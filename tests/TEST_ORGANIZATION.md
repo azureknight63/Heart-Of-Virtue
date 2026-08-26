@@ -82,18 +82,12 @@ Tests for items and inventory:
 pytest tests/ -k "commodity or drop or weapon or loot or transfer_item"
 ```
 
-### Manual Tests (3 files) - Prefix: `manual_*`
-Manual testing utilities (not run by pytest by default):
-- `manual_npc_spawner_check.py` - NPC spawner verification
-- `manual_test_special_category.py` - Special item testing
-- `manual_test_weight.py` - Weight tolerance checks
-
-**Run manual tests:**
-```bash
-python tests/manual_npc_spawner_check.py
-python tests/manual_test_special_category.py
-python tests/manual_test_weight.py
-```
+### Manual Tests - removed
+The `manual_*.py` scripts were deleted. They were ad-hoc verification scripts that
+pytest collected from the rootdir, and CLAUDE.md documents the hazard: a stray script
+doing `sys.modules['flask'] = MagicMock()` at import poisons every Flask test in a full
+run, so route/serializer tests fail in the suite while passing in isolation. The
+behaviours they checked are covered by the regular `test_*.py` suite.
 
 ### Map Tests (4 files) - Prefix: `test_map*`, `test_*tile*`, `test_*event_tile*`, `test_room_*`, `test_view_map*`
 Tests for maps and world:
@@ -352,9 +346,6 @@ Scripts for manual testing and verification:
 
 **Usage:**
 ```bash
-python tests/manual/manual_npc_spawner_check.py
-python tests/manual/manual_test_special_category.py
-python tests/manual/manual_test_weight.py
 ```
 
 ### `maps/` - Map System Tests (4 files)

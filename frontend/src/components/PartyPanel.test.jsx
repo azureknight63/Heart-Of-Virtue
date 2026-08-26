@@ -39,18 +39,36 @@ describe('PartyPanel', () => {
     expect(screen.getByText(/Aria/i)).toBeDefined();
     expect(screen.getByText(/Kael/i)).toBeDefined();
 
-    // Check HP and Level
-    expect(screen.getByText(/50 \/ 100/i)).toBeDefined();
+    // Both rows, not just the first: a panel that rendered member[0]'s stats
+    // for every row passed when only Aria's HP was read back.
+    expect(screen.getByText('50 / 100')).toBeInTheDocument();
+    expect(screen.getByText('80 / 120')).toBeInTheDocument();
     expect(screen.getByText(/LVL 5/i)).toBeDefined();
     expect(screen.getByText(/LVL 4/i)).toBeDefined();
 
+    // …and the bar width tracks the ratio, not just the printed numbers.
+    const [ariaFill, kaelFill] = Array.from(
+      document.querySelectorAll('div[style*="height: 100%"][style*="background"]')
+    ).filter((d) => d.style.width.endsWith('%'));
+    expect(ariaFill.style.width).toBe('50%');
+    expect(kaelFill.style.width).toBe(`${(80 / 120) * 100}%`);
+  });
+
+  it('falls back to 0/100 for a party member with no hp fields, without NaN%', () => {
+    render(<PartyPanel player={{ party_members: [{ name: 'Ghost' }] }} onClose={mockOnClose} />);
+    expect(screen.getByText('0 / 100')).toBeInTheDocument();
+    expect(screen.getByText(/LVL 1/i)).toBeInTheDocument();
+    const fill = Array.from(
+      document.querySelectorAll('div[style*="height: 100%"][style*="background"]')
+    ).find((d) => d.style.width.endsWith('%'));
+    expect(fill.style.width).toBe('0%');
   });
 
   it('calls onClose when close button is clicked', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
     const closeButton = screen.getByText('✕');
     fireEvent.click(closeButton);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('handles close button hover in non-empty state', () => {
@@ -79,7 +97,7 @@ describe('PartyPanel', () => {
   it('calls onClose when DISMISS is clicked', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
     fireEvent.click(screen.getByText('DISMISS'));
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('does not show a USE ITEM button when there are no usable consumables', () => {
@@ -181,7 +199,7 @@ describe('PartyPanel', () => {
       item_id: 'i1',
       target_id: 1,
     });
-    expect(onRefetch).toHaveBeenCalled();
+    expect(onRefetch).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/Gorran feels better\./)).toBeInTheDocument();
   });
 

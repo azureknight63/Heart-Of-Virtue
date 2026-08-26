@@ -1,19 +1,36 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { act } from 'react';
 import Battlefield from './Battlefield';
+import { setFlag, resetFlags } from '../utils/featureFlags';
 import React from 'react';
+import { makeBattleState, makeCombatant, makeEnemy } from '../test/payloads';
 
 // Mock child components. Battlefield also imports the VIEW_SIZE constant for
-// its off-screen-enemy detection, so expose it on the mock.
+// its off-screen-enemy detection and the view-mode constants, so expose them on
+// the mock.
+//
+// The mock RECORDS the props it was handed rather than destructuring only the
+// three it renders: Battlefield's job for combatId/mapSize is pure forwarding
+// from the top-level combat object, and a stub that ignores those props cannot
+// tell a correct forward from a deleted one.
+const gridProps = [];
 vi.mock('./BattlefieldGrid', () => ({
     VIEW_SIZE: 13,
-    default: ({ combat, tab, zoom }) => (
-        <div data-testid="grid">
-            Grid - Tab: {tab} - Zoom: {zoom}
-            Combatant: {combat?.combatants?.[0]?.name}
-        </div>
-    )
+    VIEW_MODE_FOLLOW: 'follow',
+    VIEW_MODE_FIT: 'fit',
+    default: (props) => {
+        gridProps.push(props);
+        return (
+            <div data-testid="grid">
+                Grid - Tab: {props.tab} - Zoom: {props.zoom}
+                Combatant: {props.combat?.combatants?.[0]?.name}
+            </div>
+        );
+    }
 }));
+
+const lastGridProps = () => gridProps[gridProps.length - 1];
 
 const mockCombat = {
     enemies: [{ name: 'Slime', hp: 10, max_hp: 10 }],
@@ -51,9 +68,11 @@ describe('Battlefield', () => {
             combat_active: true
         };
         render(<Battlefield combat={offScreenCombat} currentLogIndex={0} />);
-        await waitFor(() => {
-            expect(screen.getByRole('status')).toBeInTheDocument();
-        });
+        // The banner must name the enemy count it found, not merely exist:
+        // `health.current` is the only HP field this payload carries, so a
+        // component reading `hp` alone would see 0 and suppress the hint.
+        const banner = await screen.findByRole('status');
+        expect(banner).toHaveTextContent(/enemy off-screen/i);
     });
 
     it('does not flag a dead off-screen enemy as needing the zoom hint', async () => {
@@ -92,46 +111,97 @@ describe('Battlefield', () => {
 
     it('resets accumulated beat states when combat ends', () => {
         const activeCombat = { ...mockCombat, combat_active: true };
-        const { rerender } = render(<Battlefield combat={activeCombat} />);
-        expect(screen.getByTestId('grid')).toBeInTheDocument();
+        const { rerender } = render(<Battlefield combat={activeCombat} currentLogIndex={1} />);
+        expect(lastGridProps().combat.enemies[0].hp).toBe(5);
+        expect(lastGridProps().combatActive).toBe(true);
 
-        rerender(<Battlefield combat={{ ...mockCombat, combat_active: false, beat_states: [...mockCombat.beat_states, { combatants: [], enemies: [] }] }} />);
+        rerender(
+            <Battlefield
+                combat={{
+                    ...mockCombat,
+                    combat_active: false,
+                    beat_states: [...mockCombat.beat_states, { combatants: [], enemies: [] }],
+                }}
+                currentLogIndex={1}
+            />
+        );
+        // combatActive must follow the payload down to the grid — it is half of
+        // the grid's camera-reset dependency alongside combatId.
+        expect(lastGridProps().combatActive).toBe(false);
         expect(screen.getByTestId('grid')).toBeInTheDocument();
     });
 
-    it('renders overview by default', () => {
+    // The tab/zoom/beat state lives in Battlefield and reaches the player only
+    // through the props it hands the grid. The previous versions of these four
+    // tests clicked the control and then asserted `getByTestId('grid')` was
+    // defined — true before the click, after it, and for every possible state.
+
+    it('opens on the overview tab and labels the enemies tab with the live count', () => {
         render(<Battlefield combat={mockCombat} />);
-        expect(screen.getByTestId('grid')).toBeDefined();
-        expect(screen.getByText(/Enemies \(1\)/i)).toBeDefined();
+        expect(lastGridProps().tab).toBe('overview');
+        expect(screen.getByText(/Enemies \(1\)/i)).toBeInTheDocument();
     });
 
-    it('toggles tabs', () => {
+    it('switches the tab prop handed to the grid when a tab is clicked', () => {
         render(<Battlefield combat={mockCombat} />);
+        expect(lastGridProps().tab).toBe('overview');
 
         fireEvent.click(screen.getByText(/Enemies \(1\)/i));
-        expect(screen.getByTestId('grid')).toBeDefined();
+        expect(lastGridProps().tab).toBe('enemies');
 
         fireEvent.click(screen.getByText(/Overview/i));
-        expect(screen.getByTestId('grid')).toBeDefined();
+        expect(lastGridProps().tab).toBe('overview');
     });
 
-    it('toggles zoom', () => {
+    it('switches between the follow and fit view modes', () => {
         render(<Battlefield combat={mockCombat} />);
 
-        const zoomBtn = screen.getByTitle('Toggle View Mode');
-        expect(zoomBtn).toBeDefined();
-        fireEvent.click(zoomBtn);
+        const followBtn = screen.getByRole('button', { name: 'Follow' });
+        const fitBtn = screen.getByRole('button', { name: 'Fit Fight' });
 
-        fireEvent.click(zoomBtn);
-        expect(screen.getByTestId('grid')).toBeDefined();
+        // Follow is the default and both options are always offered, so the
+        // active mode is legible without clicking anything.
+        expect(followBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(fitBtn.getAttribute('aria-pressed')).toBe('false');
+        expect(screen.getByTestId('grid').textContent).toContain('Zoom: follow');
+
+        fireEvent.click(fitBtn);
+        expect(fitBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('grid').textContent).toContain('Zoom: fit');
+
+        fireEvent.click(followBtn);
+        expect(followBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('grid').textContent).toContain('Zoom: follow');
     });
 
-    it('updates displayState based on currentLogIndex', () => {
+    it('reports the beat number and how many enemies are still standing', () => {
+        const combat = {
+            ...mockCombat,
+            beat: 7,
+            beat_states: [{
+                player: { name: 'Jean', position: { x: 1, y: 1 } },
+                enemies: [
+                    { id: 'e1', name: 'Slime', hp: 4, max_hp: 10, position: { x: 2, y: 1 } },
+                    { id: 'e2', name: 'Dead Slime', hp: 0, max_hp: 10, position: { x: 3, y: 1 } },
+                ],
+            }],
+        };
+        render(<Battlefield combat={combat} currentLogIndex={0} />);
+
+        expect(screen.getByText('Beat 7')).toBeDefined();
+        expect(screen.getByText('1 standing')).toBeDefined();
+    });
+
+    it('rewinds the grid to the beat state named by currentLogIndex', () => {
+        // mockCombat's two beats put Jean at [0,0] then [1,1] and drop the
+        // Slime from 10 HP to 5 — so the beat the grid is handed is observable.
         const { rerender } = render(<Battlefield combat={mockCombat} currentLogIndex={0} />);
-        expect(screen.getByTestId('grid')).toBeDefined();
+        expect(lastGridProps().combat.combatants[0].position).toEqual([0, 0]);
+        expect(lastGridProps().combat.enemies[0].hp).toBe(10);
 
         rerender(<Battlefield combat={mockCombat} currentLogIndex={1} />);
-        expect(screen.getByTestId('grid')).toBeDefined();
+        expect(lastGridProps().combat.combatants[0].position).toEqual([1, 1]);
+        expect(lastGridProps().combat.enemies[0].hp).toBe(5);
     });
 
     it('shows off-screen banner when a living enemy is beyond the zoomed viewport', async () => {
@@ -158,13 +228,78 @@ describe('Battlefield', () => {
         render(<Battlefield combat={offScreenCombat} currentLogIndex={0} />);
 
         // Banner should appear because enemy is off-screen in normal zoom
-        await waitFor(() => {
-            expect(screen.getByRole('status')).toBeDefined();
-            expect(screen.getByText(/enemy off-screen/i)).toBeDefined();
+        const banner = await screen.findByRole('status');
+        expect(banner).toHaveTextContent(/enemy off-screen/i);
+        // ...and the zoom control retitles itself to advertise the fix.
+        expect(screen.getByTitle(/off-screen/i)).toBeInTheDocument();
+    });
+
+    // ── combat_id / map_size plumbing ─────────────────────────────────────
+    //
+    // BattlefieldGrid resets its camera pan on `combatId` changing, and sizes
+    // the arena from `mapSize`. Both are read off the TOP-LEVEL combat object
+    // here and passed as explicit props, because the grid's own `combat` prop
+    // is a per-beat state that serialize_combat_state emits neither field on.
+    // Reading them from the grid's prop instead made the pan dep flip
+    // uuid <-> undefined as displayState alternated shape, resetting the
+    // camera repeatedly mid-fight; dropping them entirely (the original
+    // wire-drift bug) meant it never reset and the arena fell back to the
+    // bounding box of current positions.
+    describe('fight identity and arena size forwarding', () => {
+        const fight = (overrides = {}) => ({
+            ...makeBattleState(overrides),
+            combat_active: true,
+            log: [],
+            beat_states: [{ player: makeCombatant(), enemies: [makeEnemy()] }],
+        });
+
+        it('forwards combat_id and map_size from the top-level combat object', () => {
+            render(<Battlefield combat={fight({ combat_id: 'fight-A', map_size: 18 })} currentLogIndex={0} />);
+            expect(lastGridProps().combatId).toBe('fight-A');
+            expect(lastGridProps().mapSize).toBe(18);
+            expect(lastGridProps().combatActive).toBe(true);
+        });
+
+        it('does not source them from the per-beat combat prop handed to the grid', () => {
+            // The beat state deliberately carries CONTRADICTORY values. If
+            // Battlefield ever regressed to reading `displayState.combat_id`,
+            // these are the values that would surface.
+            const combat = fight({ combat_id: 'fight-A', map_size: 18 });
+            combat.beat_states = [{
+                player: makeCombatant(),
+                enemies: [makeEnemy()],
+                combat_id: 'beat-state-id',
+                map_size: 13,
+            }];
+            render(<Battlefield combat={combat} currentLogIndex={0} />);
+
+            expect(lastGridProps().combat.combat_id).toBe('beat-state-id');
+            expect(lastGridProps().combatId).toBe('fight-A');
+            expect(lastGridProps().mapSize).toBe(18);
+        });
+
+        it('holds combat_id still across beats of one fight and moves it for a new fight', () => {
+            const { rerender } = render(
+                <Battlefield combat={fight({ combat_id: 'fight-A', beat: 1 })} currentLogIndex={0} />
+            );
+            expect(lastGridProps().combatId).toBe('fight-A');
+
+            // Same fight, later beat + a reinforcement wave (a server-side
+            // reinit, which keeps the id).
+            rerender(
+                <Battlefield
+                    combat={fight({ combat_id: 'fight-A', beat: 5, enemies: [makeEnemy(), makeEnemy({ id: 'enemy_2' })] })}
+                    currentLogIndex={0}
+                />
+            );
+            expect(lastGridProps().combatId).toBe('fight-A');
+
+            rerender(<Battlefield combat={fight({ combat_id: 'fight-B', beat: 1 })} currentLogIndex={0} />);
+            expect(lastGridProps().combatId).toBe('fight-B');
         });
     });
 
-    it('does not show off-screen banner in full-map mode', async () => {
+    it('does not show off-screen banner in fit mode', async () => {
         const offScreenCombat = {
             beat_states: [
                 {
@@ -180,13 +315,44 @@ describe('Battlefield', () => {
 
         render(<Battlefield combat={offScreenCombat} currentLogIndex={0} />);
 
-        // Switch to full-map mode
-        const zoomBtn = screen.getByTitle(/toggle view mode|enemies are off-screen/i);
-        fireEvent.click(zoomBtn);
+        // Switch to fit mode — it frames every combatant, so nothing is off-screen
+        fireEvent.click(screen.getByRole('button', { name: 'Fit Fight' }));
 
-        // Banner should NOT appear in full-map mode
+        // Banner should NOT appear in fit mode
         await waitFor(() => {
             expect(screen.queryByRole('status')).toBeNull();
+        });
+    });
+
+    describe('beatTimeline feature flag', () => {
+        afterEach(() => {
+            resetFlags();
+        });
+
+        const combatWithPendingMove = {
+            ...mockCombat,
+            beat: 7,
+            beat_states: [{
+                player: {
+                    id: 'player', name: 'Jean', position: { x: 1, y: 1 },
+                    current_move: { name: 'Attack', display_name: 'Attack', category: 'Offensive', current_stage: 0, beats_until_resolve: 3 },
+                },
+                enemies: [{ id: 'e1', name: 'Slime', hp: 4, max_hp: 10, position: { x: 2, y: 1 } }],
+            }],
+        };
+
+        it('shows the old beat counter, not the timeline, by default', () => {
+            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
+            expect(screen.getByText('Beat 7')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Beat timeline')).not.toBeInTheDocument();
+        });
+
+        it('shows the timeline instead of the counter once the flag is on', () => {
+            act(() => setFlag('beatTimeline', true));
+            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
+            expect(screen.getByLabelText('Beat timeline')).toBeInTheDocument();
+            expect(screen.queryByText('Beat 7')).not.toBeInTheDocument();
+            expect(screen.getByText('Jean')).toBeInTheDocument();
         });
     });
 });

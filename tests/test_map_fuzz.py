@@ -67,8 +67,20 @@ def test_recursion_bomb_is_depth_bounded():
         cur = nxt
     payload = {"__class__": "Item", "__module__": "items", "props": {"d": deep}}
     u = Universe()
-    # Must return (a value or None) without blowing the stack.
-    u._deserialize_saved_instance(payload)
+
+    # The old body called the loader and asserted nothing, so it only caught a
+    # RecursionError. The depth bound's actual contract is that the *outer*
+    # object still deserializes -- the bomb is truncated, not fatal.
+    from src.items import Item
+
+    result = u._deserialize_saved_instance(payload)
+    assert isinstance(result, Item)
+    # Walk the nesting that survived: it must stop at the configured bound
+    # rather than mirroring the attacker's depth.
+    node, depth = getattr(result, "d", None), 0
+    while isinstance(node, dict) and "n" in node:
+        node, depth = node["n"], depth + 1
+    assert depth <= MAX_DESERIALIZE_DEPTH
 
 
 def test_real_maps_still_load():
@@ -80,11 +92,19 @@ def test_real_maps_still_load():
     from src.player import Player
 
     player = Player()
-    loaded = 0
-    for jf in sorted(maps_dir.glob("*.json"))[:5]:
+    # Every shipped map, not the first five: loading all 17 costs ~60 ms, and
+    # a hardening rule that only trips on the 12th map alphabetically was
+    # exactly what the `[:5]` slice could not see.
+    map_files = sorted(maps_dir.glob("*.json"))
+    assert map_files, "no shipped maps found — the glob is wrong"
+    for jf in map_files:
         try:
             u._load_single_json_map(player, jf)
-            loaded += 1
         except Exception as exc:  # noqa: BLE001
             pytest.fail(f"legitimate map {jf.name} failed to load: {exc}")
-    assert loaded > 0
+
+    assert len(u.maps) == len(map_files)
+    # Loading must actually produce tiles, not just empty map dicts.
+    for game_map in u.maps:
+        coords = [k for k in game_map if isinstance(k, tuple)]
+        assert coords, f"map {game_map.get('name')!r} loaded with no tiles"

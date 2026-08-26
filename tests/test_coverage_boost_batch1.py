@@ -35,6 +35,7 @@ from src.positions import (
     _find_clustered_position,
 )
 from src.player import Player
+from src.narration import capture_narration
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -107,15 +108,15 @@ class TestMoveAwayConstrainedBranches:
         # Should move away from threat (east)
         assert result.x > 5
 
-    def test_blocked_destination_falls_back(self):
+    def test_blocked_destination_retries_shorter_distances(self):
+        """A blocked 2-square retreat is not abandoned -- the 1-square retreat
+        is tried next, and only a fully blocked corridor returns ``current``."""
         current = _cp(5, 5)
         threat = _cp(3, 5)
-        # Block the natural retreat direction
-        # Moving away from (3,5) with dx=1 means x+2=7
-        occupied = [_cp(7, 5), _cp(6, 5)]
-        result = move_away_constrained(current, threat, 2, occupied)
-        # Falls back to current copy
-        assert result is not None
+        # Retreat bearing is due east, so distance 2 -> (7,5) and 1 -> (6,5).
+        assert move_away_constrained(current, threat, 2, [_cp(7, 5)]) .x == 6
+        blocked = move_away_constrained(current, threat, 2, [_cp(7, 5), _cp(6, 5)])
+        assert (blocked.x, blocked.y) == (5, 5)
 
     def test_returns_current_when_fully_blocked(self):
         current = _cp(5, 5)
@@ -136,10 +137,25 @@ class TestMoveToFlankConstrainedBranches:
     """Lines 655-656, 661: move_to_flank_constrained edge cases."""
 
     def test_no_occupied_delegates_to_flank(self):
+        """With nothing occupied the constrained form is identical to move_to_flank."""
+        from src.positions import move_to_flank
+
         current = _cp(5, 25)
         target = _cp(25, 25, Direction.E)
         result = move_to_flank_constrained(current, target, 3, [])
-        assert result is not None
+        expected = move_to_flank(current, target, 3)
+        assert (result.x, result.y) == (expected.x, expected.y)
+        # Target faces east, so its blind sides are due north/south of it.
+        assert result.x == target.x
+        assert abs(result.y - target.y) == 3
+
+    def test_blocked_primary_flank_uses_the_other_blind_side(self):
+        """A blocked flank never degrades into a head-on approach."""
+        current = _cp(25, 20)  # north of the target
+        target = _cp(25, 25, Direction.E)
+        result = move_to_flank_constrained(current, target, 3, [_cp(25, 22)])
+        # North blind side (25,22) is taken -> take the south one, still a flank.
+        assert (result.x, result.y) == (25, 28)
 
     def test_returns_copy_when_both_flanks_blocked(self):
         current = _cp(5, 25)
@@ -156,24 +172,28 @@ class TestTurnTowardFallback:
     """Line 684: turn_toward fallback to Direction.N."""
 
     def test_turn_toward_same_position(self):
-        # Same position — angle is 0, maps to North
+        """Zero displacement resolves to North, not to the current facing."""
         current = _cp(5, 5, Direction.S)
         target = _cp(5, 5, Direction.S)
-        result = turn_toward(current, target)
-        # Should return a Direction (N is fallback)
-        assert isinstance(result, Direction)
+        assert turn_toward(current, target) is Direction.N
 
-    def test_turn_toward_cardinal_directions(self):
-        for dx, dy, expected in [
+    @pytest.mark.parametrize(
+        "dx, dy, expected",
+        [
             (1, 0, Direction.E),
             (-1, 0, Direction.W),
-            (0, 1, Direction.S),
-            (0, -1, Direction.N),
-        ]:
-            current = _cp(10, 10)
-            target = _cp(10 + dx * 5, 10 + dy * 5)
-            result = turn_toward(current, target)
-            assert isinstance(result, Direction)
+            (0, 1, Direction.N),   # +y is North (angle_to_target: 0 deg = +y)
+            (0, -1, Direction.S),
+            (1, 1, Direction.NE),
+            (-1, 1, Direction.NW),
+            (1, -1, Direction.SE),
+            (-1, -1, Direction.SW),
+        ],
+    )
+    def test_turn_toward_cardinal_directions(self, dx, dy, expected):
+        current = _cp(10, 10)
+        target = _cp(10 + dx * 5, 10 + dy * 5)
+        assert turn_toward(current, target) is expected
 
 
 class TestRecalcProximityNoCombatPosition:
@@ -201,37 +221,123 @@ class TestSpawnUnitsInZoneFormations:
         u.combat_proximity = {}
         return u
 
+    @staticmethod
+    def _assert_in_zone(pos, zone):
+        (x_min, y_min), (x_max, y_max) = zone
+        assert x_min <= pos.x <= x_max, pos
+        assert y_min <= pos.y <= y_max, pos
+
     def test_cluster_formation(self):
+        """Cluster puts the first unit dead centre and the rest adjacent to it."""
         units = [self._make_unit() for _ in range(3)]
         zone = ((5, 5), (15, 15))
         _spawn_units_in_zone(units, zone, formation_type="cluster")
+        first = units[0].combat_position
+        assert (first.x, first.y) == (10, 10)  # centre of the zone
         for u in units:
-            assert u.combat_position is not None
+            self._assert_in_zone(u.combat_position, zone)
+        # "Clustered" is a real claim, but the spiral re-anchors on the running
+        # cluster centre (_calculate_center_position of everyone placed so far),
+        # not on the zone centre -- so a later unit can sit >4 from (10, 10)
+        # while still being tightly clustered. Assert the bound the algorithm
+        # actually gives: each unit lands within the spiral's max radius of the
+        # centre as it stood when that unit was placed.
+        from src.positions import _calculate_center_position
 
-    def test_random_formation(self):
+        placed = [units[0].combat_position]
+        for u in units[1:]:
+            centre = _calculate_center_position(placed)
+            assert abs(u.combat_position.x - centre.x) <= 4
+            assert abs(u.combat_position.y - centre.y) <= 4
+            placed.append(u.combat_position)
+
+    def test_random_formation_stays_in_zone(self):
         units = [self._make_unit() for _ in range(3)]
         zone = ((5, 5), (20, 20))
-        _spawn_units_in_zone(units, zone, formation_type="random")
-        for u in units:
-            assert u.combat_position is not None
 
-    def test_spread_formation_with_seed(self):
-        units = [self._make_unit() for _ in range(2)]
-        zone = ((0, 0), (10, 10))
-        _spawn_units_in_zone(units, zone, formation_type="spread", seed=42)
+        _spawn_units_in_zone(units, zone, formation_type="random")
+
         for u in units:
-            assert u.combat_position is not None
+            self._assert_in_zone(u.combat_position, zone)
+
+    def test_random_formation_retries_until_min_spacing_is_satisfied(self):
+        """"random" delegates to the spaced finder: a candidate closer than
+        min_spacing to an already-placed unit is rejected and redrawn."""
+        from src.positions import CombatPosition
+
+        draws = iter([
+            CombatPosition(0, 0),   # unit 1 -- accepted (nothing placed yet)
+            CombatPosition(1, 0),   # unit 2 -- 1 ft away, rejected
+            CombatPosition(2, 0),   # unit 2 -- 2 ft away, still rejected
+            CombatPosition(9, 9),   # unit 2 -- far enough, accepted
+        ])
+        units = [self._make_unit() for _ in range(2)]
+
+        with patch(
+            "src.positions.random_position_in_zone", side_effect=lambda z: next(draws)
+        ):
+            _spawn_units_in_zone(
+                units, ((0, 0), (10, 10)), formation_type="random", min_spacing=3
+            )
+
+        placed = [(u.combat_position.x, u.combat_position.y) for u in units]
+        assert placed == [(0, 0), (9, 9)]
+
+    def test_random_formation_gives_up_on_spacing_after_twenty_attempts(self):
+        """Documented fallback: in a zone too cramped to honour min_spacing,
+        the finder places the unit anyway rather than looping forever."""
+        from src.positions import CombatPosition
+
+        attempts = []
+
+        def always_adjacent(zone):
+            attempts.append(zone)
+            return CombatPosition(0, 0)
+
+        units = [self._make_unit() for _ in range(2)]
+
+        with patch("src.positions.random_position_in_zone", always_adjacent):
+            _spawn_units_in_zone(
+                units, ((0, 0), (1, 1)), formation_type="random", min_spacing=50
+            )
+
+        # 1 draw for the first unit, then 20 rejected attempts + 1 fallback.
+        assert len(attempts) == 22
+        assert [(u.combat_position.x, u.combat_position.y) for u in units] == [
+            (0, 0),
+            (0, 0),
+        ]
+
+    def test_spread_formation_is_deterministic_for_a_given_seed(self):
+        """The seed argument must actually reproduce the same layout."""
+        zone = ((0, 0), (10, 10))
+
+        def layout():
+            units = [self._make_unit() for _ in range(3)]
+            _spawn_units_in_zone(
+                units, zone, formation_type="spread", min_spacing=2, seed=42
+            )
+            return [(u.combat_position.x, u.combat_position.y) for u in units]
+
+        first, second = layout(), layout()
+        assert first == second
+        for pos in first:
+            assert 0 <= pos[0] <= 10 and 0 <= pos[1] <= 10
+        # min_spacing=2 in a 10x10 zone is satisfiable, so no two units overlap.
+        assert len(set(first)) == 3
 
 
 class TestFindSpacedPositionFallback:
     """Line 876: _find_spaced_position fallback when constrained."""
 
     def test_fallback_when_zone_is_tiny(self):
+        """An unsatisfiable spacing constraint still yields an in-zone square."""
         zone = ((5, 5), (6, 6))  # Very small zone
         # Fill with many occupied positions to force fallback
         occupied = [_cp(x, y) for x in range(0, 51) for y in range(0, 51)]
         result = _find_spaced_position(zone, occupied, min_spacing=10)
-        assert result is not None
+        assert 5 <= result.x <= 6
+        assert 5 <= result.y <= 6
 
 
 class TestFindClusteredPosition:
@@ -244,20 +350,31 @@ class TestFindClusteredPosition:
         assert result.y == 5
 
     def test_subsequent_unit_near_first(self):
+        """The spiral starts at radius 1, so unit two lands on the ring around unit one."""
         zone = ((0, 0), (10, 10))
         first = _cp(5, 5)
         result = _find_clustered_position(zone, [first], min_spacing=1)
-        assert result is not None
-        # Should be close to first
         dx = abs(result.x - 5)
         dy = abs(result.y - 5)
-        assert dx <= 5 and dy <= 5
+        assert max(dx, dy) == 1
+        assert (result.x, result.y) != (5, 5)
+
+    def test_min_spacing_pushes_the_next_unit_further_out(self):
+        """min_spacing is honoured within the cluster, not just the zone."""
+        zone = ((0, 0), (30, 30))
+        first = _cp(15, 15)
+        result = _find_clustered_position(zone, [first], min_spacing=3)
+        from src.positions import distance_from_coords
+
+        assert distance_from_coords(result, first) >= 3
 
     def test_cluster_fallback_when_no_valid_position(self):
+        """Unsatisfiable spacing falls back to a random *in-zone* square."""
         zone = ((5, 5), (6, 6))
         occupied = [_cp(x, y) for x in range(0, 51) for y in range(0, 51)]
         result = _find_clustered_position(zone, occupied, min_spacing=5)
-        assert result is not None
+        assert 5 <= result.x <= 6
+        assert 5 <= result.y <= 6
 
 
 class TestInitializeCombatPositions:
@@ -269,24 +386,51 @@ class TestInitializeCombatPositions:
         c.combat_proximity = {}
         return c
 
-    def test_standard_scenario(self):
+    @pytest.mark.parametrize("scenario", ["standard", "pincer", "boss_arena"])
+    def test_every_unit_is_placed_facing_the_enemy_with_proximity_wired(
+        self, scenario
+    ):
+        """Placement is only half the job: facing and combat_proximity must be set too."""
+        from src.positions import distance_from_coords
+
+        allies = [self._make_combatant() for _ in range(2)]
+        enemies = [self._make_combatant() for _ in range(2)]
+        initialize_combat_positions(allies, enemies, scenario_type=scenario)
+
+        everyone = allies + enemies
+        for c in everyone:
+            assert isinstance(c.combat_position, CombatPosition)
+            assert isinstance(c.combat_position.facing, Direction)
+            # Proximity is keyed by every *other* combatant, and the distances
+            # agree with the coordinates that were just assigned.
+            assert set(c.combat_proximity) == {o for o in everyone if o is not c}
+            for other, dist in c.combat_proximity.items():
+                assert dist == distance_from_coords(
+                    c.combat_position, other.combat_position
+                )
+
+    def test_allies_and_enemies_start_on_opposite_sides(self):
+        """The standard scenario is a face-off, not a scrum."""
         allies = [self._make_combatant() for _ in range(2)]
         enemies = [self._make_combatant() for _ in range(2)]
         initialize_combat_positions(allies, enemies, scenario_type="standard")
-        for c in allies + enemies:
-            assert c.combat_position is not None
+        # The standard face-off separates the teams along X: allies spawn in
+        # x in [0, 10], enemies in x in [20, 30], and the two share an identical
+        # y range -- so a Y-axis assertion here would be testing nothing.
+        ally_xs = [a.combat_position.x for a in allies]
+        enemy_xs = [e.combat_position.x for e in enemies]
+        assert max(ally_xs) < min(enemy_xs)
 
-    def test_pincer_scenario(self):
+    def test_pincer_splits_enemies_across_two_zones(self):
+        """"Pincer" must actually pincer -- enemies straddle the allies."""
         allies = [self._make_combatant()]
-        enemies = [self._make_combatant()]
+        enemies = [self._make_combatant() for _ in range(2)]
         initialize_combat_positions(allies, enemies, scenario_type="pincer")
-        assert allies[0].combat_position is not None
-
-    def test_boss_arena_scenario(self):
-        allies = [self._make_combatant()]
-        enemies = [self._make_combatant()]
-        initialize_combat_positions(allies, enemies, scenario_type="boss_arena")
-        assert allies[0].combat_position is not None
+        # Pincer straddles along X: the two enemy zones are x in [0, 7] and
+        # x in [43, 50], with the allies boxed between them in x in [18, 32].
+        ally_x = allies[0].combat_position.x
+        enemy_xs = sorted(e.combat_position.x for e in enemies)
+        assert enemy_xs[0] < ally_x < enemy_xs[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -294,100 +438,12 @@ class TestInitializeCombatPositions:
 # ---------------------------------------------------------------------------
 
 
-class TestTilesSpawnNpc:
-    """Lines 162-163, 182, 193-194, 200-201: spawn_npc hidden/delay branches."""
-
-    def _make_tile(self):
-        from src.tiles import MapTile
-
-        universe = MagicMock()
-        universe.testing_mode = False
-        return MapTile(universe, {}, 0, 0, description="Test tile")
-
-    def test_spawn_npc_with_hidden(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("UnknownNPC", hidden=True, hfactor=50)
-        assert npc.hidden is True
-        assert npc.hide_factor == 50
-
-    def test_spawn_npc_with_explicit_delay(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("UnknownNPC", delay=3)
-        assert npc.combat_delay == 3
-
-    def test_spawn_npc_sets_current_room(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("UnknownNPC")
-        assert npc.current_room == tile
-
-    def test_spawn_npc_stub_name_includes_type(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("Goblin")
-        assert "Goblin" in npc.name
-
-
-class TestTilesSpawnItem:
-    """Lines 228, 289-290, 299-301: spawn_item hidden, stackable, Gold."""
-
-    def _make_tile(self):
-        from src.tiles import MapTile
-
-        universe = MagicMock()
-        universe.testing_mode = False
-        return MapTile(universe, {}, 0, 0)
-
-    def test_spawn_gold(self):
-        tile = self._make_tile()
-        item = tile.spawn_item("Gold", amt=50)
-        assert item is not None
-        assert len(tile.items_here) >= 1
-
-    def test_spawn_item_hidden(self):
-        tile = self._make_tile()
-        item = tile.spawn_item("Gold", amt=10, hidden=True, hfactor=30)
-        for it in tile.items_here:
-            if it is item:
-                assert it.hidden is True
-                assert it.hide_factor == 30
-
-    def test_spawn_non_stackable_item(self):
-        tile = self._make_tile()
-        tile.spawn_item("RustedIronMace", amt=1)
-        assert len(tile.items_here) >= 1
-
-    def test_spawn_stackable_item_count(self):
-        tile = self._make_tile()
-        # Antidote is stackable (has count attribute)
-        item = tile.spawn_item("Antidote", amt=3)
-        if hasattr(item, "count"):
-            assert item.count == 3
-
-
-class TestTilesAvailableActionsDebug:
-    """Lines 113-131: available_actions with debug mode via universe.testing_mode."""
-
-    def _make_tile(self):
-        from src.tiles import MapTile
-
-        universe = MagicMock()
-        universe.testing_mode = True  # triggers debug moves
-        return MapTile(universe, {}, 0, 0)
-
-    def test_debug_actions_included_when_testing_mode(self):
-        tile = self._make_tile()
-        import src.actions as act
-
-        acts = tile.available_actions()
-        action_types = [type(a).__name__ for a in acts]
-        assert "Teleport" in action_types
-
-    def test_available_actions_includes_the_default_action_set(self):
-        # Movement is dispatched via GameService.move_player, not Action
-        # classes -- the directional-move Action subclasses no longer exist.
-        tile = self._make_tile()
-        acts = tile.available_actions()
-        action_types = [type(a).__name__ for a in acts]
-        assert {"Search", "Menu", "Save"}.issubset(action_types)
+# MapTile.spawn_npc / spawn_item / available_actions were covered here and,
+# more thoroughly, in tests/test_shop_conditions_tiles_coverage.py::
+# TestMapTileCoverage (which also pins the unknown-type stub name, the
+# merchandise flag and the anti-vacuity case for the debug-action flag). The
+# two cases unique to this copy -- spawn_npc setting current_room, and a
+# non-stackable spawn -- moved there; the rest is gone.
 
 
 # ---------------------------------------------------------------------------
@@ -543,22 +599,36 @@ class TestPlayerCombatMixin:
         assert viable in result
         assert not_viable not in result
 
-    def test_combat_idle_healthy(self):
-        """Lines 16-21: combat_idle when HP is healthy."""
+    @pytest.mark.parametrize(
+        "hp_fraction, roll, expected",
+        [
+            # Healthy (>20% HP) draws from combat_idle_msg above a 995 roll.
+            (1.0, 996, ["Ready to fight!"]),
+            (1.0, 995, []),          # the guard is `> 995`, not `>=`
+            (0.21, 996, ["Ready to fight!"]),
+            # Injured (<=20% HP) draws from combat_hurt_msg above a 950 roll.
+            (0.10, 951, ["Jean is badly hurt!"]),
+            (0.10, 950, []),
+            (0.20, 951, ["Jean is badly hurt!"]),  # exactly 20% is "hurt"
+        ],
+    )
+    def test_combat_idle_picks_the_pool_by_hp_and_gates_on_the_roll(
+        self, hp_fraction, roll, expected
+    ):
         p = _player()
-        p.hp = p.maxhp  # full HP
-        # Ensure msg list has enough entries for any index up to 999
-        p.combat_idle_msg = ["Ready to fight!"] * 1001
-        with patch("random.randint", return_value=996), patch("builtins.print"):
+        p.maxhp = 100
+        p.hp = int(p.maxhp * hp_fraction)
+        p.combat_idle_msg = ["Ready to fight!"]
+        p.combat_hurt_msg = ["Jean is badly hurt!"]
+
+        # First randint is the trigger roll; the second picks the message index.
+        with (
+            patch("random.randint", side_effect=[roll, 0]),
+            capture_narration() as msgs,
+        ):
             p.combat_idle()
 
-    def test_combat_idle_hurt(self):
-        """Lines 22-25: combat_idle when HP is low."""
-        p = _player()
-        p.hp = int(p.maxhp * 0.1)  # 10% HP
-        p.combat_hurt_msg = ["Jean is badly hurt!"] * 1001
-        with patch("random.randint", return_value=951), patch("builtins.print"):
-            p.combat_idle()
+        assert [m["text"] for m in msgs] == expected
 
     def test_change_heat_upper_clamp(self):
         """Line 33: heat clamped at 10."""
@@ -656,8 +726,13 @@ class TestPlayerLevelingMixin:
         p.exp = p.exp_to_level + 10
 
         events = p.gain_exp(0, api_mode=False)
-        # _combat_adapter path also returns events list
-        assert isinstance(events, list)
+
+        # The adapter path takes the API level-up branch, so the caller still
+        # gets the structured level-up events rather than a terminal prompt.
+        assert isinstance(events, list) and len(events) == 1
+        assert events[0]["level_up"] is True
+        assert (events[0]["old_level"], events[0]["new_level"]) == (1, 2)
+        assert p.level == 2
 
     def test_learn_skill_new(self):
         """Lines 109-115: learn_skill adds new skill."""
@@ -727,12 +802,14 @@ class TestPlayerWorldMixinExtended:
         return universe
 
     def test_refresh_merchants_no_universe_attribute(self):
-        """Line 19: universe has no maps attribute."""
+        """A universe with no `maps` is reported, not crashed on."""
         p = _player()
         p.universe = MagicMock(spec=[])  # no 'maps' attribute
-        with patch("src.player._world.cprint") as mock_cp:
+        with capture_narration() as messages:
             p.refresh_merchants()
-        mock_cp.assert_called_once()
+        assert [m["text"] for m in messages] == [
+            "Universe not initialized; cannot refresh merchants."
+        ]
 
     def test_refresh_merchants_finds_merchant_no_filter(self):
         """Lines 50-54: finds merchant without filter."""
@@ -762,10 +839,12 @@ class TestPlayerWorldMixinExtended:
         m = self._make_merchant("Harold")
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
+        with capture_narration() as messages, patch("time.sleep"):
             p.refresh_merchants(phrase="zzz")
 
-        mock_cp.assert_called()
+        assert [msg["text"] for msg in messages] == [
+            "No merchants matched filter 'zzz'."
+        ]
         assert m._update_called is False
 
     def test_refresh_merchants_empty_map(self):
@@ -775,22 +854,26 @@ class TestPlayerWorldMixinExtended:
         universe.maps = [{"name": "empty_world"}]
         p.universe = universe
 
-        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
+        with capture_narration() as messages, patch("time.sleep"):
             p.refresh_merchants()
 
-        mock_cp.assert_called()
+        assert [m["text"] for m in messages] == ["No merchants found to refresh."]
 
     def test_refresh_merchants_non_dict_map_skipped(self):
         """Lines 41-42: non-dict entries in maps are skipped."""
         p = _player()
         universe = MagicMock()
-        universe.maps = ["not_a_dict", None, 42]
+        merchant = self._make_merchant("Harold")
+        tile = MagicMock()
+        tile.npcs_here = [merchant]
+        universe.maps = ["not_a_dict", None, 42, {"name": "w", (0, 0): tile}]
         p.universe = universe
 
-        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
+        with capture_narration(), patch("time.sleep"):
             p.refresh_merchants()
 
-        mock_cp.assert_called()
+        # The junk entries are skipped and the real map is still scanned.
+        assert merchant._update_called is True
 
     def test_refresh_merchants_missing_update_goods(self):
         """Lines 89-92: merchant missing update_goods logs failure."""
@@ -807,8 +890,12 @@ class TestPlayerWorldMixinExtended:
         p = _player()
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # should not raise
+        with capture_narration() as messages, patch("time.sleep"):
+            p.refresh_merchants()
+
+        text = [msg["text"] for msg in messages]
+        assert "Merchant refresh complete: 0 succeeded, 1 failed." in text
+        assert " - Broken: missing update_goods" in text
 
     def test_refresh_merchants_update_goods_raises(self):
         """Lines 86-87: update_goods raises — captured in failures list."""
@@ -828,8 +915,12 @@ class TestPlayerWorldMixinExtended:
         p = _player()
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # should not raise
+        with capture_narration() as messages, patch("time.sleep"):
+            p.refresh_merchants()
+
+        text = [msg["text"] for msg in messages]
+        assert "Merchant refresh complete: 0 succeeded, 1 failed." in text
+        assert " - Error: DB exploded" in text
 
     def test_refresh_merchants_initialize_shop_called_when_shop_none(self):
         """Lines 75-79: initialize_shop called when shop is None."""

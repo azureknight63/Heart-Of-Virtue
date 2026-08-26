@@ -480,11 +480,47 @@ class TestSpecialAbilities:
         self.player.combat_position = CombatPosition(x=15, y=25, facing=Direction.N)
 
     def test_special_ability_positioning(self):
-        """Test that special abilities work with coordinate positioning."""
-        assert self.player.combat_position is not None, "combat_position should be set"
-        assert hasattr(self.player.combat_position, 'x') and hasattr(self.player.combat_position, 'y'), "Position should have x and y"
-        assert hasattr(self.player.combat_position, 'facing'), "Position should have facing"
-        assert isinstance(self.player.combat_position.facing, Direction), f"Expected Direction enum, got {type(self.player.combat_position.facing)}"
+        """The position the fixture pinned is the position that is stored.
+
+        The old body asserted only ``is not None`` / ``hasattr`` / ``isinstance``
+        against attributes the *test itself* had just set two lines earlier in
+        ``setup_method`` -- with no engine behaviour in between, so nothing
+        could ever have made it fail. It now drives a real positional ability
+        instead: Withdraw must open distance from the enemy.
+        """
+        import src.positions as positions
+        from src.moves import Withdraw
+
+        assert (self.player.combat_position.x, self.player.combat_position.y) == (15, 25)
+        assert self.player.combat_position.facing is Direction.N
+
+        enemy = NPC(
+            name="Straw Dummy",
+            description="A target.",
+            damage=1,
+            aggro=False,
+            exp_award=1,
+        )
+        enemy.combat_position = CombatPosition(x=17, y=25, facing=Direction.W)
+        self.player.combat_list = [enemy]
+        self.player.combat_list_allies = [self.player]
+        self.player.combat_proximity = {enemy: 2}
+        enemy.combat_proximity = {self.player: 2}
+
+        before = positions.distance_from_coords(
+            self.player.combat_position, enemy.combat_position
+        )
+        withdraw = Withdraw(self.player)
+        withdraw.target = enemy
+        withdraw.current_stage = 1
+        withdraw.beat_update(self.player)
+        after = positions.distance_from_coords(
+            self.player.combat_position, enemy.combat_position
+        )
+
+        assert before == 2
+        assert after > before, (before, after)
+        assert isinstance(self.player.combat_position.facing, Direction)
 
 
 if __name__ == "__main__":

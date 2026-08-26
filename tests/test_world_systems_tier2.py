@@ -24,7 +24,6 @@ from unittest.mock import MagicMock, Mock, patch, PropertyMock, call
 
 
 from src.universe import Universe, tile_exists
-from src.api.services.game_service import GameService
 
 
 # ============================================================================
@@ -69,12 +68,6 @@ def mock_tile():
     tile.events_here = []
     tile.is_passable = True
     return tile
-
-
-@pytest.fixture
-def game_service():
-    """Create GameService instance."""
-    return GameService()
 
 
 # ============================================================================
@@ -133,6 +126,8 @@ class TestUniverseInitialization:
         assert isinstance(u.story, dict)
         assert u.locked_chests == []
         assert u.testing_mode is False
+        assert u.game_config is None
+        assert u.coordinate_config is None
 
     def test_universe_init_with_player(self, player_with_universe):
         """Test Universe initialization with player."""
@@ -238,28 +233,28 @@ class TestUniverseGetTile:
 # ============================================================================
 
 class TestJsonMapsRootCandidates:
-    """Test Universe._json_maps_root_candidates() method."""
+    """Universe._json_maps_root_candidates() — existing map directories only."""
 
-    def test_json_maps_root_candidates_returns_list(self, universe):
-        """Test that method returns a list."""
-        result = universe._json_maps_root_candidates()
-        assert isinstance(result, list)
-
-    def test_json_maps_root_candidates_checks_existence(self, universe):
-        """Test that only existing directories are returned."""
+    def test_returns_only_existing_paths_and_includes_the_shipped_maps_dir(
+        self, universe
+    ):
         candidates = universe._json_maps_root_candidates()
-        # At least one should exist (src/resources/maps)
-        for candidate in candidates:
-            assert isinstance(candidate, Path)
-            # All returned candidates must exist
-            assert candidate.exists()
 
-    def test_json_maps_root_candidates_default_location(self, universe):
-        """Test that default maps directory is checked."""
-        candidates = universe._json_maps_root_candidates()
-        # Should include src/resources/maps
-        candidate_strs = [str(c).replace("\\", "/") for c in candidates]
-        assert any("resources/maps" in s for s in candidate_strs)
+        assert candidates, "the shipped src/resources/maps directory must be found"
+        assert all(isinstance(c, Path) and c.exists() for c in candidates)
+        assert any(
+            str(c).replace("\\", "/").endswith("resources/maps") for c in candidates
+        )
+
+    def test_a_missing_candidate_directory_is_filtered_out(self, universe, tmp_path):
+        """The filter is `c.exists()`; patch RESOURCES_DIR at a temp location
+        with no maps/ subdirectory and the primary candidate drops out."""
+        import src.universe as universe_mod
+
+        with patch.object(universe_mod, "RESOURCES_DIR", tmp_path):
+            candidates = universe._json_maps_root_candidates()
+
+        assert all(c != tmp_path / "maps" for c in candidates)
 
 
 # ============================================================================
@@ -304,14 +299,33 @@ class TestDeserializeSavedInstance:
         assert obj.name == 'Sword'
         assert obj.value == 100
 
-    def test_deserialize_with_class_type_marker(self, universe, dummy_modules):
-        """Test deserializing using __class_type__ marker."""
-        payload = {
-            '__class_type__': 'items:DummyItem'
-        }
-        # This should return None or the class itself, depending on implementation
-        result = universe._deserialize_saved_instance(payload)
-        assert result is None or hasattr(result, '__module__')
+    def test_class_type_marker_resolves_to_the_engine_class_itself(self, universe):
+        """`__class_type__` yields the class object, not an instance — and it
+        must be the canonical src.* class so isinstance checks keep working."""
+        import src.items
+
+        result = universe._deserialize_saved_instance({'__class_type__': 'items:Gold'})
+
+        assert result is src.items.Gold
+
+    @pytest.mark.parametrize(
+        "spec, expected_error",
+        [
+            ("os:system", "refusing to resolve non-engine class type 'os:system'"),
+            ("items:NoSuchClass", "Failed to resolve class type 'items:NoSuchClass'"),
+            ("nocolon", "Failed to resolve class type 'nocolon'"),
+        ],
+    )
+    def test_class_type_marker_rejects_untrusted_or_broken_specs(
+        self, universe, spec, expected_error
+    ):
+        from src.narration import capture_narration
+
+        with capture_narration() as messages:
+            result = universe._deserialize_saved_instance({'__class_type__': spec})
+
+        assert result is None
+        assert expected_error in " ".join(m["text"] for m in messages)
 
     def test_deserialize_nested_objects(self, universe, dummy_modules):
         """Test deserializing nested objects."""
@@ -364,6 +378,88 @@ class TestDeserializeSavedInstance:
         assert universe._deserialize_saved_instance([1, 2, 3]) is None
         assert universe._deserialize_saved_instance(42) is None
 
+    def test_deserialize_builds_a_real_engine_instance_from_its_props(
+        self, universe
+    ):
+        """The constructor kwargs are filtered to the real __init__ signature;
+        leftover props land on the instance as attributes."""
+        import src.items
+
+        obj = universe._deserialize_saved_instance({
+            "__class__": "Gold",
+            "__module__": "items",
+            "props": {"amt": 10, "tags": ["rare", "valuable"]},
+        })
+
+        assert isinstance(obj, src.items.Gold)
+        assert obj.amt == 10
+        assert obj.count == 10
+        assert obj.tags == ["rare", "valuable"]
+
+    def test_props_are_deserialized_recursively(self, universe, dummy_modules):
+        """Nested plain dicts and lists survive; a nested marker resolves."""
+        import src.items
+
+        obj = universe._deserialize_saved_instance({
+            '__class__': 'DummyItem',
+            '__module__': 'items',
+            'props': {
+                'name': 'X',
+                'value': 1,
+                'meta': {'a': {'b': 2}},
+                'nums': [1, [2, 3]],
+                'cls': {'__class_type__': 'items:Gold'},
+            },
+        })
+
+        assert obj.name == 'X'
+        assert obj.meta == {'a': {'b': 2}}
+        assert obj.nums == [1, [2, 3]]
+        assert obj.cls is src.items.Gold
+
+    def test_tile_is_injected_into_classes_that_require_it(self, universe):
+        """Object classes take `tile` as a required positional arg; without the
+        injection they fell through to __new__ and came back nameless."""
+        universe.player = MagicMock()
+        tile = MagicMock()
+        tile.x, tile.y = 3, 4
+
+        obj = universe._deserialize_saved_instance(
+            {'__class__': 'DryingRack', '__module__': 'objects', 'props': {}},
+            tile=tile,
+        )
+
+        assert obj.tile is tile
+        assert obj.player is universe.player
+        assert obj.name == "Drying Rack"
+
+    def test_unconstructible_class_falls_back_to_new_and_still_gets_its_props(
+        self, universe, monkeypatch
+    ):
+        """When cls(**props) raises, the loader builds a bare instance via
+        __new__ and applies the saved props as plain attributes."""
+        import src.items
+
+        class Fragile:
+            def __init__(self, required):  # never satisfiable from these props
+                self.required = required
+
+        monkeypatch.setattr(src.items, 'Fragile', Fragile, raising=False)
+
+        obj = universe._deserialize_saved_instance({
+            '__class__': 'Fragile',
+            '__module__': 'items',
+            'props': {'colour': 'red'},
+        })
+
+        assert isinstance(obj, Fragile)
+        assert not hasattr(obj, 'required')
+        assert obj.colour == 'red'
+
+    def test_deserialize_dict_without_a_class_key_returns_none(self, universe):
+        assert universe._deserialize_saved_instance({}) is None
+        assert universe._deserialize_saved_instance({'props': {'name': 'x'}}) is None
+
 
 # ============================================================================
 # TEST: Universe.game_tick_events
@@ -386,132 +482,176 @@ class TestGameTickEvents:
             universe.game_tick_events()
         assert universe.game_tick == 5
 
-    def test_game_tick_events_triggers_merchant_refresh_at_1000(self, player_with_universe):
-        """Test that merchant refresh occurs at tick 1000."""
+    @pytest.mark.parametrize(
+        "starting_tick, expect_refresh",
+        [
+            (0, False),     # tick 0 is excluded by the `> 0` guard
+            (999, False),   # the check runs BEFORE the increment
+            (1000, True),
+            (1001, False),
+            (2000, True),
+        ],
+    )
+    def test_merchant_refresh_fires_on_multiples_of_1000_before_incrementing(
+        self, player_with_universe, starting_tick, expect_refresh
+    ):
+        """The guard reads game_tick *on entry*, so arriving at 1000 is not
+        enough — the next call after arriving is the one that refreshes."""
         player = player_with_universe
         universe = player.universe
         player.refresh_merchants = MagicMock()
+        universe.game_tick = starting_tick
 
-        # Get to tick 999
-        universe.game_tick = 999
-        universe.game_tick_events()  # Tick becomes 1000
+        universe.game_tick_events()
 
-        # Should have called refresh_merchants at tick 1000 (multiple check)
-        assert player.refresh_merchants.called or universe.game_tick == 1000
+        assert player.refresh_merchants.called is expect_refresh
+        assert universe.game_tick == starting_tick + 1
 
-    def test_game_tick_events_at_tick_one_evaluates_spawners(self, player_with_universe):
-        """Test that first tick evaluates map-entry spawners."""
+    def test_game_tick_events_evaluates_spawners_with_repeats_enabled(
+        self, player_with_universe
+    ):
+        """Repeat-flagged map-entry events must be re-evaluated every tick."""
         universe = player_with_universe.universe
         universe._evaluate_map_entry_spawners = MagicMock()
 
-        universe.game_tick = 0
         universe.game_tick_events()
 
-        # First tick should evaluate spawners
-        assert universe._evaluate_map_entry_spawners.called
+        universe._evaluate_map_entry_spawners.assert_called_once_with(
+            process_repeats=True
+        )
+
+    def test_game_tick_events_cycles_states_only_outside_combat(
+        self, player_with_universe
+    ):
+        player = player_with_universe
+        player.in_combat = True
+        player.universe.game_tick_events()
+        assert not player.cycle_states.called
+
+        player.in_combat = False
+        player.universe.game_tick_events()
+        player.cycle_states.assert_called_once_with()
 
 
 # ============================================================================
 # TEST: Universe._evaluate_map_entry_spawners
 # ============================================================================
 
+class _SpyEvent:
+    """A real object (not a Mock) that records who called it and how often."""
+
+    def __init__(self, has_run=False, repeat=False, raises=False):
+        self.has_run = has_run
+        self.repeat = repeat
+        self.raises = raises
+        self.calls = []
+
+    def evaluate_for_map_entry(self, player):
+        self.calls.append(player)
+        if self.raises:
+            raise RuntimeError("spawner exploded")
+
+
+class _EventWithoutHook:
+    """An event lacking evaluate_for_map_entry — must be skipped, not crashed on."""
+
+    has_run = False
+    repeat = False
+
+
 class TestEvaluateMapEntrySpawners:
-    """Test Universe._evaluate_map_entry_spawners() event triggering."""
+    """Universe._evaluate_map_entry_spawners() — which events fire, and with what."""
 
-    def test_evaluate_map_entry_spawners_with_no_events(self, player_with_universe):
-        """Test evaluation with tiles that have no events."""
-        player = player_with_universe
-        universe = player.universe
-
-        # Create mock tile with no events
+    @staticmethod
+    def _place(player, *events):
         tile = MagicMock()
-        tile.events_here = []
+        tile.events_here = list(events)
         player.map = {(5, 5): tile, "name": "TestMap"}
+        return tile
 
-        # Should complete without error
-        universe._evaluate_map_entry_spawners()
-
-    def test_evaluate_map_entry_spawners_triggers_evaluate_for_map_entry(self, player_with_universe):
-        """Test that events with evaluate_for_map_entry are called."""
+    def test_fires_unrun_event_and_passes_the_player(self, player_with_universe):
         player = player_with_universe
-        universe = player.universe
+        event = _SpyEvent()
+        self._place(player, event)
 
-        # Create event with evaluate_for_map_entry method
-        event = MagicMock()
-        event.evaluate_for_map_entry = MagicMock()
-        event.has_run = False
-        event.repeat = False
+        player.universe._evaluate_map_entry_spawners(process_repeats=False)
 
-        tile = MagicMock()
-        tile.events_here = [event]
-        player.map = {(5, 5): tile, "name": "TestMap"}
+        assert event.calls == [player]
 
-        universe._evaluate_map_entry_spawners(process_repeats=False)
-
-        assert event.evaluate_for_map_entry.called
-
-    def test_evaluate_map_entry_spawners_skips_already_run_non_repeat(self, player_with_universe):
-        """Test that already-run non-repeat events are skipped."""
+    @pytest.mark.parametrize(
+        "has_run, repeat, process_repeats, expected_calls",
+        [
+            (False, False, False, 1),  # never run -> fires
+            (True, False, False, 0),   # one-shot already run -> skipped
+            (True, True, False, 0),    # repeatable, but repeats not requested
+            (True, True, True, 1),     # repeatable and repeats requested
+            (False, False, True, 1),   # never run, repeats requested -> still fires
+        ],
+    )
+    def test_run_and_repeat_flags_gate_the_call(
+        self, player_with_universe, has_run, repeat, process_repeats, expected_calls
+    ):
         player = player_with_universe
-        universe = player.universe
+        event = _SpyEvent(has_run=has_run, repeat=repeat)
+        self._place(player, event)
 
-        event = MagicMock()
-        event.evaluate_for_map_entry = MagicMock()
-        event.has_run = True
-        event.repeat = False
+        player.universe._evaluate_map_entry_spawners(process_repeats=process_repeats)
 
-        tile = MagicMock()
-        tile.events_here = [event]
-        player.map = {(5, 5): tile, "name": "TestMap"}
+        assert len(event.calls) == expected_calls
 
-        universe._evaluate_map_entry_spawners(process_repeats=False)
-
-        assert not event.evaluate_for_map_entry.called
-
-    def test_evaluate_map_entry_spawners_with_repeat_flag(self, player_with_universe):
-        """Test that repeat events are processed with process_repeats=True."""
+    def test_event_without_the_hook_is_skipped_and_siblings_still_fire(
+        self, player_with_universe
+    ):
         player = player_with_universe
-        universe = player.universe
+        healthy = _SpyEvent()
+        self._place(player, _EventWithoutHook(), healthy)
 
-        event = MagicMock()
-        event.evaluate_for_map_entry = MagicMock()
-        event.has_run = True
-        event.repeat = True
+        player.universe._evaluate_map_entry_spawners()
 
-        tile = MagicMock()
-        tile.events_here = [event]
-        player.map = {(5, 5): tile, "name": "TestMap"}
+        assert len(healthy.calls) == 1
 
-        universe._evaluate_map_entry_spawners(process_repeats=True)
-
-        assert event.evaluate_for_map_entry.called
-
-    def test_evaluate_map_entry_spawners_with_invalid_map(self, player_with_universe):
-        """Test evaluation with invalid map (not dict)."""
+    def test_a_raising_event_does_not_stop_the_next_one(self, player_with_universe):
         player = player_with_universe
-        universe = player.universe
+        broken = _SpyEvent(raises=True)
+        healthy = _SpyEvent()
+        self._place(player, broken, healthy)
+
+        player.universe._evaluate_map_entry_spawners()
+
+        assert len(broken.calls) == 1
+        assert len(healthy.calls) == 1
+
+    def test_non_dict_map_fires_nothing(self, player_with_universe):
+        player = player_with_universe
+        event = _SpyEvent()
+        self._place(player, event)
         player.map = "InvalidMap"
 
-        # Should handle gracefully
-        universe._evaluate_map_entry_spawners()
+        player.universe._evaluate_map_entry_spawners()
 
-    def test_evaluate_map_entry_spawners_with_none_tiles(self, player_with_universe):
-        """Test evaluation with None tiles in map."""
+        assert event.calls == []
+
+    def test_none_tiles_and_the_name_key_are_skipped(self, player_with_universe):
         player = player_with_universe
-        universe = player.universe
-
+        event = _SpyEvent()
         tile = MagicMock()
-        tile.events_here = [MagicMock()]
+        tile.events_here = [event]
         player.map = {(5, 5): tile, (6, 5): None, "name": "TestMap"}
 
-        # Should skip None tiles without error
-        universe._evaluate_map_entry_spawners()
+        player.universe._evaluate_map_entry_spawners()
 
-    def test_evaluate_map_entry_spawners_no_player(self, universe):
-        """Test evaluation when universe has no player."""
-        universe.player = None
-        # Should handle gracefully
-        universe._evaluate_map_entry_spawners()
+        assert len(event.calls) == 1
+
+    def test_no_player_fires_nothing(self, player_with_universe):
+        """A session mid-teardown has no player; the scan must no-op, not raise."""
+        player = player_with_universe
+        event = _SpyEvent()
+        self._place(player, event)
+        player.universe.player = None
+
+        player.universe._evaluate_map_entry_spawners()
+
+        assert event.calls == []
 
 
 # ============================================================================
@@ -534,6 +674,8 @@ class TestGameServiceMovePlayer:
 
         # Create tiles for movement
         current_tile = MagicMock()
+        current_tile.name = "Origin"
+        current_tile.description = "The starting tile."
         current_tile.x = 5
         current_tile.y = 5
         current_tile.is_passable = True
@@ -544,11 +686,16 @@ class TestGameServiceMovePlayer:
         current_tile.objects_here = []
 
         north_tile = MagicMock()
+        north_tile.name = "NorthRoom"
+        north_tile.description = "One tile north."
         north_tile.x = 5
         north_tile.y = 4
         north_tile.is_passable = True
         north_tile.events_here = []
         north_tile.block_exit = []
+        north_tile.npcs_here = []
+        north_tile.items_here = []
+        north_tile.objects_here = []
 
         def mock_get_tile(x, y):
             if x == 5 and y == 5:
@@ -560,6 +707,8 @@ class TestGameServiceMovePlayer:
         player.universe.get_tile = mock_get_tile
         player.universe.game_tick_events = MagicMock()
         player.universe.story = {}
+        player.map = {"name": "TestMap"}
+        player.explored_tiles = {}
         player.recall_friends = MagicMock()
 
         return player
@@ -585,19 +734,61 @@ class TestGameServiceMovePlayer:
         result = game_service.move_player(player, "north")
         assert "error" in result
 
-    def test_move_player_valid_directions(self, game_service, player_for_movement):
-        """Test move_player with all valid directions."""
-        valid_directions = [
-            "north", "south", "east", "west",
-            "northeast", "northwest", "southeast", "southwest"
-        ]
-        # Just test that valid directions don't raise "Invalid direction" error
-        for direction in valid_directions:
-            # Verify direction is not rejected as invalid at validation stage
-            assert direction in [
-                "north", "south", "east", "west",
-                "northeast", "northwest", "southeast", "southwest"
-            ]
+    def test_move_player_north_updates_position_and_previous_tile(
+        self, game_service, player_for_movement
+    ):
+        """A legal move relocates Jean and records the tile he left (#377)."""
+        player = player_for_movement
+        origin = player.universe.get_tile(5, 5)
+
+        result = game_service.move_player(player, "north")
+
+        assert "error" not in result
+        assert (player.location_x, player.location_y) == (5, 4)
+        assert player.current_room is player.universe.get_tile(5, 4)
+        assert player.previous_tile is origin
+
+    def test_move_player_runs_the_world_tick(
+        self, game_service, player_for_movement
+    ):
+        """Map-entry spawners only fire because move_player ticks the world."""
+        player = player_for_movement
+
+        game_service.move_player(player, "north")
+
+        player.universe.game_tick_events.assert_called_once_with()
+
+    def test_move_player_towards_a_nonexistent_tile_is_refused(
+        self, game_service, player_for_movement
+    ):
+        """Only north and the origin exist in this fixture; south has no tile."""
+        player = player_for_movement
+
+        result = game_service.move_player(player, "south")
+
+        assert result["error"] == "Cannot go south from here"
+        assert (player.location_x, player.location_y) == (5, 5)
+
+    def test_move_player_is_case_insensitive(
+        self, game_service, player_for_movement
+    ):
+        player = player_for_movement
+
+        result = game_service.move_player(player, "NORTH")
+
+        assert "error" not in result
+        assert (player.location_x, player.location_y) == (5, 4)
+
+    def test_move_player_into_an_impassable_tile_is_refused(
+        self, game_service, player_for_movement
+    ):
+        player = player_for_movement
+        player.universe.get_tile(5, 4).is_passable = False
+
+        result = game_service.move_player(player, "north")
+
+        assert result["error"] == "Cannot move north - path is blocked"
+        assert (player.location_x, player.location_y) == (5, 5)
 
 
 # ============================================================================
@@ -605,35 +796,88 @@ class TestGameServiceMovePlayer:
 # ============================================================================
 
 class TestGameServiceTileModifications:
-    """Test tile modification storage and application."""
+    """store_tile_modification / apply_tile_modifications round-trip."""
 
-    def test_store_tile_modification_creates_entry(self, game_service):
-        """Test that store_tile_modification creates session entry."""
+    def test_store_tile_modification_uses_an_x_comma_y_string_key(
+        self, game_service
+    ):
+        """The key format is load-bearing: apply_tile_modifications looks up
+        f"{tile.x},{tile.y}", so a tuple key would silently never match."""
         session_data = {}
-        game_service.store_tile_modification(session_data, 5, 5, "block_exit", ["north"])
 
-        # Check that either tile_modifications was created or method works as expected
-        assert isinstance(session_data, dict)
+        game_service.store_tile_modification(
+            session_data, 5, 5, "block_exit", ["north"]
+        )
+
+        assert session_data["tile_modifications"] == {"5,5": {"block_exit": ["north"]}}
 
     def test_store_tile_modification_multiple(self, game_service):
-        """Test storing multiple tile modifications."""
+        """Two coordinates produce two entries, each keyed by its own tile."""
         session_data = {}
-        game_service.store_tile_modification(session_data, 5, 5, "block_exit", ["north"])
+
+        game_service.store_tile_modification(
+            session_data, 5, 5, "block_exit", ["north"]
+        )
         game_service.store_tile_modification(session_data, 6, 5, "is_passable", False)
 
-        assert len(session_data["tile_modifications"]) == 2
-
-    def test_apply_tile_modifications_sets_attribute(self, game_service):
-        """Test that apply_tile_modifications sets tile attributes."""
-        tile = MagicMock()
-        session_data = {
-            "tile_modifications": {
-                (5, 5): {"block_exit": ["north"]}
-            }
+        assert session_data["tile_modifications"] == {
+            "5,5": {"block_exit": ["north"]},
+            "6,5": {"is_passable": False},
         }
 
-        # Assuming apply works on matching coords
+    def test_store_tile_modification_merges_types_for_one_tile(self, game_service):
+        session_data = {}
+
+        game_service.store_tile_modification(
+            session_data, 5, 5, "block_exit", ["north"]
+        )
+        game_service.store_tile_modification(
+            session_data, 5, 5, "objects_removed", ["Lever"]
+        )
+
+        assert session_data["tile_modifications"]["5,5"] == {
+            "block_exit": ["north"],
+            "objects_removed": ["Lever"],
+        }
+
+    def test_apply_tile_modifications_restores_block_exit(self, game_service):
+        """A stored block_exit is copied back onto the rebuilt tile."""
+        tile = MagicMock()
+        tile.x, tile.y = 5, 5
+        tile.block_exit = []
+        tile.objects_here = []
+        session_data = {}
+        game_service.store_tile_modification(
+            session_data, 5, 5, "block_exit", ["north"]
+        )
+
         game_service.apply_tile_modifications(tile, session_data)
+
+        assert tile.block_exit == ["north"]
+        # copied, not aliased -- mutating the tile must not corrupt the session
+        tile.block_exit.append("south")
+        assert session_data["tile_modifications"]["5,5"]["block_exit"] == ["north"]
+
+    def test_apply_tile_modifications_ignores_a_different_tile(self, game_service):
+        tile = MagicMock()
+        tile.x, tile.y = 9, 9
+        tile.block_exit = []
+        tile.objects_here = []
+        session_data = {}
+        game_service.store_tile_modification(
+            session_data, 5, 5, "block_exit", ["north"]
+        )
+
+        game_service.apply_tile_modifications(tile, session_data)
+
+        assert tile.block_exit == []
+
+    def test_apply_tile_modifications_tolerates_a_none_tile(self, game_service):
+        session_data = {"tile_modifications": {"5,5": {"block_exit": ["north"]}}}
+
+        game_service.apply_tile_modifications(None, session_data)
+
+        assert session_data["tile_modifications"] == {"5,5": {"block_exit": ["north"]}}
 
 
 # ============================================================================
@@ -641,51 +885,58 @@ class TestGameServiceTileModifications:
 # ============================================================================
 
 class TestGameServiceCalculateExits:
-    """Test GameService._calculate_exits() for exit calculation."""
+    """GameService._calculate_exits() — the 8-direction adjacency probe."""
 
-    def test_calculate_exits_returns_dict(self, game_service):
-        """Test that _calculate_exits returns a dictionary."""
+    @staticmethod
+    def _universe_with(*coords):
         universe = MagicMock()
+        present = {c: MagicMock() for c in coords}
+        universe.get_tile = lambda x, y: present.get((x, y))
+        return universe
+
+    def test_exits_name_each_adjacent_tile_and_its_coordinates(self, game_service):
+        tile = MagicMock()
+        tile.block_exit = []
+        universe = self._universe_with((5, 4), (5, 6), (6, 5), (4, 5))
+
+        exits = game_service._calculate_exits(universe, tile, 5, 5)
+
+        assert exits == {
+            "north": {"x": 5, "y": 4},
+            "south": {"x": 5, "y": 6},
+            "east": {"x": 6, "y": 5},
+            "west": {"x": 4, "y": 5},
+        }
+
+    def test_diagonals_are_probed_too(self, game_service):
+        tile = MagicMock()
+        tile.block_exit = []
+        universe = self._universe_with((6, 4), (4, 4), (6, 6), (4, 6))
+
+        exits = game_service._calculate_exits(universe, tile, 5, 5)
+
+        assert set(exits) == {"northeast", "northwest", "southeast", "southwest"}
+        assert exits["northeast"] == {"x": 6, "y": 4}
+        assert exits["southwest"] == {"x": 4, "y": 6}
+
+    def test_block_exit_removes_the_direction_even_though_the_tile_exists(
+        self, game_service
+    ):
+        tile = MagicMock()
+        tile.block_exit = ["north", "south"]
+        universe = self._universe_with((5, 4), (5, 6), (6, 5), (4, 5))
+
+        exits = game_service._calculate_exits(universe, tile, 5, 5)
+
+        assert set(exits) == {"east", "west"}
+
+    def test_isolated_tile_has_no_exits(self, game_service):
         tile = MagicMock()
         tile.block_exit = []
 
-        # Create surrounding tiles
-        tiles_map = {
-            (5, 4): MagicMock(),  # north
-            (5, 6): MagicMock(),  # south
-            (6, 5): MagicMock(),  # east
-            (4, 5): MagicMock(),  # west
-        }
+        exits = game_service._calculate_exits(self._universe_with(), tile, 5, 5)
 
-        def mock_get_tile(x, y):
-            return tiles_map.get((x, y))
-
-        universe.get_tile = mock_get_tile
-
-        exits = game_service._calculate_exits(universe, tile, 5, 5)
-        assert isinstance(exits, dict)
-
-    def test_calculate_exits_respects_block_exit(self, game_service):
-        """Test that blocked exits are excluded."""
-        universe = MagicMock()
-        tile = MagicMock()
-        tile.block_exit = ["north", "south"]
-
-        tiles_map = {
-            (5, 4): MagicMock(),  # north (blocked)
-            (5, 6): MagicMock(),  # south (blocked)
-            (6, 5): MagicMock(),  # east
-            (4, 5): MagicMock(),  # west
-        }
-
-        def mock_get_tile(x, y):
-            return tiles_map.get((x, y))
-
-        universe.get_tile = mock_get_tile
-
-        exits = game_service._calculate_exits(universe, tile, 5, 5)
-        assert "north" not in exits or "north" in tile.block_exit
-        assert "south" not in exits or "south" in tile.block_exit
+        assert exits == {}
 
 
 # ============================================================================
@@ -693,30 +944,28 @@ class TestGameServiceCalculateExits:
 # ============================================================================
 
 class TestGameServiceExploredTiles:
-    """Test exploration tracking."""
+    """get_explored_tiles() reads player.explored_tiles — not player.explored."""
 
-    def test_get_explored_tiles_with_exploration_data(self, game_service):
-        """Test get_explored_tiles with actual exploration."""
+    def test_returns_the_players_recorded_history(self, game_service):
         player = MagicMock()
-        tile_mock = Mock(spec=["name", "x", "y", "description"])
-        tile_mock.name = "Tile1"
-        tile_mock.x = 5
-        tile_mock.y = 5
-        tile_mock.description = "A test tile"
-        player.explored = {(5, 5): tile_mock}
+        player.explored_tiles = {"TestMap:5,5": {"items": [], "npcs": []}}
+
+        assert game_service.get_explored_tiles(player) is player.explored_tiles
+
+    def test_initializes_the_attribute_when_absent(self, game_service):
+        player = Mock(spec=[])  # no explored_tiles attribute at all
 
         result = game_service.get_explored_tiles(player)
-        # Result could be a dict or other container
-        assert result is not None
 
-    def test_get_explored_tiles_can_be_called(self, game_service):
-        """Test that get_explored_tiles can be called without error."""
-        player = MagicMock()
-        player.explored = {}
+        assert result == {}
+        assert player.explored_tiles is result
 
-        # Should not raise an exception
-        result = game_service.get_explored_tiles(player)
-        assert result is not None
+    def test_an_unrelated_explored_attribute_is_ignored(self, game_service):
+        """Guards the attribute-name drift: `explored` is not the real field."""
+        player = Mock(spec=["explored"])
+        player.explored = {"(5, 5)": "stale"}
+
+        assert game_service.get_explored_tiles(player) == {}
 
 
 # ============================================================================
@@ -724,87 +973,30 @@ class TestGameServiceExploredTiles:
 # ============================================================================
 
 class TestWorldSystemBoundaries:
-    """Test boundary conditions and edge cases."""
+    """get_tile() must be coordinate-agnostic — no implicit non-negative bounds."""
 
-    def test_large_coordinate_values(self, player_with_universe):
-        """Test with very large coordinate values."""
+    @pytest.mark.parametrize(
+        "x, y",
+        [
+            (100000, 100000),
+            (0, 0),
+            (-100000, -100000),
+            (100, -100),
+            (-100, 100),
+        ],
+    )
+    def test_get_tile_handles_extreme_and_mixed_sign_coordinates(
+        self, player_with_universe, x, y
+    ):
         player = player_with_universe
-        universe = player.universe
+        target = Mock(spec=["name"])
+        target.name = f"Tile{x}_{y}"
+        # A decoy at the mirrored coordinate catches a sign-swapping lookup bug.
+        decoy = Mock(spec=["name"])
+        decoy.name = "Decoy"
+        player.map = {(x, y): target, (-x, -y): decoy} if (x or y) else {(0, 0): target}
 
-        large_tile = MagicMock(name="LargeTile")
-        player.map = {(100000, 100000): large_tile}
-
-        tile = universe.get_tile(100000, 100000)
-        assert tile == large_tile
-
-    def test_zero_coordinates(self, player_with_universe):
-        """Test with zero coordinates."""
-        player = player_with_universe
-        universe = player.universe
-
-        zero_tile = MagicMock(name="ZeroTile")
-        player.map = {(0, 0): zero_tile}
-
-        tile = universe.get_tile(0, 0)
-        assert tile == zero_tile
-
-    def test_max_negative_coordinates(self, player_with_universe):
-        """Test with maximum negative coordinates."""
-        player = player_with_universe
-        universe = player.universe
-
-        neg_tile = MagicMock(name="NegativeTile")
-        player.map = {(-100000, -100000): neg_tile}
-
-        tile = universe.get_tile(-100000, -100000)
-        assert tile == neg_tile
-
-    def test_mixed_coordinate_signs(self, player_with_universe):
-        """Test with mixed positive/negative coordinates."""
-        player = player_with_universe
-        universe = player.universe
-
-        poneg_tile = Mock(spec=["name"])
-        poneg_tile.name = "PoNeg"
-        negpos_tile = Mock(spec=["name"])
-        negpos_tile.name = "NegPos"
-
-        tiles = {
-            (100, -100): poneg_tile,
-            (-100, 100): negpos_tile,
-        }
-        player.map = tiles
-
-        assert universe.get_tile(100, -100).name == "PoNeg"
-        assert universe.get_tile(-100, 100).name == "NegPos"
-
-
-# ============================================================================
-# TEST: State Persistence and Transitions
-# ============================================================================
-
-class TestWorldStatePersistence:
-    """Test world state changes and persistence."""
-
-    def test_universe_maps_list_accumulates(self):
-        """Test that maps are accumulated into self.maps list."""
-        universe = Universe()
-        assert universe.maps == []
-
-        # Simulate adding maps
-        universe.maps.append({"name": "Map1", (0, 0): MagicMock()})
-        universe.maps.append({"name": "Map2", (0, 0): MagicMock()})
-
-        assert len(universe.maps) == 2
-
-    def test_game_tick_persistence_across_events(self, player_with_universe):
-        """Test that game_tick persists across multiple event evaluations."""
-        universe = player_with_universe.universe
-
-        for i in range(10):
-            universe.game_tick_events()
-
-        assert universe.game_tick == 10
+        assert player.universe.get_tile(x, y) is target
 
 
 # ============================================================================
@@ -837,44 +1029,20 @@ class TestWorldSystemsIntegration:
         assert universe.get_tile(0, 1) == tile_c
         assert universe.get_tile(99, 99) is None
 
-    def test_game_tick_with_spawner_events(self, player_with_universe):
-        """Test game tick with spawner event evaluation."""
+    def test_game_tick_runs_the_spawners_on_the_players_current_map(
+        self, player_with_universe
+    ):
+        """End to end: one tick advances the clock AND fires an unrun spawner."""
         player = player_with_universe
-        universe = player.universe
-
-        # Create event
-        event = MagicMock()
-        event.evaluate_for_map_entry = MagicMock()
-        event.has_run = False
-        event.repeat = False
-
+        event = _SpyEvent()
         tile = MagicMock()
         tile.events_here = [event]
         player.map = {(5, 5): tile, "name": "SpawnerMap"}
 
-        # Trigger game tick
-        initial_tick = universe.game_tick
-        universe.game_tick_events()
+        player.universe.game_tick_events()
 
-        assert universe.game_tick == initial_tick + 1
-        # Event should be evaluated on first tick
-        if initial_tick == 0:
-            assert event.evaluate_for_map_entry.called
-
-    def test_multi_map_universe(self):
-        """Test universe with multiple maps."""
-        universe = Universe()
-
-        # Add multiple maps
-        map1 = {"name": "Map1", (0, 0): MagicMock(name="Tile1")}
-        map2 = {"name": "Map2", (0, 0): MagicMock(name="Tile2")}
-
-        universe.maps.append(map1)
-        universe.maps.append(map2)
-
-        assert len(universe.maps) == 2
-        assert universe.maps[0]["name"] == "Map1"
-        assert universe.maps[1]["name"] == "Map2"
+        assert player.universe.game_tick == 1
+        assert event.calls == [player]
 
 
 if __name__ == "__main__":

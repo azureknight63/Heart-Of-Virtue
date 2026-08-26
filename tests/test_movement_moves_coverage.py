@@ -39,6 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent
 import pytest
 from src.player import Player
 import src.positions as positions
+from src.narration import capture_narration
 
 
 def _player():
@@ -570,13 +571,25 @@ class TestQuietMovement:
         qm = moves.QuietMovement(p)
         assert qm.viable() is False
 
-    def test_quiet_movement_execute_noop(self):
-        """Lines 717-719: execute is no-op."""
+    def test_quiet_movement_execute_is_silent_and_free(self):
+        """A passive's execute() must narrate nothing and cost nothing.
+
+        The old body just called execute() and asserted nothing, so a passive
+        that had started charging fatigue or emitting combat lines would still
+        have passed.
+        """
         import src.moves as moves
 
         p = _player()
         qm = moves.QuietMovement(p)
-        qm.execute(p)  # should not raise or print anything
+        fatigue_before, hp_before = p.fatigue, p.hp
+
+        with capture_narration() as messages:
+            result = qm.execute(p)
+
+        assert result is None
+        assert messages == []
+        assert (p.fatigue, p.hp) == (fatigue_before, hp_before)
 
 
 # ---------------------------------------------------------------------------
@@ -670,17 +683,40 @@ class TestTurn:
         turn = moves.Turn(p)
         assert turn.viable() is False
 
-    def test_turn_prep_with_direction_set(self):
-        """Line 1078-1079: prep announces turn when direction is set."""
+    def test_turn_prep_keeps_the_direction_the_adapter_supplied(self):
+        """prep() must not clobber a direction already chosen for the move.
+
+        The old body ended in a bare ``pass  # code executed = success``. prep()
+        defaults ``target_direction`` to North when it is unset, so a regression
+        that dropped the ``if not`` guard and always assigned North would have
+        gone unnoticed — and every Turn in the game would face north.
+        """
         import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
         turn = moves.Turn(p)
         turn.target_direction = positions.Direction.E
-        with patch("src.moves._movement.cprint"):
+
+        with capture_narration() as messages:
             turn.prep(p)
-        pass  # code executed = success
+
+        assert turn.target_direction is positions.Direction.E
+        assert [m["text"] for m in messages] == ["Jean begins to turn..."]
+        # prep only announces; the rotation itself belongs to execute().
+        assert p.combat_position.facing is positions.Direction.N
+
+    def test_turn_prep_defaults_to_north_when_unset(self):
+        import src.moves as moves
+
+        p = _player()
+        p.combat_position = _make_combat_position()
+        turn = moves.Turn(p)
+        turn.target_direction = None
+
+        turn.prep(p)
+
+        assert turn.target_direction is positions.Direction.N
 
     def test_turn_execute_sets_facing(self):
         """Lines 1081-1097: execute sets combat_position.facing."""
@@ -694,17 +730,29 @@ class TestTurn:
             turn.execute(p)
         assert p.combat_position.facing == positions.Direction.S
 
-    def test_turn_execute_no_direction_warning(self):
-        """Lines 1083-1088: execute warns when no direction."""
+    def test_turn_execute_without_a_direction_warns_and_changes_nothing(self):
+        """Lines 1083-1088: the no-direction branch bails out early.
+
+        The old body asserted nothing (``pass  # code executed = success``), so
+        it could not tell the warning branch from the rotation branch. What
+        matters is that facing is left alone *and* the fatigue is not spent.
+        """
         import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
         turn = moves.Turn(p)
         turn.target_direction = None
-        with patch("src.moves._movement.cprint"):
+        fatigue_before = p.fatigue
+
+        with capture_narration() as messages:
             turn.execute(p)
-        pass  # code executed = success
+
+        assert [m["text"] for m in messages] == [
+            "Jean couldn't determine a direction to turn!"
+        ]
+        assert p.combat_position.facing is positions.Direction.N
+        assert p.fatigue == fatigue_before
 
 # ---------------------------------------------------------------------------
 # QuickSwap
@@ -1280,18 +1328,30 @@ class TestFlankingManeuverRemainingGaps:
         assert fm.viable() is False
 
     def test_beat_update_returns_when_target_dead(self):
-        """Line 667-668: dead target -> early return."""
+        """Line 667-668: a dead target ends the maneuver before it costs a beat.
+
+        The old body's only claim was "No crash = success", which a
+        beat_update that kept flanking a corpse (and kept draining fatigue)
+        would have satisfied.
+        """
         import src.moves as moves
 
         p = _player()
+        p.combat_position = _make_combat_position(x=5, y=5)
         dead_enemy = _make_enemy(alive=False)
+        dead_enemy.combat_position = _make_combat_position(x=9, y=5)
         p.combat_proximity[dead_enemy] = 10
         fm = moves.FlankingManeuver(p)
         fm.target = dead_enemy
         fm.current_stage = 1
-        with patch.object(fm, "can_use_coordinates", return_value=False):
-            fm.beat_update(p)
-        # No crash = success (early return before any movement)
+        fatigue_before = p.fatigue
+
+        fm.beat_update(p)
+
+        # The early return precedes both the movement and the fatigue charge.
+        assert (p.combat_position.x, p.combat_position.y) == (5, 5)
+        assert p.combat_position.facing is positions.Direction.N
+        assert p.fatigue == fatigue_before
 
     def test_execute_flank_bonus_branch(self, capsys):
         """Lines 696-707: execute reports flank bonus (45 < angle_diff <= 135).
@@ -1375,7 +1435,12 @@ class TestTacticalPositioningRemainingGaps:
         assert tp.distance == 0
 
     def test_beat_update_returns_when_target_dead(self):
-        """Lines 801-803: dead target -> early return."""
+        """Lines 801-803: a dead target returns before the distance roll.
+
+        ``target_dist_final`` staying None is the observable proof the early
+        return fired: it is initialised on the very next statement. The old body
+        asserted nothing ("no crash = success").
+        """
         import src.moves as moves
 
         p = _player()
@@ -1384,10 +1449,24 @@ class TestTacticalPositioningRemainingGaps:
         tp = moves.TacticalPositioning(p)
         tp.target = dead_enemy
         tp.current_stage = 1
-        tp.beat_update(p)  # no crash = success
+        fatigue_before = p.fatigue
+
+        tp.beat_update(p)
+
+        assert tp.target_dist_final is None
+        assert p.combat_proximity[dead_enemy] == 10
+        assert p.fatigue == fatigue_before
 
     def test_beat_update_initializes_target_dist_final_and_dispatches_legacy(self):
-        """Lines 805-824: variance calc + legacy dispatch."""
+        """Lines 805-824: variance roll, then a legacy step of at most 2.
+
+        The old assertion was ``tp.target_dist_final is not None``, which any
+        number at all satisfies. With both RNG calls pinned the whole chain is
+        exact: variance = int(max(1, 5*1.0 - 10*1.0)) = 1, so the desired
+        distance is rolled from [4, 6] (patched to its top end, 6) and clamped
+        into mvrange (0, 100); the legacy step then closes 15 -> 13, since a
+        beat moves at most 2.
+        """
         import src.moves as moves
 
         p = _player()
@@ -1400,9 +1479,23 @@ class TestTacticalPositioningRemainingGaps:
         tp.target = enemy
         tp.distance = 5
         tp.current_stage = 1
+        fatigue_before = p.fatigue
+
+        with patch("src.moves._movement.random.uniform", return_value=1.0), \
+             patch("src.moves._movement.random.randint", side_effect=lambda a, b: b), \
+             patch.object(tp, "can_use_coordinates", return_value=False):
+            tp.beat_update(p)
+
+        assert tp.target_dist_final == 6
+        assert p.combat_proximity[enemy] == 13
+        assert enemy.combat_proximity[p] == 13
+        assert p.fatigue == fatigue_before - tp.fatigue_per_beat
+
+        # A second beat reuses the already-rolled distance rather than re-rolling.
         with patch.object(tp, "can_use_coordinates", return_value=False):
             tp.beat_update(p)
-        assert tp.target_dist_final is not None
+        assert tp.target_dist_final == 6
+        assert p.combat_proximity[enemy] == 11
 
     def test_beat_coordinate_based_moves_closer(self):
         """Lines 826-862: coordinate-based movement toward target distance."""
@@ -1516,7 +1609,13 @@ class TestTurnRemainingGaps:
 
 class TestQuickSwapRemainingGaps:
     def test_prep_shows_distance_fallback_without_coordinates(self):
-        """Line 1073-1074: legacy distance fallback in prep's ally list."""
+        """Line 1073-1074: with no coordinates the listed range comes from
+        ``combat_proximity``, not from a coordinate calculation.
+
+        The old body asserted nothing ("No crash = success"), so a prep() that
+        printed every ally at "0 ft away" — the fallback's default — would have
+        passed. The whole point of the branch is that the legacy number shows up.
+        """
         import src.moves as moves
 
         p = _player()
@@ -1530,9 +1629,15 @@ class TestQuickSwapRemainingGaps:
         p.combat_list_allies = [p, ally]
         p.combat_proximity[ally] = 2
         qs = moves.QuickSwap(p)
-        with patch("builtins.print"), patch("src.moves._movement.cprint"):
+
+        with capture_narration() as messages:
             qs.prep(p)
-        # No crash = success
+
+        texts = [m["text"] for m in messages]
+        assert texts == [
+            "\nAvailable allies to swap with:",
+            "  1. Buddy (2 ft away)",
+        ]
 
     def test_execute_raises_when_selected_target_no_longer_nearby(self):
         """Lines 1084-1088: explicit target no longer within range -> ValueError."""

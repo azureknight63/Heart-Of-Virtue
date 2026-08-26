@@ -131,15 +131,24 @@ describe('useCombatCoordinator — animation gate + endStatePendingRef regressio
     })
 
     describe('endStatePendingRef replaces endStatePending state', () => {
-        it('exposes endStatePendingRef as a ref object (not a boolean)', () => {
-            const { result } = renderHook(() =>
+        it('exposes endStatePendingRef as a stable ref object (not a boolean)', () => {
+            const { result, rerender } = renderHook(() =>
                 useCombatCoordinator({ ...baseParams })
             )
 
-            // Must be a ref object with a .current property, not a plain boolean
-            expect(result.current.endStatePendingRef).toBeDefined()
-            expect(typeof result.current.endStatePendingRef).toBe('object')
-            expect(result.current.endStatePendingRef).toHaveProperty('current')
+            // Must be a ref object with a .current property, not a plain
+            // boolean. `toBeDefined()` was redundant with the two checks below
+            // AND would have passed for `false` — the exact value this test
+            // exists to rule out. What actually matters is that the identity is
+            // STABLE across renders: a re-created object would reset the
+            // pending flag on every poll.
+            const ref = result.current.endStatePendingRef
+            expect(typeof ref).toBe('object')
+            expect(ref).toHaveProperty('current')
+            expect(typeof ref.current).toBe('boolean')
+
+            rerender()
+            expect(result.current.endStatePendingRef).toBe(ref)
         })
 
         it('endStatePendingRef.current is false initially', () => {

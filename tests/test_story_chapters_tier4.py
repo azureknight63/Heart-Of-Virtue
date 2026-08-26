@@ -1,7 +1,5 @@
 """
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Tier 4 advanced tests - coverage requirements already met")
 TIER 4A: Complete 100% coverage for story chapters ch01.py, ch02.py, ch03.py
 
 Comprehensive test coverage for all story events, memory flashes, dialogue trees,
@@ -22,6 +20,9 @@ import os
 import time
 
 # Add src to path
+
+from src.narration import capture_narration
+import src.objects as objects
 
 from src.story.ch01 import (
     Ch01_Memory_Amelia,
@@ -111,11 +112,24 @@ class TestCh01MemoryAmelia(unittest.TestCase):
     def test_memory_amelia_memory_line_format(self):
         """Test that memory lines are tuples with text and duration."""
         memory = Ch01_Memory_Amelia(self.player, self.tile)
+        # The portrait-dialogue rollout added a third element to *tagged* lines:
+        # a dict carrying speaker/emotion (and optionally reactions / stage ops)
+        # that drives the portraits. Untagged lines stay 2-tuples and render as
+        # narration. Asserting a uniform length-2 shape predates that change.
+        tagged = 0
         for line in memory.memory_lines:
             self.assertIsInstance(line, tuple)
-            self.assertEqual(len(line), 2)
+            self.assertIn(len(line), (2, 3), line)
             self.assertIsInstance(line[0], str)
             self.assertTrue(isinstance(line[1], (int, float)))
+            if len(line) == 3:
+                tagged += 1
+                self.assertIsInstance(line[2], dict, line)
+                self.assertIn("speaker", line[2], line)
+        # Both shapes must actually be present, or this would still pass against
+        # a memory that had silently lost all of its portrait tagging.
+        self.assertGreater(tagged, 0)
+        self.assertLess(tagged, len(memory.memory_lines))
 
     def test_memory_amelia_with_params(self):
         """Test memory init with params."""
@@ -261,20 +275,30 @@ class TestCh01StartOpenWall(unittest.TestCase):
         self.assertNotIn(wall_depression, self.tile.objects_here)
 
     def test_start_open_wall_process_updates_description(self):
-        """Test process updates tile description."""
+        """The real TileDescription object is rewritten to the open-wall text.
+
+        Uses a real objects.TileDescription rather than a Mock: the engine
+        selects it with isinstance(), so a Mock would either match nothing or
+        (worse) match the first object in the list and rewrite the wrong one.
+        """
         event = Ch01StartOpenWall(self.player, self.tile)
         wall_depression = Mock()
         wall_depression.name = "Wall Depression"
-        tile_desc = Mock()
-        tile_desc.name = "TileDescription"
+        wall_depression.description = "A shallow depression in the wall."
+        tile_desc = objects.TileDescription(
+            self.player, self.tile, description="A sealed chamber of cold rock."
+        )
         self.tile.objects_here = [wall_depression, tile_desc]
 
-        from unittest.mock import patch
-        import src.objects as obj_module
-        with patch('src.story.ch01.cprint'):
-            with patch('src.story.ch01.time.sleep'):
-                with patch('src.story.ch01.objects.TileDescription', tile_desc.__class__):
-                    event.process()
+        with capture_narration():
+            event.process()
+
+        self.assertIn("exit in the east wall has been revealed", tile_desc.description)
+        self.assertNotIn("sealed chamber", tile_desc.description)
+        # Only the TileDescription is rewritten -- the switch keeps its own text.
+        self.assertEqual(
+            wall_depression.description, "A shallow depression in the wall."
+        )
 
     def test_start_open_wall_process_sets_delay(self):
         """Test process sets delay properties."""
@@ -622,12 +646,33 @@ class TestCh01PostRumbler3(unittest.TestCase):
             event.check_combat_conditions()
             mock_pass.assert_called_once()
 
-    def test_post_rumbler_3_process(self):
-        """Test process method."""
+    def test_post_rumbler_3_process_stage_one_arms_the_choice(self):
+        """Stage 1 poses the choice and hands control back to the client.
+
+        It must flip needs_input on, advance to stage 2, and prepend the
+        narrative to the description the API serializes -- without spawning
+        anything or completing the event (that is stage 2's job).
+        """
         event = Ch01PostRumbler3(self.player, self.tile, params=None)
         self.player.universe.story = {}
-        with patch('src.story.ch01.cprint'):
-            event.process()
+        baseline_description = event.description
+        self.assertFalse(event.needs_input)
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        self.assertTrue(event.needs_input)
+        self.assertEqual(event._stage, 2)
+        self.assertTrue(event.description.endswith(baseline_description))
+        self.assertIn("Jean wipes the blood from his lip", event.description)
+        self.assertIn(
+            "The hole in the chamber wall is open",
+            "".join(m.get("text", "") for m in messages),
+        )
+        # Stage 1 must not run the stage-2 payload.
+        self.assertFalse(event.completed)
+        self.tile.spawn_npc.assert_not_called()
+        self.assertEqual(event.input_options[0]["value"], "a")
 
 
 class TestAfterTheRumblerFight(unittest.TestCase):
@@ -662,13 +707,36 @@ class TestAfterTheRumblerFight(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_not_called()
 
-    def test_after_rumbler_fight_process(self):
-        """Test process method."""
+    def test_after_rumbler_fight_process_reveals_the_name_only_on_the_beat(self):
+        """The portrait says "Rock-Man" until Gorran names himself.
+
+        The speaker id is what the client renders above the portrait, so
+        opening the conversation as "Gorran" would spoil the naming beat this
+        scene exists to deliver. Assert the ids, not the prose.
+        """
         event = AfterTheRumblerFight(self.player, self.tile, params=None)
         self.tile.npcs_here = []
-        with patch('src.functions.await_input'):
-            with patch('time.sleep'):
+
+        with patch('src.story.ch01.await_input'):
+            with capture_narration() as messages:
                 event.process()
+
+        cast = [m for m in messages if m.get("type") == "conversation_begin"]
+        self.assertEqual(len(cast), 1)
+        self.assertEqual(
+            [c["id"] for c in cast[0]["cast"]], ["Jean", "Rock-Man"]
+        )
+
+        speakers = [m["speaker"] for m in messages if m.get("type") == "dialogue"]
+        self.assertIn("Gorran", speakers)
+        first_gorran = speakers.index("Gorran")
+        # Nothing is attributed to Gorran before he introduces himself...
+        self.assertNotIn("Gorran", speakers[:first_gorran])
+        # ...and the naming line is the one that reveals it.
+        naming = [m for m in messages if m.get("type") == "dialogue"][first_gorran]
+        self.assertIn("Go-rra-nnn", naming["text"])
+        self.assertEqual([e["id"] for e in naming["enter"]], ["Gorran"])
+        self.assertEqual([e["id"] for e in naming["exit"]], ["Rock-Man"])
 
 
 class TestAfterGorranIntro(unittest.TestCase):
@@ -724,12 +792,24 @@ class TestCh01GorranCautionJunction(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_gorran_caution_junction_process(self):
-        """Test process method."""
+    def test_gorran_caution_junction_process_emits_the_wait_signal(self):
+        """Two cyan narration beats: the read, then the release.
+
+        Patching neotermcolor here proved nothing -- the engine emits through
+        the narration sink now, so the old patch pinned a symbol ch01 no
+        longer calls. Assert what actually reaches the client.
+        """
         event = Ch01GorranCautionJunction(self.player, self.tile, params=None)
-        with patch('time.sleep'):
-            with patch('neotermcolor.cprint'):
-                event.process()
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        self.assertEqual(len(messages), 2)
+        self.assertEqual([m["color"] for m in messages], ["cyan", "cyan"])
+        self.assertIn("raises a hand briefly: wait", messages[0]["text"])
+        self.assertIn("lowers it and moves forward", messages[1]["text"])
+        # Purely atmospheric -- it must not write a story flag.
+        self.assertEqual(self.player.universe.story, {})
 
 
 class TestCh01GorranMarkings(unittest.TestCase):
@@ -755,10 +835,18 @@ class TestCh01GorranMarkings(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_gorran_markings_process(self):
-        """Test process method."""
+    def test_gorran_markings_process_emits_two_cyan_beats(self):
+        """Gorran lingers on the markings, then watches the way ahead."""
         event = Ch01GorranMarkings(self.player, self.tile)
-        event.process()
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        self.assertEqual(len(messages), 2)
+        self.assertEqual([m["color"] for m in messages], ["cyan", "cyan"])
+        self.assertIn("fingertips trailing across the worn markings", messages[0]["text"])
+        self.assertIn("his eyes stay ahead", messages[1]["text"])
+        self.assertEqual(self.player.universe.story, {})
 
 
 class TestCh01GorranDarkChamber(unittest.TestCase):
@@ -816,12 +904,52 @@ class TestCh01GorranFirstWord(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_gorran_first_word_process(self):
-        """Test process method."""
+    def test_gorran_first_word_process_speaks_stop_and_advances_the_stage(self):
+        """Gorran's first word is "Stop.", and it moves him to language stage 1.
+
+        skip_dialog must be set False explicitly: on a bare Mock it is truthy,
+        so the previous version of this test silently exercised the
+        skip-dialog early return and never reached the scene at all.
+        """
         event = Ch01GorranFirstWord(self.player, self.tile, params=None)
-        with patch('time.sleep'):
-            with patch('neotermcolor.cprint'):
-                event.process()
+        self.player.skip_dialog = False
+
+        with patch('src.story.ch01.await_input') as mock_await:
+            with capture_narration() as messages:
+                self.assertIsNone(event.process())
+
+        dialogue = [m for m in messages if m.get("type") == "dialogue"]
+        gorran_lines = [m for m in dialogue if m["speaker"] == "Gorran"]
+        self.assertEqual(len(gorran_lines), 1)
+        self.assertEqual(gorran_lines[0]["text"], "Stop.")
+        self.assertEqual(gorran_lines[0]["emotion"], "concerned")
+        # Jean's reaction is an internal thought, not spoken aloud.
+        jean_lines = [m for m in dialogue if m["speaker"] == "Jean"]
+        self.assertTrue(all(m.get("thought") for m in jean_lines))
+
+        mock_await.assert_called_once()
+        self.assertEqual(
+            self.player.universe.story["gorran_language_stage"], "1"
+        )
+        self.tile.remove_event.assert_called_once_with("Ch01_Gorran_First_Word")
+
+    def test_gorran_first_word_skip_dialog_still_advances_the_stage(self):
+        """With dialogue skipped, the scene is silent but the gate still moves.
+
+        A player who skips must not be left able to re-trigger Gorran's first
+        word, nor stuck at language stage 0 (which gates later flavour).
+        """
+        event = Ch01GorranFirstWord(self.player, self.tile, params=None)
+        self.player.skip_dialog = True
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        self.assertEqual(messages, [])
+        self.assertEqual(
+            self.player.universe.story["gorran_language_stage"], "1"
+        )
+        self.tile.remove_event.assert_called_once_with("Ch01_Gorran_First_Word")
 
 
 # ============================================================================
@@ -863,11 +991,24 @@ class TestAfterDefeatingLurker(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_after_defeating_lurker_process(self):
-        """Test process method."""
+    def test_after_defeating_lurker_process_is_disabled_for_the_beta(self):
+        """Continuation to Grondia is deliberately switched off here.
+
+        process() is an intentional no-op for the beta build, so pin exactly
+        that: nothing narrated, no story flag written, the tile untouched and
+        the event not marked complete. If the Grondia continuation is ever
+        turned back on, this test is the one that must be rewritten.
+        """
         event = AfterDefeatingLurker(self.player, self.tile, params=None)
-        with patch('src.functions.print_slow'):
-            event.process()
+        tile_calls = list(self.tile.mock_calls)
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        self.assertEqual(messages, [])
+        self.assertEqual(self.player.universe.story, {})
+        self.assertEqual(list(self.tile.mock_calls), tile_calls)
+        self.assertFalse(event.completed)
 
 
 class TestBetaTesterBriefing(unittest.TestCase):
@@ -893,11 +1034,34 @@ class TestBetaTesterBriefing(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_beta_tester_briefing_process(self):
-        """Test process method."""
+    def test_beta_tester_briefing_process_walks_its_three_stages(self):
+        """Recap -> tester notice -> done, one client round-trip per stage.
+
+        Each stage must re-arm needs_input with its own button, and only the
+        third may complete the event and unhook it from the tile -- a briefing
+        that removed itself early would drop the tester instructions.
+        """
         event = BetaTesterBriefing(self.player, self.tile, params=None)
-        with patch('src.functions.print_slow'):
-            event.process()
+        self.tile.events_here = [event]
+
+        self.assertIsNone(event.process())
+        self.assertTrue(event.needs_input)
+        self.assertIn("HEART OF VIRTUE", event.description)
+        self.assertEqual([o["value"] for o in event.input_options], ["continue"])
+        self.assertFalse(event.completed)
+        self.assertIn(event, self.tile.events_here)
+
+        self.assertIsNone(event.process(user_input="continue"))
+        self.assertTrue(event.needs_input)
+        self.assertIn("BETA TESTER NOTICE", event.description)
+        self.assertIn("defeat the King Slime", event.description)
+        self.assertEqual([o["value"] for o in event.input_options], ["begin"])
+        self.assertFalse(event.completed)
+
+        self.assertIsNone(event.process(user_input="begin"))
+        self.assertFalse(event.needs_input)
+        self.assertTrue(event.completed)
+        self.assertEqual(self.tile.events_here, [])
 
 
 class TestCh02GuideToCitadel(unittest.TestCase):
@@ -968,11 +1132,37 @@ class TestCh02ArenaEntrance(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_not_called()
 
-    def test_arena_entrance_process(self):
-        """Test process method."""
+    def test_arena_entrance_process_narrates_and_latches_the_flag(self):
+        """The arena narration plays once, then the event unhooks itself.
+
+        arena_entered is the latch check_conditions reads to stop the scene
+        replaying, so writing it (and removing the event by name) is the whole
+        point of process(). skip_dialog is set False explicitly -- on a bare
+        Mock it is truthy and the narration branch never runs.
+        """
         event = Ch02ArenaEntrance(self.player, self.tile, params=None)
-        with patch('src.functions.print_slow'):
+        self.player.skip_dialog = False
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        text = "\n".join(m["text"] for m in messages)
+        self.assertIn("sickly green luminescence", text)
+        self.assertIn("The water began to churn", text)
+        self.assertEqual(self.player.universe.story["arena_entered"], "1")
+        self.tile.remove_event.assert_called_once_with("Ch02ArenaEntrance")
+
+    def test_arena_entrance_process_stays_silent_when_dialog_skipped(self):
+        """Skipping dialogue skips the prose but never the latch."""
+        event = Ch02ArenaEntrance(self.player, self.tile, params=None)
+        self.player.skip_dialog = True
+
+        with capture_narration() as messages:
             event.process()
+
+        self.assertEqual(messages, [])
+        self.assertEqual(self.player.universe.story["arena_entered"], "1")
+        self.tile.remove_event.assert_called_once_with("Ch02ArenaEntrance")
 
 
 class TestAfterDefeatingKingSlime(unittest.TestCase):
@@ -1131,11 +1321,33 @@ class TestGorranGestureEvent(unittest.TestCase):
         event = GorranGestureEvent(self.player, self.tile, params=None)
         self.assertTrue(hasattr(event, 'check_conditions'))
 
-    def test_gorran_gesture_event_process(self):
-        """Test process method."""
+    def test_gorran_gesture_event_process_sets_the_done_flag(self):
+        """The farewell at the gate plays once and latches gorran_gesture_done.
+
+        check_conditions unhooks the event as soon as that flag reads "1", so
+        the flag is what stops the beat replaying on every re-entry.
+        """
         event = GorranGestureEvent(self.player, self.tile, params=None)
-        with patch('src.functions.print_slow'):
+        self.player.skip_dialog = False
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        text = "".join(m["text"] for m in messages)
+        self.assertIn("His palm rested flat against the stone", text)
+        self.assertIn("Jean did not ask him", text)
+        self.assertEqual(self.player.universe.story["gorran_gesture_done"], "1")
+
+    def test_gorran_gesture_event_process_latches_even_when_skipped(self):
+        """Skipping the dialogue must still consume the one-shot."""
+        event = GorranGestureEvent(self.player, self.tile, params=None)
+        self.player.skip_dialog = True
+
+        with capture_narration() as messages:
             event.process()
+
+        self.assertEqual(messages, [])
+        self.assertEqual(self.player.universe.story["gorran_gesture_done"], "1")
 
 
 class TestEasternRoadTurnbackEvent(unittest.TestCase):
@@ -1162,11 +1374,50 @@ class TestEasternRoadTurnbackEvent(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_eastern_road_turnback_event_process(self):
-        """Test process method."""
+    def test_eastern_road_turnback_event_process_walks_jean_back_west(self):
+        """The road east always ends with Jean back on AddersShelf (5, 4).
+
+        The relocation is the mechanic; the narration is the dressing. Assert
+        both the destination lookup and the three fields that actually move
+        the player.
+        """
         event = EasternRoadTurnbackEvent(self.player, self.tile, params=None)
-        with patch('src.functions.print_slow'):
+        self.player.skip_dialog = False
+        self.player.location_x = 6
+        self.player.location_y = 4
+        adders_shelf = Mock(name="AddersShelf")
+        self.player.universe.get_tile.return_value = adders_shelf
+
+        with capture_narration() as messages:
+            self.assertIsNone(event.process())
+
+        self.player.universe.get_tile.assert_called_once_with(5, 4)
+        self.assertEqual(self.player.location_x, 5)
+        self.assertEqual(self.player.location_y, 4)
+        self.assertIs(self.player.current_room, adders_shelf)
+
+        thoughts = [m for m in messages if m.get("type") == "dialogue"]
+        self.assertEqual(len(thoughts), 1)
+        self.assertEqual(thoughts[0]["speaker"], "Jean")
+        self.assertTrue(thoughts[0]["thought"])
+        self.assertEqual(thoughts[0]["text"], "South. That's where this goes.")
+
+    def test_eastern_road_turnback_event_leaves_jean_put_if_tile_missing(self):
+        """A missing destination tile must not teleport Jean to nowhere."""
+        event = EasternRoadTurnbackEvent(self.player, self.tile, params=None)
+        self.player.skip_dialog = True
+        self.player.location_x = 6
+        self.player.location_y = 4
+        room = Mock(name="RoadEast")
+        self.player.current_room = room
+        self.player.universe.get_tile.return_value = None
+
+        with capture_narration():
             event.process()
+
+        self.assertEqual(self.player.location_x, 6)
+        self.assertEqual(self.player.location_y, 4)
+        self.assertIs(self.player.current_room, room)
 
 
 class TestNomadCampSmellEvent(unittest.TestCase):
@@ -1299,7 +1550,18 @@ class TestMaraObservationEvent(unittest.TestCase):
         self.assertEqual(event.name, "MaraObservation")
 
     def test_check_conditions_blocked_when_already_reached(self):
-        self.player.universe.story = {"nomad_camp_reached": "1"}
+        # The gate flag is "nomad_ferry_ready" -- "nomad_camp_reached" is set
+        # nowhere in src/. With the ghost name this passed for the wrong reason:
+        # the three intro flags were absent, so check_conditions returned at the
+        # *intro* gate and the already-reached branch was never exercised.
+        # Supplying the intros leaves the already-reached gate as the only thing
+        # that can block, which is what this test claims to cover.
+        self.player.universe.story = {
+            "nomad_ferry_ready": "1",
+            "mara_intro_done": "1",
+            "devet_intro_done": "1",
+            "liss_gorran_done": "1",
+        }
         event = MaraObservationEvent(self.player, self.tile)
         self.tile.events_here = [event]
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
@@ -1325,7 +1587,7 @@ class TestMaraObservationEvent(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_process_sets_nomad_camp_reached(self):
+    def test_process_sets_nomad_ferry_ready(self):
         self.player.universe.story = {
             "mara_intro_done": "1",
             "devet_intro_done": "1",
@@ -1333,7 +1595,7 @@ class TestMaraObservationEvent(unittest.TestCase):
         }
         event = MaraObservationEvent(self.player, self.tile)
         event.process()
-        self.assertEqual(self.player.universe.story.get("nomad_camp_reached"), "1")
+        self.assertEqual(self.player.universe.story.get("nomad_ferry_ready"), "1")
 
     def test_process_mace_branch(self):
         """Mara says 'That\'s religious kit.' when Jean carries a Mace."""
@@ -1348,7 +1610,7 @@ class TestMaraObservationEvent(unittest.TestCase):
         event = MaraObservationEvent(self.player, self.tile)
         # should not raise; mace branch selects alternate dialogue
         event.process()
-        self.assertEqual(self.player.universe.story.get("nomad_camp_reached"), "1")
+        self.assertEqual(self.player.universe.story.get("nomad_ferry_ready"), "1")
 
 
 if __name__ == "__main__":

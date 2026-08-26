@@ -1,17 +1,18 @@
+"""Behaviour of functions.refresh_stat_bonuses.
+
+The sys.path preamble that used to sit here put the *src/ directory itself* on
+sys.path, which makes bare module names importable for the rest of the pytest
+run and silently masks bare-import regressions everywhere downstream (exactly
+what tests/test_no_bare_local_imports.py::test_no_src_dir_on_sys_path_in_tests
+exists to prevent -- it missed this one because the offending line spelled the
+directory as a variable rather than the literal "src"). The project root is
+already on sys.path via conftest, so the canonical import below is enough.
+"""
+
 import copy
 import math
-import os, sys
-# Ensure project root and src directory are on sys.path for isolated test invocation
-_CURRENT = os.path.dirname(__file__)
-_PROJECT_ROOT = os.path.abspath(os.path.join(_CURRENT, '..'))
-_SRC_DIR = os.path.join(_PROJECT_ROOT, 'src')
-for _p in (_PROJECT_ROOT, _SRC_DIR):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-try:
-    import src.functions as functions
-except ModuleNotFoundError:  # fallback if src not discoverable in isolated test invocation
-    import src.functions as functions  # type: ignore
+
+import src.functions as functions
 
 class MockItem:
     def __init__(self, **attrs):

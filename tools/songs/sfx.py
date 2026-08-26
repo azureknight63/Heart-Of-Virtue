@@ -7,7 +7,7 @@ from ..audio_engine.core import generate_tone, generate_tone_sweep, generate_cho
 class ClickSFX(Song):
     """Crisp two-note upward chirp for button presses."""
     def __init__(self):
-        super().__init__("SFX: Click", "sfx_click.wav")
+        super().__init__("SFX: Click", "sfx/click.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -22,7 +22,7 @@ class ClickSFX(Song):
 class MoveSFX(Song):
     """Soft triangle step sound for cursor/world movement."""
     def __init__(self):
-        super().__init__("SFX: Move", "sfx_move.wav")
+        super().__init__("SFX: Move", "sfx/move.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -34,7 +34,7 @@ class MoveSFX(Song):
 class ErrorSFX(Song):
     """Descending sawtooth tones for invalid actions."""
     def __init__(self):
-        super().__init__("SFX: Error", "sfx_error.wav")
+        super().__init__("SFX: Error", "sfx/error.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -49,7 +49,7 @@ class ErrorSFX(Song):
 class UiConfirmSFX(Song):
     """Ascending C-E-G arpeggio for confirming a move/selection."""
     def __init__(self):
-        super().__init__("SFX: UI Confirm", "sfx_ui_confirm.wav")
+        super().__init__("SFX: UI Confirm", "sfx/ui_confirm.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -67,7 +67,7 @@ class UiConfirmSFX(Song):
 class CombatStartSFX(Song):
     """Low power-chord stab followed by a rising alarm arpeggio."""
     def __init__(self):
-        super().__init__("SFX: Combat Start", "sfx_combat_start.wav")
+        super().__init__("SFX: Combat Start", "sfx/combat_start.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -88,7 +88,7 @@ class CombatStartSFX(Song):
 class AttackSFX(Song):
     """Short downward chirp played when selecting an attack move."""
     def __init__(self):
-        super().__init__("SFX: Attack", "sfx_attack.wav")
+        super().__init__("SFX: Attack", "sfx/attack.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -103,7 +103,7 @@ class AttackSFX(Song):
 class AttackSwipeSFX(Song):
     """Noise whoosh for the moment an attack is launched."""
     def __init__(self):
-        super().__init__("SFX: Attack Swipe", "sfx_attack_swipe.wav")
+        super().__init__("SFX: Attack Swipe", "sfx/attack_swipe.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -115,7 +115,7 @@ class AttackSwipeSFX(Song):
 class AttackHitSFX(Song):
     """Low sawtooth thud + noise burst — heavy impact sound."""
     def __init__(self):
-        super().__init__("SFX: Attack Hit", "sfx_attack_hit.wav")
+        super().__init__("SFX: Attack Hit", "sfx/attack_hit.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -130,7 +130,7 @@ class AttackHitSFX(Song):
 class AttackMissSFX(Song):
     """Soft fading noise — air whoosh with no impact."""
     def __init__(self):
-        super().__init__("SFX: Attack Miss", "sfx_attack_miss.wav")
+        super().__init__("SFX: Attack Miss", "sfx/attack_miss.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -141,7 +141,7 @@ class AttackMissSFX(Song):
 class AttackParrySFX(Song):
     """High-pitched square ring + noise clang — metallic parry clash."""
     def __init__(self):
-        super().__init__("SFX: Attack Parry", "sfx_attack_parry.wav")
+        super().__init__("SFX: Attack Parry", "sfx/attack_parry.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -156,7 +156,7 @@ class AttackParrySFX(Song):
 class EnemyDeathSFX(Song):
     """Descending sawtooth steps into a fading noise tail."""
     def __init__(self):
-        super().__init__("SFX: Enemy Death", "sfx_enemy_death.wav")
+        super().__init__("SFX: Enemy Death", "sfx/enemy_death.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -173,7 +173,7 @@ class EnemyDeathSFX(Song):
 class LowHealthWarningSFX(Song):
     """Three rapid urgent beeps — warning when HP is critical."""
     def __init__(self):
-        super().__init__("SFX: Low Health Warning", "sfx_low_health_warning.wav")
+        super().__init__("SFX: Low Health Warning", "sfx/low_health_warning.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -192,7 +192,7 @@ class LowHealthWarningSFX(Song):
 class LevelUpSFX(Song):
     """Rising arpeggio sweep + sparkle overtone — character levels up."""
     def __init__(self):
-        super().__init__("SFX: Level Up", "sfx_level_up.wav")
+        super().__init__("SFX: Level Up", "sfx/level_up.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -214,7 +214,7 @@ class LevelUpSFX(Song):
 class QuestCompleteSFX(Song):
     """Two-chord resolution stab — quest milestone achieved."""
     def __init__(self):
-        super().__init__("SFX: Quest Complete", "sfx_quest_complete.wav")
+        super().__init__("SFX: Quest Complete", "sfx/quest_complete.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -237,7 +237,7 @@ class QuestCompleteSFX(Song):
 class ItemUseSFX(Song):
     """Soft shimmer + warm thud — using an item from inventory."""
     def __init__(self):
-        super().__init__("SFX: Item Use", "sfx_item_use.wav")
+        super().__init__("SFX: Item Use", "sfx/item_use.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -256,7 +256,7 @@ class ItemUseSFX(Song):
 class HealSFX(Song):
     """Warm ascending tone + soft chord — HP restored."""
     def __init__(self):
-        super().__init__("SFX: Heal", "sfx_heal.wav")
+        super().__init__("SFX: Heal", "sfx/heal.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -278,7 +278,7 @@ class HealSFX(Song):
 class StatusHitSFX(Song):
     """Buzzing square warble — a status effect lands on a target."""
     def __init__(self):
-        super().__init__("SFX: Status Hit", "sfx_status_hit.wav")
+        super().__init__("SFX: Status Hit", "sfx/status_hit.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
@@ -296,7 +296,7 @@ class StatusHitSFX(Song):
 class PlayerDeathSFX(Song):
     """Slow descending sawtooth drone — Jean is defeated."""
     def __init__(self):
-        super().__init__("SFX: Player Death", "sfx_player_death.wav")
+        super().__init__("SFX: Player Death", "sfx/player_death.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale

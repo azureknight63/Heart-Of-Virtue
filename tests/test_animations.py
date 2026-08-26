@@ -84,21 +84,30 @@ def test_function_exists_not_callable():
 
 
 @patch('src.animations.Screen')
-def test_demo_screen_output(mock_screen):
-    """Test demo function prints to screen"""
+def test_demo_prints_the_placeholder_text_within_screen_bounds(mock_screen):
+    """demo() draws its placeholder text at a random in-bounds position.
+
+    The old assertion was `assert screen_mock.print_at.called`, which held for
+    any call with any arguments -- including drawing empty text off-screen.
+    """
     from src.animations import demo
 
-    # Mock screen object
     screen_mock = Mock()
     screen_mock.width = 80
     screen_mock.height = 24
     screen_mock.colours = 8
-    screen_mock.get_key.return_value = ord('q')  # Exit immediately
+    screen_mock.get_key.return_value = ord('q')  # exit after one frame
 
     demo(screen_mock)
 
-    # Verify print_at was called
-    assert screen_mock.print_at.called
+    screen_mock.print_at.assert_called_once()
+    (text, x, y), kwargs = screen_mock.print_at.call_args
+    assert text == "This is the placeholder animation!"
+    assert 0 <= x <= screen_mock.width
+    assert 0 <= y <= screen_mock.height
+    # Colours are picked from the screen's own palette, never beyond it.
+    assert 0 <= kwargs["colour"] <= screen_mock.colours - 1
+    assert 0 <= kwargs["bg"] <= screen_mock.colours - 1
 
 
 @patch('src.animations.Screen')
@@ -152,9 +161,15 @@ def test_play_gif_file_exists(mock_scene, mock_print, mock_bubble, mock_image,
 
     play_gif(screen_mock, "test_animation", "test text")
 
-    # Verify methods were called
-    assert mock_count.called
-    assert screen_mock.play.called
+    # The frame count is read from the resolved gif path and the scene is
+    # played once, non-repeating and resize-safe. The old assertions were
+    # `assert mock_count.called` / `assert screen_mock.play.called`, which
+    # said nothing about which file was opened or how it was played.
+    mock_count.assert_called_once_with("./resources/animations/test_animation.gif")
+    screen_mock.play.assert_called_once()
+    (scenes,), play_kwargs = screen_mock.play.call_args
+    assert len(scenes) == 1
+    assert play_kwargs == {"repeat": False, "stop_on_resize": True}
 
 
 @patch('src.animations.Path')
@@ -187,7 +202,12 @@ def test_display_static_image_exists(mock_scene, mock_print, mock_image, mock_pa
 
     display_static_image(screen_mock, "test.png")
 
-    assert screen_mock.play.called
+    # The image is resolved under resources/images and played once, without
+    # repeating. `assert screen_mock.play.called` proved none of that.
+    mock_path.assert_called_once_with("./resources/images/test.png")
+    screen_mock.play.assert_called_once()
+    _, play_kwargs = screen_mock.play.call_args
+    assert play_kwargs == {"repeat": False, "stop_on_resize": True}
 
 
 @patch('src.animations.Path')
@@ -204,31 +224,15 @@ def test_display_static_image_not_exists(mock_print, mock_path):
     mock_print.assert_called_with("### Animation not found!")
 
 
-def test_animate_to_main_screen_gif():
-    """Test animate_to_main_screen with a gif file"""
-    from src.animations import animate_to_main_screen
-
-    animate_to_main_screen("test.gif", "some text")
-
-    # Test that it runs without error
-
-
-def test_animate_to_main_screen_function():
-    """Test animate_to_main_screen with a function name"""
-    from src.animations import animate_to_main_screen
-
-    animate_to_main_screen("image_to_main_screen", "")
-
-    # Test that it runs without error
-
-
-def test_animate_to_main_screen_not_found():
-    """Test animate_to_main_screen with non-existent animation"""
-    from src.animations import animate_to_main_screen
-
-    animate_to_main_screen("nonexistent", "")
-
-    # Test that it runs without error
+# NOTE: three tests named ``test_animate_to_main_screen_{gif,function,not_found}``
+# used to live here. They called ``animate_to_main_screen`` and asserted nothing
+# ("Test that it runs without error"). Worse, under pytest ``_terminal_available()``
+# is False, so the function returned on its second line and none of the branches
+# they were named for ever executed. Every branch they claimed to cover is really
+# covered in tests/test_animations_gaps.py -- ``test_animate_to_main_screen_gif_path_detail``,
+# ``test_animate_to_main_screen_existing_function`` and
+# ``test_animate_to_main_screen_not_found`` -- which force ``_terminal_available``
+# True and assert on the dispatched function and arguments.
 
 
 @patch('src.animations.Screen')
@@ -240,7 +244,13 @@ def test_image_to_main_screen(mock_screen):
 
     image_to_main_screen("test.png")
 
-    assert mock_screen.wrapper.called
+    # It must dispatch display_static_image with the image name -- not merely
+    # call Screen.wrapper with something.
+    from src.animations import display_static_image
+
+    mock_screen.wrapper.assert_called_once_with(
+        func=display_static_image, arguments=["test.png"]
+    )
 
 
 @patch('src.animations.Screen')
@@ -271,4 +281,9 @@ def test_demo2(mock_stars, mock_cycle, mock_screen):
 
     demo2(screen_mock)
 
-    assert screen_mock.play.called
+    # Two Cycle banners plus a Stars field, played as one scene.
+    assert mock_cycle.call_count == 2
+    mock_stars.assert_called_once_with(screen_mock, 200)
+    screen_mock.play.assert_called_once()
+    (scenes,), _ = screen_mock.play.call_args
+    assert len(scenes) == 1

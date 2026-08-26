@@ -1,87 +1,152 @@
+"""Cooldown-drain behaviour of the real beat loop in ``ApiCombatAdapter``.
+
+The fix (d0876dd) changed the beat loop so that when ``current_move`` is None:
+  - if ANY known move is at stage 0 (ready) -> break and return control
+  - if ALL moves are in cooldown (stage > 0) -> keep advancing beats
+
+so the player is never handed a turn with zero available actions.
+
+What changed and why
+--------------------
+Every test in this file used to run against ``_simulate_beat_exit`` -- a
+*reimplementation* of that loop living in this file. It re-derived the exit
+condition in ten lines of test-local code and then asserted that those ten lines
+behaved as the docstring described. Deleting the guard from
+``src/api/combat_adapter.py`` entirely would not have failed a single
+assertion, and CLAUDE.md's architecture rule ("the API layer adapts; it does not
+reimplement") applies to its tests as much as to the code.
+
+The simulation is gone. These tests now drive
+``ApiCombatAdapter._execute_move_inner`` over a real ``Player`` and a real
+``Slime``, and read the number of beats the engine actually processed off the
+``beat_states`` list it publishes.
 """
-Tests for the cooldown-drain beat-loop logic in combat_adapter.
 
-The fix (d0876dd) changed the beat loop so that when current_move is None:
-  - If ANY move is at stage 0 (ready) → break and return control to the player
-  - If ALL moves are in cooldown (stage > 0) → keep advancing beats
+import pytest
 
-This ensures the player always gets back at least one available action
-rather than being returned zero options when all moves happen to be cooling.
-"""
-import sys
-import pathlib
-
-_ROOT = pathlib.Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+from src.api.combat_adapter import ApiCombatAdapter
+from src.npc import Slime
+from src.player import Player
+from tests._combat_fixtures import engage
 
 
-class _Move:
+class _StubMove:
+    """A move that cools down by exactly one stage per ``advance()``.
+
+    Deliberately hand-rolled rather than a real engine move: the point is to
+    control the stage numbers precisely. Everything the adapter reads off a move
+    while serializing the beat is present, so nothing about the loop is faked.
+    """
+
+    passive = False
+    targeted = False
+    instant = False
+    needs_duration = False
+    accepts_ally_target = False
+    web_animation = "attack"
+    category = "Attack"
+    description = ""
+    fatigue_cost = 0
+    beats_left = 0
+    stage_beat = (1, 1, 1, 3)
+
     def __init__(self, name, stage=0):
         self.name = name
+        self.display_name = name
         self.current_stage = stage
+        self.target = None
+        self.user = None
+
+    def advance(self, user):
+        if self.current_stage > 0:
+            self.current_stage -= 1
+
+    def viable(self):
+        return self.current_stage == 0
+
+    def cast(self):
+        pass
 
 
-def _simulate_beat_exit(moves, current_move):
+@pytest.fixture
+def drain():
+    """Run one move through the real beat loop; return (beats, final stages).
+
+    ``drain([_StubMove("Slash", 4)])`` builds a fresh encounter whose enemy
+    cannot die or kill, so the only thing that ends the loop is the
+    cooldown-drain guard under test.
     """
-    Simulate the beat-loop exit condition from combat_adapter.py.
 
-    Returns (broke_early, advances) where:
-      broke_early — True if the loop exited because a move became available
-      advances    — number of beat advances needed before exiting
-    """
-    advances = 0
-    while current_move is None:
-        if any(m.current_stage == 0 for m in moves):
-            return True, advances
-        # Simulate one beat: tick every move down by 1
-        for m in moves:
-            if m.current_stage > 0:
-                m.current_stage -= 1
-        advances += 1
-        if advances > 20:
-            return False, advances  # safety — should never happen
-    return False, advances
+    def _drain(cooling_moves):
+        player = Player()
+        slime = Slime()
+        slime.hp = slime.maxhp = 9999  # survives the whole drain
+        slime.damage = 0  # ...and cannot end it by killing Jean
+        engage(player, [slime])
 
+        adapter = ApiCombatAdapter(player)
+        adapter.initialize_combat([slime])
+        player.known_moves = list(cooling_moves)
+        player.current_move = None
 
-def test_all_cooldown_advances_until_one_ready():
-    """All moves in cooldown → loop must advance beats until one is at stage 0."""
-    moves = [_Move("Slash", stage=2), _Move("Shield Bash", stage=1)]
-    broke_early, advances = _simulate_beat_exit(moves, current_move=None)
+        result = adapter._execute_move_inner(_StubMove("Active", stage=0))
+        return len(result["beat_states"]), [m.current_stage for m in cooling_moves]
 
-    assert broke_early, "Loop should have broken once a move reached stage 0"
-    assert advances >= 1, "Should have advanced at least one beat (all moves were cooling)"
-    assert any(m.current_stage == 0 for m in moves), (
-        "After loop exit at least one move must be at stage 0"
-    )
+    return _drain
 
 
-def test_move_already_ready_breaks_immediately():
-    """If a move is already at stage 0 when current_move becomes None, break instantly."""
-    moves = [_Move("Attack", stage=0), _Move("Wait", stage=3)]
-    broke_early, advances = _simulate_beat_exit(moves, current_move=None)
+def test_all_cooldown_advances_until_one_ready(drain):
+    """All moves cooling -> the loop keeps burning beats until one opens up."""
+    moves = [_StubMove("Slash", stage=4), _StubMove("Shield Bash", stage=2)]
 
-    assert broke_early, "Should have broken immediately — Attack was already ready"
-    assert advances == 0, (
-        f"Expected 0 advances when a move is already ready, got {advances}"
-    )
+    beats, stages = drain(moves)
 
-
-def test_longer_cooldown_drains_fully():
-    """Move at stage 5 requires 5 advances to become available."""
-    moves = [_Move("Heavy Strike", stage=5)]
-    broke_early, advances = _simulate_beat_exit(moves, current_move=None)
-
-    assert broke_early
-    assert advances == 5
-    assert moves[0].current_stage == 0
-
-
-def test_shortest_cooldown_wins():
-    """When multiple moves are cooling, the shortest one (stage 1) wins — only 1 advance."""
-    moves = [_Move("Slash", stage=4), _Move("Quick Jab", stage=1)]
-    broke_early, advances = _simulate_beat_exit(moves, current_move=None)
-
-    assert broke_early
-    assert advances == 1, f"Quick Jab (stage 1) should have opened after 1 advance, got {advances}"
+    # Shield Bash is the first to open, two beats in; Slash is left at 2.
+    assert beats == 2
+    assert stages == [2, 0]
     assert any(m.current_stage == 0 for m in moves)
+
+
+def test_move_already_ready_stops_after_the_first_beat(drain):
+    """With something already castable the loop must not drain further.
+
+    One beat always resolves (the move that was just used has to advance); the
+    guard's job is to stop *after* it rather than burning the whole 20-beat
+    safety budget.
+    """
+    moves = [_StubMove("Attack", stage=0), _StubMove("Wait", stage=3)]
+
+    beats, stages = drain(moves)
+
+    assert beats == 1
+    # Wait ticked once with everything else, and Attack was never cooling.
+    assert stages == [0, 2]
+
+
+def test_longer_cooldown_drains_fully(drain):
+    """A lone move at stage 5 costs exactly 5 beats to become available."""
+    moves = [_StubMove("Heavy Strike", stage=5)]
+
+    beats, stages = drain(moves)
+
+    assert beats == 5
+    assert stages == [0]
+
+
+def test_shortest_cooldown_wins(drain):
+    """The loop exits on the *first* move to open, not the last."""
+    moves = [_StubMove("Slash", stage=4), _StubMove("Quick Jab", stage=1)]
+
+    beats, stages = drain(moves)
+
+    assert beats == 1
+    assert stages == [3, 0]
+
+
+def test_no_known_moves_does_not_burn_the_safety_budget(drain):
+    """The `not self.player.known_moves` guard: an empty move list must break
+    immediately rather than spinning to the 20-beat cap."""
+    beats, stages = drain([])
+
+    assert beats == 1
+    assert stages == []

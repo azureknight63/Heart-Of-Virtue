@@ -10,6 +10,12 @@ pytest==9.0.2
 pytest-asyncio==1.3.0
 pytest-cov==7.0.0
 pytest-xdist==3.6.1
+# pytest-randomly shuffles test order every run. It was absent, which made the
+# documented `-p no:randomly` flag a silent no-op and meant the suite's
+# order-independence had never actually been exercised -- installing it
+# immediately surfaced a leaked TURSO_DATABASE_URL that made a unit test
+# perform real DNS. Keep it installed.
+pytest-randomly==4.1.0
 
 # Code quality
 flake8==7.3.0

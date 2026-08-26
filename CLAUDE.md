@@ -80,6 +80,12 @@ Pick the cheapest rung that can actually observe the change, run it, and show th
 4. `python tools/inquisitor.py` or `/qa` — real browser; the only rung that sees JS/rendering bugs.
 Balance or behaviour changes need rung 2 or 3, not just rung 1.
 
+The backend suite runs in ~20s because `pytest.ini` sets `-n auto --dist loadfile`; use `-n0` when
+debugging a single test. The 565 skips are a known, audited quantity — do not add a blanket skip to
+make the suite green; a prior sweep found ~517 supposed skips ("coverage requirements already met",
+"test isolation issues") were, without exception, false — the tests failed for stale API signatures,
+mislabelled story flags, an unrestored class attribute, and one infinite loop.
+
 ## Coding conventions
 
 **Python** — snake_case/PascalCase; keep docstrings on public methods; don't add type annotations to files that don't already use them heavily; black 88; no `###DEBUG###` left behind; try/except with logging — prefer silent recovery over crashing the game loop. Conventional Commits (`feat(frontend):`, `fix(states):`, `refactor(backend):`).

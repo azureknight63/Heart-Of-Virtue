@@ -16,6 +16,7 @@ importable package), matching ``tests/test_save_fuzz.py``.
 """
 
 import importlib.util
+import random
 from pathlib import Path
 
 import pytest
@@ -48,7 +49,7 @@ def test_fuzz_no_security_violations(seed):
 # ---------------------------------------------------------------------------
 
 def _fresh_player():
-    return fuzzer._realistic_player(__import__("random").Random(0))
+    return fuzzer._realistic_player(random.Random(0))
 
 
 def test_loads_v2_wraps_invalid_json():
@@ -151,5 +152,74 @@ def test_apply_survives_non_dict_stats():
                    "stats": [1, 2, 3]},
         "world": {"map_name": "m"},
     }
-    # Must not raise AttributeError -- non-dict stats are simply skipped.
+    # Non-dict stats are skipped entirely: the scalars still apply, and every
+    # stat keeps the value it had before the load.
+    before = {s: getattr(player, s) for s in sf._ALLOWED_STAT_KEYS}
     sf.apply_data_to_player(player, doc)
+    assert player.hp == 1 and player.level == 1
+    assert {s: getattr(player, s) for s in sf._ALLOWED_STAT_KEYS} == before
+
+
+# ---------------------------------------------------------------------------
+# Meta-tests on the fuzzer itself.
+#
+# A fuzzer that cannot fail is a no-op that costs 400 iterations per seed. These
+# pin the two properties that make the assertion above mean something: the run
+# is reproducible from its seed, and an injected defect really is reported as a
+# security finding.
+# ---------------------------------------------------------------------------
+
+def test_fuzz_run_is_deterministic_for_a_seed():
+    first = fuzzer.run_fuzz(iterations=120, seed=4242)
+    second = fuzzer.run_fuzz(iterations=120, seed=4242)
+    assert [str(f) for f in first] == [str(f) for f in second]
+
+
+def test_fuzz_run_actually_varies_between_seeds():
+    """Different seeds must drive different documents, or the coverage is one case."""
+    import json as _json
+
+    rng_a, rng_b = random.Random(1), random.Random(2)
+    docs_a = [_json.dumps(fuzzer._random_document(rng_a), default=str)
+              for _ in range(40)]
+    docs_b = [_json.dumps(fuzzer._random_document(rng_b), default=str)
+              for _ in range(40)]
+    assert docs_a != docs_b
+    assert len(set(docs_a)) > 20, "generator is producing near-identical documents"
+
+
+def test_fuzzer_detects_a_broken_sanitizer(monkeypatch):
+    """Injected defect: stop sanitizing scalars -> corrupt-state findings appear.
+
+    Without this, ``test_fuzz_no_security_violations`` passing proves nothing --
+    it would pass just as happily against a fuzzer whose checks never fire.
+    """
+    monkeypatch.setattr(
+        sf, "_sanitize_scalar",
+        lambda key, value, template, current: value,
+    )
+    findings = fuzzer.security_findings(fuzzer.run_fuzz(iterations=400, seed=7))
+    assert findings, "fuzzer failed to notice an unsanitized scalar restore"
+    assert {f.category for f in findings} == {"apply-corrupt-state"}
+
+
+def test_fuzzer_detects_a_leaked_raw_exception(monkeypatch):
+    """Injected defect: validation raises KeyError instead of SaveSchemaError."""
+    real_validate = sf.validate_save_data
+
+    def leaky(data, *, strict=False):
+        try:
+            return real_validate(data, strict=strict)
+        except sf.SaveSchemaError as exc:
+            raise KeyError(str(exc)) from None
+
+    monkeypatch.setattr(sf, "validate_save_data", leaky)
+    findings = fuzzer.security_findings(fuzzer.run_fuzz(iterations=300, seed=11))
+    assert findings, "fuzzer failed to notice a leaked raw exception type"
+    assert {"validate-wrong-error", "loads-wrong-error"} & {
+        f.category for f in findings}
+
+
+def test_fuzzer_restores_cleanly_after_the_injected_defects():
+    """The monkeypatched defects above must not bleed into later runs."""
+    assert not fuzzer.security_findings(fuzzer.run_fuzz(iterations=200, seed=7))

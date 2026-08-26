@@ -42,318 +42,126 @@ def _mock_tile():
 # ---------------------------------------------------------------------------
 
 
-class TestUniverseDeserialize:
-    """Tests for Universe._deserialize_saved_instance edge cases."""
-
-    def _universe(self):
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-        return u
-
-    def test_class_type_marker(self):
-        """Lines 114-122: __class_type__ deserialization returns class, not instance."""
-        u = self._universe()
-        payload = {"__class_type__": "items:Gold"}
-        result = u._deserialize_saved_instance(payload)
-        # Should return the class (Gold), not None
-        import src.items as items
-
-        assert result is items.Gold or result is None  # graceful if import fails
-
-    def test_class_type_marker_invalid(self):
-        """Lines 119-122: invalid class_type returns None."""
-        u = self._universe()
-        payload = {"__class_type__": "nonexistent_module:Foo"}
-        result = u._deserialize_saved_instance(payload)
-        assert result is None
-
-    def test_not_a_dict(self):
-        """Line 124: non-dict payload returns None."""
-        u = self._universe()
-        assert u._deserialize_saved_instance("not a dict") is None
-        assert u._deserialize_saved_instance(42) is None
-        assert u._deserialize_saved_instance(None) is None
-
-    def test_dict_without_class_key(self):
-        """Line 124-125: dict without __class__ key returns None."""
-        u = self._universe()
-        assert u._deserialize_saved_instance({"foo": "bar"}) is None
-
-    def test_src_module_prefix_raises(self):
-        """Lines 131-132: module name with 'src.' prefix raises ValueError."""
-        u = self._universe()
-        payload = {
-            "__class__": "Gold",
-            "__module__": "src.items",
-            "props": {},
-        }
-        with pytest.raises(ValueError, match="Invalid module name format"):
-            u._deserialize_saved_instance(payload)
-
-    def test_valid_simple_class(self):
-        """Lines 151-168: deserialization of a valid simple class."""
-        u = self._universe()
-        payload = {
-            "__class__": "Gold",
-            "__module__": "items",
-            "props": {"amount": 10},
-        }
-        result = u._deserialize_saved_instance(payload)
-        assert result is not None
-
-    def test_recursive_deserialization_list(self):
-        """Lines 143-145: recursive deserialization of list-typed prop."""
-        u = self._universe()
-        # A payload containing a list in props — not a nested instance but basic values
-        payload = {
-            "__class__": "Gold",
-            "__module__": "items",
-            "props": {"tags": ["rare", "valuable"]},
-        }
-        result = u._deserialize_saved_instance(payload)
-        assert result is not None
+# Universe._deserialize_saved_instance was a fourth copy of the same suite here.
+# Three of its assertions could not fail (`result is items.Gold or result is None`,
+# and two bare `is not None`s). It now lives once, with real assertions, in
+# tests/test_world_systems_tier2.py::TestDeserializeSavedInstance.
 
 
 class TestUniverseLoadSingleJsonMap:
-    """Test _load_single_json_map handles complex tile data including events/items/npcs."""
+    """_load_single_json_map: JSON tile data -> real MapTile objects.
 
-    def _universe(self, player=None):
+    Every assertion here used to sit behind `if tile:`, so the whole class
+    passed when the map failed to load and no tile came back at all.
+    """
+
+    def _load_tile(self, tile_data, filename="test_map.json"):
+        """Write a one-tile map, load it, and return that real MapTile."""
         from src.universe import Universe
 
-        if player is None:
-            player = _player()
-        u = Universe(player=player)
-        return u
+        player = _player()
+        universe = Universe(player=player)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file = Path(tmpdir) / filename
+            json_file.write_text(json.dumps({"(0, 0)": tile_data}))
+            universe._load_single_json_map(player, json_file)
 
-    def _minimal_json(self, tiles=None):
-        """Return a minimal valid map JSON dict.
-
-        The universe uses coordinate keys like '(0, 0)' pointing to tile data dicts.
-        """
-        if tiles is None:
-            tiles = {"(0, 0)": {"title": "MapTile", "description": "A plain room."}}
-        return tiles
+        assert len(universe.maps) == 1
+        game_map = universe.maps[-1]
+        assert game_map["name"] == Path(filename).stem
+        tile = game_map.get((0, 0))
+        assert tile is not None, "the map loaded but produced no tile at (0, 0)"
+        return tile
 
     def test_basic_map_load(self):
-        """Lines 183-216: loads a JSON map with a basic tile."""
-        from src.universe import Universe
+        tile = self._load_tile({"title": "MapTile", "description": "A plain room."})
 
-        u = self._universe()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            jf = Path(tmpdir) / "test_map.json"
-            data = self._minimal_json()
-            jf.write_text(json.dumps(data))
-            p = _player()
-            u._load_single_json_map(p, jf)
-        assert len(u.maps) >= 1
+        assert tile.description == "A plain room."
+        assert tile.items_here == []
+        assert tile.events_here == []
 
     def test_tile_with_block_exit(self):
-        """Lines 227-228: block_exit from JSON is applied."""
-        from src.universe import Universe
+        tile = self._load_tile({
+            "title": "MapTile",
+            "description": "Blocked room.",
+            "block_exit": ["east", "north"],
+        })
 
-        u = self._universe()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            jf = Path(tmpdir) / "block_exit_map.json"
-            data = {
-                "(0, 0)": {
-                    "title": "MapTile",
-                    "description": "Blocked room.",
-                    "block_exit": ["east", "north"],
-                }
-            }
-            jf.write_text(json.dumps(data))
-            p = _player()
-            u._load_single_json_map(p, jf)
-        assert len(u.maps) >= 1
-        tile = u.maps[-1].get((0, 0))
-        if tile:
-            assert "east" in tile.block_exit
-            assert "north" in tile.block_exit
+        assert set(tile.block_exit) == {"east", "north"}
 
     def test_tile_with_exits_whitelist(self):
-        """Lines 240-244: exits whitelist blocks non-listed directions."""
-        from src.universe import Universe
+        """`exits` is a whitelist: every other direction becomes blocked."""
+        tile = self._load_tile({
+            "title": "MapTile",
+            "description": "Room.",
+            "exits": ["east"],
+        })
 
-        u = self._universe()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            jf = Path(tmpdir) / "exits_map.json"
-            data = {
-                "(0, 0)": {
-                    "title": "MapTile",
-                    "description": "Room.",
-                    "exits": ["east"],
-                }
-            }
-            jf.write_text(json.dumps(data))
-            p = _player()
-            u._load_single_json_map(p, jf)
-        assert len(u.maps) >= 1
-        tile = u.maps[-1].get((0, 0))
-        if tile:
-            # Non-whitelisted dirs should be blocked
-            assert "west" in tile.block_exit
-            assert "east" not in tile.block_exit
+        assert "east" not in tile.block_exit
+        for direction in (
+            "north", "south", "west",
+            "northeast", "northwest", "southeast", "southwest",
+        ):
+            assert direction in tile.block_exit
 
     def test_tile_with_symbol(self):
-        """Lines 245-249: symbol from JSON is applied."""
-        from src.universe import Universe
+        tile = self._load_tile({
+            "title": "MapTile",
+            "description": "Room.",
+            "symbol": "@",
+        })
 
-        u = self._universe()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            jf = Path(tmpdir) / "symbol_map.json"
-            data = {
-                "(0, 0)": {
-                    "title": "MapTile",
-                    "description": "Room.",
-                    "symbol": "@",
-                }
-            }
-            jf.write_text(json.dumps(data))
-            p = _player()
-            u._load_single_json_map(p, jf)
-        assert len(u.maps) >= 1
-        tile = u.maps[-1].get((0, 0))
-        if tile:
-            assert tile.symbol == "@"
+        assert tile.symbol == "@"
 
     def test_tile_with_item_payload(self):
-        """Lines 301-315: item payload deserialized and added to tile."""
-        from src.universe import Universe
+        """An item payload is deserialized into a real engine item on the tile."""
+        import src.items
 
-        u = self._universe()
-        item_payload = {
-            "__class__": "Gold",
-            "__module__": "items",
-            "props": {"amount": 25},
-        }
-        with tempfile.TemporaryDirectory() as tmpdir:
-            jf = Path(tmpdir) / "item_map.json"
-            data = {
-                "(0, 0)": {
-                    "title": "MapTile",
-                    "description": "Room.",
-                    "items": [item_payload],
-                }
-            }
-            jf.write_text(json.dumps(data))
-            p = _player()
-            u._load_single_json_map(p, jf)
-        tile = u.maps[-1].get((0, 0)) if u.maps else None
-        if tile:
-            assert len(tile.items_here) >= 1
+        tile = self._load_tile({
+            "title": "MapTile",
+            "description": "Room.",
+            "items": [{
+                "__class__": "Gold",
+                "__module__": "items",
+                "props": {"amt": 25},
+            }],
+        })
 
-    def test_tile_with_bad_event_payload_graceful(self):
-        """Lines 297-299: bad event payload is silently skipped."""
-        from src.universe import Universe
+        assert len(tile.items_here) == 1
+        gold = tile.items_here[0]
+        assert isinstance(gold, src.items.Gold)
+        assert gold.amt == 25
 
-        u = self._universe()
-        bad_payload = {
-            "__class__": "NonExistentEvent",
-            "__module__": "nonexistent",
-            "props": {},
-        }
-        with tempfile.TemporaryDirectory() as tmpdir:
-            jf = Path(tmpdir) / "bad_event_map.json"
-            data = {
-                "(0, 0)": {
-                    "title": "MapTile",
-                    "description": "Room.",
-                    "events": [bad_payload],
-                }
-            }
-            jf.write_text(json.dumps(data))
-            p = _player()
-            # Should not raise
-            u._load_single_json_map(p, jf)
+    def test_tile_with_bad_event_payload_is_skipped_but_the_tile_still_loads(self):
+        """A payload naming a non-engine module is refused loudly and dropped —
+        the rest of the tile must survive."""
+        from src.narration import capture_narration
 
+        with capture_narration() as messages:
+            tile = self._load_tile({
+                "title": "MapTile",
+                "description": "Room.",
+                "events": [{
+                    "__class__": "NonExistentEvent",
+                    "__module__": "nonexistent",
+                    "props": {},
+                }],
+            }, filename="bad_event_map.json")
 
+        assert tile.events_here == []
+        assert tile.description == "Room."
+        assert any(
+            "refusing to deserialize non-engine class" in m["text"]
+            for m in messages
+        )
 
 
 class TestUniverseMiscMethods:
     """Other uncovered universe methods."""
 
-    def test_get_tile_no_player(self):
-        """get_tile with no player returns None."""
-        from src.universe import Universe
-
-        u = Universe()
-        result = u.get_tile(0, 0)
-        assert result is None
-
-    def test_get_tile_with_player(self):
-        """get_tile with player returns tile from player.map."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-        tile = MagicMock()
-        p.map = {(0, 0): tile}
-        result = u.get_tile(0, 0)
-        assert result is tile
-
-    def test_game_tick_events_increments_tick(self):
-        """Universe.game_tick_events increments game_tick."""
-        from src.universe import Universe
-
-        p = _player()
-        p.map = {}
-        u = Universe(player=p)
-        u.player = p
-        u.game_tick = 0
-
-        with patch.object(u, "_evaluate_map_entry_spawners"):
-            u.game_tick_events()
-
-        assert u.game_tick == 1
-
-    def test_game_tick_events_tick_1000_refreshes_merchants(self):
-        """game_tick_events at tick 1000 calls player.refresh_merchants."""
-        from src.universe import Universe
-
-        p = _player()
-        p.map = {}
-        u = Universe(player=p)
-        u.player = p
-        u.game_tick = 1000
-
-        with (
-            patch.object(p, "refresh_merchants") as mock_refresh,
-            patch.object(u, "_evaluate_map_entry_spawners"),
-        ):
-            u.game_tick_events()
-
-        mock_refresh.assert_called_once()
-
-    def test_evaluate_map_entry_spawners_no_map(self):
-        """_evaluate_map_entry_spawners handles non-dict map gracefully."""
-        from src.universe import Universe
-
-        p = _player()
-        p.map = "not_a_dict"
-        u = Universe(player=p)
-        u.player = p
-        u._evaluate_map_entry_spawners()  # Should not raise
-
-    def test_evaluate_map_entry_spawners_with_event(self):
-        """_evaluate_map_entry_spawners calls evaluate_for_map_entry on eligible events."""
-        from src.universe import Universe
-
-        p = _player()
-        ev = MagicMock()
-        ev.has_run = False
-        ev.repeat = False
-
-        tile = MagicMock()
-        tile.events_here = [ev]
-
-        p.map = {(0, 0): tile}
-        u = Universe(player=p)
-        u.player = p
-
-        u._evaluate_map_entry_spawners(process_repeats=False)
-        ev.evaluate_for_map_entry.assert_called_once_with(p)
+    # get_tile / game_tick_events / _evaluate_map_entry_spawners were a further
+    # copy of tests/test_world_systems_tier2.py's coverage (one of them asserted
+    # nothing at all). Only the map-loading paths unique to this file remain.
 
     def test_build_loads_maps_from_saved_state(self):
         """Line 66-67: build() uses player.saveuniv if available."""
@@ -371,13 +179,6 @@ class TestUniverseMiscMethods:
         mock_load.assert_not_called()
         assert u.maps == p.saveuniv
 
-    def test_json_maps_root_candidates_returns_list(self):
-        """_json_maps_root_candidates returns a list."""
-        from src.universe import Universe
-
-        u = Universe()
-        result = u._json_maps_root_candidates()
-        assert isinstance(result, list)
 
 
 # ---------------------------------------------------------------------------

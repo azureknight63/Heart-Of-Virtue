@@ -8,12 +8,9 @@ NPC Advanced Systems - Tier 3B Coverage.
 - src/npc/_llm.py: MynxLLMMixin, LLM context, text sanitization, pronouns
 
 Target: 120+ tests covering all conditional paths, edge cases, error states.
-
-NOTE: Skipped in CI due to test suite size. Runs locally for full validation.
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Tier 3 advanced tests - skipped in CI for timeout. Run locally for full validation.")
 import sys
 import json
 import random
@@ -21,6 +18,7 @@ import os
 from unittest.mock import MagicMock, patch, call, ANY, mock_open
 from pathlib import Path
 from io import StringIO
+from types import SimpleNamespace
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -34,6 +32,7 @@ from src.npc._merchants import Merchant, MiloCurioDealer, JamboHealsU
 from src.npc._llm import MynxLLMMixin
 from src.npc import NPC, Friend
 from src.player import Player
+from src.narration import capture_narration
 from src.items import Item, Gold, Restorative, Draught, Antidote, Rock, Spear, Shortsword
 import src.moves as moves  # type: ignore
 
@@ -445,10 +444,16 @@ class TestMara:
         assert mara.aggro is False
 
     def test_mara_keywords(self):
-        """Test Mara keywords."""
+        """Mara offers the talk verb only -- she is not a merchant.
+
+        ConversationalNPCMixin._init_chat_attrs() deliberately does not
+        auto-append a "chat" keyword: every mixin host already carries
+        "talk", and duplicating it produced two buttons for one action.
+        """
         mara = Mara()
-        assert "talk" in mara.keywords
-        assert "trade" in mara.keywords
+        assert mara.keywords == ["talk"]
+        assert "trade" not in mara.keywords
+        assert "buy" not in mara.keywords
 
     def test_mara_battle_symbol(self):
         """Test Mara battle symbol."""
@@ -1003,15 +1008,19 @@ class TestMerchant:
             exp_award=0,
             stock_count=10,
         )
-        merchant._collect_player_merchandise = MagicMock()
-        merchant.shop = MagicMock()
-        player = MagicMock()
+        # Real player-ish object carrying one merchandise item and one personal item.
+        merchandise = Rock(merchandise=True)
+        personal = Rock()
+        personal.merchandise = False
+        player = SimpleNamespace(inventory=[merchandise, personal])
 
         merchant.trade(player)
 
-        merchant._collect_player_merchandise.assert_called_once_with(player)
-        if merchant.shop:
-            merchant.shop.run.assert_called_once()
+        # trade() absorbs unpaid merchandise into the merchant's stock and
+        # leaves Jean's own belongings alone.
+        assert merchandise not in player.inventory
+        assert personal in player.inventory
+        assert merchandise in merchant.inventory
 
     def test_merchant_buy_delegates_to_trade(self):
         """Test Merchant.buy() delegates to trade()."""
@@ -1075,11 +1084,18 @@ class TestMiloCurioDealer:
         milo = MiloCurioDealer()
         assert milo.base_gold == 5000
 
-    def test_milo_shop_exit_message(self):
-        """Test MiloCurioDealer shop exit message."""
+    def test_milo_shop_pricing_attributes(self):
+        """Milo carries the authored shop name and default price modifiers.
+
+        The terminal ShopInterface (``npc.shop``) was removed; pricing now
+        lives directly on the merchant and is read by GameService.shop_buy/
+        shop_sell and ShopSerializer.
+        """
         milo = MiloCurioDealer()
-        if milo.shop:
-            assert "nod" in milo.shop.exit_message.lower()
+        assert not hasattr(milo, "shop")
+        assert milo.shop_name == "The Wandering Curiosities Shop"
+        assert milo.buy_modifier == 1.0
+        assert milo.sell_modifier == 0.5
 
     @patch('builtins.print')
     def test_milo_talk(self, mock_print):
@@ -1090,16 +1106,19 @@ class TestMiloCurioDealer:
         mock_print.assert_called_once()
         assert "rare" in str(mock_print.call_args).lower()
 
-    def test_milo_trade_uses_custom_shop(self):
+    def test_milo_trade_absorbs_player_merchandise(self):
         """Test MiloCurioDealer.trade() absorbs player merchandise."""
         milo = MiloCurioDealer()
-        player = MagicMock()
-        milo._collect_player_merchandise = MagicMock()
+        merchandise = Rock(merchandise=True)
+        keepsake = Rock()
+        keepsake.merchandise = False
+        player = SimpleNamespace(inventory=[merchandise, keepsake])
 
         with patch('builtins.print'):
             milo.trade(player)
 
-        milo._collect_player_merchandise.assert_called_once_with(player)
+        assert merchandise in milo.inventory
+        assert player.inventory == [keepsake]
 
 
 class TestJamboHealsU:
@@ -1143,21 +1162,53 @@ class TestJamboHealsU:
         jambo = JamboHealsU()
         assert jambo.base_gold == 800
 
-    def test_jambo_initialize_shop_with_interface(self):
-        """Test JamboHealsU.initialize_shop() creates shop."""
+    def test_jambo_initialize_shop_sets_pricing(self):
+        """initialize_shop() installs the pricing attributes the web shop reads."""
         jambo = JamboHealsU()
-        # Should have initialized a shop
-        assert jambo.shop is not None or jambo.inventory is not None
+        assert jambo.shop_name == "Jambo Heals U"
+        assert jambo.buy_modifier == 1.0
+        assert jambo.sell_modifier == 0.5
+        assert isinstance(jambo.inventory, list)
 
-    def test_jambo_talk(self):
-        """Test JamboHealsU.talk() message."""
+    @pytest.mark.parametrize(
+        "map_name, allies, expected_tail",
+        [
+            # Neither context line qualifies: the pool is the three base lines
+            # and the last of them is the river-crossings patter.
+            (None, [], "River crossings"),
+            # On the nomad camp map Jambo adds his crossing-is-good-business line...
+            ("eastern-descent-nomad-camp", [], "Good crossing, this."),
+            # ...and with Gorran along, the new-market-segment line.
+            (None, ["Gorran"], "The stone one"),
+        ],
+    )
+    def test_jambo_talk_line_pool_is_context_sensitive(
+        self, map_name, allies, expected_tail
+    ):
+        """talk() appends context lines for the nomad camp and for Gorran.
+
+        random.choice is pinned to the *last* entry so the assertion reads the
+        line the context appended -- with a plain MagicMock player neither
+        context ever qualifies, which is why the old version of this test
+        (patching builtins.print, asserting nothing) could not tell the
+        difference. Output goes through the narration sink, not print.
+        """
         jambo = JamboHealsU()
         player = MagicMock()
+        player.map = {"name": map_name} if map_name else None
+        player.combat_list_allies = [
+            SimpleNamespace(name=name) for name in allies
+        ]
 
-        with patch('builtins.print') as mock_print:
+        with patch(
+            "src.npc._merchants.random.choice", side_effect=lambda seq: seq[-1]
+        ) as mock_choice, capture_narration() as messages:
             jambo.talk(player)
-            # talk() is marked as pragma: no cover, but should still be callable
-            # Verify it doesn't crash
+
+        assert len(messages) == 1
+        assert expected_tail in messages[0]["text"]
+        pool = mock_choice.call_args.args[0]
+        assert len(pool) == 3 + len(allies) + (1 if map_name else 0)
 
     def test_jambo_trade(self):
         """Test JamboHealsU.trade() absorbs player merchandise."""
@@ -1551,24 +1602,52 @@ class TestMynxLLMMixin:
 class TestIntegration:
     """Integration tests covering multiple systems."""
 
-    def test_mynx_full_interaction_cycle(self):
-        """Test complete Mynx interaction cycle."""
+    @pytest.mark.parametrize(
+        "verb, kwargs, expected_prompt",
+        [
+            ("talk", {}, None),
+            ("pet", {}, "pet"),
+            ("play", {}, "play"),
+            ("play", {"item": "a pebble"}, "play with a pebble"),
+        ],
+    )
+    def test_mynx_verbs_forward_the_right_prompt(self, verb, kwargs, expected_prompt):
+        """Each verb is a thin wrapper that names itself to the LLM layer.
+
+        The prompt string is the only thing distinguishing talk/pet/play, and
+        it is what reaches the model -- so assert the prompt and the returned
+        value, not merely that the call survived.
+        """
         mynx = Mynx()
         player = MagicMock()
-        mynx.current_room = MagicMock()
-        mynx.current_room.npcs_here = []
+        sentinel = {"text": "Mynx chirps."}
 
-        mynx._get_llm_adapter = MagicMock(return_value=None)
+        with patch.object(
+            Mynx, "interact_with_player", return_value=sentinel
+        ) as mock_interact:
+            result = getattr(mynx, verb)(player, **kwargs)
 
-        with patch('builtins.print'):
-            # Talk
-            mynx.talk(player)
-            # Pet
-            mynx.pet(player)
-            # Play
-            mynx.play(player)
+        assert result is sentinel
+        assert mock_interact.call_args.args[0] is player
+        assert mock_interact.call_args.kwargs["prompt"] == expected_prompt
+        assert mock_interact.call_args.kwargs["structured"] is False
 
-        # All should work without error
+    @pytest.mark.parametrize("verb", ["talk", "pet", "play"])
+    def test_mynx_verbs_fall_back_to_a_chitter_on_error(self, verb):
+        """An LLM failure degrades to narrated flavour, never an exception."""
+        mynx = Mynx()
+
+        with patch.object(
+            Mynx, "interact_with_player", side_effect=RuntimeError("llm down")
+        ):
+            with capture_narration() as messages:
+                result = getattr(mynx, verb)(MagicMock())
+
+        assert result is None
+        assert len(messages) == 1
+        assert messages[0]["text"] == (
+            f"{mynx.name} tilts its head and makes a confused chitter."
+        )
 
     def test_merchant_shop_initialization(self):
         """Test Merchant shop initializes correctly."""
@@ -1584,7 +1663,16 @@ class TestIntegration:
         assert hasattr(merchant, 'shop') or hasattr(merchant, 'initialize_shop')
 
     def test_loot_system_full_death_sequence(self):
-        """Test full NPC death sequence with loot."""
+        """Death drops both the loot-table roll and the carried inventory.
+
+        Uses a real MapTile so the items actually land in items_here -- with a
+        MagicMock room, spawn_item records a call and nothing is ever created,
+        so the previous version of this test would have passed against a die()
+        that dropped nothing at all.
+        """
+        from src.tiles import MapTile
+
+        room = MapTile(MagicMock(), MagicMock(), 0, 0)
         npc = NPC(
             name="DeathTest",
             description="Test",
@@ -1593,16 +1681,24 @@ class TestIntegration:
             exp_award=50,
         )
         npc.loot = {"Gold": {"chance": 100, "qty": 50}}
-        npc.current_room = MagicMock()
-        npc.current_room.items_here = []
-        npc.inventory = []
+        npc.current_room = room
+        npc.inventory = [Rock()]
 
-        with patch('src.functions.stack_items_list'):
-            with patch('src.functions.randomize_amount', return_value=50):
-                with patch('builtins.print'):
-                    npc.die()
+        with patch('src.functions.randomize_amount', return_value=50), \
+                patch('src.npc._loot.random.random', return_value=0.0), \
+                capture_narration() as messages:
+            npc.die()
 
-        # Should complete without error
+        dropped = {type(item).__name__: item for item in room.items_here}
+        assert set(dropped) == {"Gold", "Rock"}
+        assert dropped["Gold"].amt == 50
+        # Scattered inventory is concealed; the loot-table drop is not.
+        assert dropped["Rock"].hidden is True
+        assert npc.inventory == []
+
+        text = [m["text"] for m in messages]
+        assert "DeathTest dropped Gold x 50!" in text
+        assert "DeathTest exploded into fragments of light!" in text
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1618,13 +1714,34 @@ class TestMynxExceptionHandling:
         # known_moves should be either initialized or empty
         assert isinstance(mynx.known_moves, list)
 
-    def test_append_llm_history_exception(self):
-        """Test _append_llm_history handles non-string inputs."""
+    def test_append_llm_history_drops_empty_pairs_and_normalises_the_rest(self):
+        """None/None contributes no history entry; real values are normalised.
+
+        An entry for an empty exchange would waste one of the three history
+        slots the prompt builder has, silently pushing out a real turn.
+        """
         mynx = Mynx()
-        # Should not crash with non-string inputs
+
         mynx._append_llm_history(None, None)
+        assert mynx._llm_history == []
+
         mynx._append_llm_history(123, 456)
-        # Should complete without error
+        assert mynx._llm_history == [{"prompt": "123", "response": "456"}]
+
+        mynx._append_llm_history("  spaced\n\nout  ", "line\tbreaks")
+        assert mynx._llm_history[-1] == {
+            "prompt": "spaced out",
+            "response": "line breaks",
+        }
+
+        # Prompt/response are truncated to 200/300 characters respectively.
+        mynx._append_llm_history("p" * 250, "r" * 400)
+        assert len(mynx._llm_history[-1]["prompt"]) == 200
+        assert len(mynx._llm_history[-1]["response"]) == 300
+
+        # ...and only the three most recent exchanges are kept.
+        assert len(mynx._llm_history) == 3
+        assert mynx._llm_history[0]["prompt"] == "123"
 
     def test_sanitize_mynx_llm_text_none_input(self):
         """Test _sanitize_mynx_llm_text handles None input."""
@@ -1647,19 +1764,37 @@ class TestMynxExceptionHandling:
         result = mynx._enforce_pronouns_and_names(None, set())
         assert result is None
 
-    def test_gather_environment_lists_exception(self):
-        """Test _gather_environment_lists handles malformed items."""
+    def test_gather_environment_lists_skips_nameless_items(self):
+        """A nameless item is dropped from the prompt, not rendered as "None".
+
+        The env string is pasted straight into the LLM prompt, so a malformed
+        item must contribute nothing at all -- while a well-formed one beside
+        it still has to show up, which is what stops this passing vacuously.
+        """
         mynx = Mynx()
         room = MagicMock()
-        # Item with no name
-        item = MagicMock()
-        item.name = None
-        room.items_here = [item]
+        nameless = MagicMock()
+        nameless.name = None
+        nameless.title = None
+        good = MagicMock()
+        good.name = "Restorative"
+        good.description = "A red potion."
+        room.items_here = [nameless, good]
         room.objects_here = []
         room.npcs_here = []
         mynx.current_room = room
-        env_string, _ = mynx._gather_environment_lists()
-        # Should complete without error
+
+        env_string, legacy = mynx._gather_environment_lists()
+
+        assert legacy == set()
+        assert env_string == (
+            " Nearby items (name — description): Restorative — A red potion.."
+        )
+        assert "None" not in env_string
+
+        # With only the malformed item there is nothing to say at all.
+        room.items_here = [nameless]
+        assert mynx._gather_environment_lists() == ("", set())
 
 
 class TestGorranEdgeCases:
@@ -1674,7 +1809,14 @@ class TestGorranEdgeCases:
         assert gorran.name == "Rock-Man"
 
     def test_gorran_talk_with_valid_story_first_encounter(self):
-        """Test Gorran talk initializes story properly on first encounter."""
+        """The first TALK arms AfterGorranIntro and latches gorran_first.
+
+        Three things have to happen together, and none of them was checked
+        before: the intro event is constructed for this room and appended to
+        it, the flag flips so the branch never runs twice, and the narration
+        still calls him the Rock-Man (he is not named until ch01's naming
+        beat).
+        """
         gorran = Gorran()
         universe = MagicMock()
         universe.story = {"gorran_first": "0"}
@@ -1685,11 +1827,20 @@ class TestGorranEdgeCases:
         player = MagicMock()
         player.universe = universe
 
-        with patch('src.functions.seek_class') as mock_seek:
-            mock_event = MagicMock()
-            mock_seek.return_value = MagicMock(return_value=mock_event)
-            with patch('builtins.print'):
-                gorran.talk(player)
+        event_cls = MagicMock()
+        intro_event = event_cls.return_value
+        with patch('src.functions.seek_class', return_value=event_cls) as mock_seek:
+            with capture_narration() as messages:
+                assert gorran.talk(player) is None
+
+        mock_seek.assert_called_once_with("AfterGorranIntro", "story")
+        event_cls.assert_called_once_with(player, room, None, False)
+        assert room.events_here == [intro_event]
+        assert universe.story["gorran_first"] == "1"
+
+        assert len(messages) == 1
+        assert "The Rock-Man turns toward you slowly" in messages[0]["text"]
+        assert "Gorran" not in messages[0]["text"]
 
     def test_grondite_known_moves_exception_fallback(self):
         """Test Grondite classes handle move initialization failures."""
@@ -1718,11 +1869,29 @@ class TestMerchantsEdgeCases:
         )
         assert merchant.inventory is None or isinstance(merchant.inventory, list)
 
-    def test_jambo_initialize_shop_no_interface(self):
-        """Test JamboHealsU initialize_shop when interface import fails."""
-        jambo = JamboHealsU()
-        # Should initialize without error even if Shop is unavailable
-        assert hasattr(jambo, 'shop')
+    def test_merchant_initialize_shop_defaults_shop_name(self):
+        """A merchant that authors no shop_name gets the derived default."""
+        merchant = Merchant(
+            name="Nameless",
+            description="Test",
+            damage=5,
+            aggro=False,
+            exp_award=0,
+            stock_count=10,
+            inventory=[],
+        )
+        assert merchant.shop_name == "Nameless's Shop"
+
+    def test_merchant_initialize_shop_respects_preset_modifiers(self):
+        """initialize_shop() must not clobber modifiers a subclass preset."""
+        merchant = Merchant.__new__(Merchant)
+        merchant.name = "Gouger"
+        merchant.inventory = []
+        merchant.buy_modifier = 2.5
+        merchant.sell_modifier = 0.1
+        merchant.initialize_shop()
+        assert merchant.buy_modifier == 2.5
+        assert merchant.sell_modifier == 0.1
 
 
 class TestLlmContextBuilding:
@@ -1822,22 +1991,40 @@ class TestLlmContextBuilding:
             assert isinstance(result, str)
 
     def test_interact_with_player_roster_building(self):
-        """Test interact_with_player builds NPC roster correctly."""
+        """The roster reaching the model is exactly who is in the room, plus Jean.
+
+        The allowed-names list is the guard-rail that stops the model
+        inventing characters, so assert the string the adapter actually
+        receives. With the adapter stubbed out to None (as this test used to
+        do) the roster is never built at all.
+        """
         mynx = Mynx()
         mynx.name = "Mynx"
         room = MagicMock()
-        npc1 = MagicMock()
-        npc1.name = "Mara"
-        npc2 = MagicMock()
-        npc2.name = "Gorran"
-        room.npcs_here = [npc1, npc2]
+        room.description = "a mossy hollow"
+        room.items_here = []
+        room.objects_here = []
+        nameless = MagicMock()
+        nameless.name = None
+        room.npcs_here = [
+            SimpleNamespace(name="Mara", description="A scavenger."),
+            SimpleNamespace(name="Gorran", description="A rock-man."),
+            nameless,
+        ]
         mynx.current_room = room
-        mynx._get_llm_adapter = MagicMock(return_value=None)
-        player = MagicMock()
 
-        with patch('builtins.print'):
-            mynx.interact_with_player(player, prompt="observe")
-            # Should complete without error
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = ""  # force the canned fallback
+        with patch.object(Mynx, '_get_llm_adapter', return_value=adapter):
+            with capture_narration():
+                mynx.interact_with_player(MagicMock(), prompt="observe")
+
+        context = adapter.generate_plain.call_args.kwargs["context"]
+        assert (
+            "Allowed entity names you may reference (no others): "
+            "Gorran, Jean, Mara, Mynx." in context
+        )
+        assert "Player action/intent: 'observe'." in context
 
 
 class TestLootEdgeCases:
@@ -1865,8 +2052,26 @@ class TestLootEdgeCases:
         # Should only call spawn_item once (breaks after first success)
         assert npc.current_room.spawn_item.call_count == 1
 
-    def test_drop_inventory_no_spawn_when_zero_quantity(self):
-        """Test drop_inventory doesn't spawn items with 0 quantity."""
+    @pytest.mark.parametrize(
+        "roll, expected_dropped",
+        [
+            (0.9, 0),  # every unit fails its survival roll -> nothing spawns
+            (0.0, 2),  # every unit survives -> the whole stack spawns
+        ],
+    )
+    def test_drop_inventory_spawns_only_the_surviving_units(
+        self, roll, expected_dropped
+    ):
+        """Each unit of a stack rolls to survive; zero survivors spawns nothing.
+
+        Uses a real MapTile so "did not spawn" means the floor is genuinely
+        empty -- against a MagicMock room, spawn_item(amt=0) and no call at
+        all look identical. Either way the corpse's inventory is cleared, so
+        nothing can be dropped twice.
+        """
+        from src.tiles import MapTile
+
+        room = MapTile(MagicMock(), MagicMock(), 0, 0)
         npc = NPC(
             name="ZeroQuant",
             description="Test",
@@ -1874,18 +2079,14 @@ class TestLootEdgeCases:
             aggro=True,
             exp_award=50,
         )
-        item = MagicMock()
-        item.count = 1
-        item.__class__.__name__ = "TestItem"
-        npc.inventory = [item]
-        npc.current_room = MagicMock()
+        npc.inventory = [Restorative(count=2)]
+        npc.current_room = room
 
-        # Always roll > 0.6 so items are removed
-        with patch('random.random', return_value=0.9):
+        with patch('src.npc._loot.random.random', return_value=roll):
             npc.drop_inventory()
 
-        # If random > 0.6 every time, quantity goes negative, spawn shouldn't be called
-        # (or should be called with 0)
+        assert sum(item.count for item in room.items_here) == expected_dropped
+        assert npc.inventory == []
 
     def test_drop_inventory_hidden_items(self):
         """Test drop_inventory hides items properly."""
@@ -1916,14 +2117,22 @@ class TestMayaSelectMoveEdgeCases:
     """Test Mara's select_move with various edge cases."""
 
     def test_mara_select_move_no_weighted_moves(self):
-        """Test Mara.select_move when available_moves is empty."""
+        """With nothing available, Mara picks nothing -- not even a rest.
+
+        The empty-pool return fires before the fatigue-management block, so
+        current_move must still be None afterwards. Falling through would hand
+        her an NpcRest she never chose, which is a different (and wrong) beat.
+        """
         mara = Mara()
         mara.refresh_moves = MagicMock(return_value=[])
         mara.fatigue = 50
         mara.maxfatigue = 100
+        assert mara.current_move is None
 
-        mara.select_move()
-        # Should not crash
+        assert mara.select_move() is None
+
+        assert mara.current_move is None
+        mara.refresh_moves.assert_called_once()
 
     def test_mara_select_move_ai_config_bonus(self):
         """Test Mara.select_move with AI config bonuses."""
@@ -2042,26 +2251,54 @@ class TestLLMGetAdapterEdgeCases:
                             # Should handle exception and return None
                             assert result is None
 
+    @staticmethod
+    def _fake_llm_module(available=True, status="model=stub"):
+        """A stand-in llm_client module exposing one MynxLLMAdapter."""
+        adapter = MagicMock()
+        adapter.available.return_value = available
+        adapter.debug_status.return_value = status
+        module = MagicMock()
+        module.MynxLLMAdapter.return_value = adapter
+        return module, adapter
+
     def test_get_llm_adapter_debug_status(self):
-        """Test _get_llm_adapter debug status output."""
+        """With debug on, an available adapter is cached and its status narrated.
+
+        The old version asserted nothing and patched builtins.print, which the
+        engine stopped using when output moved to the narration sink -- so it
+        could not have seen the debug line even if it had looked.
+        """
         mynx = Mynx()
         mynx._llm_adapter = None
+        module, adapter = self._fake_llm_module(status="model=stub")
 
         with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}):
-            with patch('pathlib.Path.exists', return_value=True):
-                with patch('importlib.util.spec_from_file_location') as mock_spec:
-                    spec = MagicMock()
-                    adapter = MagicMock()
-                    adapter.available = MagicMock(return_value=True)
-                    adapter.debug_status = MagicMock(return_value="ok")
-                    spec.loader.exec_module = MagicMock()
-                    mock_spec.return_value = spec
-                    with patch('importlib.util.module_from_spec') as mock_from_spec:
-                        mock_mod = MagicMock()
-                        mock_from_spec.return_value = mock_mod
-                        with patch('builtins.print'):
-                            # This would normally print debug info
-                            result = mynx._get_llm_adapter()
+            with patch(
+                'src.npc._llm._load_llm_client_module', return_value=module
+            ) as mock_load:
+                with capture_narration() as messages:
+                    result = mynx._get_llm_adapter()
+
+        assert result is adapter
+        assert mynx._llm_adapter is adapter  # cached for the next call
+        mock_load.assert_called_once()
+        assert [m["text"] for m in messages] == [
+            "[MYNX_LLM_DEBUG] Adapter available: model=stub"
+        ]
+
+    def test_get_llm_adapter_stays_silent_without_the_debug_flag(self):
+        """Debug narration is opt-in -- players must never see it."""
+        mynx = Mynx()
+        mynx._llm_adapter = None
+        module, adapter = self._fake_llm_module()
+
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "0"}):
+            with patch('src.npc._llm._load_llm_client_module', return_value=module):
+                with capture_narration() as messages:
+                    result = mynx._get_llm_adapter()
+
+        assert result is adapter
+        assert messages == []
 
 
 class TestLLMHistoryEdgeCases:
@@ -2075,12 +2312,17 @@ class TestLLMHistoryEdgeCases:
         assert "12345" in mynx._llm_history[0]["prompt"]
 
     def test_append_llm_history_exception_silently_returns(self):
-        """Test _append_llm_history handles exceptions silently."""
+        """A broken history container must not take the conversation down.
+
+        Bookkeeping this incidental is never worth an exception escaping into
+        the NPC interaction path, so the failure is swallowed whole and the
+        container is left exactly as it was.
+        """
         mynx = Mynx()
-        # This should not raise even with problematic inputs
-        mynx._append_llm_history(None, None)
-        mynx._append_llm_history("", "")
-        # No exception should be raised
+        mynx._llm_history = None  # append() on this raises AttributeError
+
+        assert mynx._append_llm_history("a real prompt", "a real response") is None
+        assert mynx._llm_history is None
 
 
 class TestSanitizationEdgeCases:
@@ -2259,17 +2501,20 @@ class TestInteractWithPlayerPlayVariants:
 class TestMerchantInitializeShopEdgeCases:
     """Test merchant shop initialization edge cases."""
 
-    def test_jambo_initialize_shop_sets_correct_name(self):
-        """Test JamboHealsU.initialize_shop sets shop name."""
+    def test_jambo_initialize_shop_keeps_authored_name(self):
+        """JamboHealsU's authored shop_name survives initialize_shop()."""
         jambo = JamboHealsU()
-        if jambo.shop:
-            # Should use canonical shop name
-            assert jambo.shop is not None
+        # Authored in __init__ *after* super().__init__() ran initialize_shop(),
+        # so the derived "Jambo's Shop" default must not be what sticks.
+        assert jambo.shop_name == "Jambo Heals U"
 
-    def test_jambo_initialize_shop_with_empty_inventory(self):
-        """Test JamboHealsU.initialize_shop with empty inventory."""
-        jambo = JamboHealsU()
-        assert jambo.inventory is not None or jambo.shop is not None
+    def test_jambo_initialize_shop_normalizes_none_inventory(self):
+        """initialize_shop() converts a None inventory into an empty list."""
+        jambo = JamboHealsU.__new__(JamboHealsU)
+        jambo.name = "Jambo"
+        jambo.inventory = None
+        jambo.initialize_shop()
+        assert jambo.inventory == []
 
 
 if __name__ == "__main__":

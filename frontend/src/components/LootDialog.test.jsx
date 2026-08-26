@@ -179,7 +179,10 @@ describe('LootDialog', () => {
   it('calls onSkip when the skip link is clicked', () => {
     render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     fireEvent.click(screen.getByText(/skip — drop all items on tile/))
-    expect(onSkip).toHaveBeenCalled()
+    // Exactly once, with no arguments: skipping drops EVERYTHING on the tile,
+    // so a handler that forwarded a selection would be dropping the wrong set.
+    expect(onSkip).toHaveBeenCalledTimes(1)
+    expect(onCollect).not.toHaveBeenCalled()
   })
 
   it('shows the current, added, and total carry weight', () => {

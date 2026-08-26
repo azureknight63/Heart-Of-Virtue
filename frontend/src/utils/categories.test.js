@@ -5,7 +5,8 @@ import {
   MOVE_CATEGORY_GLOW,
   MOVE_CATEGORY_ICON,
   categoryColor,
-  categoryGlow,
+  categoryColorOrNull,
+  categoryGlowOrNull,
   categoryIcon,
   CATEGORY_GROUPS,
   movesInGroup,
@@ -23,13 +24,39 @@ describe('categories', () => {
     });
   });
 
-  describe('categoryGlow', () => {
-    it('returns the mapped glow for a known category', () => {
-      expect(categoryGlow('Special')).toBe(MOVE_CATEGORY_GLOW.Special);
+  describe('categoryColorOrNull / categoryGlowOrNull', () => {
+    it('returns the mapped value for a known category', () => {
+      expect(categoryColorOrNull('Offensive')).toBe(MOVE_CATEGORY_COLOR.Offensive);
+      expect(categoryGlowOrNull('Special')).toBe(MOVE_CATEGORY_GLOW.Special);
     });
 
-    it('falls back to transparent for an unknown category', () => {
-      expect(categoryGlow('Nonexistent')).toBe('transparent');
+    it('returns null for an unknown category, so absence stays falsy', () => {
+      // These exist because their `||`-fallback siblings return a truthy
+      // default (muted / 'transparent'), which would pick the wrong branch
+      // where the caller uses absence to select a different rendering.
+      expect(categoryColorOrNull('Nonexistent')).toBeNull();
+      expect(categoryGlowOrNull('Nonexistent')).toBeNull();
+    });
+  });
+
+  describe('prototype members are not categories', () => {
+    // A bare map[category] resolves Object.prototype keys, so these names
+    // yield a truthy *function* — which does not fall through to the
+    // fallback, it defeats it, silently costing the caller its default.
+    it.each(['constructor', 'toString', 'hasOwnProperty', '__proto__'])(
+      'treats %s as unknown',
+      (name) => {
+        expect(categoryColor(name)).toBe(colors.text.muted);
+        expect(categoryColorOrNull(name)).toBeNull();
+        expect(categoryGlowOrNull(name)).toBeNull();
+        expect(categoryIcon(name)).toBe('◈');
+      }
+    );
+
+    it('treats a non-string category as unknown', () => {
+      expect(categoryColorOrNull(undefined)).toBeNull();
+      expect(categoryColorOrNull(null)).toBeNull();
+      expect(categoryColorOrNull({})).toBeNull();
     });
   });
 

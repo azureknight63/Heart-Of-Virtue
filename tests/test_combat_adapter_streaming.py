@@ -110,10 +110,23 @@ def test_ensure_streamer_is_idempotent():
 
 
 def test_stream_combat_result_is_noop_without_streamer():
+    """With streaming off the call is inert -- but it still consumes the
+    pending departure reasons.
+
+    The old test asserted nothing at all. The departure clear happens *before*
+    the ``streamer is None`` return, deliberately: leaving stale reasons behind
+    would make the next move's reconcile_final report an old death.
+    """
     adapter = _bare_adapter()
     adapter._beat_streamer = None
-    # Must not raise when streaming is off.
-    adapter._stream_combat_result({"combatants": []}, [])
+    adapter._departures = {"enemy_1": "death"}
+
+    assert adapter._stream_combat_result({"combatants": []}, []) is None
+
+    assert adapter._departures == {}
+    assert adapter._beat_streamer is None
+    # The terminal-event latch is only set on a real emit.
+    assert adapter._terminal_event_emitted is False
 
 
 def test_stream_combat_result_emits_beats_and_resolved():

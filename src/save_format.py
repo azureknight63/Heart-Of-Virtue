@@ -58,7 +58,9 @@ _PLAYER_SCALARS = {
     "fatigue": 150,
     "maxfatigue": 150,
     "heat": 1.0,
-    "protection": 0,
+    # float: Player.protection is derived (endurance + equipment) and is
+    # fractional -- an int template here truncates it on restore.
+    "protection": 0.0,
     "time_elapsed": 0,
     "location_x": 0,
     "location_y": 0,

@@ -43,16 +43,19 @@ describe('VictoryDialog', () => {
       />
     );
 
-    expect(screen.getByText(/Victory!/)).toBeDefined();
-    expect(screen.getByText(/Combat/i)).toBeDefined();
-    expect(screen.getByText(/\+100/)).toBeDefined();
-    expect(screen.getByText(/Exploration/i)).toBeDefined();
-    expect(screen.getByText(/\+50/)).toBeDefined();
-    // Loot is now shown as a count notice (items appear in LootDialog Phase 2)
-    expect(screen.getByText(/2 items available to collect/i)).toBeDefined();
-    expect(screen.getByText(/LEVEL 1/)).toBeDefined();
-    expect(screen.getByText(/Available Points:/)).toBeDefined();
-    expect(screen.getByText(/\+5 Points awarded/)).toBeDefined();
+    // The endState message becomes the dialog title, prefixed with a sparkle.
+    expect(screen.getByText('✨ Victory!')).toBeInTheDocument();
+    // Each exp channel is rendered with its own gained amount, not summed.
+    expect(screen.getByText('Combat').parentElement.textContent).toContain('+100');
+    expect(screen.getByText('Exploration').parentElement.textContent).toContain('+50');
+    // Loot is a COUNT notice here — the items themselves belong to LootDialog
+    // (phase 2). Two dropped rows, one of quantity 2, still reads "2 items"
+    // because the notice counts rows, not stack sizes.
+    expect(screen.getByText(/2 items available to collect/i)).toBeInTheDocument();
+    // The level-up banner reports the level BEFORE the gain plus the award.
+    expect(screen.getByText(/LEVEL 1/)).toBeInTheDocument();
+    expect(screen.getByText(/\+5 Points awarded/)).toBeInTheDocument();
+    expect(screen.getByText('Available Points:').nextElementSibling.textContent).toBe('5');
   });
 
   it('defaults exp_gained/items_dropped/level_ups/message when absent from endState', () => {
@@ -97,7 +100,7 @@ describe('VictoryDialog', () => {
     fireEvent.click(screen.getByText('MINIMIZE'));
     expect(screen.getByText('CONTINUE')).toBeInTheDocument();
     fireEvent.click(screen.getByText('CONTINUE'));
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to a generic error when allocation fails without an error field', async () => {
@@ -185,7 +188,7 @@ describe('VictoryDialog', () => {
     const closeBtn = screen.getByText('CLOSE');
     expect(closeBtn.disabled).toBe(false);
     fireEvent.click(closeBtn);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('handles attribute allocation successfully', async () => {
@@ -308,7 +311,9 @@ describe('VictoryDialog', () => {
     );
 
     fireEvent.click(screen.getByText('COLLECT LOOT →'));
-    expect(mockOnContinueToLoot).toHaveBeenCalled();
+    // Loot is a second phase, not a dismissal: onClose must stay untouched or
+    // the LootDialog never gets a chance to render.
+    expect(mockOnContinueToLoot).toHaveBeenCalledTimes(1);
     expect(mockOnClose).not.toHaveBeenCalled();
   });
 
@@ -326,7 +331,8 @@ describe('VictoryDialog', () => {
 
     fireEvent.click(screen.getByText('MINIMIZE'));
     fireEvent.click(screen.getByText('COLLECT LOOT →'));
-    expect(mockOnContinueToLoot).toHaveBeenCalled();
+    expect(mockOnContinueToLoot).toHaveBeenCalledTimes(1);
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 
   it('prefers the server error over the axios message when allocation rejects with a response error', async () => {
@@ -361,8 +367,10 @@ describe('VictoryDialog', () => {
 
     fireEvent.click(screen.getByText('ALLOCATE POINTS'));
     await waitFor(() => {
-      expect(mockOnContinueToLoot).toHaveBeenCalled();
+      expect(mockOnContinueToLoot).toHaveBeenCalledTimes(1);
     });
+    // Loot exists, so the dialog hands off rather than closing outright.
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 
   it('closes when allocation spends the last point and there is no loot', async () => {
@@ -379,7 +387,7 @@ describe('VictoryDialog', () => {
 
     fireEvent.click(screen.getByText('ALLOCATE POINTS'));
     await waitFor(() => {
-      expect(mockOnClose).toHaveBeenCalled();
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -416,8 +424,10 @@ describe('VictoryDialog', () => {
 
       fireEvent.click(screen.getByText('RANDOMIZE'));
       await waitFor(() => {
-        expect(mockOnContinueToLoot).toHaveBeenCalled();
+        expect(mockOnContinueToLoot).toHaveBeenCalledTimes(1);
       });
+      expect(mockOnAllocatePoints).toHaveBeenCalledWith('randomize', 5);
+      expect(mockOnClose).not.toHaveBeenCalled();
     });
 
     it('shows a backend error when randomizing fails', async () => {
@@ -468,7 +478,7 @@ describe('VictoryDialog', () => {
 
       fireEvent.click(screen.getByText('RANDOMIZE'));
       await waitFor(() => {
-        expect(mockOnClose).toHaveBeenCalled();
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
       });
     });
 

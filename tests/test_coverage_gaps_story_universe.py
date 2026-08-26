@@ -12,6 +12,7 @@ Tests verify real behaviour: state transitions, condition guards, stage
 progression, edge cases, and error paths — not just line execution.
 """
 
+import logging
 import sys
 from unittest.mock import Mock, MagicMock, patch
 
@@ -20,6 +21,8 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter"] = MagicMock()
     sys.modules["tkinter.ttk"] = MagicMock()
     sys.modules["tkinter.font"] = MagicMock()
+
+from src.narration import capture_narration  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -1507,10 +1510,17 @@ class TestGorranGestureEvent:
             ev.check_conditions()
             mock_pass.assert_not_called()
 
-    def test_process_skip_dialog_is_noop(self):
+    def test_process_skip_dialog_emits_no_prose_but_still_sets_the_gate(self):
+        """skip_dialog suppresses the beat, not the state change — otherwise
+        the event would re-fire on every re-entry."""
         ev, player, tile = self._make(coming_from_grondia=True)
         player.skip_dialog = True
-        ev.process()  # should not raise or print
+
+        with patch("src.story.ch03.print_slow") as mock_print:
+            ev.process()
+
+        mock_print.assert_not_called()
+        assert player.universe.story["gorran_gesture_done"] == "1"
 
     def test_process_full_outputs_text(self):
         ev, player, tile = self._make(coming_from_grondia=True)
@@ -1576,9 +1586,25 @@ class TestNomadCampSmellEvent:
         assert player.universe.story.get("nomad_camp_entered") == "1"
 
     def test_set_gate_with_no_universe(self):
+        """A partially built session has no universe: the gate must be skipped
+        silently. A control run first proves _set_gate really writes something,
+        so this cannot pass vacuously."""
+        control, control_player, _ = self._make()
+        baseline = dict(control_player.universe.story)
+        control._set_gate()
+        written = {
+            k for k, v in control_player.universe.story.items()
+            if baseline.get(k) != v
+        }
+        assert written, "_set_gate wrote no story key -- test would be vacuous"
+
         ev, player, tile = self._make()
+        story = player.universe.story
         player.universe = None
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert not (written & set(story))
 
 
 class TestMaraFirstContactEvent:
@@ -1640,9 +1666,25 @@ class TestMaraFirstContactEvent:
         assert player.universe.story.get("mara_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):
+        """A partially built session has no universe: the gate must be skipped
+        silently. A control run first proves _set_gate really writes something,
+        so this cannot pass vacuously."""
+        control, control_player, _ = self._make()
+        baseline = dict(control_player.universe.story)
+        control._set_gate()
+        written = {
+            k for k, v in control_player.universe.story.items()
+            if baseline.get(k) != v
+        }
+        assert written, "_set_gate wrote no story key -- test would be vacuous"
+
         ev, player, tile = self._make()
+        story = player.universe.story
         player.universe = None
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert not (written & set(story))
 
 
 class TestDevetIntroEvent:
@@ -1702,9 +1744,25 @@ class TestDevetIntroEvent:
         assert player.universe.story.get("devet_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):
+        """A partially built session has no universe: the gate must be skipped
+        silently. A control run first proves _set_gate really writes something,
+        so this cannot pass vacuously."""
+        control, control_player, _ = self._make()
+        baseline = dict(control_player.universe.story)
+        control._set_gate()
+        written = {
+            k for k, v in control_player.universe.story.items()
+            if baseline.get(k) != v
+        }
+        assert written, "_set_gate wrote no story key -- test would be vacuous"
+
         ev, player, tile = self._make()
+        story = player.universe.story
         player.universe = None
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert not (written & set(story))
 
 
 class TestLissObservingEvent:
@@ -1767,9 +1825,25 @@ class TestLissObservingEvent:
         assert player.universe.story.get("liss_gorran_done") == "1"
 
     def test_set_gate_with_no_universe(self):
+        """A partially built session has no universe: the gate must be skipped
+        silently. A control run first proves _set_gate really writes something,
+        so this cannot pass vacuously."""
+        control, control_player, _ = self._make()
+        baseline = dict(control_player.universe.story)
+        control._set_gate()
+        written = {
+            k for k, v in control_player.universe.story.items()
+            if baseline.get(k) != v
+        }
+        assert written, "_set_gate wrote no story key -- test would be vacuous"
+
         ev, player, tile = self._make()
+        story = player.universe.story
         player.universe = None
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert not (written & set(story))
 
 
 class TestAnvilIntroEvent:
@@ -1853,9 +1927,25 @@ class TestAnvilIntroEvent:
         assert player.universe.story.get("anvil_conversation_done") == "1"
 
     def test_set_gate_with_no_universe(self):
+        """A partially built session has no universe: the gate must be skipped
+        silently. A control run first proves _set_gate really writes something,
+        so this cannot pass vacuously."""
+        control, control_player, _ = self._make()
+        baseline = dict(control_player.universe.story)
+        control._set_gate()
+        written = {
+            k for k, v in control_player.universe.story.items()
+            if baseline.get(k) != v
+        }
+        assert written, "_set_gate wrote no story key -- test would be vacuous"
+
         ev, player, tile = self._make()
+        story = player.universe.story
         player.universe = None
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert not (written & set(story))
 
 
 class TestEasternRoadTurnbackEvent:
@@ -1904,9 +1994,30 @@ class TestEasternRoadTurnbackEvent:
         assert player.current_room is west_tile
 
     def test_process_handles_no_universe(self):
+        """Without a universe there is no tile to move to, so Jean stays put."""
         ev, player, tile = self._make()
+        player.skip_dialog = True
+        player.location_x, player.location_y = 6, 4
+        player.current_room = tile
         player.universe = None
-        ev.process()  # should not raise
+
+        ev.process()
+
+        assert (player.location_x, player.location_y) == (6, 4)
+        assert player.current_room is tile
+
+    def test_process_leaves_player_put_when_the_west_tile_is_missing(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = True
+        player.location_x, player.location_y = 6, 4
+        player.current_room = tile
+        player.universe.get_tile.return_value = None
+
+        ev.process()
+
+        player.universe.get_tile.assert_called_once_with(5, 4)
+        assert (player.location_x, player.location_y) == (6, 4)
+        assert player.current_room is tile
 
 
 class TestMaraObservationEvent:
@@ -2013,15 +2124,35 @@ class TestMaraObservationEvent:
         assert player.universe.story.get("nomad_ferry_ready") == "1"
 
     def test_set_gate_with_no_universe(self):
+        """A partially built session has no universe: the gate must be skipped
+        silently. A control run first proves _set_gate really writes something,
+        so this cannot pass vacuously."""
+        control, control_player, _ = self._make()
+        baseline = dict(control_player.universe.story)
+        control._set_gate()
+        written = {
+            k for k, v in control_player.universe.story.items()
+            if baseline.get(k) != v
+        }
+        assert written, "_set_gate wrote no story key -- test would be vacuous"
+
         ev, player, tile = self._make()
+        story = player.universe.story
         player.universe = None
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert not (written & set(story))
 
     def test_set_gate_with_none_story(self):
+        """A universe whose story dict has not been built yet: the `is not None`
+        guard must skip the write instead of raising TypeError on None[...]."""
         ev, player, tile = self._make()
         player.universe.story = None
-        player.universe.__class__.__name__ = "Universe"
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert player.universe.story is None
 
 
 class TestCampEntryGreetingEvent:
@@ -2112,9 +2243,25 @@ class TestCampEntryGreetingEvent:
         assert player.universe.story.get("camp_entry_greeting_done") == "1"
 
     def test_set_gate_with_no_universe(self):
+        """A partially built session has no universe: the gate must be skipped
+        silently. A control run first proves _set_gate really writes something,
+        so this cannot pass vacuously."""
+        control, control_player, _ = self._make()
+        baseline = dict(control_player.universe.story)
+        control._set_gate()
+        written = {
+            k for k, v in control_player.universe.story.items()
+            if baseline.get(k) != v
+        }
+        assert written, "_set_gate wrote no story key -- test would be vacuous"
+
         ev, player, tile = self._make()
+        story = player.universe.story
         player.universe = None
-        ev._set_gate()  # should not raise
+
+        ev._set_gate()
+
+        assert not (written & set(story))
 
 
 # ===========================================================================
@@ -2375,29 +2522,53 @@ class TestMaybeExploreFlavor:
         player.combat_list_allies = [player, gorran]
         return player, gorran
 
-    def test_skip_dialog_returns_immediately(self):
+    def test_skip_dialog_returns_before_consulting_the_story(self):
+        """skip_dialog short-circuits ahead of the cooldown bookkeeping, so the
+        last-tick marker is never written."""
         from src.story.gorran_flavor import maybe_explore_flavor
 
-        player = _make_player()
+        player, gorran = self._make_player_with_gorran(current_tick=100, last_tick=0)
         player.skip_dialog = True
-        player.combat_list_allies = []
-        maybe_explore_flavor(player)  # no error, early return
 
-    def test_no_gorran_returns_immediately(self):
+        with (
+            patch("src.story.gorran_flavor.random.random", return_value=0.0) as rand,
+            capture_narration() as messages,
+        ):
+            maybe_explore_flavor(player)
+
+        rand.assert_not_called()
+        assert messages == []
+        assert player.universe.story["gorran_explore_last_tick"] == "0"
+
+    def test_no_gorran_narrates_nothing(self):
+        """Gorran's flavor pool must not leak out when he is not in the party."""
         from src.story.gorran_flavor import maybe_explore_flavor
 
-        player = _make_player()
-        player.skip_dialog = False
-        player.combat_list_allies = []
-        maybe_explore_flavor(player)  # no error
+        player, gorran = self._make_player_with_gorran(current_tick=100, last_tick=0)
+        player.combat_list_allies = [player]
+
+        with (
+            patch("src.story.gorran_flavor.random.random", return_value=0.0),
+            capture_narration() as messages,
+        ):
+            maybe_explore_flavor(player)
+
+        assert messages == []
+        assert player.universe.story["gorran_explore_last_tick"] == "0"
 
     def test_cooldown_prevents_fire(self):
         from src.story.gorran_flavor import maybe_explore_flavor
 
         player, gorran = self._make_player_with_gorran(current_tick=100, last_tick=98)
-        with patch("src.story.gorran_flavor.random.random", return_value=0.0) as mock_rand:
+        with (
+            patch("src.story.gorran_flavor.random.random", return_value=0.0) as mock_rand,
+            capture_narration() as messages,
+        ):
             maybe_explore_flavor(player)
-            mock_rand.assert_not_called()
+
+        mock_rand.assert_not_called()
+        assert messages == []
+        assert player.universe.story["gorran_explore_last_tick"] == "98"
 
     def test_fires_when_ready(self):
         from src.story.gorran_flavor import maybe_explore_flavor
@@ -2420,7 +2591,9 @@ class TestMaybeExploreFlavor:
         # tick was NOT updated to current_tick (100); it stays at its initial value (0)
         assert player.universe.story.get("gorran_explore_last_tick") == "0"
 
-    def test_handles_exception_gracefully(self):
+    def test_handles_exception_gracefully(self, caplog):
+        """A broken story dict is logged as a warning, never raised into the
+        world tick — and no flavor line escapes."""
         from src.story.gorran_flavor import maybe_explore_flavor
 
         player = Mock()
@@ -2428,253 +2601,26 @@ class TestMaybeExploreFlavor:
         gorran = Mock()
         gorran.name = "Gorran"
         player.combat_list_allies = [Mock(), gorran]
-        player.universe.story = None  # will raise in try block
-        maybe_explore_flavor(player)  # should not propagate exception
+        player.universe.story = None  # AttributeError inside the try block
+
+        with caplog.at_level(logging.WARNING), capture_narration() as messages:
+            maybe_explore_flavor(player)
+
+        assert messages == []
+        assert any(
+            "gorran_flavor explore" in r.getMessage() for r in caplog.records
+        )
 
 
 # ===========================================================================
-# UNIVERSE TESTS
+# UNIVERSE TESTS -- moved out
 # ===========================================================================
-
-
-class TestUniverseBasics:
-    """Universe class init, get_tile, game_tick_events."""
-
-    def _make_universe(self):
-        from src.universe import Universe
-
-        return Universe()
-
-    def test_init_defaults(self):
-        u = self._make_universe()
-        assert u.game_tick == 0
-        assert u.maps == []
-        assert u.story["gorran_language_stage"] == "0"
-        assert u.story["gorran_first"] == "0"
-
-    def test_get_tile_without_player(self):
-        u = self._make_universe()
-        result = u.get_tile(0, 0)
-        assert result is None
-
-    def test_get_tile_with_player_and_map(self):
-        u = self._make_universe()
-        player = _make_player()
-        tile = Mock()
-        player.map = {(2, 3): tile}
-        u.player = player
-        result = u.get_tile(2, 3)
-        assert result is tile
-
-    def test_get_tile_missing_coords(self):
-        u = self._make_universe()
-        player = _make_player()
-        player.map = {}
-        u.player = player
-        result = u.get_tile(99, 99)
-        assert result is None
-
-
-
-
-    def test_game_tick_increments(self):
-        u = self._make_universe()
-        player = _make_player()
-        player.map = {"name": "test"}
-        u.player = player
-        u.game_tick_events()
-        assert u.game_tick == 1
-
-    def test_game_tick_increments_twice(self):
-        u = self._make_universe()
-        player = _make_player()
-        player.map = {"name": "test"}
-        u.player = player
-        u.game_tick_events()
-        u.game_tick_events()
-        assert u.game_tick == 2
-
-    def test_game_tick_triggers_merchant_refresh(self):
-        u = self._make_universe()
-        player = _make_player()
-        player.map = {"name": "test"}
-        u.player = player
-        u.game_tick = 1000  # 1000 % 1000 == 0 triggers refresh
-        u.game_tick_events()
-        player.refresh_merchants.assert_called_once()
-
-
-class TestUniverseDeserialize:
-    """_deserialize_saved_instance edge cases."""
-
-    def _make_universe(self):
-        from src.universe import Universe
-
-        u = Universe()
-        u.player = _make_player()
-        return u
-
-    def test_returns_none_for_non_dict(self):
-        u = self._make_universe()
-        assert u._deserialize_saved_instance("a string") is None
-
-    def test_returns_none_for_dict_without_class(self):
-        u = self._make_universe()
-        assert u._deserialize_saved_instance({"foo": "bar"}) is None
-
-    def test_returns_class_type_for_class_type_marker(self):
-        u = self._make_universe()
-        # __class_type__ pointing at a real class
-        result = u._deserialize_saved_instance(
-            {"__class_type__": "tiles:MapTile"}
-        )
-        from src.tiles import MapTile
-        assert result is MapTile
-
-    def test_returns_none_for_invalid_class_type(self):
-        u = self._make_universe()
-        result = u._deserialize_saved_instance(
-            {"__class_type__": "nonexistent_module:NonExistent"}
-        )
-        assert result is None
-
-    def test_raises_for_src_prefix(self):
-        u = self._make_universe()
-        import pytest
-        with pytest.raises(ValueError, match="Invalid module name format"):
-            u._deserialize_saved_instance(
-                {
-                    "__class__": "MapTile",
-                    "__module__": "src.tiles",
-                    "props": {},
-                }
-            )
-
-    def test_deserializes_known_class(self):
-        u = self._make_universe()
-        result = u._deserialize_saved_instance(
-            {
-                "__class__": "MapTile",
-                "__module__": "tiles",
-                "props": {},
-            }
-        )
-        from src.tiles import MapTile
-        assert isinstance(result, MapTile)
-
-    def test_returns_none_for_unknown_class(self):
-        u = self._make_universe()
-        result = u._deserialize_saved_instance(
-            {
-                "__class__": "NonExistentClass12345",
-                "__module__": "tiles",
-                "props": {},
-            }
-        )
-        assert result is None
-
-    def test_recursive_deserialize_nested_class(self):
-        u = self._make_universe()
-        payload = {
-            "__class__": "MapTile",
-            "__module__": "tiles",
-            "props": {
-                "nested": {
-                    "__class__": "MapTile",
-                    "__module__": "tiles",
-                    "props": {},
-                }
-            },
-        }
-        result = u._deserialize_saved_instance(payload)
-        from src.tiles import MapTile
-        assert isinstance(result, MapTile)
-
-
-class TestUniverseEvaluateMapEntry:
-    """_evaluate_map_entry_spawners — event dispatch."""
-
-    def _make_universe(self):
-        from src.universe import Universe
-
-        u = Universe()
-        u.player = _make_player()
-        return u
-
-    def test_no_crash_with_empty_map(self):
-        u = self._make_universe()
-        u.player.map = {"name": "test"}
-        u._evaluate_map_entry_spawners()  # no error
-
-    def test_no_crash_with_none_tile(self):
-        u = self._make_universe()
-        u.player.map = {"name": "test", (0, 0): None}
-        u._evaluate_map_entry_spawners()
-
-    def test_calls_evaluate_for_map_entry_on_events(self):
-        u = self._make_universe()
-        ev = Mock()
-        ev.has_run = False
-        ev.repeat = False
-        tile = Mock()
-        tile.events_here = [ev]
-        u.player.map = {(0, 0): tile}
-        u._evaluate_map_entry_spawners()
-        ev.evaluate_for_map_entry.assert_called_once_with(u.player)
-
-    def test_skips_event_without_evaluate_method(self):
-        u = self._make_universe()
-        ev = Mock(spec=[])  # no evaluate_for_map_entry
-        tile = Mock()
-        tile.events_here = [ev]
-        u.player.map = {(0, 0): tile}
-        u._evaluate_map_entry_spawners()  # no error
-
-    def test_repeat_events_called_when_process_repeats_true(self):
-        u = self._make_universe()
-        ev = Mock()
-        ev.has_run = True
-        ev.repeat = True
-        tile = Mock()
-        tile.events_here = [ev]
-        u.player.map = {(0, 0): tile}
-        u._evaluate_map_entry_spawners(process_repeats=True)
-        ev.evaluate_for_map_entry.assert_called_once()
-
-    def test_non_repeat_events_not_called_after_run(self):
-        u = self._make_universe()
-        ev = Mock()
-        ev.has_run = True
-        ev.repeat = False
-        tile = Mock()
-        tile.events_here = [ev]
-        u.player.map = {(0, 0): tile}
-        u._evaluate_map_entry_spawners(process_repeats=True)
-        ev.evaluate_for_map_entry.assert_not_called()
-
-    def test_exception_in_event_does_not_propagate(self):
-        u = self._make_universe()
-        ev = Mock()
-        ev.has_run = False
-        ev.repeat = False
-        ev.evaluate_for_map_entry.side_effect = RuntimeError("boom")
-        tile = Mock()
-        tile.events_here = [ev]
-        u.player.map = {(0, 0): tile}
-        u._evaluate_map_entry_spawners()  # should not raise
-
-
-class TestTileExistsFunction:
-    """tile_exists module-level helper."""
-
-    def test_returns_tile_when_present(self):
-        from src.universe import tile_exists
-
-        m = {(1, 2): "tile_obj"}
-        assert tile_exists(m, 1, 2) == "tile_obj"
-
-    def test_returns_none_when_absent(self):
-        from src.universe import tile_exists
-
-        assert tile_exists({}, 0, 0) is None
-
+#
+# Universe.__init__, get_tile, tile_exists, _deserialize_saved_instance,
+# game_tick_events and _evaluate_map_entry_spawners were a third copy of the
+# same suite (the others being test_remaining_modules_tier4.py and
+# test_world_systems_tier2.py). Four of the copies here asserted nothing at
+# all. They now live once, with real assertions, in
+# tests/test_world_systems_tier2.py, which additionally covers the
+# __class_type__ trust gate, the tile-injection path and the __new__ fallback
+# that none of the three copies reached.

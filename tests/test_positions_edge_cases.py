@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 import pytest
+from unittest.mock import patch
+
 from src.player import Player
 from src.npc import NPC
 import src.positions as positions
@@ -68,29 +70,28 @@ class TestGridBoundaryConditions:
 
         new_pos = positions.move_toward(start, target, 5)
 
-        # Should move somewhere between start and target
-        assert 0 <= new_pos.x <= 50
-        assert 0 <= new_pos.y <= 50
+        # Bearing to the opposite corner is 45 deg, so a 5-square step lands at
+        # round(0 + sin(45)*5) = 4 on both axes. An in-bounds assertion would
+        # equally accept (0, 0) or a step in the wrong direction entirely.
+        assert (new_pos.x, new_pos.y) == (4, 4)
+        assert new_pos.facing is positions.Direction.N  # facing is preserved
 
-        # Should be closer to target than start was
         new_dist = positions.distance_from_coords(new_pos, target)
         old_dist = positions.distance_from_coords(start, target)
-        assert new_dist < old_dist
+        assert (old_dist, new_dist) == (71, 65)
 
     def test_move_away_from_corner_clamps_correctly(self):
         """Test that move_away clamps at grid boundaries."""
         start = positions.CombatPosition(x=2, y=2, facing=positions.Direction.N)
         threat = positions.CombatPosition(x=25, y=25, facing=positions.Direction.S)
 
-        # Should not raise error - clamping should happen automatically or via move_away
-        try:
-            new_pos = positions.move_away_from(start, threat, 5)
-            # If it succeeds, position should be valid
-            assert 0 <= new_pos.x <= 50
-            assert 0 <= new_pos.y <= 50
-        except ValueError:
-            # Acceptable if move_away rejects extreme movements
-            pass
+        new_pos = positions.move_away_from(start, threat, 5)
+
+        # Bearing away from (25,25) is 225 deg, so the ideal destination is
+        # round(2 - sin(45)*5) = -2 on both axes; the grid clamp pulls it to the
+        # corner. The try/except this replaces swallowed any failure, and the
+        # in-bounds assertion could not tell a clamp from a no-op.
+        assert (new_pos.x, new_pos.y) == (0, 0)
 
     def test_clamp_position_at_corners(self):
         """Test clamping of positions at grid corners."""
@@ -106,18 +107,28 @@ class TestGridBoundaryConditions:
         assert corner3.x == 0 and corner3.y == 50
         assert corner4.x == 50 and corner4.y == 0
 
-    def test_edge_positions_are_valid(self):
-        """Test that all edge positions are valid."""
-        edges = [
-            (0, 25), (50, 25),    # left/right edges
-            (25, 0), (25, 50),    # top/bottom edges
-            (0, 0), (50, 0), (0, 50), (50, 50)  # corners
-        ]
+    @pytest.mark.parametrize(
+        "x, y",
+        [
+            (0, 25), (50, 25),                   # left/right edges
+            (25, 0), (25, 50),                   # top/bottom edges
+            (0, 0), (50, 0), (0, 50), (50, 50),  # corners
+        ],
+    )
+    def test_edge_positions_are_accepted_by_the_validator(self, x, y):
+        """Coordinates exactly on the bound are inclusive, not rejected.
 
-        for x, y in edges:
-            pos = positions.CombatPosition(x=x, y=y, facing=positions.Direction.N)
-            assert 0 <= pos.x <= 50
-            assert 0 <= pos.y <= 50
+        The previous version asserted `0 <= pos.x <= 50` on coordinates it had
+        just supplied itself -- true by construction. What actually matters is
+        that ``__post_init__`` accepts the boundary rather than raising.
+        """
+        pos = positions.CombatPosition(x=x, y=y, facing=positions.Direction.N)
+        assert (pos.x, pos.y) == (x, y)
+
+    @pytest.mark.parametrize("x, y", [(-1, 25), (51, 25), (25, -1), (25, 51)])
+    def test_positions_one_step_outside_the_bound_are_rejected(self, x, y):
+        with pytest.raises(ValueError, match="between 0 and 50"):
+            positions.CombatPosition(x=x, y=y, facing=positions.Direction.N)
 
 
 class TestAngleCalculationsAtBoundaries:
@@ -128,22 +139,19 @@ class TestAngleCalculationsAtBoundaries:
         origin = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
 
         test_targets = [
-            (0, 25, "north"),
-            (25, 0, "east"),
-            (0, -25, "south"),  # Will be clamped
-            (-25, 0, "west"),   # Will be clamped
+            (0, 25, 0.0),     # due north
+            (25, 0, 90.0),    # due east
+            (25, 25, 45.0),   # north-east diagonal
+            (0, 0, 0.0),      # same square -> atan2(0, 0) is 0.0, not an error
         ]
 
-        for x, y, direction in test_targets:
-            # Clamp target to valid grid
-            x = max(0, min(50, x))
-            y = max(0, min(50, y))
-
+        for x, y, expected_angle in test_targets:
             target = positions.CombatPosition(x=x, y=y, facing=positions.Direction.N)
             angle = positions.angle_to_target(origin, target)
 
-            # Angle should be valid (0-360)
-            assert 0 <= angle <= 360
+            # 0 deg is North (+y) and 90 deg is East (+x). The old assertion
+            # (0 <= angle <= 360) held for every possible return value.
+            assert angle == expected_angle, f"({x}, {y}) -> {angle}"
 
     def test_angle_from_corner_to_opposite_corner(self):
         """Test diagonal angle calculations."""
@@ -152,9 +160,8 @@ class TestAngleCalculationsAtBoundaries:
 
         angle = positions.angle_to_target(corner1, corner2)
 
-        # Should be valid angle
-        assert 0 <= angle <= 360
-        assert angle != 0  # Should not be exactly north
+        # (0,0) -> (50,50) is exactly the north-east diagonal.
+        assert angle == 45.0
 
     def test_angle_difference_at_180_degrees(self):
         """Test angle difference when facing opposite direction."""
@@ -165,8 +172,10 @@ class TestAngleCalculationsAtBoundaries:
             target_dir.value, facing_dir
         )
 
-        # Should be 180 degrees difference
-        assert diff == 180 or diff == -180
+        # Facing North, attacked from due South: a textbook rear attack.
+        assert diff == 180
+        assert positions.get_damage_modifier(diff) == 1.40
+        assert positions.get_accuracy_modifier(diff) == 1.30
 
 
 class TestPositionClamping:
@@ -197,15 +206,11 @@ class TestPositionClamping:
         start = positions.CombatPosition(x=1, y=1, facing=positions.Direction.N)
         target = positions.CombatPosition(x=5, y=5, facing=positions.Direction.S)
 
-        # Move away from target with smaller distance
-        try:
-            new_pos = positions.move_away_from(start, target, 3)
-            # If it succeeds, position should be valid
-            assert 0 <= new_pos.x <= 50
-            assert 0 <= new_pos.y <= 50
-        except ValueError:
-            # Acceptable if move_away rejects extreme movements
-            pass
+        new_pos = positions.move_away_from(start, target, 3)
+
+        # Bearing away is 225 deg -> round(1 - sin(45)*3) = -1 on both axes,
+        # clamped to the (0, 0) corner rather than raising or wrapping.
+        assert (new_pos.x, new_pos.y) == (0, 0)
 
 
 class TestExtremeDistances:
@@ -231,9 +236,8 @@ class TestExtremeDistances:
         pos2 = positions.CombatPosition(x=26, y=26, facing=positions.Direction.N)
 
         distance = positions.distance_from_coords(pos1, pos2)
-        # Diagonal distance with integer rounding: sqrt(2) ≈ 1.414 → 1
-        # Due to rounding, we expect 1 or 2
-        assert distance in [1, 2]
+        # sqrt(2) = 1.414..., and the function rounds to the nearest integer.
+        assert distance == 1
 
 
 class TestDirectionEdgeCases:
@@ -245,24 +249,33 @@ class TestDirectionEdgeCases:
             assert direction.value in [0, 45, 90, 135, 180, 225, 270, 315]
             assert hasattr(direction, 'name')
 
-    def test_turn_toward_from_facing_north(self):
-        """Test turning to face each direction from north."""
+    @pytest.mark.parametrize(
+        "to_xy, expected",
+        [
+            ((25, 45), positions.Direction.N),
+            ((45, 45), positions.Direction.NE),
+            ((45, 25), positions.Direction.E),
+            ((45, 5), positions.Direction.SE),
+            ((25, 5), positions.Direction.S),
+            ((5, 5), positions.Direction.SW),
+            ((5, 25), positions.Direction.W),
+            ((5, 45), positions.Direction.NW),
+        ],
+    )
+    def test_turn_toward_resolves_every_compass_bearing(self, to_xy, expected):
+        """The old loop pointed at the same square eight times (it varied only
+        the *target's* facing, which turn_toward ignores) and asserted the
+        result was some Direction -- true of all eight possible answers."""
         from_pos = positions.CombatPosition(x=25, y=25, facing=positions.Direction.N)
+        to_pos = positions.CombatPosition(x=to_xy[0], y=to_xy[1])
 
-        for direction in positions.Direction:
-            to_pos = positions.CombatPosition(x=25, y=0, facing=direction)
-            new_facing = positions.turn_toward(from_pos, to_pos)
+        assert positions.turn_toward(from_pos, to_pos) is expected
 
-            # Should return a valid direction
-            assert isinstance(new_facing, positions.Direction)
+    def test_turn_toward_same_position_defaults_to_north(self):
+        """atan2(0, 0) is 0.0, so a self-referential turn resolves to North."""
+        pos = positions.CombatPosition(x=25, y=25, facing=positions.Direction.SW)
 
-    def test_turn_toward_same_position(self):
-        """Test turning toward same position."""
-        pos = positions.CombatPosition(x=25, y=25, facing=positions.Direction.N)
-
-        # Should handle gracefully (might return current facing or north)
-        new_facing = positions.turn_toward(pos, pos)
-        assert isinstance(new_facing, positions.Direction)
+        assert positions.turn_toward(pos, pos) is positions.Direction.N
 
     def test_facing_direction_names(self):
         """Test that direction names are correct."""
@@ -276,19 +289,20 @@ class TestDirectionEdgeCases:
 class TestStressAndComplexScenarios:
     """Stress tests and complex scenario validation."""
 
-    def test_many_units_formation(self):
-        """Test positioning with many units in grid."""
-        units = []
-        for i in range(20):
-            x = (i % 5) * 10
-            y = (i // 5) * 10
-            pos = positions.CombatPosition(x=x, y=y, facing=positions.Direction.N)
-            units.append(pos)
+    def test_many_units_formation_keeps_every_unit_on_a_distinct_square(self):
+        """The old version built 20 positions from hardcoded coordinates and
+        asserted they were in bounds -- true by construction, and it would not
+        have noticed two units stacked on the same square."""
+        units = [
+            positions.CombatPosition(
+                x=(i % 5) * 10, y=(i // 5) * 10, facing=positions.Direction.N
+            )
+            for i in range(20)
+        ]
 
-        # All positions should be valid
-        for pos in units:
-            assert 0 <= pos.x <= 50
-            assert 0 <= pos.y <= 50
+        assert len({(p.x, p.y) for p in units}) == 20
+        assert min(p.x for p in units) == 0 and max(p.x for p in units) == 40
+        assert min(p.y for p in units) == 0 and max(p.y for p in units) == 30
 
     def test_damage_modifier_for_angle_ranges(self):
         """Test damage modifiers for different angle ranges."""
@@ -337,12 +351,17 @@ class TestStressAndComplexScenarios:
             )
 
             # Move toward with various distances
+            start_dist = positions.distance_from_coords(start, target)
             for move_dist in [1, 2, 5, 10, 20]:
                 new_pos = positions.move_toward(start, target, move_dist)
 
-                # Result should be valid
-                assert 0 <= new_pos.x <= 50
-                assert 0 <= new_pos.y <= 50
+                # The real invariant: a step of N never travels more than N
+                # squares, and never overshoots the target. Bounds-only checks
+                # would pass even if move_toward teleported to the target.
+                travelled = positions.distance_from_coords(start, new_pos)
+                assert travelled <= move_dist + 1, (start_dist, move_dist, travelled)
+                remaining = positions.distance_from_coords(new_pos, target)
+                assert remaining <= start_dist
 
 
 class TestScenarioDefinitions:
@@ -383,15 +402,25 @@ class TestMovementEdgeCases:
         dist = positions.distance_from_coords(pos, new_pos)
         assert dist < 1  # Allow tiny floating point error
 
-    def test_move_away_when_at_same_position(self):
-        """Test moving away from a position you're at."""
+    def test_move_away_when_at_same_position_picks_one_of_four_axis_steps(self):
+        """Degenerate case: the bearing is undefined, so the engine picks a
+        random cardinal step of exactly ``distance``. The old test asserted only
+        that the result was on the grid, which a no-op (25, 25) also satisfies.
+        """
         pos = positions.CombatPosition(x=25, y=25, facing=positions.Direction.N)
+        expected = {(30, 25), (20, 25), (25, 30), (25, 20)}
 
-        new_pos = positions.move_away_from(pos, pos, 5)
+        # random.choice is the only nondeterminism; drive it across all 4 arms.
+        seen = set()
+        for index in range(4):
+            with patch(
+                "src.positions.random.choice", side_effect=lambda seq, i=index: seq[i]
+            ):
+                moved = positions.move_away_from(pos, pos, 5)
+            seen.add((moved.x, moved.y))
+            assert moved.facing is positions.Direction.N
 
-        # Should move somewhere (direction doesn't matter when at same point)
-        assert 0 <= new_pos.x <= 50
-        assert 0 <= new_pos.y <= 50
+        assert seen == expected
 
     def test_flank_movement_perpendicular(self):
         """Test that flanking movement is perpendicular to target."""
@@ -400,9 +429,16 @@ class TestMovementEdgeCases:
 
         flank_pos = positions.move_to_flank(attacker_pos, defender_pos, 3)
 
-        # Should produce valid position
-        assert 0 <= flank_pos.x <= 50
-        assert 0 <= flank_pos.y <= 50
+        # The defender faces West (270 deg), so its blind sides are due North
+        # (0 deg) and due South (180 deg); the approach bearing ties and the
+        # first blind side wins, putting the flanker 3 squares north of it.
+        assert (flank_pos.x, flank_pos.y) == (30, 28)
+        assert flank_pos.facing is positions.Direction.E  # attacker keeps facing
+
+        # And it really is a flank, not a head-on approach.
+        approach = positions.angle_to_target(flank_pos, defender_pos)
+        diff = positions.attack_angle_difference(approach, defender_pos.facing)
+        assert 45 < diff <= 135
 
 
 class TestInvalidInputHandling:
@@ -413,15 +449,13 @@ class TestInvalidInputHandling:
         start = positions.CombatPosition(x=25, y=25, facing=positions.Direction.N)
         target = positions.CombatPosition(x=30, y=30, facing=positions.Direction.N)
 
-        # Negative distance should handle gracefully
-        try:
-            new_pos = positions.move_toward(start, target, -5)
-            # Should produce valid position or raise controlled error
-            assert 0 <= new_pos.x <= 50
-            assert 0 <= new_pos.y <= 50
-        except ValueError:
-            # Acceptable to reject negative distances
-            pass
+        new_pos = positions.move_toward(start, target, -5)
+
+        # Documented current behaviour: negative distances are NOT rejected --
+        # min(-5, 7) is -5, so the unit walks 5 squares backwards along the
+        # bearing. No caller passes a negative distance today; this pins the
+        # behaviour so a future guard is a deliberate, visible change.
+        assert (new_pos.x, new_pos.y) == (21, 21)
 
     def test_zero_distance_movement(self):
         """Test movement with zero distance."""
@@ -439,11 +473,10 @@ class TestInvalidInputHandling:
         start = positions.CombatPosition(x=25, y=25, facing=positions.Direction.N)
         target = positions.CombatPosition(x=30, y=30, facing=positions.Direction.N)
 
-        # Very large movement should still stay within bounds
+        # A huge step must stop *at* the target, not merely somewhere on grid.
         new_pos = positions.move_toward(start, target, 10000)
 
-        assert 0 <= new_pos.x <= 50
-        assert 0 <= new_pos.y <= 50
+        assert (new_pos.x, new_pos.y) == (target.x, target.y)
 
 
 if __name__ == "__main__":

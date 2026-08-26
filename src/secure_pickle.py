@@ -33,6 +33,7 @@ legacy import only.
 import io
 import os
 import sys
+import types
 import struct
 import hashlib
 import pickle
@@ -261,6 +262,35 @@ def _is_allowed(module, name):
     return _is_engine_module(module) or (module, name) in _SAFE_STDLIB
 
 
+def _resolved_global_is_trusted(obj):
+    """Second strict-mode gate: the *resolved* object must itself originate in
+    a trusted module.
+
+    ``_is_allowed`` only inspects the ``(module, name)`` pair the pickle
+    stream names. That is not sufficient on its own: from protocol 4 onward
+    pickle resolves ``name`` as a **dotted attribute path** (so that nested
+    classes and unbound methods can be pickled), and attribute traversal can
+    walk straight out of the trusted module into an imported one. A crafted
+    stream naming ``("src.secure_pickle", "os.system")`` passes
+    ``_is_engine_module`` -- the module really is an engine module -- yet
+    resolves to ``os.system`` and hands the attacker arbitrary code execution.
+
+    Checking the resolved object's own ``__module__`` closes that: every
+    curated safe-stdlib global and every engine class/function reports a
+    trusted owner, while ``os.system`` reports ``posix``/``nt`` and is
+    rejected. Module objects are rejected outright -- a save has no legitimate
+    reason to embed one, and admitting them would re-open the traversal.
+    """
+    if isinstance(obj, types.ModuleType):
+        return False
+    owner = getattr(obj, "__module__", None)
+    if not isinstance(owner, str):
+        # Objects with no declaring module (e.g. slot/method descriptors) are
+        # not part of any save this engine writes; refuse rather than guess.
+        return False
+    return _is_allowed(owner, getattr(obj, "__name__", "") or "")
+
+
 def strict_mode_enabled():
     """Return True when strict allow-list enforcement is requested via env."""
     return os.environ.get(STRICT_ENV_VAR, "").strip().lower() in (
@@ -354,8 +384,24 @@ class SafeUnpickler(pickle.Unpickler):
         else:
             logger.debug("SafeUnpickler %s: %s.%s", kind, module, name)
 
+    @staticmethod
+    def _sanitize_type_name(raw):
+        """Coerce an arbitrary string into something ``type()`` will accept.
+
+        A crafted pickle can name a module containing characters that are legal
+        in a pickle stream but illegal in a Python type name -- most sharply a
+        NUL, which makes ``type()`` raise ``ValueError`` outright. That raise
+        happened *after* ``find_class``'s guarded ``super()`` call, so it
+        escaped as an unhandled crash rather than degrading to a placeholder.
+        Everything outside ``[A-Za-z0-9_]`` collapses to an underscore.
+        """
+        cleaned = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in raw)
+        return cleaned or "_"
+
     def _make_placeholder(self, module, name):
-        placeholder_class_name = f"LegacyMissing_{module.replace('.', '_')}_{name}"
+        placeholder_class_name = self._sanitize_type_name(
+            f"LegacyMissing_{module.replace('.', '_')}_{name}"
+        )
         attrs = dict(_PLACEHOLDER_ATTRS)
         attrs["__doc__"] = f"Placeholder for missing legacy class {module}.{name}"
         attrs["__repr__"] = lambda self: f"<LegacyMissing {module}.{name}>"
@@ -384,7 +430,8 @@ class SafeUnpickler(pickle.Unpickler):
             cls = None
 
         if cls is not None:
-            if strict and not _is_allowed(module, name):
+            if strict and not (_is_allowed(module, name)
+                               and _resolved_global_is_trusted(cls)):
                 self._record("rejected", module, name)
                 raise RestrictedUnpicklingError(
                     f"Class {module}.{name} is not on the save allow-list"

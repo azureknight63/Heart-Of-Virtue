@@ -11,18 +11,13 @@ Targets uncovered lines:
     335-337:         objects loading in JSON map
 """
 
-import sys
-import io
 import json
-import tempfile
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
 import pytest
+
+from src.narration import capture_narration
 from src.universe import Universe, tile_exists
 
 # ---------------------------------------------------------------------------
@@ -121,13 +116,20 @@ class TestDeserializeInventorySkip:
         finally:
             delattr(items_mod, "MyClass")
 
-    def test_class_type_marker_bad_spec_returns_none(self):
+    @pytest.mark.parametrize("spec", [
+        "no_colon_here",     # rsplit(":", 1) cannot produce a module/class pair
+        ":Item",             # empty module half
+        "items:",            # empty class half
+        "items:NoSuchClass", # well-formed but unresolvable
+        "",
+        None,
+        5,
+    ])
+    def test_class_type_marker_bad_spec_returns_none(self, spec):
+        """The previous assertion was ``result is None or True`` -- true for
+        every possible value, including a resolved ``os.system``."""
         u = self._universe()
-        payload = {"__class_type__": "no_colon_here"}
-        # rsplit with maxsplit=1 requires at least one colon
-        result = u._deserialize_saved_instance(payload)
-        # Should either return None or raise and catch internally
-        assert result is None or True  # no crash is sufficient
+        assert u._deserialize_saved_instance({"__class_type__": spec}) is None
 
     def test_recursive_deserialize_nested_dict(self):
         """Nested dicts with __class__ keys are recursively deserialized."""
@@ -366,6 +368,11 @@ class TestLoadSingleJsonMap:
             loaded = next((m for m in u.maps if m.get("name") == "npc_map"), None)
             tile = loaded.get((1, 0))
             assert len(tile.npcs_here) == 1
+            npc = tile.npcs_here[0]
+            assert isinstance(npc, SimpleNPC)
+            # The loader's job is not just to append: it must wire the NPC's
+            # room back-reference, or the NPC has no idea where it is.
+            assert npc.current_room is tile
         finally:
             delattr(npc_mod, "SimpleNPC")
 
@@ -403,6 +410,9 @@ class TestLoadSingleJsonMap:
             loaded = next((m for m in u.maps if m.get("name") == "obj_map"), None)
             tile = loaded.get((0, 1))
             assert len(tile.objects_here) == 1
+            obj = tile.objects_here[0]
+            assert isinstance(obj, SimpleObject)
+            assert obj.tile is tile
         finally:
             delattr(objects_mod, "SimpleObject")
 
@@ -446,7 +456,9 @@ class TestUniverseBuild:
         assert u.player is player
 
     def test_build_with_game_config_initializes_configs(self):
-        """When player.game_config is set, coordinate config is created."""
+        """When player.game_config is set, a usable coordinate config is built."""
+        from src.coordinate_config import CoordinateSystemConfig
+
         u = Universe()
         player = _make_player()
         # A truthy game_config triggers CoordinateSystemConfig init
@@ -457,8 +469,19 @@ class TestUniverseBuild:
         with patch.object(u, "_load_all_json_maps", return_value=0):
             u.build(player)
 
-        # Config object should be initialised (non-None) when game_config exists
-        assert u.coordinate_config is not None
+        assert isinstance(u.coordinate_config, CoordinateSystemConfig)
+        assert u.coordinate_config.player is player
+        assert u.coordinate_config.get_dynamic_grid_size(2) == (9, 9)
+
+    def test_build_without_game_config_leaves_coordinate_config_none(self):
+        u = Universe()
+        player = _make_player()
+        player.game_config = None
+
+        with patch.object(u, "_load_all_json_maps", return_value=0):
+            u.build(player)
+
+        assert u.coordinate_config is None
 
 
 # ---------------------------------------------------------------------------
@@ -495,14 +518,20 @@ class TestGameTickEvents:
         u.game_tick_events()
         p.refresh_merchants.assert_called_once()
 
-    def test_tick_2000_triggers_merchant_refresh_again(self):
+    def test_merchant_refresh_fires_once_per_thousand_ticks(self):
+        """The name promised "again" but the old test built a fresh universe,
+        so it re-proved the 1000 case. Drive the counter across two boundaries."""
         u = Universe()
         p = _make_player()
         p.map = {"name": "test"}
         u.player = p
-        u.game_tick = 2000
-        u.game_tick_events()
-        p.refresh_merchants.assert_called_once()
+
+        u.game_tick = 999
+        for _ in range(1002):          # 999 -> 2001, crossing 1000 and 2000
+            u.game_tick_events()
+
+        assert u.game_tick == 2001
+        assert p.refresh_merchants.call_count == 2
 
     def test_tick_999_no_refresh(self):
         u = Universe()
@@ -583,21 +612,25 @@ class TestLoadAllJsonMaps:
 
         assert count == 0
 
-    def test_exception_in_single_map_load_is_caught(self):
-        """Exceptions from a single map load are caught and do not abort."""
+    def test_exception_in_single_map_load_is_caught_and_reported(self, tmp_path):
+        """A failing map is skipped, reported, and does not abort the loop."""
         u = Universe()
         player = _make_player()
+        (tmp_path / "aaa_bad.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "zzz_good.json").write_text("{}", encoding="utf-8")
 
-        fake_dir = MagicMock()
-        fake_path = MagicMock()
-        fake_path.name = "bad.json"
-        fake_dir.glob.return_value = [fake_path]
+        def _load(_player, path):
+            if path.name == "aaa_bad.json":
+                raise ValueError("boom")
 
-        with patch.object(u, "_json_maps_root_candidates", return_value=[fake_dir]):
-            with patch.object(u, "_load_single_json_map", side_effect=Exception("err")):
-                with patch("builtins.print"):
+        with patch.object(u, "_json_maps_root_candidates", return_value=[tmp_path]):
+            with patch.object(u, "_load_single_json_map", side_effect=_load):
+                with capture_narration() as messages:
                     count = u._load_all_json_maps(player)
 
-        assert count == 0
+        assert count == 1                       # the good map still counted
+        texts = [m.get("text", "") for m in messages]
+        assert any("boom" in t and "aaa_bad.json" in t for t in texts), texts
+        assert not any("zzz_good.json" in t for t in texts)
 
 

@@ -148,10 +148,15 @@ def test_drop_merchandise_items_value_error_ignored():
     p.map = {}
     p.location_x = 0
     p.location_y = 0
-    with patch("src.player._inventory.tile_exists", return_value=tile):
-        with patch("time.sleep"):
-            # Should not raise
+    with patch("src.player._inventory.narrate") as mock_narrate:
+        with patch("src.player._inventory.tile_exists", return_value=tile):
             p.drop_merchandise_items()
+
+    # The ValueError short-circuits the drop entirely: the item must NOT be
+    # duplicated onto the tile, and no drop message may be narrated for it.
+    assert tile.items_here == []
+    assert merch in p.inventory
+    mock_narrate.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -406,14 +411,20 @@ def test_equip_item_accessory_non_ring_replaces():
 
 
 def test_equip_item_no_isequipped_attribute():
-    """equip_item does nothing for items without isequipped."""
+    """equip_item ignores non-equippable items entirely."""
     p = _make_player()
-    item = MagicMock(spec=[])  # No attributes
+    item = MagicMock(spec=[])  # no isequipped -> not equippable
     item.name = "Rock"
-    p.inventory = [item]
+    p.current_room.items_here = [item]
+    p.inventory = []
+    weapon_before = p.eq_weapon
 
-    # Should not raise
     p.equip_item(item_object=item)
+
+    # Not picked up, not equipped, no weapon slot change.
+    assert p.inventory == []
+    assert p.current_room.items_here == [item]
+    assert p.eq_weapon is weapon_before
 
 
 # ---------------------------------------------------------------------------
@@ -422,121 +433,95 @@ def test_equip_item_no_isequipped_attribute():
 
 
 def test_use_item_by_phrase_merchandise_skipped():
-    """use_item with a phrase skips merchandise items."""
+    """use_item skips merchandise but still uses a later legitimate match."""
     p = _make_player()
     merch_potion = _make_consumable("Healing Potion")
     merch_potion.merchandise = True
-    merch_potion.announce = "healing potion"
-    p.inventory = [merch_potion]
+    owned_potion = _make_consumable("Healing Potion")
+    p.inventory = [merch_potion, owned_potion]
 
-    with patch("builtins.input", return_value="y"):
-        p.use_item(phrase="potion")
+    p.use_item(phrase="healing")
 
     merch_potion.use.assert_not_called()
+    owned_potion.use.assert_called_once_with(p, user=p)
 
 
-def test_use_item_by_phrase_confirm_yes():
-    """use_item with a phrase and 'y' confirmation calls item.use."""
+def test_use_item_by_phrase_uses_first_match_on_self():
+    """A phrase match consumes the item with the player as both target and user."""
     p = _make_player()
     potion = _make_consumable("Healing Potion")
-    potion.announce = "healing potion"
     p.inventory = [potion]
 
-    with patch("builtins.input", return_value="y"):
-        p.use_item(phrase="healing")
+    p.use_item(phrase="healing")
 
-    potion.use.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# use_item — interactive menu paths
-# ---------------------------------------------------------------------------
+    potion.use.assert_called_once_with(p, user=p)
 
 
-def test_use_item_menu_cancel():
-    """use_item with no phrase and 'x' input exits the loop."""
+def test_use_item_routes_effect_to_explicit_target():
+    """An explicit target receives the effect; the player remains the user."""
     p = _make_player()
-    p.inventory = []
-    with patch("builtins.input", return_value="x"):
-        with patch("src.player._inventory.cprint"):
-            # Should not hang; 'x' exits the loop
-            p.use_item(phrase="")
-
-
-def test_use_item_menu_merchandise_blocked():
-    """use_item menu blocks using a merchandise item."""
-    p = _make_player()
-    potion = _make_consumable("Merch Potion")
-    potion.merchandise = True
+    ally = MagicMock()
+    potion = _make_consumable("Healing Potion")
     p.inventory = [potion]
-    p.preferences = {}
-    p.in_combat = False
 
-    # Input sequence: select 'c' (consumables), then item index 0, then 'x' to exit
-    inputs = iter(["c", "0", "x"])
-    with patch("builtins.input", side_effect=inputs):
-        with patch("src.player._inventory.cprint"):
-            p.use_item(phrase="")
+    p.use_item(phrase="healing", target=ally)
 
-    potion.use.assert_not_called()
+    potion.use.assert_called_once_with(ally, user=p)
 
 
-def test_use_item_menu_non_integer_input():
-    """use_item menu handles non-integer item selection gracefully."""
+def test_use_item_stops_after_first_match():
+    """Only the first matching item is used, never the whole matching set."""
+    p = _make_player()
+    first = _make_consumable("Healing Potion")
+    second = _make_consumable("Healing Draught")
+    p.inventory = [first, second]
+
+    p.use_item(phrase="healing")
+
+    first.use.assert_called_once_with(p, user=p)
+    second.use.assert_not_called()
+
+
+def test_use_item_ignores_non_consumable_matches():
+    """Items that are neither Consumable nor Special are never 'used'."""
+    p = _make_player()
+    sword = _make_equippable(name="Healing Blade")
+    sword.use = MagicMock()
+    p.inventory = [sword]
+
+    p.use_item(phrase="healing")
+
+    sword.use.assert_not_called()
+
+
+def test_use_item_without_phrase_is_a_noop():
+    """No phrase means no item is used — there is no terminal selection menu."""
     p = _make_player()
     potion = _make_consumable("Potion")
     p.inventory = [potion]
     p.preferences = {}
     p.in_combat = False
 
-    inputs = iter(["c", "abc", "x"])
-    with patch("builtins.input", side_effect=inputs):
-        with patch("src.player._inventory.cprint"):
-            p.use_item(phrase="")
+    assert p.use_item(phrase="") is None
 
     potion.use.assert_not_called()
+    assert p.inventory == [potion]
 
 
-# ---------------------------------------------------------------------------
-# use_item — equipped item displayed with (Equipped) marker (line 390-401)
-# ---------------------------------------------------------------------------
-
-
-def test_use_item_menu_shows_equipped_marker():
-    """use_item menu shows (Equipped) for equipped items (exercises print branches)."""
+def test_use_item_never_prompts_for_terminal_input():
+    """Regression guard: the terminal item menu is gone; use_item must not read stdin."""
     p = _make_player()
-    consumable = _make_consumable("Equipped Potion")
-    consumable.isequipped = True
-    p.inventory = [consumable]
-    p.preferences = {}
-    p.in_combat = False
-
-    # "c" selects consumables, "abc" is non-integer (loops back), "x" exits
-    inputs = iter(["c", "abc", "x"])
-    with patch("builtins.input", side_effect=inputs):
-        with patch("src.player._inventory.cprint"):
-            with patch("builtins.print"):
-                p.use_item(phrase="")
-
-
-# ---------------------------------------------------------------------------
-# use_item — preference marker (line ~388)
-# ---------------------------------------------------------------------------
-
-
-def test_use_item_menu_shows_preference_marker():
-    """use_item menu shows (P) for preferred items."""
-    p = _make_player()
-    potion = _make_consumable("Lucky Potion")
+    potion = _make_consumable("Healing Potion")
     p.inventory = [potion]
-    p.preferences = {"slot1": "Lucky Potion"}
-    p.in_combat = False
 
-    inputs = iter(["c", "abc", "x"])
-    with patch("builtins.input", side_effect=inputs):
-        with patch("src.player._inventory.cprint"):
-            with patch("builtins.print"):
-                p.use_item(phrase="")
+    def _boom(*_a, **_kw):
+        raise AssertionError("use_item must not call input()")
+
+    with patch("builtins.input", side_effect=_boom):
+        p.use_item(phrase="")
+        p.use_item(phrase="healing")
+
+    potion.use.assert_called_once_with(p, user=p)
 
 
 # ---------------------------------------------------------------------------

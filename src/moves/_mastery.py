@@ -123,6 +123,12 @@ class KillingPrecision(Move):
             return False
         return _is_highest(self.user, self.user.finesse)
 
+    def preview_hit_chance(self, target=None):
+        """Killing Precision never misses (see execute(): no roll, no
+        to_hit_chance call) -- a viable cast is a guaranteed 100% hit."""
+        t = target if target is not None else self.target
+        return 100 if self._viable_for(t) else None
+
     def execute(self, player):
         self.prep_colors()
         narrate(self.stage_announce[1])

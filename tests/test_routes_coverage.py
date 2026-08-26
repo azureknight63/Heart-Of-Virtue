@@ -20,23 +20,6 @@ from flask import Flask
 # ---------------------------------------------------------------------------
 
 
-def _make_session(session_id="sid_001", db_user_id="db_user_1"):
-    s = MagicMock()
-    s.session_id = session_id
-    s.db_user_id = db_user_id
-    s.data = {"timezone": "America/New_York"}
-    return s
-
-
-def _make_session_no_db(session_id="sid_002"):
-    """Session without a registered (cloud) account."""
-    s = MagicMock()
-    s.session_id = session_id
-    s.db_user_id = None
-    s.data = {}
-    return s
-
-
 def _make_player():
     p = MagicMock()
     p.name = "Jean Claire"
@@ -44,16 +27,6 @@ def _make_player():
     p.maxhp = 100
     p.level = 1
     return p
-
-
-def _make_session_manager(session, player):
-    sm = MagicMock()
-    sm.get_session.return_value = session
-    sm.get_player.return_value = player
-    sm.save_session.return_value = None
-    sm.set_player.return_value = None
-    sm.start_new_game.return_value = True
-    return sm
 
 
 def _make_game_service():
@@ -73,27 +46,44 @@ NO_AUTH = {}
 BAD_AUTH = {"Authorization": "NotBearer sid_001"}
 
 
-def _minimal_app(bp, prefix=None):
-    """Create a fresh Flask test app with one blueprint."""
-    session = _make_session()
-    player = _make_player()
-    sm = _make_session_manager(session, player)
-    gs = _make_game_service()
+@pytest.fixture
+def minimal_app(make_stub_session, make_stub_session_manager):
+    """Build a one-blueprint Flask app on the shared session/manager stubs.
 
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-    if prefix is None:
-        app.register_blueprint(bp)
-    else:
-        app.register_blueprint(bp, url_prefix=prefix)
+    ``make_stub_session`` returns a *real* ``Session`` rather than a MagicMock,
+    so an attribute the routes read but ``Session`` does not define raises here
+    instead of being invented; ``make_stub_session_manager`` is
+    ``spec``-constrained for the same reason. Blueprint registration stays
+    local because these routes mount under a ``/api`` prefix and the shared
+    ``make_route_app`` registers at the app root.
+    """
 
-    app.session_manager = sm
-    app.game_service = gs
-    app._test_session = session
-    app._test_player = player
-    app._test_sm = sm
-    app._test_gs = gs
-    return app
+    def _minimal_app(bp, prefix=None):
+        session = make_stub_session(
+            session_id="sid_001",
+            db_user_id="db_user_1",
+            timezone="America/New_York",
+        )
+        player = _make_player()
+        sm = make_stub_session_manager(session, player)
+        gs = _make_game_service()
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        if prefix is None:
+            app.register_blueprint(bp)
+        else:
+            app.register_blueprint(bp, url_prefix=prefix)
+
+        app.session_manager = sm
+        app.game_service = gs
+        app._test_session = session
+        app._test_player = player
+        app._test_sm = sm
+        app._test_gs = gs
+        return app
+
+    return _minimal_app
 
 
 # ===========================================================================
@@ -105,10 +95,10 @@ class TestSavesRoutes:
     """Tests for routes/saves.py."""
 
     @pytest.fixture
-    def app(self):
+    def app(self, minimal_app):
         from src.api.routes.saves import saves_bp
 
-        return _minimal_app(saves_bp, prefix="/api")
+        return minimal_app(saves_bp, prefix="/api")
 
     @pytest.fixture
     def client(self, app):
@@ -132,9 +122,9 @@ class TestSavesRoutes:
         rv = client.get("/api/saves", headers=BAD_AUTH)
         assert rv.status_code == 401
 
-    def test_list_saves_no_db_user_id(self, app):
+    def test_list_saves_no_db_user_id(self, app, make_stub_session):
         """Session without db_user_id returns empty saves list."""
-        session = _make_session_no_db()
+        session = make_stub_session(session_id="sid_002", db_user_id=None)
         app._test_sm.get_session.return_value = session
         with app.test_client() as c:
             rv = c.get("/api/saves", headers=AUTH)
@@ -183,8 +173,8 @@ class TestSavesRoutes:
         data = rv.get_json()
         assert "autosave" in data["message"].lower()
 
-    def test_create_save_no_db_user(self, app):
-        session = _make_session_no_db()
+    def test_create_save_no_db_user(self, app, make_stub_session):
+        session = make_stub_session(session_id="sid_002", db_user_id=None)
         app._test_sm.get_session.return_value = session
         with app.test_client() as c:
             rv = c.post("/api/saves", headers=AUTH, json={"name": "X"})
@@ -220,8 +210,8 @@ class TestSavesRoutes:
         data = rv.get_json()
         assert data["success"] is True
 
-    def test_load_save_no_db_user(self, app):
-        session = _make_session_no_db()
+    def test_load_save_no_db_user(self, app, make_stub_session):
+        session = make_stub_session(session_id="sid_002", db_user_id=None)
         app._test_sm.get_session.return_value = session
         with app.test_client() as c:
             rv = c.post("/api/saves/s1/load", headers=AUTH)
@@ -257,8 +247,8 @@ class TestSavesRoutes:
             rv = c.delete("/api/saves/s1", headers=AUTH)
         assert rv.status_code == 404
 
-    def test_delete_save_no_db_user(self, app):
-        session = _make_session_no_db()
+    def test_delete_save_no_db_user(self, app, make_stub_session):
+        session = make_stub_session(session_id="sid_002", db_user_id=None)
         app._test_sm.get_session.return_value = session
         with app.test_client() as c:
             rv = c.delete("/api/saves/s1", headers=AUTH)
@@ -315,7 +305,7 @@ class TestLogsRoutes:
     """Tests for routes/logs.py."""
 
     @pytest.fixture
-    def app(self):
+    def app(self, minimal_app):
         from src.api.routes.logs import logs_bp
 
         app = Flask(__name__)

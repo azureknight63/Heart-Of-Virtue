@@ -13,25 +13,21 @@ Target: Increase game_service.py coverage from 27% → 60%+ with 35-40 tests.
 """
 
 import pytest
-from unittest.mock import MagicMock, Mock, patch, PropertyMock
-from src.api.services.game_service import GameService
+from unittest.mock import MagicMock, patch
 
-
-@pytest.fixture(scope="session")
-def _cached_game_service():
-    """Cache GameService instance across the session (stateless singleton)."""
-    return GameService()
+from src.items import Consumable, Gold
+from src.npc._merchants import Merchant
 
 
 @pytest.fixture
-def game_service(_cached_game_service):
-    """Return the cached GameService (function-scoped to isolate mocks)."""
-    return _cached_game_service
-
-
-@pytest.fixture(scope="session")
 def _cached_mock_universe():
-    """Cache universe mock across session (immutable in tests)."""
+    """A stub universe for the skill-tree tests.
+
+    Deliberately **not** session-scoped despite the old name: ``story`` and
+    ``game_tick`` are mutable, so a session-wide instance leaks whatever one
+    test writes into every later test — and under ``-n auto`` that ordering is
+    not even reproducible.
+    """
     universe = MagicMock()
     universe.story = {}
     universe.game_tick = 100
@@ -185,255 +181,171 @@ def mock_item():
 # ============================================================================
 
 
-class TestShopGetState:
-    """Tests for get_shop_state() - retrieve shop inventory and pricing."""
+class _ShopWorld:
+    """A real merchant on Jean's tile — no serializer is stubbed.
 
-    def test_get_shop_state_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_shop_state returns a dictionary."""
-        with patch.object(
-            game_service, "_find_merchant"
-        ) as mock_find:
-            merchant = MagicMock()
-            merchant.shop = MagicMock()
-            merchant.inventory = []
-            mock_find.return_value = merchant
+    The previous shop tests here wrapped every call in five nested
+    ``patch(...ShopSerializer...)`` blocks and then asserted
+    ``isinstance(result, dict)``. With the serializers stubbed out there was no
+    price, no ledger and no gold movement left to check, so the assertions could
+    not have failed. The pricing/gold/round-trip surface is now covered against
+    real objects in ``tests/test_game_service_advanced.py``; what remains here
+    are the ``shop_buyback`` refusal branches that file does not reach.
+    """
 
-            with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state"):
-                with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable"):
-                    with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                        result = game_service.get_shop_state(extended_mock_player, "merchant_id")
-                        assert isinstance(result, dict)
+    def __init__(self, game_service, player, merchant):
+        self.gs, self.player, self.merchant = game_service, player, merchant
+        self.npc_id = str(id(merchant))
 
-    def test_get_shop_state_merchant_not_found(self, game_service, extended_mock_player):
-        """Test get_shop_state when merchant is not found."""
-        with patch.object(game_service, "_find_merchant", return_value=None):
-            result = game_service.get_shop_state(extended_mock_player, "invalid_id")
-            assert result["success"] is False
-            assert "error" in result
+    def sell(self, item, quantity=1):
+        return self.gs.shop_sell(self.player, self.npc_id, str(id(item)), quantity)
 
-    def test_get_shop_state_initializes_shop(self, game_service, extended_mock_player, mock_merchant):
-        """Test that get_shop_state initializes pricing when uninitialized."""
-        # No buy_modifier set yet -> get_shop_state should lazily initialize.
-        del mock_merchant.buy_modifier
-        mock_merchant.initialize_shop = MagicMock()
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state", return_value={"sell_modifier": 0.5}):
-                with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable", return_value=[]):
-                    with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                        game_service.get_shop_state(extended_mock_player, "merchant_id")
-                        mock_merchant.initialize_shop.assert_called()
+    def buyback(self, item_id):
+        return self.gs.shop_buyback(self.player, self.npc_id, item_id)
 
-    def test_get_shop_state_includes_shop_state_key(self, game_service, extended_mock_player):
-        """Test that get_shop_state includes shop_state in response."""
-        with patch.object(game_service, "_find_merchant") as mock_find:
-            merchant = MagicMock()
-            merchant.shop = MagicMock()
-            merchant.inventory = []
-            mock_find.return_value = merchant
-
-            with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state", return_value={"items": [], "sell_modifier": 0.5}):
-                with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable", return_value=[]):
-                    with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                        result = game_service.get_shop_state(extended_mock_player, "merchant_id")
-                        assert "shop_state" in result
-                        assert "sell_inventory" in result
+    def offer_id(self):
+        """The ledger id of the single outstanding buyback offer."""
+        (entry,) = self.merchant._buyback_ledger
+        return entry["item_id"]
 
 
-class TestShopBuy:
-    """Tests for shop_buy() - purchase items from merchant."""
-
-    def test_shop_buy_returns_dict(self, game_service, extended_mock_player, mock_merchant, mock_item):
-        """Test that shop_buy returns a dictionary."""
-        mock_merchant.inventory = [mock_item]
-        extended_mock_player.current_room.npcs_here = [mock_merchant]
-
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.interface.get_gold", return_value=1000):
-                with patch("src.interface.transfer_gold"):
-                    with patch("src.interface.transfer_item"):
-                        with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                            with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state", return_value={"sell_modifier": 0.5}):
-                                with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable", return_value=[]):
-                                    result = game_service.shop_buy(
-                                        extended_mock_player, "merchant_id", str(id(mock_item)), 1
-                                    )
-                                    assert isinstance(result, dict)
-
-    def test_shop_buy_merchant_not_found(self, game_service, extended_mock_player):
-        """Test shop_buy when merchant is not found."""
-        with patch.object(game_service, "_find_merchant", return_value=None):
-            result = game_service.shop_buy(extended_mock_player, "invalid_id", "item_id", 1)
-            assert result["success"] is False
-
-    def test_shop_buy_item_not_found(self, game_service, extended_mock_player, mock_merchant):
-        """Test shop_buy when item is not found in merchant inventory."""
-        mock_merchant.inventory = []
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            result = game_service.shop_buy(extended_mock_player, "merchant_id", "invalid_item_id", 1)
-            assert result["success"] is False
-
-    def test_shop_buy_insufficient_gold(self, game_service, extended_mock_player, mock_merchant, mock_item):
-        """Test shop_buy when player has insufficient gold."""
-        mock_merchant.inventory = [mock_item]
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.interface.get_gold", return_value=10):  # Not enough
-                result = game_service.shop_buy(extended_mock_player, "merchant_id", str(id(mock_item)), 1)
-                assert result["success"] is False
-                assert "not enough gold" in result["error"].lower()
-
-    def test_shop_buy_process_transfer(self, game_service, extended_mock_player, mock_merchant, mock_item):
-        """Test shop_buy executes transfer when conditions met."""
-        mock_item.value = 10
-        mock_merchant.inventory = [mock_item]
-        extended_mock_player.weight_current = 10
-        extended_mock_player.weight_tolerance = 100
-        extended_mock_player.refresh_weight = MagicMock()
-
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.interface.get_gold", return_value=100):  # enough gold
-                with patch("src.interface.transfer_gold") as mock_transfer_gold:
-                    with patch("src.interface.transfer_item") as mock_transfer_item:
-                        with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                            with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state", return_value={"sell_modifier": 0.5}):
-                                with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable", return_value=[]):
-                                    result = game_service.shop_buy(extended_mock_player, "merchant_id", str(id(mock_item)), 1)
-                                    # If success or we attempted transfer, the test passes
-                                    if result.get("success"):
-                                        mock_transfer_gold.assert_called()
-                                        mock_transfer_item.assert_called()
-                                    else:
-                                        # Method still ran, just failed validation
-                                        assert isinstance(result, dict)
+def _tradeable(name="Tonic", value=100, weight=0.1, count=1):
+    return Consumable(
+        name=name,
+        description=f"A {name.lower()}.",
+        value=value,
+        weight=weight,
+        maintype="consumable",
+        subtype="healing",
+        count=count,
+    )
 
 
-class TestShopSell:
-    """Tests for shop_sell() - sell items to merchant."""
-
-    def test_shop_sell_returns_dict(self, game_service, extended_mock_player, mock_merchant, mock_item):
-        """Test that shop_sell returns a dictionary."""
-        extended_mock_player.inventory = [mock_item]
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.interface.get_gold", return_value=1000):
-                with patch("src.interface.transfer_gold"):
-                    with patch("src.interface.transfer_item"):
-                        with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                            with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state", return_value={"sell_modifier": 0.5}):
-                                with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable", return_value=[]):
-                                    result = game_service.shop_sell(
-                                        extended_mock_player, "merchant_id", str(id(mock_item)), 1
-                                    )
-                                    assert isinstance(result, dict)
-
-    def test_shop_sell_merchant_not_found(self, game_service, extended_mock_player):
-        """Test shop_sell when merchant is not found."""
-        with patch.object(game_service, "_find_merchant", return_value=None):
-            result = game_service.shop_sell(extended_mock_player, "invalid_id", "item_id", 1)
-            assert result["success"] is False
-
-    def test_shop_sell_item_not_found(self, game_service, extended_mock_player, mock_merchant):
-        """Test shop_sell when item is not in inventory."""
-        extended_mock_player.inventory = []
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            result = game_service.shop_sell(extended_mock_player, "merchant_id", "invalid_item_id", 1)
-            assert result["success"] is False
-
-    def test_shop_sell_equipped_item(self, game_service, extended_mock_player, mock_merchant, mock_item):
-        """Test shop_sell when trying to sell equipped item."""
-        mock_item.is_equipped = True
-        extended_mock_player.inventory = [mock_item]
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            result = game_service.shop_sell(extended_mock_player, "merchant_id", str(id(mock_item)), 1)
-            assert result["success"] is False
-            assert "equipped" in result["error"].lower()
-
-    def test_shop_sell_no_sell_value(self, game_service, extended_mock_player, mock_merchant):
-        """Test shop_sell rejects items with no base value."""
-        item = MagicMock()
-        item.name = "Worthless"
-        item.value = 0
-        item.is_equipped = False
-        item.isequipped = False
-        extended_mock_player.inventory = [item]
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            result = game_service.shop_sell(extended_mock_player, "merchant_id", str(id(item)), 1)
-            # Value of 0 triggers error
-            if result.get("success") is False:
-                assert "value" in result.get("error", "").lower() or "sell" in result.get("error", "").lower()
-
-    def test_shop_sell_merchant_insufficient_gold(self, game_service, extended_mock_player, mock_merchant, mock_item):
-        """Test shop_sell when merchant has insufficient funds."""
-        extended_mock_player.inventory = [mock_item]
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.interface.get_gold", return_value=5):  # Merchant has little gold
-                result = game_service.shop_sell(extended_mock_player, "merchant_id", str(id(mock_item)), 1)
-                assert result["success"] is False
-                assert "insufficient funds" in result["error"].lower()
+@pytest.fixture
+def shop_world(game_service, make_world, grid_3x3, set_player_gold):
+    jean, game_map = make_world(grid_3x3)
+    set_player_gold(jean, 1000)
+    trader = Merchant(
+        name="Milo",
+        description="A trader.",
+        damage=1,
+        aggro=False,
+        exp_award=0,
+        stock_count=0,
+        inventory=[Gold(2000)],
+    )
+    # A non-gold item keeps get_shop_state from firing the update_goods restock,
+    # which would clear the inventory and reroll the purse.
+    shelf_filler = _tradeable(name="Stall Ledger", value=0, weight=0.0)
+    shelf_filler.merchandise = False
+    trader.inventory.append(shelf_filler)
+    game_map[(0, 0)].npcs_here = [trader]
+    return _ShopWorld(game_service, jean, trader)
 
 
-class TestShopBuyback:
-    """Tests for shop_buyback() - repurchase recently sold items."""
+class TestMerchantDiscovery:
+    """``_find_merchant`` gates on ``buy_modifier``, and nothing else does."""
 
-    def test_shop_buyback_returns_dict(self, game_service, extended_mock_player, mock_merchant):
-        """Test that shop_buyback returns a dictionary."""
-        entry = {
-            "item_id": "item_1",
-            "item_name": "Iron Sword",
-            "buyback_price": 25,
-            "count": 1,
+    def test_a_merchant_without_pricing_is_not_found_at_all(
+        self, game_service, shop_world
+    ):
+        """``get_shop_state`` contains a lazy ``initialize_shop()`` fallback for
+        an uninitialised merchant — but it is unreachable through the real
+        lookup, because ``_find_merchant`` itself requires ``buy_modifier`` to
+        be present. Deleting the attribute makes the merchant invisible rather
+        than triggering the fallback.
+
+        The old test for this patched ``_find_merchant`` to hand back the mock
+        directly, which is precisely what hid the contradiction.
+        """
+        del shop_world.merchant.buy_modifier
+
+        result = game_service.get_shop_state(shop_world.player, shop_world.npc_id)
+
+        assert result == {
+            "success": False,
+            "error": "Merchant not found at this location",
         }
-        mock_merchant._buyback_ledger = [entry]
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.interface.get_gold", return_value=100):
-                with patch("src.interface.transfer_gold"):
-                    with patch("src.interface.transfer_item"):
-                        with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                            with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state", return_value={"sell_modifier": 0.5}):
-                                with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable", return_value=[]):
-                                    result = game_service.shop_buyback(extended_mock_player, "merchant_id", "item_1")
-                                    assert isinstance(result, dict)
 
-    def test_shop_buyback_merchant_not_found(self, game_service, extended_mock_player):
-        """Test shop_buyback when merchant is not found."""
-        with patch.object(game_service, "_find_merchant", return_value=None):
-            result = game_service.shop_buyback(extended_mock_player, "invalid_id", "item_id")
-            assert result["success"] is False
+    def test_a_merchant_on_another_tile_is_not_found(self, game_service, shop_world):
+        game_service.move_player(shop_world.player, "east")
 
-    def test_shop_buyback_item_not_found(self, game_service, extended_mock_player, mock_merchant):
-        """Test shop_buyback when item is not in ledger."""
-        mock_merchant._buyback_ledger = []
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                result = game_service.shop_buyback(extended_mock_player, "merchant_id", "invalid_id")
-                assert result["success"] is False
-                assert "expired" in result["error"].lower() or "not found" in result["error"].lower()
+        result = game_service.get_shop_state(shop_world.player, shop_world.npc_id)
 
-    def test_shop_buyback_insufficient_gold(self, game_service, extended_mock_player, mock_merchant):
-        """Test shop_buyback when player has insufficient gold."""
-        entry = {
-            "item_id": "item_1",
-            "item_name": "Iron Sword",
-            "buyback_price": 100,
-            "count": 1,
+        assert result["success"] is False
+
+
+class TestShopBuybackRefusals:
+    """Every way ``shop_buyback`` declines, asserted on real state."""
+
+    def test_an_unknown_merchant_is_refused(self, game_service, shop_world):
+        result = game_service.shop_buyback(shop_world.player, "no-such-npc", "x")
+
+        assert result == {
+            "success": False,
+            "error": "Merchant not found at this location",
         }
-        mock_merchant._buyback_ledger = [entry]
-        with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
-            with patch("src.interface.get_gold", return_value=10):  # Not enough
-                with patch("src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"):
-                    result = game_service.shop_buyback(extended_mock_player, "merchant_id", "item_1")
-                    assert result["success"] is False
-                    assert "not enough gold" in result["error"].lower()
 
+    def test_an_unknown_offer_is_refused(self, shop_world):
+        """The ledger attribute is created lazily on the first sale, so a
+        merchant nobody has sold to has none at all."""
+        assert not hasattr(shop_world.merchant, "_buyback_ledger")
 
-# ============================================================================
-# SKILL SYSTEM TESTS
-# ============================================================================
+        result = shop_world.buyback("never-sold-this")
+
+        assert result["error"] == "Buyback offer has expired or was not found"
+
+    def test_buying_back_beyond_the_purse_is_refused_with_the_shortfall(
+        self, shop_world, set_player_gold, get_player_gold
+    ):
+        item = _tradeable(value=800)
+        shop_world.player.inventory.append(item)
+        assert shop_world.sell(item)["gold_gained"] == 400
+
+        set_player_gold(shop_world.player, 100)
+        result = shop_world.buyback(shop_world.offer_id())
+
+        assert result == {"success": False, "error": "Not enough gold — need 300 more"}
+        assert get_player_gold(shop_world.player) == 100
+        assert len(shop_world.merchant._buyback_ledger) == 1, "offer was consumed"
+
+    def test_buying_back_something_too_heavy_is_refused(self, shop_world):
+        """Jean sold it while over-strong; the carry check runs again on the way
+        back in, after the gold check has already passed."""
+        shop_world.player.weight_tolerance = 10_000
+        anvil = _tradeable(name="Anvil", value=200, weight=999)
+        shop_world.player.inventory.append(anvil)
+        shop_world.sell(anvil)
+
+        shop_world.player.weight_tolerance = 30
+        result = shop_world.buyback(shop_world.offer_id())
+
+        assert result == {"success": False, "error": "Exceeds carry limit"}
+
+    def test_an_offer_whose_item_vanished_is_dropped_from_the_ledger(
+        self, shop_world
+    ):
+        """A stale ledger row must not survive a failed lookup, or the shop
+        would keep advertising an item the merchant cannot hand over."""
+        item = _tradeable(value=100)
+        shop_world.player.inventory.append(item)
+        shop_world.sell(item)
+        offer_id = shop_world.offer_id()
+        shop_world.merchant.inventory = [
+            i for i in shop_world.merchant.inventory if i.name != "Tonic"
+        ]
+
+        result = shop_world.buyback(offer_id)
+
+        assert result["error"] == "Buyback item no longer in merchant stock"
+        assert shop_world.merchant._buyback_ledger == []
 
 
 class TestLearnSkill:
     """Tests for learn_skill() - learn skills from skill tree."""
 
-    def test_learn_skill_returns_dict(self, game_service, extended_mock_player):
-        """Test that learn_skill returns a dictionary."""
+    def test_learning_spends_the_skill_experience(self, game_service, extended_mock_player):
+        """The cost is deducted from the category's exp pool, not just checked."""
         mock_skill = MagicMock()
         mock_skill.name = "Power Strike"
         mock_skill.description = "A powerful attack"
@@ -441,7 +353,22 @@ class TestLearnSkill:
         extended_mock_player.skill_exp["Basic"] = 100
 
         result = game_service.learn_skill(extended_mock_player, "Power Strike", "Basic")
-        assert isinstance(result, dict)
+
+        assert result["success"] is True
+        assert extended_mock_player.skill_exp["Basic"] == 50
+        extended_mock_player.learn_skill.assert_called_once_with(mock_skill)
+
+    def test_a_refused_purchase_spends_nothing(self, game_service, extended_mock_player):
+        """The mirror image: an unaffordable skill must leave the pool intact."""
+        mock_skill = MagicMock()
+        mock_skill.name = "Power Strike"
+        extended_mock_player.skilltree.subtypes["Basic"][mock_skill] = 200
+        extended_mock_player.skill_exp["Basic"] = 50
+
+        game_service.learn_skill(extended_mock_player, "Power Strike", "Basic")
+
+        assert extended_mock_player.skill_exp["Basic"] == 50
+        extended_mock_player.learn_skill.assert_not_called()
 
     def test_learn_skill_no_skill_tree(self, game_service, extended_mock_player):
         """Test learn_skill when player has no skill tree."""
@@ -503,27 +430,21 @@ class TestLearnSkill:
 class TestGetPlayerSkills:
     """Tests for get_player_skills() - retrieve skill tree state."""
 
-    def test_get_player_skills_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_player_skills returns a dictionary."""
-        result = game_service.get_player_skills(extended_mock_player)
-        assert isinstance(result, dict)
+    def test_the_payload_reports_the_players_own_moves_and_exp(
+        self, game_service, extended_mock_player
+    ):
+        """Values, not just keys — the three sections used to be checked with
+        ``isinstance(..., list/dict)``, which an empty stub satisfies."""
+        known = MagicMock()
+        known.name = "Jab"
+        extended_mock_player.known_moves = [known]
+        extended_mock_player.skill_exp = {"Basic": 100, "Dagger": 50}
 
-    def test_get_player_skills_includes_known_moves(self, game_service, extended_mock_player):
-        """Test that get_player_skills includes known_moves."""
         result = game_service.get_player_skills(extended_mock_player)
-        assert "known_moves" in result
-        assert isinstance(result["known_moves"], list)
 
-    def test_get_player_skills_includes_skill_exp(self, game_service, extended_mock_player):
-        """Test that get_player_skills includes skill_exp."""
-        result = game_service.get_player_skills(extended_mock_player)
-        assert "skill_exp" in result
-        assert isinstance(result["skill_exp"], dict)
-
-    def test_get_player_skills_includes_skill_tree(self, game_service, extended_mock_player):
-        """Test that get_player_skills includes skill_tree."""
-        result = game_service.get_player_skills(extended_mock_player)
-        assert "skill_tree" in result
+        assert [m["name"] for m in result["known_moves"]] == ["Jab"]
+        assert result["skill_exp"] == {"Basic": 100, "Dagger": 50}
+        assert set(result["skill_tree"]) == {"Basic", "Dagger"}
 
     def test_get_player_skills_no_skill_tree(self, game_service, extended_mock_player):
         """Test get_player_skills when player has no skill tree."""
@@ -609,56 +530,64 @@ class TestGetPlayerSkills:
 
 
 class TestCollectCombatLoot:
-    """Tests for collect_combat_loot() - collect post-combat drops."""
+    """``collect_combat_loot`` moves named drops into the pack, or explains why not.
 
-    def test_collect_combat_loot_returns_dict(self, game_service, extended_mock_player):
-        """Test that collect_combat_loot returns a dictionary."""
-        result = game_service.collect_combat_loot(extended_mock_player, [])
-        assert isinstance(result, dict)
+    Driven with a real ``Player`` so the weight arithmetic is the engine's own.
+    The previous versions asserted ``isinstance(result, dict)`` and then wrapped
+    the interesting assertion in ``if result.get("collected"):``, so an empty
+    result satisfied them.
+    """
 
-    def test_collect_combat_loot_success_flag(self, game_service, extended_mock_player):
-        """Test that collect_combat_loot has success flag."""
-        result = game_service.collect_combat_loot(extended_mock_player, [])
-        assert result["success"] is True
+    @pytest.fixture
+    def looter(self, make_world, grid_3x3):
+        jean, _game_map = make_world(grid_3x3)
+        return jean
 
-    def test_collect_combat_loot_clears_drops(self, game_service, extended_mock_player):
-        """Test that collect_combat_loot clears combat_drops."""
-        extended_mock_player.combat_drops = ["item1", "item2"]
-        game_service.collect_combat_loot(extended_mock_player, [])
-        assert extended_mock_player.combat_drops == []
+    def test_collecting_nothing_still_succeeds(self, game_service, looter):
+        result = game_service.collect_combat_loot(looter, [])
 
-    def test_collect_combat_loot_collects_items(self, game_service, extended_mock_player):
-        """Test that collect_combat_loot collects selected items."""
-        mock_item = MagicMock()
-        mock_item.name = "Iron Sword"
-        mock_item.weight = 5.0
-        extended_mock_player.current_room.items_here = [mock_item]
-        extended_mock_player.inventory = []
-        extended_mock_player.inventory_list = extended_mock_player.inventory
-        extended_mock_player.carrying_capacity = 100.0
+        assert result == {"success": True, "collected": [], "skipped": []}
 
-        result = game_service.collect_combat_loot(extended_mock_player, ["Iron Sword"])
-        assert "collected" in result
-        # Item should be in collected list if weight allows
-        if result.get("collected"):
-            assert "Iron Sword" in result["collected"]
+    def test_a_named_drop_moves_into_the_pack(self, game_service, looter):
+        tonic = _tradeable(name="Tonic", value=10, weight=0.5)
+        looter.current_room.items_here = [tonic]
 
-    def test_collect_combat_loot_weight_limit(self, game_service, extended_mock_player):
-        """Test that collect_combat_loot respects weight limit."""
-        mock_item = MagicMock()
-        mock_item.name = "Heavy Item"
-        mock_item.weight = 20.0
-        extended_mock_player.current_room.items_here = [mock_item]
-        extended_mock_player.inventory = []
-        extended_mock_player.inventory_list = []
-        extended_mock_player.weight_current = 85
-        extended_mock_player.carrying_capacity = 100.0
+        result = game_service.collect_combat_loot(looter, ["Tonic"])
 
-        result = game_service.collect_combat_loot(extended_mock_player, ["Heavy Item"])
-        assert "skipped" in result
-        # With 85/100 capacity and 20 weight item, should be skipped
-        if result["skipped"]:
-            assert any(s["name"] == "Heavy Item" for s in result["skipped"])
+        assert result["collected"] == ["Tonic"]
+        assert result["skipped"] == []
+        assert tonic not in looter.current_room.items_here
+        assert [i for i in looter.inventory if i.name == "Tonic"]
+
+    def test_an_unnamed_drop_is_left_on_the_floor(self, game_service, looter):
+        wanted = _tradeable(name="Tonic", value=10, weight=0.5)
+        ignored = _tradeable(name="Salve", value=10, weight=0.5)
+        looter.current_room.items_here = [wanted, ignored]
+
+        game_service.collect_combat_loot(looter, ["Tonic"])
+
+        assert looter.current_room.items_here == [ignored]
+
+    def test_the_drop_list_is_cleared_afterwards(self, game_service, looter):
+        """``combat_drops`` is the post-victory prompt; leaving it populated
+        would re-offer the same loot on the next fight."""
+        looter.combat_drops = [_tradeable(name="Tonic")]
+
+        game_service.collect_combat_loot(looter, [])
+
+        assert looter.combat_drops == []
+
+    def test_something_too_heavy_is_reported_as_skipped_not_dropped(
+        self, game_service, looter
+    ):
+        anvil = _tradeable(name="Anvil", value=1, weight=999)
+        looter.current_room.items_here = [anvil]
+
+        result = game_service.collect_combat_loot(looter, ["Anvil"])
+
+        assert result["collected"] == []
+        assert [s["name"] for s in result["skipped"]] == ["Anvil"]
+        assert anvil in looter.current_room.items_here, "skipped loot must stay behind"
 
 
 # ============================================================================
@@ -667,19 +596,46 @@ class TestCollectCombatLoot:
 
 
 class TestFleeCombat:
-    """Tests for flee_combat() - flee from combat."""
+    """``flee_combat`` tears the encounter down, or refuses for a stated reason."""
 
-    def test_flee_combat_returns_dict(self, game_service, extended_mock_player):
-        """Test that flee_combat returns a dictionary."""
-        extended_mock_player.in_combat = True
-        result = game_service.flee_combat(extended_mock_player)
-        assert isinstance(result, dict)
+    @pytest.fixture
+    def fighter(self, game_service, make_world, grid_3x3):
+        from src.npc._enemies import Slime
 
-    def test_flee_combat_not_in_combat(self, game_service, extended_mock_player):
-        """Test flee_combat when not in combat."""
-        extended_mock_player.in_combat = False
-        result = game_service.flee_combat(extended_mock_player)
-        assert result.get("success") is False or "error" in result
+        jean, game_map = make_world(grid_3x3)
+        slime = Slime()
+        game_map[(0, 0)].npcs_here = [slime]
+        game_service.start_combat(jean, str(id(slime)))
+        return jean, slime
+
+    def test_fleeing_a_distant_enemy_ends_the_fight(self, game_service, fighter):
+        jean, slime = fighter
+        slime.combat_proximity = {jean: 40}
+
+        result = game_service.flee_combat(jean)
+
+        assert result["fled"] is True
+        assert jean.in_combat is False
+        assert jean.combat_list == []
+        assert jean.current_move is None
+
+    def test_fleeing_strips_combat_only_status_effects(self, game_service, fighter):
+        """World-persistent states (Poisoned, Slimed) survive the escape; a
+        combat-scoped one must not follow Jean out of the room."""
+        jean, slime = fighter
+        slime.combat_proximity = {jean: 40}
+        transient = MagicMock(persistent=False)
+        lasting = MagicMock(persistent=True)
+        jean.states = [transient, lasting]
+
+        game_service.flee_combat(jean)
+
+        assert jean.states == [lasting]
+
+    def test_fleeing_outside_combat_is_refused(self, game_service, make_world, grid_3x3):
+        jean, _ = make_world(grid_3x3)
+
+        assert game_service.flee_combat(jean) == {"error": "Not in combat"}
 
 
 # ============================================================================
@@ -688,48 +644,121 @@ class TestFleeCombat:
 
 
 class TestGetPlayerStats:
-    """Tests for get_player_stats() - retrieve player attributes."""
+    """The character sheet reports live, derived values — not raw attributes."""
 
-    def test_get_player_stats_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_player_stats returns a dictionary."""
-        result = game_service.get_player_stats(extended_mock_player)
-        assert isinstance(result, dict)
+    @pytest.fixture
+    def sheet(self, game_service, make_world, grid_3x3, set_player_gold):
+        jean, _ = make_world(grid_3x3)
+        set_player_gold(jean, 250)
+        return game_service.get_player_stats(jean), jean
 
-    def test_get_player_stats_includes_attributes(self, game_service, extended_mock_player):
-        """Test that get_player_stats includes attribute data."""
-        result = game_service.get_player_stats(extended_mock_player)
-        assert len(result) > 0
+    def test_hp_and_fatigue_come_from_the_player(self, sheet):
+        stats, jean = sheet
+
+        assert (stats["hp"], stats["max_hp"]) == (jean.hp, jean.maxhp)
+        assert (stats["fatigue"], stats["max_fatigue"]) == (jean.fatigue, jean.maxfatigue)
+
+    def test_every_attribute_is_reported_with_its_unmodified_base(self, sheet):
+        """Equipment shifts the effective value; the sheet shows both so the UI
+        can render the delta."""
+        stats, _jean = sheet
+
+        for attribute in (
+            "strength",
+            "finesse",
+            "speed",
+            "endurance",
+            "charisma",
+            "intelligence",
+            "faith",
+        ):
+            assert attribute in stats
+            assert f"{attribute}_base" in stats
+
+    def test_jeans_starting_gear_shifts_three_attributes_off_base(self, sheet):
+        """Not a tautology: the Tattered Cloth / Cloth Hood / Wedding Band Jean
+        starts in are what make effective != base here."""
+        stats, _jean = sheet
+
+        assert (stats["finesse"], stats["finesse_base"]) == (11, 10)
+        assert (stats["endurance"], stats["endurance_base"]) == (11, 10)
+        assert (stats["charisma"], stats["charisma_base"]) == (9, 10)
+
+    def test_the_purse_is_reported_as_a_number(self, sheet, get_player_gold):
+        stats, jean = sheet
+
+        assert stats["gold"] == get_player_gold(jean) == 250
 
 
 class TestGetAvailableMoves:
-    """Tests for get_available_moves() - list castable moves."""
+    """``get_available_moves`` mirrors the adapter's move-selection options."""
 
-    def test_get_available_moves_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_available_moves returns a dictionary."""
-        extended_mock_player.in_combat = True
-        result = game_service.get_available_moves(extended_mock_player)
-        assert isinstance(result, dict)
+    def test_outside_combat_there_are_no_moves(self, game_service, make_world, grid_3x3):
+        jean, _ = make_world(grid_3x3)
+        assert not hasattr(jean, "_combat_adapter")
 
-    def test_get_available_moves_includes_moves(self, game_service, extended_mock_player):
-        """Test that get_available_moves returns move data."""
-        extended_mock_player.in_combat = True
-        result = game_service.get_available_moves(extended_mock_player)
-        assert "available_moves" in result or "moves" in result or isinstance(result, dict)
+        assert game_service.get_available_moves(jean) == {"moves": []}
+
+    def test_in_combat_the_adapters_options_are_serialized(
+        self, game_service, make_player, make_npc, make_adapter
+    ):
+        from src.npc import Slime
+
+        jean = make_player(weapon="Sword")
+        # GameService._initialize_combat is what binds the adapter to the
+        # player in production; make_adapter only builds it.
+        jean._combat_adapter = make_adapter(jean, enemies=[make_npc(cls=Slime, hp=40)])
+
+        moves = game_service.get_available_moves(jean)["moves"]
+
+        assert moves, "a live fight must offer at least one move"
+        assert [m["name"] for m in moves] == [
+            option["name"] for option in jean._combat_adapter.available_options
+        ]
+        assert [m["id"] for m in moves] == [str(i) for i in range(len(moves))]
+        assert all(
+            {"name", "description", "fatigue_cost", "category", "beats_left"} <= set(m)
+            for m in moves
+        )
+
+    def test_a_non_move_prompt_offers_nothing(
+        self, game_service, make_player, make_npc, make_adapter
+    ):
+        """While the adapter is waiting for a target or a direction its
+        ``available_options`` are not moves, so none are advertised."""
+        from src.npc import Slime
+
+        jean = make_player(weapon="Sword")
+        adapter = make_adapter(jean, enemies=[make_npc(cls=Slime, hp=40)])
+        jean._combat_adapter = adapter
+        adapter.input_type = "target_selection"
+
+        assert game_service.get_available_moves(jean) == {"moves": []}
 
 
 class TestGetCombatStatus:
-    """Tests for get_combat_status() - retrieve combat state."""
+    """``get_combat_status`` is the poll the client runs every beat."""
 
-    def test_get_combat_status_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_combat_status returns a dictionary."""
-        result = game_service.get_combat_status(extended_mock_player)
-        assert isinstance(result, dict)
+    def test_outside_combat_there_is_no_battle_state(
+        self, game_service, make_world, grid_3x3
+    ):
+        jean, _ = make_world(grid_3x3)
 
-    def test_get_combat_status_not_in_combat(self, game_service, extended_mock_player):
-        """Test get_combat_status when not in combat."""
-        extended_mock_player.in_combat = False
-        result = game_service.get_combat_status(extended_mock_player)
-        assert isinstance(result, dict)
-        # in_combat should be False or not present
-        if "in_combat" in result:
-            assert result["in_combat"] is False
+        status = game_service.get_combat_status(jean)
+
+        assert status == {"combat_active": False, "log": [], "battle_state": None}
+
+    def test_in_combat_the_battle_state_names_the_enemy(
+        self, game_service, make_world, grid_3x3
+    ):
+        from src.npc._enemies import Slime
+
+        jean, game_map = make_world(grid_3x3)
+        slime = Slime()
+        game_map[(0, 0)].npcs_here = [slime]
+        game_service.start_combat(jean, str(id(slime)))
+
+        status = game_service.get_combat_status(jean)
+
+        assert status["combat_active"] is True
+        assert [e["name"] for e in status["battle_state"]["enemies"]] == [slime.name]

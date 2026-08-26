@@ -191,7 +191,7 @@ def _make_adapter(player=None):
 
 class TestInitializeCombatScenarioTypes:
     def test_pincer_scenario_type(self):
-        """3 enemies vs 1 ally → pincer."""
+        """Outnumbered (3 enemies vs 1 ally) picks the pincer layout."""
         player = _make_player()
         enemy1 = _make_enemy("E1")
         enemy2 = _make_enemy("E2")
@@ -200,15 +200,24 @@ class TestInitializeCombatScenarioTypes:
         adapter = _make_adapter(player)
 
         with (
-            patch("src.api.combat_adapter.positions.initialize_combat_positions"),
+            patch(
+                "src.api.combat_adapter.positions.initialize_combat_positions"
+            ) as mock_init,
             patch("src.coordinate_config.CoordinateSystemConfig") as MockCoord,
         ):
             MockCoord.return_value.get_dynamic_grid_size.return_value = (10, 10)
-            result = adapter.initialize_combat([enemy1, enemy2, enemy3])
-        assert result is not None
+            adapter.initialize_combat([enemy1, enemy2, enemy3])
+
+        # The docstring named "pincer" but the old assertion was
+        # `result is not None`, so the scenario choice this test exists to
+        # cover was never checked.
+        _, kwargs = mock_init.call_args
+        assert kwargs["scenario_type"] == "pincer"
+        assert kwargs["enemies"] == [enemy1, enemy2, enemy3]
+        assert kwargs["grid_width"] == 10 and kwargs["grid_height"] == 10
 
     def test_boss_arena_scenario_type(self):
-        """1 enemy vs 1 ally → boss_arena."""
+        """A clean 1v1 picks the boss_arena layout."""
         player = _make_player()
         enemy = _make_enemy("BossEnemy")
         player.combat_list = [enemy]
@@ -216,35 +225,124 @@ class TestInitializeCombatScenarioTypes:
         adapter = _make_adapter(player)
 
         with (
-            patch("src.api.combat_adapter.positions.initialize_combat_positions"),
+            patch(
+                "src.api.combat_adapter.positions.initialize_combat_positions"
+            ) as mock_init,
             patch("src.coordinate_config.CoordinateSystemConfig") as MockCoord,
         ):
             MockCoord.return_value.get_dynamic_grid_size.return_value = (10, 10)
-            result = adapter.initialize_combat([enemy])
-        assert result is not None
+            adapter.initialize_combat([enemy])
 
-    def test_position_init_failure_fallback(self):
-        """When positions.initialize_combat_positions raises, fallback proximity is used."""
+        _, kwargs = mock_init.call_args
+        assert kwargs["scenario_type"] == "boss_arena"
+
+    def test_even_teams_use_the_standard_scenario_type(self):
+        """Two-on-two is neither outnumbered nor a duel -> standard."""
+        player = _make_player()
+        ally = _make_enemy("Gorran", friend=True)
+        enemy1 = _make_enemy("E1")
+        enemy2 = _make_enemy("E2")
+        player.combat_list = [enemy1, enemy2]
+        player.combat_list_allies = [player, ally]
+        adapter = _make_adapter(player)
+
+        with (
+            patch(
+                "src.api.combat_adapter.positions.initialize_combat_positions"
+            ) as mock_init,
+            patch("src.coordinate_config.CoordinateSystemConfig") as MockCoord,
+        ):
+            MockCoord.return_value.get_dynamic_grid_size.return_value = (10, 10)
+            adapter.initialize_combat([enemy1, enemy2])
+
+        _, kwargs = mock_init.call_args
+        assert kwargs["scenario_type"] == "standard"
+
+    def test_position_init_failure_falls_back_to_symmetric_proximity(self):
+        """A coordinate-system failure must degrade to the legacy 1D proximity.
+
+        The old assertion was `result is not None`, which held even if the
+        fallback populated nothing -- leaving every combatant at distance
+        "unknown" and silently breaking range checks for the whole fight.
+        """
         player = _make_player()
         enemy = _make_enemy()
         player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        enemy.combat_proximity = {}
+        enemy.default_proximity = 10
         adapter = _make_adapter(player)
 
         with patch(
             "src.api.combat_adapter.positions.initialize_combat_positions",
             side_effect=Exception("pos failure"),
         ):
-            result = adapter.initialize_combat([enemy])
-        assert result is not None
+            adapter.initialize_combat([enemy])
 
-    def test_reinit_ally_reset(self):
-        """reinit=True resets all ally moves."""
+        # Both sides must end up with an integer entry for each other, and the
+        # two must agree -- an asymmetric proximity dict makes each combatant
+        # compute a different range for the same pair. (The initial fallback
+        # value, int(default_proximity * uniform(0.75, 1.25)), is later
+        # refreshed by _synchronize_distances, so assert the invariant that
+        # survives rather than the transient seed value.)
+        assert enemy in player.combat_proximity
+        distance = player.combat_proximity[enemy]
+        assert isinstance(distance, int)
+        assert enemy.combat_proximity[player] == distance
+
+    def test_position_init_failure_seeds_from_the_enemys_default_proximity(self):
+        """The fallback seed itself: int(default_proximity * uniform(.75, 1.25)).
+
+        Captured at the moment it is written, before _synchronize_distances
+        refreshes it from (mocked) coordinates.
+        """
         player = _make_player()
-        move = _make_move()
-        player.known_moves = [move]
-        player.current_move = None
         enemy = _make_enemy()
         player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        enemy.combat_proximity = {}
+        enemy.default_proximity = 20
+        adapter = _make_adapter(player)
+        seeded = {}
+
+        def capture(*_a, **_k):
+            # Runs immediately after the fallback loop populates the dicts.
+            seeded.update(player.combat_proximity)
+            return {}
+
+        with (
+            patch(
+                "src.api.combat_adapter.positions.initialize_combat_positions",
+                side_effect=Exception("pos failure"),
+            ),
+            patch("src.api.combat_adapter.random.uniform", return_value=1.25),
+            patch(
+                "src.api.combat_adapter.positions.recalculate_proximity_dict",
+                side_effect=capture,
+            ),
+        ):
+            adapter.initialize_combat([enemy])
+
+        assert seeded[enemy] == 25  # int(20 * 1.25)
+
+    def test_reinit_clears_stale_cooldowns_on_both_sides(self):
+        """A reinit must not leave prior cooldowns blocking the new wave.
+
+        The old assertion was `result is not None`, so the move reset this
+        test is named for was never verified -- a move stuck at stage 3 with
+        beats_left would have stayed unavailable for the rest of the fight.
+        """
+        player = _make_player()
+        ally_move = _make_move(current_stage=3, beats_left=4)
+        player.known_moves = [ally_move]
+        player.current_move = None
+        enemy = _make_enemy()
+        enemy_move = _make_move("Bite", current_stage=2, beats_left=2)
+        enemy.known_moves = [enemy_move]
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
         adapter = _make_adapter(player)
         adapter.awaiting_input = True
         adapter.input_type = "move_selection"
@@ -254,8 +352,12 @@ class TestInitializeCombatScenarioTypes:
             patch("src.coordinate_config.CoordinateSystemConfig") as MockCoord,
         ):
             MockCoord.return_value.get_dynamic_grid_size.return_value = (10, 10)
-            result = adapter.initialize_combat([enemy], reinit=True)
-        assert result is not None
+            adapter.initialize_combat([enemy], reinit=True)
+
+        assert (ally_move.current_stage, ally_move.beats_left) == (0, 0)
+        assert (enemy_move.current_stage, enemy_move.beats_left) == (0, 0)
+        assert enemy.in_combat is True
+        assert enemy.player_ref is player
 
     def test_pending_scenario_type_override_used_and_cleared(self):
         """Issue #427: a CombatEventConfig-scripted scenario_type stashed on
@@ -359,18 +461,37 @@ class TestHandleCombinedSelection:
         result = adapter._handle_combined_selection("Slash", None)
         assert "error" in result
 
-    def test_partial_match(self):
+    def test_partial_match_resolves_to_the_named_move_and_runs_it(self):
+        """A substring must select *that* move and actually cast it.
+
+        The old assertion was ``result is not None``, which every branch of
+        _handle_combined_selection satisfies — including all four of its error
+        returns. The partial-match fallback could have selected the wrong move,
+        or none, and the test would still have passed.
+        """
+        wrong = _make_move("Parry")
         move = _make_move("Advanced Slash")
         player = _make_player()
-        player.known_moves = [move]
+        player.known_moves = [wrong, move]
         player.combat_list = []
         adapter = _make_adapter(player)
         adapter.awaiting_input = True
         adapter.input_type = "move_selection"
-        # "slash" partial-matches "Advanced Slash"
+
         result = adapter._handle_combined_selection("slash", None)
-        # Either executes or requests target
-        assert result is not None
+
+        assert "error" not in result
+        assert move.user is player
+        # Untargeted moves resolve onto the caster.
+        assert move.target is player
+        move.cast.assert_called_once()
+        move.advance.assert_called_once_with(player)
+        # The other known move was never touched by the substring match.
+        wrong.cast.assert_not_called()
+        assert wrong.target is None
+        # The animation entry names the move that actually ran.
+        animations = [e for e in player.combat_log if e["type"] == "animation"]
+        assert [a["animation"]["move_name"] for a in animations] == ["Advanced Slash"]
 
     def test_move_not_found(self):
         adapter = self._adapter_with_move(_make_move("Slash"))
@@ -416,8 +537,16 @@ class TestHandleCombinedSelection:
             adapter.awaiting_input = True
             adapter.input_type = "move_selection"
             result = adapter._handle_combined_selection("Slash", None)
-        # Returns state prompting for target
-        assert result is not None
+
+        # Returns the combat state with the adapter parked in target selection,
+        # not an error and not an executed move. ``result is not None`` (the old
+        # assertion) held for every one of those outcomes.
+        assert "error" not in result
+        assert adapter.input_type == "target_selection"
+        assert adapter.pending_move_index == 0
+        assert [o["name"] for o in adapter.available_options] == ["E1", "E2"]
+        assert player.current_move is not move
+        move.cast.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -645,17 +774,42 @@ class TestGetAvailableTargetsBranches:
         ally_targets = [t for t in targets if t.get("is_ally")]
         assert len(ally_targets) > 0
 
-    def test_target_with_verbose_targeting(self):
-        move = _make_move("Slash", targeted=True, verbose_targeting=True)
-        move.mvrange = (0, 50)
-        move.calculate_hit_chance.return_value = 0.85
-        player = _make_player()
-        enemy = _make_enemy()
+    def test_target_with_verbose_targeting_publishes_an_integer_percentage(self):
+        """The serialized ``hit_chance`` is the engine's integer percentage.
+
+        The old test pointed a mocked ``calculate_hit_chance`` at 0.85 and then
+        asserted the field was "not None" — a mock agreeing with itself, and one
+        that would have endorsed the 0-1 fraction that CLAUDE.md lists among the
+        five shipped wire-drift bugs. This builds a real ShootBow over a real
+        Player/NPC so the number is the one the client actually receives.
+        """
+        from src.moves import ShootBow
+        from tests._combat_fixtures import make_npc, make_player as _real_player
+
+        player = _real_player(weapon="Bow", finesse=10, intelligence=5)
+        enemy = make_npc(name="Straw Dummy", finesse=10)
         player.combat_list = [enemy]
-        player.combat_proximity = {enemy: 5}
+        player.combat_list_allies = [player]
+        player.combat_position = None
+        enemy.combat_position = None
+        player.combat_proximity = {enemy: 10}
+        enemy.combat_proximity = {player: 10}
+
+        move = ShootBow(player)
+        move.user = player
         adapter = _make_adapter(player)
+
         targets = adapter._get_available_targets(move)
-        assert targets[0].get("hit_chance") is not None
+
+        assert [t["name"] for t in targets] == ["Straw Dummy"]
+        chance = targets[0]["hit_chance"]
+        # to_hit_chance(finesse 10 / int 5 vs finesse 10) = int(98 - 10 + 7 + 1.5)
+        assert chance == 96
+        assert isinstance(chance, int)
+        # Guards the 0-1-fraction drift specifically: a fraction would be <= 1.
+        assert 2 <= chance <= 100
+        assert targets[0]["distance"] == 10
+        assert targets[0]["is_ally"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -700,7 +854,18 @@ class TestExecuteMoveEdgeCases:
             }
             player.current_move = move
             result = adapter._execute_move(move)
-        assert result is not None
+
+        # An instant move is cast and advanced within the same call, so the
+        # player is left with no move in progress; with the combat_list empty
+        # the beat then resolves to victory. ``result is not None`` (the old
+        # assertion) was equally true of the error return.
+        assert "error" not in result
+        move.cast.assert_called_once()
+        move.advance.assert_called_once_with(player)
+        assert player.current_move is None
+        assert result["combat_active"] is False
+        assert adapter.awaiting_input is False
+        assert result["battle_state"]["awaiting_input"] is False
 
 
 # ---------------------------------------------------------------------------

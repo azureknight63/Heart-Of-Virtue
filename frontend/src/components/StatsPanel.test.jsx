@@ -1,9 +1,15 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import StatsPanel from './StatsPanel';
+import { makePlayerStats } from '../test/payloads';
 
 describe('StatsPanel', () => {
-  const mockPlayer = {
+  // Derived from the real GameService.get_player_stats payload
+  // (src/test/payloads.js) rather than hand-written. The old literal carried
+  // `attack`, `accuracy` and `evasion` — three keys no serializer emits (the
+  // engine has hit_accuracy/evasion_chance and no `attack` stat at all), so the
+  // fixture agreed with a component reading fields that never arrive.
+  const mockPlayer = makePlayerStats({
     name: 'Hero',
     level: 5,
     exp: 1200,
@@ -15,27 +21,14 @@ describe('StatsPanel', () => {
     protection: 10,
     weight: 15.5,
     max_weight: 50,
-    attack: 15,
     attack_damage_min: 10,
     attack_damage_max: 20,
-    accuracy: 85,
     hit_accuracy: 85,
-    evasion: 10,
     evasion_chance: 10,
     strength: 12,
     strength_base: 10,
     finesse: 8,
     finesse_base: 10,
-    speed: 10,
-    speed_base: 10,
-    endurance: 10,
-    endurance_base: 10,
-    charisma: 10,
-    charisma_base: 10,
-    intelligence: 10,
-    intelligence_base: 10,
-    faith: 10,
-    faith_base: 10,
     resistance: {
       physical: 0.1,
       fire: 0.05,
@@ -46,12 +39,18 @@ describe('StatsPanel', () => {
       poison: 0.2,
       stun: 0.1,
     },
+    // get_player_stats emits {name, steps_left} pairs here, not serialize_state dicts.
     states: [
       { name: 'Blessed', description: 'Increased stats', steps_left: 5 },
-      { name: 'Poisoned', description: 'Taking damage over time' }
-    ]
-  };
+      { name: 'Poisoned', description: 'Taking damage over time' },
+    ],
+  });
 
+  /** The tooltip-bearing tile that owns an attribute row. */
+  const attributeTile = (tooltip) => screen.getByTitle(tooltip);
+  const STRENGTH_TIP = /Increases melee damage, carrying capacity, armor effectiveness/i;
+  const FINESSE_TIP = /Improves weapon damage.*hit accuracy/i;
+  const SPEED_TIP = /Determines turn order and action preparation time/i;
 
   it('renders null if player is missing', () => {
     const { container } = render(<StatsPanel player={null} />);
@@ -61,90 +60,104 @@ describe('StatsPanel', () => {
   it('renders player stats correctly', () => {
     render(<StatsPanel player={mockPlayer} />);
 
-    expect(screen.getByText(/📊 CHARACTER STATS/i)).toBeDefined();
-    expect(screen.getByText('Level')).toBeDefined();
-    expect(screen.getAllByText(/5/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/📊 CHARACTER STATS/i)).toBeInTheDocument();
 
-    // Check attributes
-    expect(screen.getByText(/Strength/i)).toBeDefined();
-    expect(screen.getAllByText(/12/i).length).toBeGreaterThan(0); // Buffed
-    expect(screen.getByText(/Finesse/i)).toBeDefined();
-    expect(screen.getAllByText(/8/i).length).toBeGreaterThan(0); // Debuffed
+    // Values read out of THEIR OWN tile. The old assertions were
+    // `getAllByText(/5/i).length > 0` and friends — /5/ matches "15.5", "85"
+    // and "5T" alike, so they passed no matter what number the level tile
+    // rendered, or whether it rendered one at all.
+    expect(screen.getByText('Level').closest('div')).toHaveTextContent('5');
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('12')).toBeInTheDocument();
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('BASE: 10')).toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).getByText('8')).toBeInTheDocument();
 
-    // Check core stats
-    expect(screen.getByText(/80\/100/i)).toBeDefined(); // HP
+    // Core stats
+    expect(screen.getByText('80/100')).toBeInTheDocument();
 
-    // Check resistances (displayed as "PHYSICAL: 10%")
-    expect(screen.getByText(/PHYSICAL: 10%/i)).toBeDefined();
-    expect(screen.getByText(/FIRE: 5%/i)).toBeDefined();
-    expect(screen.getByText(/LIGHTNING: -5%/i)).toBeDefined();
+    // Resistances render as a percentage of the 0-1 multiplier.
+    expect(screen.getByText(/PHYSICAL: 10%/i)).toBeInTheDocument();
+    expect(screen.getByText(/FIRE: 5%/i)).toBeInTheDocument();
+    expect(screen.getByText(/LIGHTNING: -5%/i)).toBeInTheDocument();
+    // A resistance of exactly 1 (the neutral multiplier) is filtered out.
+    expect(screen.queryByText(/ICE:/i)).toBeNull();
 
-    // Check states
-    expect(screen.getAllByText(/Blessed/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Poisoned/i).length).toBeGreaterThan(0);
+    // Active effects, with the remaining-step counter for the one that has it.
+    const blessed = screen.getByText('Blessed').closest('div');
+    expect(blessed).toHaveTextContent('5T');
+    // 'Poisoned' carries no steps_left, so no counter chip is rendered for it.
+    expect(screen.getByText('Poisoned').closest('div').textContent).toBe('Poisoned');
   });
 
   it('applies correct colors for attributes', () => {
     render(<StatsPanel player={mockPlayer} />);
 
     // Strength is 12 (base 10) -> buffed color #00ff88
-    const strengthContainer = screen.getByTitle(/Increases melee damage, carrying capacity, armor effectiveness/i);
+    const strengthContainer = attributeTile(STRENGTH_TIP);
     const strengthVal = within(strengthContainer).getByText('12');
     expect(strengthVal.style.color).toBe('rgb(0, 255, 136)'); // #00ff88
 
     // Finesse is 8 (base 10) -> debuffed color #ff6666
-    const finesseContainer = screen.getByTitle(/Improves weapon damage.*hit accuracy/i);
+    const finesseContainer = attributeTile(FINESSE_TIP);
     const finesseVal = within(finesseContainer).getByText('8');
     expect(finesseVal.style.color).toBe('rgb(255, 68, 68)'); // #ff4444 (colors.danger)
 
     // Speed is 10 (base 10) -> normal color #ffcc00 (colors.gold)
-    const speedContainer = screen.getByTitle(/Determines turn order and action preparation time/i);
+    const speedContainer = attributeTile(SPEED_TIP);
     const speedVal = within(speedContainer).getByText('10');
     expect(speedVal.style.color).toBe('rgb(255, 204, 0)'); // #ffcc00
   });
 
 
-  it('handles hover effects for all stat rows', () => {
+  it('gives every attribute row an explanatory tooltip', () => {
+    // The old test was named "handles hover effects for all stat rows" but
+    // hovered nothing and checked ONE row's existence. What actually matters is
+    // that no attribute ships without an explanation.
     render(<StatsPanel player={mockPlayer} />);
 
-    // Test attribute rows have tooltips
-    const attribute = screen.getByTitle(/Increases melee damage, carrying capacity, armor effectiveness/i);
-    expect(attribute).toBeDefined();
-
-    // Test that states display correctly
-    expect(screen.getByText(/Blessed/i)).toBeDefined();
-    expect(screen.getByText(/5T/i)).toBeDefined(); // 5 turns left
+    const ATTRIBUTES = ['Strength', 'Finesse', 'Speed', 'Endurance', 'Charisma', 'Intelligence', 'Faith'];
+    ATTRIBUTES.forEach((name) => {
+      const tile = screen.getByText(name).closest('[title]');
+      expect(tile, `${name} has no tooltip`).not.toBeNull();
+      expect(tile.getAttribute('title').length).toBeGreaterThan(20);
+    });
   });
 
 
-  it('handles close button hover', () => {
-    render(<StatsPanel player={mockPlayer} />);
-    const closeButton = screen.getByText('✕');
+  it.each([['✕'], ['CLOSE SHEET']])(
+    'calls onClose exactly once from the %s control',
+    (label) => {
+      // Two separate affordances close this sheet; the old file only covered
+      // the ✕, and did so with a bare `toHaveBeenCalled()` that could not tell
+      // one call from five.
+      const mockOnClose = vi.fn();
+      render(<StatsPanel player={mockPlayer} onClose={mockOnClose} />);
 
-    // Just verify the button exists and can be interacted with
-    fireEvent.mouseEnter(closeButton);
-    fireEvent.mouseLeave(closeButton);
-    expect(closeButton).toBeDefined();
-  });
+      fireEvent.click(screen.getByText(label));
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+      expect(mockOnClose).toHaveBeenCalledWith(expect.anything());
+    }
+  );
 
-
-  it('calls onClose when close button is clicked', () => {
-    const mockOnClose = vi.fn();
-    render(<StatsPanel player={mockPlayer} onClose={mockOnClose} />);
-
-    fireEvent.click(screen.getByText(/✕/i));
-    expect(mockOnClose).toHaveBeenCalled();
-  });
-
-  it('handles missing optional data', () => {
+  it('drops the resistance chips and shows the empty-effects copy when those fields are null', () => {
+    // Asserting only that the header still rendered proved nothing about the
+    // null branches this test exists for.
     const minimalPlayer = {
       ...mockPlayer,
       resistance: null,
       status_resistance: null,
-      states: null
+      states: null,
     };
     render(<StatsPanel player={minimalPlayer} />);
-    expect(screen.getByText(/📊 CHARACTER STATS/i)).toBeDefined();
+
+    expect(screen.getByText(/📊 CHARACTER STATS/i)).toBeInTheDocument();
+    // No resistance chips at all...
+    expect(screen.queryByText(/PHYSICAL:/i)).toBeNull();
+    expect(screen.queryByText(/FIRE:/i)).toBeNull();
+    // ...and the explicit empty state instead of a bare panel.
+    expect(screen.getByText('No active status effects')).toBeInTheDocument();
+    expect(screen.queryByText('Blessed')).toBeNull();
+    // The attributes still render, so this is a partial payload, not a blank sheet.
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('12')).toBeInTheDocument();
   });
 
   const sparsePlayer = {
@@ -155,26 +168,26 @@ describe('StatsPanel', () => {
   it('defaults protection and level when absent from the player object', () => {
     render(<StatsPanel player={sparsePlayer} />);
 
-    expect(screen.getByText('Protection')).toBeDefined();
-    expect(screen.getByText('0')).toBeDefined(); // Protection default
-    expect(screen.getByText('Level')).toBeDefined();
-    expect(screen.getByText('1')).toBeDefined(); // Level default
+    // Read each default out of its own tile: a bare getByText('0') would be
+    // satisfied by any zero anywhere on the sheet.
+    expect(screen.getByText('Protection').closest('div')).toHaveTextContent('0');
+    expect(screen.getByText('Level').closest('div')).toHaveTextContent('1');
   });
 
   it('defaults exp to 0 when absent, still rendering the EXP panel via max_exp', () => {
     const player = { ...sparsePlayer, max_exp: 100 };
     render(<StatsPanel player={player} />);
 
-    expect(screen.getByText('0 / 100')).toBeDefined();
-    expect(screen.getByText('100 EXP to next level')).toBeDefined();
+    expect(screen.getByText('0 / 100')).toBeInTheDocument();
+    expect(screen.getByText('100 EXP to next level')).toBeInTheDocument();
   });
 
   it('defaults an attribute and its base to 10 when absent from the player object', () => {
     render(<StatsPanel player={sparsePlayer} />);
 
-    const strengthContainer = screen.getByTitle(/Increases melee damage, carrying capacity, armor effectiveness/i);
-    expect(within(strengthContainer).getByText('10')).toBeDefined();
-    expect(within(strengthContainer).getByText('BASE: 10')).toBeDefined();
+    const strengthContainer = attributeTile(STRENGTH_TIP);
+    expect(within(strengthContainer).getByText('10')).toBeInTheDocument();
+    expect(within(strengthContainer).getByText('BASE: 10')).toBeInTheDocument();
   });
 
   it('colors a resistance value above 1 as a weakness (danger color)', () => {

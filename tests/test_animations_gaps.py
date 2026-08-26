@@ -71,29 +71,24 @@ def test_animate_to_main_screen_no_terminal_returns_early():
     mock_wrapper.assert_not_called()
 
 
-def test_animate_to_main_screen_gif_path_detail():
-    """animate_to_main_screen with .gif uses play_gif as the func argument."""
-    import src.animations as animations
+def test_animate_to_main_screen_gif_strips_the_extension_from_the_name():
+    """play_gif takes a bare stem, so the .gif suffix must be stripped.
 
-    animations.set_api_mode(False)
-    with patch.object(animations, "_terminal_available", return_value=True):
-        with patch.object(animations.Screen, "wrapper") as mock_wrapper:
-            animations.animate_to_main_screen("flash.gif", "rawtext")
-
-    mock_wrapper.assert_called_once()
-    _, kwargs = mock_wrapper.call_args
-    assert kwargs.get("func") is animations.play_gif
-
-
-def test_animate_to_main_screen_gif_path_via_mock():
-    """Simpler test: animate_to_main_screen with .gif calls Screen.wrapper."""
+    The old assertion was a bare `assert_called_once()`, which would have held
+    even if the full "flash.gif" (or an empty string) had been forwarded --
+    play_gif re-appends ".gif", so passing it through unstripped resolves to
+    "flash.gif.gif" and the animation silently never plays.
+    """
     import src.animations as animations
 
     animations.set_api_mode(False)
     with patch.object(animations, "_terminal_available", return_value=True):
         with patch.object(animations.Screen, "wrapper") as mock_wrapper:
             animations.animate_to_main_screen("flash.gif", "")
-    mock_wrapper.assert_called_once()
+
+    mock_wrapper.assert_called_once_with(
+        func=animations.play_gif, arguments=["flash", ""]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -101,16 +96,21 @@ def test_animate_to_main_screen_gif_path_via_mock():
 # ---------------------------------------------------------------------------
 
 
-def test_animate_to_main_screen_existing_function():
-    """animate_to_main_screen calls Screen.wrapper with a matching function."""
+def test_animate_to_main_screen_dispatches_a_named_function_positionally():
+    """With no text, the function is passed positionally with no arguments list.
+
+    The old assertion was a bare `assert_called_once()`, which could not tell
+    the no-text branch (positional) from the with-text branch (keyword +
+    arguments) -- the two are different call shapes in the source.
+    """
     import src.animations as animations
 
     animations.set_api_mode(False)
-    # 'demo' is a known function in the module
     with patch.object(animations, "_terminal_available", return_value=True):
         with patch.object(animations.Screen, "wrapper") as mock_wrapper:
             animations.animate_to_main_screen("demo", "")
-    mock_wrapper.assert_called_once()
+
+    mock_wrapper.assert_called_once_with(animations.demo)
 
 
 def test_animate_to_main_screen_function_with_text():
@@ -144,13 +144,17 @@ def test_animate_to_main_screen_not_found(capsys):
 
 
 def test_main_no_args_gif(monkeypatch):
-    """main() with a .gif argument calls Screen.wrapper with play_gif."""
+    """main() with a .gif argument dispatches play_gif with the bare stem."""
     import src.animations as animations
 
     monkeypatch.setattr(sys, "argv", ["animations.py", "test.gif"])
     with patch.object(animations.Screen, "wrapper") as mock_wrapper:
         animations.main()
-    mock_wrapper.assert_called_once()
+
+    # Unlike animate_to_main_screen, main() passes no text argument.
+    mock_wrapper.assert_called_once_with(
+        func=animations.play_gif, arguments=["test"]
+    )
 
 
 def test_main_no_args_function_exists(monkeypatch):
@@ -165,12 +169,20 @@ def test_main_no_args_function_exists(monkeypatch):
 
 
 def test_main_no_args_not_found(monkeypatch, capsys):
-    """main() with an unknown animation name prints error."""
+    """main() with an unknown animation name prints the error and plays nothing.
+
+    The old version called ``capsys.readouterr()`` and threw the result away
+    with the comment "either path runs without exception" -- so the test named
+    "not found" could not distinguish the error path from a successful play.
+    """
     import src.animations as animations
 
     monkeypatch.setattr(sys, "argv", ["animations.py", "nonexistent_anim"])
-    animations.main()
-    capsys.readouterr()  # consume output; either path runs without exception
+    with patch.object(animations.Screen, "wrapper") as mock_wrapper:
+        animations.main()
+
+    assert "### Animation not found!" in capsys.readouterr().out
+    mock_wrapper.assert_not_called()
 
 
 def test_main_too_many_args(monkeypatch):
@@ -186,18 +198,26 @@ def test_main_too_many_args(monkeypatch):
     mock_wrapper.assert_called_once()
 
 
-def test_main_resize_screen_error_handled(monkeypatch):
-    """main() handles ResizeScreenError gracefully."""
+def test_main_resize_screen_error_is_swallowed_without_exiting(monkeypatch):
+    """A terminal resize aborts the demo but must not kill the process.
+
+    The happy path of this branch calls ``sys.exit(0)``; the ResizeScreenError
+    path deliberately does not. The old version asserted nothing, so it could
+    not tell those two apart -- a regression that let SystemExit escape on a
+    resize would still have passed.
+    """
     import src.animations as animations
     from asciimatics.exceptions import ResizeScreenError
 
     monkeypatch.setattr(sys, "argv", ["animations.py", "arg1", "arg2"])
-    with patch("builtins.input", return_value=""):
+    with patch("builtins.input", return_value="") as mock_input:
         with patch.object(
             animations.Screen, "wrapper", side_effect=ResizeScreenError("resize")
-        ):
-            # Should not raise
-            animations.main()
+        ) as mock_wrapper:
+            animations.main()  # must NOT raise SystemExit
+
+    mock_input.assert_called_once_with("### no arguments passed to script!")
+    mock_wrapper.assert_called_once_with(animations.demo)
 
 
 # ---------------------------------------------------------------------------

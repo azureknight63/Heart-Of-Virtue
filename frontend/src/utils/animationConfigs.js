@@ -30,7 +30,7 @@
  *     color         primary CSS color of the overlay
  *     size          ring end-radius / particle size multiplier (default 1)
  *     anchor        'source' (default) | 'target' — which cell a ring sits on
- *   sfx           { [phaseName]: cue } — cue is an sfx_<name>.wav basename, or
+ *   sfx           { [phaseName]: cue } — cue is an sfx/<name>.wav basename, or
  *                 the special value 'outcome' which resolves via the
  *                 animation's outcome (hit/miss/parry) at play time
  */
@@ -381,8 +381,20 @@ export const ANIMATION_CONFIGS = {
   },
 };
 
-/** Resolve a config for the given type, falling back to `pulse` when unknown. */
-export const getAnimationConfig = (type) => ANIMATION_CONFIGS[type] || ANIMATION_CONFIGS.pulse;
+/** Resolve a config for the given type, falling back to `pulse` when unknown.
+ *
+ * `Object.hasOwn`, not a bare lookup with `||`: a type of `constructor` or
+ * `toString` finds an inherited Object.prototype member, which is truthy and
+ * so defeats the fallback entirely — the caller then dereferences
+ * `config.phases[0].name` and throws. With no ErrorBoundary in the app that
+ * unmounts the whole SPA mid-fight. Engine `web_animation` values are
+ * contract-tested so this is not reachable today; the guard costs nothing and
+ * the failure mode is total.
+ */
+export const getAnimationConfig = (type) =>
+  (typeof type === 'string' && Object.hasOwn(ANIMATION_CONFIGS, type))
+    ? ANIMATION_CONFIGS[type]
+    : ANIMATION_CONFIGS.pulse;
 
 /**
  * Duration in ms for an animation of the given type.

@@ -219,12 +219,14 @@ class TestWhirlAttack:
         move.evaluate()
         assert move.power == user.strength * 0.5
 
-    def test_prep_announces(self):
-        user = _make_user()
+    def test_prep_announces_the_spin_by_name(self):
+        user = _make_user(name="Jean")
         move = WhirlAttack(user)
+
         with patch("src.moves._sword.cprint") as mock_cprint:
             move.prep(user)
-        mock_cprint.assert_called_once()
+
+        mock_cprint.assert_called_once_with("Jean begins to spin...", "magenta")
 
     def test_execute_hits_enemy_in_range_and_skips_dead(self, monkeypatch):
         user = _make_user()
@@ -384,14 +386,18 @@ class TestVertigoSpin:
         move.evaluate()
         assert move.power == user.strength * 0.6
 
-    def test_prep_with_target(self):
-        user = _make_user()
-        tgt = _make_target()
+    def test_prep_names_both_combatants_in_its_warning(self):
+        user = _make_user(name="Jean")
+        tgt = _make_target(name="Slime")
         move = VertigoSpin(user)
         move.target = tgt
+
         with patch("src.moves._sword.cprint") as mock_cprint:
             move.prep(user)
-        mock_cprint.assert_called_once()
+
+        mock_cprint.assert_called_once_with(
+            "Jean begins spinning toward Slime...", "red"
+        )
 
     def test_prep_no_target_no_announce(self):
         user = _make_user()
@@ -469,7 +475,7 @@ class TestVertigoSpin:
             for c in mock_cprint.call_args_list
         )
 
-    def test_execute_miss_calls_miss(self, monkeypatch):
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         """On a miss, VertigoSpin now routes through the shared Move.miss()
         pipeline (issue #402) instead of a bespoke cprint."""
         user = _make_user()
@@ -479,14 +485,18 @@ class TestVertigoSpin:
         move.power = 5
         user.fatigue = 100
         move.fatigue_cost = 10
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         with patch("src.moves._sword.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch("src.moves._sword.cprint"):
             move.execute(user)
 
-        mock_miss.assert_called_once()
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called,
+        # so a move that damaged the target *and* reported a miss
+        # would have passed.
+        assert tgt.hp == hp_before
 
 
 # ---------------------------------------------------------------------------
@@ -598,7 +608,14 @@ class TestDisarmingSlash:
         count = sum(1 for s in tgt.states if isinstance(s, states.Disoriented))
         assert count == 1
 
-    def test_execute_disoriented_inflict_exception_swallowed(self, monkeypatch):
+    def test_a_failed_disoriented_rider_still_leaves_the_slash_landed(
+        self, monkeypatch
+    ):
+        """The Disoriented rider is best-effort; the slash itself is not.
+
+        The old version asserted nothing at all, so an ``except: pass`` that
+        also swallowed the damage would have passed.
+        """
         user = _make_user()
         tgt = _make_target(finesse=0, protection=0)
         tgt.states = []
@@ -615,10 +632,19 @@ class TestDisarmingSlash:
              patch("src.moves._sword.cprint"), \
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t), \
              patch("src.moves._sword.functions.inflict", side_effect=Exception("boom")):
-            # Should not raise
             move.execute(user)
 
-    def test_execute_parry_blocks(self, monkeypatch):
+        assert tgt.hp == 60, "the slash must land even though the status failed"
+        assert tgt.states == [], "no state may be left half-applied"
+        # Fatigue is still charged (and floored at 0 here, since the move's
+        # cost exceeds the 100 the user had) rather than skipped by the
+        # swallowed exception.
+        assert move.fatigue_cost > 100
+        assert user.fatigue == 0
+
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user()
         tgt = _make_target(finesse=0)
         user.combat_proximity = {tgt: 3}
@@ -627,17 +653,24 @@ class TestDisarmingSlash:
         move.power = 40
         move.base_damage_type = "slashing"
         user.fatigue = 100
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._sword.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch("src.moves._sword.cprint"), \
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_parry.assert_called_once()
 
-    def test_execute_miss(self, monkeypatch):
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
+
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         user = _make_user()
         tgt = _make_target()
         move = DisarmingSlash(user)
@@ -645,15 +678,20 @@ class TestDisarmingSlash:
         move.power = 5
         move.base_damage_type = "slashing"
         user.fatigue = 100
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._sword.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch("src.moves._sword.cprint"), \
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called,
+        # so a move that damaged the target *and* reported a miss
+        # would have passed.
+        assert tgt.hp == hp_before
 
     def test_execute_fatigue_floored_at_zero(self, monkeypatch):
         user = _make_user()
@@ -673,8 +711,16 @@ class TestDisarmingSlash:
             move.execute(user)
         assert user.fatigue == 0
 
-    def test_execute_turns_facing_toward_target_and_glances(self, monkeypatch):
-        """Covers the facing-turn branch and the glancing-blow halving branch."""
+    def test_execute_turns_facing_east_toward_target_and_halves_a_glance(
+        self, monkeypatch
+    ):
+        """The facing-turn branch and the glancing-blow halving branch.
+
+        The old version asserted only ``facing is not None`` -- but facing was
+        already a Direction before execute ran, so the assertion held whether or
+        not the turn happened, and the "glances" half of the name was never
+        checked at all.
+        """
         user = _make_user()
         user.combat_position = positions.CombatPosition(x=1, y=1)
         tgt = _make_target(finesse=0, protection=0)
@@ -686,7 +732,9 @@ class TestDisarmingSlash:
         move.base_damage_type = "slashing"
         user.fatigue = 100
 
-        # hit_chance will be ~98; roll just under it triggers the "glance" branch
+        # to_hit_chance is 98 - 0 + 7 + 3 = 108; the flank accuracy modifier
+        # (1.1) then caps it at 100. A roll of 99 lands (100 >= 99) but by only
+        # 1 point (< 10), which is exactly the glancing-blow condition.
         monkeypatch.setattr(random, "randint", lambda a, b: 99)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._sword.functions.check_parry", return_value=False), \
@@ -694,7 +742,10 @@ class TestDisarmingSlash:
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        assert user.combat_position.facing is not None
+        # The target is due east, so the user must be turned to face E.
+        assert user.combat_position.facing is positions.Direction.E
+        # 40 power halved by the glance = 20 damage, not the full 40.
+        assert tgt.hp == 80
 
 
 # ---------------------------------------------------------------------------
@@ -778,7 +829,9 @@ class TestRiposte:
         assert user.heat == 1.0
         assert tgt.hp < 100
 
-    def test_execute_parry_blocks(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user()
         tgt = _make_target(finesse=0)
         user.combat_proximity = {tgt: 3}
@@ -788,17 +841,24 @@ class TestRiposte:
         move.power = 40
         move.base_damage_type = "slashing"
         user.fatigue = 100
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._sword.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch("src.moves._sword.cprint"), \
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_parry.assert_called_once()
 
-    def test_execute_miss(self, monkeypatch):
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
+
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         user = _make_user()
         tgt = _make_target()
         move = Riposte(user)
@@ -806,15 +866,20 @@ class TestRiposte:
         move.power = 5
         move.base_damage_type = "slashing"
         user.fatigue = 100
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._sword.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch("src.moves._sword.cprint"), \
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called,
+        # so a move that damaged the target *and* reported a miss
+        # would have passed.
+        assert tgt.hp == hp_before
 
     def test_execute_fatigue_floored_at_zero(self, monkeypatch):
         user = _make_user()
@@ -834,8 +899,15 @@ class TestRiposte:
             move.execute(user)
         assert user.fatigue == 0
 
-    def test_execute_turns_facing_toward_target_and_glances(self, monkeypatch):
-        """Covers the facing-turn branch and the glancing-blow halving branch."""
+    def test_execute_turns_facing_east_and_applies_the_heat_boosted_glance(
+        self, monkeypatch
+    ):
+        """Facing turn, the 1.3x riposte heat boost, and the glance halving.
+
+        The old version asserted only ``facing is not None``, which was already
+        true before execute ran -- so neither the turn, the heat boost, nor the
+        glance was actually pinned.
+        """
         user = _make_user()
         user.combat_position = positions.CombatPosition(x=1, y=1)
         tgt = _make_target(finesse=0, protection=0)
@@ -847,6 +919,7 @@ class TestRiposte:
         move.power = 40
         move.base_damage_type = "slashing"
         user.fatigue = 100
+        user.heat = 1.0
 
         monkeypatch.setattr(random, "randint", lambda a, b: 99)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
@@ -855,7 +928,13 @@ class TestRiposte:
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        assert user.combat_position.facing is not None
+        assert user.combat_position.facing is positions.Direction.E
+        # Riposte momentarily boosts heat 1.0 -> 1.3 for its own damage roll:
+        # 40 * 1.3 = 52, halved by the glance = int(26).
+        assert tgt.hp == 100 - 26
+        # ...and restores the user's heat afterwards rather than leaking the
+        # boost into the rest of the fight.
+        assert user.heat == 1.0
 
 
 # ---------------------------------------------------------------------------

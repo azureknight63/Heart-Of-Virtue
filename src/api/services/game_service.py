@@ -2425,6 +2425,26 @@ class GameService:
         result["turn_order"] = [c["id"] for c in combatants]
         return result
 
+    def abort_move(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Abandon the move the player is currently winding up.
+
+        Routes to the combat adapter, which delegates the state change to the
+        engine's own interrupt path. Returns an error dict rather than raising
+        when there is no combat, no adapter, or nothing abortable in flight --
+        the caller is a route, and a bad abort must not end the fight.
+        """
+        if not getattr(player, "in_combat", False):
+            return {"success": False, "error": "Not in combat"}
+        adapter = getattr(player, "_combat_adapter", None)
+        if adapter is None:
+            return {"success": False, "error": "No active combat"}
+
+        result = adapter.abort_current_move()
+        if result.get("error"):
+            return {"success": False, "error": result["error"]}
+        result["success"] = True
+        return result
+
     def execute_move(
         self,
         player: "player_module.Player",

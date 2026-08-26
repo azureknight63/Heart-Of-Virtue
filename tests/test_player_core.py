@@ -6,16 +6,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-import pytest
 from unittest.mock import MagicMock, patch
-from src.player import Player
 import src.items as items
 
 class TestPlayerCore:
-    @pytest.fixture
-    def player(self):
-        return Player()
-
     def test_player_init(self, player):
         assert player.name == "Jean"
         assert player.hp == 100
@@ -367,8 +361,8 @@ class TestPlayerCore:
         assert "unequip" in item.interactions
         assert "equip" not in item.interactions
 
-    @patch('src.player.input', return_value='y')
-    def test_equip_item_from_room(self, mock_input, player):
+    def test_equip_item_from_room_by_partial_phrase(self, player):
+        """``equip_item("iron")`` matches "Iron Sword" on a name fragment."""
         item = MagicMock()
         item.name = "Iron Sword"
         item.announce = "A sharp blade"
@@ -537,17 +531,6 @@ class TestPlayerCore:
             assert "Ally2" in output
             assert "Ally3" in output
 
-    def test_get_equipped_items(self, player):
-        item1 = MagicMock()
-        item1.isequipped = True
-        item2 = MagicMock()
-        item2.isequipped = False
-        player.inventory = [item1, item2]
-
-        equipped = player.get_equipped_items()
-        assert item1 in equipped
-        assert item2 not in equipped
-
     def test_refresh_merchants(self, player):
         player.universe = MagicMock()
 
@@ -602,7 +585,8 @@ class TestPlayerCore:
         player.apply_state(state)
         assert state in player.states
 
-    def test_apply_state_compounding(self, player):
+    def test_apply_state_compounding_matches_by_name_not_identity(self, player):
+        """A *different* state object with an existing state's name compounds it."""
         state1 = MagicMock()
         state1.name = "Poison"
         state1.compounding = True
@@ -613,12 +597,6 @@ class TestPlayerCore:
 
         player.apply_state(state2)
         state1.compound.assert_called_once_with(player)
-
-    def test_cycle_states(self, player):
-        state = MagicMock()
-        player.states = [state]
-        player.cycle_states()
-        state.process.assert_called_once_with(player)
 
     def test_use_item_phrase(self, player):
         mock_item = MagicMock(spec=items.Restorative)

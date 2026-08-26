@@ -123,11 +123,14 @@ def test_json_maps_root_candidates_returns_existing_dirs(tmp_path):
     from src.universe import Universe
 
     u = Universe()
-    # The method checks two candidate paths; at least the method should not raise
     candidates = u._json_maps_root_candidates()
-    # All returned paths should exist
-    for c in candidates:
-        assert c.exists()
+
+    # A vacuous pass (empty list) would satisfy the per-path loop below, so
+    # pin that the real maps directory is among the candidates.
+    assert candidates, "no map roots discovered — maps would silently not load"
+    assert all(c.is_dir() for c in candidates)
+    assert any(c.name == "maps" for c in candidates)
+    assert any((c / "combat-testing-arena.json").exists() for c in candidates)
 
 
 # ---------------------------------------------------------------------------
@@ -206,31 +209,52 @@ def test_game_tick_events_no_refresh_at_non_multiple():
 
 
 def test_evaluate_map_entry_spawners_no_map():
-    """_evaluate_map_entry_spawners returns early when player.map is not a dict."""
+    """A non-dict player.map short-circuits before any event is touched.
+
+    "Should not raise" was the whole assertion here; the method wraps its body
+    in ``except Exception: pass``, so it could never have raised regardless of
+    whether the guard existed. The proof has to be that the spawner event is
+    left alone.
+    """
     from src.universe import Universe
 
     u = Universe()
+    ev = MagicMock()
+    ev.has_run = False
     player = MagicMock()
     player.map = None  # Not a dict
     u.player = player
 
-    # Should not raise
     u._evaluate_map_entry_spawners()
+
+    ev.evaluate_for_map_entry.assert_not_called()
 
 
 def test_evaluate_map_entry_spawners_skips_non_tuple_keys():
-    """_evaluate_map_entry_spawners skips map entries with non-tuple keys."""
+    """The 'name' key is not a tile: its value must never be walked for events.
+
+    The old test asserted nothing at all. Here the map's "name" entry is a
+    *string*, and a coordinate tile alongside it carries a live spawner -- so
+    the coordinate tile's event fires while the string key is skipped without
+    an AttributeError being swallowed by the outer except.
+    """
     from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
+
+    ev = MagicMock()
+    ev.has_run = False
+    ev.repeat = False
     tile = MagicMock()
-    tile.events_here = []
+    tile.events_here = [ev]
+
     player.map = {"name": "test_map", (0, 0): tile}
     u.player = player
 
-    # Should not raise, and should process the tile at (0, 0)
     u._evaluate_map_entry_spawners()
+
+    ev.evaluate_for_map_entry.assert_called_once_with(player)
 
 
 def test_evaluate_map_entry_spawners_calls_evaluate_for_map_entry():
@@ -300,16 +324,29 @@ def test_evaluate_map_entry_spawners_processes_repeat_events():
 
 
 def test_evaluate_map_entry_spawners_skips_none_tiles():
-    """_evaluate_map_entry_spawners skips None tiles without error."""
+    """A ``None`` tile is skipped, and iteration continues past it.
+
+    The outer ``except Exception: pass`` means a missing ``if tile is None``
+    guard would abort the *whole* scan silently rather than raise -- so the
+    real proof is that the tile after the None one still gets processed.
+    """
     from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
-    player.map = {(0, 0): None, (1, 1): MagicMock(events_here=[])}
+
+    ev = MagicMock()
+    ev.has_run = False
+    ev.repeat = False
+    later_tile = MagicMock()
+    later_tile.events_here = [ev]
+
+    player.map = {(0, 0): None, (1, 1): later_tile}
     u.player = player
 
-    # Should not raise
     u._evaluate_map_entry_spawners()
+
+    ev.evaluate_for_map_entry.assert_called_once_with(player)
 
 
 def test_evaluate_map_entry_spawners_handles_exception_in_event():
@@ -324,13 +361,22 @@ def test_evaluate_map_entry_spawners_handles_exception_in_event():
     ev.has_run = False
     ev.repeat = False
 
+    good_ev = MagicMock()
+    good_ev.has_run = False
+    good_ev.repeat = False
+
     tile = MagicMock()
-    tile.events_here = [ev]
+    tile.events_here = [ev, good_ev]
     player.map = {(0, 0): tile}
     u.player = player
 
-    # Should not raise — exception is swallowed
     u._evaluate_map_entry_spawners()
+
+    # The raising event was actually attempted...
+    ev.evaluate_for_map_entry.assert_called_once_with(player)
+    # ...and its failure did not abort the scan: the next event still ran.
+    # ("should not raise" alone could not tell a `continue` from a `return`.)
+    good_ev.evaluate_for_map_entry.assert_called_once_with(player)
 
 
 
@@ -403,10 +449,23 @@ def test_universe_full_build_starting_map():
     p = Player()
     u.build(p)
 
-    # starting_map_default should be set if any map has 'start' in its name
-    # (may be None if no such map exists, which is also valid)
-    # Just ensure no exception was raised and maps loaded
-    assert isinstance(u.maps, list)
+    # `isinstance(u.maps, list)` was the entire assertion: it held before
+    # build() ran, so the test could not fail. build()'s job is to populate the
+    # map list and select a starting map.
+    assert len(u.maps) > 0
+    named = [m.get("name") for m in u.maps if isinstance(m, dict)]
+    assert all(isinstance(n, str) and n for n in named)
+    assert len(set(named)) == len(named), "duplicate map names loaded"
+
+    # build()'s rule is "the first loaded map whose name contains 'start'";
+    # re-derive it from the loaded names rather than restating the outcome.
+    # NOTE: no shipped map name currently contains "start", so this resolves
+    # to None today and every caller (session_manager, app) falls through to
+    # its own fallback. Re-deriving keeps the test honest either way: it fails
+    # if the loop stops matching once a startable map does exist.
+    expected = next((m for m in u.maps
+                     if isinstance(m, dict) and "start" in m.get("name", "")), None)
+    assert u.starting_map_default is expected
 
 
 def test_universe_deserialize_class_type_marker():

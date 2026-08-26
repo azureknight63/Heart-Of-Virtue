@@ -92,7 +92,11 @@ describe('TileCache', () => {
 
     const tiles = await tileCache.fetchTiles([{ x: 0, y: 0 }, { x: 0, y: 1 }]);
     
-    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalled();
+    // Both misses go out in ONE batch request, with the coordinates asked for.
+    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalledTimes(1);
+    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalledWith([
+      { x: 0, y: 0 }, { x: 0, y: 1 },
+    ]);
     expect(tiles).toHaveLength(2);
     expect(tileCache.has(0, 0)).toBe(true);
     expect(tileCache.has(0, 1)).toBe(true);
@@ -192,7 +196,12 @@ describe('TileCache', () => {
     apiEndpoints.world.getTilesBatch.mockResolvedValue({ data: { success: true, tiles: [] } });
     await tileCache.prefetchAdjacent(0, 0);
 
-    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalled();
+    // All eight neighbours (including diagonals) in a single batch.
+    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalledTimes(1);
+    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalledWith([
+      { x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 },
+      { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 },
+    ]);
   });
 
   it('does not prefetch when all adjacent tiles are already cached', async () => {
@@ -210,7 +219,10 @@ describe('TileCache', () => {
     const tile = await tileCache.getTileWithPrefetch(0, 0);
 
     expect(tile.name).toBe('Center');
-    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalled();
+    // The requested tile comes from the single-tile endpoint; the neighbours
+    // ride along on one background batch.
+    expect(apiEndpoints.world.getTile).toHaveBeenCalledWith(0, 0);
+    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalledTimes(1);
   });
 
   it('exports and imports cache data', () => {

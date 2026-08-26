@@ -60,10 +60,15 @@ class TestStackItemsList:
         assert lst[0].count == 3
 
     def test_non_list_does_nothing(self):
-        # Must be a list, not a tuple or set
-        not_a_list = (_Stackable(), _Stackable())
-        # Should not raise
+        """The guard is `isinstance(x, list)`: a tuple of two mergeable items
+        is returned untouched rather than stacked (or crashed on)."""
+        a, b = _Stackable(name="Rock", count=3), _Stackable(name="Rock", count=2)
+        not_a_list = (a, b)
+
         functions.stack_items_list(not_a_list)
+
+        assert not_a_list == (a, b)
+        assert (a.count, b.count) == (3, 2)
 
     def test_merges_two_identical_stackable_items(self):
         a = _Stackable(name="Rock", count=3)
@@ -190,10 +195,18 @@ class TestStackItemsList:
 
 
 class TestStackInvItems:
-    def test_no_inventory_attr_does_nothing(self):
+    def test_no_inventory_attr_does_nothing(self, monkeypatch):
+        """Without an `inventory` attribute the helper returns before it ever
+        reaches stack_items_list."""
+        calls = []
+        monkeypatch.setattr(
+            functions, "stack_items_list", lambda lst: calls.append(lst)
+        )
         target = object()  # has no 'inventory' attribute
-        # Should not raise
+
         functions.stack_inv_items(target)
+
+        assert calls == []
 
     def test_delegates_to_stack_items_list(self):
         target = MagicMock()

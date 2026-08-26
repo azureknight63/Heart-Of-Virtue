@@ -58,8 +58,21 @@ bad = [
 # A bare copy existing at all (even without a src.* twin) means some code path
 # still imports outside the canonical src.* namespace.
 bare_loaded = [m for m in critical if m in sys.modules and f"src.{m}" not in sys.modules]
+# Anti-vacuity: if booting the app didn't actually pull these modules in, the
+# duplication check above proves nothing. Report what was really loaded so the
+# parent test can insist the import graph was exercised.
+not_loaded = [m for m in critical if f"src.{m}" not in sys.modules]
+player = sm.get_player(sid)
+# Live-object provenance: real engine instances the API hands out must come
+# from the canonical src.* modules, not bare twins.
 print("DUPLICATED:" + ",".join(bad))
 print("BARE_ONLY:" + ",".join(bare_loaded))
+print("NOT_LOADED:" + ",".join(not_loaded))
+print("LIVE_MODULES:" + ",".join(sorted({
+    type(player).__module__,
+    type(player.universe).__module__,
+    type(player.inventory[0]).__module__,
+})))
 sys.exit(1 if (bad or bare_loaded) else 0)
 """ % _CRITICAL
 
@@ -73,10 +86,33 @@ def test_critical_modules_not_duplicated_in_production():
         timeout=180,
     )
     out = proc.stdout + proc.stderr
-    dup_line = next((ln for ln in out.splitlines() if ln.startswith("DUPLICATED:")), "")
-    bare_line = next((ln for ln in out.splitlines() if ln.startswith("BARE_ONLY:")), "")
+
+    def _field(prefix):
+        line = next((ln for ln in out.splitlines() if ln.startswith(prefix)), None)
+        assert line is not None, (
+            f"subprocess never reported {prefix} — it died before finishing "
+            f"(returncode {proc.returncode}).\n--- subprocess output ---\n{out}"
+        )
+        return line[len(prefix):]
+
+    dup = _field("DUPLICATED:")
+    bare = _field("BARE_ONLY:")
+    not_loaded = _field("NOT_LOADED:")
+    live_modules = _field("LIVE_MODULES:").split(",")
+
+    # The guard is only meaningful if booting the app really imported the whole
+    # engine graph; an empty graph would make the duplication check vacuous.
+    assert not_loaded == "", (
+        "Booting the production entry point did not import these critical "
+        f"modules, so the duplication check is vacuous: {not_loaded}"
+    )
+    # ...and the live objects the API hands out must carry canonical classes.
+    assert live_modules == ["src.items", "src.player", "src.universe"], (
+        f"live engine objects resolved from non-canonical modules: {live_modules}"
+    )
+
     assert proc.returncode == 0, (
         "Critical API/engine modules are duplicated (bare vs src.) or loaded "
-        f"bare in the production import path: {dup_line} {bare_line}\n"
+        f"bare in the production import path: DUPLICATED:{dup} BARE_ONLY:{bare}\n"
         f"--- subprocess output ---\n{out}"
     )

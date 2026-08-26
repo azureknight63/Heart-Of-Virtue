@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -59,13 +58,6 @@ def _make_equippable(maintype="Weapon", subtype="Sword", name="TestSword"):
     item.on_equip = MagicMock()
     item.on_unequip = MagicMock()
     return item
-
-
-@pytest.fixture
-def game_service():
-    from src.api.services.game_service import GameService
-
-    return GameService()
 
 
 # ---------------------------------------------------------------------------

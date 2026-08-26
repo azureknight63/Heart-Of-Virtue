@@ -11,6 +11,7 @@ it (qty is always strictly less than available in that branch, so item.count
 can never reach <= 0 there) and are intentionally left uncovered.
 """
 
+import logging
 import sys
 import threading
 from pathlib import Path
@@ -166,12 +167,20 @@ class _BlockedAttrItem:
 
 
 class TestTransferItemGuards:
-    def test_missing_inventory_attr_logs_and_returns(self):
+    def test_missing_inventory_attr_logs_and_returns(self, caplog):
+        """A source with no inventory is refused with a warning: nothing moves
+        and the target is left empty."""
         source = _NoInventory()
         target = _PlainInventoryHolder()
         item = Restorative(count=1)
-        # Should not raise despite source lacking .inventory
-        transfer_item(source, target, item, qty=1)
+
+        with caplog.at_level(logging.WARNING):
+            transfer_item(source, target, item, qty=1)
+
+        assert target.inventory == []
+        assert any(
+            "does not have an inventory" in r.getMessage() for r in caplog.records
+        )
 
     def test_qty_less_than_one_is_clamped_to_one(self):
         source = _PlainInventoryHolder(name="Jean")

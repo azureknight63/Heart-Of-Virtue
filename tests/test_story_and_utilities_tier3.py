@@ -1,126 +1,22 @@
 """
-Comprehensive test coverage for story modules and critical utilities.
+Construction/configuration coverage for the story event classes.
 
 Targets:
-- src/verify_combat_event.py (51 lines, 0% coverage)
-- src/open_terminal.py (6 lines, 0% coverage)
 - src/story/ch01.py, ch02.py, ch03.py (story branches, dialogues, transitions)
 - src/story/effects.py (status effects, mechanics)
-- src/story/gorran_flavor.py (Gorran interactions, companion behavior)
+
+Note: this file previously opened with a ``TestVerifyCombatEvent`` class aimed
+at ``src/verify_combat_event.py``. That module was deleted in the terminal-mode
+teardown and the class never imported it — its nine tests were tautologies
+(``player.universe = u; assert player.universe == u``), conditional assertions
+that vanished when the ``if`` was false, and five full ``Universe.build()``
+calls to assert ``len(maps) > 0``. The real proofs now live in
+tests/test_verify_combat_event_unit.py, which builds the universe once per
+module and asserts the actual deserialized CombatEvent roster.
 """
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock, call
-import sys
-import os
-
-# Add src to path
-
-
-class TestVerifyCombatEvent(unittest.TestCase):
-    """Test src/verify_combat_event.py - combat event loading and validation."""
-
-    def setUp(self):
-        """Set up test fixtures for combat event testing."""
-        from src.player import Player
-        from src.universe import Universe
-
-        self.player = Player()
-        self.universe = Universe(self.player)
-        if hasattr(self.player, "attach_universe"):
-            self.player.attach_universe(self.universe)
-        else:
-            self.player.universe = self.universe
-
-    def test_combat_event_setup_with_attach_universe(self):
-        """Test setup when player has attach_universe method."""
-        from src.player import Player
-        from src.universe import Universe
-
-        player = Player()
-        universe = Universe(player)
-
-        if hasattr(player, "attach_universe"):
-            player.attach_universe(universe)
-            self.assertEqual(player.universe, universe)
-
-    def test_combat_event_setup_without_attach_universe(self):
-        """Test setup when player doesn't have attach_universe method."""
-        from src.universe import Universe
-
-        player = Mock(spec=[])
-        universe = Universe(Mock())
-        player.universe = universe
-        self.assertEqual(player.universe, universe)
-
-    def test_universe_build_loads_maps(self):
-        """Test that universe.build loads maps correctly."""
-        self.universe.build(self.player)
-        self.assertIsNotNone(self.universe.maps)
-        self.assertGreater(len(self.universe.maps), 0)
-
-    def test_testing_map_exists(self):
-        """Test that the testing-map exists in the universe."""
-        self.universe.build(self.player)
-        testing_map = None
-        for m in self.universe.maps:
-            if m.get("name") == "testing-map":
-                testing_map = m
-                break
-        self.assertIsNotNone(testing_map, "testing-map not found")
-
-    def test_tile_access_in_map(self):
-        """Test accessing a specific tile in a map."""
-        self.universe.build(self.player)
-        testing_map = None
-        for m in self.universe.maps:
-            if m.get("name") == "testing-map":
-                testing_map = m
-                break
-
-        if testing_map:
-            for coords in [(2, 3), (0, 0), (1, 1)]:
-                tile = testing_map.get(coords)
-                if tile:
-                    self.assertIsNotNone(tile)
-
-    def test_tile_has_events_attribute(self):
-        """Test that tiles have events_here attribute."""
-        self.universe.build(self.player)
-        testing_map = None
-        for m in self.universe.maps:
-            if m.get("name") == "testing-map":
-                testing_map = m
-                break
-
-        if testing_map:
-            tile = testing_map.get((0, 0))
-            if tile:
-                self.assertTrue(hasattr(tile, "events_here"))
-
-    def test_combat_event_config_types(self):
-        """Test that CombatEvent configs have expected structure."""
-        from src.combat_event_config import CombatEventConfig
-
-        config = CombatEventConfig()
-        self.assertIsInstance(config, CombatEventConfig)
-
-    def test_combat_event_scenario_type_attribute(self):
-        """Test that CombatEventConfig supports scenario_type."""
-        from src.combat_event_config import CombatEventConfig
-
-        config = CombatEventConfig()
-        config.scenario_type = "standard"
-        self.assertEqual(config.scenario_type, "standard")
-
-    def test_combat_event_enemy_list_attribute(self):
-        """Test that CombatEventConfig supports enemy_list."""
-        from src.combat_event_config import CombatEventConfig
-
-        config = CombatEventConfig()
-        config.enemy_list = [("TestEnemy", 2)]
-        self.assertEqual(len(config.enemy_list), 1)
-        self.assertEqual(config.enemy_list[0], ("TestEnemy", 2))
+from unittest.mock import Mock, patch
 
 
 class TestCh01MemoryAmelia(unittest.TestCase):
@@ -154,11 +50,15 @@ class TestCh01MemoryAmelia(unittest.TestCase):
         self.assertGreater(len(memory.memory_lines), 0)
 
     def test_memory_amelia_has_aftermath_text(self):
-        """Test that memory has aftermath_text."""
+        """The aftermath is what returns Jean to the present after the flash."""
         memory = self.Ch01_Memory_Amelia(
             player=self.player, tile=self.tile, repeat=False
         )
-        self.assertIsNotNone(memory.aftermath_text)
+        self.assertTrue(memory.aftermath_text)
+        # MemoryFlash._split_line accepts a bare string or a (text, meta) pair;
+        # anything else renders as its repr in the player's face.
+        for line in memory.aftermath_text:
+            self.assertIsInstance(line, (str, tuple, list))
 
 
 class TestCh01DarkGrottoIntro(unittest.TestCase):
@@ -182,13 +82,27 @@ class TestCh01DarkGrottoIntro(unittest.TestCase):
         self.assertEqual(event.name, "Ch01_DarkGrotto_Intro")
         self.assertEqual(event.player, self.player)
 
-    def test_dark_grotto_intro_process_stages_no_validation(self):
-        """Test dark grotto intro has stage attribute."""
+    def test_dark_grotto_intro_first_pass_opens_a_staged_prompt(self):
+        """The intro is a staged event: pass one sets prose and waits."""
         event = self.Ch01DarkGrottoIntro(
             player=self.player, tile=self.tile, repeat=False
         )
-        # Just verify event can be created
-        self.assertIsNotNone(event)
+        self.assertFalse(hasattr(event, "_stage"))
+
+        event.process(user_input=None)
+
+        self.assertEqual(event._stage, 2)
+        self.assertTrue(event.needs_input)
+        self.assertEqual(event.input_type, "choice")
+        self.assertEqual(
+            [o["value"] for o in event.input_options], ["continue"]
+        )
+        self.assertIn("Darkness. Silence.", event.description)
+
+        first_description = event.description
+        event.process(user_input="continue")
+        self.assertEqual(event._stage, 3)
+        self.assertNotEqual(event.description, first_description)
 
 
 class TestCh01StartOpenWall(unittest.TestCase):
@@ -213,13 +127,63 @@ class TestCh01StartOpenWall(unittest.TestCase):
         self.assertEqual(event.name, "Ch01_Start_Open_Wall")
         self.assertTrue(event.repeat)
 
-    def test_start_open_wall_check_conditions_no_object(self):
-        """Test check_conditions when wall depression not present."""
+    def test_start_open_wall_stays_shut_without_the_depression(self):
+        """No Wall Depression on the tile: the wall must not open on its own."""
         self.tile.objects_here = []
         event = self.Ch01StartOpenWall(
             player=self.player, tile=self.tile, repeat=True
         )
+        event.pass_conditions_to_process = Mock()
+
         event.check_conditions()
+
+        event.pass_conditions_to_process.assert_not_called()
+        self.assertEqual(self.tile.block_exit, ["east"])
+
+    def test_start_open_wall_stays_shut_until_the_depression_is_pressed(self):
+        """The depression must be in its pressed position — merely present
+        is not enough, or the hidden passage would open on arrival."""
+        depression = Mock()
+        depression.name = "Wall Depression"
+        depression.position = False
+        self.tile.objects_here = [depression]
+        event = self.Ch01StartOpenWall(
+            player=self.player, tile=self.tile, repeat=True
+        )
+        event.pass_conditions_to_process = Mock()
+
+        event.check_conditions()
+        event.pass_conditions_to_process.assert_not_called()
+
+        depression.position = True
+        event.check_conditions()
+        event.pass_conditions_to_process.assert_called_once()
+
+    def test_start_open_wall_process_unblocks_the_east_exit(self):
+        """Processing removes the block, retires the switch, and re-describes
+        the room — the whole point of the hidden-passage mechanic."""
+        import src.objects as objects
+
+        depression = Mock()
+        depression.name = "Wall Depression"
+        depression.position = True
+        description_obj = objects.TileDescription(
+            self.player, self.tile, description="A dark, cramped chamber."
+        )
+        self.tile.objects_here = [depression, description_obj]
+        event = self.Ch01StartOpenWall(
+            player=self.player, tile=self.tile, repeat=True
+        )
+
+        with patch("src.story.ch01.time.sleep"):
+            event.process()
+
+        self.assertEqual(self.tile.block_exit, [])
+        self.assertNotIn(depression, self.tile.objects_here)
+        self.assertIn("east wall has been revealed", description_obj.description)
+        # The dialog is held open long enough for the player to read it.
+        self.assertEqual(event.delay_duration, 2000)
+        self.assertEqual(event.delay_mode, "exploration")
 
 
 class TestCh01BridgeWall(unittest.TestCase):

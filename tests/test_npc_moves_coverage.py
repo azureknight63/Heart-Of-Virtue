@@ -630,32 +630,28 @@ class TestSpiderBite:
 
 
 # ---------------------------------------------------------------------------
-# BatBite (if it exists in moves)
+# BatBite (vampiric) — fatigue accounting
 # ---------------------------------------------------------------------------
 
 
 class TestBatBite:
-    """Lines 773+: BatBite (vampiric)."""
+    """BatBite's fatigue bookkeeping.
 
-    def test_batbite_init(self):
-        """BatBite instantiates correctly."""
-        import src.moves as moves
-
-        if not hasattr(moves, "BatBite"):
-            pytest.skip("BatBite not available")
-        p = _make_player_target()
-        npc = _make_npc()
-        npc.target = p
-        bb = moves.BatBite(npc)
-        assert bb.name == "BatBite"
+    The two ``if not hasattr(moves, "BatBite"): pytest.skip(...)`` guards that
+    used to open these tests were dead: ``BatBite`` is exported from
+    ``src/moves/__init__.py`` and wired onto the CaveBat in
+    ``src/npc/_enemies.py``. A conditional skip on a move the engine ships would
+    only ever hide its removal, so both guards are gone. The former
+    ``test_batbite_init`` here was a strict subset of
+    ``TestBatBiteReal.test_batbite_init`` below (which also asserts ``power``)
+    and was deleted rather than duplicated.
+    """
 
     def test_batbite_execute(self):
         """BatBite execute runs without error and deducts its fatigue cost
         regardless of hit/miss outcome."""
         import src.moves as moves
 
-        if not hasattr(moves, "BatBite"):
-            pytest.skip("BatBite not available")
         p = _make_player_target()
         npc = _make_npc(damage=5)
         npc.target = p
@@ -673,51 +669,153 @@ class TestBatBite:
 # ---------------------------------------------------------------------------
 
 
-class TestRumbleAttack:
-    """Lines 937+: RumbleAttack (if available)."""
+class TestSeismicSlam:
+    """SeismicSlam — Gorran's level-9 radial ground slam (src/moves/_npc.py).
 
-    def test_rumble_attack_init(self):
-        """RumbleAttack instantiates if available."""
+    Replaces the former TestRumbleAttack/TestSlamAttack classes, which were
+    skipped forever because `moves.RumbleAttack` and `moves.SlamAttack` have
+    never existed in this codebase. SeismicSlam is the real radial NPC slam;
+    before this class it had zero test coverage anywhere in tests/.
+    """
+
+    @staticmethod
+    def _npc(name, friend, damage=20, hp=200, finesse=10):
+        from src.npc import NPC
+
+        n = NPC(
+            name=name,
+            description="d",
+            damage=damage,
+            maxhp=hp,
+            protection=0,
+            aggro=not friend,
+            exp_award=0,
+        )
+        n.friend = friend
+        n.finesse = finesse
+        return n
+
+    def test_only_enemies_inside_the_radius_take_damage(self):
+        """Damage lands on hostiles within _RADIUS (6 ft) and nobody else."""
         import src.moves as moves
 
-        if not hasattr(moves, "RumbleAttack"):
-            pytest.skip("RumbleAttack not available")
-        p = _make_player_target()
-        npc = _make_npc()
-        npc.target = p
-        ra = moves.RumbleAttack(npc)
-        assert ra is not None
+        user = self._npc("Ally", friend=True, damage=20, finesse=40)
+        near = self._npc("Near", friend=False)
+        edge = self._npc("Edge", friend=False)
+        far = self._npc("Far", friend=False)
+        comrade = self._npc("Comrade", friend=True)
+        user.combat_proximity = {near: 1, edge: 6, far: 7, comrade: 1}
 
-    def test_rumble_attack_execute(self):
-        """RumbleAttack execute runs."""
+        slam = moves.SeismicSlam(user)
+        assert slam.power == user.damage * 0.7 == 14.0
+        with patch("src.moves._npc.random.randint", return_value=0):
+            slam.execute(user)
+
+        assert near.hp == 200 - 14
+        assert edge.hp == 200 - 14, "distance == _RADIUS is inside the blast"
+        assert far.hp == 200, "distance > _RADIUS must be spared"
+        assert comrade.hp == 200, "allies must never be caught in the slam"
+
+    def test_ally_slam_never_friendly_fires_jean(self):
+        """The player has no `friend` attribute; _hostile_to must still keep an
+        ally's AoE off him even though coordinate sync puts him in every
+        combatant's combat_proximity dict."""
         import src.moves as moves
 
-        if not hasattr(moves, "RumbleAttack"):
-            pytest.skip("RumbleAttack not available")
-        p = _make_player_target()
-        npc = _make_npc(damage=12)
-        npc.target = p
-        npc.combat_proximity[p] = 2
-        ra = moves.RumbleAttack(npc)
-        ra.target = p
-        with patch("builtins.print"):
-            ra.execute(npc)
+        user = self._npc("Gorran-like", friend=True, finesse=40)
+        enemy = self._npc("Enemy", friend=False)
+        jean = _player()
+        jean.protection = 0
+        hp_before = jean.hp
+        user.combat_proximity = {jean: 1, enemy: 1}
 
+        slam = moves.SeismicSlam(user)
+        with patch("src.moves._npc.random.randint", return_value=0):
+            slam.execute(user)
 
-class TestSlamAttack:
-    """SlamAttack NPC move tests."""
+        assert jean.hp == hp_before
+        assert enemy.hp < 200
 
-    def test_slam_attack_init(self):
-        """SlamAttack instantiates if available."""
+    def test_protection_reduces_damage_and_never_below_zero(self):
         import src.moves as moves
 
-        if not hasattr(moves, "SlamAttack"):
-            pytest.skip("SlamAttack not available")
-        p = _make_player_target()
-        npc = _make_npc()
-        npc.target = p
-        sa = moves.SlamAttack(npc)
-        assert sa is not None
+        user = self._npc("Ally", friend=True, damage=20, finesse=40)
+        armored = self._npc("Armored", friend=False)
+        armored.protection = 4
+        plated = self._npc("Plated", friend=False)
+        plated.protection = 999
+        user.combat_proximity = {armored: 1, plated: 1}
+
+        slam = moves.SeismicSlam(user)
+        with patch("src.moves._npc.random.randint", return_value=0):
+            slam.execute(user)
+
+        assert armored.hp == 200 - (14 - 4)
+        assert plated.hp == 200, "over-protected target takes 0, not negative damage"
+
+    def test_execute_spends_fatigue_and_restores_its_target(self):
+        import src.moves as moves
+
+        user = self._npc("Ally", friend=True, finesse=40)
+        enemy = self._npc("Enemy", friend=False)
+        user.combat_proximity = {enemy: 1}
+        user.fatigue = 50
+
+        slam = moves.SeismicSlam(user)
+        assert slam.target is user  # self-targeted (targeted=False)
+        with patch("src.moves._npc.random.randint", return_value=0):
+            slam.execute(user)
+
+        assert user.fatigue == 50 - slam.fatigue_cost
+        assert slam.target is user, "loop must restore the original target"
+
+    def test_fatigue_floors_at_zero(self):
+        import src.moves as moves
+
+        user = self._npc("Ally", friend=True, finesse=40)
+        enemy = self._npc("Enemy", friend=False)
+        user.combat_proximity = {enemy: 1}
+        user.fatigue = 5
+
+        slam = moves.SeismicSlam(user)
+        with patch("src.moves._npc.random.randint", return_value=0):
+            slam.execute(user)
+        assert user.fatigue == 0
+
+    def test_viable_requires_a_living_hostile_in_radius(self):
+        import src.moves as moves
+
+        user = self._npc("Ally", friend=True)
+        enemy = self._npc("Enemy", friend=False)
+        comrade = self._npc("Comrade", friend=True)
+
+        user.combat_proximity = {enemy: 3}
+        assert moves.SeismicSlam(user).viable() is True
+
+        user.combat_proximity = {enemy: 7}
+        assert moves.SeismicSlam(user).viable() is False, "out of radius"
+
+        user.combat_proximity = {comrade: 1}
+        assert moves.SeismicSlam(user).viable() is False, "allies do not justify a slam"
+
+        enemy.hp = 0
+        user.combat_proximity = {enemy: 1}
+        assert moves.SeismicSlam(user).viable() is False, "dead enemies do not count"
+
+    def test_a_missed_roll_deals_no_damage(self):
+        """to-hit is max(5, 85 - target.finesse + user.finesse * 0.7); a very
+        evasive target floors it at 5, so a roll of 100 misses."""
+        import src.moves as moves
+
+        user = self._npc("Ally", friend=True, finesse=10)
+        enemy = self._npc("Enemy", friend=False, finesse=200)
+        user.combat_proximity = {enemy: 1}
+
+        slam = moves.SeismicSlam(user)
+        with patch("src.moves._npc.random.randint", return_value=100):
+            slam.execute(user)
+        assert enemy.hp == 200
+        assert user.fatigue == 100 - slam.fatigue_cost, "cost is paid on a miss too"
 
 
 class TestNpcMovesExistInModule:

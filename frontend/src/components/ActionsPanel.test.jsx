@@ -4,6 +4,11 @@ import { MemoryRouter } from 'react-router-dom';
 import ActionsPanel from './ActionsPanel';
 import apiEndpoints from '../api/endpoints';
 import { AudioProvider } from '../context/AudioContext';
+import { colors } from '../styles/theme';
+
+/** #rrggbb -> the `rgb(r, g, b)` form jsdom normalises inline styles to. */
+const hexToRgb = (hex) =>
+  `rgb(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 
 // Mock apiEndpoints
 vi.mock('../api/endpoints', () => ({
@@ -92,7 +97,13 @@ describe('ActionsPanel', () => {
     expect(screen.getByText(/Saving game.../i)).toBeDefined();
 
     await waitFor(() => {
-      expect(apiEndpoints.saves.save).toHaveBeenCalled();
+      // The save name is `Save_<ISO datetime with ':' -> '-'>`. A bare
+      // toHaveBeenCalled() passed even when the name was undefined — which the
+      // backend would store as a nameless slot the player cannot identify.
+      expect(apiEndpoints.saves.save).toHaveBeenCalledTimes(1);
+      expect(apiEndpoints.saves.save).toHaveBeenCalledWith(
+        expect.stringMatching(/^Save_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$/)
+      );
       expect(screen.getByText(/Game saved!/i)).toBeDefined();
     });
   });
@@ -263,21 +274,27 @@ describe('ActionsPanel', () => {
     expect(screen.queryByText(/Showvar/i)).toBeNull();
   });
 
-  it('handles close button hover', () => {
+  it('brightens the close button on hover and dims it again on leave', () => {
+    // Was: `expect(() => fireEvent.mouseEnter(...)).not.toThrow()` twice, on the
+    // grounds that the colours are "an internal impl detail". But those two
+    // handlers ARE the entire behaviour under test — with both deleted the old
+    // assertions still passed, leaving the dialog's only hover affordance
+    // unproven. The tokens come from the theme, so this does not hardcode hex.
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
-
     const closeButton = screen.getByText(/✕/i);
 
-    // Verify hover/leave events fire without error (color values are an
-    // internal impl detail of BaseDialog — we don't assert specific hex here).
-    expect(() => fireEvent.mouseEnter(closeButton)).not.toThrow();
-    expect(() => fireEvent.mouseLeave(closeButton)).not.toThrow();
+    fireEvent.mouseEnter(closeButton);
+    expect(closeButton.style.color).toBe(hexToRgb(colors.text.highlight));
+
+    fireEvent.mouseLeave(closeButton);
+    expect(closeButton.style.color).toBe(hexToRgb(colors.text.muted));
   });
 
-  it('calls onClose when close button is clicked', async () => {
+  it('calls onClose exactly once when the close button is clicked', async () => {
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     fireEvent.click(screen.getByText(/✕/i));
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    expect(mockOnClose).toHaveBeenCalledWith(expect.objectContaining({ type: 'click' }));
   });
 });

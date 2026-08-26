@@ -224,7 +224,7 @@ describe('useEventManager', () => {
             expect(result.current.eventHistory).toEqual([])
         })
 
-        it('should call onEventProcessed callback', () => {
+        it('should call onEventProcessed exactly once per close, with no arguments', () => {
             const onEventProcessed = vi.fn()
             const params = { ...defaultParams, onEventProcessed }
             const { result } = renderHook(() => useEventManager(params))
@@ -233,7 +233,27 @@ describe('useEventManager', () => {
                 result.current.handleEventClose()
             })
 
-            expect(onEventProcessed).toHaveBeenCalled()
+            // GamePage's onEventProcessed refetches player + world. A bare
+            // toHaveBeenCalled() passed even if it fired twice per close, which
+            // doubles that round-trip on every event dismissal.
+            expect(onEventProcessed).toHaveBeenCalledTimes(1)
+            expect(onEventProcessed).toHaveBeenCalledWith()
+            // …and the close itself clears the active event.
+            expect(result.current.currentEvent).toBeNull()
+
+            act(() => {
+                result.current.handleEventClose()
+            })
+            expect(onEventProcessed).toHaveBeenCalledTimes(2)
+        })
+
+        it('does not blow up when no onEventProcessed callback was supplied', () => {
+            const { onEventProcessed, ...params } = defaultParams
+            const { result } = renderHook(() => useEventManager(params))
+            act(() => {
+                result.current.handleEventClose()
+            })
+            expect(result.current.currentEvent).toBeNull()
         })
     })
 

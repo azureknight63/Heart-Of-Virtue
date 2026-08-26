@@ -8,13 +8,21 @@
  * Positions for the death burst are read from the current combat snapshot,
  * which still contains the just-killed combatant (resolved isn't applied yet).
  */
-function findEntity(combat, id) {
+/**
+ * Locate a combatant by wire id and report which side it fights on.
+ *
+ * Alignment has to travel with the death burst: the fading token is drawn from
+ * this snapshot after the combatant has already left `combat.allies` /
+ * `combat.enemies`, so at render time there is no pool left to infer it from.
+ */
+function findCombatant(combat, id) {
   if (!combat) return null;
-  if (id === 'player' || combat.player?.id === id) return combat.player;
-  const pools = [combat.enemies, combat.allies];
-  for (const pool of pools) {
+  if (id === 'player' || combat.player?.id === id) {
+    return combat.player ? { entity: combat.player, friendly: true } : null;
+  }
+  for (const [pool, friendly] of [[combat.enemies, false], [combat.allies, true]]) {
     const hit = (pool || []).find((e) => e.id === id);
-    if (hit) return hit;
+    if (hit) return { entity: hit, friendly };
   }
   return null;
 }
@@ -32,13 +40,14 @@ export function beatToAnimations(beat, combat) {
   ];
 
   for (const id of beat.killed || []) {
-    const entity = findEntity(combat, id);
-    if (entity?.position) {
+    const found = findCombatant(combat, id);
+    if (found?.entity?.position) {
       animations.push({
         type: 'death',
         target_id: id,
-        position: entity.position,
-        entity,
+        position: found.entity.position,
+        entity: found.entity,
+        friendly: found.friendly,
         suppressSfx: true,
       });
     }

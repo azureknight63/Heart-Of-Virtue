@@ -247,14 +247,39 @@ def test_reconcile_final_no_double_death_when_already_streamed():
 
 
 def test_emit_never_raises_on_socket_failure():
+    """A dead socket must not break combat -- and must not desynchronise the
+    streamer's baseline either.
+
+    The old test called stream_beats() and asserted nothing, so it proved only
+    that the exception was swallowed somewhere. If the swallow had happened
+    *before* ``self._last = curr``, every later beat would have re-diffed
+    against a stale roster and re-reported damage that already landed.
+    """
+    attempts = []
+
     class Boom:
         def emit(self, *a, **k):
+            attempts.append(a)
             raise RuntimeError("socket down")
 
     streamer = CombatBeatStreamer(
         Boom(), "r", initial_combatants=[_combatant("enemy_9", 30)]
     )
-    # Should swallow and continue (combat must not break on a bad socket).
+
     streamer.stream_beats(
         [_snapshot([_combatant("enemy_9", 10)], animation=_anim("player", "enemy_9"))]
     )
+
+    # The emit was genuinely attempted (so the except branch really was hit)...
+    assert len(attempts) == 1
+    # ...the sequence counter still advanced...
+    assert streamer._seq == 1
+    # ...and the baseline moved on, so a follow-up beat diffs from hp 10, not 30.
+    assert streamer._last == [_combatant("enemy_9", 10)]
+
+    streamer.stream_beats(
+        [_snapshot([_combatant("enemy_9", 4)], animation=_anim("player", "enemy_9"))]
+    )
+    assert len(attempts) == 2
+    second_beat = attempts[1][1]
+    assert second_beat["hp_changes"] == [{"id": "enemy_9", "delta": -6}]

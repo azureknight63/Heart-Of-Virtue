@@ -22,7 +22,7 @@ paced locally. This tightly couples combat visuals **and** SFX to the engine.
 - SFX is **animation-phase-keyed and client-resolved**: `ANIMATION_CONFIGS[type]
   .sfx = { [phase]: cue }`, with the special cue `'outcome'` resolved via
   `impactSfxFor(outcome)`. `BattlefieldGrid`'s phase machine fires cues through
-  `AudioContext.playSFX(name)` → `/assets/sounds/sfx_<name>.wav`.
+  `AudioContext.playSFX(name)` → `/assets/sounds/sfx/<name>.wav`.
 - The SocketIO **server layer is fully built but has zero consumers**:
   `src/api/sockets.py` handlers + `combat_adapter.py` emits
   (`combat:log/started/update/turn/suggestions_ready`), `socket.io-client` is a
@@ -62,7 +62,7 @@ paced locally. This tightly couples combat visuals **and** SFX to the engine.
    `scheduleSfxChain(emissions, durationOf) → [{cue, startMs}]` with
    `startMs[i+1] = startMs[i] + 0.75 * durationOf(cue[i])`.
 6. **SFX duration source = the shipped `.wav` files, not the synth generator.**
-   A script iterates `frontend/public/assets/sounds/sfx_*.wav`, reads the true
+   A script iterates `frontend/public/assets/sounds/sfx/*.wav`, reads the true
    duration from each WAV header (`dataBytes / byteRate`, exact for PCM), and
    writes `frontend/src/utils/sfxDurations.js`. Correct regardless of how the
    file was produced (synthesized, hand-picked among renders, Audacity-trimmed).

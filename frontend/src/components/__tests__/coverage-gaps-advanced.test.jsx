@@ -9,9 +9,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import GamePanel from '../GamePanel'
 import StatsPanel from '../StatsPanel'
-import SkillsPanel from '../SkillsPanel'
 import CooldownTray from '../CooldownTray'
 import CombatLog from '../CombatLog'
+import { colors, spacing } from '../../styles/theme'
+import { makePlayer } from '../../test/payloads'
 
 describe('Advanced Coverage Gap Tests', () => {
   describe('GamePanel Advanced Coverage', () => {
@@ -30,17 +31,22 @@ describe('Advanced Coverage Gap Tests', () => {
       expect(screen.getByText('Test Panel')).toBeInTheDocument()
     })
 
-    it('renders without title but with onClose', () => {
+    it('renders a working close button with no title, and no title row', () => {
       render(
         <GamePanel onClose={mockOnClose}>
           <p>Content</p>
         </GamePanel>
       )
-      const buttons = screen.getAllByRole('button')
-      expect(buttons.length).toBeGreaterThan(0)
+      // Exactly one control, and it is the close affordance — "at least one
+      // button exists" was true of any panel with any button at all.
+      const button = screen.getByRole('button', { name: '✕' })
+      expect(screen.getAllByRole('button')).toHaveLength(1)
+      fireEvent.click(button)
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+      expect(screen.getByText('Content')).toBeInTheDocument()
     })
 
-    it('calls onClose when close button clicked (with title)', () => {
+    it('calls onClose exactly once when the titled panel\'s close button is clicked', () => {
       render(
         <GamePanel title="Test" onClose={mockOnClose}>
           <p>Content</p>
@@ -48,25 +54,32 @@ describe('Advanced Coverage Gap Tests', () => {
       )
       const button = screen.getByRole('button')
       fireEvent.click(button)
-      expect(mockOnClose).toHaveBeenCalled()
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+      // A close handler that also unmounted/cleared the panel would be a
+      // different bug: GamePanel is presentational, the parent owns dismissal.
+      expect(screen.getByText('Test')).toBeInTheDocument()
     })
 
-    it('renders with custom padding', () => {
-      const { container } = render(
-        <GamePanel padding="small" onClose={mockOnClose}>
-          <p>Content</p>
-        </GamePanel>
-      )
-      expect(container.firstChild).toBeInTheDocument()
+    it('applies the padding token it was given, distinct from the default', () => {
+      // Was: `expect(container.firstChild).toBeInTheDocument()`, which is true
+      // of any rendered panel and so proved nothing about `padding`.
+      const { container: small } = render(<GamePanel padding="small" onClose={mockOnClose}>c</GamePanel>)
+      const { container: dflt } = render(<GamePanel onClose={mockOnClose}>c</GamePanel>)
+      // Pin the token, not merely "some padding": `toBeTruthy()` passed for any
+      // non-empty string, including the wrong size.
+      expect(small.firstChild.style.padding).toBe(spacing.sm)
+      expect(dflt.firstChild.style.padding).toBe(spacing.lg)
     })
 
-    it('renders with custom border variant', () => {
-      const { container } = render(
-        <GamePanel borderVariant="danger" onClose={mockOnClose}>
-          <p>Content</p>
-        </GamePanel>
-      )
-      expect(container.firstChild).toBeInTheDocument()
+    it('applies the border variant it was given, distinct from the default', () => {
+      const { container: danger } = render(<GamePanel borderVariant="danger" onClose={mockOnClose}>c</GamePanel>)
+      const { container: dflt } = render(<GamePanel onClose={mockOnClose}>c</GamePanel>)
+      const { container: bogus } = render(<GamePanel borderVariant="nope" onClose={mockOnClose}>c</GamePanel>)
+      // #ff4444 -> rgb(255, 68, 68) once jsdom normalises it.
+      expect(danger.firstChild.style.border).toBe('2px solid rgb(255, 68, 68)')
+      expect(dflt.firstChild.style.border).toBe('2px solid rgba(255, 170, 0, 0.3)')
+      // An unknown variant must fall back to `main`, not render borderless.
+      expect(bogus.firstChild.style.border).toBe(dflt.firstChild.style.border)
     })
 
     it('applies glow style when glow=true', () => {
@@ -84,8 +97,10 @@ describe('Advanced Coverage Gap Tests', () => {
           <p>Content</p>
         </GamePanel>
       )
-      const panel = container.firstChild
-      expect(panel).toBeInTheDocument()
+      // The paired `glow={true}` test above asserts the class is present, so
+      // this one has to assert its ABSENCE — it previously asserted only that
+      // the panel existed, which is equally true with the glow left on.
+      expect(container.firstChild).not.toHaveClass('retro-glow')
     })
 
     it('handles custom className', () => {
@@ -146,185 +161,90 @@ describe('Advanced Coverage Gap Tests', () => {
       expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
     })
 
-    it('renders with high stat values', () => {
-      const { container } = render(
-        <StatsPanel
-          player={{
-            hp: 999,
-            max_hp: 999,
-            fatigue: 999,
-            max_fatigue: 999,
-            protection: 99,
-            level: 99,
-            attack_damage_min: 99,
-            attack_damage_max: 199,
-            hit_accuracy: 999,
-            evasion_chance: 999,
-            strength: 99,
-            finesse: 99,
-            speed: 99,
-            endurance: 99,
-            charisma: 99,
-            intelligence: 99,
-            faith: 99
-          }}
-          onClose={vi.fn()}
-        />
-      )
-      expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
-    })
+    // These two used to differ ONLY in the numbers they passed, and both
+    // asserted the same thing — that a dialog rendered. Nothing read a single
+    // stat back out, so StatsPanel could have shown all zeroes at 99 and both
+    // stayed green. They are now one parametrised case that reads the numbers
+    // back, with the zero row kept because 0 is the value most likely to be
+    // swallowed by a `||` fallback.
+    it.each([
+      ['high', { hp: 999, max_hp: 999, fatigue: 999, max_fatigue: 999, protection: 99, level: 99, attack_damage_min: 99, attack_damage_max: 199 }],
+      ['zero', { hp: 0, max_hp: 100, fatigue: 0, max_fatigue: 50, protection: 0, level: 0, attack_damage_min: 0, attack_damage_max: 0 }],
+    ])('renders %s stat values verbatim rather than a fallback', (_label, stats) => {
+      const player = makePlayer({ ...stats, hit_accuracy: 0, evasion_chance: 0 })
+      const { container } = render(<StatsPanel player={player} onClose={vi.fn()} />)
 
-    it('renders with zero stat values', () => {
-      const { container } = render(
-        <StatsPanel
-          player={{
-            hp: 0,
-            max_hp: 100,
-            fatigue: 0,
-            max_fatigue: 50,
-            protection: 0,
-            level: 0,
-            attack_damage_min: 0,
-            attack_damage_max: 0,
-            hit_accuracy: 0,
-            evasion_chance: 0,
-            strength: 0,
-            finesse: 0,
-            speed: 0,
-            endurance: 0,
-            charisma: 0,
-            intelligence: 0,
-            faith: 0
-          }}
-          onClose={vi.fn()}
-        />
-      )
       expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
+      expect(container.textContent).toContain(`${stats.hp}/${stats.max_hp}`)
+      expect(container.textContent).toContain(`${stats.fatigue}/${stats.max_fatigue}`)
+      expect(container.textContent).toContain(`${stats.attack_damage_min}-${stats.attack_damage_max}`)
+      expect(container.textContent).toContain(String(stats.level))
     })
   })
 
   describe('CooldownTray Coverage', () => {
-    it('renders with empty cooldowns array', () => {
-      const { container } = render(
-        <CooldownTray cooldowns={[]} />
-      )
-      expect(container).toBeTruthy()
+    // WHAT WAS HERE: six tests passing `cooldowns={[...]}` — a prop
+    // CooldownTray does not accept (it takes `moves`) — each asserting
+    // `expect(container).toBeTruthy()`. The render-container div testing
+    // -library creates is truthy unconditionally, including when the component
+    // returns null, which is exactly what every one of those renders did. Six
+    // tests, one wrong prop name, zero coverage of the tray.
+    const move = (name, over = {}) => ({ id: name, name, category: 'Offensive', cooldown_remaining: 3, ...over })
+
+    it('renders nothing for an empty move list', () => {
+      const { container } = render(<CooldownTray moves={[]} />)
+      expect(container.firstChild).toBeNull()
     })
 
-    it('renders with single cooldown', () => {
-      const { container } = render(
-        <CooldownTray cooldowns={[
-          { name: 'Move 1', cooldown_remaining: 0, cooldown_max: 10 }
-        ]} />
-      )
-      expect(container).toBeTruthy()
+    it('counts the cooling moves in the header and shows each remaining beat count', () => {
+      render(<CooldownTray moves={[
+        move('Power Strike', { cooldown_remaining: 4 }),
+        move('Reap', { cooldown_remaining: 7 }),
+        move('Riposte', { cooldown_remaining: 9 }),
+      ]} />)
+
+      expect(screen.getByText('Cooldown')).toBeInTheDocument()
+      // Header count sits next to the "Cooldown" label.
+      expect(screen.getByText('Cooldown').parentElement.textContent).toBe('Cooldown3')
+      // Collapsed cards show the beats remaining, not the move name.
+      expect(screen.getByText('4')).toBeInTheDocument()
+      expect(screen.getByText('7')).toBeInTheDocument()
+      expect(screen.getByText('9')).toBeInTheDocument()
+      expect(screen.queryByText('Power Strike')).toBeNull()
     })
 
-    it('renders with multiple cooldowns', () => {
-      const { container } = render(
-        <CooldownTray cooldowns={[
-          { name: 'Move 1', cooldown_remaining: 0, cooldown_max: 10 },
-          { name: 'Move 2', cooldown_remaining: 5, cooldown_max: 10 },
-          { name: 'Move 3', cooldown_remaining: 10, cooldown_max: 10 }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles cooldown at max', () => {
-      const { container } = render(
-        <CooldownTray cooldowns={[
-          { name: 'Move 1', cooldown_remaining: 10, cooldown_max: 10 }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles very long cooldown names', () => {
+    it('reveals a very long move name in full when expanded', () => {
       const longName = 'A'.repeat(100)
-      const { container } = render(
-        <CooldownTray cooldowns={[
-          { name: longName, cooldown_remaining: 0, cooldown_max: 10 }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles cooldown with zero max', () => {
-      const { container } = render(
-        <CooldownTray cooldowns={[
-          { name: 'Move 1', cooldown_remaining: 0, cooldown_max: 0 }
-        ]} />
-      )
-      expect(container).toBeTruthy()
+      const { container } = render(<CooldownTray moves={[move(longName)]} />)
+      fireEvent.mouseEnter(container.firstChild)
+      expect(screen.getByText(longName)).toBeInTheDocument()
     })
   })
 
   describe('CombatLog Coverage', () => {
-    it('renders with empty log', () => {
-      const { container } = render(
-        <CombatLog log={[]} />
-      )
-      expect(container).toBeTruthy()
+    // WHAT WAS HERE: seven tests each ending in `expect(container).toBeTruthy()`
+    // — the render container, which testing-library creates and which is truthy
+    // whatever the component does. CombatLog writes each entry through
+    // `dangerouslySetInnerHTML` (with DOMPurify), and not one of the seven read
+    // a single rendered message back out, let alone the sanitisation.
+    //
+    // The message rendering, the animation-entry filter, the DOMPurify
+    // behaviour and the empty/null-log placeholders are all covered by
+    // coverage-gaps-final.test.jsx's CombatLog block, so only the one thing it
+    // does NOT assert — the per-type colour table and its fallback — lives
+    // here, rather than a second weaker copy of all of it.
+    it('colours an entry by its type and falls back for an unknown type', () => {
+      render(<CombatLog log={[
+        { id: 1, type: 'damage', message: 'Took a hit' },
+        { id: 2, type: 'heal', message: 'Patched up' },
+        { id: 3, type: 'no-such-type', message: 'Uncategorised' },
+      ]} />)
+
+      expect(screen.getByText('Took a hit')).toHaveStyle({ color: colors.danger })
+      expect(screen.getByText('Patched up')).toHaveStyle({ color: colors.success })
+      expect(screen.getByText('Uncategorised')).toHaveStyle({ color: colors.text.main })
     })
 
-    it('renders with single log entry', () => {
-      const { container } = render(
-        <CombatLog log={[
-          { type: 'move', message: 'Jean used Attack' }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders with multiple log entries', () => {
-      const { container } = render(
-        <CombatLog log={[
-          { type: 'move', message: 'Jean used Attack' },
-          { type: 'hit', message: 'Hit for 10 damage' },
-          { type: 'miss', message: 'Attack missed' },
-          { type: 'heal', message: 'Healed 20 HP' }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles log entries with special characters', () => {
-      const { container } = render(
-        <CombatLog log={[
-          { type: 'move', message: 'Attack!@#$%^&*()' }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles very long log entries', () => {
-      const longMessage = 'A'.repeat(500)
-      const { container } = render(
-        <CombatLog log={[
-          { type: 'move', message: longMessage }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles null/undefined log', () => {
-      const { container } = render(
-        <CombatLog log={null} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles log with multiple entries in sequence', () => {
-      const { container } = render(
-        <CombatLog log={[
-          { type: 'move', message: 'Attack' },
-          { type: 'hit', message: 'Hit' },
-          { type: 'crit', message: 'Critical!' }
-        ]} />
-      )
-      expect(container).toBeTruthy()
-    })
   })
 
   // The blocks below replace ~16 tests that rendered inline <div> literals to
@@ -368,23 +288,11 @@ describe('Advanced Coverage Gap Tests', () => {
   describe('List rendering in CooldownTray', () => {
     const move = (id, over = {}) => ({ id, name: `Move ${id}`, category: 'Offensive', cooldown_remaining: 2, ...over })
 
-    it('renders nothing when there are no cooling moves', () => {
-      const { container, rerender } = render(<CooldownTray moves={[]} />)
-      expect(container.firstChild).toBeNull()
-
-      rerender(<CooldownTray moves={null} />)
-      expect(container.firstChild).toBeNull()
-
-      rerender(<CooldownTray />)
-      expect(container.firstChild).toBeNull()
-    })
-
-    it('shows the cooling-move count and one card per move', () => {
-      render(<CooldownTray moves={[move(1), move(2), move(3)]} />)
-      expect(screen.getByText('Cooldown')).toBeInTheDocument()
-      expect(screen.getByText('3')).toBeInTheDocument()
-    })
-
+    // The empty/null/undefined-moves cases and the plain count-and-cards case
+    // that used to live here are byte-for-byte covered by CooldownTray.test.jsx
+    // ("renders nothing for %s" and "labels the section and counts exactly the
+    // moves it was given"), which asserts them against the grid children rather
+    // than a lone getByText. Removed rather than kept as a weaker second copy.
     it('swaps to the expanded layout on hover and back on leave', () => {
       const { container } = render(<CooldownTray moves={[move(1, { name: 'Power Strike' })]} />)
       const tray = container.firstChild
@@ -399,31 +307,64 @@ describe('Advanced Coverage Gap Tests', () => {
       expect(screen.queryByText('Power Strike')).toBeNull()
     })
 
-    it('renders moves of every category without needing a known one', () => {
+    it('gives each category its own icon and falls back to ◈ for an unknown one', () => {
       const moves = [
         move(1, { category: 'Offensive' }),
         move(2, { category: 'Defensive' }),
         move(3, { category: 'Maneuver' }),
         move(4, { category: 'Utterly Unknown' }),
       ]
-      expect(() => render(<CooldownTray moves={moves} />)).not.toThrow()
-      expect(screen.getByText('4')).toBeInTheDocument()
+      const { container } = render(<CooldownTray moves={moves} />)
+      // `not.toThrow()` plus a header count of 4 held even if every card
+      // rendered the same glyph — the point of the category map is that they
+      // differ. Offensive ⚔, Defensive ◈, Maneuver ↯, unknown falls back to ◈.
+      const cards = Array.from(container.firstChild.lastChild.children, c => c.textContent)
+      expect(cards).toEqual(['⚔2', '◈2', '↯2', '◈2'])
     })
   })
 
   describe('Absent and partial player data in StatsPanel', () => {
-    it('does not crash when the player has no stats at all', () => {
-      expect(() => render(<StatsPanel player={{}} onClose={vi.fn()} />)).not.toThrow()
+    it('renders the defended fallbacks — and, today, prints "undefined" for the undefended ones', () => {
+      // This replaces `expect(() => render(...)).not.toThrow()`, which allowed
+      // literally any output. Reading the output back immediately surfaced a
+      // REAL DEFECT (reported, not fixed here — StatsPanel.jsx is outside this
+      // pass's file set):
+      //
+      //   StatsPanel.jsx:39-40 defend with `|| 0` / `|| 1`
+      //   StatsPanel.jsx:37,38,41 do NOT, so a player payload missing hp /
+      //   max_hp / fatigue / max_fatigue / attack_damage_* renders the literal
+      //   strings "undefined/undefined" and "undefined-undefined" at the player.
+      //   StatsPanel.jsx:47,62 render a blank Accuracy/Evasion cell for the
+      //   same reason.
+      //
+      // The assertions below pin BOTH halves. When the undefended fields gain
+      // the same `?? 0` treatment, the second block fails loudly and should be
+      // flipped to the not-toContain form rather than deleted.
+      const { container } = render(<StatsPanel player={{}} onClose={vi.fn()} />)
+      expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
+      expect(container.textContent).not.toContain('NaN')
+
+      // Defended today:
+      expect(container.textContent).toContain('Protection0')
+      expect(container.textContent).toContain('Level1')
+
+      // Undefended today — this is the bug, recorded so it cannot regress
+      // silently in either direction.
+      expect(container.textContent).toContain('HPundefined/undefined')
+      expect(container.textContent).toContain('Fatigueundefined/undefined')
+      expect(container.textContent).toContain('Attackundefined-undefined')
     })
 
     it('closes via its close handler', () => {
+      // The `if (button)` guard that used to wrap this assertion meant the
+      // test passed with ZERO assertions the moment the close control moved or
+      // was removed — the exact failure it exists to catch.
       const onClose = vi.fn()
       const { container } = render(<StatsPanel player={{ name: 'Jean', level: 3 }} onClose={onClose} />)
       const button = container.querySelector('button')
-      if (button) {
-        fireEvent.click(button)
-        expect(onClose).toHaveBeenCalled()
-      }
+      expect(button).not.toBeNull()
+      fireEvent.click(button)
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
   })
 })

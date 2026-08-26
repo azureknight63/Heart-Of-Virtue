@@ -77,11 +77,23 @@ def test_ensure_weapon_exp_no_skill_exp_attribute():
 
 
 def test_ensure_weapon_exp_no_combat_exp_attribute():
+    """A user with no combat_exp is left completely untouched.
+
+    The old assertion (``not hasattr(user, 'skill_exp')``) was true before the
+    call as well as after, so it held even if the helper had created a
+    ``combat_exp`` dict out of thin air — precisely the thing the early return
+    exists to avoid, since the caller's absent combat_exp means "this combatant
+    does not track weapon exp".
+    """
     user = types.SimpleNamespace()
     user.eq_weapon = DummyWeapon(subtype='Ghost')
-    # No combat_exp; should silently return without raising
-    _ensure_weapon_exp(user)  # Should not raise
-    assert not hasattr(user, 'skill_exp')  # ensure it didn't create unrelated attributes
+    before = dict(vars(user))
+
+    _ensure_weapon_exp(user)
+
+    assert vars(user) == before
+    assert not hasattr(user, 'combat_exp')
+    assert not hasattr(user, 'skill_exp')
 
 
 def test_ensure_weapon_exp_weapon_without_subtype():

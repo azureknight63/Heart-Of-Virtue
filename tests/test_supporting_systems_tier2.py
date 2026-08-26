@@ -23,6 +23,7 @@ import src.items as items  # pragma: no cover - ensures module is imported for c
 import src.functions as functions
 import src.states as states
 import src.moves as moves
+from src.narration import capture_narration
 
 
 # ============================================================================
@@ -351,43 +352,52 @@ class TestEquipItem:
         return p
 
     def test_equip_weapon_basic(self, player):
-        """Test equipping a basic weapon."""
-        weapon = MagicMock(spec=items.Weapon)
-        weapon.name = "Sword"
-        weapon.str_req = 5
-        weapon.fin_req = 5
-        weapon.isequipped = False
-        weapon.interactions = ["equip"]
-        weapon.maintype = "Weapon"
-        weapon.type = "Weapon"
-
+        """Equipping a weapon flips isequipped, sets eq_weapon and swaps the verb."""
+        weapon = items.Shortsword()
         player.inventory = [weapon]
-        # Just test that equip_item can be called without error
-        # The actual implementation handles complex logic
-        try:
-            player.equip_item(item_object=weapon)
-        except (AttributeError, TypeError):
-            # Expected due to mock complexity
-            pass
+
+        player.equip_item(item_object=weapon)
+
+        assert weapon.isequipped is True
+        assert player.eq_weapon is weapon
+        assert "unequip" in weapon.interactions
+        assert "equip" not in weapon.interactions
 
     def test_equip_armor_basic(self, player):
-        """Test equipping armor."""
-        armor = MagicMock(spec=items.Armor)
-        armor.name = "Leather Armor"
-        armor.str_req = 5
-        armor.isequipped = False
-        armor.interactions = ["equip"]
-        armor.maintype = "Armor"
-        armor.type = "Armor"
-
+        """Equipping armor marks it equipped but never touches eq_weapon."""
+        armor = items.TatteredCloth()
         player.inventory = [armor]
-        # Just test that equip_item can be called without error
-        # The actual implementation handles complex logic
-        try:
-            player.equip_item(item_object=armor)
-        except (AttributeError, TypeError):
-            # Expected due to mock complexity
-            pass
+
+        player.equip_item(item_object=armor)
+
+        assert armor.isequipped is True
+        assert armor.maintype == "Armor"
+        assert player.eq_weapon is None  # armor must not become the weapon slot
+        assert armor.interactions == ["drop", "unequip"]
+
+    def test_equip_second_weapon_unequips_the_first(self, player):
+        """Only one weapon may be equipped: the incumbent is swapped out."""
+        old = items.Shortsword()
+        new = items.Dagger()
+        player.inventory = [old, new]
+        player.equip_item(item_object=old)
+
+        player.equip_item(item_object=new)
+
+        assert new.isequipped is True
+        assert old.isequipped is False
+        assert player.eq_weapon is new
+        assert "equip" in old.interactions and "unequip" not in old.interactions
+
+    def test_equip_item_with_no_arguments_is_a_noop(self, player):
+        """No phrase and no object equips nothing (the terminal menu is gone)."""
+        weapon = items.Shortsword()
+        player.inventory = [weapon]
+
+        player.equip_item()
+
+        assert weapon.isequipped is False
+        assert player.eq_weapon is None
 
 
 class TestDropItem:
@@ -404,14 +414,14 @@ class TestDropItem:
         return p
 
     def test_drop_single_item(self, player):
-        """Test dropping a single item."""
-        item = MagicMock()
-        item.name = "Sword"
-
+        """Dropping moves the item from inventory onto the tile — it is not cloned."""
+        item = items.Shortsword()
         player.inventory = [item]
-        with patch.object(item, 'drop'):
-            item.drop(player)
-            item.drop.assert_called_once()
+
+        item.drop(player)
+
+        assert item not in player.inventory
+        assert player.current_room.items_here == [item]
 
 
 class TestInventoryWeight:
@@ -585,24 +595,11 @@ class TestPlayerUI:
 # ============================================================================
 
 
-class TestPlayerWorld:
-    """Test Player world/universe interaction."""
-
-    @pytest.fixture
-    def player(self):
-        p = Player()
-        p.universe = MagicMock()
-        p.universe.story = {}
-        p.universe.game_tick = 0
-        return p
-
-    def test_universe_reference(self, player):
-        """Test player has universe reference."""
-        assert player.universe is not None
-
-    def test_story_state(self, player):
-        """Test story state stored."""
-        assert isinstance(player.universe.story, dict)
+# Player.refresh_merchants() -- the world mixin's only method -- is covered in
+# tests/test_coverage_boost_batch1.py::TestPlayerWorldMixinExtended, which
+# already exercises the filter, the initialize_shop path and both failure
+# branches. The class that used to sit here asserted only
+# `player.universe is not None`.
 
 
 # ============================================================================
@@ -683,12 +680,17 @@ class TestGoldItem:
         assert gold.count == gold.amt
 
     def test_gold_cannot_drop(self):
-        """Test gold cannot be dropped."""
+        """Gold.drop() is a deliberate no-op — the pouch stays in inventory."""
         gold = items.Gold(amt=50)
-        player = MagicMock()
-        # Gold.drop() does nothing
+        player = Player()
+        player.inventory = [gold]
+        player.current_room = MagicMock()
+        player.current_room.items_here = []
+
         gold.drop(player)
-        # Should not raise error
+
+        assert player.inventory == [gold]
+        assert player.current_room.items_here == []
 
     def test_gold_stack_grammar(self):
         """Test gold updates description on count change."""
@@ -917,26 +919,27 @@ class TestItemEquipEdgeCases:
     """Test item equip/unequip edge cases."""
 
     def test_equip_merchandise_prevents(self):
-        """Test equipping merchandise item fails."""
-        item = items.Item(
-            name="Merchandise",
-            description="For sale only",
-            value=10,
-            maintype="Test",
-            subtype="Test",
-            discovery_message="test",
-            merchandise=True,
-        )
-
-        player = MagicMock()
+        """Unpaid merchandise is refused: it stays unequipped and keeps 'equip'."""
+        weapon = items.Shortsword()
+        weapon.merchandise = True
+        weapon.isequipped = True
+        weapon.interactions = ["unequip"]
+        player = Player()
         player.name = "Jean"
 
-        with patch("builtins.print"):
-            item.on_equip(player)
-            # Should not equip merchandise
+        with capture_narration() as messages:
+            weapon.on_equip(player)
+
+        assert weapon.isequipped is False
+        assert weapon.interactions == ["equip"]
+        assert player.eq_weapon is player.fists
+        assert (
+            "Jean must purchase Shortsword before using or equipping it."
+            == messages[0]["text"]
+        )
 
     def test_item_with_equip_states(self):
-        """Test item with equip_states applies them."""
+        """A non-merchandise item hands its equip_states to the player."""
         item = items.Item(
             name="Enchanted Ring",
             description="Magic ring",
@@ -945,22 +948,41 @@ class TestItemEquipEdgeCases:
             subtype="Ring",
             discovery_message="a magic ring",
         )
-
-        # Add equip state
-        item.equip_states = ["strength_boost"]
-
-        player = MagicMock()
-        player.apply_state = MagicMock()
+        player = Player()
+        player.states = []
+        hawkeye = states.Hawkeye(None)
+        item.equip_states = [hawkeye]
 
         item.on_equip(player)
-        # Would apply states if not merchandise
+
+        assert player.states == [hawkeye]
+        assert hawkeye.target is player  # re-targeted onto the wearer
+
+    def test_merchandise_item_does_not_apply_its_equip_states(self):
+        """The merchandise guard returns before states are granted."""
+        item = items.Item(
+            name="Shop Ring",
+            description="For sale",
+            value=200,
+            maintype="Jewelry",
+            subtype="Ring",
+            discovery_message="a ring",
+            merchandise=True,
+        )
+        player = Player()
+        player.states = []
+        item.equip_states = [states.Hawkeye(None)]
+
+        item.on_equip(player)
+
+        assert player.states == []
 
 
 class TestItemInventoryOperations:
     """Test item inventory interactions."""
 
     def test_item_take_basic(self):
-        """Test taking item from ground."""
+        """take() moves the item off the tile and into the inventory."""
         item = items.Item(
             name="Potion",
             description="Healing potion",
@@ -970,17 +992,19 @@ class TestItemInventoryOperations:
             discovery_message="a potion",
         )
 
-        player = MagicMock()
+        player = Player()
+        player.name = "Jean"
         player.inventory = []
         player.current_room = MagicMock()
         player.current_room.items_here = [item]
 
-        with patch.object(item, 'take'):
-            item.take(player)
-            item.take.assert_called_once()
+        item.take(player)
+
+        assert player.inventory == [item]
+        assert player.current_room.items_here == []
 
     def test_item_drop_basic(self):
-        """Test dropping item to ground."""
+        """drop() is take()'s inverse for a non-stacking item."""
         item = items.Item(
             name="Potion",
             description="Healing potion",
@@ -990,14 +1014,16 @@ class TestItemInventoryOperations:
             discovery_message="a potion",
         )
 
-        player = MagicMock()
+        player = Player()
+        player.name = "Jean"
         player.inventory = [item]
         player.current_room = MagicMock()
         player.current_room.items_here = []
 
-        with patch.object(item, 'drop'):
-            item.drop(player)
-            item.drop.assert_called_once()
+        item.drop(player)
+
+        assert player.inventory == []
+        assert player.current_room.items_here == [item]
 
 
 # ============================================================================
@@ -1107,42 +1133,51 @@ class TestItemEdgeCases:
 
 
 class TestPlayerStatCalculations:
-    """Test player stat-based calculations."""
+    """A freshly constructed Player's stats.
 
-    @pytest.fixture
-    def player(self):
+    This class used to build a fixture that *assigned* strength/finesse/speed/
+    wisdom/constitution/hp/fatigue and then asserted each was >= 0 — statements
+    about the assignments, not about Player. Two of those attributes
+    (``wisdom``, ``constitution``) do not exist on the real Player at all, so
+    the fixture was inventing fields the engine never reads.
+    """
+
+    def test_a_fresh_player_starts_at_full_hp_and_fatigue(self):
         p = Player()
-        p.strength = 10
-        p.finesse = 10
-        p.speed = 10
-        p.wisdom = 10
-        p.constitution = 10
-        p.endurance = 10
-        p.hp = 100
-        p.maxhp = 100
-        p.fatigue = 50
-        p.maxfatigue = 100
-        return p
 
-    def test_stat_values_exist(self, player):
-        """Test all player stats exist."""
-        assert player.strength >= 0
-        assert player.finesse >= 0
-        assert player.speed >= 0
-        assert player.wisdom >= 0
-        assert player.constitution >= 0
-        assert player.endurance >= 0
+        assert p.hp == p.maxhp == 100
+        assert p.fatigue == p.maxfatigue
+        assert p.maxfatigue > 0
 
-    def test_hp_and_maxhp(self, player):
-        """Test HP and max HP."""
-        assert player.hp <= player.maxhp
-        assert player.hp >= 0
+    def test_a_fresh_player_starts_at_level_one_with_no_experience(self):
+        p = Player()
 
-    def test_fatigue_mechanics(self, player):
-        """Test fatigue exists and is valid."""
-        assert player.fatigue <= player.maxfatigue
-        assert player.fatigue >= 0
+        assert (p.level, p.exp) == (1, 0)
+        assert p.exp_to_level > 0
 
+    def test_carrying_weight_starts_within_tolerance(self):
+        p = Player()
+
+        assert 0 <= p.weight_current < p.weight_tolerance
+
+    @pytest.mark.parametrize(
+        "attribute",
+        ["strength", "finesse", "speed", "endurance", "charisma",
+         "intelligence", "faith"],
+    )
+    def test_every_primary_attribute_is_present_and_positive(self, attribute):
+        p = Player()
+
+        value = getattr(p, attribute)
+        assert isinstance(value, int) and value > 0
+
+    @pytest.mark.parametrize(
+        "attribute", ["wisdom", "constitution", "health", "stamina", "defense"]
+    )
+    def test_attributes_the_engine_does_not_have(self, attribute):
+        """CLAUDE.md's attribute traps, pinned: a test (or a route) reading any
+        of these silently gets nothing."""
+        assert not hasattr(Player(), attribute)
 
 
 # ============================================================================
@@ -1151,32 +1186,10 @@ class TestPlayerStatCalculations:
 
 
 class TestItemOnEquip:
-    """Test Item.on_equip() - equip behavior including merchandise prevention."""
+    """Item.on_equip() — merchandise guard and equip_states hand-off."""
 
-    def test_on_equip_merchandise_blocks(self):
-        """Test merchandise item cannot be equipped."""
-        item = items.Item(
-            name="Merchandise",
-            description="For sale",
-            value=10,
-            maintype="Test",
-            subtype="Test",
-            discovery_message="test",
-            merchandise=True,
-        )
-
-        player = MagicMock()
-        player.name = "Jean"
-        player.eq_weapon = None
-        player.inventory = []
-        player.fists = MagicMock()
-
-        with patch("builtins.print"):
-            item.on_equip(player)
-            # Should handle merchandise gracefully
-
-    def test_on_equip_normal_item(self):
-        """Test normal item equip succeeds."""
+    def test_on_equip_normal_item_with_no_states_leaves_the_player_alone(self):
+        """The empty-equip_states path must not touch player.states at all."""
         item = items.Item(
             name="Normal Item",
             description="Regular item",
@@ -1186,16 +1199,16 @@ class TestItemOnEquip:
             discovery_message="test",
             merchandise=False,
         )
-
-        player = MagicMock()
-        player.apply_state = MagicMock()
-        item.equip_states = []
+        player = Player()
+        player.states = []
+        assert item.equip_states == []
 
         item.on_equip(player)
-        # Should not raise error
 
-    def test_on_equip_with_states(self):
-        """Test equip applies states."""
+        assert player.states == []
+
+    def test_on_equip_with_states_grants_each_state_once(self):
+        """Re-equipping must not duplicate a state already on the player."""
         item = items.Item(
             name="Enchanted Ring",
             description="Magic",
@@ -1205,96 +1218,59 @@ class TestItemOnEquip:
             discovery_message="ring",
             merchandise=False,
         )
-
-        player = MagicMock()
-        player.apply_equip_states = MagicMock()
-        item.equip_states = ["strength_boost"]
+        player = Player()
+        player.states = []
+        item.equip_states = [states.Hawkeye(None)]
 
         item.on_equip(player)
-        player.apply_equip_states.assert_called_with(item)
+        item.on_equip(player)
+
+        assert [s.name for s in player.states] == ["Hawkeye"]
 
 
 class TestItemDrop:
-    """Test Item.drop() - dropping items from inventory."""
+    """Item.drop() — inventory -> tile, including the equipped-weapon unwind."""
 
-    def test_drop_single_item(self):
-        """Test dropping a single non-stackable item."""
-        item = items.Item(
-            name="Sword",
-            description="A blade",
-            value=100,
-            maintype="Weapon",
-            subtype="Sword",
-            discovery_message="a sword",
-        )
+    @pytest.fixture
+    def player(self):
+        p = Player()
+        p.name = "Jean"
+        p.inventory = []
+        p.current_room = MagicMock()
+        p.current_room.items_here = []
+        return p
 
-        player = MagicMock()
-        player.name = "Jean"
-        player.current_room = MagicMock()
-        player.current_room.items_here = []
-        player.inventory = [item]
-
-        with patch("builtins.print"):
-            item.drop(player)
-            # Item should be dropped
-
-    def test_drop_equipped_weapon(self):
-        """Test dropping an equipped weapon."""
-        weapon = items.Weapon(
-            name="Sword",
-            description="A blade",
-            value=100,
-            damage=15,
-            isequipped=True,
-            str_req=10,
-            fin_req=5,
-            str_mod=1.0,
-            fin_mod=0.5,
-            weight=5,
-            maintype="Weapon",
-            subtype="Sword",
-            discovery_message="a sword",
-        )
-
-        player = MagicMock()
-        player.name = "Jean"
-        player.current_room = MagicMock()
-        player.current_room.items_here = []
+    def test_drop_equipped_weapon_unequips_and_falls_back_to_fists(self, player):
+        weapon = items.Shortsword()
         player.inventory = [weapon]
-        player.fists = MagicMock()
-        player.eq_weapon = weapon
+        player.equip_item(item_object=weapon)
 
-        with patch("builtins.print"):
-            weapon.drop(player)
+        weapon.drop(player)
+
+        assert weapon.isequipped is False
+        assert player.eq_weapon is player.fists
+        assert weapon.interactions == ["drop", "equip"]
+        assert player.inventory == []
+        assert player.current_room.items_here == [weapon]
 
 
 class TestItemTake:
-    """Test Item.take() - picking items up from ground."""
+    """Item.take() — tile -> inventory, capacity guard, shop tagging."""
 
-    def test_take_single_item(self):
-        """Test taking a single item."""
-        item = items.Item(
-            name="Potion",
-            description="Healing",
-            value=20,
-            maintype="Consumable",
-            subtype="Potion",
-            discovery_message="a potion",
-        )
+    @pytest.fixture
+    def player(self):
+        p = Player()
+        p.name = "Jean"
+        p.inventory = []
+        p.weight_tolerance = 100
+        p.weight_current = 0
+        p.current_room = MagicMock()
+        p.current_room.items_here = []
+        return p
 
-        player = MagicMock()
-        player.name = "Jean"
-        player.inventory = []
-        player.current_room = MagicMock()
-        player.current_room.items_here = [item]
-        player.weight_tolerance = 100
-        player.weight_current = 0
-
-        with patch("builtins.print"):
-            item.take(player)
-
-    def test_take_weight_capacity_exceeded(self):
-        """Test cannot take item if over weight limit."""
+    def test_take_weight_capacity_exceeded_leaves_the_item_on_the_ground(
+        self, player
+    ):
         item = items.Item(
             name="Boulder",
             description="Heavy rock",
@@ -1304,70 +1280,90 @@ class TestItemTake:
             discovery_message="a rock",
         )
         item.weight = 200
-
-        player = MagicMock()
-        player.name = "Jean"
-        player.inventory = []
-        player.current_room = MagicMock()
-        player.current_room.items_here = [item]
-        player.weight_tolerance = 100
         player.weight_current = 50
+        player.current_room.items_here = [item]
 
-        with patch("builtins.print"):
+        with capture_narration() as messages:
             item.take(player)
+
+        assert player.inventory == []
+        assert player.current_room.items_here == [item]
+        assert messages[0]["text"] == "It's too heavy to carry!"
+
+    def test_take_just_within_capacity_succeeds(self, player):
+        """The guard is > capacity, not >= — an exact fit is allowed."""
+        item = items.Shortsword()
+        item.weight = 50
+        player.weight_current = 50
+        player.current_room.items_here = [item]
+
+        item.take(player)
+
+        assert player.inventory == [item]
+
+    @pytest.mark.parametrize(
+        "map_name, expected_merchandise",
+        [("milo-shop", True), ("dark-grotto", False)],
+    )
+    def test_take_tags_merchandise_only_inside_a_shop_map(
+        self, player, map_name, expected_merchandise
+    ):
+        item = items.Shortsword()
+        item.merchandise = not expected_merchandise
+        player.map = {"name": map_name}
+        player.current_room.items_here = [item]
+
+        item.take(player)
+
+        assert item.merchandise is expected_merchandise
 
 
 class TestItemEquip:
-    """Test Item.equip() - equip action wrapper."""
+    """Item.equip() — the action wrapper delegating to Player.equip_item()."""
 
-    def test_equip_calls_player_equip_item(self):
-        """Test equip() calls player.equip_item()."""
-        item = items.Item(
-            name="Ring",
-            description="Magic ring",
-            value=50,
-            maintype="Ring",
-            subtype="Ring",
-            discovery_message="ring",
-        )
+    def test_equip_equips_the_item_on_a_real_player(self):
+        weapon = items.Shortsword()
+        player = Player()
+        player.name = "Jean"
+        player.inventory = [weapon]
 
-        player = MagicMock()
-        player.equip_item = MagicMock()
+        weapon.equip(player)
 
-        item.equip(player)
-        player.equip_item.assert_called_once_with(item_object=item)
+        assert weapon.isequipped is True
+        assert player.eq_weapon is weapon
 
 
 class TestItemUnequip:
-    """Test Item.unequip() - remove equipped item."""
+    """Item.unequip() — remove an equipped item."""
 
-    def test_unequip_weapon(self):
-        """Test unequipping a weapon."""
-        weapon = items.Weapon(
-            name="Sword",
-            description="A blade",
-            value=100,
-            damage=15,
-            isequipped=True,
-            str_req=10,
-            fin_req=5,
-            str_mod=1.0,
-            fin_mod=0.5,
-            weight=5,
-            maintype="Weapon",
-            subtype="Sword",
-            discovery_message="a sword",
-        )
-
-        player = MagicMock()
+    def test_unequip_weapon_restores_fists_and_the_equip_verb(self):
+        weapon = items.Shortsword()
+        player = Player()
         player.name = "Jean"
-        player.fists = MagicMock()
-        player.eq_weapon = weapon
+        player.inventory = [weapon]
+        player.equip_item(item_object=weapon)
 
-        with patch("builtins.print"):
-            with patch("src.functions.refresh_stat_bonuses"):
-                weapon.unequip(player)
-                # Weapon should be unequipped
+        with capture_narration() as messages:
+            weapon.unequip(player)
+
+        assert weapon.isequipped is False
+        assert player.eq_weapon is player.fists
+        assert weapon.interactions == ["drop", "equip"]
+        assert messages[-1]["text"] == "Jean put Shortsword back into his bag."
+
+    def test_unequip_removes_the_states_the_item_granted(self):
+        weapon = items.Shortsword()
+        weapon.equip_states = [states.Hawkeye(None)]
+        player = Player()
+        player.name = "Jean"
+        player.states = []
+        player.inventory = [weapon]
+        player.equip_item(item_object=weapon)
+        assert [s.name for s in player.states] == ["Hawkeye"]
+
+        weapon.unequip(player)
+
+        assert player.states == []
 
 
 class TestWeaponTwoHand:

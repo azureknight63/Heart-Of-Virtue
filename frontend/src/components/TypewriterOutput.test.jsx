@@ -19,7 +19,12 @@ describe('TypewriterOutput', () => {
         act(() => { vi.advanceTimersByTime(200) })
 
         expect(screen.getByTestId('event-text-container').textContent).toContain('Hello')
-        expect(onComplete).toHaveBeenCalled()
+        // Exactly once. onComplete gates the caller's "continue" affordance, and
+        // a second call re-arms a beat the player has already passed — the same
+        // class of bug as ConversationStage's completedRef soft-lock.
+        expect(onComplete).toHaveBeenCalledTimes(1)
+        act(() => { vi.advanceTimersByTime(1000) })
+        expect(onComplete).toHaveBeenCalledTimes(1)
     })
 
     it('fires onComplete for an empty beat', () => {
@@ -30,7 +35,13 @@ describe('TypewriterOutput', () => {
 
         act(() => { vi.advanceTimersByTime(50) })
 
-        expect(onComplete).toHaveBeenCalled()
+        expect(onComplete).toHaveBeenCalledTimes(1)
+        // No prose and no blinking caret: `isComplete` must be true on the very
+        // first render for an empty beat, otherwise the player sees a cursor
+        // pulsing over nothing while the continue affordance is withheld.
+        const container = screen.getByTestId('event-text-container')
+        expect(container.querySelector('span')).toBeNull()
+        expect(container.style.cursor).toBe('default')
     })
 
     it('finishes immediately when the output is clicked', () => {

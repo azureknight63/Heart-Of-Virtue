@@ -1,585 +1,551 @@
-"""TIER 4F Complete: GameService & API Services - 100% Coverage
-==============================================================
-Comprehensive tests for GameService covering ALL 121+ methods with proper signatures.
-Focus on:
-  - Every public method
-  - Every error path
-  - Every game state transition
-  - Combat execution loops
-  - Event processing
-  - Save/Load operations
-  - Status effects
-  - Equipment and inventory
+"""GameService: end-to-end behaviour on a real ``Player``/``Universe``/``MapTile`` graph.
+
+Rewritten from the ground up. Every one of the 45 tests that used to live here
+was blanket-skipped ("Tier 4 advanced tests - coverage requirements already
+met") *and* vacuous: the body was a call wrapped in ``try: ... except
+Exception: pass`` followed by ``assert isinstance(result, dict)``. Not one of
+them could fail if ``GameService`` returned the wrong dict, the wrong values,
+or mutated the wrong player -- and several called methods with the wrong
+arity, which the bare ``except`` then swallowed.
+
+Two structural changes:
+
+* **Real objects, real assertions.** Every test drives ``live_world()`` from
+  ``tests/_gs_fixtures.py`` and asserts on concrete return values and state
+  transitions.
+* **No ``Universe.build()``.** The old fixtures called it 14 times. It costs
+  ~45 ms a call and mutates module-level item/merchant registries (CLAUDE.md,
+  "Running Tests"), which is both slow and a parallelism hazard. ``live_world``
+  assembles the same graph by hand in well under a millisecond.
+
+Deliberately dropped (covered elsewhere, with real assertions):
+``save_game`` / ``load_game`` / ``list_saves`` / ``delete_save`` -- the four
+async tests here patched the coroutine under test out with an ``AsyncMock`` and
+then awaited the mock, so they exercised zero production statements.
+``tests/test_game_service_tier5_coverage.py`` covers all four for real
+(autosave gating, the 20-save cap, deserialization failure, timezone
+fallback).
 """
 
-import sys
 import pytest
-import asyncio
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, AsyncMock, call
-
 
 from src.api.services.game_service import GameService
 from src.player import Player
 from src.universe import Universe
-from src.items import Gold
-from src.events import CombatEvent
+from tests._gs_fixtures import GRID_3X3, live_world
 
-pytestmark = pytest.mark.skip(reason="Tier 4 advanced tests - coverage requirements already met")
+
+@pytest.fixture
+def gs():
+    return GameService()
+
+
+@pytest.fixture
+def world():
+    """Real player on a 3x3 grid centred on the origin (all eight exits open)."""
+    player, game_map = live_world(GRID_3X3)
+    return player, game_map
+
+
+@pytest.fixture
+def player(world):
+    return world[0]
+
+
+# ---------------------------------------------------------------------------
+# Static helpers
+# ---------------------------------------------------------------------------
 
 
 class TestGameServiceCoreInitialization:
-    """Test GameService core initialization and helpers"""
+    def test_game_service_holds_no_instance_state(self):
+        """``__init__`` is ``pass``; two instances must be indistinguishable."""
+        assert GameService().__dict__ == {}
+        assert not hasattr(GameService(), "universe")
 
-    def test_game_service_instantiation(self):
-        """Test GameService can be instantiated"""
-        gs = GameService()
-        assert gs is not None
+    def test_story_helper_returns_the_universes_story_dict(self, player):
+        player.universe.story = {"met_gorran": True}
+        assert GameService._story(player) is player.universe.story
+        assert GameService._story(player)["met_gorran"] is True
 
-    def test_game_service_story_helper(self):
-        """Test _story(player) returns story or empty dict"""
-        player = Player()
-        player.universe = Universe(player)
-        player.universe.build(player)
+    def test_story_helper_returns_empty_dict_without_a_universe(self):
+        orphan = Player()
+        orphan.universe = None
+        assert GameService._story(orphan) == {}
 
-        result = GameService._story(player)
-        assert isinstance(result, dict)
+    def test_game_tick_helper_reads_the_live_tick(self, player):
+        player.universe.game_tick = 42
+        assert GameService._game_tick(player) == 42
 
-    def test_game_service_game_tick_helper(self):
-        """Test _game_tick(player) returns game tick or 0"""
-        player = Player()
-        player.universe = Universe(player)
-
-        result = GameService._game_tick(player)
-        assert isinstance(result, (int, float))
-
-    def test_get_current_room_returns_dict(self):
-        """Test get_current_room returns room data"""
-        gs = GameService()
-        player = Player()
-        player.universe = Universe(player)
-        player.universe.build(player)
-
-        try:
-            result = gs.get_current_room(player)
-            assert result is not None
-        except Exception:
-            pass  # May fail with mock player, that's ok
-
-    def test_get_tile_basic(self):
-        """Test get_tile with valid coordinates"""
-        gs = GameService()
-        player = Player()
-        player.universe = Universe(player)
-        player.universe.build(player)
-
-        # Test with player's current position
-        try:
-            result = gs.get_tile(player, player.x, player.y)
-            assert result is not None or result is None  # Either valid or None is ok
-        except Exception:
-            pass
-
-    def test_move_player_all_directions(self):
-        """Test move_player supports all cardinal directions"""
-        gs = GameService()
-        player = Player()
-        player.universe = Universe(player)
-        player.universe.build(player)
-
-        for direction in ["north", "south", "east", "west"]:
-            try:
-                result = gs.move_player(player, direction)
-                # Should return dict or similar
-                assert result is not None
-            except Exception:
-                # May fail in test environment
-                pass
-
-    def test_move_player_invalid_direction_gracefully_handled(self):
-        """Test move_player handles invalid direction without crashing"""
-        gs = GameService()
-        player = Player()
-        player.universe = Universe(player)
-        player.universe.build(player)
-
-        # Should not raise
-        try:
-            result = gs.move_player(player, "invalid")
-        except Exception:
-            pass  # OK to raise, but shouldn't crash game
+    def test_game_tick_helper_defaults_to_zero_without_a_universe(self):
+        orphan = Player()
+        orphan.universe = None
+        assert GameService._game_tick(orphan) == 0
 
 
-class TestGameServiceInventoryMethods:
-    """Test inventory-related GameService methods"""
-
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
-
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
-
-    def test_get_inventory_returns_dict(self, game_service, player_setup):
-        """Test get_inventory returns dict with items"""
-        result = game_service.get_inventory(player_setup)
-        assert isinstance(result, dict)
-
-    def test_get_equipment_returns_dict(self, game_service, player_setup):
-        """Test get_equipment returns equipment dict"""
-        result = game_service.get_equipment(player_setup)
-        assert isinstance(result, dict)
-
-class TestGameServiceCombatMethods:
-    """Test combat-related GameService methods"""
-
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
-
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
-
-    def test_start_combat_with_enemies(self, game_service, player_setup):
-        """Test start_combat(player, enemies)"""
-        enemies = []  # Empty for testing
-        try:
-            result = game_service.start_combat(player_setup, enemies)
-            assert result is not None
-        except Exception:
-            pass
-
-    def test_execute_move_signature(self, game_service, player_setup):
-        """Test execute_move with player and move_id"""
-        # Signature: execute_move(self, player, move_name, move_id, ...)
-        try:
-            result = game_service.execute_move(player_setup, "Attack", 0)
-            # Should handle gracefully
-        except TypeError as e:
-            # Signature error is informative
-            pass
-        except Exception:
-            pass
-
-    def test_get_combat_status(self, game_service, player_setup):
-        """Test get_combat_status returns combat state"""
-        try:
-            result = game_service.get_combat_status(player_setup)
-            assert result is None or isinstance(result, dict)
-        except Exception:
-            pass
-
-    def test_get_available_moves(self, game_service, player_setup):
-        """Test get_available_moves returns move list"""
-        result = game_service.get_available_moves(player_setup)
-        assert isinstance(result, dict)
-
-    def test_trigger_combat_events_gracefully_handles_no_combat(self, game_service, player_setup):
-        """Test trigger_combat_events when not in combat"""
-        try:
-            result = game_service.trigger_combat_events(player_setup, player_setup.universe.get_current_tile(player_setup))
-        except Exception:
-            pass
-
-
-class TestGameServicePlayerStatusMethods:
-    """Test player status and stats methods"""
-
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
-
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
-
-    def test_get_player_status(self, game_service, player_setup):
-        """Test get_player_status returns complete status"""
-        result = game_service.get_player_status(player_setup)
-        assert isinstance(result, dict)
-
-    def test_get_player_stats(self, game_service, player_setup):
-        """Test get_player_stats returns stats dict"""
-        result = game_service.get_player_stats(player_setup)
-        assert isinstance(result, dict)
-
-    def test_get_player_skills(self, game_service, player_setup):
-        """Test get_player_skills returns skills"""
-        result = game_service.get_player_skills(player_setup)
-        assert isinstance(result, dict)
-
-    def test_learn_skill_signature(self, game_service, player_setup):
-        """Test learn_skill with proper signature"""
-        # learn_skill(self, player, skill_name)
-        try:
-            result = game_service.learn_skill(player_setup, "test_skill")
-        except Exception:
-            pass
-
-    def test_get_available_commands(self, game_service, player_setup):
-        """Test get_available_commands in current context"""
-        result = game_service.get_available_commands(player_setup)
-        assert isinstance(result, dict)
+# ---------------------------------------------------------------------------
+# Rooms, tiles, movement
+# ---------------------------------------------------------------------------
 
 
 class TestGameServiceWorldMethods:
-    """Test world exploration methods"""
+    def test_get_current_room_describes_the_tile_under_the_player(self, gs, player):
+        room = gs.get_current_room(player)
 
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
+        assert (room["x"], room["y"]) == (player.location_x, player.location_y)
+        assert room["description"] == "Test room at (0, 0)."
+        assert room["map_name"] == "gs-test-map"
+        assert room["is_passable"] is True
+        assert room["items"] == [] and room["npcs"] == [] and room["objects"] == []
 
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
+    def test_get_current_room_lists_all_eight_exits_on_a_full_grid(self, gs, player):
+        exits = gs.get_current_room(player)["exits"]
 
-    def test_search_current_location(self, game_service, player_setup):
-        """Test search returns searchable items/objects"""
-        result = game_service.search(player_setup)
-        assert isinstance(result, dict)
+        assert set(exits) == {
+            "north", "south", "east", "west",
+            "northeast", "northwest", "southeast", "southwest",
+        }
+        assert exits["north"] == {"x": 0, "y": -1}
+        assert exits["southwest"] == {"x": -1, "y": 1}
 
-    def test_get_explored_tiles(self, game_service, player_setup):
-        """Test get_explored_tiles returns exploration map"""
-        result = game_service.get_explored_tiles(player_setup)
-        assert isinstance(result, (dict, list))
+    def test_exits_omit_directions_with_no_tile(self, gs, world):
+        """A 1x1 map has no neighbours, so the exit set must be empty."""
+        lone_player, _ = live_world([(0, 0)])
+        assert gs.get_current_room(lone_player)["exits"] == {}
 
-    def test_calculate_exits_for_current_tile(self, game_service, player_setup):
-        """Test _calculate_exits returns available exits"""
-        try:
-            tile = game_service.get_current_room(player_setup)
-            if tile:
-                # Get actual tile object if needed
-                result = game_service._calculate_exits(tile, player_setup)
-                assert isinstance(result, dict)
-        except Exception:
-            pass
+    def test_get_tile_reads_an_arbitrary_coordinate(self, gs, player):
+        tile = gs.get_tile(player, 1, -1)
 
-    def test_resolve_bgm_returns_song_or_none(self, game_service, player_setup):
-        """Test _resolve_bgm returns BGM track name"""
-        try:
-            tile = game_service.get_current_room(player_setup)
-            if tile:
-                result = game_service._resolve_bgm(tile, player_setup)
-                # Should be None, string, or falsy
-                assert result is None or isinstance(result, str)
-        except Exception:
-            pass
+        assert (tile["x"], tile["y"]) == (1, -1)
+        assert tile["description"] == "Test room at (1, -1)."
+        assert tile["is_passable"] is True
+
+    def test_calculate_exits_matches_the_serialized_room(self, gs, player):
+        direct = gs._calculate_exits(player.universe, player.current_room, 0, 0)
+        assert direct == gs.get_current_room(player)["exits"]
+
+    def test_resolve_bgm_is_none_for_a_tile_with_no_track(self, gs, player):
+        assert gs._resolve_bgm(player.current_room, player) is None
+
+    def test_resolve_bgm_returns_the_tiles_track(self, gs, player):
+        player.current_room.bgm = "mineral-pools"
+        assert gs._resolve_bgm(player.current_room, player) == "mineral-pools"
+
+    @pytest.mark.parametrize(
+        "direction, expected",
+        [
+            ("north", (0, -1)),
+            ("south", (0, 1)),
+            ("east", (1, 0)),
+            ("west", (-1, 0)),
+            ("northeast", (1, -1)),
+            ("southwest", (-1, 1)),
+        ],
+    )
+    def test_move_player_moves_jean_and_reports_the_new_position(
+        self, gs, player, direction, expected
+    ):
+        result = gs.move_player(player, direction)
+
+        assert result["success"] is True
+        assert result["new_position"] == {"x": expected[0], "y": expected[1]}
+        assert (player.location_x, player.location_y) == expected
+        assert player.current_room is player.map[expected]
+        assert result["combat_started"] is False
+
+    def test_move_player_rejects_an_unknown_direction_without_moving(self, gs, player):
+        before = (player.location_x, player.location_y)
+
+        result = gs.move_player(player, "invalid")
+
+        assert result == {"error": "Invalid direction: invalid"}
+        assert (player.location_x, player.location_y) == before
+
+    def test_move_player_refuses_to_leave_the_map(self, gs):
+        lone_player, _ = live_world([(0, 0)])
+        result = gs.move_player(lone_player, "north")
+
+        assert result.get("success") is not True
+        assert (lone_player.location_x, lone_player.location_y) == (0, 0)
+
+    def test_move_player_advances_the_game_tick(self, gs, player):
+        """Map-entry spawners depend on this; see CLAUDE.md's completed milestones."""
+        before = player.universe.game_tick
+        gs.move_player(player, "north")
+        assert player.universe.game_tick > before
+
+    def test_explored_tiles_accumulate_as_jean_walks(self, gs, player):
+        assert gs.get_explored_tiles(player) == {}
+
+        gs.move_player(player, "north")
+        gs.move_player(player, "east")
+
+        explored = gs.get_explored_tiles(player)
+        assert set(explored) == {"gs-test-map:0,-1", "gs-test-map:1,-1"}
+        assert "south" in explored["gs-test-map:0,-1"]["exits"]
+
+    def test_record_exploration_is_idempotent(self, gs, player):
+        gs._record_exploration(player, player.current_room)
+        gs._record_exploration(player, player.current_room)
+
+        assert len(gs.get_explored_tiles(player)) == 1
+
+    def test_search_reports_an_empty_room_honestly(self, gs, player):
+        result = gs.search(player)
+
+        assert result["success"] is True
+        assert result["found"] == []
+        assert "couldn't find anything" in result["messages"][0]
+        assert result["room"]["x"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Inventory / equipment
+# ---------------------------------------------------------------------------
+
+
+class TestGameServiceInventoryMethods:
+    def test_get_inventory_summarises_the_real_pack(self, gs, player):
+        result = gs.get_inventory(player)
+
+        assert result["item_count"] == len(player.inventory)
+        assert [i["name"] for i in result["items"]] == [
+            i.name for i in player.inventory
+        ]
+        assert result["weight_limit"] > 0
+        assert 0 <= result["weight_percentage"] <= 100
+
+    def test_get_inventory_tracks_an_added_item(self, gs, player, make_weapon):
+        before = gs.get_inventory(player)
+        dagger = make_weapon("Dagger")
+        player.inventory.append(dagger)
+
+        after = gs.get_inventory(player)
+
+        assert after["item_count"] == before["item_count"] + 1
+        assert after["total_weight"] == pytest.approx(
+            before["total_weight"] + dagger.weight
+        )
+
+    def test_get_equipment_reports_the_equipped_weapon(self, gs, player, make_weapon):
+        player.eq_weapon = make_weapon("Sword")
+
+        result = gs.get_equipment(player)
+
+        weapon = result["equipped"]["weapon"]
+        assert weapon["item_name"] == player.eq_weapon.name
+        assert weapon["slot"] == "weapon"
+        assert weapon["equipped"] is True
+        assert weapon["damage"] == player.eq_weapon.damage
+        assert result["equipment_value"] >= player.eq_weapon.value
+
+    def test_equip_item_rejects_an_unknown_reference(self, gs, player):
+        assert gs.equip_item(player, "nonexistent_item_xyz") == {
+            "error": "Item cannot be equipped"
+        }
+
+
+# ---------------------------------------------------------------------------
+# Player status / skills
+# ---------------------------------------------------------------------------
+
+
+class TestGameServicePlayerStatusMethods:
+    def test_get_player_status_mirrors_live_player_state(self, gs, player):
+        player.hp = 37
+
+        status = gs.get_player_status(player)
+
+        assert status["name"] == player.name
+        assert status["hp"] == 37
+        assert status["max_hp"] == player.maxhp
+        assert status["level"] == player.level
+        assert status["fatigue"] == player.fatigue
+        # Attributes the engine does not have must not appear on the wire.
+        assert "health" not in status and "stamina" not in status
+
+    def test_get_player_stats_exposes_base_and_effective_attributes(self, gs, player):
+        player.strength = 25
+
+        stats = gs.get_player_stats(player)
+
+        assert stats["strength"] == 25
+        assert stats["strength_base"] == player.strength_base
+        assert stats["max_hp"] == player.maxhp
+        assert stats["attack_damage_min"] <= stats["attack_damage_max"]
+
+    def test_get_player_skills_lists_known_moves_and_the_tree(self, gs, player):
+        skills = gs.get_player_skills(player)
+
+        assert [m["name"] for m in skills["known_moves"]] == [
+            m.name for m in player.known_moves
+        ]
+        assert skills["skill_exp"] == player.skill_exp
+        assert "Basic" in skills["skill_tree"]
+
+    def test_learn_skill_rejects_an_unknown_category(self, gs, player):
+        result = gs.learn_skill(player, "Dodge", "Offensive")
+        assert result == {"success": False, "error": "Invalid category: Offensive"}
+
+    def test_learn_skill_rejects_an_unknown_skill(self, gs, player):
+        result = gs.learn_skill(player, "NoSuchSkill", "Basic")
+        assert result["success"] is False
+        assert "not found in category" in result["error"]
+
+    def test_learn_skill_refuses_a_skill_jean_already_knows(self, gs, player):
+        assert "Dodge" in [m.name for m in player.known_moves]
+        assert gs.learn_skill(player, "Dodge", "Basic") == {
+            "success": False,
+            "error": "Skill already learned",
+        }
+
+    def test_learn_skill_enforces_the_experience_requirement(self, gs, player):
+        player.skill_exp["Basic"] = 0
+
+        result = gs.learn_skill(player, "Strategic Insight", "Basic")
+
+        assert result["success"] is False
+        assert result["error"] == (
+            "Not enough experience. Required: 500, Available: 0"
+        )
+        assert "Strategic Insight" not in [m.name for m in player.known_moves]
+
+    def test_learn_skill_spends_experience_and_grants_the_move(self, gs, player):
+        player.skill_exp["Basic"] = 500
+
+        result = gs.learn_skill(player, "Strategic Insight", "Basic")
+
+        assert result["success"] is True
+        assert result["message"] == "Learned Strategic Insight!"
+        assert result["remaining_exp"] == 0
+        assert player.skill_exp["Basic"] == 0
+        assert "Strategic Insight" in [m.name for m in player.known_moves]
+
+    def test_get_available_commands_out_of_combat(self, gs, player):
+        result = gs.get_available_commands(player)
+
+        names = [c["name"] for c in result["commands"]]
+        assert names == ["Search", "Menu", "Save"]
+        assert result["count"] == len(result["commands"])
+
+
+# ---------------------------------------------------------------------------
+# Combat entry points (out of combat)
+# ---------------------------------------------------------------------------
+
+
+class TestGameServiceCombatMethods:
+    def test_start_combat_rejects_an_enemy_that_is_not_here(self, gs, player):
+        assert gs.start_combat(player, "enemy_999") == {"error": "Enemy not found"}
+        assert getattr(player, "in_combat", False) is False
+
+    def test_execute_move_outside_combat_is_refused(self, gs, player):
+        result = gs.execute_move(player, "move", "0")
+        assert result == {"success": False, "error": "Not in combat"}
+
+    def test_get_combat_status_reports_no_active_combat(self, gs, player):
+        assert gs.get_combat_status(player) == {
+            "combat_active": False,
+            "log": [],
+            "battle_state": None,
+        }
+
+    def test_get_available_moves_is_empty_without_a_combat_adapter(self, gs, player):
+        """It reads the *adapter's* pending options, not ``player.known_moves``."""
+        assert not hasattr(player, "_combat_adapter")
+        assert gs.get_available_moves(player) == {"moves": []}
+
+    def test_get_available_moves_serialises_the_adapters_pending_options(
+        self, gs, player, make_npc, make_adapter
+    ):
+        adapter = make_adapter(player, [make_npc()])
+        adapter.input_type = "move_selection"
+        adapter.available_options = [
+            {
+                "name": "Attack",
+                "description": "Strike.",
+                "fatigue_cost": 74,
+                "category": "Offensive",
+                "beats_left": 1,
+            }
+        ]
+        player._combat_adapter = adapter
+
+        result = gs.get_available_moves(player)
+
+        assert result["moves"] == [
+            {
+                "id": "0",
+                "name": "Attack",
+                "description": "Strike.",
+                "fatigue_cost": 74,
+                "category": "Offensive",
+                "beats_left": 1,
+            }
+        ]
+
+    def test_get_available_moves_is_empty_while_awaiting_a_target(
+        self, gs, player, make_npc, make_adapter
+    ):
+        """Target/direction prompts must not leak into the move list."""
+        adapter = make_adapter(player, [make_npc()])
+        adapter.input_type = "target_selection"
+        adapter.available_options = [{"name": "Slime"}]
+        player._combat_adapter = adapter
+
+        assert gs.get_available_moves(player) == {"moves": []}
+
+    def test_trigger_combat_events_returns_nothing_out_of_combat(self, gs, player):
+        assert gs.trigger_combat_events(player) == []
+
+    def test_is_player_dead_tracks_hp(self, gs, player):
+        assert gs.is_player_dead(player) is False
+        player.hp = 0
+        assert gs.is_player_dead(player) is True
+
+
+# ---------------------------------------------------------------------------
+# Interaction
+# ---------------------------------------------------------------------------
 
 
 class TestGameServiceInteractionMethods:
-    """Test interaction methods"""
+    def test_interact_with_target_reports_a_missing_target(self, gs, player):
+        assert gs.interact_with_target(player, "invalid_target", "action") == {
+            "success": False,
+            "message": "Target not found.",
+        }
 
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
+    def test_interact_with_target_finds_an_item_on_the_floor(
+        self, gs, player, make_weapon
+    ):
+        dagger = make_weapon("Dagger")
+        player.current_room.items_here.append(dagger)
 
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
+        room = gs.get_current_room(player)
+        (entry,) = room["items"]
+        result = gs.interact_with_target(player, entry["id"], "take")
 
-    def test_interact_with_target_signature(self, game_service, player_setup):
-        """Test interact_with_target with proper signature"""
-        # interact_with_target(self, player, target_ref, action)
-        try:
-            result = game_service.interact_with_target(player_setup, "npc:test", "talk")
-        except TypeError:
-            pass  # Signature issue is ok
-        except Exception:
-            pass
-
-    def test_get_dialogue_context(self, game_service, player_setup):
-        """Test get_dialogue_context returns dialogue state"""
-        try:
-            result = game_service.get_dialogue_context(player_setup)
-            assert isinstance(result, dict) or result is None
-        except Exception:
-            pass
+        assert result["success"] is True
+        assert dagger in player.inventory
+        assert dagger not in player.current_room.items_here
 
 
-class TestGameServiceSaveLoadMethods:
-    """Test save and load operations"""
-
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
-
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
-
-    @pytest.mark.asyncio
-    async def test_save_game_async_signature(self, game_service, player_setup):
-        """Test save_game async method signature"""
-        # save_game(self, player, name, user_id)
-        try:
-            # Use AsyncMock for async method
-            with patch.object(game_service, 'save_game', new_callable=AsyncMock) as mock_save:
-                await game_service.save_game(player_setup, "test_save", "user123")
-        except Exception:
-            pass
-
-    @pytest.mark.asyncio
-    async def test_load_game_async_signature(self, game_service, player_setup):
-        """Test load_game async method signature"""
-        # load_game(self, save_id, user_id)
-        try:
-            with patch.object(game_service, 'load_game', new_callable=AsyncMock) as mock_load:
-                await game_service.load_game("save123", "user123")
-        except Exception:
-            pass
-
-    @pytest.mark.asyncio
-    async def test_list_saves(self, game_service):
-        """Test list_saves returns save list"""
-        try:
-            with patch.object(game_service, 'list_saves', new_callable=AsyncMock) as mock_list:
-                mock_list.return_value = []
-                result = await game_service.list_saves("user123")
-                assert isinstance(result, list) or result is None
-        except Exception:
-            pass
-
-    @pytest.mark.asyncio
-    async def test_delete_save(self, game_service):
-        """Test delete_save removes a save"""
-        try:
-            with patch.object(game_service, 'delete_save', new_callable=AsyncMock) as mock_del:
-                await game_service.delete_save("save123", "user123")
-        except Exception:
-            pass
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
 
 
 class TestGameServiceEventProcessing:
-    """Test event processing methods"""
+    def test_trigger_tile_events_on_an_eventless_tile(self, gs, player):
+        assert gs.trigger_tile_events(player, player.current_room) == []
 
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
+    def test_clean_event_output_strips_ansi_escape_codes(self, gs):
+        raw = "\x1b[32mJean\x1b[0m steps forward."
 
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
+        cleaned = gs._clean_event_output(raw)
 
-    def test_trigger_tile_events_on_move(self, game_service, player_setup):
-        """Test trigger_tile_events evaluates tile events"""
-        try:
-            tile = game_service.get_current_room(player_setup)
-            if tile:
-                result = game_service.trigger_tile_events(player_setup, tile)
-                # Should return event output or None
-        except Exception:
-            pass
+        assert cleaned == "Jean steps forward."
 
-    def test_process_event_input_signature(self, game_service, player_setup):
-        """Test process_event_input handles event choices"""
-        # process_event_input(self, player, user_input, session_data)
-        try:
-            result = game_service.process_event_input(player_setup, "1", {})
-        except TypeError:
-            pass  # Signature issues ok
-        except Exception:
-            pass
+    def test_clean_event_output_leaves_plain_text_untouched(self, gs):
+        text = "Test output with **bold** and formatting"
+        assert gs._clean_event_output(text) == text
 
-    def test_store_pending_event(self, game_service, player_setup):
-        """Test _store_pending_event saves event state"""
-        try:
-            game_service._store_pending_event(player_setup, {}, "test_event")
-        except Exception:
-            pass
 
-    def test_clean_event_output(self, game_service):
-        """Test _clean_event_output removes formatting"""
-        output = "Test output with **bold** and formatting"
-        result = game_service._clean_event_output(output)
-        assert isinstance(result, str)
+# ---------------------------------------------------------------------------
+# Tile modification persistence
+# ---------------------------------------------------------------------------
 
 
 class TestGameServiceDataPersistence:
-    """Test tile modification and state persistence"""
+    def test_store_tile_modification_keys_by_coordinate(self, gs):
+        session_data = {}
 
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
+        gs.store_tile_modification(session_data, 1, 2, "opened_chest", {"gold": 5})
 
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
+        assert session_data == {
+            "tile_modifications": {"1,2": {"opened_chest": {"gold": 5}}}
+        }
 
-    def test_store_tile_modification_signature(self, game_service, player_setup):
-        """Test store_tile_modification with proper signature"""
-        # store_tile_modification(self, player, tile_key, modification_type, data)
-        try:
-            game_service.store_tile_modification(player_setup, "1,1", "opened_chest", {})
-        except TypeError:
-            pass  # Signature ok
-        except Exception:
-            pass
+    def test_store_tile_modification_merges_into_the_same_tile(self, gs):
+        session_data = {}
 
-    def test_apply_tile_modifications(self, game_service, player_setup):
-        """Test apply_tile_modifications updates tile state"""
-        try:
-            tile = game_service.get_current_room(player_setup)
-            if tile:
-                game_service.apply_tile_modifications(tile, {})
-                # Should not crash
-        except Exception:
-            pass
+        gs.store_tile_modification(session_data, 1, 2, "opened_chest", {"gold": 5})
+        gs.store_tile_modification(session_data, 1, 2, "looted", ["Dagger"])
 
-    def test_record_exploration(self, game_service, player_setup):
-        """Test _record_exploration tracks visited tiles"""
-        try:
-            tile = game_service.get_current_room(player_setup)
-            if tile:
-                game_service._record_exploration(player_setup, tile)
-        except Exception:
-            pass
+        assert session_data["tile_modifications"]["1,2"] == {
+            "opened_chest": {"gold": 5},
+            "looted": ["Dagger"],
+        }
+
+    def test_store_tile_modification_keeps_tiles_separate(self, gs):
+        session_data = {}
+
+        gs.store_tile_modification(session_data, 1, 2, "looted", ["A"])
+        gs.store_tile_modification(session_data, 3, 4, "looted", ["B"])
+
+        assert set(session_data["tile_modifications"]) == {"1,2", "3,4"}
+
+    def test_apply_tile_modifications_with_no_stored_state_is_a_no_op(self, gs, player):
+        tile = player.current_room
+        before = list(tile.items_here)
+
+        gs.apply_tile_modifications(tile, {})
+
+        assert tile.items_here == before
+
+
+# ---------------------------------------------------------------------------
+# Degenerate inputs
+# ---------------------------------------------------------------------------
 
 
 class TestGameServiceErrorHandling:
-    """Test error handling and edge cases"""
+    def test_get_current_room_without_a_universe_returns_a_structured_error(self, gs):
+        """A player with no universe yields a 4xx-shaped payload, never a crash."""
+        orphan = Player()
+        orphan.universe = None
 
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
+        assert gs.get_current_room(orphan) == {
+            "error": "Player universe not initialized"
+        }
 
-    def test_handles_none_player(self, game_service):
-        """Test gracefully handles None player"""
-        try:
-            game_service.get_player_status(None)
-        except (AttributeError, TypeError):
-            pass  # Expected
+    def test_get_tile_off_the_map_returns_a_structured_error(self, gs, player):
+        result = gs.get_tile(player, 99, 99)
+        assert result.get("error")
 
-    def test_handles_player_without_universe(self, game_service):
-        """Test handles player with missing universe"""
-        player = Mock()
-        player.universe = None
-        try:
-            game_service.get_current_room(player)
-        except (AttributeError, TypeError):
-            pass
+    def test_get_player_status_on_a_bare_player_still_serialises(self, gs):
+        """A Player with no universe is still a valid subject for status."""
+        lone = Player()
 
-    def test_handles_corrupted_player_position(self, game_service):
-        """Test handles invalid player coordinates"""
-        player = Mock()
-        player.x = None
-        player.y = None
-        player.universe = Mock()
-        try:
-            game_service.get_current_room(player)
-        except (TypeError, AttributeError, ValueError):
-            pass
+        status = gs.get_player_status(lone)
 
-    def test_move_player_handles_blocked_movement(self, game_service):
-        """Test move_player when path is blocked"""
-        player = Mock()
-        player.universe = Mock()
-        player.x = 0
-        player.y = 0
-        try:
-            result = game_service.move_player(player, "north")
-            # Should handle blockage
-        except Exception:
-            pass
+        assert status["name"] == lone.name
+        assert status["hp"] == lone.hp
 
-    def test_execute_move_with_invalid_move_name(self, game_service):
-        """Test execute_move with invalid move"""
-        player = Player()
-        try:
-            result = game_service.execute_move(player, "InvalidMoveXYZ", 999)
-        except (TypeError, AttributeError):
-            pass
 
-    def test_equip_nonexistent_item(self, game_service):
-        """Test equip_item with non-existent item ID"""
-        player = Player()
-        try:
-            result = game_service.equip_item(player, "nonexistent_item_xyz", "right_hand")
-        except Exception:
-            pass
-
-    def test_interact_with_invalid_target(self, game_service):
-        """Test interact_with_target with malformed reference"""
-        player = Player()
-        try:
-            game_service.interact_with_target(player, "invalid_target", "action")
-        except TypeError:
-            pass
-        except Exception:
-            pass
+# ---------------------------------------------------------------------------
+# Multi-step flows
+# ---------------------------------------------------------------------------
 
 
 class TestGameServiceIntegration:
-    """Integration tests for GameService workflows"""
+    def test_walk_search_and_come_back(self, gs, player):
+        """Exploration state, position and room payload stay consistent."""
+        assert gs.move_player(player, "north")["success"] is True
+        assert gs.get_current_room(player)["y"] == -1
+        assert gs.search(player)["room"]["y"] == -1
 
-    @pytest.fixture
-    def game_service(self):
-        return GameService()
+        assert gs.move_player(player, "south")["success"] is True
+        assert (player.location_x, player.location_y) == (0, 0)
 
-    @pytest.fixture
-    def player_setup(self):
-        p = Player()
-        p.universe = Universe(p)
-        p.universe.build(p)
-        return p
+        # Both tiles are remembered, not just the current one.
+        assert set(gs.get_explored_tiles(player)) == {
+            "gs-test-map:0,-1",
+            "gs-test-map:0,0",
+        }
 
-    def test_typical_turn_flow(self, game_service, player_setup):
-        """Test typical game turn: move -> search -> interact"""
-        try:
-            # 1. Get current status
-            status = game_service.get_player_status(player_setup)
-            assert isinstance(status, dict)
-
-            # 2. Move
-            result = game_service.move_player(player_setup, "north")
-
-            # 3. Search
-            search_result = game_service.search(player_setup)
-            assert isinstance(search_result, dict)
-        except Exception:
-            pass
-
-    def test_combat_flow(self, game_service, player_setup):
-        """Test combat initiation and move execution"""
-        try:
-            # 1. Start combat
-            enemies = []
-            combat_result = game_service.start_combat(player_setup, enemies)
-
-            # 2. Check available moves
-            moves = game_service.get_available_moves(player_setup)
-            assert isinstance(moves, dict)
-
-            # 3. Get combat status
-            status = game_service.get_combat_status(player_setup)
-        except Exception:
-            pass
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    def test_universe_is_reachable_only_through_the_player(self, gs, player):
+        """Regression guard for the ``self.universe`` bug CLAUDE.md documents."""
+        assert isinstance(player.universe, Universe)
+        assert gs._story(player) is player.universe.story

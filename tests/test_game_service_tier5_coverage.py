@@ -760,11 +760,31 @@ class TestProcessEventInputExtra:
 
 class TestApplyTileModificationsExtra:
     def test_no_tile_key_returns_early(self, game_service):
-        tile = MagicMock()
-        tile.x, tile.y = 1, 1
+        """With no entry for this tile, nothing on the tile is rewritten.
+
+        Uses a real ``MapTile``: a ``MagicMock`` tile would auto-create
+        ``block_exit``/``objects_here`` and answer any assertion made about
+        them, so it could not detect the modifications being applied anyway.
+        """
+        import src.objects as objects
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(((1, 1),), start=(1, 1))
+        tile = game_map[(1, 1)]
+        crate = objects.Object("Crate", "A crate.", tile=tile, player=player)
+        tile.objects_here.append(crate)
+        tile.block_exit = ["south"]
         session_data = {"tile_modifications": {}}
-        # Should not raise, and should leave tile untouched.
+
         game_service.apply_tile_modifications(tile, session_data)
+
+        assert tile.objects_here == [crate]
+        assert tile.block_exit == ["south"]
+        # The one thing that DOES happen for an unlisted tile: the pristine
+        # object roster is snapshotted, so a later removal is detectable.
+        assert session_data["tile_modifications"] == {
+            "1,1": {"objects_baseline": ["Crate"]}
+        }
 
     def test_objects_removed_filters_tile(self, game_service):
         # Removals are keyed on stable object names, not id() (#328).

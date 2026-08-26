@@ -75,3 +75,78 @@ def test_malicious_reduce_side_effect_never_fires_in_strict_mode(tmp_path):
     with pytest.raises(sp.RestrictedUnpicklingError):
         sp.safe_pickle_load(io.BytesIO(data), strict=True)
     assert not sentinel.exists(), "malicious os.mkdir reduce executed!"
+
+
+def test_protocol0_crafting_cannot_express_the_dotted_traversal_vector():
+    """Pins a known blind spot in this fuzzer's adversarial crafting.
+
+    ``craft_global_pickle`` emits the protocol-0 ``GLOBAL`` opcode, which
+    resolves ``name`` with a plain ``getattr`` -- no dotted attribute
+    traversal. The engine-module-trust bypass (a stream naming
+    ``("src.secure_pickle", "os.system")``, which walks out of the trusted
+    module into ``os``) is only expressible from protocol 4's ``STACK_GLOBAL``
+    onward, so this fuzzer structurally cannot generate it and the vector is
+    covered by ``tests/test_secure_pickle.py`` instead.
+
+    Both halves are asserted so the note cannot rot silently: if protocol 0
+    ever gained dotted lookup, the first assertion fails and the fuzzer should
+    be extended; if strict mode ever stopped blocking the protocol-4 form, the
+    second fails.
+    """
+    import io
+    import src.secure_pickle as sp
+
+    events = []
+    # Legacy mode is the permissive leg: if protocol 0 could reach os.system,
+    # this is where it would come back live. It comes back as an inert
+    # placeholder instead, because getattr(src.secure_pickle, "os.system")
+    # simply does not exist.
+    proto0 = sp.safe_pickle_load(
+        io.BytesIO(fuzzer.craft_global_pickle("src.secure_pickle", "os.system")),
+        strict=False, events=events)
+    assert getattr(proto0, "_legacy_placeholder", False) is True
+    assert events[-1]["kind"] == "placeholder"
+
+    proto4 = (b"\x80\x04"
+              b"\x8c\x11src.secure_pickle"
+              b"\x8c\x09os.system"
+              b"\x93.")
+    with pytest.raises(sp.RestrictedUnpicklingError):
+        sp.safe_pickle_load(io.BytesIO(proto4), strict=True)
+
+
+# ---------------------------------------------------------------------------
+# Meta-tests on the fuzzer itself.
+#
+# ``test_fuzz_no_security_violations`` passing is only meaningful if the fuzzer
+# is (a) reproducible from its seed and (b) actually capable of reporting a
+# breach. A fuzzer that can never fail is the most expensive no-op in a suite.
+# ---------------------------------------------------------------------------
+
+def test_fuzz_run_is_deterministic_for_a_seed():
+    first = fuzzer.run_fuzz(iterations=120, seed=4242)
+    second = fuzzer.run_fuzz(iterations=120, seed=4242)
+    assert [str(f) for f in first] == [str(f) for f in second]
+
+
+def test_fuzzer_reports_a_breach_when_the_allow_list_is_disabled(monkeypatch):
+    """Injected defect: strict mode trusts every global.
+
+    The fuzzer must then report gadgets getting through *and* a malicious
+    ``__reduce__`` actually firing -- if it stays silent, its clean runs prove
+    nothing about the loader.
+    """
+    import src.secure_pickle as secure_pickle
+
+    monkeypatch.setattr(secure_pickle, "_is_allowed", lambda module, name: True)
+    findings = fuzzer.security_findings(fuzzer.run_fuzz(iterations=400, seed=5))
+
+    assert findings, "fuzzer failed to notice a disabled allow-list"
+    categories = {f.category for f in findings}
+    assert "disallowed-not-blocked" in categories
+    assert "reduce-side-effect-fired" in categories
+
+
+def test_fuzzer_is_clean_again_once_the_defect_is_reverted():
+    """The monkeypatched defect above must not bleed into later runs."""
+    assert fuzzer.security_findings(fuzzer.run_fuzz(iterations=400, seed=5)) == []

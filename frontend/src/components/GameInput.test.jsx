@@ -23,12 +23,19 @@ describe('GameInput', () => {
       expect(input).toBeInTheDocument()
     })
 
-    it('renders with label', () => {
-      const { container } = render(
+    it('renders the label text above the input, and none when there is no label', () => {
+      // Was: `expect(container.firstChild).toBeInTheDocument()` — the wrapper
+      // div, which renders for every GameInput whether or not a label is given.
+      const { container, rerender } = render(
         <GameInput label="Username" onChange={mockOnChange} />
       )
-      // Check for label text or association
-      expect(container.firstChild).toBeInTheDocument()
+      const label = container.querySelector('label')
+      expect(label.textContent).toBe('Username')
+      // Label first, then the field.
+      expect(container.firstChild.firstChild).toBe(label)
+
+      rerender(<GameInput onChange={mockOnChange} />)
+      expect(container.querySelector('label')).toBeNull()
     })
 
     it('renders disabled state', () => {
@@ -104,22 +111,20 @@ describe('GameInput', () => {
       expect(input).toHaveValue('initial')
     })
 
-    it('calls onChange when input value changes', () => {
-      const { container } = render(
-        <GameInput onChange={mockOnChange} />
-      )
+    it('forwards the raw change event, with the typed value on event.target', () => {
+      // Merged from two tests: one asserted only `toHaveBeenCalled()`, the
+      // other `toHaveBeenCalledWith(expect.any(Object))` — which any argument
+      // at all satisfies. Every caller in the app reads `e.target.value`, so
+      // that is the contract worth pinning.
+      const { container } = render(<GameInput onChange={mockOnChange} />)
       const input = container.querySelector('input')
-      fireEvent.change(input, { target: { value: 'new value' } })
-      expect(mockOnChange).toHaveBeenCalled()
-    })
 
-    it('passes event to onChange handler', () => {
-      const { container } = render(
-        <GameInput onChange={mockOnChange} />
-      )
-      const input = container.querySelector('input')
-      fireEvent.change(input, { target: { value: 'test' } })
-      expect(mockOnChange).toHaveBeenCalledWith(expect.any(Object))
+      fireEvent.change(input, { target: { value: 'new value' } })
+
+      expect(mockOnChange).toHaveBeenCalledTimes(1)
+      const event = mockOnChange.mock.calls[0][0]
+      expect(event.target).toBe(input)
+      expect(event.target.value).toBe('new value')
     })
 
     it('handles empty value', () => {
@@ -147,11 +152,18 @@ describe('GameInput', () => {
       expect(input).not.toHaveFocus()
     })
 
-    it('handles key events', () => {
-      const { container } = render(<GameInput onChange={mockOnChange} />)
+    it('forwards keyboard handlers through to the DOM input', () => {
+      // Was: fire a keyDown, then assert the input still exists. GameInput
+      // spreads `...props` onto <input>, so the checkable claim is that an
+      // arbitrary handler actually arrives there.
+      const onKeyDown = vi.fn()
+      const { container } = render(<GameInput onChange={mockOnChange} onKeyDown={onKeyDown} />)
       const input = container.querySelector('input')
+
       fireEvent.keyDown(input, { key: 'Enter' })
-      expect(input).toBeInTheDocument()
+      expect(onKeyDown).toHaveBeenCalledTimes(1)
+      expect(onKeyDown.mock.calls[0][0].key).toBe('Enter')
+      expect(mockOnChange).not.toHaveBeenCalled()
     })
 
     it('renders with disabled attribute', () => {
@@ -251,40 +263,51 @@ describe('GameInput', () => {
       expect(mockOnChange).toHaveBeenCalledTimes(3)
     })
 
-    it('clears value correctly', () => {
+    it('reports a cleared field as an empty string, not undefined', () => {
+      // The value must be read INSIDE the handler: React restores
+      // input.value to match the `value` prop before the assertion runs, so a
+      // spy's recorded event shows the old text.
+      const seen = []
       const { container } = render(
-        <GameInput value="test" onChange={mockOnChange} />
+        <GameInput value="test" onChange={(e) => seen.push(e.target.value)} />
       )
       const input = container.querySelector('input')
       expect(input).toHaveValue('test')
+
       fireEvent.change(input, { target: { value: '' } })
-      expect(mockOnChange).toHaveBeenCalled()
+      expect(seen).toEqual([''])
+      // Controlled: the DOM does not clear until the parent lowers `value`.
+      expect(input).toHaveValue('test')
     })
   })
 
   describe('Accessibility', () => {
-    it('is keyboard accessible', () => {
-      const { container } = render(<GameInput onChange={mockOnChange} />)
+    it.each([
+      ['an enabled input takes focus', {}, true],
+      ['a disabled input refuses it', { disabled: true }, false],
+    ])('%s', (_label, props, shouldFocus) => {
+      // Was "is keyboard accessible", which asserted the input existed and then
+      // fired a keyDown with no assertion after it.
+      const { container } = render(<GameInput onChange={mockOnChange} {...props} />)
       const input = container.querySelector('input')
-      expect(input).toBeInTheDocument()
-      fireEvent.keyDown(input, { key: 'a' })
+      input.focus()
+      expect(document.activeElement === input).toBe(shouldFocus)
     })
 
-    it('accepts autofocus as a prop', () => {
-      const { container } = render(
-        <GameInput autoFocus onChange={mockOnChange} />
-      )
-      const input = container.querySelector('input')
-      // Check that input exists and can receive autoFocus
-      expect(input).toBeInTheDocument()
+    it('takes focus on mount with autoFocus', () => {
+      // Was "accepts autofocus as a prop", asserting only that the input
+      // existed — true with or without the prop.
+      const { container } = render(<GameInput autoFocus onChange={mockOnChange} />)
+      expect(container.querySelector('input')).toHaveFocus()
     })
 
-    it('has proper input role', () => {
-      const { container } = render(
-        <GameInput placeholder="test" onChange={mockOnChange} />
-      )
-      const input = container.querySelector('input')
+    it('associates a label with its input through htmlFor/id', () => {
+      // The label is only useful if it is wired to the field; GameInput renders
+      // `htmlFor={id}`, so an id-less GameInput with a label is a broken label.
+      render(<GameInput id="jean-name" label="Name" onChange={mockOnChange} />)
+      const input = screen.getByLabelText('Name')
       expect(input.tagName).toBe('INPUT')
+      expect(input.id).toBe('jean-name')
     })
   })
 })

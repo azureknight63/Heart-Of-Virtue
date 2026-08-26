@@ -7,9 +7,12 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
 
     if (!effects || effects.length === 0) return null
 
-    // Helper to determine icon based on effect name/type
+    // Helper to determine icon based on effect name/type. Coerces because a
+    // serializer regression that drops `name` from one effect would otherwise
+    // throw mid-render, and with no ErrorBoundary in the app that unmounts the
+    // whole SPA — losing the fight over a missing icon.
     const getEffectIcon = (name) => {
-        const n = name.toLowerCase()
+        const n = String(name ?? '').toLowerCase()
         if (n.includes('burn') || n.includes('fire')) return '🔥'
         if (n.includes('poison') || n.includes('toxic')) return '🧪'
         if (n.includes('bleed')) return '🩸'
@@ -44,7 +47,7 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
             position: 'relative',
             zIndex: 100
         }}>
-            {effects.map((effect, idx) => (
+            {effects.filter(Boolean).map((effect, idx) => (
                 <div
                     key={`${effect.name}-${idx}`}
                     onMouseEnter={() => setHoveredEffectName(effect.name)}
@@ -96,7 +99,7 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                                 borderBottom: `1px solid ${getEffectColor(effect.type)}44`,
                                 paddingBottom: '2px'
                             }}>
-                                {displayNameOf(effect).toUpperCase()}
+                                {(displayNameOf(effect) ?? 'Unknown').toUpperCase()}
                             </div>
                             <div style={{ fontSize: '10px', color: '#ccc', lineHeight: '1.4' }}>
                                 {effect.description || 'No description available.'}

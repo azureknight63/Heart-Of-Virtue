@@ -236,6 +236,18 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 # If 'player' is a parameter, pass self.player
                 if "player" in pnames and "player" not in init_kwargs:
                     init_kwargs["player"] = self.player
+                # Likewise for 'tile': many object classes (HealingSpring,
+                # WallSwitch, Crate, ...) declare it as a *required positional*
+                # arg. Without injecting it here, a payload whose props omit
+                # 'tile' (which every shipped map's props do) raised TypeError
+                # and fell through to the __new__ fallback below, yielding a
+                # completely uninitialized instance with no name/description.
+                if (
+                    tile is not None
+                    and "tile" in pnames
+                    and "tile" not in init_kwargs
+                ):
+                    init_kwargs["tile"] = tile
                 inst = cls(**init_kwargs)
             except Exception:
                 inst = cls.__new__(cls)

@@ -75,8 +75,17 @@ class _ProdConfig:
 # ---------------------------------------------------------------------------
 
 
-def _make_app(config=None, env=None):
-    """Create a Flask app with patched universe so it loads quickly."""
+def _make_app(config=None, env=None, capture=None):
+    """Create a Flask app with patched universe so it loads quickly.
+
+    ``capture`` (a dict) receives the patched ``universe_module`` mock under
+    the key ``"universe_module"``. That is the only handle on the real
+    ``Player`` the factory builds: ``create_app`` passes it to
+    ``universe_module.Universe(test_player)`` and then keeps it only through
+    the (mocked) universe, so ``capture["universe_module"].Universe.call_args``
+    is how a test observes what the CONFIG_FILE block actually did. See
+    :func:`_config_player`.
+    """
     if config is None:
         config = _FastTestConfig
 
@@ -104,6 +113,8 @@ def _make_app(config=None, env=None):
             from src.api.app import create_app
 
             app, socketio = create_app(config)
+            if capture is not None:
+                capture["universe_module"] = mock_univ_mod
         return app, socketio
     finally:
         for k, old_v in old_env.items():
@@ -120,9 +131,17 @@ def _make_app(config=None, env=None):
 
 class TestCreateApp:
     def test_returns_app_and_socketio(self):
+        from flask import Flask
+        from flask_socketio import SocketIO
+
         app, socketio = _make_app()
-        assert app is not None
-        assert socketio is not None
+        # `is not None` is satisfied by any two objects, including a mistaken
+        # `(socketio, app)` return order -- which callers unpack positionally.
+        assert isinstance(app, Flask)
+        assert isinstance(socketio, SocketIO)
+        assert app.socketio is socketio
+        assert app.config["TESTING"] is True
+        assert app.config["SECRET_KEY"] == "test-secret"
 
     def test_app_has_session_manager(self):
         app, _ = _make_app()
@@ -137,14 +156,47 @@ class TestCreateApp:
         assert hasattr(app, "socketio")
 
     def test_default_config_is_development(self):
-        """When no config supplied, DevelopmentConfig is used."""
-        app, _ = _make_app()
-        assert app is not None
+        """`create_app()` with no argument must fall back to DevelopmentConfig.
+
+        Asserted through the config values the app ends up with rather than
+        `app is not None`, which was true no matter which config was chosen.
+        Called directly (not through _make_app) because the point is the
+        *default* argument.
+        """
+        from src.api.app import create_app
+        from src.api.config import DevelopmentConfig
+
+        universe_mock = MagicMock(maps=[], starting_map_default={})
+        with (
+            patch("src.api.app.universe_module") as mock_univ_mod,
+            patch("src.api.app.SessionManager", return_value=MagicMock()),
+            patch("src.api.app.GameService", return_value=MagicMock()),
+        ):
+            mock_univ_mod.Universe.return_value = universe_mock
+            app, _ = create_app()
+
+        assert app.config["DEBUG"] is DevelopmentConfig.DEBUG
+        assert app.config["CORS_ORIGINS"] == DevelopmentConfig.CORS_ORIGINS
+        # DevelopmentConfig is one of the two names that take the
+        # universe-building branch, so it must have been attempted.
+        mock_univ_mod.Universe.assert_called_once()
 
     def test_production_config_skips_universe(self):
-        """Non-dev config path uses game_service but skips universe build."""
-        app, _ = _make_app(config=_ProdConfig)
-        assert app is not None
+        """Non-dev config must not build the universe at all.
+
+        This is the whole behavioural difference the branch exists for -- a
+        production boot that silently built a throwaway universe would add
+        seconds of startup and a stray Player per worker. `app is not None`
+        asserted none of it.
+        """
+        capture = {}
+        app, _ = _make_app(config=_ProdConfig, capture=capture)
+
+        capture["universe_module"].Universe.assert_not_called()
+        assert app.config["CORS_ORIGINS"] == ["https://example.com"]
+        # SessionManager is still wired up, just without a universe.
+        assert app.session_manager is not None
+        assert app.game_service is not None
 
 
 # ---------------------------------------------------------------------------
@@ -277,29 +329,36 @@ class TestTestingEndpoints:
         self.app.config["TESTING"] = True
         self.client = self.app.test_client()
 
-    def test_test_session_endpoint_exists(self):
-        resp = self.client.post(
-            "/api/test/session",
-            json={"username": "tester"},
-            content_type="application/json",
-        )
-        # Should return 201 (or at least not 404 — endpoint is registered)
-        assert resp.status_code in (201, 200, 500)
+    def test_test_session_endpoint_is_registered(self):
+        """Registration, asserted through the URL map rather than a status.
 
-    def test_test_session_returns_session_id(self):
-        resp = self.client.post(
-            "/api/test/session",
-            json={"username": "tester"},
-            content_type="application/json",
-        )
-        if resp.status_code == 201:
-            data = json.loads(resp.data)
-            assert "session_id" in data
+        The old pair of tests asked for a status ``in (201, 200, 500)`` and
+        then, in the second one, wrapped the real assertion in
+        ``if resp.status_code == 201:`` -- so on any other status the test
+        asserted nothing at all. In this harness the SessionManager is an
+        unconfigured MagicMock whose ``create_session`` return value will not
+        unpack, so the route *always* 500s and the id assertion never once
+        ran. ``TestTestingEndpointsSuccessPaths`` below configures the mock
+        and owns the 201/session-id contract; this test owns registration.
+        """
+        rules = {str(r.rule) for r in self.app.url_map.iter_rules()}
+        assert "/api/test/session" in rules
+        assert "/api/test/heal" in rules
 
     def test_test_heal_endpoint_unauthenticated(self):
+        """Exactly 401 with the auth-middleware message.
+
+        ``in (401, 400, 500)`` would also have accepted the 500 that a broken
+        route raises, i.e. it could not tell "rejected the missing token"
+        apart from "crashed before checking".
+        """
         resp = self.client.post("/api/test/heal", json={})
-        # Without a valid session, returns 401
-        assert resp.status_code in (401, 400, 500)
+        assert resp.status_code == 401
+        data = json.loads(resp.data)
+        assert data["success"] is False
+        assert data["error"] == "Missing or invalid Authorization header"
+        # The auth gate must run before the player is touched.
+        self.app.session_manager.get_player.assert_not_called()
 
     def test_test_endpoints_not_present_without_testing_flag(self):
         """Endpoints are only registered when TESTING=True."""
@@ -324,6 +383,28 @@ class TestTestingEndpoints:
 
 
 class TestConfigFileParsing:
+    """Every test in this class previously ended in ``assert app is not None``.
+
+    That assertion held for *any* CONFIG_FILE content -- and, worse, for a
+    factory that never read the file at all: the tests ran under
+    ``_FastTestConfig``, whose class name is neither ``DevelopmentConfig``
+    nor ``TestingConfig``, so ``create_app``'s ``is_dev_or_test`` branch was
+    skipped and none of the parsed values (position, exp, gold, equipment)
+    were ever applied to anything. One of them even configured
+    ``Chainmail:0``, a class ``src.items`` does not define, and passed.
+
+    These now run under ``_DevConfig`` (really named ``DevelopmentConfig``)
+    so the apply branch executes, and assert against the real ``Player`` the
+    factory built, recovered from ``universe_module.Universe``'s call args.
+
+    Division of labour with ``TestUniverseBuildSuccessPath`` below: that class
+    owns the universe-build path's own concerns (the get_tile closure, the
+    refresh_stat_bonuses call count, the unknown-class and bad-enchantment
+    fallbacks). This class owns *where the values come from* -- path
+    resolution, quoting, defaults -- and asserts the parsed value's effect on
+    the player rather than a call count.
+    """
+
     def _make_config_file(self, content: str) -> str:
         """Write an INI config file and return its path."""
         fd, path = tempfile.mkstemp(suffix=".ini")
@@ -331,66 +412,143 @@ class TestConfigFileParsing:
             f.write(content)
         return path
 
+    def _boot(self, ini_body=None, config_file=None):
+        """Boot the factory on the universe-building path and return the
+        real ``Player`` create_app configured (plus the app)."""
+        cfg_path = None
+        env = {}
+        if ini_body is not None:
+            cfg_path = self._make_config_file(ini_body)
+            env["CONFIG_FILE"] = config_file(cfg_path) if config_file else cfg_path
+        elif config_file is not None:
+            env["CONFIG_FILE"] = config_file
+        try:
+            capture = {}
+            app, _ = _make_app(config=_DevConfig, env=env, capture=capture)
+            universe_cls = capture["universe_module"].Universe
+            universe_cls.assert_called_once()
+            return app, universe_cls.call_args.args[0]
+        finally:
+            if cfg_path:
+                os.unlink(cfg_path)
+
     def test_config_file_with_start_position(self):
-        cfg = self._make_config_file(
+        app, player = self._boot(
             "[game]\nstartposition = (3, 4)\nstartmap = default\n"
         )
-        try:
-            app, _ = _make_app(env={"CONFIG_FILE": cfg})
-            assert app is not None
-        finally:
-            os.unlink(cfg)
+        assert (player.location_x, player.location_y) == (3, 4)
+
+    def test_start_position_defaults_when_absent(self):
+        """The documented default is (2, 2). Asserted alongside the override
+        above so a parse that silently fell back would be visible."""
+        app, player = self._boot("[game]\nstartmap = default\n")
+        assert (player.location_x, player.location_y) == (2, 2)
+
+    def test_malformed_start_position_leaves_the_default(self):
+        """The int() conversion raises inside the try, which aborts the whole
+        CONFIG_FILE block -- so a typo'd position silently discards every
+        later key too. Pinned as the current fail-safe behaviour."""
+        app, player = self._boot(
+            "[game]\nstartposition = (x, y)\nstarting_gold = 100\n"
+        )
+        assert (player.location_x, player.location_y) == (2, 2)
+        assert not [i for i in player.inventory if getattr(i, "amt", 0) == 100]
 
     def test_config_file_with_starting_exp(self):
-        cfg = self._make_config_file("[game]\nstarting_exp = 500\n")
-        try:
-            app, _ = _make_app(env={"CONFIG_FILE": cfg})
-            assert app is not None
-        finally:
-            os.unlink(cfg)
+        app, player = self._boot("[game]\nstarting_exp = 500\n")
+        # 500 exp is enough to level Jean past 1; the factory drains the pool
+        # through _level_up_api until it no longer reaches exp_to_level.
+        assert player.level > 1
+        assert player.exp < player.exp_to_level
+        # ...and the same figure seeds every skill-tree category, which is how
+        # a configured test player gets its moves.
+        assert set(player.skill_exp) == set(player.skilltree.subtypes)
+        assert set(player.skill_exp.values()) == {500}
 
     def test_config_file_with_starting_gold(self):
-        cfg = self._make_config_file("[game]\nstarting_gold = 100\n")
-        try:
-            app, _ = _make_app(env={"CONFIG_FILE": cfg})
-            assert app is not None
-        finally:
-            os.unlink(cfg)
+        app, player = self._boot("[game]\nstarting_gold = 100\n")
+        import src.items as items
+
+        purses = [i for i in player.inventory if isinstance(i, items.Gold)]
+        # Jean starts with a purse of his own, so the config adds a second.
+        assert 100 in [p.amt for p in purses]
 
     def test_config_file_with_equipment(self):
-        cfg = self._make_config_file(
-            "[game]\nstarting_equipment = Longsword:1, Chainmail:0\n"
+        # The original fixture asked for "Chainmail", which src.items has no
+        # class for -- silently a no-op. ChainCoif is the real armour class.
+        app, player = self._boot(
+            "[game]\nstarting_equipment = Longsword:1, ChainCoif:0\n"
         )
-        try:
-            app, _ = _make_app(env={"CONFIG_FILE": cfg})
-            assert app is not None
-        finally:
-            os.unlink(cfg)
+        import src.items as items
+
+        by_type = {type(i).__name__: i for i in player.inventory}
+        sword = by_type["Longsword"]
+        coif = by_type["ChainCoif"]
+
+        assert sword.enchantment_level == 1
+        assert coif.enchantment_level == 0
+        # Auto-equipped, with the interaction verbs flipped accordingly.
+        for item in (sword, coif):
+            assert item.isequipped is True
+            assert "unequip" in item.interactions
+            assert "equip" not in item.interactions
+        # Weapons additionally take the eq_weapon slot, displacing Fists.
+        assert player.eq_weapon is sword
+        assert not isinstance(player.eq_weapon, items.Fists)
 
     def test_config_file_nonexistent_path_is_silently_skipped(self):
-        """A path that doesn't exist should not crash the factory."""
-        app, _ = _make_app(env={"CONFIG_FILE": "/nonexistent/path/config.ini"})
-        assert app is not None
+        """A path that doesn't exist must not crash the factory, and must
+        leave the built-in defaults in place."""
+        app, player = self._boot(config_file="/nonexistent/path/config.ini")
+        assert (player.location_x, player.location_y) == (2, 2)
+        assert player.level == 1
 
     def test_config_file_with_quoted_path(self):
-        cfg = self._make_config_file("[game]\nstartposition = (1, 1)\n")
-        try:
-            app, _ = _make_app(env={"CONFIG_FILE": f"'{cfg}'"})
-            assert app is not None
-        finally:
-            os.unlink(cfg)
+        """.env files often quote values; the factory strips them.
 
-    def test_config_file_relative_path(self):
-        """Relative path is resolved relative to project root."""
-        app, _ = _make_app(env={"CONFIG_FILE": "nonexistent_relative.ini"})
-        assert app is not None
+        Without the strip the path would not exist and the file would be
+        skipped -- which is exactly what `assert app is not None` could not
+        tell apart from success.
+        """
+        app, player = self._boot(
+            "[game]\nstartposition = (1, 1)\n", config_file=lambda p: f"'{p}'"
+        )
+        assert (player.location_x, player.location_y) == (1, 1)
+
+    def test_config_file_relative_path(self, worker_id):
+        """A relative path resolves against the project root, not the cwd.
+
+        The only way to exercise that branch is with a file that genuinely
+        exists at the repo root, so write a scratch one there (named per xdist
+        worker so parallel workers cannot race each other's write/unlink) and
+        assert its values land on the player. Previously this test pointed at
+        `nonexistent_relative.ini` and asserted `app is not None` -- i.e. it
+        proved only the not-found path, under a name promising the opposite.
+        """
+        from pathlib import Path as _Path
+
+        root = _Path(__file__).resolve().parent.parent
+        scratch = root / f"_pytest_app_factory_scratch_{worker_id}.ini"
+        scratch.write_text("[game]\nstartposition = (7, 8)\nstarting_gold = 33\n")
+        try:
+            app, player = self._boot(config_file=scratch.name)
+        finally:
+            scratch.unlink()
+
+        assert (player.location_x, player.location_y) == (7, 8)
+        assert 33 in [getattr(i, "amt", None) for i in player.inventory]
+
+    def test_config_file_relative_path_that_does_not_exist_is_skipped(self):
+        app, player = self._boot(config_file="nonexistent_relative.ini")
+        assert (player.location_x, player.location_y) == (2, 2)
 
     def test_config_file_without_env_var(self):
-        """No CONFIG_FILE env var — should use defaults silently."""
+        """No CONFIG_FILE env var — defaults, silently."""
         old = os.environ.pop("CONFIG_FILE", None)
         try:
-            app, _ = _make_app()
-            assert app is not None
+            app, player = self._boot()
+            assert (player.location_x, player.location_y) == (2, 2)
+            assert player.level == 1
         finally:
             if old is not None:
                 os.environ["CONFIG_FILE"] = old
@@ -403,7 +561,7 @@ class TestConfigFileParsing:
 
 class TestUniverseInitFailure:
     def test_universe_failure_still_returns_app(self):
-        """If universe init raises, app factory should still return."""
+        """If universe init raises, app factory should still return a usable app."""
         session_manager_mock = MagicMock()
         session_manager_mock.get_active_session_count.return_value = 0
 

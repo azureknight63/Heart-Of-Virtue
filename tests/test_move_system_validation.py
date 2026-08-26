@@ -29,6 +29,7 @@ from src.moves import Advance, Withdraw, BullCharge, TacticalRetreat, FlankingMa
 from src.npc import NPC
 import src.positions as positions
 import src.items as items
+from src.narration import capture_narration
 
 
 # Helper for isinstance checks that work across module boundaries in tests
@@ -396,7 +397,17 @@ class TestFlankingManeuverMoveValidation:
         assert flanking.viable() is False
 
     def test_flanking_coordinate_positioning(self, monkeypatch):
-        """FlankingManeuver should move perpendicular to target's facing."""
+        """FlankingManeuver lands on the target's blind side, not behind or in
+        front of it.
+
+        The old body computed ``angle_diff`` and then threw it away, asserting
+        only ``player.combat_position is not None`` — inside an ``if`` on that
+        same expression. A FlankingManeuver that walked straight at the target
+        would have passed.
+
+        ``positions.move_to_flank`` uses no RNG of its own, so with the beat's
+        ``randint(1, 2)`` pinned the destination is exact.
+        """
         player = Player()
         player.speed = 10
 
@@ -404,7 +415,7 @@ class TestFlankingManeuverMoveValidation:
             x=20, y=20, facing=positions.Direction.S
         )
 
-        # Target faces SOUTH
+        # Target faces SOUTH, five squares south of the player.
         enemy = DummyEnemy(x=20, y=25)
         enemy.combat_position.facing = positions.Direction.S
 
@@ -412,27 +423,30 @@ class TestFlankingManeuverMoveValidation:
 
         flanking = FlankingManeuver(player)
         flanking.target = enemy
-        player.current_move = flanking  # Set as current move for process_stage to execute
+        player.current_move = flanking
 
         monkeypatch.setattr(random, 'randint', lambda a, b: 3)
 
-        # Execute flanking (simulate one beat of movement)
         flanking.current_stage = 1  # execute stage
         flanking.beats_left = 1
         flanking.advance(player)
 
-        if player.combat_position is not None:
-            # Calculate angle to target
-            angle = positions.angle_to_target(
-                player.combat_position, enemy.combat_position
-            )
-            angle_diff = positions.attack_angle_difference(
-                angle, enemy.combat_position.facing
-            )
+        # Three squares off the target's western blind side, level with it.
+        assert (player.combat_position.x, player.combat_position.y) == (17, 25)
 
-            # After flanking, should be positioned to the side (45-135 degrees)
-            # Note: This is non-deterministic due to randomness, so we just verify it executed
-            assert player.combat_position is not None
+        angle = positions.angle_to_target(
+            player.combat_position, enemy.combat_position
+        )
+        angle_diff = positions.attack_angle_difference(
+            angle, enemy.combat_position.facing
+        )
+        # 45 < diff <= 135 is exactly the window execute() pays the flank bonus
+        # for; a head-on approach would read 0 and a rear approach 180.
+        assert angle_diff == 90
+        assert 45 < angle_diff <= 135
+
+        # The mover always turns to keep the target in view.
+        assert player.combat_position.facing == positions.Direction.E
 
 
 class TestMoveIntegration:
@@ -511,34 +525,46 @@ class TestMoveDualPathExecution:
     """Test that moves execute correctly with both coordinate and legacy systems."""
 
     def test_advance_legacy_fallback(self, monkeypatch):
-        """Advance should fall back to legacy system if coordinates unavailable."""
+        """Without coordinates, Advance closes distance through combat_proximity.
+
+        The old test called ``execute()`` (which only narrates) inside a
+        try/except and asserted nothing, so it proved neither that the legacy
+        branch was taken nor that anyone moved. The movement actually happens in
+        ``beat_update`` at stage 1.
+        """
         player = Player()
         enemy = DummyEnemy()
 
-        # No coordinates set
+        # No coordinates set -> can_use_coordinates() is False
         player.combat_position = None
         enemy.combat_position = None
 
         player.combat_proximity[enemy] = 10.0
 
-        advance = None
-        for move in player.known_moves:
-            if is_move(move, Advance):
-                advance = move
-                break
-
+        advance = next(m for m in player.known_moves if is_move(m, Advance))
         advance.target = enemy
+        advance.current_stage = 1
+        assert advance.can_use_coordinates(player) is False
 
+        # randint(0, 30) -> 15; distance = min(3, max(1, (15 + 10 - 5) // 10)) = 2
         monkeypatch.setattr(random, 'randint', lambda a, b: (a + b) // 2)
+        fatigue_before = player.fatigue
 
-        # Should not raise error - will use legacy system
-        try:
-            advance.execute(player)
-        except AttributeError:
-            pytest.fail("Advance should handle legacy execution without error")
+        advance.beat_update(player)
+
+        assert player.combat_proximity[enemy] == 8.0
+        # The legacy branch mirrors the distance back onto the target.
+        assert enemy.combat_proximity[player] == 8.0
+        assert player.fatigue == fatigue_before - advance.fatigue_per_beat
+        # Legacy means legacy: no coordinate object is conjured.
+        assert player.combat_position is None
 
     def test_bull_charge_legacy_fallback(self, monkeypatch):
-        """BullCharge should fall back to legacy system if coordinates unavailable."""
+        """BullCharge closes faster than Advance on the legacy path, and stops
+        at distance 3 rather than 1 (the charge ends at weapon reach).
+
+        The old test asserted nothing.
+        """
         player = Player()
         enemy = DummyEnemy()
 
@@ -549,16 +575,32 @@ class TestMoveDualPathExecution:
 
         bull_charge = BullCharge(player)
         bull_charge.target = enemy
+        bull_charge.current_stage = 1
+        assert bull_charge.can_use_coordinates(player) is False
 
+        # randint(4, 6) -> 5
         monkeypatch.setattr(random, 'randint', lambda a, b: (a + b) // 2)
+        fatigue_before = player.fatigue
 
-        try:
-            bull_charge.execute(player)
-        except AttributeError:
-            pytest.fail("BullCharge should handle legacy execution without error")
+        bull_charge.beat_update(player)
+
+        assert player.combat_proximity[enemy] == 5.0
+        assert enemy.combat_proximity[player] == 5.0
+        assert player.fatigue == fatigue_before - bull_charge.fatigue_per_beat
+
+        # A second beat would overshoot; the charge floors at 3.
+        bull_charge.beat_update(player)
+        assert player.combat_proximity[enemy] == 3
+        assert enemy.combat_proximity[player] == 3
 
     def test_flanking_no_fallback_for_legacy(self):
-        """FlankingManeuver should gracefully handle missing coordinates."""
+        """FlankingManeuver has *no* legacy branch: without coordinates it burns
+        the beat's fatigue and changes nothing else.
+
+        The old test wrapped ``execute()`` in ``try/except Exception:
+        pytest.fail(...)``, which would have been satisfied by a
+        FlankingManeuver that silently teleported the player anywhere at all.
+        """
         player = Player()
         enemy = DummyEnemy()
 
@@ -569,37 +611,53 @@ class TestMoveDualPathExecution:
 
         flanking = FlankingManeuver(player)
         flanking.target = enemy
+        flanking.current_stage = 1
+        fatigue_before = player.fatigue
 
-        # FlankingManeuver only works with coordinates, should handle gracefully
-        try:
+        flanking.beat_update(player)
+
+        assert player.combat_position is None
+        assert player.combat_proximity[enemy] == 10.0
+        assert player.fatigue == fatigue_before - flanking.fatigue_per_beat
+
+        # execute() falls through to its coordinate-free elif: a generic line,
+        # explicitly not one of the two flank-bonus reports.
+        with capture_narration() as messages:
             flanking.execute(player)
-        except Exception as e:
-            pytest.fail(f"FlankingManeuver should handle missing coordinates gracefully: {e}")
+        assert [m["text"] for m in messages] == ["Jean finished maneuvering."]
 
 
 class TestMoveEdgeCases:
     """Test edge cases and boundary conditions."""
 
     def test_advance_dead_target_handling(self, monkeypatch):
-        """Advance should not crash if target dies before execution."""
+        """A target that dies mid-advance stops the move rather than crashing.
+
+        The old test only asserted that ``execute()`` raised no AttributeError.
+        """
         player = Player()
         enemy = DummyEnemy()
         enemy.hp = 0  # Dead
 
         player.combat_proximity[enemy] = 10.0
 
-        advance = None
-        for move in player.known_moves:
-            if is_move(move, Advance):
-                advance = move
-                break
-
+        advance = next(m for m in player.known_moves if is_move(m, Advance))
         advance.target = enemy
+        advance.current_stage = 1
+        fatigue_before = player.fatigue
 
-        try:
+        # No living combatant to switch to, so beat_update bails out before
+        # spending the beat's fatigue and before moving anyone.
+        monkeypatch.setattr(random, 'randint', lambda a, b: (a + b) // 2)
+        advance.beat_update(player)
+
+        assert player.combat_proximity[enemy] == 10.0
+        assert player.fatigue == fatigue_before
+
+        # execute()'s "finished advancing" line is gated on the target living.
+        with capture_narration() as messages:
             advance.execute(player)
-        except AttributeError:
-            pytest.fail("Advance should handle dead targets gracefully")
+        assert messages == []
 
     def test_withdraw_multiple_enemies(self):
         """Withdraw should retreat from nearest threat when multiple enemies."""

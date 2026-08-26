@@ -19,7 +19,6 @@ import pytest
 from src.player import Player
 import src.items as items
 
-pytestmark = pytest.mark.skip(reason="Test isolation issues in full suite - movement tests interfere with other tests")
 
 
 class TestPlayerMovement:
@@ -60,7 +59,7 @@ class TestPlayerMovement:
         target_map = {"name": "Test Map"}
         player.universe.maps = [target_map]
 
-        with patch("src.universe.tile_exists", return_value=None):
+        with patch("src.player._movement.tile_exists", return_value=None):
             with patch("builtins.print") as mock_print:
                 player.teleport("Test Map", (999, 999))
 
@@ -83,7 +82,7 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("src.universe.tile_exists", return_value=mock_tile):
+        with patch("src.player._movement.tile_exists", return_value=mock_tile):
             with patch.object(player, "drop_merchandise_items") as mock_drop:
                 with patch("builtins.print"):
                     player.teleport("Test Map", (5, 5))
@@ -223,7 +222,7 @@ class TestPlayerInventory:
         mock_tile = MagicMock()
         mock_tile.items_here = []
 
-        with patch("src.universe.tile_exists", return_value=mock_tile):
+        with patch("src.player._inventory.tile_exists", return_value=mock_tile):
             with patch("random.choice", side_effect=lambda x: x[0]):
                 with patch("builtins.print"):
                     with patch("time.sleep"):
@@ -233,36 +232,51 @@ class TestPlayerInventory:
         assert merch_item not in player.inventory
 
     def test_drop_merchandise_no_tile(self, player):
-        """Test drop_merchandise when no valid tile."""
+        """With no tile underfoot nothing is dropped -- the goods stay carried.
+
+        (Was ``assert len(player.inventory) >= initial_count``, which is true of
+        *any* outcome that does not shrink the list, including one that appended
+        a duplicate.)
+        """
         merch_item = MagicMock()
         merch_item.merchandise = True
-        initial_count = len(player.inventory)
         player.inventory = [merch_item]
         player.map = MagicMock()
         player.location_x = 0
         player.location_y = 0
 
-        with patch("src.universe.tile_exists", return_value=None):
+        with patch("src.player._inventory.tile_exists", return_value=None):
             player.drop_merchandise_items()
 
-        # Should not crash and item should still be in inventory
-        assert len(player.inventory) >= initial_count
+        assert player.inventory == [merch_item]
 
-    def test_drop_merchandise_remove_error(self, player):
-        """Test drop_merchandise handles ValueError on removal."""
-        merch_item = MagicMock()
-        merch_item.merchandise = True
-        merch_item.name = "Bread"
+    def test_drop_merchandise_keeps_non_merchandise_items(self, player):
+        """Only ``merchandise`` items are put back; Jean's own kit stays with him.
 
-        # Item not in inventory
-        player.inventory = []
-        mock_tile = MagicMock()
-        mock_tile.items_here = []
+        Replaces ``test_drop_merchandise_remove_error``, which set up an empty
+        inventory and then asserted nothing at all -- the loop it claimed to
+        exercise never ran a single iteration.
+        """
+        merch = MagicMock()
+        merch.merchandise = True
+        merch.name = "Bread"
+        own = MagicMock()
+        own.merchandise = False
+        own.name = "Sword"
 
-        with patch("src.universe.tile_exists", return_value=mock_tile):
-            with patch("random.choice", return_value="Jean sets {item} down; unpaid goods don't leave the shop."):
-                # Should not raise error
-                player.drop_merchandise_items()
+        player.inventory = [merch, own]
+        player.map = MagicMock()
+        player.location_x = 0
+        player.location_y = 0
+        tile = MagicMock()
+        tile.items_here = []
+
+        with patch("src.player._inventory.tile_exists", return_value=tile):
+            player.drop_merchandise_items()
+
+        assert player.inventory == [own]
+        assert tile.items_here == [merch]
+        merch.stack_grammar.assert_called_once_with()
 
     def test_equip_item_from_inventory(self, player):
         """Test equipping an item from inventory."""
@@ -291,23 +305,57 @@ class TestPlayerInventory:
         assert weapon.isequipped is True
         weapon.on_equip.assert_called_once()
 
-    def test_equip_item_already_equipped_unequip(self, player):
-        """Test unequipping already equipped item."""
-        weapon = MagicMock()
-        weapon.maintype = "Weapon"
-        weapon.name = "Sword"
-        weapon.isequipped = True
-        weapon.on_unequip = MagicMock()
-        weapon.interactions = ["unequip"]
+    def test_equip_item_on_an_already_equipped_item_is_a_no_op(self, make_player,
+                                                               make_weapon):
+        """Re-equipping narrates and changes nothing.
 
-        player.inventory = [weapon]
-        player.eq_weapon = weapon
+        This test used to assert that ``equip_item`` *unequipped* the item after
+        a ``y`` at an ``input()`` prompt. That prompt was deleted in the
+        terminal teardown -- ``equip_item`` is now non-interactive and the web
+        client has a dedicated unequip route (``Player.unequip_item``, covered
+        by the next test).
+        """
+        from src.narration import capture_narration
 
-        with patch("builtins.input", return_value="y"):
-            with patch("neotermcolor.cprint"):
-                player.equip_item(item_object=weapon)
+        player = make_player()
+        sword = make_weapon("Sword")
+        player.inventory.append(sword)
+        player.equip_item(item_object=sword)
+        assert sword.isequipped is True
 
-        assert weapon.isequipped is False
+        with capture_narration() as messages:
+            player.equip_item(item_object=sword)
+
+        assert sword.isequipped is True, "re-equipping must not toggle it off"
+        assert player.eq_weapon is sword
+        assert any("already equipped" in m["text"] for m in messages)
+
+    def test_unequip_item_returns_the_weapon_slot_to_fists(self, make_player,
+                                                           make_weapon):
+        """``unequip_item`` is the canonical replacement for the deleted prompt."""
+        player = make_player()
+        sword = make_weapon("Sword")
+        player.inventory.append(sword)
+        player.equip_item(item_object=sword)
+
+        player.unequip_item(sword)
+
+        assert sword.isequipped is False
+        assert player.eq_weapon is player.fists
+        assert "equip" in sword.interactions
+        assert "unequip" not in sword.interactions
+
+    def test_unequip_item_ignores_an_item_that_is_not_equipped(self, make_player,
+                                                               make_weapon):
+        player = make_player()
+        sword = make_weapon("Sword")
+        player.inventory.append(sword)
+        equipped_before = player.eq_weapon
+
+        player.unequip_item(sword)
+
+        assert sword.isequipped is False
+        assert player.eq_weapon is equipped_before
 
     def test_equip_item_weight_exceeded(self, player):
         """Test equipping item when weight limit exceeded."""
@@ -328,91 +376,53 @@ class TestPlayerInventory:
         # Item should still be in room since it was too heavy
         assert weapon in player.current_room.items_here
 
-    def test_equip_item_menu_cancel(self, player):
-        """Test equip_item_menu with cancel selection."""
-        with patch("builtins.input", return_value="x"):
-            with patch("neotermcolor.cprint"):
-                result = player.equip_item_menu()
+    # ``Player.equip_item_menu`` was deleted in the terminal teardown (CLAUDE.md,
+    # "Terminal-mode removal"), together with ``skillmenu``, ``level_up`` and the
+    # rest of the ``input()``-driven helpers. The three tests that drove it
+    # ("cancel", "select weapon", "invalid selection") are gone with it -- as is
+    # ``test_use_item_merchandise_prevention``, which despite its name called
+    # ``equip_item_menu`` and asserted only ``result is not None``. Its stated
+    # intent is now actually tested, against the real ``use_item``, below.
+    # Equipping through the web path is covered by
+    # ``tests/test_game_service_equip_unequip.py``.
 
-        assert result is None
+    def test_use_item_without_a_phrase_is_a_no_op(self, make_player):
+        """``use_item`` no longer opens a menu; an empty phrase does nothing."""
+        player = make_player()
+        potion = items.Restorative()
+        potion.count = 1
+        player.inventory = [potion]
+        player.hp = 1
 
-    def test_equip_item_menu_select_weapon(self, player):
-        """Test equip_item_menu selecting weapon category."""
-        weapon = MagicMock()
-        weapon.maintype = "Weapon"
-        weapon.name = "Sword"
-        weapon.isequipped = False
+        player.use_item()
 
-        player.inventory = [weapon]
+        assert player.hp == 1
+        assert potion in player.inventory
 
-        with patch("builtins.input", side_effect=["w", "0"]):
-            with patch("neotermcolor.cprint"):
-                with patch("builtins.print"):
-                    result = player.equip_item_menu()
+    def test_use_item_consumes_the_first_phrase_match(self, make_player):
+        player = make_player()
+        potion = items.Restorative()
+        player.inventory = [potion]
+        player.hp = 1
+        player.maxhp = 100
 
-        assert result == weapon
+        player.use_item("restorative")
 
-    def test_equip_item_menu_invalid_selection(self, player):
-        """Test equip_item_menu with invalid input loops."""
-        weapon = MagicMock()
-        weapon.maintype = "Weapon"
-        weapon.name = "Sword"
-        weapon.isequipped = False
+        assert player.hp > 1, "the potion must actually heal Jean"
 
-        player.inventory = [weapon]
+    def test_use_item_refuses_unpurchased_merchandise(self, make_player):
+        """Merchandise sitting in a shop's stock cannot be used before purchase."""
+        player = make_player()
+        potion = items.Restorative()
+        potion.merchandise = True
+        player.inventory = [potion]
+        player.hp = 1
+        player.maxhp = 100
 
-        # First invalid selection, then cancel
-        with patch("builtins.input", side_effect=["w", "abc", "x"]):
-            with patch("neotermcolor.cprint"):
-                with patch("builtins.print"):
-                    result = player.equip_item_menu()
+        player.use_item("restorative")
 
-        assert result is None
-
-    def test_use_item_prefer_flow(self, player):
-        """Test use_item with prefer interaction."""
-        item = MagicMock()
-        item.name = "Bread"
-        item.count = 5
-        item.merchandise = False
-        item.interactions = ["prefer"]
-        item.__class__ = items.Consumable
-
-        player.inventory = [item]
-        player.preferences = {}
-
-        with patch("builtins.input", side_effect=["x"]):
-            with patch("neotermcolor.cprint"):
-                with patch("builtins.print"):
-                    player.use_item()
-
-    def test_use_item_no_consumables(self, player):
-        """Test use_item when no consumables available."""
-        other_item = MagicMock()
-        other_item.name = "Sword"
-
-        player.inventory = [other_item]
-
-        with patch("builtins.input", side_effect=["c", "x"]):
-            with patch("neotermcolor.cprint"):
-                with patch("builtins.print"):
-                    player.use_item()
-
-    def test_use_item_merchandise_prevention(self, player):
-        """Test merchandise items cannot be used before purchase."""
-        # Test that use_item_menu works with valid input
-        weapon = MagicMock()
-        weapon.maintype = "Weapon"
-        weapon.name = "Sword"
-        weapon.isequipped = False
-
-        player.inventory = [weapon]
-
-        with patch("builtins.input", side_effect=["w", "0"]):
-            with patch("neotermcolor.cprint"):
-                with patch("builtins.print"):
-                    result = player.equip_item_menu()
-                    assert result is not None
+        assert player.hp == 1, "merchandise must not take effect"
+        assert potion in player.inventory
 
 
 class TestPlayerCombat:
@@ -446,25 +456,62 @@ class TestPlayerCombat:
         p.current_room.npcs_here = []
         return p
 
-    def test_combat_idle_healthy(self, player):
-        """Test combat idle message when healthy."""
+    def test_combat_idle_stays_silent_on_a_low_roll(self, player):
+        """Idle chatter needs a roll above 995; 500 must produce nothing."""
+        from src.narration import capture_narration
+
         player.hp = 80
         player.maxhp = 100
 
-        with patch("random.randint", side_effect=[500, 0]):  # No idle msg
-            with patch("builtins.print"):
-                player.combat_idle()
+        with patch("random.randint", side_effect=[500, 0]), capture_narration() as msgs:
+            player.combat_idle()
 
-    def test_combat_idle_hurt(self, player):
-        """Test combat idle message when hurt."""
+        assert msgs == []
+
+    def test_combat_idle_healthy_uses_the_idle_pool(self, player):
+        """Above 20% HP a winning roll draws from ``combat_idle_msg``."""
+        from src.narration import capture_narration
+
+        player.hp = 80
+        player.maxhp = 100
+
+        with patch("random.randint", side_effect=[996, 0]), capture_narration() as msgs:
+            player.combat_idle()
+
+        assert [m["text"] for m in msgs] == [player.combat_idle_msg[0]]
+
+    def test_combat_idle_hurt_uses_the_hurt_pool(self, player):
+        """At or below 20% HP the message comes from ``combat_hurt_msg`` instead.
+
+        Was ``mock_print.assert_called()`` -- which passed for *any* output at
+        all, including the healthy pool, and would still pass if the two pools
+        were swapped.
+        """
+        from src.narration import capture_narration
+
         player.hp = 15
         player.maxhp = 100
 
-        with patch("random.randint", side_effect=[951, 0]):  # Yes hurt msg
-            with patch("builtins.print") as mock_print:
-                player.combat_idle()
+        with patch("random.randint", side_effect=[951, 0]), capture_narration() as msgs:
+            player.combat_idle()
 
-        mock_print.assert_called()
+        assert [m["text"] for m in msgs] == [player.combat_hurt_msg[0]]
+        assert msgs[0]["text"] not in player.combat_idle_msg
+
+    def test_combat_idle_hurt_threshold_is_exactly_20_percent(self, player):
+        """20% is 'hurt'; 21% is 'healthy'. Pins the boundary the branch uses."""
+        from src.narration import capture_narration
+
+        player.maxhp = 100
+        player.hp = 20
+        with patch("random.randint", side_effect=[951, 0]), capture_narration() as msgs:
+            player.combat_idle()
+        assert msgs[0]["text"] in player.combat_hurt_msg
+
+        player.hp = 21
+        with patch("random.randint", side_effect=[951, 0]), capture_narration() as msgs:
+            player.combat_idle()
+        assert msgs == [], "951 is below the healthy pool's 995 threshold"
 
     def test_change_heat_increase(self, player):
         """Test heat increase with multiplier."""
@@ -554,86 +601,16 @@ class TestPlayerCombat:
         # total: 2 + 12 = 14
         assert player.protection == 14.0
 
-    def test_attack_no_target(self, player):
-        """Test attack with no valid target."""
-        player.current_room.npcs_here = []
-
-        with patch("builtins.print") as mock_print:
-            player.attack()
-
-        mock_print.assert_called_with("There's nothing here for Jean to attack.\n")
-
-    def test_attack_with_target_hit(self, player):
-        """Test successful attack strike."""
-        target = MagicMock()
-        target.name = "Goblin"
-        target.hidden = False
-        target.finesse = 5
-        target.protection = 2
-        target.hp = 100
-        target.is_alive.return_value = True
-        target.in_combat = False
-        target.alert_message = "roars!"
-
-        player.current_room.npcs_here = [target]
-
-        with patch("builtins.input", return_value="0"):
-            with patch("random.randint", return_value=50):
-                with patch("random.uniform", return_value=1.0):
-                    with patch("src.functions.check_for_combat", return_value=[]):
-                        with patch("combat.combat"):
-                            with patch("builtins.print"):
-                                with patch("neotermcolor.colored", side_effect=lambda x, y: str(x)):
-                                    player.attack()
-
-        assert target.hp < 100
-
-    def test_attack_miss(self, player):
-        """Test attack miss."""
-        target = MagicMock()
-        target.name = "Goblin"
-        target.hidden = False
-        target.finesse = 40  # Very high finesse
-        target.protection = 2
-        target.hp = 100
-        target.is_alive.return_value = True
-        target.in_combat = False
-        target.alert_message = "roars!"
-
-        player.current_room.npcs_here = [target]
-
-        with patch("builtins.input", return_value="0"):
-            with patch("random.randint", return_value=2):  # Miss
-                with patch("random.uniform", return_value=1.0):
-                    with patch("src.functions.check_for_combat", return_value=[]):
-                        with patch("combat.combat"):
-                            with patch("builtins.print"):
-                                with patch("neotermcolor.colored", side_effect=lambda x, y: str(x)):
-                                    player.attack()
-
-    def test_attack_by_phrase(self, player):
-        """Test attack with phrase matching."""
-        target = MagicMock()
-        target.name = "Goblin"
-        target.hidden = False
-        target.finesse = 5
-        target.protection = 2
-        target.hp = 100
-        target.is_alive.return_value = True
-        target.announce = "green skinned"
-        target.idle_message = "angry"
-        target.in_combat = False
-        target.alert_message = "attacks!"
-
-        player.current_room.npcs_here = [target]
-
-        with patch("random.randint", return_value=50):
-            with patch("random.uniform", return_value=1.0):
-                with patch("src.functions.check_for_combat", return_value=[]):
-                    with patch("combat.combat"):
-                        with patch("builtins.print"):
-                            with patch("neotermcolor.colored", side_effect=lambda x, y: str(x)):
-                                player.attack("goblin")
+    # ``Player.attack`` was removed in the terminal teardown, along with the
+    # ``Attack`` action in ``actions.py`` and ``src/combat.py``'s ``combat()``
+    # loop (CLAUDE.md, "Terminal-mode removal"). The four tests that lived here
+    # -- test_attack_no_target / _with_target_hit / _miss / _by_phrase -- drove
+    # that verb through ``input()`` and ``patch("combat.combat")``. That patch
+    # target is also a bare-module import, which the codebase forbids: with
+    # ``src/combat.py`` gone it resolves to an empty namespace package, so the
+    # patch raises rather than doing anything. Combat is now entered through
+    # ``GameService.start_combat`` -> ``ApiCombatAdapter``; see
+    # ``tests/test_game_service_combat.py`` and ``tests/test_combat_adapter*.py``.
 
 
 class TestPlayerWorld:
@@ -647,83 +624,163 @@ class TestPlayerWorld:
         p.name = "Jean"
         return p
 
+    def _merchant(self, name="Smith", update=None):
+        """A stand-in whose MRO really contains a class named ``Merchant``.
+
+        ``refresh_merchants`` identifies vendors by walking ``cls.mro()`` for the
+        name "Merchant". The old tests faked that with
+        ``merchant.__class__.mro = MagicMock(...)`` on a ``MagicMock`` -- which
+        rebinds an attribute on the mock's *class*, the exact leak pattern that
+        has poisoned later tests in this suite before. A real throwaway subclass
+        costs nothing and cannot leak.
+        """
+
+        class Merchant:
+            pass
+
+        class _Vendor(Merchant):
+            pass
+
+        vendor = _Vendor()
+        vendor.name = name
+        vendor.shop = object()
+        vendor.update_goods = update if update is not None else MagicMock()
+        return vendor
+
+    @staticmethod
+    def _map_with(*npcs):
+        tile = MagicMock()
+        tile.npcs_here = list(npcs)
+        return {"name": "Test Map", (0, 0): tile}
+
     def test_refresh_merchants_no_universe(self, player):
-        """Test refresh_merchants when universe not initialized."""
+        """No universe: say so and touch nothing."""
+        from src.narration import capture_narration
+
         player.universe = None
 
-        with patch("builtins.print"):
+        with capture_narration() as msgs:
             player.refresh_merchants()
 
-    def test_refresh_merchants_no_maps(self, player):
-        """Test refresh_merchants when maps not accessible."""
+        assert [m["text"] for m in msgs] == [
+            "Universe not initialized; cannot refresh merchants."
+        ]
+
+    def test_refresh_merchants_no_maps_attribute(self, player):
+        from src.narration import capture_narration
+
         player.universe = MagicMock()
         del player.universe.maps
 
-        with patch("builtins.print"):
+        with capture_narration() as msgs:
             player.refresh_merchants()
+
+        assert [m["text"] for m in msgs] == [
+            "Universe not initialized; cannot refresh merchants."
+        ]
 
     def test_refresh_merchants_empty_map_list(self, player):
-        """Test refresh_merchants with empty map list."""
+        from src.narration import capture_narration
+
         player.universe.maps = []
 
-        with patch("builtins.print"):
+        with capture_narration() as msgs:
             player.refresh_merchants()
+
+        assert [m["text"] for m in msgs] == ["No merchants found to refresh."]
 
     def test_refresh_merchants_no_merchants_found(self, player):
-        """Test refresh_merchants when no merchants exist."""
-        tile = MagicMock()
-        tile.npcs_here = []
+        from src.narration import capture_narration
 
-        game_map = {
-            "name": "Test Map",
-            (0, 0): tile,
-        }
-        player.universe.maps = [game_map]
+        player.universe.maps = [self._map_with()]
 
-        with patch("builtins.print"):
+        with capture_narration() as msgs:
             player.refresh_merchants()
 
-    def test_refresh_merchants_with_phrase_filter(self, player):
-        """Test refresh_merchants filters by phrase."""
-        # Create a merchant that passes filter
-        merchant = MagicMock()
-        merchant.name = "Smith"
-        merchant.__class__.mro = MagicMock(return_value=[merchant.__class__, object])
-        merchant.__class__.__name__ = "Merchant"
-        merchant.update_goods = MagicMock()
+        assert [m["text"] for m in msgs] == ["No merchants found to refresh."]
 
-        tile = MagicMock()
-        tile.npcs_here = [merchant]
+    def test_refresh_merchants_updates_every_vendor(self, player):
+        from src.narration import capture_narration
 
-        game_map = {
-            "name": "Test Map",
-            (0, 0): tile,
-        }
-        player.universe.maps = [game_map]
+        first = self._merchant("Smith")
+        second = self._merchant("Baker")
+        player.universe.maps = [self._map_with(first, second)]
 
-        with patch("builtins.print"):
+        with capture_narration() as msgs:
+            player.refresh_merchants()
+
+        first.update_goods.assert_called_once_with()
+        second.update_goods.assert_called_once_with()
+        assert msgs[0]["text"] == "Merchant refresh complete: 2 succeeded, 0 failed."
+
+    def test_refresh_merchants_phrase_filter_selects_one_vendor(self, player):
+        from src.narration import capture_narration
+
+        smith = self._merchant("Smith")
+        baker = self._merchant("Baker")
+        player.universe.maps = [self._map_with(smith, baker)]
+
+        with capture_narration() as msgs:
             player.refresh_merchants("smith")
 
-    def test_refresh_merchants_update_fails(self, player):
-        """Test refresh_merchants handles update failures."""
-        merchant = MagicMock()
-        merchant.name = "Broken Merchant"
-        merchant.__class__.mro = MagicMock(return_value=[merchant.__class__, object])
-        merchant.__class__.__name__ = "Merchant"
-        merchant.update_goods = MagicMock(side_effect=Exception("Update failed"))
+        smith.update_goods.assert_called_once_with()
+        baker.update_goods.assert_not_called()
+        assert msgs[0]["text"] == "Merchant refresh complete: 1 succeeded, 0 failed."
 
-        tile = MagicMock()
-        tile.npcs_here = [merchant]
+    def test_refresh_merchants_phrase_filter_matching_nobody(self, player):
+        from src.narration import capture_narration
 
-        game_map = {
-            "name": "Test Map",
-            (0, 0): tile,
-        }
-        player.universe.maps = [game_map]
+        smith = self._merchant("Smith")
+        player.universe.maps = [self._map_with(smith)]
 
-        with patch("builtins.print"):
+        with capture_narration() as msgs:
+            player.refresh_merchants("cooper")
+
+        smith.update_goods.assert_not_called()
+        assert [m["text"] for m in msgs] == ["No merchants matched filter 'cooper'."]
+
+    def test_refresh_merchants_reports_a_failing_vendor_and_keeps_going(self, player):
+        from src.narration import capture_narration
+
+        broken = self._merchant(
+            "Broken Merchant", update=MagicMock(side_effect=RuntimeError("Update failed"))
+        )
+        healthy = self._merchant("Smith")
+        player.universe.maps = [self._map_with(broken, healthy)]
+
+        with capture_narration() as msgs:
             player.refresh_merchants()
 
+        healthy.update_goods.assert_called_once_with(), "one bad vendor must not abort the sweep"
+        texts = [m["text"] for m in msgs]
+        assert texts[0] == "Merchant refresh complete: 1 succeeded, 1 failed."
+        assert texts[1] == " - Broken Merchant: Update failed"
+
+    def test_refresh_merchants_flags_a_vendor_with_no_update_goods(self, player):
+        from src.narration import capture_narration
+
+        vendor = self._merchant("Mute")
+        vendor.update_goods = None
+        player.universe.maps = [self._map_with(vendor)]
+
+        with capture_narration() as msgs:
+            player.refresh_merchants()
+
+        texts = [m["text"] for m in msgs]
+        assert texts[0] == "Merchant refresh complete: 0 succeeded, 1 failed."
+        assert texts[1] == " - Mute: missing update_goods"
+
+    def test_refresh_merchants_ignores_non_merchant_npcs(self, player):
+        from src.narration import capture_narration
+
+        bystander = MagicMock()
+        bystander.name = "Smith"
+        player.universe.maps = [self._map_with(bystander)]
+
+        with capture_narration() as msgs:
+            player.refresh_merchants()
+
+        assert [m["text"] for m in msgs] == ["No merchants found to refresh."]
 
 class TestPlayerDebug:
     """Debug system tests — _debug.py (target: 100% coverage)."""

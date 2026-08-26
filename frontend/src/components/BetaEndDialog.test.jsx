@@ -2,348 +2,110 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import BetaEndDialog from './BetaEndDialog';
 
+/**
+ * BetaEndDialog is a two-button terminal card with no internal state, so it
+ * makes exactly five claims. This file used to spread those five across twenty
+ * tests — `renders all thank you messages`, `renders both action buttons`,
+ * `renders any additional instructions or information`, `renders the title
+ * consistently`, `maintains dialog state across re-renders` and
+ * `maintains semantic structure` were the same render-and-look assertion six
+ * times over, and two more asserted a bare `toHaveBeenCalled()` under names
+ * promising an argument check ("receives correct parameters if any").
+ *
+ * Two could not fail at all:
+ *   * `always renders both buttons` used
+ *     `expect(screen.queryByText(...)).toBeDefined()` — queryByText returns
+ *     null when the node is missing, and `expect(null).toBeDefined()` PASSES.
+ *     Deleting both buttons kept that test green.
+ *   * `renders properly with mock callbacks that throw errors` built a throwing
+ *     callback and then never clicked it.
+ */
 describe('BetaEndDialog', () => {
-  const mockOnSendFeedback = vi.fn();
-  const mockOnContinue = vi.fn();
+  const onSendFeedback = vi.fn();
+  const onContinue = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders the beta end title and thank-you copy', () => {
-    render(
-      <BetaEndDialog
-        onSendFeedback={mockOnSendFeedback}
-        onContinue={mockOnContinue}
-      />
-    );
+  const renderDialog = (props = {}) =>
+    render(<BetaEndDialog onSendFeedback={onSendFeedback} onContinue={onContinue} {...props} />);
 
-    expect(screen.getByText('END OF BETA')).toBeDefined();
-    expect(screen.getByText(/You've reached the end of the beta/i)).toBeDefined();
-    expect(screen.getByText(/Thank you for playing/i)).toBeDefined();
+  it('renders the title, both thank-you paragraphs and both action buttons', () => {
+    renderDialog();
+
+    expect(screen.getByText('END OF BETA')).toBeInTheDocument();
+    expect(screen.getByText(/You've reached the end of the beta/i)).toBeInTheDocument();
+    // The second paragraph is a distinct node, not a substring of the first.
+    expect(screen.getByText(/Thank you for playing/i)).toBeInTheDocument();
+
+    // Real <button> elements, in the order the design puts them: dismiss first,
+    // the call to action last. `queryByText(...).toBeDefined()` — the old
+    // assertion — passes even when both are missing.
+    const buttons = screen.getAllByRole('button');
+    expect(buttons.map((b) => b.textContent)).toEqual(['Continue Exploring', 'Send Feedback']);
   });
 
-  it('does not throw when clicked with no handlers provided (default no-ops)', () => {
-    render(<BetaEndDialog />);
-    expect(() => fireEvent.click(screen.getByText('Continue Exploring'))).not.toThrow();
-    expect(() => fireEvent.click(screen.getByText('Send Feedback'))).not.toThrow();
+  it('offers no close control, so the dialog can only be dismissed by a button', () => {
+    // showCloseButton={false} is deliberate: this card is the beta's last beat
+    // and must be acknowledged, not dismissed by the ✕.
+    renderDialog();
+    expect(screen.queryByText('✕')).toBeNull();
   });
 
-  it('calls onContinue when "Continue Exploring" is clicked', () => {
-    render(
-      <BetaEndDialog
-        onSendFeedback={mockOnSendFeedback}
-        onContinue={mockOnContinue}
-      />
-    );
+  it.each([
+    ['Continue Exploring', () => onContinue, () => onSendFeedback],
+    ['Send Feedback', () => onSendFeedback, () => onContinue],
+  ])('routes a %s click to its own handler and no other', (label, fires, silent) => {
+    renderDialog();
+    fireEvent.click(screen.getByText(label));
 
+    expect(fires()).toHaveBeenCalledTimes(1);
+    expect(silent()).not.toHaveBeenCalled();
+  });
+
+  it('fires once per click rather than latching after the first', () => {
+    // There is no submitting/disabled gate on this dialog: a player who
+    // double-taps Continue must not be silently ignored the second time.
+    renderDialog();
+    const continueBtn = screen.getByText('Continue Exploring');
+    const feedbackBtn = screen.getByText('Send Feedback');
+
+    fireEvent.click(continueBtn);
+    fireEvent.click(feedbackBtn);
+    fireEvent.click(continueBtn);
+
+    expect(onContinue).toHaveBeenCalledTimes(2);
+    expect(onSendFeedback).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([[undefined], [null]])(
+    'stays clickable with %s callbacks, using the default no-ops',
+    (handler) => {
+      // `expect(render).not.toThrow()` never clicked anything, so the default
+      // parameters it exists to cover were not actually exercised. Note `null`
+      // does NOT trigger a default parameter — only `undefined` does — so this
+      // case proves GameButton tolerates a null onClick too.
+      render(<BetaEndDialog onSendFeedback={handler} onContinue={handler} />);
+      expect(() => fireEvent.click(screen.getByText('Continue Exploring'))).not.toThrow();
+      expect(() => fireEvent.click(screen.getByText('Send Feedback'))).not.toThrow();
+      // Still on screen and still interactive afterwards.
+      expect(screen.getByText('END OF BETA')).toBeInTheDocument();
+    }
+  );
+
+  it('invokes the newest callbacks after a re-render, not the ones captured at mount', () => {
+    const newFeedback = vi.fn();
+    const newContinue = vi.fn();
+    const { rerender } = renderDialog();
+
+    rerender(<BetaEndDialog onSendFeedback={newFeedback} onContinue={newContinue} />);
     fireEvent.click(screen.getByText('Continue Exploring'));
-    expect(mockOnContinue).toHaveBeenCalledOnce();
-    expect(mockOnSendFeedback).not.toHaveBeenCalled();
-  });
-
-  it('calls onSendFeedback when "Send Feedback" is clicked', () => {
-    render(
-      <BetaEndDialog
-        onSendFeedback={mockOnSendFeedback}
-        onContinue={mockOnContinue}
-      />
-    );
-
     fireEvent.click(screen.getByText('Send Feedback'));
-    expect(mockOnSendFeedback).toHaveBeenCalledOnce();
-    expect(mockOnContinue).not.toHaveBeenCalled();
-  });
 
-  describe('Content Rendering', () => {
-    it('renders all thank you messages', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(screen.getByText('END OF BETA')).toBeDefined();
-      expect(screen.getByText(/reached the end of the beta/i)).toBeDefined();
-      expect(screen.getByText(/Thank you/i)).toBeDefined();
-    });
-
-    it('renders both action buttons', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(screen.getByText('Send Feedback')).toBeDefined();
-      expect(screen.getByText('Continue Exploring')).toBeDefined();
-    });
-
-    it('renders any additional instructions or information', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      // Check that the dialog has content
-      expect(screen.getByText(/END OF BETA/)).toBeDefined();
-    });
-  });
-
-  describe('Button Interactions', () => {
-    it('handles rapid clicking of continue button', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      const continueBtn = screen.getByText('Continue Exploring');
-      fireEvent.click(continueBtn);
-      fireEvent.click(continueBtn);
-      fireEvent.click(continueBtn);
-
-      expect(mockOnContinue).toHaveBeenCalledTimes(3);
-    });
-
-    it('handles rapid clicking of feedback button', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      const feedbackBtn = screen.getByText('Send Feedback');
-      fireEvent.click(feedbackBtn);
-      fireEvent.click(feedbackBtn);
-
-      expect(mockOnSendFeedback).toHaveBeenCalledTimes(2);
-    });
-
-    it('handles alternating button clicks', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      fireEvent.click(screen.getByText('Continue Exploring'));
-      fireEvent.click(screen.getByText('Send Feedback'));
-      fireEvent.click(screen.getByText('Continue Exploring'));
-
-      expect(mockOnContinue).toHaveBeenCalledTimes(2);
-      expect(mockOnSendFeedback).toHaveBeenCalledTimes(1);
-    });
-
-    it('handles clicking buttons after dialog has been rendered for a while', () => {
-      const { rerender } = render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      // Simulate some time passing by re-rendering
-      rerender(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      fireEvent.click(screen.getByText('Continue Exploring'));
-      expect(mockOnContinue).toHaveBeenCalledOnce();
-    });
-  });
-
-  describe('Callback Behavior', () => {
-    it('onContinue receives correct parameters if any', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      fireEvent.click(screen.getByText('Continue Exploring'));
-      expect(mockOnContinue).toHaveBeenCalled();
-    });
-
-    it('onSendFeedback receives correct parameters if any', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      fireEvent.click(screen.getByText('Send Feedback'));
-      expect(mockOnSendFeedback).toHaveBeenCalled();
-    });
-
-    it('only one callback fires per button click', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      fireEvent.click(screen.getByText('Send Feedback'));
-
-      expect(mockOnSendFeedback).toHaveBeenCalledOnce();
-      expect(mockOnContinue).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Conditional Rendering', () => {
-    it('always renders both buttons', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(screen.queryByText('Continue Exploring')).toBeDefined();
-      expect(screen.queryByText('Send Feedback')).toBeDefined();
-    });
-
-    it('renders the title consistently', () => {
-      const { rerender } = render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(screen.getByText('END OF BETA')).toBeDefined();
-
-      rerender(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(screen.getByText('END OF BETA')).toBeDefined();
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('renders without crashing if callbacks are undefined', () => {
-      expect(() => {
-        render(
-          <BetaEndDialog
-            onSendFeedback={undefined}
-            onContinue={undefined}
-          />
-        );
-      }).not.toThrow();
-    });
-
-    it('handles null callbacks gracefully', () => {
-      expect(() => {
-        render(
-          <BetaEndDialog
-            onSendFeedback={null}
-            onContinue={null}
-          />
-        );
-      }).not.toThrow();
-    });
-
-    it('renders properly with mock callbacks that throw errors', () => {
-      const throwingCallback = vi.fn(() => {
-        throw new Error('Test error');
-      });
-
-      render(
-        <BetaEndDialog
-          onSendFeedback={throwingCallback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      // Should still render even if callback might throw
-      expect(screen.getByText('Send Feedback')).toBeDefined();
-    });
-  });
-
-  describe('Accessibility', () => {
-    it('renders buttons with accessible text labels', () => {
-      render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      const buttons = screen.getAllByRole('button', { hidden: true });
-      expect(buttons.length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('maintains semantic structure', () => {
-      const { container } = render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(container.firstChild).toBeDefined();
-    });
-  });
-
-  describe('State Preservation', () => {
-    it('maintains dialog state across re-renders with same props', () => {
-      const { rerender } = render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(screen.getByText('END OF BETA')).toBeDefined();
-
-      rerender(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      expect(screen.getByText('END OF BETA')).toBeDefined();
-    });
-
-    it('updates when new callbacks are provided', () => {
-      const newFeedback = vi.fn();
-      const newContinue = vi.fn();
-
-      const { rerender } = render(
-        <BetaEndDialog
-          onSendFeedback={mockOnSendFeedback}
-          onContinue={mockOnContinue}
-        />
-      );
-
-      rerender(
-        <BetaEndDialog
-          onSendFeedback={newFeedback}
-          onContinue={newContinue}
-        />
-      );
-
-      fireEvent.click(screen.getByText('Continue Exploring'));
-      expect(newContinue).toHaveBeenCalledOnce();
-      expect(mockOnContinue).not.toHaveBeenCalled();
-    });
+    expect(newContinue).toHaveBeenCalledTimes(1);
+    expect(newFeedback).toHaveBeenCalledTimes(1);
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(onSendFeedback).not.toHaveBeenCalled();
   });
 });

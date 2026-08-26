@@ -72,12 +72,15 @@ from src.api.serializers.combat import (
 )
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
-from src.items import Restorative
-from src.moves import ShootBow
+from src.items import IronArrow, Mace, Restorative, Shortbow
+from src.moves import Attack, PowerStrike, ShootBow, Wait
+from src.moves._mastery import BloodOfMartyrs
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
 import src.states as states
+from tests._gs_fixtures import GRID_3X3
+from src.narration import capture_narration
 
 
 def _assert_contract(payload: dict, contract: dict, label: str):
@@ -281,6 +284,144 @@ class TestCombatWireContract:
 
 
 # ----------------------------------------------------------------------------
+# Move payload: combat.available_options[i] (src.api.combat_adapter
+# ApiCombatAdapter._get_available_moves)
+# ----------------------------------------------------------------------------
+# CombatMovePanel.jsx renders each move card off this shape.
+MOVE_CONTRACT = {
+    "name": "CombatMovePanel.jsx:75 move.name || move.display_name",
+    "display_name": "CombatMovePanel.jsx:75,131 displayNameOf(move)",
+    "description": "CombatMovePanel.jsx:140 move.description",
+    "available": "CombatMovePanel.jsx:73 move.available !== false",
+    "reason": "CombatMovePanel.jsx:74,109,142-146 move.reason",
+    "fatigue_cost": "CombatMovePanel.jsx:133-137 move.fatigue_cost",
+    "targeted": "CombatMovePanel.jsx:80 move.targeted",
+    "viable_targets": "CombatMovePanel.jsx:79-82 move.viable_targets",
+    "requires_target_selection": "CombatMovePanel.jsx:80 move.requires_target_selection",
+    # `category` routes the move to a radial button via CATEGORY_GROUPS
+    # (utils/categories.js). A category no group claims leaves the move with no
+    # button at all — that is how 8 castable moves became unreachable.
+    "category": "CooldownTray.jsx:66,100 / BattlefieldGrid.jsx:89 move.category",
+    # The commitment bar (how many beats a move locks the player out for,
+    # shown BEFORE they commit) — named sub-fields, not the engine's raw
+    # stage_beat list/index convention. See MOVE_STAGE_BEATS_CONTRACT below.
+    "stage_beats": "CombatMovePanel.jsx MoveCommitmentBar move.stage_beats",
+}
+
+ABORTABLE_MOVE_CONTRACT = {
+    "name": "AbortMoveControl.jsx abortable.name",
+    "beats_left": "AbortMoveControl.jsx abortable.beats_left ('lands in N beats')",
+    "beats_invested": "AbortMoveControl.jsx abortable.beats_invested ('forfeits N beats')",
+    "cooldown_beats": "AbortMoveControl.jsx abortable.cooldown_beats ('then N beats cooldown')",
+    "prep_beats": "AbortMoveControl.jsx destructures abortable (unused today, kept on the wire)",
+}
+
+
+MOVE_STAGE_BEATS_CONTRACT = {
+    "prep": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.prep",
+    "execute": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.execute",
+    "recoil": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.recoil",
+    "cooldown": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.cooldown",
+}
+
+
+class TestMoveWireContract:
+    def test_available_move_fields(self):
+        player = Player()
+        player.known_moves = [Attack(player)]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move_payloads = adapter._get_available_moves()
+
+        assert move_payloads, "expected Attack to appear in available moves"
+        _assert_contract(move_payloads[0], MOVE_CONTRACT, "_get_available_moves()[0]")
+        _assert_contract(
+            move_payloads[0]["stage_beats"],
+            MOVE_STAGE_BEATS_CONTRACT,
+            "_get_available_moves()[0].stage_beats",
+        )
+
+    def test_stage_beats_are_the_real_engine_values_not_recomputed(self):
+        """Guards the Architecture rule that the engine is the source of
+        truth for move timing: the API layer must read Move.stage_beat, never
+        hardcode or re-derive it. Attack (a 10-beat commitment) and
+        BloodOfMartyrs (101 beats — prep=40, execute=1, recoil=5,
+        cooldown=55) are pinned by value so a swapped index or a hardcoded
+        constant in the adapter shows up immediately."""
+        player = Player()
+        attack = Attack(player)
+        blood = BloodOfMartyrs(player)
+        player.known_moves = [attack, blood]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move_payloads = adapter._get_available_moves()
+
+        by_name = {m["name"]: m for m in move_payloads}
+
+        assert attack.stage_beat == [4, 1, 1, 4]  # pin the fixture's own assumption
+        assert by_name["Attack"]["stage_beats"] == {
+            "prep": 4,
+            "execute": 1,
+            "recoil": 1,
+            "cooldown": 4,
+        }
+
+        assert blood.stage_beat == [40, 1, 5, 55]  # pin the fixture's own assumption
+        assert by_name["Blood of Martyrs"]["stage_beats"] == {
+            "prep": 40,
+            "execute": 1,
+            "recoil": 5,
+            "cooldown": 55,
+        }
+
+    def test_stage_beats_handle_float_and_zero_values(self):
+        """stage_beat entries can be floats (e.g. 3.5) and can be 0 — the
+        payload must carry both through unchanged rather than truncating or
+        substituting a default. Uses Wait rather than Attack: Attack.viable()
+        calls evaluate(), which recomputes stage_beat from the player's
+        weapon and would silently clobber this test's override; Wait's
+        viable() is the unmodified Move base (no recompute)."""
+        player = Player()
+        move = Wait(player)
+        move.stage_beat = [0, 3.5, 0, 12]
+        player.known_moves = [move]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move_payloads = adapter._get_available_moves()
+
+        assert move_payloads[0]["stage_beats"] == {
+            "prep": 0,
+            "execute": 3.5,
+            "recoil": 0,
+            "cooldown": 12,
+        }
+
+
+# ----------------------------------------------------------------------------
 # Combatant shape: combat.player / combat.enemies[i]
 # ----------------------------------------------------------------------------
 # HeroPanel.jsx reads these off `player` — which during combat IS combat.player
@@ -295,6 +436,39 @@ COMBATANT_CONTRACT = {
     "status_effects": "HeroPanel.jsx:130-133,338-341 player?.status_effects",
     "passives": "HeroPanel.jsx:109-113,332-336 player?.passives",
     "distance": "LeftPanel.jsx:131 e.distance (canFlee check on combat.enemies)",
+    # The battlefield map is the other consumer of a serialized combatant. It
+    # was reading `position`/`current_move` all along; `distance` is now shown
+    # there too (token tooltip, selected-combatant panel, enemies list and the
+    # off-screen edge markers), which is what the positional layer is *for*.
+    "name": "BattlefieldGrid.jsx EntityTooltip / EnemiesList entity.name",
+    "battle_symbol": "BattlefieldGrid.jsx entitiesToRender displaySymbol fallback chain",
+    "position": "BattlefieldGrid.jsx getPos(entity) -> getEntityStyle / fitBox framing",
+    "current_move": "BattlefieldGrid.jsx CombatantMarker telegraph + EntityTooltip",
+}
+
+# The in-progress move hanging off a combatant (CombatantSerializer.
+# _serialize_active_move). BattlefieldGrid turns this into the *only* readout
+# of enemy intent on the map, so a rename here silently blanks the telegraph.
+ACTIVE_MOVE_CONTRACT = {
+    "display_name": "combatMoveStatus.js displayNameOf(move)",
+    "category": "BattlefieldGrid.jsx MOVE_CATEGORY_GLOW/_COLOR[move.category]",
+    # isMovePending() suppresses the telegraph for stages 2/3 so a spent
+    # combatant stops looking like one winding up; beatsUntilResolve() renders
+    # the countdown badge on the token.
+    "current_stage": "combatMoveStatus.js isMovePending / formatCombatMoveStatus",
+    "beats_left": "combatMoveStatus.js beatsUntilResolve fallback (stage-less payloads)",
+    # The countdown badge renders THIS, not beats_left: the latter is beats
+    # left in the current stage, which for a windup move is a much smaller
+    # number than the time until the blow actually lands.
+    "beats_until_resolve": "combatMoveStatus.js beatsUntilResolve -> countdown badge",
+    "falloff": "BattlefieldGrid.jsx RangeRingLayer — gradient vs hard ring",
+    # Threat-line/range-ring feature: who the pending move is aimed at, and
+    # how far it reaches. target_id MUST be resolved through
+    # CombatantSerializer.stream_id (see _serialize_move_target_id) or the
+    # frontend can never match it against a combatant's own `id` — the same
+    # drift class this whole file exists to catch.
+    "target_id": "BattlefieldGrid.jsx ThreatLineLayer entity.current_move.target_id",
+    "mvrange": "BattlefieldGrid.jsx RangeRingLayer entity.current_move.mvrange",
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.
@@ -334,6 +508,282 @@ class TestCombatantWireContract:
         enemy = Slime()
         payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
         _assert_contract(payload, COMBATANT_CONTRACT, "serialize_combatant(enemy)")
+
+    def test_active_move_fields_on_a_real_move_in_progress(self):
+        """A real move mid-cast, through the real serializer, so the fields the
+        battlefield telegraph reads can't be renamed out from under it."""
+        player = Player()
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 2
+        player.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["current_move"], "expected the in-progress move to serialize"
+        _assert_contract(
+            payload["current_move"], ACTIVE_MOVE_CONTRACT, "combatant.current_move"
+        )
+
+    def test_active_move_target_id_matches_the_target_combatants_own_serialized_id(self):
+        """The whole point of `target_id`: it must resolve to exactly the same
+        wire id `serialize_combatant` gives the target itself, or the frontend
+        can never look the target up in `combat.enemies`/`combat.allies` to
+        draw the threat line — the "id schemes don't match" failure mode
+        CLAUDE.md calls this repo's dominant bug class.
+
+        Both sides are computed independently through the real serializer
+        entry points (never hand-built) so a future change to either the
+        active-move id logic or `stream_id` itself cannot silently drift them
+        apart without breaking this test.
+        """
+        player = Player()
+        player.known_moves = []
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.in_combat = True
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 10}
+
+        move = ShootBow(player)
+        move.target = enemy
+        move.current_stage = 0
+        move.beats_left = 2
+        player.current_move = move
+
+        player_payload = CombatantSerializer.serialize_combatant(player)
+        enemy_payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+
+        assert player_payload["current_move"], "expected the in-progress move to serialize"
+        assert player_payload["current_move"]["target_id"] == enemy_payload["id"], (
+            "current_move.target_id must exactly match the target's own "
+            "serialize_combatant() id, or BattlefieldGrid cannot resolve who "
+            f"the move is aimed at. Got target_id={player_payload['current_move']['target_id']!r} "
+            f"vs enemy id={enemy_payload['id']!r}"
+        )
+
+    def test_active_move_range_prefers_the_engines_effective_max(self):
+        """`mvrange.max` must be the reach the engine actually uses, not the
+        static tuple bound.
+
+        Without this the "prefer get_effective_range_max" branch could quietly
+        never fire — the base Move returns None, so a wrong argument or a
+        swallowed exception would silently fall back to `mvrange[1]` and the
+        range ring would draw the wrong radius with nothing failing. The
+        expected value is computed by calling the move's own method rather
+        than hardcoding a number, so the engine stays the source of truth.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+
+        engine_effective_max = move.get_effective_range_max(player)
+        assert engine_effective_max is not None, (
+            "fixture no longer exercises the override — pick a move/weapon "
+            "whose get_effective_range_max returns a value"
+        )
+        assert engine_effective_max != move.mvrange[1], (
+            "fixture is degenerate: the effective max coincides with the "
+            "static bound, so this test could pass either way"
+        )
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["current_move"]["mvrange"] == {
+            "min": int(move.mvrange[0]),
+            "max": int(engine_effective_max),
+        }
+
+    def test_active_move_falloff_predicts_the_engines_own_hit_chance(self):
+        """The falloff curve must describe the *real* accuracy decay.
+
+        The battlefield draws a gradient from `start`/`per_ft` to show a
+        decaying move dissolving toward a vanishing hit chance. If those two
+        numbers don't match what `calculate_hit_chance` actually subtracts,
+        the gradient is a confident-looking lie — worse than drawing nothing.
+
+        So this doesn't just check the fields exist: it takes the serialized
+        pair, predicts the hit chance at a distance past `start`, and compares
+        against the engine's own calculation at that distance.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        falloff = payload["current_move"]["falloff"]
+        assert falloff, "a bow shot decays with range — expected a falloff curve"
+
+        start = falloff["start"]
+        per_ft = falloff["per_ft"]
+        assert per_ft > 0
+
+        # Baseline at the plateau edge, then a point well beyond it. Both come
+        # from the engine; only the *difference* between them is predicted.
+        player.combat_proximity = {enemy: int(start)}
+        baseline = move.calculate_hit_chance(enemy)
+
+        far = int(start) + 40
+        player.combat_proximity = {enemy: far}
+        actual = move.calculate_hit_chance(enemy)
+
+        predicted = baseline - (far - start) * per_ft
+        assert abs(actual - predicted) <= 1, (
+            f"serialized falloff (start={start}, per_ft={per_ft}) predicts "
+            f"{predicted:.2f}% at {far} ft but the engine computes {actual}%. "
+            "The battlefield gradient would misrepresent real hit chance."
+        )
+        assert actual < baseline, (
+            "fixture is degenerate: accuracy did not actually drop past "
+            "`start`, so this test could pass with a zero falloff"
+        )
+
+    def test_falloff_still_predicts_hit_chance_once_the_arrow_is_chosen(self):
+        """Same contract, but after `prep` has folded in the real ammunition.
+
+        ShootBow picks its arrow at the end of the prep stage, and the arrow
+        carries a `range_decay_modifier` (0.8-1.4). So the decay a bow reports
+        while aiming is the weapon's bare rate, and the decay it reports once
+        nocked is that rate scaled by the arrow. The test above only ever sees
+        the first of those, which would let an arrow-scaling regression pass:
+        both sides of its comparison read the same unrefreshed attribute.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        arrow = IronArrow()
+        arrow.count = 10
+        player.inventory.append(arrow)
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+        move.prep(player)
+
+        falloff = CombatantSerializer.serialize_combatant(player)["current_move"]["falloff"]
+        start, per_ft = falloff["start"], falloff["per_ft"]
+
+        # The arrow really did move the rate — otherwise this test is just a
+        # second copy of the one above.
+        assert per_ft == pytest.approx(
+            player.eq_weapon.range_decay * arrow.range_decay_modifier
+        )
+        assert per_ft != pytest.approx(player.eq_weapon.range_decay)
+
+        player.combat_proximity = {enemy: int(start)}
+        baseline = move.calculate_hit_chance(enemy)
+        far = int(start) + 40
+        player.combat_proximity = {enemy: far}
+        actual = move.calculate_hit_chance(enemy)
+
+        predicted = baseline - (far - start) * per_ft
+        assert abs(actual - predicted) <= 1, (
+            f"serialized falloff (start={start}, per_ft={per_ft}) predicts "
+            f"{predicted:.2f}% at {far} ft but the engine computes {actual}%."
+        )
+        assert actual < baseline
+
+    def test_the_aim_preview_describes_the_shot_that_will_be_taken(self):
+        """The falloff on the wire must not change when the shot resolves.
+
+        `prep` runs at the *last* beat of a 10-beat aim, and it used to be the
+        only place the arrow was chosen. So for the ten beats the client renders
+        a range gradient -- it renders only while a move is pending -- the wire
+        carried the `__init__` placeholder: 0.05 decay for a shot that resolved
+        at 2.1, and a 97% hit chance for one that landed at 45%. The player
+        aimed at a near-certain shot and got a coin flip.
+
+        This asserts the two agree across the whole aim, which is the property
+        the split between `_select_arrow` and `prep`'s side effects exists for.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        arrow = IronArrow()
+        arrow.count = 10
+        player.inventory.append(arrow)
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 45}
+
+        move = ShootBow(player)
+        move.user = player
+        move.target = enemy
+        player.current_move = move
+        move.cast()
+
+        def snapshot():
+            payload = CombatantSerializer.serialize_combatant(player)["current_move"]
+            return payload["falloff"], payload["mvrange"], move.calculate_hit_chance(enemy)
+
+        while_aiming = []
+        with capture_narration():
+            while move.current_stage == 0:
+                while_aiming.append(snapshot())
+                move.advance(player)
+            at_execute = snapshot()
+
+        assert len(while_aiming) > 1, "fixture is degenerate: no aim to preview"
+        assert while_aiming[0] == at_execute, (
+            f"the aim showed {while_aiming[0]} but the shot resolved as "
+            f"{at_execute} -- the preview is describing a different arrow"
+        )
+        assert all(beat == at_execute for beat in while_aiming), (
+            "the preview changed part-way through the aim"
+        )
+        # An iron arrow really does move the numbers, so this is not vacuous.
+        assert while_aiming[0][0]["per_ft"] == pytest.approx(
+            player.eq_weapon.range_decay * arrow.range_decay_modifier
+        )
+
+    def test_no_falloff_for_a_move_whose_accuracy_does_not_decay(self):
+        """Melee moves carry no decay, and must report none — the client uses
+        null here to pick a hard range ring over a dissolving gradient."""
+        player = Player()
+        move = PowerStrike(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["current_move"]["falloff"] is None
+
+    def test_active_move_range_computes_reach_from_the_moves_own_user(self):
+        """An NPC's reach must come from the NPC's weapon, not the player's.
+
+        `_serialize_move_range` passes `move.user` into the override; passing a
+        fixed player reference (as combat_adapter does for its own player-only
+        target list) would report Jean's bow range for a Slime's move.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        enemy = Slime()
+        enemy.eq_weapon = None  # a Slime has no weapon slot at all
+
+        enemy_move = ShootBow(enemy)  # enemy has no bow equipped
+        enemy_move.current_stage = 0
+        enemy_move.beats_left = 1
+        enemy.current_move = enemy_move
+
+        payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+        # No weapon on the Slime => the override returns None => the static
+        # bound stands. If the player were used as the reference instead, the
+        # Shortbow's much longer effective reach would leak in here.
+        assert payload["current_move"]["mvrange"]["max"] == int(enemy_move.mvrange[1])
 
     def test_status_effect_fields_on_a_real_state(self):
         player = Player()
@@ -408,6 +858,41 @@ class TestCombatantWireContract:
             f"hit_chance={hit_chance!r} looks like a 0-1 fraction, not the integer "
             "percentage CombatInputDialog.jsx renders unscaled"
         )
+
+    def test_hit_chance_is_populated_for_a_non_shootbow_move(self):
+        """Before Move.preview_hit_chance (src/moves/_base.py), hit_chance was
+        gated on `move.verbose_targeting and hasattr(move, "calculate_hit_chance")`
+        -- true for ShootBow only, so every other targeted move's target card
+        silently lacked an accuracy estimate (33 of 34 targeted moves). This
+        pins PowerStrike, one of those 33, as a regression guard: revert the
+        adapter's preview_hit_chance wiring and this fails while the
+        ShootBow-only test above keeps passing, since that one never exercised
+        the gap."""
+        player = Player()
+        player.known_moves = []
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.in_combat = True
+        player.eq_weapon = Mace()
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 3}  # inside PowerStrike's (0, 5) range
+        enemy.combat_proximity = {player: 3}
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move = PowerStrike(player)
+            move.target = enemy
+            targets = adapter._get_available_targets(move)
+
+        assert targets, "expected the in-range Slime to produce a target entry"
+        assert "hit_chance" in targets[0], (
+            "PowerStrike (a non-ShootBow, non-verbose_targeting move) should "
+            "now expose a preview hit chance via Move.preview_hit_chance"
+        )
+        assert targets[0]["hit_chance"] == move.preview_hit_chance(enemy)
 
 
 # ============================================================================
@@ -628,3 +1113,347 @@ class TestSavesWireContract:
 
         assert saves, "expected list_saves to return the mocked row"
         _assert_contract(saves[0], SAVES_ROW_CONTRACT, "list_saves()[0]")
+
+
+# =====================================================================
+# Room / location payload
+# ============================================================================
+# useApi.js's transformLocationData(response.data.room) becomes the client-side
+# `location` object. It spreads `...room` and then normalises exits/items/npcs/
+# objects into fresh array references, so every other key rides through
+# untouched — which is exactly why a rename here is silent.
+
+ROOM_CONTRACT = {
+    "x": "MapGrid.jsx:93,98,208 location.x; GamePage.jsx:190 tile cache key",
+    "y": "MapGrid.jsx:94,98,209 location.y; GamePage.jsx:190 tile cache key",
+    "name": "CollapsibleRoomDescription.jsx:56 location.name || 'Current Location'",
+    "map_name": "MapGrid.jsx:97,188 location.map_name (grid title + tile key)",
+    "description": "RoomContents.jsx:61 location.description",
+    "exits": "useApi.js:28-30 transformLocationData normalises room.exits -> [direction]",
+    "items": "useApi.js:31 items: room.items ? [...room.items] : []",
+    "npcs": "useApi.js:32 npcs: room.npcs ? [...room.npcs] : []",
+    "objects": "useApi.js:33 objects: room.objects ? [...room.objects] : []",
+    "bgm": "GamePage.jsx:423 const track = location?.bgm || 'adventure'",
+}
+
+# Room items flow through ItemSerializer.serialize_list -> RoomContents /
+# InteractPanel target cards.
+ROOM_ITEM_CONTRACT = {
+    "id": "RoomContents.jsx:44 id: item.id; InteractPanel.jsx:491 takeOne(item.id, …)",
+    "name": "RoomContents.jsx:38,42 item.name",
+    "announce": "RoomContents.jsx:38 item.announce || `There is a ${item.name} here.`",
+    "count": "InteractPanel.jsx:486 item.count > 1 ? `x${item.count}` : ''",
+    "hidden": "InteractPanel.jsx:83 allTargets.filter(t => !t.hidden)",
+    "keywords": "InteractPanel.jsx:512 selectedTarget.keywords.length > 0",
+}
+
+# Room NPCs flow through NPCSerializer.serialize_list.
+ROOM_NPC_CONTRACT = {
+    "id": "InteractPanel.jsx:339 key={`${target.id}-${idx}`}",
+    "name": "RoomContents.jsx:28 name: npc.name",
+    "type": "InteractPanel.jsx:78 npc_class: n.type -> NpcChatPanel npcId",
+    "idle_message": "RoomContents.jsx:24,27 if (npc.idle_message) …",
+    "llm_chat_enabled": "InteractPanel.jsx:192 selectedTarget?.llm_chat_enabled",
+    "loquacity_available": "InteractPanel.jsx:193 selectedTarget?.loquacity_available !== false",
+}
+
+# Room objects flow through ObjectSerializer.serialize_list.
+ROOM_OBJECT_CONTRACT = {
+    "id": "InteractPanel.jsx:339 key={`${target.id}-${idx}`}",
+    "name": "RoomContents.jsx:54 name: obj.name",
+    "idle_message": "RoomContents.jsx:50,53 if (obj.idle_message) …",
+    "keywords": "InteractPanel.jsx:62,512 objectState.keywords ?? prev.keywords",
+}
+
+
+class TestRoomWireContract:
+    """`GameService.get_current_room` against a real Player/Universe/MapTile.
+
+    ``live_world`` builds the world graph by hand rather than via
+    ``Universe.build()``, so no module-level item/merchant registry is mutated
+    and this stays safe for the default suite (see CLAUDE.md, Running Tests).
+    """
+
+    @staticmethod
+    def _populated_room():
+        from src.items import Longsword
+        from src.objects import Container
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        tile = game_map[(0, 0)]
+        tile.items_here = [Longsword()]
+        tile.npcs_here = [Slime()]
+        tile.objects_here = [Container(name="Chest", inventory=[Longsword()])]
+        return player, tile
+
+    def test_room_fields(self):
+        player, _ = self._populated_room()
+
+        room = GameService().get_current_room(player)
+
+        _assert_contract(room, ROOM_CONTRACT, "get_current_room()")
+
+    def test_exits_is_a_direction_keyed_mapping_the_client_can_take_keys_of(self):
+        """transformLocationData calls `Object.keys(room.exits)`. If the server
+        ever switched to a list of dicts the client would render `["0","1"]`
+        as its compass directions — no error, just wrong exits."""
+        player, _ = self._populated_room()
+
+        exits = GameService().get_current_room(player)["exits"]
+
+        assert isinstance(exits, dict)
+        assert "north" in exits and "southwest" in exits
+        assert set(exits["north"]) == {"x", "y"}
+
+    def test_room_item_fields(self):
+        player, _ = self._populated_room()
+
+        items = GameService().get_current_room(player)["items"]
+
+        assert items, "expected the Longsword on the tile"
+        _assert_contract(items[0], ROOM_ITEM_CONTRACT, "get_current_room()['items'][0]")
+
+    def test_room_npc_fields(self):
+        player, _ = self._populated_room()
+
+        npcs = GameService().get_current_room(player)["npcs"]
+
+        assert npcs, "expected the Slime on the tile"
+        _assert_contract(npcs[0], ROOM_NPC_CONTRACT, "get_current_room()['npcs'][0]")
+
+    def test_room_object_fields(self):
+        player, _ = self._populated_room()
+
+        objects = GameService().get_current_room(player)["objects"]
+
+        assert objects, "expected the Container on the tile"
+        _assert_contract(
+            objects[0], ROOM_OBJECT_CONTRACT, "get_current_room()['objects'][0]"
+        )
+
+
+# ============================================================================
+# Inventory payload
+# ============================================================================
+# useApi.js:59 — `inventory: data.inventory?.items || []`. Each entry is an
+# InventoryItemSerializer.serialize() dict, read by InventoryDialog (list rows)
+# and ItemDetailDialog (detail pane).
+
+INVENTORY_ITEM_CONTRACT = {
+    "id": "InventoryDialog.jsx:258,280 key={item.id}; ItemDetailDialog.jsx:104 item_id",
+    "name": "InventoryDialog.jsx:407 {item.name}",
+    "type": "ItemDetailDialog.jsx item.type",
+    "maintype": "InventoryDialog.jsx / ItemDetailDialog.jsx item.maintype (slot grouping)",
+    "subtype": "InventoryDialog.jsx / ItemDetailDialog.jsx item.subtype",
+    "quantity": "InventoryDialog.jsx item.quantity (stack count badge)",
+    "rarity": "InventoryDialog.jsx item.rarity (row colour)",
+    "weight": "InventoryDialog.jsx item.weight",
+    "value": "InventoryDialog.jsx item.value",
+    "is_equipped": "InventoryDialog.jsx item.is_equipped; ItemDetailDialog.jsx:159",
+    "is_merchandise": "ItemDetailDialog.jsx item.is_merchandise",
+    "description": "ItemDetailDialog.jsx:489,502 item.description",
+    "can_equip": "ItemDetailDialog.jsx item.can_equip (Equip button gate)",
+    "can_use": "ItemDetailDialog.jsx item.can_use (Use button gate)",
+    "can_read": "ItemDetailDialog.jsx item.can_read (Read button gate)",
+    "can_drop": "ItemDetailDialog.jsx item.can_drop (Drop button gate)",
+}
+
+
+class TestInventoryWireContract:
+    def test_inventory_envelope_and_item_fields(self):
+        from src.api.serializers.inventory import InventorySerializer
+        from src.items import Longsword
+
+        player = Player()
+        player.inventory = [Longsword()]
+
+        payload = InventorySerializer.serialize(player)
+
+        # useApi.js reads `data.inventory?.items`; anything else is invisible.
+        assert "items" in payload
+        _assert_contract(
+            payload["items"][0], INVENTORY_ITEM_CONTRACT, "inventory.items[0]"
+        )
+
+    def test_weapon_rows_carry_the_weapon_stat_block(self):
+        from src.api.serializers.inventory import InventoryItemSerializer
+        from src.items import Longsword
+
+        row = InventoryItemSerializer.serialize(Longsword(), 0)
+
+        # ItemStatGrid renders damage/damage_type for weapons.
+        assert row["damage"] == 30
+        assert row["damage_type"] == "slashing"
+
+    def test_armor_rows_carry_protection(self):
+        from src.api.serializers.inventory import InventoryItemSerializer
+        from src.items import IronCuirass
+
+        row = InventoryItemSerializer.serialize(IronCuirass(), 0)
+
+        assert row["protection"] == 14
+
+    def test_comparison_block_shape_for_an_equippable_candidate(self):
+        """ItemDetailDialog renders `item.comparison.differences.*`."""
+        from src.api.serializers.inventory import InventoryItemSerializer
+        from src.items import Shortsword, Longsword
+
+        equipped = Shortsword()
+        equipped.isequipped = True
+        candidate = Longsword()
+        player = Player()
+        player.inventory = [equipped, candidate]
+
+        row = InventoryItemSerializer.serialize(candidate, 1, player)
+
+        comparison = row["comparison"]
+        assert comparison["comparison_type"] == "item_to_item"
+        assert set(comparison) >= {"current", "candidate", "differences",
+                                   "recommendation", "reason"}
+        assert set(comparison["differences"]) >= {
+            "damage_diff", "protection_diff", "weight_diff", "value_diff",
+            "bonus_diffs", "resistance_diffs", "status_resistance_diffs",
+        }
+
+
+# ============================================================================
+# Skills payload
+# ============================================================================
+# GET /player/skills -> GameService.get_player_skills(). SkillsPanel.jsx reads
+# `skills.skill_tree` / `skills.skill_exp`; CombatMovePanel / CooldownTray /
+# BattlefieldGrid read the move dicts.
+
+SKILLS_CONTRACT = {
+    "known_moves": "CombatMovePanel.jsx move list source",
+    "skill_tree": "SkillsPanel.jsx:31,85,149 skills.skill_tree",
+    "skill_exp": "SkillsPanel.jsx:32,86,135 skills.skill_exp",
+}
+
+# The skills panel's move list is a DIFFERENT payload from the combat move list
+# above: get_player_skills() emits the at-a-glance fields (xp_gain, beats_left),
+# while _get_available_moves() emits the per-beat combat gating fields
+# (available/reason/targeted/stage_beats). Keeping one name for both let the
+# later definition shadow the earlier one, so whichever test ran against the
+# survivor was silently asserting the wrong contract.
+KNOWN_MOVE_CONTRACT = {
+    "name": "CombatMovePanel.jsx:75 move.name || move.display_name",
+    "display_name": "CombatMovePanel.jsx:75 move.display_name",
+    # `category` routes the move to a radial button via CATEGORY_GROUPS
+    # (utils/categories.js). A category no group claims leaves the move with no
+    # button at all — that is how 8 castable moves became unreachable.
+    "category": "CooldownTray.jsx:66,100 / BattlefieldGrid.jsx:89 move.category",
+    "description": "CombatMovePanel.jsx move tooltip",
+    "fatigue_cost": "CombatMovePanel.jsx:133-135 move.fatigue_cost > 0",
+    "beats_left": "CooldownTray.jsx cooldown countdown",
+    "xp_gain": "SkillsPanel/CombatMovePanel move xp readout",
+}
+
+SKILL_TREE_ENTRY_CONTRACT = {
+    "name": "SkillsPanel.jsx:175 handleLearn(skill.name, selectedCategory)",
+    "display_name": "SkillsPanel.jsx skill card title",
+    "description": "SkillsPanel.jsx:186 {skill.description}",
+    "required_exp": "SkillsPanel.jsx:180,191 LEARN ({skill.required_exp})",
+    "is_known": "SkillsPanel.jsx:151,161,167,173 skill.is_known",
+    "can_learn": "SkillsPanel.jsx:176,177,189 skill.can_learn",
+}
+
+
+class TestSkillsWireContract:
+    def test_skills_envelope_fields(self):
+        payload = GameService().get_player_skills(Player())
+
+        _assert_contract(payload, SKILLS_CONTRACT, "get_player_skills()")
+
+    def test_known_move_fields_on_a_real_move(self):
+        player = Player()
+        player.known_moves = [ShootBow(player)]
+
+        payload = GameService().get_player_skills(player)
+
+        assert payload["known_moves"], "expected the ShootBow in known_moves"
+        _assert_contract(
+            payload["known_moves"][0],
+            KNOWN_MOVE_CONTRACT,
+            "get_player_skills().known_moves[0]",
+        )
+
+    def test_move_category_is_one_the_ui_routes(self):
+        """A category string CATEGORY_GROUPS does not claim means no button."""
+        player = Player()
+        player.known_moves = [ShootBow(player)]
+
+        move = GameService().get_player_skills(player)["known_moves"][0]
+
+        assert move["category"] == ShootBow(player).category
+        assert isinstance(move["category"], str) and move["category"]
+
+    def test_skill_tree_entry_fields(self):
+        payload = GameService().get_player_skills(Player())
+
+        entries = [e for cat in payload["skill_tree"].values() for e in cat]
+        assert entries, "expected the real skill tree to offer at least one skill"
+        _assert_contract(
+            entries[0], SKILL_TREE_ENTRY_CONTRACT, "skill_tree[category][0]"
+        )
+
+class TestAbortableMoveWireContract:
+    """`battle_state.abortable_move` is what the abort control renders.
+
+    It is published inside battle_state, never at the top level, because
+    transformCombatData whitelists top-level keys and silently drops the rest —
+    the drop-trap CLAUDE.md records as having shipped twice.
+    """
+
+    def _adapter_mid_prep(self):
+        from src.api.combat_adapter import ApiCombatAdapter
+        from src.items import Crossbow, IronArrow
+        from src.moves import AimedShot, Wait
+        from src.narration import capture_narration
+
+        player = Player()
+        player.eq_weapon = Crossbow()
+        arrow = IronArrow()
+        arrow.count = 30
+        player.inventory.append(arrow)
+        player.combat_exp.setdefault("Crossbow", 0)
+        player.known_moves = [AimedShot(player), Wait(player)]
+        for move in player.known_moves:
+            move.user = player
+
+        enemy = Slime()
+        adapter = ApiCombatAdapter(player)
+        with capture_narration():
+            adapter.initialize_combat([enemy])
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 20}
+        with capture_narration():
+            adapter._handle_move_selection(0)
+        return adapter
+
+    def test_abortable_move_fields_match_what_the_control_reads(self):
+        adapter = self._adapter_mid_prep()
+        state = adapter.get_combat_state()
+        assert "abortable_move" not in state, (
+            "abortable_move must live inside battle_state — transformCombatData "
+            "drops unknown top-level keys"
+        )
+        abortable = state["battle_state"]["abortable_move"]
+        assert abortable is not None, "fixture: expected a move mid-prep"
+
+        missing = set(ABORTABLE_MOVE_CONTRACT) - set(abortable)
+        assert not missing, (
+            f"AbortMoveControl reads fields the serializer never emits: {missing}"
+        )
+
+    def test_abortable_move_is_null_when_nothing_is_in_flight(self):
+        from src.api.combat_adapter import ApiCombatAdapter
+
+        player = Player()
+        player.known_moves = []
+        player.combat_log = []
+        player.combat_beat = 1
+        adapter = ApiCombatAdapter(player)
+        state = adapter.get_combat_state()
+        assert state["battle_state"]["abortable_move"] is None

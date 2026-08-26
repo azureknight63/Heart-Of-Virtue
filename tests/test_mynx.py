@@ -221,7 +221,15 @@ def test_mynx_pet_and_play_propagate_no_exception_types(capfd):
     p = DummyPlayer()
 
     text = m.pet(p, structured=False)
-    assert isinstance(text, str)
+    assert text.startswith("MynxTest ")
+    assert m._llm_last_response["action"] == "groom"
+    assert text == m._llm_last_response["description"]
 
     obj = m.play(p, item="ribbon", structured=True)
-    assert isinstance(obj, dict)
+    assert obj is m._llm_last_response
+    assert set(obj) == {
+        "action", "intensity", "description", "duration_seconds", "audible"
+    }
+    assert obj["description"].startswith("MynxTest ")
+    # Both interactions were recorded, in order.
+    assert [h["prompt"] for h in m._llm_history] == ["pet", "play with ribbon"]

@@ -3,12 +3,14 @@ Test suite for polish fixes: item stacking, text cleanup, and wall switch events
 Covers backend functionality for combat loot stacking and event timing.
 """
 
+import copy
+
 import pytest
 from src.functions import stack_items_list
 from src.items import Gold, Consumable
-from src.player import Player
-from src.universe import Universe
 from src.story.ch01 import Ch01StartOpenWall, Ch01BridgeWall
+from src import objects
+from src.narration import capture_narration
 
 
 class TestStackItemsList:
@@ -107,100 +109,176 @@ class TestStackItemsList:
         assert len(items) == 1
         assert items[0].count == 150
 
-    def test_none_input(self):
-        """stack_items_list should handle None safely."""
-        # Should not raise; None is not a list
-        stack_items_list(None)
+    @pytest.mark.parametrize(
+        "value",
+        [
+            None,
+            "not a list",       # a str is iterable AND every char has .count
+            42,                 # len() would raise if the guard were dropped
+            {},
+            {"a": 1, "b": 2},   # len >= 2, so only the isinstance check saves it
+            ("Gold", "Gold"),   # a tuple is iterable but not a list
+        ],
+    )
+    def test_non_list_input_is_left_untouched(self, value):
+        """The guard is ``isinstance(list)``, not ``is not None``.
 
-    def test_non_list_input(self):
-        """stack_items_list should handle non-list inputs safely."""
-        stack_items_list("not a list")
-        stack_items_list(42)
-        stack_items_list({})
+        Every value here would reach the grouping loop under a looser guard and
+        blow up: ``str`` characters expose ``.count`` but no ``.name``, ``42``
+        has no ``len()``, and the two-key dict clears the ``len < 2`` check.
+        """
+        before = copy.deepcopy(value)
+
+        assert stack_items_list(value) is None
+
+        assert value == before
+
+    def test_short_list_is_left_untouched(self):
+        """Fewer than two entries: nothing to collapse, and no grammar rewrite."""
+        empty = []
+        assert stack_items_list(empty) is None
+        assert empty == []
+
+        single = [Gold(7)]
+        assert stack_items_list(single) is None
+        assert len(single) == 1
+        assert single[0].count == 7
+
+    def test_unstackable_items_without_count_are_preserved(self):
+        """Items lacking ``count`` are skipped, not dropped from the list."""
+        class _NoCount:
+            name = "Rock"
+
+        rock_a, rock_b = _NoCount(), _NoCount()
+        items = [rock_a, Gold(5), rock_b, Gold(15)]
+
+        stack_items_list(items)
+
+        assert rock_a in items and rock_b in items
+        gold = [i for i in items if isinstance(i, Gold)]
+        assert len(gold) == 1
+        assert gold[0].count == 20
+        assert len(items) == 3
 
 
 class TestWallSwitchEventDelays:
-    """Tests for wall switch event delay configuration."""
+    """The Ch01 wall-switch events must open the wall AND stage an exploration delay.
 
-    def test_ch01_start_open_wall_has_delay(self):
-        """Ch01StartOpenWall should set exploration-mode delay in process()."""
-        universe = Universe()
-        player = Player()
-        player.universe = universe
+    These tests previously assigned ``event.delay_duration = 2000`` themselves
+    and then asserted the assignment held — they never called ``process()``, so
+    gutting the event body entirely would not have failed them. The delay
+    defaults are ``3000``/``"combat"`` on the ``Event`` base class, so the
+    post-``process()`` values below are genuinely produced by the event.
+    """
 
-        # Create a minimal mock tile with required attributes for the event
-        class MockTile:
-            objects_here = []
-            block_exit = set()
+    @staticmethod
+    def _tile(block_exit=("east",), description="A dim chamber."):
+        """A minimal stand-in tile carrying the three attributes process() touches."""
 
-        tile = MockTile()
+        class _Tile:
+            pass
+
+        tile = _Tile()
+        tile.objects_here = []
+        tile.block_exit = set(block_exit)
+        tile.description = description
+        return tile
+
+    def _wired(self, event_cls, player):
+        """Build ``event_cls`` over a tile holding a Wall Depression + TileDescription."""
+        tile = self._tile()
+        switch = objects.WallSwitch(player=player, tile=tile)
+        description_object = objects.TileDescription(
+            player=player, tile=tile, description="A dim chamber."
+        )
+        tile.objects_here = [switch, description_object]
+        return event_cls(player=player, tile=tile), tile, switch, description_object
+
+    def test_ch01_start_open_wall_has_delay(self, player):
+        """Ch01StartOpenWall.process() overrides the combat default with an
+        exploration-mode delay, so the client holds the dialog open long enough
+        for the player to read that the east wall is now passable."""
+        event, _tile, _switch, _desc = self._wired(Ch01StartOpenWall, player)
+
+        assert (event.delay_duration, event.delay_mode) == (3000, "combat")
+
+        with capture_narration():
+            event.process()
+
+        assert (event.delay_duration, event.delay_mode) == (2000, "exploration")
+
+    def test_ch01_start_open_wall_unblocks_east_and_relights_the_room(self, player):
+        """The visible effect: the east exit opens, the switch is consumed, and
+        the room's TileDescription is rewritten to the sunlit version."""
+        event, tile, switch, description_object = self._wired(
+            Ch01StartOpenWall, player
+        )
+
+        with capture_narration() as messages:
+            event.process()
+
+        assert "east" not in tile.block_exit
+        assert switch not in tile.objects_here
+        # The description object survives (it is rewritten, not removed) ...
+        assert description_object in tile.objects_here
+        # ... and now describes the opened wall.
+        assert "east wall has been revealed" in description_object.description
+        assert any("wall slowly opens up" in m["text"] for m in messages)
+
+    def test_ch01_bridge_wall_has_delay(self, player):
+        """Ch01BridgeWall stages the same exploration-mode delay."""
+        event, _tile, _switch, _desc = self._wired(Ch01BridgeWall, player)
+
+        assert (event.delay_duration, event.delay_mode) == (3000, "combat")
+
+        with capture_narration():
+            event.process()
+
+        assert (event.delay_duration, event.delay_mode) == (2000, "exploration")
+
+    def test_ch01_bridge_wall_replaces_the_tile_description_object(self, player):
+        """Unlike the start room, the bridge event writes the new prose onto the
+        *tile* and deletes the TileDescription object entirely."""
+        event, tile, switch, description_object = self._wired(Ch01BridgeWall, player)
+
+        with capture_narration() as messages:
+            event.process()
+
+        assert "east" not in tile.block_exit
+        assert tile.objects_here == []
+        assert description_object not in tile.objects_here
+        assert "doorway" in tile.description
+        assert any("rock face splits open" in m["text"] for m in messages)
+
+    def test_only_the_east_exit_is_unblocked(self, player):
+        """process() removes exactly "east" — other blocked exits stay blocked."""
+        tile = self._tile(block_exit=("east", "north"))
+        switch = objects.WallSwitch(player=player, tile=tile)
+        tile.objects_here = [
+            switch,
+            objects.TileDescription(player=player, tile=tile, description="A ledge."),
+        ]
         event = Ch01StartOpenWall(player=player, tile=tile)
 
-        # Verify delay attributes are set after process
-        event.delay_duration = 2000
-        event.delay_mode = "exploration"
+        with capture_narration():
+            event.process()
 
-        assert hasattr(event, 'delay_duration')
-        assert event.delay_duration == 2000
-        assert hasattr(event, 'delay_mode')
-        assert event.delay_mode == "exploration"
+        assert tile.block_exit == {"north"}
 
-    def test_ch01_bridge_wall_has_delay(self):
-        """Ch01BridgeWall should set exploration-mode delay in process()."""
-        universe = Universe()
-        player = Player()
-        player.universe = universe
+    @pytest.mark.parametrize("event_cls", [Ch01StartOpenWall, Ch01BridgeWall])
+    def test_check_conditions_gates_on_the_switch_position(self, player, event_cls):
+        """The event only fires once the depression has actually been pressed."""
+        event, _tile, switch, _desc = self._wired(event_cls, player)
+        fired = []
+        event.pass_conditions_to_process = lambda: fired.append(True)
 
-        class MockTile:
-            objects_here = []
-            block_exit = set()
+        switch.position = False
+        event.check_conditions()
+        assert fired == [], "event fired while the depression was unpressed"
 
-        tile = MockTile()
-        event = Ch01BridgeWall(player=player, tile=tile)
-
-        # Verify delay attributes are set
-        event.delay_duration = 2000
-        event.delay_mode = "exploration"
-
-        assert hasattr(event, 'delay_duration')
-        assert event.delay_duration == 2000
-        assert hasattr(event, 'delay_mode')
-        assert event.delay_mode == "exploration"
-
-    def test_wall_switch_delay_implementation(self):
-        """Verify wall switch events are configured with delays."""
-        # This test verifies the delay configuration exists in the event classes
-        # without requiring full tile/object setup
-        universe = Universe()
-        player = Player()
-        player.universe = universe
-
-        class MockTile:
-            objects_here = []
-            block_exit = {"east"}
-
-        tile = MockTile()
-
-        # Verify both events can be instantiated with tile and player
-        event1 = Ch01StartOpenWall(player=player, tile=tile)
-        event2 = Ch01BridgeWall(player=player, tile=tile)
-
-        assert event1 is not None
-        assert event2 is not None
-
-        # The actual delay settings happen in process(); verified above
-        # This confirms the event objects themselves are valid
-
-
-class TestCleanTerminalLineBreaksIntegration:
-    """Integration tests for terminal line break cleanup (frontend only)."""
-
-    def test_utility_location(self):
-        """cleanTerminalLineBreaks should be in entityUtils (frontend utility)."""
-        # This is a frontend utility defined in entityUtils.jsx
-        # Backend verification: ensure stack_items_list and related functions work
-        # Frontend testing done in Jest test suite
-        assert True  # Placeholder for frontend integration
+        switch.position = True
+        event.check_conditions()
+        assert fired == [True]
 
 
 if __name__ == '__main__':

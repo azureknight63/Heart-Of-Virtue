@@ -5,6 +5,105 @@ import GamePanel from './GamePanel';
 import GameText from './GameText';
 import { movesInGroup } from '../utils/categories';
 import { displayNameOf } from '../utils/combatMoveStatus';
+import {
+    STAGE_KEYS,
+    getStageBeats,
+    totalStageBeats,
+    formatBeats,
+    maxTotalStageBeats,
+} from '../utils/moveCommitment';
+
+// Stage -> color. Deliberately distinct from MOVE_CATEGORY_COLOR (categories.js) —
+// this palette reads as a timeline (winding up -> striking -> recovering ->
+// locked out), not a move-type identity, so it must not be confused with the
+// category coloring used elsewhere on the same card.
+const STAGE_COLORS = {
+    prep: colors.accent,
+    execute: colors.primary,
+    recoil: colors.danger,
+    cooldown: colors.text.muted,
+};
+
+const STAGE_LABELS = {
+    prep: 'Prep',
+    execute: 'Execute',
+    recoil: 'Recoil',
+    cooldown: 'Cooldown',
+};
+
+// Width of the fullest bar in the visible list (the move at maxTotal beats).
+// Every other bar in the same panel is scaled relative to this, not to its
+// own total — see maxTotalStageBeats' docstring for why per-card
+// normalization would defeat the purpose.
+const COMMITMENT_BAR_MAX_WIDTH = 120;
+// Floor so a very cheap (or 0-beat) move still shows a visible sliver
+// instead of disappearing next to a heavy move's full-width bar.
+const COMMITMENT_BAR_MIN_WIDTH = 3;
+
+/**
+ * Compact "how long does this lock me out for" visual: a four-segment bar
+ * (prep/execute/recoil/cooldown) whose overall length is proportioned
+ * against `maxTotal` — the heaviest move currently visible in this panel —
+ * so relative cost is readable without reading any numbers, plus a total
+ * beat count for players who want the exact figure.
+ */
+const MoveCommitmentBar = ({ move, maxTotal }) => {
+    const stageBeats = getStageBeats(move);
+    const total = totalStageBeats(stageBeats);
+
+    // Nothing in the visible list declares a duration (e.g. every move here
+    // is missing stage_beats) — draw nothing rather than a row of empty bars.
+    if (maxTotal <= 0) return null;
+
+    const barWidth = total <= 0
+        ? COMMITMENT_BAR_MIN_WIDTH
+        : Math.max(COMMITMENT_BAR_MIN_WIDTH, (total / maxTotal) * COMMITMENT_BAR_MAX_WIDTH);
+
+    const breakdown = STAGE_KEYS
+        .map((key) => `${STAGE_LABELS[key]} ${formatBeats(stageBeats[key])}`)
+        .join(' · ');
+
+    return (
+        <div
+            data-testid="move-commitment-bar"
+            data-total-beats={total}
+            title={`${breakdown} (${formatBeats(total)} beats total lockout)`}
+            style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}
+        >
+            <div
+                style={{
+                    width: `${COMMITMENT_BAR_MAX_WIDTH}px`,
+                    height: '6px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                    borderRadius: '2px',
+                    overflow: 'hidden',
+                    flexShrink: 0,
+                }}
+            >
+                <div style={{ display: 'flex', width: `${barWidth}px`, height: '100%' }}>
+                    {STAGE_KEYS.map((key) => {
+                        const segmentWidth = total > 0 ? (stageBeats[key] / total) * barWidth : 0;
+                        if (segmentWidth <= 0) return null;
+                        return (
+                            <div
+                                key={key}
+                                data-testid={`commitment-segment-${key}`}
+                                style={{
+                                    width: `${segmentWidth}px`,
+                                    height: '100%',
+                                    backgroundColor: STAGE_COLORS[key],
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            </div>
+            <GameText variant="muted" size="xs" style={{ fontFamily: fonts.main, whiteSpace: 'nowrap' }}>
+                {formatBeats(total)} beats
+            </GameText>
+        </div>
+    );
+};
 
 // `isProcessing` is passed by LeftPanel while a move submission is in flight.
 // Without it the panel stays live during the API round trip and a double-click
@@ -17,6 +116,10 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
 
     const filteredMoves = useMemo(() => movesInGroup(moves, category), [moves, category]);
+    // Shared scale across THIS panel's visible moves, not per-card — see
+    // MoveCommitmentBar/maxTotalStageBeats for why per-card normalization
+    // would make every move's bar look identical.
+    const maxCommitmentBeats = useMemo(() => maxTotalStageBeats(filteredMoves), [filteredMoves]);
 
     return (
         <GamePanel
@@ -136,6 +239,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                         </GameText>
                                     )}
                                 </div>
+                                <MoveCommitmentBar move={move} maxTotal={maxCommitmentBeats} />
                                 <GameText variant={isAvailable ? 'muted' : 'dim'} size="sm">
                                     {move.description}
                                 </GameText>
