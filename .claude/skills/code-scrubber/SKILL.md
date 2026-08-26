@@ -1,13 +1,14 @@
 ---
 name: code-scrubber
-version: 1.0.0
+version: 2.0.0
 description: |
   Chunked, multi-agent adversarial review for large diffs (over 1000 changed
   lines): splits the diff into model-sized chunks, fans out to 5 dimension
   specialist subagents in parallel per chunk, runs an adversarial challenge
-  pass, applies fixes, and verifies tests. Always runs as a background-
-  dispatched Agent since the workflow is long-running. Diffs at or under
-  1000 changed lines are out of scope — use /code-review instead.
+  pass, applies fixes, and verifies tests. Orchestrated by the main session
+  (subagents cannot spawn subagents). Resolves a target git worktree first, so
+  it works from the bare repo container as well as from inside a worktree.
+  Diffs at or under 1000 changed lines are out of scope - use /code-review.
   Use when asked to "scrub this branch", "deep review this PR", "harden this
   before shipping", or when /code-review's Step 0 redirects here because the
   diff is too large for a single-pass review.
@@ -15,96 +16,125 @@ allowed-tools:
   - Agent
   - Bash
   - Read
+  - Write
+  - Edit
   - Grep
   - Glob
-  - Skill
+  - TodoWrite
+  - AskUserQuestion
 ---
 
 # /code-scrubber: Large-Diff Forge Review
 
 You are a master of the forge. Raw code walks in. Tempered steel walks out.
 
-You don't review a diff — you *work* it: heat it until the weak points glow, hammer out every flaw, quench it in tests, and grind the surface clean. Nothing leaves this shop until it rings true.
+You don't review a diff - you *work* it: heat it until the weak points glow, hammer out every flaw, quench it in tests, and grind the surface clean. Nothing leaves this shop until it rings true.
 
-Feeding an entire billet into the furnace in one pass is folly — the heat is uneven, the core stays cold, and flaws hide until the piece fails under load. So you **split the work into model-sized heats**, drive each through the full cycle on a subagent's anvil, then aggregate, look for cross-cutting patterns, and verify the full run before the steel ships.
+Feeding an entire billet into the furnace in one pass is folly - the heat is uneven, the core stays cold, and flaws hide until the piece fails under load. So you **split the work into model-sized heats**, drive each through the full cycle on a subagent's anvil, then aggregate, look for cross-cutting patterns, and verify the full run before the steel ships.
 
-## Invocation Mode — Background Dispatch Required
+## Invocation Mode - The Main Session Orchestrates
 
-**This skill's workflow (Steps 0.5–6 below) must never run directly in the main conversation.** It is long-running (potentially dozens of parallel subagent calls across multiple waves) and, per its own rules, needs to make judgment calls at points where an interactive skill would normally pause and ask the user. A background Agent cannot pause mid-task to ask a question — so every "ask the user" moment from the original interactive design is replaced with a conservative default plus a prominent flag in the final report (see Steps 2 and 4).
+**You, the session reading this, are the orchestrator. Do not delegate orchestration to a background Agent.**
 
-**When this skill is invoked** (directly via `/code-scrubber`, or via redirect from `/code-review`'s Step 0), the current session must:
+This is a hard architectural constraint, learned the expensive way: **a dispatched agent cannot spawn its own subagents in this environment.** A previous version of this skill told the main session to hand the whole workflow to one background `general-purpose` Agent. That agent then could not fan out, so it silently degraded into a *single generalist reviewer* - the exact shallow review this skill exists to prevent. The grades it reported were one model's opinion wearing five hats.
 
-1. Do Step 0 (the diff-size guard) itself, inline — it's cheap and needs to happen before deciding to dispatch anything.
-2. If Step 0 passes, dispatch **one** background Agent (`subagent_type: "general-purpose"`, `run_in_background: true`) with a self-contained prompt that:
-   - States the diff scope resolved in Step 0 (branch/PR/files/range, already measured).
-   - Instructs it to read and follow this file (`.claude/skills/code-scrubber/SKILL.md`) starting at Step 0.5, end to end, including all sub-steps.
-   - Tells it to end with the Step 6 report format, verbatim.
-3. Tell the user the scrub is running in the background and will report back — do not block, do not poll. End your turn.
-4. When the background Agent's result arrives (as a task notification, in a later turn), relay its Step 6 report to the user, including the Deferred Fixes and Auto-Proceeded Flags sections in full — those need human eyes precisely because the background run couldn't ask.
+Therefore:
 
-Everything from here down is written as instructions **for the dispatched background Agent**, not for the main session.
+- The **main session** runs Steps 0 through 6 directly.
+- The **main session** issues every `Agent` call for the dimension specialists and adversaries, as top-level parallel calls.
+- Dimension subagents review and report. They never dispatch, and they never edit.
+
+Because the orchestrator is the main session, it **can** ask the user. Where a judgment call is genuinely the user's, use `AskUserQuestion` rather than guessing. If the session is non-interactive and a question cannot be asked, apply the conservative default (do not apply the fix) and record it under `DEFERRED FIXES` in the Step 6 report.
+
+Announce the plan and progress as you go; this is a long-running workflow and the user should be able to watch it advance.
 
 ## Constraints
 
-- DO NOT review the entire diff in a single pass when it exceeds the chunk budget for your model — split first, then dispatch.
+- DO NOT review the entire diff in a single pass when it exceeds the chunk budget for your model - split first, then dispatch.
 - DO NOT push, force-push, merge, rebase, amend public commits, drop tables, or take any other irreversible action. This skill never has authorization for those regardless of mode.
+- DO NOT commit. Leave the working tree dirty for the user to inspect and commit themselves.
 - DO NOT skip the test run.
-- For any fix that is destructive, materially changes a public API, alters business logic in a way that could shift behaviour, or that you have below ~80% confidence in: **do not apply it.** Add it to the `DEFERRED FIXES` list in the Step 6 report instead (see Step 4). You cannot ask the user — do not guess on their behalf.
-- Cap fix iterations at **`MAX_ITERATIONS_PER_CHUNK`** (3) per chunk. If a chunk is still not A-grade after 3 iterations, stop iterating and list its remaining findings under `Escalations` in the Step 6 report.
-- Dispatch dimension/adversary subagents by `subagent_type` only (see the table in Step 3) — do not pass a `model` override; each subagent's own `.claude/agents/*.md` definition already pins the correct model where one is required.
+- For any fix that is destructive, materially changes a public API, alters business logic in a way that could shift behaviour, or that you have below ~80% confidence in: **ask the user** (`AskUserQuestion`). If you cannot ask, do not apply it - defer it to the report.
+- Cap fix iterations at **`MAX_ITERATIONS_PER_CHUNK`** (3) per chunk. If a chunk is still not A-grade after 3 iterations, stop iterating and list its remaining findings under `Escalations`.
+- Dispatch dimension/adversary subagents by `subagent_type` only (see the table in Step 3) - do not pass a `model` override; each subagent's own `.claude/agents/*.md` definition already pins the correct model where one is required.
 - NEVER fabricate test results, grades, or finding counts. If you didn't run it, say so.
 - **REPORT-ONLY MODE:** If the invocation says `--report-only`, skip Step 4 (no fixes applied) and proceed straight from the adversarial challenge (end of Step 3) to Step 5's cross-chunk analysis and Step 6, returning all findings, notes, and grades without touching any files.
 
 ## Reference Data
 
-All constants (chunk sizes, guard thresholds, iteration cap, dimensions, severity levels, subagent names, model overrides) live in:
-**`.claude/skills/_shared/review_rules/code_scrubber_rules.py`** (imports the base dimension set from `code_review_rules.py` in the same directory).
+All constants (chunk sizes, guard thresholds, iteration cap, dimensions, severity levels, subagent names, model overrides) live in `review_rules/code_scrubber_rules.py`, which imports the base dimension set from `code_review_rules.py` beside it.
 
-Read that file directly rather than relying on memory of it — it is the tested single source of truth, and this document may drift from it over time.
+**Resolution order - the worktree copy wins:**
+
+1. `<WORKTREE>/.claude/skills/_shared/review_rules/` - the tracked, tested source of truth. Prefer this always.
+2. `~/.claude/skills/_shared/review_rules/` - a fallback copy shipped with this skill, used only when the target has no tracked copy.
+
+Read the file directly rather than relying on memory of it. If the two copies disagree, the worktree copy is authoritative and you should flag the drift in your Step 6 report.
 
 ## Chunk-Size Heuristic
 
-Consult `code_scrubber_rules.get_chunk_size(model_name)` for the model → line-budget mapping. Treat the number as a soft target, not a hard cap: a chunk that lands at 110% (`SOFT_CAP_PCT`) to keep a function intact is fine; a chunk above 200% (`HARD_CAP_PCT`, via `chunk_is_oversized()`) is not.
+Consult `code_scrubber_rules.get_chunk_size(model_name)` for the model -> line-budget mapping. Treat the number as a soft target, not a hard cap: a chunk that lands at 110% (`SOFT_CAP_PCT`) to keep a function intact is fine; a chunk above 200% (`HARD_CAP_PCT`, via `chunk_is_oversized()`) is not.
 
 ## Splitting Strategy (in priority order)
 
 1. **By file.** One file per chunk if it fits.
 2. **By top-level symbol.** If a single file exceeds the budget, split by class/function/exported symbol. Keep imports at the top of every chunk so context is preserved.
-3. **By hunk, with neighbour padding.** Last resort. Include ±20 lines of unchanged context around each hunk.
+3. **By hunk, with neighbour padding.** Last resort. Include +/-20 lines of unchanged context around each hunk.
 4. **Never split mid-function, mid-class, or mid-multi-line statement.**
 
-If a chunk is dominated by mechanical changes (imports rewrite, formatter pass, generated code, lockfile), mark it `mechanical` and review it lightly in a single pass — don't waste a subagent on it.
+If a chunk is dominated by mechanical changes (imports rewrite, formatter pass, generated code, lockfile), mark it `mechanical` and review it lightly in a single pass - don't waste five subagents on it.
 
 ## The Work of the Forge
 
-### Step 0 — Measure the Billet and Guard Scope
+### Step 0 - Resolve the Worktree
 
-*(Done by the main session before dispatch — see Invocation Mode above. Repeated here for completeness in case this skill is entered directly.)*
+**Do this before anything else.** This repository is a bare container with sibling worktrees; `git diff` in the container fails with `fatal: this operation must be run in a work tree`. Every git command in this skill must therefore run against a resolved worktree path, as `git -C "$WORKTREE" ...`.
+
+1. Check whether the current directory is usable:
+   ```bash
+   git rev-parse --is-bare-repository 2>/dev/null
+   ```
+2. If it returns `false`, you are already inside a worktree. Set `WORKTREE="$(git rev-parse --show-toplevel)"` and continue.
+3. If it returns `true` (or the command errors), enumerate the candidates:
+   ```bash
+   git worktree list
+   ```
+   - If the user named one in the invocation (`/code-scrubber Alpha`, `/code-scrubber Delta --report-only`), match it case-insensitively against the worktree basenames and use it.
+   - Otherwise **ask the user which worktree to scrub** with `AskUserQuestion`, listing each worktree with its branch and whether its tree is dirty (`git -C <path> status --short`). Do not assume the first one, and do not assume `master`.
+4. Confirm the resolved worktree and its branch back to the user in one line.
+
+From here on, `WORKTREE` is fixed. All `git`, test, and file operations are relative to it.
+
+### Step 1 - Measure the Billet and Guard Scope
 
 Identify what to scrub from the user's argument:
 
 | Input | Action |
 |---|---|
-| (none) or `branch` | Default branch diff: `git diff $(git merge-base HEAD origin/<DEFAULT>)..HEAD`. Detect `<DEFAULT>` via `git symbolic-ref refs/remotes/origin/HEAD` (fall back to `main`, then `master`). |
-| PR number or URL | Use `mcp__github__pull_request_read` (mode: `get`) for the PR body/metadata and `mcp__github__pull_request_read` (mode: `diff` or `files`) for the changed files/diff. This environment has no `gh` CLI — GitHub access is MCP-only. |
+| (none) or `branch` | Default branch diff: `git -C "$WORKTREE" diff $(git -C "$WORKTREE" merge-base HEAD origin/<DEFAULT>)..HEAD`. Detect `<DEFAULT>` via `git -C "$WORKTREE" symbolic-ref refs/remotes/origin/HEAD` (fall back to `main`, then `master`). |
+| PR number or URL | Use `mcp__github__pull_request_read` (mode: `get`) for the PR body/metadata and (mode: `diff` or `files`) for the changed files/diff. This environment has no `gh` CLI - GitHub access is MCP-only. |
 | File path(s) | Treat the file's full content as the review target. |
-| Function/symbol name | Locate via `Grep`, then chunk to the function and ±20 lines. |
+| Function/symbol name | Locate via `Grep`, then chunk to the function and +/-20 lines. |
 | Pasted code | Treat the paste as a single chunk; skip git operations. |
 | Other branch range (e.g. `main..feature/x`) | Honour the user's range exactly. |
 
-Count lines (`git diff ... | wc -l`, or content lines for non-git input). If the diff is **at or under** `DIFF_REDIRECT_THRESHOLD` (1000 lines, from `code_review_rules.py`), this skill is the wrong tool — stop and tell the user to use `/code-review` instead (or, if you are the background Agent and somehow reached this state, say so in your report and stop; do not proceed with a scrub that a single agent could have done inline). If the diff is empty, say so and stop.
+Count changed lines (`git -C "$WORKTREE" diff ... | wc -l`, or content lines for non-git input).
+
+- If the diff is **empty**, say so and stop.
+- If the diff is **at or under** `DIFF_REDIRECT_THRESHOLD` (1000 lines, from `code_review_rules.py`), this skill is the wrong tool - stop and tell the user to use `/code-review` instead. Do not proceed with a scrub that a single agent could have done inline.
+- If the worktree has **uncommitted changes unrelated to the diff** that a test run would sweep up, surface this and ask before proceeding.
 
 Confirm the diff scope back to the user in one line before starting the scrub.
 
-### Step 0.5 — Gather Alignment Context
+### Step 1.5 - Gather Alignment Context
 
-Before chunking, collect the developer's intent so the Alignment + Correctness subagent has context to work from. Run all of the following that are applicable, then compose a `GOAL_CONTEXT` block. There is no Jira/Atlassian integration in this environment — do not attempt one.
+Collect the developer's intent so the Alignment + Correctness subagent has something to check against. There is no Jira/Atlassian integration in this environment - do not attempt one.
 
 **Sources (try in order, combine all available):**
 
-1. **Pull request description** — if scrubbing a PR, use `mcp__github__pull_request_read` (mode: `get`) and capture the body.
-2. **Latest commit message** — run `git log -1 --pretty=%B` and capture the message.
-3. **User brief** — unavailable in background-dispatch mode (see Invocation Mode). Skip this source; do not attempt to ask.
+1. **Pull request description** - if scrubbing a PR, `mcp__github__pull_request_read` (mode: `get`), capture the body.
+2. **Latest commit message** - `git -C "$WORKTREE" log -1 --pretty=%B`.
+3. **User brief** - you are the main session, so you *can* ask. If PR body and commit message are both thin, ask the user for a one-line statement of intent.
 
 **Compose the GOAL_CONTEXT block:**
 
@@ -112,43 +142,57 @@ Before chunking, collect the developer's intent so the Alignment + Correctness s
 GOAL_CONTEXT:
   pr_description: <first 400 chars of PR body, or "none">
   commit_message: <first 400 chars of latest commit, or "none">
-  user_brief: "none — orchestrator runs unattended in background mode"
+  user_brief: <the user's one-line intent, or "none">
 ```
 
-If both `pr_description` and `commit_message` are empty, use the fallback instead:
+If all three are empty, use the fallback verbatim from `ALIGNMENT_FALLBACK_BRIEF` in `code_scrubber_rules.py`:
 ```
 GOAL_CONTEXT:
-  fallback: "Does the code meet the highest professional software development standards?"
+  fallback: "<ALIGNMENT_FALLBACK_BRIEF value>"
 ```
 
-(The exact fallback string lives in `ALIGNMENT_FALLBACK_BRIEF` in `code_scrubber_rules.py` — use that value verbatim.)
+Include this block in every review packet sent to **code-scrubber-alignment-correctness**.
 
-Include this block in every review packet sent to the **code-scrubber-alignment-correctness** subagent.
-
-### Step 2 — Plan the Heats
+### Step 2 - Plan the Heats
 
 1. Pick the chunk target from `get_chunk_size()` for the model you're running as.
 2. Apply the splitting strategy and produce a chunk plan.
-3. Call `chunk_requires_confirmation()` per chunk (and for the total plan). Since this orchestrator runs unattended, a `True` result does **not** block you — proceed, but record an `AUTO-PROCEEDED (needs review): <reason>` line for the Step 6 report's Safety Flags section. This is different from the interactive design this skill is based on, which would pause and ask; here, proceeding-with-a-flag is the correct behaviour because there is no one to ask.
-4. Show the plan (chunk count, wave count, file/symbol per chunk, line counts) in your working notes so it ends up in the final report.
+3. Call `chunk_requires_confirmation()` per chunk and for the total plan. If it returns `True`, **ask the user** whether to proceed. If you cannot ask, proceed but record an `AUTO-PROCEEDED (needs review): <reason>` line for the Step 6 Safety Flags section.
+4. Group chunks into waves of up to `CHUNK_WAVE_SIZE` (5).
+5. Create a todo list with `TodoWrite` - one item per wave, plus one for "aggregate + full test run". Show the plan (chunk count, wave count, file/symbol per chunk, line counts) to the user.
 
-### Step 3 — Fire Each Heat
+### Step 2.5 - Extract Chunk Diffs to Files
 
-Group chunks into waves of up to **`CHUNK_WAVE_SIZE`** (5) chunks. For each wave, dispatch **all `5 × wave_size` subagent calls simultaneously** — issue every `Agent` tool call for the wave in a single message (both the within-chunk dimension fanout and the cross-chunk fanout happen in one parallel block; do not use `run_in_background` for these — you need all results before continuing, and ordinary parallel tool calls within one message already block until every result returns). Chunks are self-contained; results do not need to arrive in any particular order.
+**Do not skip this.** Dimension subagents are provisioned with `Read`, `Grep`, and `Glob` - **they have no `Bash`, so they cannot run `git diff` themselves.** Pasting each chunk's diff plus full file contents inline into five prompts also burns the packet budget for no reason.
 
-**Review packet context — send the right amount of context to each subagent:**
+For every chunk, write its diff to a file in the session scratchpad and pass the **path**:
+
+```bash
+mkdir -p "$SCRATCH/chunks"
+git -C "$WORKTREE" diff <range> -- <paths-for-this-chunk> > "$SCRATCH/chunks/<chunk-id>.diff"
+```
+
+Verify each file is non-empty before dispatching. A subagent handed an empty or missing diff path will hallucinate a review of nothing - check first.
+
+Review packets reference `chunk_diff_path` (absolute), plus absolute paths to any full files the subagent needs. Subagents `Read` what they need. Never paste whole files into a packet when a path will do.
+
+### Step 3 - Fire Each Heat
+
+For each wave, dispatch **all `5 x wave_size` subagent calls simultaneously** - issue every `Agent` tool call for the wave in a single message. Do not use `run_in_background` for these: you need all results before continuing, and ordinary parallel tool calls in one message already block until every result returns.
+
+**Review packet context - send the right pointers to each subagent:**
 
 | Subagent (`subagent_type`) | Context to include |
 |---|---|
-| `code-scrubber-dry-maintainability` | Diff hunk **+ full file contents** for every file touched |
-| `code-scrubber-security` | Diff hunk **+ full file contents** for every file touched |
-| `code-scrubber-clean-ai` | Diff hunk **+ enclosing top-level symbol** (class/function containing the change, plus imports) |
-| `code-scrubber-optimization` | Diff hunk **+ enclosing top-level symbol** |
-| `code-scrubber-alignment-correctness` | Diff hunk **+ enclosing top-level symbol** + the `GOAL_CONTEXT` block from Step 0.5 |
+| `code-scrubber-dry-maintainability` | `chunk_diff_path` + absolute paths to **full file contents** for every file touched |
+| `code-scrubber-security` | `chunk_diff_path` + absolute paths to **full file contents** for every file touched |
+| `code-scrubber-clean-ai` | `chunk_diff_path` + path and symbol name of the **enclosing top-level symbol** |
+| `code-scrubber-optimization` | `chunk_diff_path` + path and symbol name of the **enclosing top-level symbol** |
+| `code-scrubber-alignment-correctness` | `chunk_diff_path` + enclosing symbol + the `GOAL_CONTEXT` block from Step 1.5 |
 
-For all subagents, also include: file path(s) touched, related-file pointers if cross-file context is relevant, and the chunk ID. Do not pass a `model` parameter to the `Agent` tool call — the subagent definitions already pin their required model.
+For all subagents also include: the chunk ID, the worktree root, file paths touched, and related-file pointers if cross-file context matters. Do not pass a `model` parameter - the subagent definitions pin their own.
 
-**Collecting results:** Each subagent returns its structured block (see its own `.claude/agents/*.md` file for the exact format):
+**Collecting results:** each subagent returns its structured block (exact format in its own `.claude/agents/*.md`):
 ```
 CHUNK: <id>
 GRADES: <dimension(s)>=<A-F>
@@ -157,51 +201,52 @@ FINDINGS:
 NOTES: ...
 ```
 
-Once all wave responses are collected, aggregate findings per chunk into ranked lists (Critical first, then Major, Minor, Nit) using `sort_findings_by_severity()`. Deduplicate any finding two subagents both flagged (keep the higher-severity version and note both sources).
+Aggregate findings per chunk into ranked lists using `sort_findings_by_severity()`. Deduplicate anything two subagents both flagged (keep the higher-severity version, note both sources).
 
-Chunks dominated by mechanical changes may be reviewed in a single light pass with one subagent instead of all five — mark them `[mechanical]` in the chunk plan.
+Chunks marked `[mechanical]` may be reviewed by a single subagent instead of all five.
 
 **Adversarial challenge (runs in both normal and `--report-only` mode):**
 
-Once findings are aggregated for the wave, dispatch both adversary subagents simultaneously (unless the wave contains only `[mechanical]` chunks, in which case skip this):
+Once the wave's findings are aggregated, dispatch both adversaries simultaneously (skip if the wave is all `[mechanical]`):
 
-- `code-scrubber-adversary-style` — receives the aggregated style findings list (each with a `file:line` reference). It fetches source on demand; don't pre-read for it.
-- `code-scrubber-adversary-security` — receives the aggregated security/alignment/correctness findings list and the `GOAL_CONTEXT` block. Same on-demand-fetch behaviour.
+- `code-scrubber-adversary-style` - the aggregated style findings, each with a `file:line`. It fetches source on demand via `Read`.
+- `code-scrubber-adversary-security` - the aggregated security/alignment/correctness findings plus the `GOAL_CONTEXT` block.
 
-When both return, apply their dispositions to the aggregated findings list. `Advisory` findings are retained at Nit level and flagged `[advisory]` — they remain in grades and the report but are deprioritised for fix application. In `--report-only` mode, the updated findings feed Step 5/6 directly.
+Apply their dispositions. `Advisory` findings drop to Nit, are tagged `[advisory]`, stay in grades and the report, and are deprioritised for fixing. In `--report-only` mode the updated list feeds Steps 5-6 directly.
 
-### Step 4 — Hammer and Quench
+### Step 4 - Hammer and Quench
 
-Subagents propose; **only you (the orchestrator) edit.** This avoids concurrent writers and keeps the patch history clean.
+Subagents propose; **only you, the orchestrator, edit.** This avoids concurrent writers and keeps the patch history clean.
 
-After all wave responses arrive, apply fixes **across the whole wave together**, file by file. When two chunks touch the same file, apply all their findings to that file in one pass (severity order) rather than interleaving. Chunks touching different files are independent and may be fixed in any order.
+Apply fixes **across the whole wave together**, file by file. When two chunks touch the same file, apply all their findings to that file in one pass (severity order) rather than interleaving. Chunks touching different files are independent.
 
 For each file touched by the wave's findings, in severity order:
 
-1. Read the file fresh.
-2. **Confidence check first.** Could this change alter observable behaviour, public API, persisted data, or business logic? Are you below ~80% confident the fix is correct? If either is true, **do not apply it** — add it to the running `DEFERRED FIXES` list instead, with the finding, the file:line, your proposed patch description in prose, and why it needs a human decision. This is the background-mode equivalent of "ask the user" from the interactive design.
-3. Otherwise, apply the smallest change that resolves the finding.
-4. After applying all safe fixes for the wave, re-run the relevant tests for all modified files. If tests fail, diagnose and fix before moving on — a test failure you introduced is never something to defer.
-5. **Targeted re-dispatch (wave-level parallel):** Collect all (chunk, dimension) pairs still below A-grade across the wave (excluding anything deferred in step 2 above — those stay below A by design until a human acts on them). Dispatch all of them simultaneously in one parallel block — same wave-parallel pattern as Step 3.
-6. Repeat until every non-deferred dimension across every chunk in the wave is A — **maximum 3 iterations per chunk** (`MAX_ITERATIONS_PER_CHUNK`). After a chunk's 3rd iteration, stop and list its remaining findings under `Escalations` in the Step 6 report.
+1. `Read` the file fresh.
+2. **Confidence check first.** Could this change alter observable behaviour, public API, persisted data, or business logic? Are you below ~80% confident? If either is true, **ask the user** via `AskUserQuestion`, presenting the finding and the proposed patch. If you cannot ask, add it to `DEFERRED FIXES` with the finding, `file:line`, the proposed patch in prose, and why it needs a human.
+3. Otherwise apply the smallest change that resolves the finding.
+4. After all safe fixes for the wave, re-run the tests covering the modified files. If tests fail, diagnose and fix before moving on - a test failure you introduced is never something to defer.
+5. **Targeted re-dispatch:** collect every (chunk, dimension) pair still below A across the wave, excluding anything deferred or declined (those stay below A by design). Re-extract the chunk diffs (the files changed - regenerate them per Step 2.5) and dispatch all pairs simultaneously in one parallel block.
+6. Repeat until every non-deferred dimension in the wave is A - **maximum 3 iterations per chunk**. After a chunk's 3rd iteration, list its remaining findings under `Escalations`.
 
-### Step 5 — Inspect the Full Run
+### Step 5 - Inspect the Full Run
 
-After every heat reaches A, is escalated, or has fully-deferred findings:
+After every heat reaches A, is escalated, or is fully deferred:
 
-- Look for **cross-chunk patterns**: same anti-pattern in multiple files, repeated near-duplicate logic, inconsistent naming, scattered config values, recurring security issues. These are the things any per-chunk review will miss.
-- Propose any cross-cutting refactors as recommended follow-up rather than auto-applying them — treat a large refactor as its own future chunk pass with its own review loop.
-- Run the **full** test suite (not just changed-file tests), using `TEST_SUITE_COMMANDS` from `code_scrubber_rules.py` (`python -m pytest -q`, and `cd frontend && npm test -- --run` if frontend files were touched). If a suite doesn't apply to this diff (e.g. no frontend files touched), say so rather than skipping silently.
+- Look for **cross-chunk patterns**: the same anti-pattern in several files, repeated near-duplicate logic, inconsistent naming, scattered config values, recurring security issues. Per-chunk review structurally cannot see these - this step is the only place they surface.
+- Propose cross-cutting refactors as recommended follow-ups rather than auto-applying. A large refactor deserves its own branch and its own review.
+- Run the **full** test suite using `TEST_SUITE_COMMANDS` from `code_scrubber_rules.py`, from the worktree root. If a suite doesn't apply to this diff (e.g. no frontend files touched), say so rather than skipping silently.
 
-### Step 6 — Mark the Steel
+### Step 6 - Mark the Steel
 
-Output a single, structured summary. This is what the main session relays to the user, so make it stand alone:
+Output a single structured summary:
 
 ```
 SCRUB COMPLETE
 
+Worktree:          <path>  (branch: <branch>)
 Diff scope:        <what was scrubbed>
-Chunks reviewed:   <N>  (avg <M> lines)
+Chunks reviewed:   <N>  (avg <M> lines, <W> waves)
 Iterations used:   <total across all chunks>
 Tests:             <pass>/<total>  (suite: <command(s) actually run>)
 
@@ -212,31 +257,29 @@ Per-chunk grades (final):
 Fixes applied:     <count>
 Escalations (not A-grade after 3 iterations): <count>
 
-DEFERRED FIXES (needs your review — could not auto-apply in background mode):
+DEFERRED FIXES (need your review - not auto-applied):
   - [Critical|Major|Minor|Nit] <dimension> | <file>:<line> | <finding> | proposed fix: <description> | why deferred: <reason>
   ...  (or "NONE")
 
-AUTO-PROCEEDED SAFETY FLAGS (plan exceeded a normal confirmation threshold and ran anyway):
+AUTO-PROCEEDED SAFETY FLAGS (exceeded a confirmation threshold and ran anyway):
   - <reason from chunk_requires_confirmation(), Step 2>
   ...  (or "NONE")
 
 Cross-cutting observations:
   - <pattern 1>
-  - <pattern 2>
 
 Recommended follow-ups (not auto-applied):
   - <item>
 ```
 
-Do not commit, push, or open a PR. Any deferred fix or safety flag is a to-do for a human, not something to resolve on your own initiative afterward.
+The forge is quiet. The steel is ready. Do not commit, push, or open a PR unless the user explicitly asks. A deferred fix or safety flag is a to-do for a human, not something to quietly resolve afterward.
 
 ## Walk Away from the Forge When
 
+- No worktree can be resolved (Step 0), or `git` is unavailable.
 - The diff is empty or untouched.
-- The diff is at or under `DIFF_REDIRECT_THRESHOLD` (1000 lines) — this is `/code-review`'s job, not this skill's (Step 0).
-- The repository has uncommitted unrelated changes that would be swept up by a test run — surface this in the report and stop before running fixes.
-- Tests cannot be discovered or fail to start for environmental reasons — report and stop, do not paper over.
-- A finding requires domain knowledge or business-rule context that isn't available — add it to `DEFERRED FIXES`, don't guess.
-- `git` is not available or the working directory is not a git repository (for branch-input mode) — report and stop.
-- The GitHub MCP tools error or are unavailable (for PR-input mode) — report the error and stop.
-- No test suite can be discovered after inspecting project context — report this explicitly in the Step 6 output rather than skipping silently.
+- The diff is at or under `DIFF_REDIRECT_THRESHOLD` (1000 lines) - that's `/code-review`'s job.
+- The worktree has uncommitted unrelated changes a test run would sweep up - surface and ask before fixing.
+- Tests cannot be discovered or fail to start for environmental reasons - report and stop, do not paper over.
+- A finding needs domain or business-rule context you don't have - ask, or defer it. Don't guess.
+- The GitHub MCP tools error or are unavailable (PR-input mode) - report and stop.
