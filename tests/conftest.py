@@ -20,6 +20,16 @@ os.environ["MYNX_LLM_ENABLED"] = "0"
 os.environ["MYNX_FALLBACK_DELAY"] = "0"
 # Prevent CombatStrategist from making discovery requests
 os.environ["MYNX_LLM_PROVIDER"] = "none"
+# Blank the REAL provider credentials .env loads at import (ai/llm_client.py,
+# src/api/db.py): the provider chain treats a present key as dialable, so a
+# leaked key would let a unit test spend real quota. Set to "" rather than
+# .pop() — load_dotenv(override=False) refills keys that are *absent* (the
+# GITHUB_TOKEN lesson). tests/integration/conftest.py restores them from the
+# .env file itself for the opt-in live suite.
+os.environ["OPENROUTER_API_KEY"] = ""
+os.environ["GROQ_API_KEY"] = ""
+os.environ["CEREBRAS_API_KEY"] = ""
+os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
 
 # Hermes itself exposes a top-level utils.py; the project map editor uses the
 # repository's utils/ package. Remove the already-loaded helper module so the

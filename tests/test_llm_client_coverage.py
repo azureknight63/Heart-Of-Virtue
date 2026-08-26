@@ -1439,6 +1439,50 @@ class TestOpenrouterChatSingle:
             result = client._openrouter_chat_single("model/x", "sys", "user", structured=True)
         assert result == {"action": "play"}
 
+    def test_sdk_404_skips_http_fallback(self, monkeypatch):
+        """A deterministic SDK failure (401/402/403/404) must not be retried
+        over HTTP -- the identical request would just fail the same way."""
+        client = self._client(monkeypatch)
+
+        class FakeNotFoundError(Exception):
+            status_code = 404
+
+        sdk = MagicMock()
+        sdk.chat.completions.create.side_effect = FakeNotFoundError("model not found")
+        with patch.object(client, "_get_sdk_client", return_value=sdk), \
+             patch("requests.post") as mock_post:
+            result = client._openrouter_chat_single("model/x", "sys", "user", structured=False)
+        assert result is None
+        mock_post.assert_not_called()
+
+    def test_sdk_400_reasoning_error_strips_reasoning_from_http_fallback(self, monkeypatch):
+        """A 400 that names the reasoning block as the culprit should proceed
+        to the HTTP fallback (unlike 401/402/403/404) but with the reasoning
+        params already stripped, since we know they're what the endpoint
+        rejected -- _post_chat_completion's own retry-on-400 is then a no-op
+        for this case, saving the extra round trip."""
+        client = self._client(monkeypatch)
+
+        class FakeResponse:
+            status_code = 400
+
+        class FakeBadRequestError(Exception):
+            status_code = 400
+            response = FakeResponse()
+
+        sdk = MagicMock()
+        sdk.chat.completions.create.side_effect = FakeBadRequestError(
+            "Reasoning is mandatory for this endpoint and cannot be disabled"
+        )
+        http_resp = MagicMock(status_code=200)
+        http_resp.json.return_value = {"choices": [{"message": {"content": "http after reasoning strip"}}]}
+        with patch.object(client, "_get_sdk_client", return_value=sdk), \
+             patch("requests.post", return_value=http_resp) as mock_post:
+            result = client._openrouter_chat_single("model/x", "sys", "user", structured=False)
+        assert result == "http after reasoning strip"
+        sent_payload = mock_post.call_args.kwargs["json"]
+        assert "reasoning" not in sent_payload
+
     def test_extra_headers_included_when_site_configured(self, monkeypatch):
         client = self._client(monkeypatch)
         client._openrouter_site = "https://example.com"

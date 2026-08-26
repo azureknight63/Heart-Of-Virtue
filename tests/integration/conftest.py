@@ -36,6 +36,8 @@ _LIVE_KEYS = (
     "OPENROUTER_API_KEY",
     "OPENROUTER_SITE",
     "OPENROUTER_SITE_TITLE",
+    "GROQ_API_KEY",
+    "CEREBRAS_API_KEY",
     "OLLAMA_BASE_URL",
 )
 
@@ -73,6 +75,7 @@ def live_env():
         GenericLLMClient.reset_class_state()
         with NpcChatLLMAdapter._instances_lock:
             NpcChatLLMAdapter._instances.clear()
+            NpcChatLLMAdapter._prewarm_attempted = False
 
     # Everything from the first os.environ write onward sits inside the
     # try/finally: if the mutation loop or the entry _reset() raises, the

@@ -143,12 +143,12 @@ class TestSendDigest:
             sent["json"] = json
             return _Resp()
 
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/hook")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
         monkeypatch.setattr(digest.requests, "post", fake_post)
         _record("groq", 100, 50)
 
         assert digest.send_digest() is True
-        assert sent["url"] == "https://discord.test/hook"
+        assert sent["url"] == "https://discord.com/api/webhooks/1/test-hook"
         assert "embeds" in sent["json"]
         assert len(sent["json"]["embeds"]) == 1
 
@@ -156,18 +156,18 @@ class TestSendDigest:
         def boom(*a, **k):
             raise RuntimeError("discord is down")
 
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/hook")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
         monkeypatch.setattr(digest.requests, "post", boom)
         assert digest.send_digest() is False
 
     def test_http_error_does_not_raise(self, monkeypatch):
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/hook")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
         monkeypatch.setattr(digest.requests, "post", lambda *a, **k: _Resp(500))
         assert digest.send_digest() is False
 
     def test_a_failed_post_keeps_the_window_open(self, monkeypatch):
         """An outage costs a digest, not the traffic it was describing."""
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/hook")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
         monkeypatch.setattr(digest.requests, "post", lambda *a, **k: _Resp(500))
         _record("groq", 100, 50)
         assert digest.send_digest() is False
@@ -175,11 +175,77 @@ class TestSendDigest:
         assert providers["groq"]["requests"] == 1
 
     def test_sending_resets_the_window(self, monkeypatch):
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/hook")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
         monkeypatch.setattr(digest.requests, "post", lambda *a, **k: _Resp())
         _record("groq", 100, 50)
         digest.send_digest()
         assert GenericLLMClient.provider_saturation()["providers"]["groq"]["requests"] == 0
+
+    def test_failure_log_does_not_leak_the_webhook_url(self, monkeypatch, caplog):
+        """A requests exception's str() embeds the full request URL -- a
+        bearer credential for an incoming webhook. The failure log must never
+        interpolate it, only the exception type and (if present) status."""
+        webhook = "https://discord.com/api/webhooks/1/test-hook"
+
+        class _LeakyError(RuntimeError):
+            pass
+
+        def boom(*a, **k):
+            # Stands in for requests.exceptions.RequestException, whose
+            # message embeds the request (and, for HTTPError, the response).
+            raise _LeakyError("POST %s failed: 429 Too Many Requests" % webhook)
+
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", webhook)
+        monkeypatch.setattr(digest.requests, "post", boom)
+        with caplog.at_level("WARNING"):
+            assert digest.send_digest() is False
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        assert webhook not in logged
+        assert "_LeakyError" in logged
+
+    def test_failed_post_does_not_lose_usage_for_the_next_digest(self, monkeypatch):
+        """Counts recorded during a failed post must show up in the next one,
+        not vanish -- see the ``merge_usage`` call in ``send_digest``."""
+        webhook = "https://discord.com/api/webhooks/1/test-hook"
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", webhook)
+
+        calls = {"n": 0}
+        posted = []
+
+        def flaky_post(url, json=None, headers=None, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _Resp(500)
+            posted.append(json)
+            return _Resp()
+
+        monkeypatch.setattr(digest.requests, "post", flaky_post)
+
+        _record("groq", 100, 50)
+        assert digest.send_digest() is False
+        # Not lost: visible in the live window immediately after the failure.
+        assert GenericLLMClient.provider_saturation()["providers"]["groq"]["requests"] == 1
+
+        _record("groq", 100, 49)
+        assert digest.send_digest() is True
+        blob = str(posted[0])
+        assert "2 call(s)" in blob  # the failed attempt's call plus this one
+
+    def test_call_recorded_during_a_failed_post_is_not_lost(self, monkeypatch):
+        """A call landing while the POST is still in flight lands in the new
+        (already-reset) window and must survive the merge-back on failure."""
+        webhook = "https://discord.com/api/webhooks/1/test-hook"
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", webhook)
+
+        def flaky_post(url, json=None, headers=None, timeout=None):
+            _record("groq", 100, 40)  # a call landing mid-POST
+            return _Resp(500)
+
+        monkeypatch.setattr(digest.requests, "post", flaky_post)
+        _record("groq", 100, 50)  # a call recorded before send_digest started
+
+        assert digest.send_digest() is False
+        assert GenericLLMClient.provider_saturation()["providers"]["groq"]["requests"] == 2
 
 
 class _FakeThreading:
@@ -225,7 +291,7 @@ class TestDigestScheduler:
 
     def test_zero_interval_disables_it(self, monkeypatch):
         started = []
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h")
         monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "0")
         monkeypatch.setattr(digest, "threading", _FakeThreading(started))
         assert digest.start_digest_scheduler() is False
@@ -241,7 +307,7 @@ class TestDigestScheduler:
             def start(self):
                 made["started"] = True
 
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h")
         monkeypatch.delenv("HOV_ANALYTICS_INTERVAL_HOURS", raising=False)
         monkeypatch.setattr(digest, "threading", _FakeThreading(thread_cls=_T))
         assert digest.start_digest_scheduler() is True
@@ -258,7 +324,7 @@ class TestDigestScheduler:
             def start(self):
                 pass
 
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h")
         monkeypatch.setattr(digest, "threading", _FakeThreading(thread_cls=_T))
         digest.start_digest_scheduler()
         digest.start_digest_scheduler()
@@ -267,6 +333,63 @@ class TestDigestScheduler:
     def test_bad_interval_falls_back_to_the_default(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "not-a-number")
         assert digest._baseline_interval_seconds() == 168 * 3600
+
+
+class TestWebhookValidation:
+    """The webhook must be an https:// discord.com/discordapp.com URL, or a
+    copy-paste mistake could turn this into a beacon for an arbitrary host."""
+
+    def setup_method(self):
+        digest._scheduler_started = False
+
+    def teardown_method(self):
+        digest._scheduler_started = False
+
+    def test_discord_com_is_valid(self):
+        assert digest._webhook_url_is_valid(
+            "https://discord.com/api/webhooks/1/tok"
+        ) is True
+
+    def test_discordapp_com_is_valid(self):
+        assert digest._webhook_url_is_valid(
+            "https://discordapp.com/api/webhooks/1/tok"
+        ) is True
+
+    def test_subdomain_is_allowed(self):
+        assert digest._webhook_url_is_valid(
+            "https://canary.discordapp.com/api/webhooks/1/tok"
+        ) is True
+
+    def test_http_scheme_is_rejected(self):
+        assert digest._webhook_url_is_valid(
+            "http://discord.com/api/webhooks/1/tok"
+        ) is False
+
+    def test_non_discord_host_is_rejected(self):
+        assert digest._webhook_url_is_valid("https://evil.example/steal") is False
+
+    def test_lookalike_host_is_rejected(self):
+        """``discord.com.evil.example`` must not pass a naive suffix check."""
+        assert digest._webhook_url_is_valid(
+            "https://discord.com.evil.example/hook"
+        ) is False
+
+    def test_garbage_url_is_rejected(self):
+        assert digest._webhook_url_is_valid("not a url") is False
+
+    def test_send_digest_treats_a_bad_host_as_unset(self, monkeypatch):
+        posted = []
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://evil.example/steal")
+        monkeypatch.setattr(digest.requests, "post", lambda *a, **k: posted.append(1))
+        assert digest.send_digest() is False
+        assert posted == []
+
+    def test_scheduler_treats_a_bad_host_as_unset(self, monkeypatch):
+        started = []
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://evil.example/steal")
+        monkeypatch.setattr(digest, "threading", _FakeThreading(started))
+        assert digest.start_digest_scheduler() is False
+        assert started == []
 
 
 class TestAdaptiveCadence:
@@ -312,6 +435,28 @@ class TestAdaptiveCadence:
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "0.5")
         assert digest._baseline_interval_seconds() == 72 * 3600
         assert digest._alert_interval_seconds() == 1800
+
+    def test_alert_interval_zero_means_no_escalation_not_every_tick(self, monkeypatch):
+        """0 here is not the same 0 as HOV_ANALYTICS_INTERVAL_HOURS=0: that one
+        disables the feature outright, this one just declines to speed up."""
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "72")
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "0")
+        assert digest._alert_interval_seconds() == 72 * 3600
+
+    def test_negative_alert_interval_also_falls_back_to_baseline(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "72")
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "-3")
+        assert digest._alert_interval_seconds() == 72 * 3600
+
+    def test_required_interval_does_not_collapse_to_every_tick_while_saturated(
+        self, monkeypatch
+    ):
+        """A saturated chain with the alert cadence disabled must keep the
+        routine cadence, not fire a digest on every SCHEDULER_TICK_SECONDS."""
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "0")
+        self._saturate("groq", 100, 5)  # saturated -- would normally escalate
+        assert digest._should_alert() is True
+        assert digest._required_interval_seconds() == digest._baseline_interval_seconds()
 
     def test_no_alert_with_headroom(self):
         self._saturate("groq", 100, 90)  # 10% used
@@ -385,7 +530,7 @@ class TestAlertDigestIsMarked:
         GenericLLMClient._record_provider_usage(
             "groq", _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"})
         )
-        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h")
         monkeypatch.setattr(digest.requests, "post", fake_post)
         digest.send_digest()
         assert sent["json"]["embeds"][0]["color"] == digest.ALERT_COLOR

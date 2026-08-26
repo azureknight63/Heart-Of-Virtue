@@ -32,6 +32,7 @@ use and caches it afterward (TIKTOKEN_CACHE_DIR overrides the location) —
 the measurement itself makes no LLM calls and spends no quota.
 """
 
+import argparse
 import json
 import logging
 import os
@@ -47,10 +48,6 @@ except ImportError:
 
 ENC = tiktoken.get_encoding("o200k_base")
 
-# The adapters log a warning every time the stubbed _call_llm returns None.
-# That is the expected path here, so keep it out of the report.
-logging.disable(logging.WARNING)
-
 
 def ntok(s):
     return len(ENC.encode(s or ""))
@@ -59,7 +56,10 @@ def ntok(s):
 # Chat-template overhead: role headers and separators, ~4 tokens per message
 # plus a few for the reply primer. Consistent across the OpenAI, Llama and
 # Qwen templates to within a token or two.
-OVERHEAD = 4 * 2 + 3
+_TOKENS_PER_MESSAGE_HEADER = 4  # role header + separator tokens, per message
+_MESSAGE_COUNT = 2  # system prompt + user prompt sent per call
+_REPLY_PRIMER_TOKENS = 3  # tokens reserved for the assistant's reply primer
+OVERHEAD = _TOKENS_PER_MESSAGE_HEADER * _MESSAGE_COUNT + _REPLY_PRIMER_TOKENS
 
 ROWS = []
 DUMP = []
@@ -88,6 +88,8 @@ def record(path, call, system, user, max_tokens, note=""):
 import ai.llm_client as llm  # noqa: E402
 
 from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
+import src.npc._chat_guard as chat_guard  # noqa: E402
+from ai.combat_strategist import CombatStrategist  # noqa: E402
 
 HUMAN_DIR = os.path.join(REPO, "ai", "npc", "human")
 
@@ -122,6 +124,16 @@ def make_npc(config_path=None, personality=None, growth=False, level=1, moves=()
     return n
 
 
+def _biggest_npc_config():
+    """Largest character config on disk -- the realistic upper bound for the
+    story-NPC prompt block."""
+    return max(
+        (f for f in os.listdir(HUMAN_DIR)
+         if f.endswith(".json") and f != "world_facts.json"),
+        key=lambda f: os.path.getsize(os.path.join(HUMAN_DIR, f)),
+    )
+
+
 # The adapter's generate_* methods build the user prompt and hand it to
 # _call_llm. Swapping _call_llm for a recorder captures the exact pair that
 # would have gone over the wire, with no network and no mocked HTTP layer.
@@ -130,21 +142,14 @@ CAPTURED = {}
 
 def _capture(self, system_prompt, user_prompt, max_tokens=512, temperature=0.7):
     # clear() first so a generate_* path that returns before reaching
-    # _call_llm makes cap() raise KeyError instead of silently re-reporting
-    # the previous call's numbers.
+    # _call_llm makes capture_call() raise KeyError instead of silently
+    # re-reporting the previous call's numbers.
     CAPTURED.clear()
     CAPTURED.update(sys=system_prompt, user=user_prompt, max_tokens=max_tokens)
     return None
 
 
-llm.NpcChatLLMAdapter._call_llm = _capture
-adapter = llm.NpcChatLLMAdapter.__new__(llm.NpcChatLLMAdapter)
-adapter._world_facts = json.load(
-    open(os.path.join(HUMAN_DIR, "world_facts.json"), encoding="utf-8"))
-adapter.provider, adapter.model, adapter.enabled = "openrouter", "x", True
-
-
-def cap(path, call, note=""):
+def capture_call(path, call, note=""):
     record(path, call, CAPTURED["sys"], CAPTURED["user"], CAPTURED["max_tokens"], note)
 
 
@@ -158,75 +163,6 @@ _TURN = {
 
 def hist(n):
     return [dict(_TURN) for _ in range(n)]
-
-
-# ---------------------------------------------------------------------------
-# 1. NPC chat
-# ---------------------------------------------------------------------------
-nomad = make_npc(personality={
-    "given_name": "Ren", "voice": "sparse, declarative",
-    "knowledge": ["water routes", "herd sickness"], "loquacity_base": 65})
-adapter.generate_turn(nomad._build_system_prompt(_Player()), [], is_opening=True)
-cap("NPC chat", "generate_turn (generic nomad, opening)")
-
-# Largest character config on disk -- the realistic upper bound for the block.
-BIG = max((f for f in os.listdir(HUMAN_DIR)
-           if f.endswith(".json") and f != "world_facts.json"),
-          key=lambda f: os.path.getsize(os.path.join(HUMAN_DIR, f)))
-
-story_npc = make_npc(config_path=os.path.join(HUMAN_DIR, BIG))
-sys_story = story_npc._build_system_prompt(_Player())
-adapter.generate_turn(sys_story, hist(6), is_opening=False,
-                      jean_text="Then whose tracks were they? You'd know if it were bandits.")
-cap("NPC chat", "generate_turn (story NPC %s, 6-turn history)" % BIG)
-
-ally = make_npc(
-    config_path=os.path.join(HUMAN_DIR, BIG), growth=True, level=15,
-    moves=[_Move("Rending Arc", "A wide sweeping strike that carries through multiple foes."),
-           _Move("Ironhold", "Plant and absorb an incoming blow, converting it to counter-pressure."),
-           _Move("Quicken", "Shorten the wind-up on the next technique at the cost of stability."),
-           _Move("Sunder Guard", "A precise thrust aimed at a gap in the opponent's defense."),
-           _Move("Second Wind", "Recover breath and footing after a punishing exchange.")])
-adapter.generate_turn(ally._build_system_prompt(_Player()), hist(12), is_opening=False,
-                      jean_text="You've changed since the caves. Tell me plainly what you can do now.")
-cap("NPC chat", "generate_turn (WORST: ally, full history)", "upper bound")
-
-adapter.generate_personality("weathered nomad herder")
-cap("NPC chat", "generate_personality (one-shot)")
-
-adapter.generate_npc_turn(sys_story, hist(6), is_opening=False,
-                          jean_text="Then whose tracks were they?")
-cap("NPC chat", "generate_npc_turn (legacy split 1/2)")
-
-adapter.generate_jean_options(
-    "Mara", "wary, speaks in short bursts",
-    "Dust, mostly. And tracks that didn't belong to any herd I know.", hist(6), 7)
-cap("NPC chat", "generate_jean_options (legacy split 2/2)")
-
-# ---------------------------------------------------------------------------
-# 2. Mynx
-# ---------------------------------------------------------------------------
-mynx = llm.MynxLLMAdapter.__new__(llm.MynxLLMAdapter)
-mynx._advisor = mynx._load_mynx_advisor()
-mynx._allowed_actions = set(
-    mynx._advisor.get("behavior_profile", {}).get("typical_actions", []) or ["investigate_object"])
-mynx._example_struct = mynx._advisor.get("example_structured_response", {})
-mynx_sys = mynx._advisor.get("system_prompt_snippet", "")
-mynx_ctx = ("Jean is resting by a low fire in a rock hollow. The mynx has eaten recently, "
-            "is not alarmed, and a loose strap on Jean's pack is within reach.")
-record("Mynx", "generate_structured", mynx_sys, mynx._build_user_prompt(mynx_ctx, True), 1024)
-record("Mynx", "generate_plain", mynx_sys, mynx._build_user_prompt(mynx_ctx, False), 256)
-
-# ---------------------------------------------------------------------------
-# 3. Combat tactical advisor
-# ---------------------------------------------------------------------------
-from ai.combat_strategist import CombatStrategist  # noqa: E402
-
-strat = CombatStrategist.__new__(CombatStrategist)
-# A stub client, not None: CombatStrategist falls back to constructing a real
-# GenericLLMClient, whose __init__ runs OpenRouter model discovery and a live
-# validation chat. Measuring prompt sizes must not spend free-tier requests.
-CombatStrategist.__init__(strat, client=type("_Stub", (), {"available": lambda self: False})())
 
 
 def _move(name, cat, cost, desc, targets=()):
@@ -301,15 +237,24 @@ def ctx_for(n_enemies, n_allies, n_history, moves, player_se):
     }
 
 
-for _label, _ctx, _note in [
-    ("get_suggestions (light: 1 enemy, 0 allies, 4 moves)",
-     ctx_for(1, 0, 5, MOVES[:4], []), ""),
-    ("get_suggestions (typical: 2 enemies, 1 ally, 9 moves)",
-     ctx_for(2, 1, 20, MOVES, PLAYER_SE), ""),
-    ("get_suggestions (WORST: 4 enemies, 2 allies, 9 moves)",
-     ctx_for(4, 2, 20, MOVES, PLAYER_SE), "upper bound"),
-]:
-    record("Combat TA", _label, strat.system_prompt, strat._build_user_prompt(_ctx), 1024, _note)
+# get_suggestions (ai/combat_strategist.py, ~line 174) appends a JSON-
+# instruction wrapper to _build_user_prompt's output before sending it --
+# measuring the bare prompt alone understates the real wire size by ~25
+# tokens. _wrap_ta_prompt mirrors that wrapper f-string exactly.
+#
+# base_suggested_move_count defaults to 1 (src/player/__init__.py) and is
+# read verbatim as get_suggestions's max_suggestions argument
+# (src/api/combat_adapter.py, ~line 1884) with no call site overriding it, so
+# 1 is the realistic value here, not just a placeholder.
+_MAX_SUGGESTIONS = 1
+
+
+def _wrap_ta_prompt(user_prompt, max_suggestions=_MAX_SUGGESTIONS):
+    return (
+        f"{user_prompt}\nReturn the result as a JSON object with a key 'suggestions' "
+        f"containing a list of exactly {max_suggestions} move objects."
+    )
+
 
 # ---------------------------------------------------------------------------
 # Realistic completions (see module docstring -- these are written, not measured)
@@ -366,54 +311,219 @@ OUTPUTS = [
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
-def table(rows, cols, widths):
-    print("  ".join(
-        h.ljust(w) if i == 1 else h.rjust(w)
-        for i, (h, w) in enumerate(zip(cols, widths))))
+def table(rows, cols, widths, align):
+    """Render rows under headers, blank-lining whenever the PATH column
+    (each row's first field) changes.
+
+    ``align`` is an explicit per-column "l"/"r" spec, one entry per column --
+    replacing the old index-based guess ("columns 0-1 are text, the rest are
+    numeric") that only happened to hold because both call sites in this file
+    are shaped that way.
+    """
+    def _pad(value, width, a):
+        return str(value).ljust(width) if a == "l" else str(value).rjust(width)
+
+    print("  ".join(_pad(h, w, a) for h, w, a in zip(cols, widths, align)))
     print("-" * (sum(widths) + 2 * (len(widths) - 1)))
     last = None
     for r in rows:
         if last and r[0] != last:
             print()
         last = r[0]
-        print("  ".join(str(v).ljust(w) if i < 2 else str(v).rjust(w)
-                        for i, (v, w) in enumerate(zip(r, widths))))
+        print("  ".join(_pad(v, w, a) for v, w, a in zip(r, widths, align)))
 
 
-W = max(len(r["call"]) for r in ROWS)
-table([(r["path"], r["call"], r["sys_tok"], r["user_tok"], r["in_tok"],
-        r["max_out"], r["worst_rt"]) for r in ROWS],
-      ["PATH", "CALL", "sys", "user", "IN", "max_out", "CEILING"],
-      [9, W, 6, 6, 6, 7, 7])
+def _parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Token-budget baseline for every LLM call path in the game.")
+    parser.add_argument(
+        "--outputs", action="store_true",
+        help="also print a realistic-completion margin table")
+    parser.add_argument(
+        "--dump", action="store_true",
+        help="also write full prompts to tools/_prompt_dump/")
+    parser.add_argument(
+        "--json", metavar="PATH",
+        help="also write the raw measurement rows to PATH as JSON")
+    return parser.parse_args(argv)
 
-_chars = sum(r["sys_chars"] + r["user_chars"] for r in ROWS)
-_toks = sum(r["sys_tok"] + r["user_tok"] for r in ROWS)
-print("\nCalibration: %d chars / %d tokens = %.2f chars per token"
-      % (_chars, _toks, _chars / _toks))
 
-if "--outputs" in sys.argv:
-    print()
-    OW = max(len(c) for _, c, _ in OUTPUTS)
-    caps = {r["call"].split(" (")[0]: r["max_out"] for r in ROWS}
-    rows = []
-    for path, call, text in OUTPUTS:
-        cap_ = caps.get(call.split(" (")[0], 0)
-        t = ntok(text)
-        rows.append((path, call, t, cap_, "%.1fx" % (cap_ / t) if t else "-"))
-    table(rows, ["PATH", "CALL", "real", "max_out", "margin"], [9, OW, 6, 7, 7])
-    print("\n'real' completions are written to schema, not measured from live calls.")
+def _run_measurements():
+    """Drive every LLM call path once, recording token counts into ROWS/DUMP.
 
-if "--dump" in sys.argv:
-    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_prompt_dump")
-    os.makedirs(d, exist_ok=True)
-    for i, r in enumerate(ROWS):
-        slug = "".join(c if c.isalnum() else "_" for c in r["call"])[:60]
-        with open(os.path.join(d, "%02d_%s.txt" % (i, slug)), "w", encoding="utf-8") as f:
-            f.write("### SYSTEM (%d tok)\n%s\n\n### USER (%d tok)\n%s\n"
-                    % (r["sys_tok"], DUMP[i][0], r["user_tok"], DUMP[i][1]))
-    print("\nDumped %d prompts to %s" % (len(ROWS), d))
+    Monkeypatches ``llm.NpcChatLLMAdapter._call_llm`` for the duration so the
+    real generate_*/revise_turn methods can be driven with no network and no
+    mocked HTTP layer, then restores the original method on the way out.
+    """
+    ROWS.clear()
+    DUMP.clear()
+    CAPTURED.clear()
 
-if "--json" in sys.argv:
-    dest = sys.argv[sys.argv.index("--json") + 1]
-    json.dump(ROWS, open(dest, "w"), indent=2)
-    print("\nWrote %s" % dest)
+    _orig_call_llm = llm.NpcChatLLMAdapter._call_llm
+    llm.NpcChatLLMAdapter._call_llm = _capture
+    try:
+        adapter = llm.NpcChatLLMAdapter.__new__(llm.NpcChatLLMAdapter)
+        adapter._world_facts = json.load(
+            open(os.path.join(HUMAN_DIR, "world_facts.json"), encoding="utf-8"))
+        adapter.provider, adapter.model, adapter.enabled = "openrouter", "x", True
+
+        # -------------------------------------------------------------
+        # 1. NPC chat
+        # -------------------------------------------------------------
+        nomad = make_npc(personality={
+            "given_name": "Ren", "voice": "sparse, declarative",
+            "knowledge": ["water routes", "herd sickness"], "loquacity_base": 65})
+        adapter.generate_turn(nomad._build_system_prompt(_Player()), [], is_opening=True)
+        capture_call("NPC chat", "generate_turn (generic nomad, opening)")
+
+        # Largest character config on disk -- the realistic upper bound for the block.
+        BIG = _biggest_npc_config()
+
+        story_npc = make_npc(config_path=os.path.join(HUMAN_DIR, BIG))
+        sys_story = story_npc._build_system_prompt(_Player())
+        adapter.generate_turn(sys_story, hist(6), is_opening=False,
+                              jean_text="Then whose tracks were they? You'd know if it were bandits.")
+        capture_call("NPC chat", "generate_turn (story NPC %s, 6-turn history)" % BIG)
+
+        ally = make_npc(
+            config_path=os.path.join(HUMAN_DIR, BIG), growth=True, level=15,
+            moves=[_Move("Rending Arc", "A wide sweeping strike that carries through multiple foes."),
+                   _Move("Ironhold", "Plant and absorb an incoming blow, converting it to counter-pressure."),
+                   _Move("Quicken", "Shorten the wind-up on the next technique at the cost of stability."),
+                   _Move("Sunder Guard", "A precise thrust aimed at a gap in the opponent's defense."),
+                   _Move("Second Wind", "Recover breath and footing after a punishing exchange.")])
+        adapter.generate_turn(ally._build_system_prompt(_Player()), hist(12), is_opening=False,
+                              jean_text="You've changed since the caves. Tell me plainly what you can do now.")
+        capture_call("NPC chat", "generate_turn (WORST: ally, full history)", "upper bound")
+
+        adapter.generate_personality("weathered nomad herder")
+        capture_call("NPC chat", "generate_personality (one-shot)")
+
+        adapter.generate_npc_turn(sys_story, hist(6), is_opening=False,
+                                  jean_text="Then whose tracks were they?")
+        capture_call("NPC chat", "generate_npc_turn (legacy split 1/2)")
+
+        adapter.generate_jean_options(
+            "Mara", "wary, speaks in short bursts",
+            "Dust, mostly. And tracks that didn't belong to any herd I know.", hist(6), 7)
+        capture_call("NPC chat", "generate_jean_options (legacy split 2/2)")
+
+        # Guard-escalation call (211fbb4): fires only when the cheap regex
+        # tripwire in src/npc/_chat_guard.py flags a turn. Drive it with a
+        # line the real scanner actually flags and the guidance text it
+        # actually produces, so this row is as real as the others.
+        _flagged_line = "Here, take this blade."
+        _guidance = chat_guard.guidance_for(chat_guard.scan_npc_text(_flagged_line))
+        adapter.revise_turn(
+            sys_story,
+            _flagged_line,
+            [
+                {"tone": "direct", "text": "That blade's seen more roads than I have. Where did it come from?"},
+                {"tone": "guarded", "text": "I don't take gifts from strangers, not out here."},
+                {"tone": "open", "text": "Tell me its story first, then we'll talk."},
+            ],
+            _guidance,
+        )
+        capture_call("NPC chat", "revise_turn (guard escalation)")
+
+        # -------------------------------------------------------------
+        # 2. Mynx
+        # -------------------------------------------------------------
+        mynx = llm.MynxLLMAdapter.__new__(llm.MynxLLMAdapter)
+        mynx._advisor = mynx._load_mynx_advisor()
+        mynx._allowed_actions = set(
+            mynx._advisor.get("behavior_profile", {}).get("typical_actions", []) or ["investigate_object"])
+        mynx._example_struct = mynx._advisor.get("example_structured_response", {})
+        mynx_sys = mynx._advisor.get("system_prompt_snippet", "")
+        mynx_ctx = ("Jean is resting by a low fire in a rock hollow. The mynx has eaten recently, "
+                    "is not alarmed, and a loose strap on Jean's pack is within reach.")
+        record("Mynx", "generate_structured", mynx_sys, mynx._build_user_prompt(mynx_ctx, True), 1024)
+        record("Mynx", "generate_plain", mynx_sys, mynx._build_user_prompt(mynx_ctx, False), 256)
+
+        # -------------------------------------------------------------
+        # 3. Combat tactical advisor
+        # -------------------------------------------------------------
+        strat = CombatStrategist.__new__(CombatStrategist)
+        # A stub client, not None: CombatStrategist falls back to constructing a real
+        # GenericLLMClient, whose __init__ runs OpenRouter model discovery and a live
+        # validation chat. Measuring prompt sizes must not spend free-tier requests.
+        CombatStrategist.__init__(strat, client=type("_Stub", (), {"available": lambda self: False})())
+
+        for _label, _ctx, _note in [
+            ("get_suggestions (light: 1 enemy, 0 allies, 4 moves)",
+             ctx_for(1, 0, 5, MOVES[:4], []), ""),
+            ("get_suggestions (typical: 2 enemies, 1 ally, 9 moves)",
+             ctx_for(2, 1, 20, MOVES, PLAYER_SE), ""),
+            ("get_suggestions (WORST: 4 enemies, 2 allies, 9 moves)",
+             ctx_for(4, 2, 20, MOVES, PLAYER_SE), "upper bound"),
+        ]:
+            record(
+                "Combat TA", _label, strat.system_prompt,
+                _wrap_ta_prompt(strat._build_user_prompt(_ctx)), 1024, _note)
+    finally:
+        llm.NpcChatLLMAdapter._call_llm = _orig_call_llm
+
+
+def _print_report(args):
+    W = max(len(r["call"]) for r in ROWS)
+    table([(r["path"], r["call"], r["sys_tok"], r["user_tok"], r["in_tok"],
+            r["max_out"], r["worst_rt"]) for r in ROWS],
+          ["PATH", "CALL", "sys", "user", "IN", "max_out", "CEILING"],
+          [9, W, 6, 6, 6, 7, 7],
+          ["l", "l", "r", "r", "r", "r", "r"])
+
+    _chars = sum(r["sys_chars"] + r["user_chars"] for r in ROWS)
+    _toks = sum(r["sys_tok"] + r["user_tok"] for r in ROWS)
+    print("\nCalibration: %d chars / %d tokens = %.2f chars per token"
+          % (_chars, _toks, _chars / _toks))
+
+    if args.outputs:
+        print()
+        OW = max(len(c) for _, c, _ in OUTPUTS)
+        # Ceilings, keyed by call name, not the captured system/user prompt
+        # pairs above (which is what CAPTURED holds mid-measurement) -- one
+        # letter apart in a file about token caps, so spelled out in full.
+        output_ceilings = {r["call"].split(" (")[0]: r["max_out"] for r in ROWS}
+        rows = []
+        for path, call, text in OUTPUTS:
+            cap_ = output_ceilings.get(call.split(" (")[0], 0)
+            t = ntok(text)
+            rows.append((path, call, t, cap_, "%.1fx" % (cap_ / t) if t else "-"))
+        table(rows, ["PATH", "CALL", "real", "max_out", "margin"], [9, OW, 6, 7, 7],
+              ["l", "l", "r", "r", "r"])
+        print("\n'real' completions are written to schema, not measured from live calls.")
+
+    if args.dump:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_prompt_dump")
+        os.makedirs(d, exist_ok=True)
+        for i, r in enumerate(ROWS):
+            slug = "".join(c if c.isalnum() else "_" for c in r["call"])[:60]
+            with open(os.path.join(d, "%02d_%s.txt" % (i, slug)), "w", encoding="utf-8") as f:
+                f.write("### SYSTEM (%d tok)\n%s\n\n### USER (%d tok)\n%s\n"
+                        % (r["sys_tok"], DUMP[i][0], r["user_tok"], DUMP[i][1]))
+        print("\nDumped %d prompts to %s" % (len(ROWS), d))
+
+    if args.json:
+        json.dump(ROWS, open(args.json, "w"), indent=2)
+        print("\nWrote %s" % args.json)
+
+
+def main(argv=None):
+    args = _parse_args(argv)
+
+    # The adapters log a warning every time the stubbed _call_llm returns
+    # None. That is the expected path here, so keep it out of the report --
+    # restored in the finally so calling main() from inside a larger process
+    # (or more than once) never leaves the logging config worse than it
+    # found it.
+    _prev_disable = logging.root.manager.disable
+    logging.disable(logging.WARNING)
+    try:
+        _run_measurements()
+        _print_report(args)
+    finally:
+        logging.disable(_prev_disable)
+
+
+if __name__ == "__main__":
+    main()

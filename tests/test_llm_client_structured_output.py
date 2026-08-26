@@ -1165,3 +1165,171 @@ class TestDuplicateJsonKeys:
 
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
+
+
+class TestNoneSentinelDisarmsChain:
+    """provider="none" means nobody configured chat — keys are not consent.
+
+    The repo .env holds real credentials and is loaded at import for other
+    features; before this pin, an enabled adapter with the "none" sentinel
+    still built a live chain out of whatever keys happened to be present, so
+    the default unit suite could dial OpenRouter for real.
+    """
+
+    def _adapter(self, provider):
+        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+        a.enabled = True
+        a.provider = provider
+        a.model = "m"
+        a._openrouter_api_key = "or-key"
+        a._openrouter_site = ""
+        a._openrouter_site_title = ""
+        return a
+
+    def test_none_provider_yields_empty_chain_despite_keys(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "real-looking-key")
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+        assert self._adapter("none")._provider_chain() == []
+
+    def test_empty_provider_yields_empty_chain(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "real-looking-key")
+        assert self._adapter("")._provider_chain() == []
+
+    def test_call_llm_makes_no_request_with_none_provider(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "real-looking-key")
+
+        def _bomb(*a, **kw):  # pragma: no cover - the point is it never runs
+            raise AssertionError("network dial attempted with provider=none")
+
+        monkeypatch.setattr(llm.requests, "post", _bomb)
+        assert self._adapter("none")._call_llm("sys", "user") is None
+
+
+class TestOpenrouterFallbackUsesItsOwnDialect:
+    """A chain fallback to OpenRouter must not carry Groq/Cerebras keys.
+
+    _call_openrouter used to splat _reasoning_params(self.provider): as a
+    fallback while provider=groq that sent Groq's reasoning_effort dialect to
+    openrouter.ai, and while provider=ollama it omitted the reasoning block
+    entirely — letting reasoning models spend the completion budget narrating.
+    """
+
+    def test_payload_carries_openrouter_reasoning_block(self, monkeypatch):
+        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+        a.enabled = True
+        a.provider = "groq"  # configured for groq; openrouter is the fallback
+        a.model = "some/model:free"
+        a._openrouter_api_key = "or-key"
+        a._openrouter_site = ""
+        a._openrouter_site_title = ""
+        payloads = []
+
+        def _capture(url, payload, headers, timeout):
+            payloads.append(payload)
+
+            class _R:
+                status_code = 200
+                text = ""
+
+                @staticmethod
+                def raise_for_status():
+                    return None
+
+                @staticmethod
+                def json():
+                    return {"choices": [{"message": {"content": "{}"}}]}
+
+                headers = {}
+
+            return _R()
+
+        monkeypatch.setattr(llm, "_post_chat_completion", _capture)
+        a._call_openrouter("sys", "user", 100, 0.5)
+        assert payloads, "no request captured"
+        expected = llm._reasoning_params("openrouter")
+        for key, value in expected.items():
+            assert payloads[0].get(key) == value
+        assert "reasoning_effort" not in payloads[0]
+
+
+class TestOllamaTrafficIsMetered:
+    """Ollama calls must appear in the usage picture and honour the bench."""
+
+    def _adapter(self):
+        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+        a.enabled = True
+        a.provider = "ollama"
+        a.model = "local-llama"
+        a.base_url = "http://127.0.0.1:11434"
+        return a
+
+    def test_success_records_ollama_usage(self, monkeypatch):
+        class _R:
+            status_code = 200
+            headers = {}
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"message": {"content": "{}"}}
+
+        monkeypatch.setattr(llm.requests, "post", lambda *a, **kw: _R())
+        GenericLLMClient.reset_class_state()
+        self._adapter()._call_ollama("sys", "user", 100, 0.5)
+        snap = GenericLLMClient.usage_snapshot()
+        ollama = snap["providers"].get("ollama")
+        assert ollama and ollama["requests"] >= 1 and ollama["successes"] >= 1
+
+    def test_benched_ollama_model_is_skipped(self, monkeypatch):
+        def _bomb(*a, **kw):  # pragma: no cover
+            raise AssertionError("benched ollama model was dialled")
+
+        monkeypatch.setattr(llm.requests, "post", _bomb)
+        GenericLLMClient.reset_class_state()
+        GenericLLMClient._bench_model("ollama:local-llama", duration_minutes=15)
+        assert self._adapter()._call_ollama("sys", "user", 100, 0.5) is None
+
+
+class TestResetHeaderHardening:
+    """Provider-controlled reset headers must not crash or forge output."""
+
+    def test_absurd_duration_is_clamped_not_overflowed(self):
+        reset = GenericLLMClient._parse_reset_at("3000000d")
+        assert reset is not None
+        horizon = datetime.now(timezone.utc) + timedelta(days=31)
+        assert reset < horizon
+
+    def test_huge_integer_duration_does_not_raise(self):
+        assert GenericLLMClient._parse_reset_at("99999999999d") is not None
+
+    def test_format_reset_strips_newlines_and_markdown(self):
+        rendered = GenericLLMClient._format_reset("2m59s\nFORGED **bold**")
+        assert "\n" not in rendered
+        assert "*" not in rendered
+        assert rendered.startswith("2m59s")
+
+    def test_format_reset_keeps_plain_durations(self):
+        assert GenericLLMClient._format_reset("2m59s") == "2m59s"
+
+
+class TestMergeUsage:
+    """A failed digest post must give its window counters back."""
+
+    def test_merged_counts_return_to_the_live_window(self):
+        GenericLLMClient.reset_class_state()
+        GenericLLMClient._record_provider_usage("openrouter", None, "ok")
+        GenericLLMClient._record_provider_usage("openrouter", None, "error")
+        snap = GenericLLMClient.snapshot_and_reset()
+        assert GenericLLMClient.usage_snapshot()["providers"].get(
+            "openrouter", {}
+        ).get("requests", 0) == 0
+        GenericLLMClient._record_provider_usage("openrouter", None, "ok")
+        GenericLLMClient.merge_usage(snap)
+        live = GenericLLMClient.usage_snapshot()["providers"]["openrouter"]
+        assert live["requests"] == 3
+        assert live["successes"] == 2
+        assert live["errors"] == 1
