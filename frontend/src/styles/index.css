@@ -78,10 +78,19 @@ input, select, textarea {
  * wide variant so desktop dialogs have room for portraits on both sides and
  * readable dialogue in the center. At phone widths the same stage becomes a
  * two-column portrait row above a full-width dialogue card.
+ *
+ * CSS owns wide-layout portrait sizing outright (no competing inline value
+ * from ConversationStage.jsx) — the desktop clamp below and the mobile
+ * override in the media query differ only by breakpoint, so the override
+ * doesn't need !important to win: same selector, later in source order.
  */
 .conversation-stage--wide .conversation-stage__portrait-column {
-  min-width: 0 !important;
+  min-width: 0;
   width: 100%;
+}
+
+.conversation-stage--wide .conversation-stage__portrait-column img {
+  width: clamp(130px, 12vw, 185px);
 }
 
 @media (max-width: 767px) {
@@ -96,12 +105,11 @@ input, select, textarea {
   }
 
   .conversation-stage--wide .conversation-stage__portrait-column {
-    min-width: 0 !important;
     min-height: 150px;
   }
 
   .conversation-stage--wide .conversation-stage__portrait-column img {
-    width: min(38vw, 150px) !important;
+    width: min(38vw, 150px);
   }
 
   .conversation-stage--wide .conversation-stage__dialogue {

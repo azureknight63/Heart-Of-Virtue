@@ -153,7 +153,11 @@ function Portrait({ member, isSpeaker, wide = false }) {
                 name={member.name}
                 emotion={member.emotion}
                 style={{
-                    width: wide ? 'clamp(130px, 12vw, 185px)' : '130px',
+                    // Wide-layout width is owned by CSS (index.css's
+                    // `.conversation-stage--wide .conversation-stage__portrait-column img`,
+                    // including its mobile override) so it isn't duplicated
+                    // here with a competing inline value.
+                    width: wide ? undefined : '130px',
                     height: 'auto',
                     borderRadius: '6px',
                     border: `2px solid ${isSpeaker ? colors.secondary : colors.border.light}`,
@@ -188,13 +192,31 @@ function Portrait({ member, isSpeaker, wide = false }) {
  * emphasized; listeners persist, dimmed, until a beat changes their emotion.
  * Pre-conversation beats (no `in_conversation`) render as plain centered prose.
  *
+ * `mode` sets the defaults for the `interactive` / `showAdvanceHint` /
+ * `followTail` trio, which always travel together for a given caller:
+ * `"authored"` (default) is a clickable scene that starts at beat 0, shows the
+ * advance hint, and fires `onComplete` once the final beat is revealed —
+ * EventDialog's authored events. `"live"` is a non-interactive, tail-following
+ * display with no advance hint that never fires `onComplete` — NpcChatPanel's
+ * streamed chat, which tracks its own completion off the API response rather
+ * than the stage. Each of the three booleans remains a fully functional prop
+ * in its own right and overrides the mode's default whenever passed
+ * explicitly (e.g. `mode="live" interactive` still ends up interactive).
+ *
+ * The blank-beat safety-valve timer (auto-advancing a silent enter/exit beat
+ * after its fade has a moment to play) stays armed in both modes — a blank
+ * frame must always resolve on its own — but completion is mode-gated: in
+ * `"live"` mode `onComplete` is never invoked, even when that timer walks the
+ * stage off its final beat.
+ *
  * @param {Array}    segments   - ordered beats from the event payload
  * @param {Object}   conversation - { cast: [...] } initial roster (optional)
- * @param {Function} onComplete - called once after the final beat is revealed
+ * @param {Function} onComplete - called once after the final beat is revealed (never in `"live"` mode)
  * @param {number}   [speed]    - typewriter speed (ms/char)
- * @param {boolean}  [interactive] - whether click/keyboard advances the stage
- * @param {boolean}  [showAdvanceHint] - whether to show the advance affordance
- * @param {boolean}  [followTail] - keep the newest appended beat visible
+ * @param {'authored'|'live'} [mode] - sets the default interactive/showAdvanceHint/followTail trio
+ * @param {boolean}  [interactive] - whether click/keyboard advances the stage (overrides the mode default)
+ * @param {boolean}  [showAdvanceHint] - whether to show the advance affordance (overrides the mode default)
+ * @param {boolean}  [followTail] - keep the newest appended beat visible (overrides the mode default)
  * @param {'default'|'wide'} [layout] - layout density for the conversation stage
  */
 function ConversationStage({
@@ -202,11 +224,17 @@ function ConversationStage({
     conversation = null,
     onComplete,
     speed = 25,
-    interactive = true,
-    showAdvanceHint = true,
-    followTail = false,
+    mode = 'authored',
+    interactive,
+    showAdvanceHint,
+    followTail,
     layout = 'default',
 }) {
+    const isLive = mode === 'live'
+    const resolvedInteractive = interactive ?? !isLive
+    const resolvedShowAdvanceHint = showAdvanceHint ?? !isLive
+    const resolvedFollowTail = followTail ?? isLive
+
     const [beatIndex, setBeatIndex] = useState(0)
     const completedRef = useRef(false)
     const containerRef = useRef(null)
@@ -229,9 +257,9 @@ function ConversationStage({
     // event are often the same length, and a length-keyed reset leaves the stage
     // parked on the previous stage's last beat with onComplete already spent.
     useEffect(() => {
-        setBeatIndex(followTail ? Math.max(0, segments.length - 1) : 0)
+        setBeatIndex(resolvedFollowTail ? Math.max(0, segments.length - 1) : 0)
         completedRef.current = false
-    }, [segments, followTail])
+    }, [segments, resolvedFollowTail])
 
     const advance = useCallback(() => {
         if (!isComplete) {
@@ -242,9 +270,12 @@ function ConversationStage({
             setBeatIndex((i) => i + 1)
         } else if (!completedRef.current) {
             completedRef.current = true
-            onComplete?.()
+            // Live chat tracks its own completion off the API response; the
+            // stage itself must never fire onComplete for it (guarded here,
+            // the only call site).
+            if (!isLive) onComplete?.()
         }
-    }, [isComplete, finishImmediately, beatIndex, lastIndex, onComplete])
+    }, [isComplete, finishImmediately, beatIndex, lastIndex, onComplete, isLive])
 
     // Auto-advance text-less beats (silent enter/exit) once their fade has a
     // moment to play, so the player isn't asked to click through blank frames.
@@ -257,7 +288,7 @@ function ConversationStage({
 
     // Enter/Space advance the conversation while it is active.
     useEffect(() => {
-        if (!interactive) return undefined
+        if (!resolvedInteractive) return undefined
         const node = containerRef.current
         if (!node) return undefined
         const onKey = (e) => {
@@ -269,7 +300,7 @@ function ConversationStage({
         }
         node.addEventListener('keydown', onKey)
         return () => node.removeEventListener('keydown', onKey)
-    }, [advance, interactive])
+    }, [advance, resolvedInteractive])
 
     const leftMembers = members.filter((m) => m.side === 'left')
     const rightMembers = members.filter((m) => m.side === 'right')
@@ -286,7 +317,10 @@ function ConversationStage({
                 justifyContent: 'center',
                 alignItems: 'center',
                 gap: spacing.md,
-                minWidth: staged ? '150px' : '0',
+                // In wide layout the grid track governs the column's width;
+                // `.conversation-stage--wide .conversation-stage__portrait-column`
+                // in index.css owns min-width/width there instead.
+                minWidth: isWide ? undefined : (staged ? '150px' : '0'),
                 gridArea: isWide ? area : undefined,
                 transition: 'min-width 0.35s ease',
             }}
@@ -301,28 +335,26 @@ function ConversationStage({
         <div
             ref={containerRef}
             data-testid="conversation-stage"
-            tabIndex={interactive ? -1 : undefined}
+            tabIndex={resolvedInteractive ? -1 : undefined}
             onClick={(e) => {
                 e.stopPropagation()
-                if (interactive) advance()
+                if (resolvedInteractive) advance()
             }}
             className={`conversation-stage conversation-stage--${layout}`}
-            style={isWide ? {
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)',
-                gridTemplateAreas: '"left dialogue right"',
+            style={{
                 alignItems: 'stretch',
                 gap: spacing.lg,
-                cursor: interactive ? 'pointer' : 'default',
+                cursor: resolvedInteractive ? 'pointer' : 'default',
                 outline: 'none',
-                minHeight: '360px',
-            } : {
-                display: 'flex',
-                alignItems: 'stretch',
-                gap: spacing.lg,
-                cursor: interactive ? 'pointer' : 'default',
-                outline: 'none',
-                minHeight: '300px',
+                ...(isWide ? {
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)',
+                    gridTemplateAreas: '"left dialogue right"',
+                    minHeight: '360px',
+                } : {
+                    display: 'flex',
+                    minHeight: '300px',
+                }),
             }}
         >
             {staged && renderColumn(leftMembers, 'left')}
@@ -387,7 +419,7 @@ function ConversationStage({
                 >
                     {displayedText}
                 </div>
-                {showAdvanceHint && (
+                {resolvedShowAdvanceHint && (
                     <span
                         data-testid="conversation-advance-hint"
                         style={{

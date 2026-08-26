@@ -1,51 +1,114 @@
-import { useState, useEffect, useRef } from 'react'
-import npcChat from '../api/npcChat'
+import { useState, useMemo } from 'react'
+import { useNpcChat, JEAN_ID, npcCast } from '../hooks/useNpcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import ConversationStage from './ConversationStage'
 import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
-import ScrollFadeIndicator from './ScrollFadeIndicator'
-import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, fonts } from '../styles/theme'
 
-const TONE_EMOTIONS = {
-  direct: 'neutral',
-  guarded: 'skeptical',
-  open: 'curious',
+// Re-exported for callers that referenced these pure helpers directly off
+// NpcChatPanel before the API-state logic moved into useNpcChat.
+export { toneEmotion, qualityEmotion } from '../hooks/useNpcChat'
+
+/**
+ * ChatLoadingIndicator — shared loading affordance for the conversation
+ * stage. Used both while the very first NPC line is being fetched (block
+ * layout, larger text) and while a reply to Jean's chosen option is pending
+ * (inline layout, stacked under the existing segments). Both call sites
+ * share the same testid/aria contract so it can't drift between them.
+ */
+function ChatLoadingIndicator({ message, variant = 'block' }) {
+  const isInline = variant === 'inline'
+  return (
+    <div
+      data-testid="npc-chat-loading"
+      role="status"
+      aria-live="polite"
+      style={
+        isInline
+          ? {
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              color: colors.text.muted,
+              fontFamily: fonts.main,
+              fontSize: '12px',
+              padding: spacing.sm,
+              animation: 'pulse 1s infinite',
+            }
+          : {
+              color: colors.text.muted,
+              fontFamily: fonts.main,
+              fontSize: '14px',
+              textAlign: 'center',
+              padding: spacing.xl,
+              animation: 'pulse 1s infinite',
+            }
+      }
+    >
+      <span className="npc-chat-spinner" aria-hidden="true" />
+      <span>{message}</span>
+    </div>
+  )
 }
 
-const QUALITY_EMOTIONS = {
-  positive: 'happy',
-  neutral: 'neutral',
-  negative: 'concerned',
-  offensive: 'angry',
+/**
+ * PreviousLineRecap — the "Previously" strip showing the turn immediately
+ * before the one on stage (see the comment above its call site for why it
+ * exists). Renders nothing when there is no prior turn yet.
+ */
+function PreviousLineRecap({ segment, cast }) {
+  if (!segment) return null
+  return (
+    <div data-testid="npc-chat-previous-line" style={{ marginBottom: spacing.sm }}>
+      <div
+        style={{
+          color: colors.text.dim,
+          fontFamily: fonts.main,
+          fontSize: '10px',
+          letterSpacing: '1px',
+          textTransform: 'uppercase',
+          marginBottom: spacing.xs,
+        }}
+      >
+        Previously
+      </div>
+      <TranscriptEntry segment={segment} cast={cast} variant="compact" />
+    </div>
+  )
 }
 
-export function toneEmotion(tone) {
-  return TONE_EMOTIONS[String(tone || '').toLowerCase()] || 'neutral'
-}
-
-export function qualityEmotion(quality) {
-  return QUALITY_EMOTIONS[String(quality || '').toLowerCase()] || 'neutral'
-}
-
-function npcCast(npcId, npcName) {
-  return [
-    { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
-    { id: npcId, name: npcName || npcId, side: 'right', emotion: 'neutral' },
-  ]
-}
-
-function chatSegment({ text, speaker, emotion = 'neutral', flavor = '', reactions = {} }) {
-  return {
-    text: text || '',
-    speaker,
-    emotion,
-    flavor: flavor || '',
-    reactions,
-    in_conversation: true,
-  }
+/** ConversationActionRow — the "View History" / "End Conversation" button row. */
+function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onEndConversation }) {
+  return (
+    <div style={{ display: 'flex', gap: spacing.md, flexWrap: 'wrap' }}>
+      <GameButton
+        variant="secondary"
+        size="medium"
+        onClick={onOpenHistory}
+        disabled={historyOpen}
+        style={{ flex: '1 1 180px' }}
+      >
+        View History
+      </GameButton>
+      {phase !== 'ended' && (
+        <GameButton
+          variant="secondary"
+          size="medium"
+          onClick={onEndConversation}
+          disabled={loading || phase === 'opening' || historyOpen}
+          style={{
+            flex: '2 1 220px',
+            opacity: 0.7,
+          }}
+        >
+          End Conversation
+        </GameButton>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -56,176 +119,34 @@ function chatSegment({ text, speaker, emotion = 'neutral', flavor = '', reaction
  * @param {function} onClose - Callback when conversation ends or user closes
  */
 export default function NpcChatPanel({ npcId, npcName, onClose }) {
-  const [phase, setPhase] = useState('opening') // 'opening' | 'waiting_jean' | 'waiting_npc' | 'ended'
-  const [npcKey, setNpcKey] = useState(null)
-  const [displayName, setDisplayName] = useState(npcName)
-  const [conversationSegments, setConversationSegments] = useState([])
-  const [conversationCast, setConversationCast] = useState(null)
-  const [currentOptions, setCurrentOptions] = useState([])
-  const [loquacity, setLoquacity] = useState({ current: 0, max: 1 })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [relationship, setRelationship] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const retryFnRef = useRef(null)
-  // Guards async setState calls (open/respond) from firing after unmount, and
-  // lets the "conversation ended" auto-close timer be cancelled on unmount.
-  const isMountedRef = useRef(true)
-  const endTimeoutRef = useRef(null)
-  const { showTop, showBottom, check, ref: messagesRef } = useScrollIndicators()
-
-  useEffect(() => { check() }, [conversationSegments, check])
-
-  useEffect(() => {
-    isMountedRef.current = true
-    return () => {
-      isMountedRef.current = false
-      clearTimeout(endTimeoutRef.current)
-    }
-  }, [])
-
-  // On mount, open the conversation
-  useEffect(() => {
-    const openConversation = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const response = await npcChat.open(npcId)
-        if (!isMountedRef.current) return
-        const data = response.data
-
-        setNpcKey(data.npc_key)
-        setDisplayName(data.npc_name || npcName)
-        setConversationCast(npcCast(npcId, data.npc_name || npcName))
-        setLoquacity({
-          current: data.loquacity_current ?? 0,
-          max: data.loquacity_max ?? 1,
-        })
-        setCurrentOptions(data.jean_options || [])
-        setRelationship(data.relationship || null)
-
-        if (data.npc_opening) {
-          setConversationSegments([
-            chatSegment({
-              text: data.npc_opening,
-              speaker: npcId,
-              emotion: 'neutral',
-              flavor: data.npc_flavor,
-            }),
-          ])
-        } else {
-          setConversationSegments([])
-        }
-
-        setPhase('waiting_jean')
-      } catch (err) {
-        if (!isMountedRef.current) return
-        const errorMsg = err.response?.data?.error || 'Failed to open conversation'
-        retryFnRef.current = openConversation
-        setError(errorMsg)
-        setPhase('ended')
-      } finally {
-        if (isMountedRef.current) setLoading(false)
-      }
-    }
-
-    openConversation()
-  }, [npcId])
-
-  const handleOptionClick = async (option) => {
-    if (phase !== 'waiting_jean' || !npcKey) return
-
-    // Clear any previous failure before trying again. The option list is gated
-    // on `!error`, so a stale error would hide every dialogue option for the
-    // rest of the conversation even after a successful retry.
-    setError(null)
-    retryFnRef.current = null
-
-    const jeanSegment = chatSegment({
-      text: option.text,
-      speaker: 'Jean',
-      emotion: toneEmotion(option.tone),
-      reactions: { [npcId]: 'curious' },
-    })
-
-    try {
-      setPhase('waiting_npc')
-      setLoading(true)
-
-      // Add Jean's response to the portrait-backed conversation stage.
-      setConversationSegments((prev) => [...prev, jeanSegment])
-
-      // Call the respond endpoint
-      const response = await npcChat.respond(npcKey, option.text, option.tone)
-      if (!isMountedRef.current) return
-      const data = response.data
-
-      // Add NPC response to messages and to the portrait-backed conversation stage.
-      setConversationSegments((prev) => [
-        ...prev,
-        chatSegment({
-          text: data.npc_response,
-          speaker: npcId,
-          emotion: qualityEmotion(data.conversation_quality),
-          flavor: data.npc_flavor,
-          reactions: { Jean: toneEmotion(option.tone) },
-        }),
-      ])
-
-      // Update loquacity, options, and relationship standing
-      setLoquacity({
-        current: data.loquacity_current ?? 0,
-        max: data.loquacity_max ?? 1,
-      })
-      setCurrentOptions(data.jean_options || [])
-      setRelationship(data.relationship || null)
-
-      // Check if conversation ended
-      if (data.conversation_ended) {
-        setPhase('ended')
-        // Wait 2 seconds before closing
-        endTimeoutRef.current = setTimeout(() => {
-          if (isMountedRef.current) onClose()
-        }, 2000)
-      } else {
-        setPhase('waiting_jean')
-      }
-    } catch (err) {
-      if (!isMountedRef.current) return
-      const errorMsg = err.response?.data?.error || 'NPC did not respond'
-      // Roll back the optimistic segment — the retry re-adds it.
-      setConversationSegments((prev) => prev.filter((segment) => segment !== jeanSegment))
-      retryFnRef.current = () => handleOptionClick(option)
-      setError(errorMsg)
-      setPhase('waiting_jean')
-    } finally {
-      if (isMountedRef.current) setLoading(false)
-    }
-  }
+  const {
+    phase,
+    displayName,
+    conversationSegments,
+    conversationCast,
+    currentOptions,
+    loquacity,
+    loading,
+    error,
+    relationship,
+    retryFnRef,
+    handleOptionClick,
+    handleEndConversation,
+    cancelAutoClose,
+  } = useNpcChat(npcId, npcName, onClose)
 
   // Opening the transcript suspends the "conversation ended" auto-close: the
   // player is reading the log, and the panel closing out from under them takes
   // it with it. Dismissing the transcript resumes the close it suspended.
   const handleOpenHistory = () => {
-    clearTimeout(endTimeoutRef.current)
+    cancelAutoClose()
     setHistoryOpen(true)
   }
 
   const handleCloseHistory = () => {
     setHistoryOpen(false)
     if (phase === 'ended') onClose()
-  }
-
-  const handleEndConversation = async () => {
-    if (!npcKey) return
-
-    try {
-      await npcChat.end(npcKey)
-      onClose()
-    } catch (err) {
-      // Silently close on error
-      onClose()
-    }
   }
 
   // Calculate loquacity bar color
@@ -245,7 +166,11 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   // strip keeps the turn immediately before the current one on screen so the
   // reply always has its question next to it; everything older lives in the
   // history dialog.
-  const cast = conversationCast || npcCast(npcId, displayName)
+  // conversationCast is only null before the first `open()` response lands,
+  // so the fallback is memoized rather than rebuilt (a new array) every
+  // render once the real cast has already taken over.
+  const fallbackCast = useMemo(() => npcCast(npcId, displayName), [npcId, displayName])
+  const cast = conversationCast || fallbackCast
   const previousSegment =
     conversationSegments.length > 1
       ? conversationSegments[conversationSegments.length - 2]
@@ -265,6 +190,37 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       default:
         return colors.text.muted
     }
+  }
+
+  // The conversation stage body is one of three mutually exclusive states —
+  // named branches read more plainly here than a nested ternary.
+  let stageBody
+  if (conversationSegments.length > 0) {
+    stageBody = (
+      <ConversationStage
+        segments={conversationSegments}
+        conversation={{ cast }}
+        speed={20}
+        mode="live"
+        layout="wide"
+      />
+    )
+  } else if (loading) {
+    stageBody = <ChatLoadingIndicator message={`Waiting for ${displayName}…`} />
+  } else {
+    stageBody = (
+      <div
+        style={{
+          color: colors.text.muted,
+          fontFamily: fonts.main,
+          fontSize: '12px',
+          textAlign: 'center',
+          padding: spacing.md,
+        }}
+      >
+        Waiting for NPC to speak…
+      </div>
+    )
   }
 
   return (
@@ -320,97 +276,15 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
       {/* Recap of the turn just before the one on stage — the question an answer
           is answering, kept in the same visual language as the history dialog. */}
-      {previousSegment && (
-        <div data-testid="npc-chat-previous-line" style={{ marginBottom: spacing.sm }}>
-          <div
-            style={{
-              color: colors.text.dim,
-              fontFamily: fonts.main,
-              fontSize: '10px',
-              letterSpacing: '1px',
-              textTransform: 'uppercase',
-              marginBottom: spacing.xs,
-            }}
-          >
-            Previously
-          </div>
-          <TranscriptEntry segment={previousSegment} cast={cast} variant="compact" />
-        </div>
-      )}
+      <PreviousLineRecap segment={previousSegment} cast={cast} />
 
       {/* Portrait-backed conversation stage. The stage uses the same renderer as
           authored event conversations, so spoken lines, flavor text, portraits,
           and reactions have one consistent visual language. */}
-      <div
-        ref={messagesRef}
-        style={{ position: 'relative', marginBottom: spacing.md }}
-      >
-        {conversationSegments.length > 0 ? (
-          <ConversationStage
-            segments={conversationSegments}
-            conversation={{ cast }}
-            speed={20}
-            interactive={false}
-            showAdvanceHint={false}
-            followTail
-            layout="wide"
-          />
-        ) : loading ? (
-          <div
-            data-testid="npc-chat-loading"
-            role="status"
-            aria-live="polite"
-            style={{
-              color: colors.text.muted,
-              fontFamily: fonts.main,
-              fontSize: '14px',
-              textAlign: 'center',
-              padding: spacing.xl,
-              animation: 'pulse 1s infinite',
-            }}
-          >
-            <span className="npc-chat-spinner" aria-hidden="true" />
-            <span>Waiting for {displayName}…</span>
-          </div>
-        ) : (
-          <div
-            style={{
-              color: colors.text.muted,
-              fontFamily: fonts.main,
-              fontSize: '12px',
-              textAlign: 'center',
-              padding: spacing.md,
-            }}
-          >
-            Waiting for NPC to speak…
-          </div>
-        )}
+      <div style={{ position: 'relative', marginBottom: spacing.md }}>
+        {stageBody}
         {loading && conversationSegments.length > 0 && (
-          <div
-            data-testid="npc-chat-loading"
-            role="status"
-            aria-live="polite"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: spacing.sm,
-              color: colors.text.muted,
-              fontFamily: fonts.main,
-              fontSize: '12px',
-              padding: spacing.sm,
-              animation: 'pulse 1s infinite',
-            }}
-          >
-            <span className="npc-chat-spinner" aria-hidden="true" />
-            <span>{displayName} is gathering a reply…</span>
-          </div>
-        )}
-        {showTop && (
-          <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="#0a0a0a" />
-        )}
-        {showBottom && (
-          <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="#0a0a0a" />
+          <ChatLoadingIndicator message={`${displayName} is gathering a reply…`} variant="inline" />
         )}
       </div>
 
@@ -485,31 +359,13 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       )}
 
       {/* Transcript + End Conversation */}
-      <div style={{ display: 'flex', gap: spacing.md, flexWrap: 'wrap' }}>
-        <GameButton
-          variant="secondary"
-          size="medium"
-          onClick={handleOpenHistory}
-          disabled={historyOpen}
-          style={{ flex: '1 1 180px' }}
-        >
-          View History
-        </GameButton>
-        {phase !== 'ended' && (
-          <GameButton
-            variant="secondary"
-            size="medium"
-            onClick={handleEndConversation}
-            disabled={loading || phase === 'opening' || historyOpen}
-            style={{
-              flex: '2 1 220px',
-              opacity: 0.7,
-            }}
-          >
-            End Conversation
-          </GameButton>
-        )}
-      </div>
+      <ConversationActionRow
+        phase={phase}
+        loading={loading}
+        historyOpen={historyOpen}
+        onOpenHistory={handleOpenHistory}
+        onEndConversation={handleEndConversation}
+      />
 
       {historyOpen && (
         <ConversationHistoryDialog

@@ -555,6 +555,45 @@ describe('ConversationStage rendering', () => {
         expect(onComplete).toHaveBeenCalledTimes(2)
     })
 
+    it('shows only the newest segment when followTail is set and a longer segments array arrives', () => {
+        // Mirrors NpcChatPanel's usage: the stage never shows the full history,
+        // only the latest beat — each new turn hands the same mounted instance
+        // a longer segments array and the display must jump straight to its tail.
+        const initialSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const longerSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Beat two.', speaker: 'Amelia', emotion: 'happy', in_conversation: true },
+            { text: 'Beat three.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const { rerender } = render(
+            <ConversationStage
+                segments={initialSegments}
+                conversation={{ cast: CAST }}
+                followTail
+                interactive={false}
+                showAdvanceHint={false}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat one.')).toBeInTheDocument()
+
+        rerender(
+            <ConversationStage
+                segments={longerSegments}
+                conversation={{ cast: CAST }}
+                followTail
+                interactive={false}
+                showAdvanceHint={false}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat three.')).toBeInTheDocument()
+        expect(screen.queryByText('Beat two.')).not.toBeInTheDocument()
+        expect(screen.queryByText('Beat one.')).not.toBeInTheDocument()
+    })
+
     // The wrapper <div> around the <img> carries the composed portrait opacity.
     const portraitOpacity = (name) => Number(screen.getByAltText(new RegExp(name, 'i')).parentElement.style.opacity)
 
@@ -636,6 +675,107 @@ describe('ConversationStage rendering', () => {
         expect(onComplete).not.toHaveBeenCalled()
         act(() => fireEvent.click(stage)) // last beat complete -> onComplete
         expect(onComplete).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('ConversationStage mode prop', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('mode="live" defaults to a non-interactive, hint-less, tail-following display', () => {
+        // Mirrors NpcChatPanel's usage: no click/keyboard advance, no advance
+        // hint, and each new (longer) segments array jumps straight to its
+        // newest beat instead of replaying from the start.
+        const initialSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const longerSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Beat two.', speaker: 'Amelia', emotion: 'happy', in_conversation: true },
+        ]
+        const { rerender } = render(
+            <ConversationStage segments={initialSegments} conversation={{ cast: CAST }} mode="live" />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage).not.toHaveAttribute('tabindex')
+        expect(screen.queryByTestId('conversation-advance-hint')).not.toBeInTheDocument()
+
+        // Non-interactive: a click must not advance the stage.
+        fireEvent.click(stage)
+        expect(screen.getByText('Beat one.')).toBeInTheDocument()
+
+        rerender(
+            <ConversationStage segments={longerSegments} conversation={{ cast: CAST }} mode="live" />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat two.')).toBeInTheDocument()
+        expect(screen.queryByText('Beat one.')).not.toBeInTheDocument()
+    })
+
+    it('never calls onComplete in live mode, even when the blank-beat safety valve fires on the final beat', () => {
+        // The auto-advance timer for a silent (whitespace-only) beat is a
+        // safety valve that stays armed in every mode, but live chat tracks
+        // its own completion off the API response — the stage must not also
+        // call onComplete when that timer walks it off the last beat.
+        const onComplete = vi.fn()
+        const blankTailSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: ' ', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        render(
+            <ConversationStage
+                segments={blankTailSegments}
+                conversation={{ cast: CAST }}
+                mode="live"
+                onComplete={onComplete}
+            />
+        )
+        // followTail (live default) parks beatIndex on the blank final beat immediately.
+        act(() => vi.advanceTimersByTime(50)) // typewriter finishes the single space
+        act(() => vi.advanceTimersByTime(500)) // blank-beat safety valve fires -> advance()
+        expect(onComplete).not.toHaveBeenCalled()
+    })
+
+    it('mode="authored" behaves like the default: interactive, hinted, and completes on the last beat', () => {
+        const onComplete = vi.fn()
+        const segments = [
+            { text: 'Line one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Line two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        render(
+            <ConversationStage
+                segments={segments}
+                conversation={{ cast: CAST }}
+                mode="authored"
+                onComplete={onComplete}
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage).toHaveAttribute('tabindex', '-1')
+
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByTestId('conversation-advance-hint')).toBeInTheDocument()
+
+        act(() => fireEvent.click(stage)) // beat 0 complete -> beat 1
+        act(() => vi.advanceTimersByTime(3000))
+        expect(onComplete).not.toHaveBeenCalled()
+        act(() => fireEvent.click(stage)) // last beat complete -> onComplete
+        expect(onComplete).toHaveBeenCalledTimes(1)
+    })
+
+    it('lets an explicit prop override the mode default', () => {
+        // mode="live" defaults to non-interactive, but an explicit interactive
+        // prop must still win — the mode only supplies defaults.
+        render(
+            <ConversationStage
+                segments={[{ text: 'Overridden.', speaker: 'Jean', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                mode="live"
+                interactive
+            />
+        )
+        expect(screen.getByTestId('conversation-stage')).toHaveAttribute('tabindex', '-1')
     })
 })
 

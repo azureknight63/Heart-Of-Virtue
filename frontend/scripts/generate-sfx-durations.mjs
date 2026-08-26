@@ -12,60 +12,21 @@
  *   node scripts/generate-sfx-durations.mjs --check   # fail if stale (CI/prebuild)
  *
  * See docs/development/combat-streaming-plan.md.
+ *
+ * The duration-computation logic itself lives in ./sfx-durations-core.mjs
+ * (re-exported below for backward compatibility) so it can be imported from
+ * tests without dragging in this file's shebang line — see that module's
+ * header comment for why that matters.
  */
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { computeDurations, wavDurationMs } from './sfx-durations-core.mjs';
+
+export { computeDurations, wavDurationMs };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SOUNDS_DIR = join(__dirname, '..', 'public', 'assets', 'sounds');
 const OUT_FILE = join(__dirname, '..', 'src', 'utils', 'sfxDurations.js');
-
-/**
- * Exact duration (ms) of a PCM WAV from its header: data-chunk bytes / byteRate.
- * Walks the RIFF chunk list (chunks aren't always adjacent). Returns null for a
- * non-PCM / unparseable file so the caller can warn rather than emit a wrong number.
- */
-export function wavDurationMs(buffer) {
-  if (buffer.length < 12 || buffer.toString('ascii', 0, 4) !== 'RIFF') return null;
-  if (buffer.toString('ascii', 8, 12) !== 'WAVE') return null;
-
-  let byteRate = null;
-  let dataSize = null;
-  let offset = 12;
-  while (offset + 8 <= buffer.length) {
-    const id = buffer.toString('ascii', offset, offset + 4);
-    const size = buffer.readUInt32LE(offset + 4);
-    const body = offset + 8;
-    if (id === 'fmt ' && body + 16 <= buffer.length) {
-      byteRate = buffer.readUInt32LE(body + 8);
-    } else if (id === 'data') {
-      dataSize = size;
-    }
-    // Chunks are word-aligned: a padding byte follows an odd size.
-    offset = body + size + (size % 2);
-  }
-  if (!byteRate || dataSize == null) return null;
-  return Math.round((dataSize / byteRate) * 1000);
-}
-
-const cueOf = (filename) => filename.replace(/^sfx_/, '').replace(/\.wav$/, '');
-
-/** Map cue -> duration_ms for every sfx_*.wav in the sounds dir. */
-export function computeDurations(soundsDir = SOUNDS_DIR) {
-  const durations = {};
-  const warnings = [];
-  for (const name of readdirSync(soundsDir)) {
-    if (!name.startsWith('sfx_') || !name.endsWith('.wav')) continue;
-    const ms = wavDurationMs(readFileSync(join(soundsDir, name)));
-    if (ms == null) {
-      warnings.push(name);
-      continue;
-    }
-    durations[cueOf(name)] = ms;
-  }
-  return { durations, warnings };
-}
 
 function renderManifest(durations) {
   const entries = Object.keys(durations)
@@ -98,7 +59,11 @@ function main() {
     } catch {
       /* missing file -> stale */
     }
-    if (current !== next) {
+    // Compare with CRLF normalized to LF: on a Windows checkout with
+    // core.autocrlf=true, the on-disk file has CRLF line endings while
+    // `next` (freshly rendered here) is always LF-only, which would
+    // otherwise report every fresh checkout as stale.
+    if (current.replace(/\r\n/g, '\n') !== next) {
       console.error(
         '[sfx-durations] sfxDurations.js is stale. Run: npm run sfx:durations'
       );
@@ -114,6 +79,10 @@ function main() {
   );
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Compare resolved URLs (not a string-pasted `file://${argv[1]}`): on Windows
+// process.argv[1] is a backslash path lacking import.meta.url's `///C:/...`
+// form, so the naive string comparison never matched and main() silently
+// never ran when this script was invoked directly with `node`.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }

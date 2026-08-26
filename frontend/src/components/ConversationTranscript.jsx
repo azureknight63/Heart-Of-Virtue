@@ -62,6 +62,36 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
     const accent = isLeft ? colors.primary : colors.secondary
     const size = isCompact ? THUMB_SIZES.compact : THUMB_SIZES.full
 
+    // Every density/side-dependent style is resolved once here rather than
+    // re-checking isCompact/isLeft at each of the properties below.
+    const variantStyles = {
+        portraitOpacity: isCompact ? 0.85 : 1,
+        bubbleGap: isCompact ? spacing.sm : spacing.md,
+        // The bubble hugs its speaker's side rather than filling the row:
+        // side + accent carry the identity, so the prose itself can stay
+        // left-aligned instead of going ragged-left.
+        bubbleFlex: isCompact ? 1 : '0 1 auto',
+        bubbleMaxWidth: isCompact ? '100%' : '82%',
+        bubblePadding: isCompact ? `${spacing.xs} ${spacing.sm}` : spacing.md,
+        // All four border edges are declared longhand on purpose: the same
+        // DOM node is reused as the recap strip switches speakers, and
+        // dropping a `borderLeft`/`borderRight` while a `border` shorthand is
+        // set makes React warn and can leave the old edge painted.
+        borderLeft: isLeft ? `3px solid ${accent}` : `1px solid ${colors.border.light}`,
+        borderRight: isLeft ? `1px solid ${colors.border.light}` : `3px solid ${accent}`,
+        // The label sits nearest its own portrait; only the prose below it is
+        // always left-aligned.
+        labelAlign: isLeft ? 'flex-start' : 'flex-end',
+        labelOpacity: isCompact ? 0.8 : 1,
+        textColor: isCompact ? colors.text.muted : colors.text.main,
+        textFontSize: isCompact ? '13px' : '14px',
+        // The recap is a reminder, not a re-read: clamp it to two lines so a
+        // long turn can't push the live stage off screen.
+        textClamp: isCompact
+            ? { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }
+            : {},
+    }
+
     return (
         <div
             data-testid="transcript-entry"
@@ -71,7 +101,7 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
                 display: 'flex',
                 flexDirection: isLeft ? 'row' : 'row-reverse',
                 alignItems: 'flex-start',
-                gap: isCompact ? spacing.sm : spacing.md,
+                gap: variantStyles.bubbleGap,
             }}
         >
             <PortraitImage
@@ -87,50 +117,36 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
                     flexShrink: 0,
                     borderRadius: '6px',
                     border: `1px solid ${accent}55`,
-                    opacity: isCompact ? 0.85 : 1,
+                    opacity: variantStyles.portraitOpacity,
                 }}
             />
             <div
                 style={{
-                    // The bubble hugs its speaker's side rather than filling the
-                    // row: side + accent carry the identity, so the prose itself
-                    // can stay left-aligned instead of going ragged-left.
-                    flex: isCompact ? 1 : '0 1 auto',
+                    flex: variantStyles.bubbleFlex,
                     minWidth: 0,
-                    maxWidth: isCompact ? '100%' : '82%',
+                    maxWidth: variantStyles.bubbleMaxWidth,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: spacing.xs,
-                    padding: isCompact ? `${spacing.xs} ${spacing.sm}` : spacing.md,
+                    padding: variantStyles.bubblePadding,
                     backgroundColor: colors.bg.panelLight,
                     borderRadius: '8px',
-                    // All four edges are declared longhand on purpose: the same
-                    // DOM node is reused as the recap strip switches speakers,
-                    // and dropping a `borderLeft`/`borderRight` while a `border`
-                    // shorthand is set makes React warn and can leave the old
-                    // edge painted.
                     borderTop: `1px solid ${colors.border.light}`,
                     borderBottom: `1px solid ${colors.border.light}`,
-                    borderLeft: isLeft
-                        ? `3px solid ${accent}`
-                        : `1px solid ${colors.border.light}`,
-                    borderRight: isLeft
-                        ? `1px solid ${colors.border.light}`
-                        : `3px solid ${accent}`,
+                    borderLeft: variantStyles.borderLeft,
+                    borderRight: variantStyles.borderRight,
                 }}
             >
                 <span
                     style={{
-                        // The label sits nearest its own portrait; only the
-                        // prose below it is always left-aligned.
-                        alignSelf: isLeft ? 'flex-start' : 'flex-end',
+                        alignSelf: variantStyles.labelAlign,
                         fontFamily: fonts.main,
                         fontSize: '11px',
                         fontWeight: 'bold',
                         letterSpacing: '1px',
                         textTransform: 'uppercase',
                         color: accent,
-                        opacity: isCompact ? 0.8 : 1,
+                        opacity: variantStyles.labelOpacity,
                     }}
                 >
                     {name}
@@ -150,21 +166,12 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
                 )}
                 <div
                     style={{
-                        color: isCompact ? colors.text.muted : colors.text.main,
+                        color: variantStyles.textColor,
                         fontFamily: fonts.main,
-                        fontSize: isCompact ? '13px' : '14px',
+                        fontSize: variantStyles.textFontSize,
                         lineHeight: 1.6,
                         whiteSpace: 'pre-wrap',
-                        // The recap is a reminder, not a re-read: clamp it to two
-                        // lines so a long turn can't push the live stage off screen.
-                        ...(isCompact
-                            ? {
-                                display: '-webkit-box',
-                                WebkitBoxOrient: 'vertical',
-                                WebkitLineClamp: 2,
-                                overflow: 'hidden',
-                            }
-                            : {}),
+                        ...variantStyles.textClamp,
                     }}
                 >
                     {text}

@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { SFX_DURATIONS } from './sfxDurations';
-import { computeDurations } from '../../scripts/generate-sfx-durations.mjs';
+// Import the pure computation logic from the shebang-free helper module
+// (not generate-sfx-durations.mjs itself) — Vite/Vitest's SSR module runner
+// wraps a transformed module's body in `new AsyncFunction(...)`, and a
+// leading `#!/usr/bin/env node` shebang is a SyntaxError once wrapped like
+// that. See scripts/sfx-durations-core.mjs's header comment for details.
+import { computeDurations } from '../../scripts/sfx-durations-core.mjs';
 
 describe('sfxDurations manifest', () => {
   it('is fresh: matches the durations read from the shipped WAV files', () => {

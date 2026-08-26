@@ -275,4 +275,134 @@ describe('BaseDialog', () => {
       expect(document.getElementById(innerLabel)).toHaveTextContent('Inner')
     })
   })
+
+  describe('Keyboard & Focus', () => {
+    it('calls onClose when Escape is pressed', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not throw on Escape when no onClose is provided', () => {
+      // LootDialog and BetaEndDialog deliberately render without onClose
+      // (the player must use the dialog's own controls to proceed).
+      render(
+        <BaseDialog title="Loot">
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(() => fireEvent.keyDown(document, { key: 'Escape' })).not.toThrow()
+    })
+
+    it('closes only the innermost dialog when stacked', () => {
+      const outerClose = vi.fn()
+      const innerClose = vi.fn()
+      render(
+        <BaseDialog title="Outer" onClose={outerClose}>
+          <BaseDialog title="Inner" onClose={innerClose}>
+            <p>Content</p>
+          </BaseDialog>
+        </BaseDialog>
+      )
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(innerClose).toHaveBeenCalledTimes(1)
+      expect(outerClose).not.toHaveBeenCalled()
+    })
+
+    it('closes the outer dialog on Escape once the inner one has unmounted', () => {
+      const outerClose = vi.fn()
+      const innerClose = vi.fn()
+      const { rerender } = render(
+        <BaseDialog title="Outer" onClose={outerClose}>
+          <BaseDialog title="Inner" onClose={innerClose}>
+            <p>Content</p>
+          </BaseDialog>
+        </BaseDialog>
+      )
+
+      rerender(
+        <BaseDialog title="Outer" onClose={outerClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(outerClose).toHaveBeenCalledTimes(1)
+      expect(innerClose).not.toHaveBeenCalled()
+    })
+
+    it('moves focus to the first focusable element inside the dialog on mount', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button>Inner Button</button>
+        </BaseDialog>
+      )
+      // The header (with the ✕ close button) precedes children in DOM order.
+      expect(document.activeElement).toHaveTextContent('✕')
+    })
+
+    it('focuses the dialog container itself when it has no focusable elements', () => {
+      const { container } = render(
+        <BaseDialog title="Test" showCloseButton={false}>
+          <p>Static content only</p>
+        </BaseDialog>
+      )
+      const dialog = container.querySelector('[role="dialog"]')
+      expect(document.activeElement).toBe(dialog)
+    })
+
+    it('restores focus to the previously focused element when the dialog closes', () => {
+      const trigger = document.createElement('button')
+      trigger.textContent = 'Open Dialog'
+      document.body.appendChild(trigger)
+      trigger.focus()
+      expect(document.activeElement).toBe(trigger)
+
+      const { unmount } = render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(document.activeElement).not.toBe(trigger)
+
+      unmount()
+      expect(document.activeElement).toBe(trigger)
+
+      document.body.removeChild(trigger)
+    })
+
+    it('wraps Tab from the last focusable element back to the first', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button>First</button>
+          <button>Last</button>
+        </BaseDialog>
+      )
+      const buttons = screen.getAllByRole('button')
+      const closeButton = buttons[0]
+      const lastButton = buttons[buttons.length - 1]
+      lastButton.focus()
+      fireEvent.keyDown(document, { key: 'Tab' })
+      expect(document.activeElement).toBe(closeButton)
+    })
+
+    it('wraps Shift+Tab from the first focusable element back to the last', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button>First</button>
+          <button>Last</button>
+        </BaseDialog>
+      )
+      const buttons = screen.getAllByRole('button')
+      const closeButton = buttons[0]
+      const lastButton = buttons[buttons.length - 1]
+      closeButton.focus()
+      fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+      expect(document.activeElement).toBe(lastButton)
+    })
+  })
 })
