@@ -50,7 +50,7 @@ python tools/inquisitor.py --headless --output tools/browser_findings.json   # r
 
 - Always `python -m pytest`, never bare `pytest` — the venv may not expose the binary and bare runs fail silently on imports.
 - **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/`, which is excluded from the default run: a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests. Other route tests use a *mocked* `session_manager`.
-- Coverage gates: backend ≥85% (CI), frontend ≥95% (`vite.config.js` thresholds). Measured 2026-08: backend 96%, ~7.3k backend + ~2.3k frontend tests — re-measure before quoting. Dashboard: `docs/coverage/coverage-dashboard.md`.
+- Coverage gates: backend ≥85% (CI), frontend ≥95% (`vite.config.js` thresholds). Measured 2026-08-23: backend 96% (7,671 tests), frontend 99.4% stmts / 95.1% branch (2,296 tests) — re-measure before quoting. Dashboard: `docs/coverage/coverage-dashboard.md`.
 - Tests touching randomness must seed or patch `random` — the engine makes ~220 unseeded `random.*` calls (only `positions.py` seeds). Never assert on an unseeded roll.
 - Mocks that stub an engine module imported as `import src.x as m` must patch both `sys.modules["src.x"]` *and* the `src` package attribute (see `_fake_engine_modules` in `tests/test_session_manager_coverage.py`); to pass an engine `isinstance`, set `mock.__class__` to the real class or build with `RealClass.__new__(RealClass)`.
 

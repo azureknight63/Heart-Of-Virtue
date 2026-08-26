@@ -1,274 +1,137 @@
 # Test Coverage Dashboard
 
-Last Updated: 2026-05-15
+Last Updated: 2026-08-23
 
 ## Current Coverage State
 
-| Layer | Current | Target | Status | Trend |
-|-------|---------|--------|--------|-------|
-| **Backend (Python)** | 47% | 60% | 🟡 Below target | +2% this week |
-| **Frontend (React)** | ~75% | 85% | 🟡 Below target | +3% this week |
-| **Total Test Count** | 1,308 | 1,500+ | 🟢 On track | +50 new tests |
+| Layer | Current | Gate | Status |
+|-------|---------|------|--------|
+| **Backend (Python)** | 96% | 85% (`--cov-fail-under=85`) | 🟢 Well above gate |
+| **Frontend (React)** | 99.4% stmts / 95.1% branch | 95% (`vite.config.js` thresholds) | 🟢 Above gate (branch coverage is the tight margin) |
+| **Total Test Count** | 9,967 | — | 🟢 7,671 backend + 2,296 frontend, 0 failing |
 
 ## Backend Coverage Details
 
 ```
-Current: 47% (13,383 lines covered / 25,119 total)
-Target:  60%
-Minimum: 55% (enforced by CI)
+Current: 96% (23,713 lines covered / 24,785 total)
+Gate:    85% (enforced by CI via --cov-fail-under=85)
 
-Key areas:
-- src/api/routes/: 80% (well-tested)
-- src/combat.py: 62% (good coverage)
-- src/moves/: 58% (improved with package refactor)
-- src/api/services/: 75% (core logic well-covered)
-- src/story/: 18% (narrative content — low coverage expected)
-- src/npc.py: 54% (needs more edge cases)
+python -m pytest --cov=src --cov=ai --cov-report=term-missing --cov-fail-under=85 -q
+7,671 passed, 565 skipped, 0 failed (default suite; excludes tests/api, tests/broken, tests/uat, tests/integration)
 ```
 
-### Failing Tests (22 failed, 1,286 passed)
+### Package rollups
 
-Currently blocking CI coverage enforcement:
-- `test_game_service_coverage.py` — 15 failures (GameService refactoring in progress)
-- `test_game_service_critical_methods.py` — 7 failures (API integration tests)
+| Package | Coverage | Stmts | Missed |
+|---|---|---|---|
+| `src/moves/` | 99.1% | 4,683 | 41 |
+| `src/player/` | 95.7% | 576 | 25 |
+| `src/api/` | 95.5% | 6,726 | 305 |
+| `ai/` | 95.0% | 1,986 | 100 |
+| `src/npc/` | 94.9% | 2,869 | 145 |
+| `src` (top-level: `combat.py`, `states.py`, `universe.py`, `items.py`, `objects.py`, …) | 94.9% | 5,975 | 302 |
+| `src/story/` | 93.8% | 1,890 | 118 |
+| `src/tilesets/` | 55.0% | 80 | 36 |
 
-**Action**: These tests are high-priority fixes needed to reach 55% minimum enforcement.
+### Lowest-covered modules
+
+| Module | Coverage | Notes |
+|---|---|---|
+| `src/_unpickle_worker.py` | 31% (13 stmts) | Subprocess entry point for isolated unpickling — exercised via `save_fuzzer.py`, not unit tests |
+| `src/tilesets/grondelith_mineral_pools.py` | 51% (73 stmts) | Map/tileset content — same "intentionally low" category as `src/story/` |
+| `src/api/routes/player.py` | 78% |  |
+| `src/api/utils/log_cleanup.py` | 80% |  |
+| `src/genericng.py` | 80% |  |
+| `src/player/_movement.py` | 82% |  |
+| `src/api/routes/combat.py` | 83% |  |
+| `src/story/ch03.py` | 84% (500 stmts) | Narrative — see FAQ below |
+| `src/events.py` | 86% |  |
+| `src/map_placeholders.py` | 86% |  |
+| `src/objects.py` | 87% (787 stmts) |  |
+| `src/api/serializers/_safe.py` | 88% |  |
+| `ai/provider_digest.py` | 89% |  |
+| `src/npc/_adjutant.py` | 89% |  |
+| `src/tiles.py` | 89% |  |
+
+Only 8 of 123 measured modules sit under the 85% file-level figure; every package rollup clears the gate.
 
 ## Frontend Coverage Details
 
 ```
-Current: ~75% (estimated from test pass rate)
-Target:  85%
-Minimum: 80% (enforced by CI)
+Current: 99.4% statements / 95.11% branch / 98.26% functions / 99.4% lines
+Gate:    95% (vite.config.js thresholds)
 
-Components covered:
-- Battlefield.jsx: 82%
-- MainMenuPage.jsx: 90%
-- GamePage.jsx: 78%
-- CombatLog.jsx: 85%
-
-Components needing work:
-- NpcChatPanel.jsx: 65% (complex state, async errors)
-- MobileTabBar.jsx: 70% (touch interactions)
-- InventoryPanel.jsx: 72% (inventory state management)
+cd frontend && npm test -- --run --coverage
+Test Files: 107 passed (107)
+Tests:      2,296 passed (2,296), 0 failed
 ```
 
-### Frontend Test Status
+### Directory rollups
 
-```
-Test Files: 2 failed | 51 passed (53 total)
-Tests:      2 failed | 567 passed (569 total)
+| Directory | Stmts | Branch | Funcs | Lines |
+|---|---|---|---|---|
+| `src/context/` | 100% | 99.1% | 100% | 100% |
+| `src/data/` | 100% | 100% | 100% | 100% |
+| `src/styles/` | 100% | 100% | 100% | 100% |
+| `src/utils/` | 100% | 99.2% | 100% | 100% |
+| `src/components/` | 99.5% | 95.0% | 99.5% | 99.5% |
+| `src/hooks/` | 99.4% | 94.1% | 100% | 99.4% |
+| `src/pages/` | 98.4% | 92.2% | 90.6% | 98.4% |
+| `src/api/` | 96.9% | 98.3% | 95.3% | 96.9% |
 
-Known issues:
-- NpcChatPanel.jsx: ReferenceError in error state rendering (retryFn undefined)
-- Complex async state handling in network error tests
-```
+### Lowest-covered files
 
-## Coverage Targets by Layer
+| File | Stmts | Branch | Funcs | Notes |
+|---|---|---|---|---|
+| `src/api/socketClient.js` | 73.3% | 50% | 50% | Lowest in the tree — socket reconnection edge paths |
+| `src/pages/GamePage.jsx` | 95.3% | 89.7% | 87.5% |  |
+| `src/hooks/useEventManager.js` | 96.8% | 85.8% | 100% |  |
+| `src/components/Battlefield.jsx` | 97.6% | 96.5% | 100% |  |
+| `src/components/BattlefieldGrid.jsx` | 97.6% | 84.4% | 100% |  |
+| `src/components/DefeatDialog.jsx` | 97.9% | 92.9% | 100% |  |
+| `src/components/EventDialog.jsx` | 98.4% | 92.5% | 100% |  |
+| `src/components/BaseDialog.jsx` | 98.6% | 91.0% | 100% | Recently reworked (Escape/focus-trap) — new branches, not yet fully exercised |
+| `src/hooks/useCombatSocket.js` | 98.7% | 90.6% | 100% |  |
+| `src/components/BookReaderDialog.jsx` | 98.7% | 96.6% | 100% |  |
 
-### Backend (Python)
-
-| Module | Current | Target | Notes |
-|--------|---------|--------|-------|
-| src/api/routes/ | 80% | 85% | Well-tested REST endpoints |
-| src/api/services/ | 75% | 80% | Core game logic |
-| src/api/middleware/ | 70% | 75% | Auth, error handling |
-| src/combat.py | 62% | 70% | Turn-based combat engine |
-| src/moves/ | 58% | 65% | 73+ ability classes |
-| src/player.py | 55% | 70% | Character state, progression |
-| src/npc.py | 54% | 70% | NPC AI, combat behavior |
-| src/combatant.py | 48% | 65% | Base class for shared logic |
-| src/items.py | 45% | 60% | Item system, equipment |
-| src/universe.py | 68% | 75% | World/map system |
-| src/states.py | 40% | 60% | Status effects, buffs/debuffs |
-| src/story/ | 18% | 25% | Narrative (intentionally low) |
-| ai/ | 35% | 50% | LLM integration, Mynx adapter |
-
-### Frontend (React)
-
-| Module | Current | Target | Notes |
-|--------|---------|--------|-------|
-| pages/ | 88% | 90% | Login, menu, game pages |
-| components/ | 75% | 85% | UI components |
-| hooks/ | 82% | 90% | Custom API/game hooks |
-| api/ | 90% | 95% | Axios client, endpoints |
-| context/ | 68% | 80% | React context providers |
-
-## CI/CD Enforcement Rules
-
-### Branch Protection: `master` / `develop`
-
-1. **Test Coverage Workflow MUST Pass**
-   - Backend coverage minimum: 55% (enforced via `--cov-fail-under`)
-   - Frontend tests must pass (569 tests)
-   - All CI checks must succeed before merge
-
-2. **Coverage Trend Monitoring**
-   - PR comments auto-posted with coverage summary
-   - Automatic badge updates on main branch
-   - Monthly trend reports generated
-
-3. **Pre-Commit Hook** (local dev)
-   ```bash
-   # Prevents commits that break tests
-   python -m pytest -q --tb=line
-   ```
+Branch coverage at 95.11% overall sits closest to the 95% gate — `socketClient.js` and `useEventManager.js` are the two files most worth a look if that margin needs padding.
 
 ## How Coverage is Measured
 
 ### Backend (pytest)
 
 ```bash
-# Run with coverage reporting
-python -m pytest \
-  --cov=src \
-  --cov=ai \
-  --cov-report=term-missing \
-  --cov-report=html
-
-# View HTML report
+python -m pytest --cov=src --cov=ai --cov-report=term-missing --cov-report=html --cov-fail-under=85 -q
 open htmlcov/index.html
 ```
 
-**Exclusions** (see `pytest.ini`):
-- Tests in `tests/api/`, `tests/broken/`, `tests/uat/` (UAT only)
-- Debug scripts: `debug_*.py`, `check_*.py`, `find_*.py`, etc.
-- Manual test files: `manual_*.py`, `uat_*.py`
+**Exclusions** (see `pytest.ini`): `tests/api/`, `tests/broken/`, `tests/uat/`, `tests/integration/`, debug/check/find/reproduce/verify/uat/manual scripts, and a few named tier-4 files.
 
 ### Frontend (vitest)
 
 ```bash
 cd frontend && npm test -- --run --coverage
-
-# View HTML report
 open coverage/index.html
 ```
 
-**Included**:
-- All files in `src/**/*.{js,jsx}`
+**Included**: all of `src/**/*.{js,jsx}`. **Excluded**: `src/main.jsx`, `src/test/**`.
 
-**Excluded**:
-- `src/main.jsx` (app entry point)
-- `src/test/**` (test infrastructure)
-
-## Monthly Trend Tracking
-
-*(Placeholder for automated monthly tracking)*
-
-### May 2026
-
-- **Week 1**: Backend 45%, Frontend 72%, Tests 1,250
-- **Week 2**: Backend 47%, Frontend 75%, Tests 1,286 (this week)
-- **Week 3**: *pending*
-- **Week 4**: *pending*
-
-## Coverage Badges
-
-### README Badge URLs
-
-```markdown
-![Backend Coverage](https://img.shields.io/badge/backend--coverage-47%25-orange)
-![Frontend Coverage](https://img.shields.io/badge/frontend--coverage-75%25-yellow)
-```
-
-Update these badges on each PR merge via workflow automation.
-
-## Next Steps
-
-### Immediate (this week)
-
-1. Fix 22 failing tests in `test_game_service_coverage.py`
-   - Priority: High (blocks 55% enforcement)
-   - Estimated effort: 2-4 hours
-   - Impact: +5% coverage
-
-2. Fix NpcChatPanel.jsx error state rendering
-   - Priority: High (2 test failures)
-   - Estimated effort: 1 hour
-   - Impact: +3% coverage
-
-### Short-term (this month)
-
-3. Reach 55% backend minimum (currently 47%)
-   - Focus: `src/states.py` (40% → 60%)
-   - Focus: `src/npc.py` (54% → 70%)
-   - Focus: `src/items.py` (45% → 60%)
-   - Estimated effort: 8-12 hours
-   - Impact: +8% coverage
-
-4. Reach 80% frontend minimum (currently ~75%)
-   - Focus: `InventoryPanel.jsx` (72% → 85%)
-   - Focus: `MobileTabBar.jsx` (70% → 85%)
-   - Estimated effort: 4-6 hours
-   - Impact: +5% coverage
-
-### Medium-term (2-3 months)
-
-5. Reach target state
-   - Backend: 60% coverage, 1,500+ tests
-   - Frontend: 85% coverage, 600+ tests
-   - Total: 2,100+ comprehensive tests
-   - Estimated effort: 30-40 hours
-   - Payoff: Regression detection, refactoring confidence
-
-## Resources
-
-- **Pytest Coverage Docs**: https://pytest-cov.readthedocs.io/
-- **Vitest Coverage**: https://vitest.dev/guide/coverage
-- **GitHub Actions Workflows**: `.github/workflows/test-coverage.yml`
-- **CI/CD Config**: See CLAUDE.md "Testing" section
-
-## Setting Up Pre-Commit Hook
-
-The pre-commit hook prevents accidental commits of code that breaks tests. Set it up once:
+## Regenerating this dashboard
 
 ```bash
-# From project root
-cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-set -e
-echo "🧪 Running pre-commit tests..."
-python -m pytest -q --tb=line || exit 1
-echo "✅ Tests passed! Commit proceeding..."
-EOF
-
-chmod +x .git/hooks/pre-commit
+python -m pytest --cov=src --cov=ai --cov-report=term-missing -q -p no:cacheprovider
+cd frontend && npm test -- --run --coverage
 ```
 
-Then on every `git commit`:
-- Hook runs `python -m pytest -q` (~2-3 seconds)
-- If tests fail, commit is blocked
-- To bypass: `git commit --no-verify` (use sparingly)
+Update the headline table, package/directory rollups, and lowest-covered lists from the fresh output; update `CLAUDE.md`'s "Coverage gates" bullet to match.
 
 ## FAQ
 
-**Q: Why is story/ coverage so low?**
-A: Narrative content is intentionally low-coverage because story paths are hard to test (many branches, state-dependent). We focus on core mechanics (combat, inventory, movement) which must be 60%+.
+**Q: Why is `src/story/` (and `src/tilesets/`) coverage lower than everything else?**
+A: Narrative and map-placement content is intentionally lower-coverage — story paths branch heavily on player choice and state, and testing every branch has poor ROI versus testing the mechanics (combat, inventory, movement, saves) those branches call into. The engine code those chapters call is itself well-covered.
 
 **Q: Can I run coverage locally without CI?**
-A: Yes!
-```bash
-# Backend
-python -m pytest --cov=src --cov=ai --cov-report=html
-open htmlcov/index.html
-
-# Frontend
-cd frontend && npm test -- --run --coverage
-open coverage/index.html
-```
+A: Yes — see "Regenerating this dashboard" above; add `--cov-report=html` (backend) or open `coverage/index.html` (frontend) for a browsable per-line report.
 
 **Q: What happens if coverage drops on a PR?**
-A: The workflow fails and posts a comment with the coverage summary. You must either:
-1. Add tests to restore coverage
-2. Request an exception from the maintainer (rare)
-
-**Q: Do merge commits reset the trend?**
-A: No. Coverage is measured on the merged code, so trends are continuous.
-
-**Q: How do I set up GitHub branch protection?**
-A: After pushing this workflow, configure in GitHub Settings → Branches:
-1. Go to your repo Settings → Branches
-2. Add rule for `master` / `develop`
-3. Require status check: "Test Coverage" (or "backend-coverage" and "frontend-coverage")
-4. Require branches to be up to date before merging
-5. Optionally: require code reviews, dismiss stale reviews on push
+A: `--cov-fail-under=85` fails the backend job outright; the frontend `vite.config.js` thresholds fail the same way. Either add tests to restore coverage or, rarely, get a maintainer exception.
