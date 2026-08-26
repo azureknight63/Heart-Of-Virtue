@@ -17,10 +17,7 @@ Tests:
 import os
 import json
 import tempfile
-import configparser
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Minimal test config — avoids loading the real universe (slow)
@@ -127,6 +124,40 @@ def _make_app(config=None, env=None, capture=None):
 # ---------------------------------------------------------------------------
 # Basic factory tests
 # ---------------------------------------------------------------------------
+
+
+class TestLoggingConfiguration:
+    """create_app() must not demolish logging the host process set up.
+
+    _configure_logging used basicConfig(force=True), which removes *and
+    closes* every existing root handler. Under pytest that is caplog's own
+    handler, so any test building an app lost its log capture from that point
+    on -- and a negative assertion ("nothing was logged") then passed
+    vacuously, which is the failure mode that hides regressions rather than
+    reporting them.
+    """
+
+    def test_does_not_destroy_a_pre_existing_root_handler(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            _make_app()
+            logging.getLogger("hov.probe").warning("still captured")
+
+        assert "still captured" in caplog.text
+
+    def test_repeated_calls_do_not_stack_duplicate_handlers(self):
+        import logging
+
+        from src.api.app import _configure_logging
+
+        root = logging.getLogger()
+        _configure_logging()
+        after_first = len(root.handlers)
+        _configure_logging()
+        # Idempotence was the reason force=True was there in the first place;
+        # replacing it must not reintroduce handler stacking.
+        assert len(root.handlers) == after_first
 
 
 class TestCreateApp:

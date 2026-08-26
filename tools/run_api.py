@@ -50,21 +50,19 @@ def main():
         os.environ["CONFIG_FILE"] = args.config
         print(f"[run_api] Using config file from command line: {args.config}")
 
-    # Reload .env so project env settings (e.g. MYNX_LLM_MODEL, OPENROUTER_*)
-    # are guaranteed to be present — but never let the file beat something the
-    # operator set explicitly. override=True alone silently discarded both the
-    # CLI config argument (the .env pins CONFIG_FILE) and an exported
-    # FLASK_ENV, so `FLASK_ENV=production python tools/run_api.py` booted
-    # TestingConfig with the debug blueprint registered.
+    # Reload .env by explicit path, so project settings (MYNX_LLM_MODEL,
+    # OPENROUTER_*, ...) are present even when the import-time load_dotenv()
+    # above resolved find_dotenv() from a different working directory.
+    #
+    # override=False is the whole point: "already in the environment" is
+    # exactly the set the operator (or the CLI arg above) set deliberately, so
+    # the file fills gaps and never wins. This replaced an override=True that
+    # rescued only CONFIG_FILE and FLASK_ENV by hand — every *other* exported
+    # variable was still silently discarded, so `MYNX_LLM_ENABLED=0 python
+    # tools/run_api.py` booted with the LLM on whenever .env said 1.
     env_path = ROOT / ".env"
     if env_path.exists():
-        explicit = {
-            key: os.environ[key]
-            for key in ("CONFIG_FILE", "FLASK_ENV")
-            if key in os.environ
-        }
-        load_dotenv(env_path, override=True)
-        os.environ.update(explicit)
+        load_dotenv(env_path, override=False)
 
     # Determine environment
     env = os.environ.get("FLASK_ENV", "development").lower()
@@ -82,7 +80,6 @@ def main():
     # Run
     port = int(os.environ.get("PORT", 5000))
     debug = config.DEBUG
-    use_reloader = debug
 
     print(f"\n{'='*60}")
     print(f"Heart of Virtue API - {env.upper()}")

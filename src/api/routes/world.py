@@ -75,7 +75,12 @@ def get_current_room():
         try:
             from ai.llm_client import NpcChatLLMAdapter
 
-            if not NpcChatLLMAdapter.is_prewarmed():
+            # Gated on TESTING for the same reason as the digest scheduler
+            # below: prewarm() performs real network discovery/validation, so
+            # without this every suite or bug-hunt world load spends free-tier
+            # requests and mutates class-level LLM state on a daemon thread —
+            # after the per-test reset fixtures have already run.
+            if not current_app.config.get("TESTING") and not NpcChatLLMAdapter.is_prewarmed():
                 _log.info("Triggering NPC chat LLM prewarm after map load...")
                 threading.Thread(
                     target=NpcChatLLMAdapter.prewarm,

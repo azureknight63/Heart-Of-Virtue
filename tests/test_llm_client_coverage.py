@@ -11,7 +11,6 @@ real (infinite-loop) background thread.
 """
 import json
 import logging
-import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -132,6 +131,17 @@ class TestJSONToolsExtractMessageText:
             {"type": "text", "text": "the answer"},
         ]}
         assert _JSONTools.extract_message_text(message) == "the answer"
+
+    def test_content_that_is_only_thinking_falls_through_to_reasoning(self):
+        # An unclosed <think> block strips to "", and the early return fired
+        # on the *pre-strip* text — so the reasoning/thinking fallbacks below
+        # it were unreachable and the real answer was discarded. "" is also
+        # not None, so callers skipped their own salvage branches too.
+        message = {
+            "content": "<think>weighing how she would answer",
+            "reasoning": '{"npc_text": "Hello."}',
+        }
+        assert _JSONTools.extract_message_text(message) == '{"npc_text": "Hello."}'
 
     def test_content_with_think_tags_gets_stripped(self):
         message = {"content": "<think>reasoning here</think>{\"a\": 1}"}
@@ -577,12 +587,15 @@ class TestSelectModelFromCache:
         client._select_model_from_cache(["first", "second"])
         assert client.model == "first"
 
-    def test_empty_list_falls_back_to_stable(self, monkeypatch):
+    def test_empty_list_falls_back_to_the_auto_router(self, monkeypatch):
+        # Not STABLE_FREE_FALLBACKS[0]: those slugs are all retired upstream,
+        # so an empty discovery result used to pin the client to a model that
+        # 404s on every call.
         monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
         client = GenericLLMClient()
         client.model = "free"
         client._select_model_from_cache([])
-        assert client.model == GenericLLMClient.STABLE_FREE_FALLBACKS[0]
+        assert client.model == llm_client._OPENROUTER_AUTO_ROUTER
 
 
 class TestNightlyRefresh:
@@ -972,6 +985,49 @@ class TestGeneratePlain:
         client._available = True
         with patch.object(client, "_ollama_chat", return_value=None):
             assert client.generate_plain("sys", "user") is None
+
+    def _ollama_client(self, monkeypatch):
+        monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
+        monkeypatch.setenv("MYNX_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("MYNX_LLM_MODEL", "m")
+        client = GenericLLMClient()
+        client._available = True
+        return client
+
+    def test_prose_opening_with_a_bracketed_action_is_kept(self, monkeypatch):
+        # Mynx ambient lines routinely open with a stage direction. The
+        # JSON-unwrap branch triggers on a leading "[", the text does not
+        # parse as JSON, and the salvage guard then refused it for the same
+        # leading "[" — so a perfectly good line was dropped and Mynx fell
+        # back to canned text.
+        line = "[chitters softly] The mynx noses at the crate."
+        client = self._ollama_client(monkeypatch)
+        with patch.object(client, "_ollama_chat", return_value=line):
+            assert client.generate_plain("sys", "user") == line
+
+    def test_raw_json_array_is_still_refused(self, monkeypatch):
+        # The guard's real job: a response that genuinely parses as a JSON
+        # container must never reach the player verbatim.
+        client = self._ollama_client(monkeypatch)
+        with patch.object(client, "_ollama_chat", return_value='["one", "two"]'):
+            assert client.generate_plain("sys", "user") is None
+
+    def test_truncated_json_array_is_refused(self, monkeypatch):
+        # An array cut off mid-string parses as nothing, so "did it parse" is
+        # the wrong test for telling JSON from a stage direction: this would
+        # otherwise reach the player with its brackets and quotes intact.
+        client = self._ollama_client(monkeypatch)
+        truncated = '["the mynx circles the crate", "it sniffs at the la'
+        with patch.object(client, "_ollama_chat", return_value=truncated):
+            assert client.generate_plain("sys", "user") is None
+
+    def test_truncated_json_object_yields_its_repaired_description(self, monkeypatch):
+        # Not None: _repair_truncated_json exists to rescue a cut-off reply,
+        # so the player gets the fragment as prose rather than nothing. What
+        # must never escape is JSON *syntax*, and this path strips it.
+        client = self._ollama_client(monkeypatch)
+        with patch.object(client, "_ollama_chat", return_value='{"description": "half a li'):
+            assert client.generate_plain("sys", "user") == "half a li"
 
     def test_json_looking_response_extracts_description(self, monkeypatch):
         monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
@@ -2004,7 +2060,7 @@ class TestGenerateNpcTurn:
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
         raw = json.dumps({"npc_text": "Hello there.", "conversation_quality": "positive",
-                           "conversation_end": False, "reputation_delta": 2})
+                          "conversation_end": False, "reputation_delta": 2})
         with patch.object(adapter, "_call_llm", return_value=raw) as mock_call:
             result = adapter.generate_npc_turn("sys", [], is_opening=True)
         assert "opening line" in mock_call.call_args[0][1]
@@ -2015,7 +2071,7 @@ class TestGenerateNpcTurn:
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
         raw = json.dumps({"npc_text": "I see.", "conversation_quality": "neutral",
-                           "conversation_end": False, "reputation_delta": 0})
+                          "conversation_end": False, "reputation_delta": 0})
         with patch.object(adapter, "_call_llm", return_value=raw) as mock_call:
             result = adapter.generate_npc_turn("sys", [], is_opening=False, jean_text="Hello.")
         assert "Jean said" in mock_call.call_args[0][1]
@@ -2413,12 +2469,18 @@ class TestGetOpenrouterModel:
         GenericLLMClient._free_models_cache = ["cached/model"]
         assert adapter._get_openrouter_model() == "cached/model"
 
-    def test_auto_falls_back_to_stable(self, monkeypatch):
+    def test_auto_falls_back_to_the_auto_router_not_a_retired_slug(self, monkeypatch):
+        # Every STABLE_FREE_FALLBACKS entry has been retired upstream and 404s
+        # (see the list's own comment), so handing one back as the last resort
+        # spent attempt 1 of 3 on a guaranteed failure in every fresh process
+        # where discovery had not run. `openrouter/free` is the auto-router
+        # that actually catches a rotation.
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
         adapter.model = "auto"
         GenericLLMClient._free_models_cache = []
-        assert adapter._get_openrouter_model() == GenericLLMClient.STABLE_FREE_FALLBACKS[0]
+        assert adapter._get_openrouter_model() == llm_client._OPENROUTER_AUTO_ROUTER
+        assert adapter._get_openrouter_model() not in GenericLLMClient.STABLE_FREE_FALLBACKS
 
 
 class TestFormatHistory:

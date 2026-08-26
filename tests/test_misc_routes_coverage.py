@@ -405,3 +405,41 @@ class TestNpcChatRateLimit:
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "CHAT_LIMITER_DISABLED_OK" in result.stdout
+
+    def test_malformed_rate_limit_does_not_break_blueprint_import(self):
+        """A typo'd NPC_CHAT_RATE_LIMIT_PER_MINUTE must not stop the server.
+
+        The value was read with a bare ``int()`` at module scope, so
+        ``NPC_CHAT_RATE_LIMIT_PER_MINUTE=twenty`` raised ValueError while the
+        blueprint was being imported and took the whole API down at boot --
+        a hard outage from a one-character mistake in an env file. Falling
+        back to the default keeps the limiter on, which is the safe direction.
+
+        Subprocess for the same reason as the test above: the module is a
+        process-wide singleton.
+        """
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        env = os.environ.copy()
+        env["NPC_CHAT_RATE_LIMIT_PER_MINUTE"] = "twenty"
+        repo_root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import src.api.routes.npc_chat as m; "
+                "assert m._chat_limiter is not None, 'limiter silently disabled'; "
+                "assert m._RATE_LIMIT_PER_MINUTE == 20, m._RATE_LIMIT_PER_MINUTE; "
+                "print('CHAT_LIMITER_DEFAULTED_OK')",
+            ],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "CHAT_LIMITER_DEFAULTED_OK" in result.stdout

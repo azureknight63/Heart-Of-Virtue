@@ -135,6 +135,24 @@ class TestGetCurrentRoom:
         assert data["success"] is True
         assert "room" in data
 
+    def test_does_not_prewarm_the_llm_under_testing(self, client):
+        """A world load in the test suite must not dial a real provider.
+
+        prewarm() -> GenericLLMClient.__init__ -> _validate_and_fallback_openrouter,
+        which sends real chat completions. `.env` reaches pytest through
+        db.py's load_dotenv(), so without a TESTING gate every GET /world in
+        the suite (and in the bug-hunt harness) can burn free-tier requests and
+        mutate class-level LLM state on a daemon thread, asynchronously, after
+        the reset fixtures have run. The provider-digest scheduler three lines
+        below this call is gated for exactly that reason.
+        """
+        with patch("ai.llm_client.NpcChatLLMAdapter.prewarm") as prewarm, patch(
+            "ai.llm_client.NpcChatLLMAdapter.is_prewarmed", return_value=False
+        ):
+            rv = client.get("/world", headers=AUTH)
+        assert rv.status_code == 200
+        prewarm.assert_not_called()
+
     def test_trailing_slash(self, client):
         rv = client.get("/world/", headers=AUTH)
         assert rv.status_code == 200

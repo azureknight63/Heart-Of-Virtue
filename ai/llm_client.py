@@ -120,6 +120,25 @@ _OPENAI_COMPATIBLE_PROVIDERS = {
 # Saturation at or above which a provider is pre-emptively skipped.
 _DEFAULT_SATURATION_CUTOFF = 0.90
 
+# HTTP statuses that mean "this will not answer, and retrying next turn will not
+# change that": 401 the credential is rejected, 402 the account has no quota,
+# 404 the model does not exist. Distinct from 429 (transient, metered) and 5xx
+# (transient, the provider's problem), neither of which earns a bench.
+_PERMANENT_MODEL_FAILURES = frozenset({401, 402, 404})
+
+# OpenRouter's auto-router: it picks a live free model per request. This is the
+# correct last resort when discovery has not run, because every entry in
+# STABLE_FREE_FALLBACKS has since been retired upstream and 404s on sight —
+# handing one back spent an attempt on a guaranteed failure.
+_OPENROUTER_AUTO_ROUTER = "openrouter/free"
+
+# A prose line opening with a stage direction — "[chitters softly] The mynx
+# noses at the crate." — versus a JSON array. The character class excludes the
+# quotes and braces a JSON array of strings opens with, the length cap keeps a
+# long array element from passing as a phrase, and the trailing \S requires
+# actual prose after the closing bracket.
+_STAGE_DIRECTION_RE = re.compile(r'^\[[^\[\]{}"]{1,80}\]\s*\S')
+
 
 def _post_chat_completion(
     url: str,
@@ -193,7 +212,6 @@ class _JSONTools:
         s = "\n".join(line for line in s.splitlines() if line.strip() != "```")
         return s.strip()
 
-    @staticmethod
     @staticmethod
     def _keep_first_duplicate(pairs):
         """object_pairs_hook that keeps the FIRST value for a repeated key.
@@ -336,7 +354,14 @@ class _JSONTools:
             # Some completion-style responses use "text" instead of "content".
             text = _JSONTools.extract_text_content(message.get("text"))
         if text and text.strip():
-            return _JSONTools._strip_thinking_tokens(text)
+            # Strip *before* deciding, not after: content that is nothing but
+            # an unclosed <think> block strips to "", and returning that here
+            # made the reasoning/thinking fallbacks below unreachable. ""
+            # is not None, so callers skipped their own salvage branches too
+            # and the turn was discarded with its answer sitting in `reasoning`.
+            stripped = _JSONTools._strip_thinking_tokens(text)
+            if stripped and stripped.strip():
+                return stripped
 
         # content was empty/null — the model likely spent its budget on
         # reasoning without producing a final answer. Chain-of-thought is not
@@ -784,7 +809,7 @@ class GenericLLMClient:
         """Pick a primary model from the ranked list when model is set to auto."""
         if self.model not in ("auto", "free", "") and self.model:
             return  # User explicitly specified a model; respect it
-        self.model = models[0] if models else self.STABLE_FREE_FALLBACKS[0]
+        self.model = models[0] if models else _OPENROUTER_AUTO_ROUTER
 
     @classmethod
     def _start_nightly_refresh(cls) -> None:
@@ -997,7 +1022,21 @@ class GenericLLMClient:
             # Unparseable JSON-ish response: if what's left after fence
             # stripping reads as plain text, salvage it; otherwise give up.
             stripped = _JSONTools.strip_code_fences(res)
-            if stripped and not stripped.lstrip().startswith(("{", "[")):
+            # A leading "{" is object-shaped and never goes back to the player.
+            # A leading "[" is ambiguous: it opens both a JSON array and an
+            # ambient stage direction ("[chitters softly] The mynx noses at
+            # the crate."), and refusing all of them threw the latter away.
+            # "Did it parse" is the wrong discriminator — a truncated array
+            # parses as nothing and would sail through with its brackets and
+            # quotes intact — so match the shape instead: a stage direction is
+            # a short bracketed phrase, free of JSON punctuation, that closes
+            # and is followed by prose.
+            candidate = stripped.lstrip()
+            head = candidate[:1]
+            looks_like_json = head == "{" or (
+                head == "[" and not _STAGE_DIRECTION_RE.match(candidate)
+            )
+            if stripped and not looks_like_json:
                 logger.info("generate_plain salvaged fence-stripped plain text. model=%s", self.model)
                 return _JSONTools.sanitize_text(stripped)
             logger.warning("generate_plain unusable JSON-like response; returning None. model=%s", self.model)
@@ -2743,6 +2782,22 @@ class NpcChatLLMAdapter(GenericLLMClient):
             response.raise_for_status()
         except Exception:
             GenericLLMClient._record_provider_usage(provider, response, "error")
+            # Bench the slug on a failure that will not resolve itself. Until
+            # this existed the served_id key was only ever *written* on success
+            # (via _last_served_model below), so the guard at the top of this
+            # method could never fire for a transport failure: a retired model
+            # was re-dialled every turn, paying the full round trip each time,
+            # while the chain quietly moved on and made the provider look fine.
+            # 429 is handled above and 5xx is transient — neither is benched.
+            if getattr(response, "status_code", None) in _PERMANENT_MODEL_FAILURES:
+                self._mark_model_failed(served_id, duration_minutes=30)
+                logger.warning(
+                    "Provider %s benched %s for 30m after HTTP %s (%s).",
+                    provider,
+                    served_id,
+                    response.status_code,
+                    getattr(response, "text", "")[:120],
+                )
             raise
         content = self._extract_chat_content(response.json())
         if not content:
@@ -2833,7 +2888,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
         models_to_try = [primary]
         # OpenRouter maintains this router slug as the stable escape hatch for
         # free accounts even as individual free model slugs are retired.
-        for model_id in ["openrouter/free", *GenericLLMClient._free_models_cache]:
+        for model_id in [_OPENROUTER_AUTO_ROUTER, *GenericLLMClient._free_models_cache]:
             if model_id not in models_to_try:
                 models_to_try.append(model_id)
         for model_id in self.STABLE_FREE_FALLBACKS:
@@ -2939,7 +2994,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             return self.model
         if GenericLLMClient._free_models_cache:
             return GenericLLMClient._free_models_cache[0]
-        return self.STABLE_FREE_FALLBACKS[0]
+        return _OPENROUTER_AUTO_ROUTER
 
     def _parse_or_penalize(self, raw: Optional[str], label: str) -> Optional[Dict[str, Any]]:
         """Parse a JSON reply, benching the model that served it if it will not.

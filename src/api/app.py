@@ -57,12 +57,24 @@ def _configure_logging():
             logging.getLogger(__name__).warning(
                 "Could not attach LOG_FILE handler %s: %s", log_file, exc
             )
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=handlers,
-        force=True,
-    )
+    # Replace only the handlers a previous call installed. basicConfig(
+    # force=True) did the idempotence job but removes *and closes* every root
+    # handler, including ones this process does not own: under pytest that is
+    # caplog's, so any test building an app lost its log capture from that
+    # point on and every later "nothing was logged" assertion passed
+    # vacuously. Tagging our own handlers keeps repeated create_app() calls
+    # from stacking duplicates without touching anyone else's.
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    root = logging.getLogger()
+    for existing in list(root.handlers):
+        if getattr(existing, "_hov_handler", False):
+            root.removeHandler(existing)
+            existing.close()
+    for handler in handlers:
+        handler._hov_handler = True
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+    root.setLevel(level)
 
 
 def _apply_proxy_fix(app):

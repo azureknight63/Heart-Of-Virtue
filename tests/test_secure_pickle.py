@@ -688,7 +688,9 @@ def test_sandbox_memory_cap_default_is_bounded():
 
 
 def test_rlimit_preexec_sets_address_space_limit():
-    import resource
+    # `resource` is POSIX-only; the sandbox's rlimit path does not exist on
+    # Windows, so this asserts nothing there and must skip rather than error.
+    resource = pytest.importorskip("resource")
 
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     applied = {}
@@ -701,7 +703,6 @@ def test_rlimit_preexec_sets_address_space_limit():
         resource.setrlimit = orig
     assert applied == {"which": resource.RLIMIT_AS, "limits": (123456, 123456)}
     assert resource.getrlimit(resource.RLIMIT_AS) == (soft, hard)
-
 
 
 # ---------------------------------------------------------------------------

@@ -8,11 +8,16 @@ Provides REST API endpoints for:
 - Retrieving conversation history
 """
 
+import logging
 import os
 
 from flask import Blueprint, request, jsonify, current_app
 from src.api.middleware.auth import get_session_and_player
 from src.api.rate_limiter import RateLimiter
+
+# Module-level: the rate limit is read at import, before an app context (and
+# therefore current_app.logger) exists.
+logger = logging.getLogger(__name__)
 
 npc_chat_bp = Blueprint("npc_chat", __name__)
 
@@ -32,7 +37,34 @@ _MAX_FIELD_LEN = 4000
 # entirely. Per-worker (not shared across Gunicorn workers) — see GitHub issue
 # #284 and `src.api.rate_limiter` for the bounded-store rationale, shared with
 # auth.py's login throttle and feedback.py's submission throttle.
-_RATE_LIMIT_PER_MINUTE = int(os.environ.get("NPC_CHAT_RATE_LIMIT_PER_MINUTE", "20"))
+_RATE_LIMIT_DEFAULT_PER_MINUTE = 20
+
+
+def _rate_limit_from_env():
+    """Read the limit, surviving a malformed value.
+
+    This runs at blueprint import, so a bare ``int()`` turned a typo in an env
+    file (``NPC_CHAT_RATE_LIMIT_PER_MINUTE=twenty``) into a ValueError during
+    import and took the whole API down at boot. Falling back to the default
+    keeps the limiter *on*, which is the safe direction to fail: a garbled
+    value must never be read as "unlimited".
+    """
+    raw = os.environ.get("NPC_CHAT_RATE_LIMIT_PER_MINUTE", "")
+    if not raw.strip():
+        return _RATE_LIMIT_DEFAULT_PER_MINUTE
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "NPC_CHAT_RATE_LIMIT_PER_MINUTE=%r is not an integer; "
+            "falling back to %d/minute.",
+            raw,
+            _RATE_LIMIT_DEFAULT_PER_MINUTE,
+        )
+        return _RATE_LIMIT_DEFAULT_PER_MINUTE
+
+
+_RATE_LIMIT_PER_MINUTE = _rate_limit_from_env()
 _RATE_WINDOW_SECONDS = 60
 _chat_limiter = (
     RateLimiter(limit=_RATE_LIMIT_PER_MINUTE, window_seconds=_RATE_WINDOW_SECONDS)

@@ -628,6 +628,58 @@ class TestOpenAiCompatibleCall:
         a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
         assert a._last_served_model == "groq:some-fast-model"
 
+    # The bench keyed on "<provider>:<model>" was only ever *written* on a
+    # successful call (via _last_served_model), so a transport failure marked
+    # nothing. A retired slug therefore 404'd on every turn forever, paying the
+    # full round-trip each time -- and, because the chain silently moved on,
+    # looking exactly like a healthy provider from the outside. This is the
+    # mechanism that let two dead providers pass as 46/47 green for days.
+    @pytest.mark.parametrize("status", [401, 402, 404])
+    def test_permanent_client_error_benches_the_model(self, status, monkeypatch):
+        llm.GenericLLMClient.reset_class_state()
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+        monkeypatch.setenv("GROQ_MODEL", "retired-slug")
+        monkeypatch.setattr(
+            llm, "_post_chat_completion", lambda *a, **k: _Resp(status, text="nope")
+        )
+        a = self._adapter()
+        with pytest.raises(RuntimeError):
+            a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
+        assert a._is_model_failed("groq:retired-slug")
+
+    def test_benched_model_is_not_re_dialled(self, monkeypatch):
+        llm.GenericLLMClient.reset_class_state()
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+        monkeypatch.setenv("GROQ_MODEL", "retired-slug")
+        posts = []
+
+        def counting_post(*a, **k):
+            posts.append(1)
+            return _Resp(404, text="model_not_found")
+
+        monkeypatch.setattr(llm, "_post_chat_completion", counting_post)
+        a = self._adapter()
+        with pytest.raises(RuntimeError):
+            a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
+
+        # Second turn: the guard at the top of the method must short-circuit.
+        assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
+        assert len(posts) == 1, "benched model was dialled again"
+
+    def test_transient_server_error_is_not_benched(self, monkeypatch):
+        # 5xx says nothing about the slug's validity; benching it would take a
+        # healthy provider out of the chain over one bad minute.
+        llm.GenericLLMClient.reset_class_state()
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+        monkeypatch.setenv("GROQ_MODEL", "fine-slug")
+        monkeypatch.setattr(
+            llm, "_post_chat_completion", lambda *a, **k: _Resp(503, text="try later")
+        )
+        a = self._adapter()
+        with pytest.raises(RuntimeError):
+            a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
+        assert not a._is_model_failed("groq:fine-slug")
+
 
 # ---------------------------------------------------------------------------
 # Free-tier saturation analytics
@@ -1162,6 +1214,7 @@ class TestDuplicateJsonKeys:
     def test_nested_duplicates_are_handled(self):
         parsed = llm._JSONTools.try_parse_json('{"outer": {"k": "keep", "k": "drop"}}')
         assert parsed["outer"]["k"] == "keep"
+
 
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
