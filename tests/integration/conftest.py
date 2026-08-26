@@ -21,6 +21,7 @@ default suite to start spending free-tier quota.
 """
 
 import os
+import warnings
 
 import pytest
 
@@ -45,6 +46,60 @@ _LIVE_KEYS = (
 def live_llm_enabled() -> bool:
     """True when the developer has explicitly opted into live provider calls."""
     return os.getenv("HOV_LIVE_LLM", "0") in ("1", "true", "True")
+
+
+def _apply_single_provider_isolation():
+    """Honour ``HOV_LIVE_ONLY=<provider>``: run against that provider alone.
+
+    The ``.env`` restore above is deliberately unconditional -- it has to beat
+    the default suite's ``MYNX_LLM_ENABLED=0`` safety pins. The side effect was
+    that a command-line ``GROQ_API_KEY= pytest ...`` got silently refilled from
+    ``.env``, so there was no way to ask "does this one provider actually
+    work?".
+
+    That mattered more than it sounds. The fallback chain is designed to hide a
+    dead provider: when Groq and Cerebras were both configured with retired
+    model slugs, every call 404'd, OpenRouter quietly served all of them, and
+    the live suite reported 46/47 passing. Blanking the *other* providers'
+    credentials removes the safety net for one run, so a broken provider fails
+    where you can see it.
+
+        HOV_LIVE_LLM=1 HOV_LIVE_ONLY=groq python -m pytest tests/integration/...
+
+    Every key touched here is in ``_LIVE_KEYS``, so the fixture's own finally
+    block restores it -- the blanking never outlives the module.
+    """
+    only = os.getenv("HOV_LIVE_ONLY", "").strip().lower()
+    if not only:
+        return
+
+    from ai.llm_client import _OPENAI_COMPATIBLE_PROVIDERS
+
+    if only not in _OPENAI_COMPATIBLE_PROVIDERS:
+        raise pytest.UsageError(
+            "HOV_LIVE_ONLY=%r is not a known provider (choose from: %s)"
+            % (only, ", ".join(sorted(_OPENAI_COMPATIBLE_PROVIDERS)))
+        )
+
+    for name, provider_cfg in _OPENAI_COMPATIBLE_PROVIDERS.items():
+        if name != only:
+            os.environ[provider_cfg["key_env"]] = ""
+    # _provider_chain appends ollama whenever OLLAMA_BASE_URL is set, so a
+    # local Ollama would quietly serve the calls this run exists to expose.
+    os.environ["OLLAMA_BASE_URL"] = ""
+
+    # Only the NPC chat adapter dispatches the fallback chain; GenericLLMClient
+    # routes ollama/openrouter alone and would call a chain name "Unknown
+    # provider". Setting MYNX_LLM_PROVIDER here would therefore make
+    # test_tactical_advisor_live.py skip its whole module -- the permanently
+    # inert live module this conftest's docstring exists to prevent.
+    os.environ["NPC_CHAT_LLM_PROVIDER"] = only
+    warnings.warn(
+        "HOV_LIVE_ONLY=%s: only the NPC chat chain is isolated. Other live "
+        "modules read MYNX_LLM_PROVIDER and will skip if their provider's "
+        "credential was blanked." % only,
+        stacklevel=2,
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -86,6 +141,7 @@ def live_env():
             value = cfg.get(key)
             if value:
                 os.environ[key] = value
+        _apply_single_provider_isolation()
         _reset()
         yield
     finally:

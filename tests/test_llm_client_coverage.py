@@ -890,6 +890,18 @@ class TestAvailable:
         assert client.available() is False
         assert "Unknown provider" in client._unavailable_reason
 
+    def test_chain_provider_is_unknown_to_the_base_client(self, monkeypatch):
+        # groq is dispatchable by NpcChatLLMAdapter, NOT by this class:
+        # _dispatch_chat routes only ollama and openrouter. "Unknown provider"
+        # is therefore the correct, and the useful, answer here.
+        monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
+        monkeypatch.setenv("MYNX_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "key")
+        client = GenericLLMClient()
+        client._available = None
+        assert client.available() is False
+        assert "Unknown provider" in client._unavailable_reason
+
 
 class TestDebugStatus:
     def test_returns_expected_keys(self, monkeypatch):
@@ -1768,6 +1780,74 @@ class TestMynxLLMAdapter:
 # ---------------------------------------------------------------------------
 # NpcChatLLMAdapter
 # ---------------------------------------------------------------------------
+
+
+class TestNpcChatLLMAdapterAvailable:
+    """The adapter dispatches the whole fallback chain, so it must judge it.
+
+    Regression cover for a failure that hid behind a cache: an OpenRouter
+    validation in __init__ leaves _available=True, so a groq-configured adapter
+    read as available only while an unrelated OPENROUTER_API_KEY happened to be
+    set -- and reported "Unknown provider 'groq'" the moment it wasn't.
+    """
+
+    @staticmethod
+    def _no_credentials(monkeypatch):
+        for var in ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_BASE_URL"):
+            monkeypatch.delenv(var, raising=False)
+
+    def test_chain_provider_with_its_key_is_available(self, monkeypatch):
+        # The exact configuration HOV_LIVE_ONLY=groq creates: groq keyed,
+        # every other credential blanked.
+        self._no_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "key")
+        adapter = NpcChatLLMAdapter()
+        assert adapter.available() is True
+
+    def test_available_when_only_a_fallback_is_credentialed(self, monkeypatch):
+        # Pinned to groq with no GROQ_API_KEY, but OpenRouter can serve every
+        # call via the chain. Reporting unavailable here would skip a live
+        # module that would have passed.
+        self._no_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "key")
+        adapter = NpcChatLLMAdapter()
+        assert adapter.available() is True
+
+    def test_unavailable_when_no_provider_in_the_chain_has_a_credential(self, monkeypatch):
+        self._no_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "cerebras")
+        adapter = NpcChatLLMAdapter()
+        assert adapter.available() is False
+        # The reason names the chain it tried, not a single missing key.
+        assert "chain" in adapter._unavailable_reason.lower()
+        assert "cerebras" in adapter._unavailable_reason
+
+    def test_disabled_adapter_names_the_flag_that_actually_enables_it(self, monkeypatch):
+        # The base class's message says MYNX_LLM_ENABLED, which this subclass
+        # never reads — an operator following it gets nowhere.
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "key")
+        adapter = NpcChatLLMAdapter()
+        assert adapter.available() is False
+        assert "NPC_CHAT_LLM_ENABLED" in adapter._unavailable_reason
+        assert "MYNX_LLM_ENABLED" not in adapter._unavailable_reason
+
+    def test_ollama_primary_uses_the_real_reachability_probe(self, monkeypatch):
+        # _call_ollama defaults its base_url, so no env var's absence means
+        # "not configured" — only the base class's HTTP probe can answer.
+        self._no_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "ollama")
+        adapter = NpcChatLLMAdapter()
+        with patch.object(GenericLLMClient, "available", return_value=True) as probe:
+            assert adapter.available() is True
+        probe.assert_called_once()
 
 
 class TestNpcChatLLMAdapterInit:

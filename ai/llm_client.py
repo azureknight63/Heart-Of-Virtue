@@ -99,17 +99,21 @@ _OPENAI_COMPATIBLE_PROVIDERS = {
         "url": _OPENROUTER_CHAT_URL,
         "key_env": "OPENROUTER_API_KEY",
     },
+    # default_model must be a slug the provider currently serves, or every call
+    # 404s and silently falls through to the next provider in the chain. Both
+    # entries below were Llama 3.3 until Aug 2026, when both vendors retired it;
+    # tests/integration/test_provider_catalogue.py now guards against a repeat.
     "groq": {
         "url": "https://api.groq.com/openai/v1/chat/completions",
         "key_env": "GROQ_API_KEY",
         "model_env": "GROQ_MODEL",
-        "default_model": "llama-3.3-70b-versatile",
+        "default_model": "openai/gpt-oss-120b",
     },
     "cerebras": {
         "url": "https://api.cerebras.ai/v1/chat/completions",
         "key_env": "CEREBRAS_API_KEY",
         "model_env": "CEREBRAS_MODEL",
-        "default_model": "llama-3.3-70b",
+        "default_model": "gpt-oss-120b",
     },
 }
 
@@ -909,6 +913,10 @@ class GenericLLMClient:
             self._available = True
             return True
 
+        # "Unknown" is the truth for this class: _dispatch_chat routes only
+        # ollama and openrouter. The fallback-chain providers (groq, cerebras)
+        # are dispatchable by NpcChatLLMAdapter alone, which overrides this
+        # method rather than widening it here.
         self._available = False
         self._unavailable_reason = f"Unknown provider '{self.provider}'."
         return False
@@ -1957,6 +1965,77 @@ class NpcChatLLMAdapter(GenericLLMClient):
             self.model = npc_model
         self._world_facts: Optional[Dict[str, Any]] = None
         self._load_world_facts()
+
+    def available(self) -> bool:
+        """Availability for a class that can dispatch to the whole chain.
+
+        ``GenericLLMClient.available`` knows only the providers *it* can route
+        (ollama, openrouter) and calls everything else "Unknown provider" --
+        correct for the base class, wrong here, because ``_provider_chain``
+        dispatches to groq/cerebras by name. Their one precondition is their
+        own credential.
+
+        This mattered in a way that hid itself: the base method returns a
+        cached ``_available``, and an OpenRouter validation during ``__init__``
+        leaves that cache ``True``. So a groq-configured adapter *looked*
+        available for as long as an unrelated ``OPENROUTER_API_KEY`` was
+        present, and reported "Unknown provider 'groq'" the moment it wasn't --
+        which is what made ``HOV_LIVE_ONLY=groq`` skip the entire live suite
+        instead of running against Groq.
+
+        Availability is a question about the *chain*, not about the configured
+        provider: a groq-pinned adapter with no ``GROQ_API_KEY`` but a live
+        ``OPENROUTER_API_KEY`` still answers every call, so calling it
+        unavailable would skip a live module that would have passed.
+
+        Recomputed rather than cached: this is a handful of env reads, and the
+        live fixtures rewrite provider credentials between modules.
+        """
+        if not self.enabled:
+            # Not super()'s message: the base class tells the operator to set
+            # MYNX_LLM_ENABLED, which this subclass does not read.
+            self._available = False
+            self._unavailable_reason = (
+                "NPC chat adapter disabled (set NPC_CHAT_LLM_ENABLED=1 to enable)."
+            )
+            return False
+
+        # An ollama-primary adapter gets the base class's real reachability
+        # probe. _call_ollama falls back to a default base_url, so there is no
+        # env var whose absence means "not configured" -- only an HTTP round
+        # trip can answer.
+        if self.provider == "ollama":
+            return super().available()
+
+        chain = self._provider_chain()
+        usable = [name for name in chain if self._provider_credentialed(name)]
+        self._available = bool(usable)
+        self._unavailable_reason = (
+            None
+            if usable
+            else "No credentialed provider in the chain (%s)." % (", ".join(chain) or "empty")
+        )
+        return self._available
+
+    def _provider_credentialed(self, name: str) -> bool:
+        """True when `name` has the one thing it needs to be dialled at all.
+
+        `_provider_chain` always seeds itself with the configured provider
+        whether or not that provider has a credential, so chain membership
+        alone does not mean callable.
+
+        Each branch asks the same question the corresponding call site asks:
+        `_call_openrouter` gates on the `__init__` snapshot rather than the
+        live env, and ollama joins the chain only when `OLLAMA_BASE_URL` is
+        set (`_provider_chain`), so availability must not invent a different
+        rule for either.
+        """
+        if name == "ollama":
+            return bool(os.getenv("OLLAMA_BASE_URL", "").strip())
+        if name == "openrouter":
+            return bool(self._openrouter_api_key)
+        cfg = _OPENAI_COMPATIBLE_PROVIDERS.get(name)
+        return bool(cfg and os.getenv(cfg["key_env"], "").strip())
 
     @classmethod
     def get_instance(cls) -> "NpcChatLLMAdapter":
