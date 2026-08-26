@@ -12,12 +12,18 @@ const FLUSH_INTERVAL = 5000; // 5 seconds
 // a failure. Oldest entries are dropped first — recent logs matter most.
 const MAX_QUEUE_SIZE = 100;
 const FAILURE_BACKOFF_MS = 30000;
+// Identical consecutive lines within this window collapse into one entry
+// with an `n` repeat count (React StrictMode double-invokes effects in dev,
+// duplicating nearly every debug line).
+const DEDUPE_WINDOW_MS = 2000;
 
 class BrowserLogger {
     constructor() {
         this.logQueue = [];
         this.flushTimer = null;
         this.retryAfter = 0;
+        // Last payload per event name, for eventOnChange() suppression
+        this._lastEventState = new Map();
         this.originalConsole = {
             log: console.log,
             error: console.error,
@@ -70,16 +76,47 @@ class BrowserLogger {
     }
 
     /**
-     * Queue a log entry
+     * Queue a log entry. `structured` optionally carries {event, data,
+     * serialized} from the structured event API. Structured entries ship
+     * {event, data} with no message — the composed text exists only for the
+     * devtools echo, and shipping both would double every line on the wire
+     * and on disk.
      */
-    queueLog(level, args) {
+    queueLog(level, args, structured = null) {
+        const upperLevel = level.toUpperCase();
+        const message = structured ? undefined : this.formatArgs(args);
+        const sig = structured
+            ? `${structured.event} ${structured.serialized || ''}`
+            : message;
+
+        // Collapse immediate repeats into the previous entry's counter
+        const last = this.logQueue[this.logQueue.length - 1];
+        if (
+            last &&
+            last.level === upperLevel &&
+            last._sig === sig &&
+            Date.now() - Date.parse(last.timestamp) < DEDUPE_WINDOW_MS
+        ) {
+            last.n = (last.n || 1) + 1;
+            return;
+        }
+
         const entry = {
             timestamp: new Date().toISOString(),
-            level: level.toUpperCase(),
-            message: this.formatArgs(args),
-            url: window.location.href,
-            userAgent: navigator.userAgent
+            level: upperLevel,
+            url: window.location.href
         };
+        if (message !== undefined) {
+            entry.message = message;
+        }
+        if (structured) {
+            entry.event = structured.event;
+            if (structured.data !== undefined) {
+                entry.data = structured.data;
+            }
+        }
+        // Dedupe key: non-enumerable so JSON.stringify never ships it
+        Object.defineProperty(entry, '_sig', { value: sig, enumerable: false });
 
         this.logQueue.push(entry);
         this.trimQueue();
@@ -100,19 +137,54 @@ class BrowserLogger {
     }
 
     /**
-     * Format console arguments into a string
+     * Format console arguments into a condensed single-line string
      */
     formatArgs(args) {
-        return args.map(arg => {
-            if (typeof arg === 'object') {
-                try {
-                    return JSON.stringify(arg, null, 2);
-                } catch (e) {
-                    return String(arg);
-                }
+        return args.map(arg => this.formatArg(arg)).join(' ');
+    }
+
+    formatArg(arg) {
+        if (this.isErrorLike(arg)) {
+            return this.serializeError(arg);
+        }
+        if (typeof arg === 'object' && arg !== null) {
+            try {
+                // Compact: pretty-printed JSON turns one log line into a wall
+                return JSON.stringify(arg);
+            } catch (e) {
+                return String(arg);
             }
-            return String(arg);
-        }).join(' ');
+        }
+        return String(arg);
+    }
+
+    isErrorLike(arg) {
+        // instanceof misses cross-realm errors; duck-type on message+stack.
+        // Without this, JSON.stringify(new Error(...)) yields "{}" — the
+        // error's name, message, and stack are all non-enumerable.
+        return Boolean(
+            arg &&
+            typeof arg === 'object' &&
+            typeof arg.message === 'string' &&
+            (arg instanceof Error || typeof arg.stack === 'string')
+        );
+    }
+
+    serializeError(err) {
+        // Axios-style errors: one compact request summary instead of the
+        // whole config object (which used to dump ~2KB per failed request).
+        const status = err.status ?? err.response?.status;
+        if (err.config && (err.isAxiosError || status !== undefined)) {
+            const method = (err.config.method || '?').toUpperCase();
+            const url = err.config.url || '?';
+            return `${method} ${url} -> ${status ?? err.code ?? 'ERR'} (${err.message})`;
+        }
+        const stackHead = (err.stack || '')
+            .split('\n')
+            .map(line => line.trim())
+            .find(line => line.startsWith('at ') || /\S+@/.test(line)) || '';
+        const name = err.name || 'Error';
+        return `${name}: ${err.message}${stackHead ? ` [${stackHead}]` : ''}`;
     }
 
     /**
@@ -189,6 +261,53 @@ class BrowserLogger {
      */
     log(level, ...args) {
         this.queueLog(level, args);
+    }
+
+    /**
+     * Log a named structured event: `logger.event('event.enqueue', {name})`.
+     *
+     * Always echoes a compact line to the devtools console (through the
+     * un-intercepted original, so it is never re-captured). Ships to the
+     * backend only once the logger is initialized — component unit tests
+     * therefore never trigger network sends.
+     *
+     * Options: {level: 'debug', onChange: false}. With onChange, the event
+     * is suppressed while its payload is unchanged since the last call —
+     * use for periodic state checks that only matter when state moves.
+     */
+    event(name, data = undefined, opts = {}) {
+        const { level = 'debug', onChange = false } = opts;
+        // A circular/unserializable payload stored verbatim would make every
+        // flush()'s JSON.stringify(payload) throw, re-queue, and throw again —
+        // poisoning delivery of ALL queued logs until the entry ages out.
+        let safeData = data;
+        if (data !== undefined) {
+            try {
+                JSON.stringify(data);
+            } catch (e) {
+                safeData = { _unserializable: String(data) };
+            }
+        }
+        const serialized = safeData === undefined ? '' : this.formatArg(safeData);
+        if (onChange) {
+            if (this._lastEventState.get(name) === serialized) {
+                return;
+            }
+            this._lastEventState.set(name, serialized);
+        }
+        const echo = serialized ? `${name} ${serialized}` : name;
+        this.originalConsole.debug(`[hov] ${echo}`);
+        if (!this.isInitialized) {
+            return;
+        }
+        this.queueLog(level, [], { event: name, data: safeData, serialized });
+    }
+
+    /**
+     * Shorthand for event(name, data, {onChange: true}).
+     */
+    eventOnChange(name, data) {
+        this.event(name, data, { onChange: true });
     }
 
     /**

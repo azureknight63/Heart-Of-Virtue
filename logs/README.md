@@ -2,6 +2,9 @@
 
 This directory contains browser console logs captured from the frontend application.
 
+See also: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for a build-log-style
+summary of what shipped and when.
+
 ## Overview
 
 The browser logging system automatically captures all console output (log, error, warn, info, debug) from the frontend and sends it to the backend for persistent storage.
@@ -21,31 +24,54 @@ The system automatically cleans up old log files to prevent disk space issues:
 
 - **Retention Period**: Logs older than 7 days are automatically deleted
 - **Size Limit**: If total logs exceed 100MB, oldest files are deleted first
-- **Cleanup Trigger**: Runs automatically after each log write operation
+- **Cleanup Trigger**: Browser logs (`logs/browser/`) are pruned after every
+  `POST /api/logs/browser` write. Backend logs (`logs/backend/`) are pruned
+  once whenever `configure_logging()` runs (app startup) — not per write,
+  since the backend logger writes far more frequently than the browser
+  batches logs.
 - **Silent Operation**: Cleanup failures don't affect log writing
 
 ### Cleanup Configuration
 
-Default settings (configurable in `src/api/routes/logs.py`):
+Default settings (configurable in `src/api/routes/logs.py` for browser logs,
+`src/api/structured_log.py`'s `configure_logging()` for backend logs):
 - **Retention Days**: 7 days
 - **Max Total Size**: 100 MB
 
 ## Log File Format
 
-Log files are stored with the naming convention:
-```
-YYYY-MM-DD_session_TIMESTAMP_RANDOMID.log
-```
+Both streams write JSONL — one JSON envelope per line, sharing the schema
+defined in `src/api/structured_log.py`:
 
-Each log entry follows this format:
-```
-[TIMESTAMP] [LEVEL] [URL] MESSAGE
-```
+- Browser logs: `logs/browser/YYYY-MM-DD_bucketNN.jsonl` (session ids hash
+  into a bounded bucket set)
+- Backend logs: `logs/backend/YYYY-MM-DD.jsonl` (written when `LOG_JSONL_DIR`
+  is set; `tools/run_api.py` sets it by default)
+
+`configure_logging()` (`src/api/structured_log.py`) reads three env vars:
+`LOG_LEVEL` (console/plain-file level name, default `WARNING`), `LOG_FILE`
+(optional plain-text log file path, off by default), and `LOG_JSONL_DIR`
+(directory for the JSONL stream — setting it also drops the logger to
+`DEBUG` so the JSONL file captures everything while the console keeps
+`LOG_LEVEL`).
+
+Envelope fields: `ts` (ISO-8601 UTC, Z suffix), `src` (`be`/`fe`), `lvl`
+(`debug|info|warning|error`), `event` (dot-separated name; `console` for
+intercepted console output, `log` for plain backend logger calls), plus
+optional `session`, `url`, `msg`, `data` (structured payload), and `n`
+(repeat count for collapsed duplicates).
 
 Example:
+```json
+{"ts":"2026-08-22T16:13:23.901Z","src":"fe","lvl":"debug","event":"event.enqueue","session":"session_123_abc","data":{"name":"Passage_Camp Entrance","needsInput":true}}
 ```
-[2025-11-27T18:41:11.123Z] [ERROR] [http://localhost:3000/game] Failed to fetch combat status
-```
+
+View the merged, condensed stream with `python tools/logcat.py` (`--tail` to
+follow live, `--json` for raw machine-readable output, `--errors` for
+`--level error`, `--session <id>` for one browser session, `--src be|fe`
+for one side only, `--grep <regex>`, `--since <window>`, `--limit N`).
+Pre-migration bracket-format `.log` files are still readable by logcat and
+still covered by cleanup until they age out.
 
 ## API Endpoints
 
@@ -57,16 +83,21 @@ Receives browser logs from the frontend and triggers automatic cleanup.
 {
   "logs": [
     {
-      "timestamp": "2025-11-27T18:41:11.123Z",
+      "timestamp": "2026-08-22T18:41:11.123Z",
       "level": "ERROR",
       "message": "Error message",
       "url": "http://localhost:3000/",
-      "userAgent": "Mozilla/5.0..."
+      "event": "event.enqueue",
+      "data": {"name": "Passage_Camp Entrance"},
+      "n": 2
     }
   ],
   "session_id": "session_1234567890_abc123"
 }
 ```
+
+`event`, `data`, and `n` are optional: structured events ship `event` + `data`
+with no `message`; intercepted console output ships `message` with no `data`.
 
 ### GET /api/logs/browser/files
 Lists all available browser log files.
@@ -76,9 +107,9 @@ Lists all available browser log files.
 {
   "files": [
     {
-      "filename": "2025-11-27_session_1234567890_abc123.log",
+      "filename": "2026-08-22_bucket14.jsonl",
       "size": 12345,
-      "modified": "2025-11-27T18:41:11.123Z"
+      "modified": "2026-08-22T18:41:11.123Z"
     }
   ]
 }
@@ -90,8 +121,8 @@ Retrieves the contents of a specific log file.
 **Response:**
 ```json
 {
-  "filename": "2025-11-27_session_1234567890_abc123.log",
-  "content": "[2025-11-27T18:41:11.123Z] [ERROR] [http://localhost:3000/] Error message\n..."
+  "filename": "2026-08-22_bucket14.jsonl",
+  "content": "{\"ts\":\"2026-08-22T18:41:11.123Z\",\"src\":\"fe\",\"lvl\":\"error\",\"event\":\"console\",\"session\":\"session_123\",\"msg\":\"Error message\"}\n..."
 }
 ```
 
@@ -101,7 +132,7 @@ Deletes a specific browser log file.
 **Response:**
 ```json
 {
-  "message": "Successfully deleted 2025-11-27_session_1234567890_abc123.log",
+  "message": "Successfully deleted 2026-08-22_bucket14.jsonl",
   "deleted_size": 12345
 }
 ```
@@ -146,12 +177,12 @@ Get statistics about browser log files and cleanup configuration.
     "total_files": 10,
     "total_size_mb": 5.2,
     "oldest_file": {
-      "name": "2025-11-20_session_123.log",
-      "date": "2025-11-20T10:30:00"
+      "name": "2026-08-16_bucket03.jsonl",
+      "date": "2026-08-16T10:30:00"
     },
     "newest_file": {
-      "name": "2025-11-27_session_456.log",
-      "date": "2025-11-27T18:41:11"
+      "name": "2026-08-22_bucket14.jsonl",
+      "date": "2026-08-22T18:41:11"
     }
   },
   "cleanup_config": {

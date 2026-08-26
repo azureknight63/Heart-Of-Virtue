@@ -85,7 +85,19 @@ cd frontend && npm install && npm run dev
 
 # One-shot: launch both servers via PowerShell
 .\tools\start_servers.ps1 [CONFIG_FILE]
+
+# Live condensed debug feed — merges backend + browser JSONL logs
+python tools/logcat.py --tail    # --json (agents), --errors, --grep X, --since 5m
+                                  # --session <id>, --src be|fe, --level, --limit N
 ```
+
+Debug logging uses one JSONL envelope (schema authority: `src/api/structured_log.py`).
+`configure_logging()` also reads `LOG_LEVEL` (console/plain-file level, default WARNING)
+and `LOG_FILE` (optional plain-text log path) — see the module docstring for the full
+env var contract. `run_api.py` writes `logs/backend/<utc-date>.jsonl` (via `LOG_JSONL_DIR`); the browser
+console ships to `logs/browser/*.jsonl`. New frontend debug output goes through
+`logger.event(name, data)` / `logger.eventOnChange` (`utils/logger.js`), not bare
+`console.log` — structured events ship `{event, data}` with no message string.
 
 ## Running Tests
 
@@ -110,6 +122,12 @@ cd frontend && npm test -- --run --coverage
 
 Use `python -m pytest` rather than bare `pytest` — the virtualenv may not expose the
 `pytest` binary on PATH, causing silent import failures.
+
+Known Windows-environment failures (present on clean master — not regressions):
+`test_secure_pickle.py::test_allowlist_manifest_matches_code`,
+`::test_rlimit_preexec_sets_address_space_limit` (POSIX-only `resource` module),
+and frontend `sfxDurations.test.js` (collection SyntaxError). Don't chase these
+after a change; compare against master before assuming a regression.
 
 The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs. **Full-app integration tests that build a real session/universe** (via `create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/` — creating a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests in the default suite. The other route tests avoid this by using a *mocked* `session_manager`.
 
@@ -219,6 +237,7 @@ See `docs/coverage/coverage-dashboard.md` for:
 - Docstrings on public methods (existing style — don't strip them)
 - Conventional Commits format: `refactor(backend):`, `feat(frontend):`, `fix(states):`, etc.
 - Debug statements marked `###DEBUG###` — don't leave new ones in
+- black formats `src/` (plus explicitly named files) only — never run `black tests/`; the test tree is not kept black-formatted and a blanket run churns ~250 files
 - Error handling: try/except with logging; prefer silent recovery over crashing the game loop
 - Do not add type annotations to files that don't already use them heavily
 - **All local imports use the canonical `src.` path** (`from src.items import Item`, `import src.functions as functions`) — including dynamic ones (`importlib.import_module("src.tiles")`) and `patch()` target strings. Never import an engine module by bare name: bare imports create a *duplicate module object* (separate classes, separate module-level state) whenever `src/` lands on `sys.path`, silently breaking `isinstance` checks and registries across the API/engine boundary. Enforced by `tests/test_no_bare_local_imports.py` (static AST scan) and `tests/test_import_sync_production.py` (production-entry subprocess). Persisted data is the one exception: map JSON `__module__` fields and legacy pickles store bare names by contract — resolve them through `functions.canonical_module_name()` (used by `Universe._deserialize_saved_instance` and `SafeUnpickler`).
@@ -812,6 +831,11 @@ Both skills grade the same core dimensions — DRY, Clean Code, Optimization, Ma
 For non-trivial changes, the agent should review the feedback and correct any issues until all gating dimensions reach A or above. Do not suggest `/commit` until then. If a dimension can't reach A without a decision from the user, stop and ask — don't invent a resolution. For trivial changes (config edits, comment fixes), briefly confirm all dimensions are N/A or A and move on without a full table.
 
 ## Session Workflow
+
+Git gotchas: `logs/` is gitignored as a directory, so the *tracked* `logs/README.md`
+and `logs/IMPLEMENTATION_SUMMARY.md` need `git add -f`. The repo root is a bare
+checkout — run git and `/commit` from inside a worktree (Alpha/Bravo/Charlie/Delta),
+never the root.
 
 At the end of every task, suggest the appropriate overhead steps before moving on. The goal is to ship and maintain a complete game — treat housekeeping as part of the work, not an afterthought.
 
