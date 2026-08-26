@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const SOUNDS_DIR = join(__dirname, '..', 'public', 'assets', 'sounds');
+export const SOUNDS_DIR = join(__dirname, '..', 'public', 'assets', 'sounds', 'sfx');
 
 /**
  * Exact duration (ms) of a PCM WAV from its header: data-chunk bytes / byteRate.
@@ -48,14 +48,14 @@ export function wavDurationMs(buffer) {
   return Math.round((dataSize / byteRate) * 1000);
 }
 
-const cueOf = (filename) => filename.replace(/^sfx_/, '').replace(/\.wav$/, '');
+const cueOf = (filename) => filename.replace(/\.wav$/, '');
 
-/** Map cue -> duration_ms for every sfx_*.wav in the sounds dir. */
+/** Map cue -> duration_ms for every WAV in the SFX directory. */
 export function computeDurations(soundsDir = SOUNDS_DIR) {
   const durations = {};
   const warnings = [];
   for (const name of readdirSync(soundsDir)) {
-    if (!name.startsWith('sfx_') || !name.endsWith('.wav')) continue;
+    if (!name.endsWith('.wav')) continue;
     const ms = wavDurationMs(readFileSync(join(soundsDir, name)));
     if (ms == null) {
       warnings.push(name);
