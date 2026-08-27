@@ -44,6 +44,17 @@ target-selection shapes), player (``GameService.get_player_status`` /
 ``serialize_player_sellable`` via a real ``GameService.shop_sell`` call),
 saves (``GameService.list_saves`` cloud-save row shape).
 
+Not every consumer is the React client. ``damage_multiplier`` and
+``tactical_mechanics`` are read by ``ai/combat_strategist.py`` when it builds
+the combat LLM prompt, and they fail in the same silent way a frontend read
+does — worse, actually, because both have a plausible-looking default (``1.0``
+and ``""``). Rename either and the prompt keeps assembling: every telegraphed
+hit is estimated at 1.0x with POTENTIALLY LETHAL never firing, and every status
+effect loses its mechanics. Nothing crashes and no test fails, which is
+precisely the drift class this file exists for, so both are contracted here
+with a VALUE assertion beside the presence check — presence alone cannot tell a
+real multiplier from the default.
+
 === How to read a failure ===
 
 Each contract below is a ``{field: "<component file:line> — how it's read"}``
@@ -84,7 +95,10 @@ from src.narration import capture_narration
 
 
 def _assert_contract(payload: dict, contract: dict, label: str):
-    """Assert every field the frontend reads is present in the real payload.
+    """Assert every field a declared consumer reads is present in the real payload.
+
+    "Consumer" is usually the React client; two fields here are read by the
+    combat prompt builder instead (see the module docstring).
 
     Failure message names the missing fields, what read them, and what to do —
     this is the guard's entire value, so the message has to be actionable
@@ -469,6 +483,13 @@ ACTIVE_MOVE_CONTRACT = {
     # drift class this whole file exists to catch.
     "target_id": "BattlefieldGrid.jsx ThreatLineLayer entity.current_move.target_id",
     "mvrange": "BattlefieldGrid.jsx RangeRingLayer entity.current_move.mvrange",
+    # NOT a frontend read. ai/combat_strategist.py's _estimate_incoming_damage
+    # multiplies the enemy's damage stat by this and raises POTENTIALLY LETHAL
+    # off the result. Renaming Move._DAMAGE_MULTIPLIER degrades it to the 1.0
+    # default rather than failing, so the value is asserted too, below.
+    "damage_multiplier": (
+        "ai/combat_strategist.py _estimate_incoming_damage -> POTENTIALLY LETHAL"
+    ),
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.
@@ -480,6 +501,15 @@ STATE_EFFECT_CONTRACT = {
     # serialize_state_with_duration (no callers) emits. The live path is
     # serialize_state -> beats_left (StatusEffectsIconPanel.jsx:103-107).
     "beats_left": "StatusEffectsIconPanel.jsx:107,115 effect.beats_left ?? effect.duration_remaining",
+    # NOT a frontend read. ai/combat_strategist.py's _format_status_effects
+    # renders this as the mechanical half of every status line in the combat
+    # prompt — the engine-owned numbers the strategist deliberately stopped
+    # hand-copying. It falls back to `description` when empty, so a rename
+    # quietly downgrades the prompt instead of failing; the value is asserted
+    # below as well.
+    "tactical_mechanics": (
+        "ai/combat_strategist.py _format_status_effects -> combat prompt"
+    ),
 }
 
 # CombatInputDialog's target_selection cards (combat_adapter._get_available_targets).
@@ -784,6 +814,55 @@ class TestCombatantWireContract:
         # bound stands. If the player were used as the reference instead, the
         # Shortbow's much longer effective reach would leak in here.
         assert payload["current_move"]["mvrange"]["max"] == int(enemy_move.mvrange[1])
+
+    def test_damage_multiplier_carries_the_moves_own_factor(self):
+        """Presence is not enough: 1.0 is a valid multiplier AND the default.
+
+        A real heavy hitter mid-cast, through the real serializer. If
+        ``Move._DAMAGE_MULTIPLIER`` is ever renamed, ``getattr`` falls through
+        to 1.0 and the Tactical Advisor silently estimates the game's biggest
+        telegraphed attack at its user's bare damage — the exact bug the
+        attribute was added to fix, restored without a single failing test.
+        """
+        from src.moves import SlimeVolley
+
+        player = Player()
+        enemy = Slime()
+        enemy.target = player
+        move = SlimeVolley(enemy)
+        move.current_stage = 0
+        move.beats_left = 2
+        enemy.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+        wire = payload["current_move"]["damage_multiplier"]
+        assert wire == pytest.approx(SlimeVolley._DAMAGE_MULTIPLIER), (
+            f"wire damage_multiplier is {wire} but SlimeVolley declares "
+            f"{SlimeVolley._DAMAGE_MULTIPLIER}"
+        )
+        assert wire != pytest.approx(1.0), (
+            "fixture is degenerate: this move must declare a NON-default "
+            "multiplier or the test cannot distinguish carried from defaulted"
+        )
+
+    def test_tactical_mechanics_carries_the_states_own_summary(self):
+        """Same shape of guard for the status half of the combat prompt.
+
+        ``_format_status_effects`` falls back to ``description`` when this is
+        empty, so a rename costs the model the engine's real numbers and
+        substitutes player-facing prose — a downgrade with no symptom.
+        """
+        player = Player()
+        state = states.Poisoned(player)
+        payload = StateEffectSerializer.serialize_state(state)
+
+        assert payload["tactical_mechanics"] == state.tactical_mechanics
+        assert payload["tactical_mechanics"], (
+            "Poisoned declares a tactical summary; an empty wire value means "
+            "the serializer is no longer reading it"
+        )
+        # The interval is the part the strategist's own table used to get wrong.
+        assert f"every {state.execute_on} beats" in payload["tactical_mechanics"]
 
     def test_status_effect_fields_on_a_real_state(self):
         player = Player()

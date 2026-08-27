@@ -1,7 +1,34 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
-import ConversationTranscript, { TranscriptEntry, THUMB_SIZES, castMember } from './ConversationTranscript'
+import ConversationTranscript, {
+    TranscriptEntry,
+    THUMB_SIZES,
+    STAGE_PORTRAIT_WIDTH_VAR,
+    castMember,
+} from './ConversationTranscript'
 import { portraitUrl } from '../utils/portraits'
+
+/**
+ * The stage portrait's width, read out of the stylesheet that owns it.
+ *
+ * jsdom does not load index.css, so the custom property cannot be resolved
+ * through `getComputedStyle` — but it can be read from source, which is the
+ * point: the previous version of the assertion below hardcoded `130`, so the
+ * "thumbnails are far smaller than the stage portrait" claim would have gone on
+ * passing against a stale number if the stylesheet ever retuned it.
+ *
+ * Read through `fs` off the vitest root rather than imported: vitest stubs CSS
+ * modules to an empty string, and `new URL(<literal>, import.meta.url)` is
+ * rewritten by Vite into an asset URL that is no longer file-scheme.
+ */
+function stagePortraitWidth() {
+    const css = readFileSync(join(process.cwd(), 'src', 'styles', 'index.css'), 'utf8')
+    const match = css.match(new RegExp(`${STAGE_PORTRAIT_WIDTH_VAR}:\\s*(\\d+)px`))
+    expect(match, `${STAGE_PORTRAIT_WIDTH_VAR} is not declared in index.css`).not.toBeNull()
+    return parseInt(match[1], 10)
+}
 
 const CAST = [
     { id: 'Jean', name: 'Jean', side: 'left' },
@@ -54,7 +81,7 @@ describe('ConversationTranscript', () => {
 
         const thumb = within(screen.getAllByTestId('transcript-entry')[0]).getByRole('img')
         expect(thumb).toHaveStyle({ width: THUMB_SIZES.full })
-        expect(parseInt(THUMB_SIZES.full, 10)).toBeLessThan(130) // the stage portrait size
+        expect(parseInt(THUMB_SIZES.full, 10)).toBeLessThan(stagePortraitWidth())
         expect(parseInt(THUMB_SIZES.compact, 10)).toBeLessThan(parseInt(THUMB_SIZES.full, 10))
     })
 

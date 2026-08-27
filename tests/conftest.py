@@ -26,9 +26,17 @@ os.environ["MYNX_LLM_PROVIDER"] = "none"
 # .pop() — load_dotenv(override=False) refills keys that are *absent* (the
 # GITHUB_TOKEN lesson). tests/integration/conftest.py restores them from the
 # .env file itself for the opt-in live suite.
-os.environ["OPENROUTER_API_KEY"] = ""
-os.environ["GROQ_API_KEY"] = ""
-os.environ["CEREBRAS_API_KEY"] = ""
+#
+# Derived from the provider registry, not transcribed: a hand-maintained list
+# here silently stops covering the chain the moment a fourth provider is
+# registered, which is the failure this blanking exists to prevent. Importing
+# ai.llm_client runs its load_project_env() first, so .env is fully loaded
+# before the loop below overwrites it — assignment wins over override=False
+# either way.
+from tests.llm_doubles import PROVIDER_KEY_ENVS  # noqa: E402
+
+for _key_env in PROVIDER_KEY_ENVS:
+    os.environ[_key_env] = ""
 os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
 # Same reason, different cost: .env ships LOG_LEVEL=DEBUG, so once db.py's
 # load_dotenv() has run the whole suite pays formatting and stderr writes for

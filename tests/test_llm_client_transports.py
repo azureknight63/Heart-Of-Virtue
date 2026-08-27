@@ -17,52 +17,16 @@ Plus the third OpenRouter candidate loop, ``_validate_and_fallback_openrouter``,
 which the 429 work never reached.
 """
 
-import pytest
-
 import ai.llm_client as llm
-from ai.llm_client import GenericLLMClient, NpcChatLLMAdapter
-
-
-class _Resp:
-    def __init__(self, status=200, payload=None, text=""):
-        self.status_code = status
-        self._payload = payload or {
-            "choices": [{"message": {"content": '{"npc_text": "Fine."}'}}]
-        }
-        self.text = text
-        self.headers = {}
-
-    def json(self):
-        return self._payload
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise RuntimeError("HTTP %s" % self.status_code)
-
-
-@pytest.fixture(autouse=True)
-def _isolate_class_state(monkeypatch, tmp_path):
-    """Process-wide counters, benches and the disk cache, per test."""
-    GenericLLMClient.reset_class_state()
-    monkeypatch.setattr(llm, "_MODEL_CACHE_FILE", str(tmp_path / ".model_cache.json"))
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
-    yield
-    GenericLLMClient.reset_class_state()
+from ai.llm_client import GenericLLMClient
+from tests.llm_doubles import Resp, make_chat_adapter, make_generic_client
+from tests.llm_doubles import isolate_llm_class_state  # noqa: F401  (autouse)
 
 
 def _openrouter_client():
-    c = GenericLLMClient.__new__(GenericLLMClient)
-    c.enabled = True
-    c.provider = "openrouter"
-    c.model = "some/model"
-    c._openrouter_api_key = "k"
-    c._openrouter_site = ""
-    c._openrouter_site_title = ""
-    c._sdk_client = None
-    c._available = True
-    return c
+    return make_generic_client(
+        model="some/model", _sdk_client=None, _available=True
+    )
 
 
 class TestSharedChatPayload:
@@ -71,7 +35,7 @@ class TestSharedChatPayload:
 
         def post(url, payload, headers, timeout):
             seen.update(payload)
-            return _Resp()
+            return Resp()
 
         monkeypatch.setattr(llm, "_post_chat_completion", post)
         # No SDK: _try_sdk would otherwise open a real socket to openrouter.ai
@@ -136,7 +100,7 @@ class TestSharedChatPayload:
 
         def post(url, payload, headers, timeout):
             seen.update(payload)
-            return _Resp()
+            return Resp()
 
         monkeypatch.setattr(llm, "_post_chat_completion", post)
         _openrouter_client()._try_http(
@@ -152,16 +116,10 @@ class TestSharedChatPayload:
 
         def post(url, payload, headers, timeout):
             seen.update(payload)
-            return _Resp()
+            return Resp()
 
         monkeypatch.setattr(llm, "_post_chat_completion", post)
-        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
-        a.enabled = True
-        a.provider = "openrouter"
-        a.model = "some/model"
-        a._openrouter_api_key = "k"
-        a._openrouter_site = ""
-        a._openrouter_site_title = ""
+        a = make_chat_adapter(model="some/model", api_key="k")
 
         assert a._call_openrouter("sys", "user", 321, 0.55)
         assert seen["response_format"] == {"type": "json_object"}
@@ -176,13 +134,12 @@ class TestOllamaTransportIsMetered:
     CombatStrategist Ollama call was invisible to the digest."""
 
     def _client(self):
-        c = GenericLLMClient.__new__(GenericLLMClient)
-        c.enabled = True
-        c.provider = "ollama"
-        c.model = "m"
-        c.base_url = "http://localhost:11434"
-        c._available = True
-        return c
+        return make_generic_client(
+            provider="ollama",
+            api_key=None,
+            base_url="http://localhost:11434",
+            _available=True,
+        )
 
     def _stats(self):
         return GenericLLMClient.provider_saturation()["providers"].get("ollama", {})
@@ -190,14 +147,14 @@ class TestOllamaTransportIsMetered:
     def test_a_successful_call_is_counted(self, monkeypatch):
         payload = {"message": {"content": "the mynx chitters"}}
         monkeypatch.setattr(
-            llm.requests, "post", lambda *a, **k: _Resp(200, payload=payload)
+            llm.requests, "post", lambda *a, **k: Resp(200, payload=payload)
         )
         assert self._client()._ollama_chat("s", "u", False)
         assert self._stats()["requests"] == 1
         assert self._stats()["successes"] == 1
 
     def test_a_non_200_is_counted_as_an_error(self, monkeypatch):
-        monkeypatch.setattr(llm.requests, "post", lambda *a, **k: _Resp(500))
+        monkeypatch.setattr(llm.requests, "post", lambda *a, **k: Resp(500))
         assert self._client()._ollama_chat("s", "u", False) is None
         assert self._stats()["errors"] == 1
 
@@ -212,7 +169,7 @@ class TestOllamaTransportIsMetered:
     def test_an_ollama_only_window_does_not_report_no_calls(self, monkeypatch):
         payload = {"message": {"content": "chitter"}}
         monkeypatch.setattr(
-            llm.requests, "post", lambda *a, **k: _Resp(200, payload=payload)
+            llm.requests, "post", lambda *a, **k: Resp(200, payload=payload)
         )
         client = self._client()
         client._ollama_chat("s", "u", False)
@@ -229,11 +186,7 @@ class TestOpenAiCompatibleFailuresAreCounted:
     method's documented "yields None, the chain moves on" contract."""
 
     def _adapter(self):
-        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
-        a.enabled = True
-        a.provider = "groq"
-        a.model = "m"
-        return a
+        return make_chat_adapter(provider="groq", api_key=None)
 
     def test_a_transport_failure_yields_none_and_is_recorded(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
@@ -249,7 +202,7 @@ class TestOpenAiCompatibleFailuresAreCounted:
     def test_an_unreadable_200_body_is_recorded_too(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
 
-        class _Garbage(_Resp):
+        class _Garbage(Resp):
             def json(self):
                 raise ValueError("not JSON at all")
 
@@ -267,17 +220,12 @@ class TestValidationRespectsTheAccountQuota:
     included) for the life of the process over one spent free tier."""
 
     def _client(self):
-        c = GenericLLMClient.__new__(GenericLLMClient)
-        c.enabled = True
-        c.provider = "openrouter"
-        c.model = "primary/model"
-        c._openrouter_api_key = "k"
-        c._available = None
-        c._unavailable_reason = None
-        return c
+        return make_generic_client(
+            model="primary/model", _available=None, _unavailable_reason=None
+        )
 
     def test_a_spent_account_is_not_dialled_at_all(self, monkeypatch):
-        GenericLLMClient._record_provider_usage("openrouter", _Resp(429), "rate_limited")
+        GenericLLMClient._record_provider_usage("openrouter", Resp(429), "rate_limited")
         assert GenericLLMClient._provider_available("openrouter") is False
 
         dialled = []
@@ -303,7 +251,7 @@ class TestValidationRespectsTheAccountQuota:
         def dial(self, model_id, *a, **k):
             dialled.append(model_id)
             GenericLLMClient._record_provider_usage(
-                "openrouter", _Resp(429), "rate_limited"
+                "openrouter", Resp(429), "rate_limited"
             )
             return None
 

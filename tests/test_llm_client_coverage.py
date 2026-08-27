@@ -27,25 +27,10 @@ from ai.llm_client import (
     NpcChatLLMAdapter,
     _JSONTools,
 )
+from tests.llm_doubles import make_chat_adapter
+from tests.llm_doubles import isolate_llm_class_state  # noqa: F401  (autouse)
 
 
-@pytest.fixture(autouse=True)
-def _reset_llm_class_state(tmp_path, monkeypatch):
-    """Isolate class-level shared state and disk cache per test."""
-    GenericLLMClient.reset_class_state()
-    GenericLLMClient._nightly_refresh_started = False
-    monkeypatch.setattr(llm_client, "_MODEL_CACHE_FILE", str(tmp_path / ".model_cache.json"))
-    # Ensure a clean baseline; individual tests override as needed.
-    monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
-    monkeypatch.setenv("MYNX_LLM_PROVIDER", "none")
-    monkeypatch.delenv("MYNX_LLM_MODEL", raising=False)
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("NPC_CHAT_LLM_ENABLED", raising=False)
-    monkeypatch.delenv("NPC_CHAT_LLM_PROVIDER", raising=False)
-    monkeypatch.delenv("NPC_CHAT_LLM_MODEL", raising=False)
-    yield
-    GenericLLMClient.reset_class_state()
-    GenericLLMClient._nightly_refresh_started = False
 
 
 # ---------------------------------------------------------------------------
@@ -2687,11 +2672,7 @@ class TestCleanJeanOptionsKeepsTheWholeList:
         assert NpcChatLLMAdapter._clean_jean_options("abc") == []
 
     def _adapter(self):
-        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
-        a.enabled = True
-        a.provider = "openrouter"
-        a.model = "m"
-        return a
+        return make_chat_adapter(api_key=None)
 
     def test_generate_turn_hands_the_whole_block_to_the_mixin(self):
         """The production path, not the helper in isolation. The mixin's
@@ -2769,13 +2750,11 @@ class TestGeneratePersonalityValidatesEveryField:
     on, reloaded from the save each session."""
 
     def _adapter(self, raw):
-        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
-        a.enabled = True
-        a.provider = "openrouter"
-        a.model = "m"
-        a._world_facts = {"allowed_proper_nouns": ["Jean"]}
-        a._call_llm = lambda *args, **kwargs: json.dumps(raw)
-        return a
+        return make_chat_adapter(
+            api_key=None,
+            _world_facts={"allowed_proper_nouns": ["Jean"]},
+            _call_llm=lambda *args, **kwargs: json.dumps(raw),
+        )
 
     def _seed(self, **overrides):
         seed = {
@@ -2846,15 +2825,13 @@ class TestChatAdapterAvailabilityAsksAboutTheChain:
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
         monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "ollama")
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
-        a.enabled = True
-        a.provider = "ollama"
-        a.model = "m"
-        a.base_url = "http://localhost:11434"
-        a._openrouter_api_key = ""
-        a._available = None
-        a._unavailable_reason = None
-        return a
+        return make_chat_adapter(
+            provider="ollama",
+            api_key="",
+            base_url="http://localhost:11434",
+            _available=None,
+            _unavailable_reason=None,
+        )
 
     def _dead_local_host(self, monkeypatch):
         def boom(*a, **k):

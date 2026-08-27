@@ -164,13 +164,8 @@ class TestAuthServiceEncryptionKey:
         ):
             AuthService()
 
-    def test_a_non_production_env_still_falls_back(self, monkeypatch):
-        """The normalisation must not over-reach and break dev/test startup."""
-        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
-        monkeypatch.setenv("FLASK_ENV", "development")
-        assert AuthService().encryption_key is not None
-
     def test_non_production_falls_back_to_a_generated_key(self, monkeypatch):
+        """The normalisation must not over-reach and break dev/test startup."""
         monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
         monkeypatch.setenv("FLASK_ENV", "development")
         service = AuthService()

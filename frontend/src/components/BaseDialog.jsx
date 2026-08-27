@@ -40,9 +40,20 @@ function removeTopLevel(id) {
     notifyTopLevelChanged()
 }
 
-/** True when `id` is the most-recently-mounted top-level dialog (or none are). */
+/**
+ * True when `id` is the most-recently-mounted top-level dialog.
+ *
+ * The single definition of "am I on top?". There used to be two — this one
+ * (which also answered true for an EMPTY stack) and an inline
+ * `topLevelStack[length - 1] === titleId` in the keydown handler (which did
+ * not). They can only disagree when the stack is empty, i.e. when a dialog
+ * asks about itself before registering; the two answers were "yes, nothing is
+ * above me" and "no, I am not the top entry". The stricter reading is the
+ * correct one for both callers — a dialog that is not in the stack has no
+ * business owning Escape — so it is the one that survived.
+ */
 function isTopOfStack(id) {
-    return topLevelStack.length === 0 || topLevelStack[topLevelStack.length - 1] === id
+    return topLevelStack[topLevelStack.length - 1] === id
 }
 
 const FOCUSABLE_SELECTOR =
@@ -71,37 +82,23 @@ function getFocusableElements(container) {
 }
 
 /**
- * BaseDialog - A reusable dialog component to reduce DRY violations in modals.
+ * Register this dialog's place in the stacking order and report back on it.
+ *
+ * Two different mechanisms, because there are two ways one dialog can end up
+ * over another (see `DialogParentContext` and `topLevelStack` above): a NESTED
+ * dialog registers with its parent and is ordered by the context; a TOP-LEVEL
+ * one pushes onto the module stack and is ordered by mount time.
+ *
+ * @param {string} dialogId - this instance's stable identity
+ * @returns {{
+ *   parentDialog: ?Object,        the enclosing dialog's registration API, if any
+ *   dialogApi: Object,            what this dialog hands to its own children
+ *   hasActiveChild: boolean,      a nested dialog of ours is open (render-time)
+ *   activeChildCountRef: Object,  the same fact, readable from an event handler
+ *   isTopMost: boolean,           no SIBLING dialog covers us (render-time)
+ * }}
  */
-export default function BaseDialog({
-    children,
-    title,
-    onClose,
-    variant = 'default', // 'default', 'danger', 'warning', 'no-blur'
-    maxWidth = '400px',
-    // Defaults to "as wide as it wants, minus a margin" so callers don't have
-    // to restate their own maxWidth pixel value in a second `min()` expression.
-    width,
-    minWidth = '0',
-    zIndex = 1000,
-    showCloseButton = true,
-    padding = spacing.xl,
-    className = '',
-    contentClassName = '',
-    containerCentered = false, // If true, positions relative to parent container instead of viewport
-    allowInternalScroll = true, // If false, the children container won't have overflowY: auto
-}) {
-    // Unique per dialog instance: the NPC chat transcript stacks a second
-    // BaseDialog on top of the panel, and a hardcoded id made the inner dialog
-    // announce the outer one's title. Also doubles as this instance's entry
-    // in topLevelStack below.
-    const titleId = useId()
-    const containerRef = useRef(null)
-    const onCloseRef = useRef(onClose)
-    useEffect(() => {
-        onCloseRef.current = onClose
-    })
-
+function useDialogStackPosition(dialogId) {
     // If this dialog is nested inside another BaseDialog's children, this is
     // that ancestor's registration API; null for a top-level dialog.
     const parentDialog = useContext(DialogParentContext)
@@ -127,40 +124,39 @@ export default function BaseDialog({
         },
     }))
 
-    // Stack membership + "am I still on top?" tracking. Split out of the
-    // focus/keyboard effect below so the two concerns can be read separately;
-    // relative ordering between the two is fixed by declaration order, and the
-    // keydown handler only consults the stack at event time, long after both
-    // have run.
+    // Declared BEFORE the focus/keyboard effect so registration is complete by
+    // the time that effect asks whether this dialog is the innermost one.
     useEffect(() => {
         if (parentDialog) {
             parentDialog.registerChild()
             return () => parentDialog.unregisterChild()
         }
-        const syncTopMost = () => setIsTopMost(isTopOfStack(titleId))
+        const syncTopMost = () => setIsTopMost(isTopOfStack(dialogId))
         topLevelSubscribers.add(syncTopMost)
-        pushTopLevel(titleId)
+        pushTopLevel(dialogId)
         return () => {
             topLevelSubscribers.delete(syncTopMost)
-            removeTopLevel(titleId)
+            removeTopLevel(dialogId)
         }
-    }, [titleId, parentDialog])
+    }, [dialogId, parentDialog])
 
-    // Escape-to-close (innermost active dialog only) + a Tab/Shift+Tab focus
-    // trap, plus moving focus into the dialog on mount and restoring it on
-    // unmount.
+    return { parentDialog, dialogApi, hasActiveChild, activeChildCountRef, isTopMost }
+}
+
+/**
+ * Escape-to-close and a Tab/Shift+Tab focus trap for the innermost dialog,
+ * plus moving focus into the dialog on mount and restoring it on unmount.
+ *
+ * `onCloseRef` rather than `onClose`: the handler's closure is built once per
+ * mount, so reading the callback through a ref keeps a re-rendered parent from
+ * tearing down and re-arming the whole trap.
+ */
+function useFocusTrap({ containerRef, dialogId, parentDialog, activeChildCountRef, onCloseRef }) {
     useEffect(() => {
         const container = containerRef.current
         if (!container) return
 
         const previouslyFocused = document.activeElement
-
-        const focusables = getFocusableElements(container)
-        if (focusables.length > 0) {
-            focusables[0].focus()
-        } else {
-            container.focus()
-        }
 
         // A dialog only responds to Escape/Tab when it's the innermost
         // active one: it must have no active nested dialog of its own, and
@@ -168,7 +164,23 @@ export default function BaseDialog({
         const isInnermostActive = () => {
             if (activeChildCountRef.current > 0) return false
             if (parentDialog) return true
-            return topLevelStack[topLevelStack.length - 1] === titleId
+            return isTopOfStack(dialogId)
+        }
+
+        // Gated on the SAME check, not focused unconditionally. React fires a
+        // child dialog's effects before its parent's, so when a nested pair
+        // mounts in one commit the inner dialog takes focus first and the outer
+        // one's effect runs afterwards — focusing itself would drag the caret
+        // out of the dialog the player is actually looking at and into the
+        // background. By the time this runs the child has already registered,
+        // so the check sees it.
+        if (isInnermostActive()) {
+            const focusables = getFocusableElements(container)
+            if (focusables.length > 0) {
+                focusables[0].focus()
+            } else {
+                container.focus()
+            }
         }
 
         const handleKeyDown = (e) => {
@@ -209,11 +221,86 @@ export default function BaseDialog({
                 previouslyFocused.focus()
             }
         }
-        // titleId is stable for the component's lifetime (useId), so this
+        // dialogId is stable for the component's lifetime (useId), so this
         // still runs exactly once per mount/unmount (plus again if this
         // instance's nesting context ever changes); onClose is read through
         // onCloseRef so it doesn't need to be a dependency here.
-    }, [titleId, parentDialog])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dialogId, parentDialog])
+}
+
+/**
+ * Resolve a dialog's rendered width.
+ *
+ * A viewport-centred dialog defaults to "as wide as it wants, minus a margin",
+ * so callers don't have to restate their own maxWidth in a second `min()`
+ * expression. A `containerCentered` dialog is NOT centred on the viewport,
+ * though — it lives inside a positioned ancestor that can be far narrower than
+ * 94vw (CombatInputDialog sits in the battlefield panel), where a
+ * viewport-relative width overflows its own container. Those stay
+ * container-relative, which is what every caller had before the viewport
+ * default was introduced.
+ *
+ * Exported because jsdom's cssstyle drops `min()` from `style.width` outright,
+ * so the viewport branch is not observable through the DOM under test.
+ */
+export function resolveDialogWidth({ width, maxWidth, containerCentered }) {
+    if (width) return width
+    return containerCentered ? '90%' : `min(94vw, ${maxWidth})`
+}
+
+/**
+ * BaseDialog — the modal shell every dialog in the app is built on.
+ *
+ * Owns three things beyond the chrome (frame, title bar, close button,
+ * scrolling content well):
+ *
+ *   1. STACKING. Dialogs open over dialogs, both nested (a dialog rendered in
+ *      another's children) and as siblings. `useDialogStackPosition` works out
+ *      which one is on top either way.
+ *   2. KEYBOARD + FOCUS. `useFocusTrap` gives the innermost dialog
+ *      Escape-to-close and a Tab cycle that cannot leave it, moves focus in on
+ *      mount and hands it back on unmount.
+ *   3. ASSISTIVE-TECH MODALITY. Only the innermost dialog is `aria-modal`; one
+ *      covered by a sibling is hidden outright.
+ *
+ * @param {string} [maxWidth] - hard ceiling on the dialog's width
+ * @param {string} [width] - explicit width; defaults per `containerCentered`
+ * @param {boolean} [containerCentered] - position within the nearest positioned
+ *   ancestor instead of the viewport (combat's battlefield panel does this)
+ */
+export default function BaseDialog({
+    children,
+    title,
+    onClose,
+    variant = 'default', // 'default', 'danger', 'warning', 'no-blur'
+    maxWidth = '400px',
+    width,
+    minWidth = '0',
+    zIndex = 1000,
+    showCloseButton = true,
+    padding = spacing.xl,
+    className = '',
+    contentClassName = '',
+    containerCentered = false, // If true, positions relative to parent container instead of viewport
+    allowInternalScroll = true, // If false, the children container won't have overflowY: auto
+}) {
+    // Unique per dialog instance. Used as this instance's identity in
+    // `topLevelStack`; the title element's id is DERIVED from it rather than
+    // being the same string, so "which dialog am I" and "which node labels me"
+    // stay separate facts — a dialog with no title still needs an identity.
+    const dialogId = useId()
+    const titleId = `${dialogId}-title`
+    const containerRef = useRef(null)
+    const onCloseRef = useRef(onClose)
+    useEffect(() => {
+        onCloseRef.current = onClose
+    })
+
+    const { parentDialog, dialogApi, hasActiveChild, activeChildCountRef, isTopMost } =
+        useDialogStackPosition(dialogId)
+
+    useFocusTrap({ containerRef, dialogId, parentDialog, activeChildCountRef, onCloseRef })
 
     // Only the innermost dialog is genuinely modal. Two `aria-modal="true"`
     // dialogs on screen at once (the InteractPanel/NpcChatPanel sibling pair,
@@ -228,6 +315,8 @@ export default function BaseDialog({
 
     const isDanger = variant === 'danger'
     const isWarning = variant === 'warning'
+
+    const resolvedWidth = resolveDialogWidth({ width, maxWidth, containerCentered })
 
     const themeStyles = {
         borderColor: isDanger ? colors.danger : (isWarning ? colors.secondary : colors.primary),
@@ -266,7 +355,7 @@ export default function BaseDialog({
                 style={{
                     maxWidth,
                     minWidth,
-                    width: width || `min(94vw, ${maxWidth})`,
+                    width: resolvedWidth,
                     backgroundColor: themeStyles.backgroundColor,
                     border: `3px solid ${themeStyles.borderColor}`,
                     borderRadius: '8px',

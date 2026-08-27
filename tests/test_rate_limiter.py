@@ -808,6 +808,36 @@ class TestLoginThrottlesCannotBeDisabled:
         ]
         assert unnamed == [], f"auth.py limiters without a literal env var: {unnamed}"
 
+    def test_the_call_scan_itself_sees_through_formatting(self):
+        """Guard-the-guard, matching the one on ``_limiter_constructions``.
+
+        Both structural checks above are only as good as this parse: a scan
+        that quietly matched nothing would report every tier compliant. These
+        pin that it finds the call however it is written, reads the env var and
+        the keyword off it, and does not fire on the name in prose.
+        """
+        spellings = [
+            "x = limiter_from_env('VAR', 1, 2, allow_disable=False)",
+            "x = limiter_from_env (\n    'VAR',\n    1,\n    2,\n    allow_disable=False,\n)",
+            "x = rate_limiter.limiter_from_env('VAR', 1, 2, allow_disable=False)",
+        ]
+        for snippet in spellings:
+            calls = _limiter_from_env_calls(snippet)
+            assert len(calls) == 1, snippet
+            _lineno, var, keywords = calls[0]
+            assert var == "VAR", snippet
+            node = keywords.get("allow_disable")
+            assert isinstance(node, ast.Constant) and node.value is False, snippet
+
+        # A computed env var name must read back as None -- that is precisely
+        # what test_every_auth_limiter_names_its_env_var_as_a_literal catches.
+        (_lineno, var, _kw), = _limiter_from_env_calls(
+            "x = limiter_from_env(NAME, 1, 2)"
+        )
+        assert var is None
+
+        assert _limiter_from_env_calls('x = "limiter_from_env("  # prose') == []
+
     def test_zero_still_yields_a_live_limiter_at_the_default(self, monkeypatch, caplog):
         """Exercised through the real auth constants, so this breaks if either
         the variable name or the default drifts."""

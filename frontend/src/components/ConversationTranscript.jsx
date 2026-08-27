@@ -1,16 +1,33 @@
 import PortraitImage from './PortraitImage'
 import GameText from './GameText'
-import { colors, spacing, fonts } from '../styles/theme'
+import { colors, spacing, fonts, commonStyles } from '../styles/theme'
 
 /**
  * Thumbnail sizes, in the two densities a transcript entry is used at:
  * `compact` for the recap strip that sits above a live conversation, `full`
- * for the scrollable history. Both are far below the 130px stage portrait —
- * these are identifiers, not performances.
+ * for the scrollable history. Both are far below the stage portrait, whose
+ * width is `--stage-portrait-width` in index.css (and wider still under the
+ * wide layout's clamp) — these are identifiers, not performances.
  */
 export const THUMB_SIZES = { compact: '40px', full: '56px' }
 
-/** Resolve a segment's speaker against the cast roster (name + which side they stand on). */
+/**
+ * The custom property that owns the stage portrait's width. Named here so the
+ * "far below the stage portrait" claim above, and the test that checks it, both
+ * read the live value instead of restating a number — which is how the previous
+ * hardcoded 130px in the prose and in the test outlived the value it described.
+ */
+export const STAGE_PORTRAIT_WIDTH_VAR = '--stage-portrait-width'
+
+/**
+ * Resolve a segment's speaker against the cast roster (name + which side they
+ * stand on).
+ *
+ * `id` is echoed back deliberately: the return value is a complete
+ * roster-shaped record a caller can pass on whole (and a test can assert as one
+ * object), rather than a pair the caller then has to re-associate with the
+ * speaker it asked about.
+ */
 export function castMember(cast, speaker) {
     const found = (cast || []).find((member) => member.id === speaker)
     return {
@@ -30,7 +47,14 @@ export function castMember(cast, speaker) {
  * so the transcript and the live scene agree at a glance. Speaker-less beats
  * (narration) render as centered prose with no portrait.
  *
- * @param {Object} segment - `{ text, speaker, emotion, flavor }`
+ * Reads the shared conversation-segment contract (utils/conversationSegment):
+ * `text`, `speaker`, `emotion` and `flavor`. `reactions`, `in_conversation`,
+ * `thought`, `enter` and `exit` are DELIBERATELY not honoured here — a
+ * transcript row is one speaker's line, with no stage for a listener to react
+ * on and no beat-by-beat staging to change. That module records which renderer
+ * honours what, so this is a documented decision rather than a silent drop.
+ *
+ * @param {import('../utils/conversationSegment').ConversationSegment} segment
  * @param {Array}  cast    - roster used to resolve display name and side
  * @param {'compact'|'full'} [variant] - density; compact clamps to two lines
  */
@@ -144,12 +168,9 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
             >
                 <span
                     style={{
+                        ...commonStyles.eyebrowLabel,
                         alignSelf: variantStyles.labelAlign,
-                        fontFamily: fonts.main,
-                        fontSize: '11px',
                         fontWeight: 'bold',
-                        letterSpacing: '1px',
-                        textTransform: 'uppercase',
                         color: accent,
                         opacity: variantStyles.labelOpacity,
                     }}
@@ -189,9 +210,18 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
 /**
  * ConversationTranscript — the full record of a conversation, oldest first.
  *
- * Reads the same segment list that drives `ConversationStage`, so every turn
- * carries its own emotion (and therefore its own portrait) rather than the
- * speaker's latest mood.
+ * Reads the same segment list that drives `ConversationStage` (the shared
+ * contract in utils/conversationSegment), so every turn carries its own emotion
+ * — and therefore its own portrait — rather than the speaker's latest mood. See
+ * `TranscriptEntry` above for which fields of that shape a row honours.
+ *
+ * @param {import('../utils/conversationSegment').ConversationSegment[]} [segments]
+ * @param {Array} [cast]
+ * @param {string} [emptyText] - copy for a conversation with nothing on record.
+ *   No production caller overrides it today; it stays a parameter because the
+ *   empty state is the one string that reads differently per surface (a live
+ *   chat's history vs. an archived record), and the alternative is a literal
+ *   buried mid-component.
  */
 export default function ConversationTranscript({
     segments = [],
@@ -218,6 +248,14 @@ export default function ConversationTranscript({
             data-testid="conversation-transcript"
             style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}
         >
+            {/* Index keys, unusually, are correct here: a transcript is
+                append-only and is never reordered, filtered or de-duplicated,
+                so the index IS each turn's stable identity. The text is not —
+                two identical lines in one conversation are ordinary — and the
+                wire carries no per-beat id. (Contrast NpcChatPanel's option
+                buttons, where the list IS replaced wholesale every turn and an
+                index key really does re-point a focused control at a different
+                choice.) */}
             {segments.map((segment, idx) => (
                 <TranscriptEntry key={idx} segment={segment} cast={cast} />
             ))}

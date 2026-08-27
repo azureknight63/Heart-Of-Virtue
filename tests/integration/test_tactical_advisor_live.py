@@ -105,6 +105,52 @@ _MOVE_PARRY = {"name": "Parry", "available": True, "category": "Defensive",
                "fatigue_cost": 3, "description": "Block and counter.", "targeted": False}
 
 
+def _charging(name, beats_until_resolve, damage_multiplier=1.0):
+    """A telegraphed enemy move, in the shape the real serializer emits.
+
+    ``beats_until_resolve`` is the ENGINE's countdown
+    (``Move.beats_until_resolve``, put on the wire by
+    ``CombatantSerializer._serialize_active_move``) and is the only field
+    ``CombatStrategist._incoming_beats`` reads. These fixtures used to carry
+    ``{"current_stage": ..., "beats_left": ...}`` — the shape of a
+    ``_beats_until_impact`` helper the strategist deleted when it stopped
+    re-walking the stage machine itself. Against the current code that returns
+    None, i.e. "nothing is incoming": the lethal-charge scenario below was
+    asserting that the model prefers Dodge against a prompt that contained no
+    threat at all, and passing.
+
+    ``damage_multiplier`` is the move's own power multiple
+    (``Move._DAMAGE_MULTIPLIER``); without it every telegraphed hit is
+    estimated at 1.0x and POTENTIALLY LETHAL never fires.
+    """
+    return {
+        "name": name,
+        "beats_until_resolve": beats_until_resolve,
+        "damage_multiplier": damage_multiplier,
+    }
+
+
+def _defensive_window_beats():
+    """The strategist's own "act now" threshold, read off the module.
+
+    Hard-coding it here is what broke these fixtures the first time.
+    """
+    from ai.combat_strategist import _DEFENSIVE_WINDOW_BEATS
+
+    return _DEFENSIVE_WINDOW_BEATS
+
+
+def _declared_multiplier(move_cls_name):
+    """A move's own ``_DAMAGE_MULTIPLIER``, read off the engine class.
+
+    Same reason: the serializer reads this attribute, so the fixture should
+    too rather than restating a number that can be retuned without it.
+    """
+    import src.moves as moves
+
+    return getattr(moves, move_cls_name)._DAMAGE_MULTIPLIER
+
+
 def _base_ctx(**overrides):
     """Minimal well-formed combat context."""
     ctx = {
@@ -257,13 +303,18 @@ class TestTacticalJudgment:
     """
 
     def test_defensive_move_in_top_suggestions_when_lethal_incoming(self, strategist):
-        """A lethal charge (bui=1) should push Dodge or Parry into the top suggestions."""
+        """A lethal charge should push Dodge or Parry into the top suggestions.
+
+        The charge lands exactly ``_DEFENSIVE_WINDOW_BEATS`` beats out: the
+        last beat on which a Dodge cast now still resolves before the blow.
+        That is the situation the prompt's priority 2 is written for, so
+        anything closer would be asking the model to contradict its own
+        instructions rather than follow them.
+        """
         ctx = _base_ctx(available_moves=[_MOVE_SLASH, _MOVE_DODGE, _MOVE_PARRY, _MOVE_ADVANCE])
-        ctx["enemies"][0]["move_in_process"] = {
-            "name": "NpcAttack",
-            "current_stage": 1,
-            "beats_left": 1,  # one beat until impact, stage 1 → bui=1
-        }
+        ctx["enemies"][0]["move_in_process"] = _charging(
+            "NpcAttack", _defensive_window_beats()
+        )
         ctx["enemies"][0]["stats"]["damage"] = 200  # clearly lethal
         # Prompt includes ⚠ INCOMING + ⚠ POTENTIALLY LETHAL alert
         results = _get(strategist, ctx, max_suggestions=2)
@@ -449,11 +500,11 @@ class TestContextReachesLLM:
                     "distance": 2,
                     "position": {"x": 3, "y": 4},
                     "stats": {"damage": 25},
-                    "move_in_process": {
-                        "name": "SlimeVolley",
-                        "current_stage": 0,
-                        "beats_left": 2,
-                    },
+                    "move_in_process": _charging(
+                        "SlimeVolley",
+                        _defensive_window_beats(),
+                        _declared_multiplier("SlimeVolley"),
+                    ),
                     "status_effects": [],
                 },
                 {

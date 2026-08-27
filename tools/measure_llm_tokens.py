@@ -118,7 +118,17 @@ import ai.llm_client as llm  # noqa: E402
 
 from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
 import src.npc._chat_guard as chat_guard  # noqa: E402
-from ai.combat_strategist import CombatStrategist, wrap_suggestions_prompt  # noqa: E402
+from ai.combat_strategist import (  # noqa: E402
+    CombatStrategist,
+    _DEFENSIVE_WINDOW_BEATS,
+    wrap_suggestions_prompt,
+)
+import src.moves as moves  # noqa: E402
+import src.states as states  # noqa: E402
+from src.api.serializers.combat import (  # noqa: E402
+    CombatantSerializer,
+    StateEffectSerializer,
+)
 
 # ai.llm_client owns the NPC-chat character directory. Hand-rolling
 # os.path.join(REPO, "ai", "npc", "human") here made a fifth copy of a path
@@ -267,12 +277,64 @@ MOVES = [
     _move("Use Item", "Miscellaneous", 0, "Consume an item from the quick-use belt."),
 ]
 
+
+class _StatusTarget:
+    """Just enough combatant for a State's ``__init__`` to compute its modifiers."""
+
+    name = "Jean"
+    in_combat = True
+    hp = maxhp = 120
+    fatigue = maxfatigue = 100
+    finesse = protection = speed = strength = 100
+    endurance = faith = charisma = intelligence = 20
+
+    def __init__(self):
+        self.states = []
+        self.status_resistance = {}
+        self.resistance = {}
+
+
+def _status(state_cls, beats_left):
+    """One status effect in the shape the real serializer emits.
+
+    Built from the real ``State`` and run through the real
+    ``StateEffectSerializer``, for the same reason nothing else in this file
+    restates a prompt fragment: these entries carry ``tactical_mechanics``, the
+    engine-owned mechanical summary the strategist renders beside its tactical
+    note, and that text is the bulk of the status block's cost. The fixtures
+    here used to be hand-typed ``{"name": ..., "duration": ...}`` pairs — a key
+    the strategist does not read, with no mechanics at all — so every status
+    line was measured at a fraction of its real width.
+    """
+    payload = StateEffectSerializer.serialize_state(state_cls(_StatusTarget()))
+    payload["beats_left"] = beats_left
+    return payload
+
+
 # Names drawn from _STATUS_TACTICAL_NOTES so the mechanical + tactical note
 # lines actually render; unknown names collapse to a bare label and understate
 # the real cost of this block.
-PLAYER_SE = [{"name": "Poisoned", "duration": 4},
-             {"name": "Disoriented", "duration": 3}]
-ENEMY_SE = [{"name": "Enflamed", "duration": 3}]
+PLAYER_SE = [_status(states.Poisoned, 4), _status(states.Disoriented, 3)]
+ENEMY_SE = [_status(states.Enflamed, 3)]
+
+# The move a charging enemy is winding up. `beats_until_resolve` is the
+# engine's own countdown (``Move.beats_until_resolve``) and the only field
+# ``_incoming_beats`` reads — the fixture used to spell it
+# ``beats_until_impact``, the name of a helper the strategist deleted, so it
+# measured a prompt with no Charging line and no INCOMING alert in it at all.
+# Pinned to the strategist's alert threshold so the alert block is inside the
+# measurement, which is the upper bound this table exists to report.
+#
+# `damage_multiplier` is read off a real move class through the real serializer
+# helper (no instance needed — it is a class attribute), so retuning the move
+# moves the measured estimate with it.
+_CHARGING_MOVE = {
+    "name": "Club Strike",
+    "beats_until_resolve": _DEFENSIVE_WINDOW_BEATS,
+    "damage_multiplier": CombatantSerializer._serialize_damage_multiplier(
+        moves.GorranClub
+    ),
+}
 
 
 def _enemy(i, name):
@@ -281,9 +343,8 @@ def _enemy(i, name):
             "position": {"x": 2 + i, "y": 3, "facing": "S"},
             "stats": {"damage": 11, "evasion": 8, "defense": 4, "accuracy": 78,
                       "speed": 5},
-            "move_in_process": {"name": "Gore", "beats_until_impact": 2,
-                                "estimated_damage": 14},
-            "status_effects": list(ENEMY_SE)}
+            "move_in_process": dict(_CHARGING_MOVE),
+            "status_effects": [dict(se) for se in ENEMY_SE]}
 
 
 def ctx_for(n_enemies, n_allies, n_history, moves, player_se):

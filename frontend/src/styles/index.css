@@ -19,6 +19,9 @@
   --stage-portrait-width: 130px;
   --space-md: 12px;
   --space-lg: 16px;
+  /* `colors.secondary` and `colors.border.light` from styles/theme.js. */
+  --color-secondary: #ffaa00;
+  --color-border-light: rgba(255, 170, 0, 0.1);
 }
 
 * {
@@ -160,9 +163,8 @@ input, select, textarea {
   display: inline-block;
   width: 12px;
   height: 12px;
-  /* colors.border.light / colors.secondary from styles/theme.js */
-  border: 2px solid rgba(255, 170, 0, 0.1);
-  border-top-color: #ffaa00;
+  border: 2px solid var(--color-border-light);
+  border-top-color: var(--color-secondary);
   border-radius: 50%;
   animation: npc-chat-spin 0.8s linear infinite;
   vertical-align: -2px;
@@ -260,6 +262,12 @@ input, select, textarea {
   animation: fade-in 0.3s ease-out;
 }
 
+/*
+ * The typewriter caret's blink. Defined ONLY here: TypewriterOutput used to
+ * inject its own `@keyframes blink` from a component `<style>` tag, and
+ * keyframe names are document-global, so that copy shadowed this one app-wide
+ * for as long as any typewriter was mid-line.
+ */
 @keyframes blink {
 
   0%,

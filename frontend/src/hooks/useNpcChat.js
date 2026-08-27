@@ -1,26 +1,49 @@
 import { useState, useEffect, useRef } from 'react'
 import npcChat from '../api/npcChat'
 import { portraitUrl } from '../utils/portraits'
+import { conversationSegment, DEFAULT_EMOTION } from '../utils/conversationSegment'
 
-const TONE_EMOTIONS = {
-  direct: 'neutral',
+// Jean's chosen tone -> the portrait she wears while she says it. `direct` /
+// `guarded` / `open` are the only tones the engine emits (src/npc/_chat_llm.py).
+export const TONE_EMOTIONS = {
+  direct: DEFAULT_EMOTION,
   guarded: 'skeptical',
   open: 'curious',
 }
 
-const QUALITY_EMOTIONS = {
+// The server's `conversation_quality` verdict -> the NPC's reaction portrait.
+export const QUALITY_EMOTIONS = {
   positive: 'happy',
-  neutral: 'neutral',
+  neutral: DEFAULT_EMOTION,
   negative: 'concerned',
   offensive: 'angry',
 }
 
+// What the NPC's portrait wears while Jean is the one talking. Named rather
+// than written as a literal in `handleOptionClick`, because `preloadTurnPortraits`
+// has to warm exactly this emotion: it is the ONE the portrait is guaranteed to
+// wear every single turn, and while it was a bare literal it was also the only
+// one the preload set never covered — so a speaker without art for it (gorran/
+// ships two portraits) re-requested a 404 on every beat, uncached and undeduped.
+export const NPC_LISTENING_EMOTION = 'curious'
+
+/**
+ * Resolve a tagged value against an emotion table, defaulting to neutral.
+ *
+ * Both tables are looked up the same way — case-folded, with an unmapped or
+ * missing value reading as neutral — so the rule lives here once instead of
+ * being written out per table.
+ */
+function mapEmotion(table, key) {
+  return table[String(key || '').toLowerCase()] || DEFAULT_EMOTION
+}
+
 export function toneEmotion(tone) {
-  return TONE_EMOTIONS[String(tone || '').toLowerCase()] || 'neutral'
+  return mapEmotion(TONE_EMOTIONS, tone)
 }
 
 export function qualityEmotion(quality) {
-  return QUALITY_EMOTIONS[String(quality || '').toLowerCase()] || 'neutral'
+  return mapEmotion(QUALITY_EMOTIONS, quality)
 }
 
 // Jean is always the player's side of the conversation — the cast roster,
@@ -36,10 +59,12 @@ export const JEAN_ID = 'Jean'
 const AUTO_CLOSE_DELAY_MS = 2000
 
 // Player-facing failure copy, deliberately fixed strings. The server's `error`
-// field is raw provider-SDK exception text — endpoint URL, model id, status
-// body, request id — which is disclosure, not a message. The detail is logged
-// instead: utils/logger mirrors console output to /api/logs/browser, so a
-// failure stays visible to the dev without being shown to the player.
+// field carries diagnostic detail — endpoint, model id, status body, request id
+// — which is disclosure, not a message, and it is NOT a guarantee about what
+// the server puts there: this side must hold whether the server's copy is
+// sanitised or not. The detail is logged instead: utils/logger mirrors console
+// output to /api/logs/browser, so a failure stays visible to the dev without
+// being shown to the player.
 const OPEN_FAILED_MESSAGE = 'Failed to open conversation'
 const RESPOND_FAILED_MESSAGE = 'NPC did not respond'
 
@@ -54,6 +79,20 @@ function serverDetail(err) {
 // the browser, so without this the misses would be re-requested every turn.
 const preloadedPortraits = new Set()
 
+/**
+ * Empty the preload registry. Test-only.
+ *
+ * The registry is module-level and deliberately outlives any one conversation,
+ * which means it also outlives any one test. Without this, a suite could only
+ * assert on "which URLs were requested" from whichever `describe` block ran
+ * first — every later block would see the shared Jean tone URLs already warmed
+ * and count fewer requests than it asked for. That is an ordering dependency,
+ * not a test.
+ */
+export function __resetPreloadedPortraits() {
+  preloadedPortraits.clear()
+}
+
 function preloadPortrait(url) {
   if (!url || preloadedPortraits.has(url)) return
   preloadedPortraits.add(url)
@@ -65,14 +104,18 @@ function preloadPortrait(url) {
 
 /**
  * Warm the cache for every portrait the next turn can possibly need: Jean wears
- * the tone of whichever option is clicked (at most three), and the NPC's
- * reaction is one of the four conversation-quality emotions.
+ * the tone of whichever option is clicked (at most three), and the NPC wears
+ * `NPC_LISTENING_EMOTION` while she says it before settling on one of the four
+ * conversation-quality emotions.
+ *
+ * The listening emotion is the only one of these that is certain to be shown,
+ * so it is warmed from the same constant `handleOptionClick` stages it with.
  */
 function preloadTurnPortraits(npcId, options) {
   ;(options || []).forEach((option) => {
     preloadPortrait(portraitUrl(JEAN_ID, toneEmotion(option?.tone)))
   })
-  Object.values(QUALITY_EMOTIONS).forEach((emotion) => {
+  ;[NPC_LISTENING_EMOTION, ...Object.values(QUALITY_EMOTIONS)].forEach((emotion) => {
     preloadPortrait(portraitUrl(npcId, emotion))
   })
 }
@@ -82,17 +125,6 @@ export function npcCast(npcId, npcName) {
     { id: JEAN_ID, name: JEAN_ID, side: 'left', emotion: 'neutral' },
     { id: npcId, name: npcName || npcId, side: 'right', emotion: 'neutral' },
   ]
-}
-
-function chatSegment({ text, speaker, emotion = 'neutral', flavor = '', reactions = {} }) {
-  return {
-    text: text || '',
-    speaker,
-    emotion,
-    flavor: flavor || '',
-    reactions,
-    in_conversation: true,
-  }
 }
 
 /**
@@ -108,7 +140,9 @@ function chatSegment({ text, speaker, emotion = 'neutral', flavor = '', reaction
  *   title before `/open` resolves, and as a fallback if the response omits one
  * @param {Function} onClose - Called when the conversation auto-closes
  *   (`AUTO_CLOSE_DELAY_MS` after the server reports `conversation_ended`) or
- *   when End Conversation is used (whether it succeeds or the request fails)
+ *   when the panel is dismissed through `handleEndConversation` (whether the
+ *   `/end` request succeeds or fails). It is never called directly by the
+ *   panel's chrome — see `handleEndConversation`.
  * @returns {{
  *   phase: string,
  *   displayName: string,
@@ -149,6 +183,19 @@ export function useNpcChat(npcId, npcName, onClose) {
   // lets the "conversation ended" auto-close timer be cancelled on unmount.
   const isMountedRef = useRef(true)
   const endTimeoutRef = useRef(null)
+  // Bumped every time the hook is pointed at a different NPC. `isMountedRef`
+  // only covers unmount, and the `cancelled` flag below is scoped to one run of
+  // the open effect — neither can stop an in-flight `/respond` for NPC A from
+  // resolving into NPC B's state after a switch. Every write past an `await` in
+  // `handleOptionClick` is gated on the sequence it started in.
+  const turnSeqRef = useRef(0)
+  // The panel now stays on screen for the duration of `/end`, because ✕, the
+  // overlay click and Escape all route through `handleEndConversation` instead
+  // of dismissing instantly. That opens a window a second click can land in.
+  const endingRef = useRef(false)
+
+  /** True while `seq` is still the conversation on screen (and we are mounted). */
+  const isCurrentTurn = (seq) => isMountedRef.current && turnSeqRef.current === seq
 
   useEffect(() => {
     isMountedRef.current = true
@@ -179,6 +226,11 @@ export function useNpcChat(npcId, npcName, onClose) {
   // On mount (and whenever the panel is pointed at a different NPC), open the
   // conversation.
   useEffect(() => {
+    // Anything already in flight for the previous NPC belongs to a spent turn
+    // now. Bumped before the reset so a `/respond` that resolves during it
+    // cannot re-populate what we are about to clear.
+    turnSeqRef.current += 1
+
     // Reset synchronously, BEFORE the request goes out. Every write below used
     // to happen only after the await, so for the whole round trip the stage
     // kept drawing the previous NPC's portraits, options and key.
@@ -215,7 +267,7 @@ export function useNpcChat(npcId, npcName, onClose) {
 
         if (data.npc_opening) {
           setConversationSegments([
-            chatSegment({
+            conversationSegment({
               text: data.npc_opening,
               speaker: npcId,
               emotion: 'neutral',
@@ -251,17 +303,21 @@ export function useNpcChat(npcId, npcName, onClose) {
   const handleOptionClick = async (option) => {
     if (phase !== 'waiting_jean' || !npcKey) return
 
+    // Captured before the request goes out; every post-await write below is
+    // gated on it still being the turn on screen.
+    const seq = turnSeqRef.current
+
     // Clear any previous failure before trying again. The option list is gated
     // on `!error`, so a stale error would hide every dialogue option for the
     // rest of the conversation even after a successful retry.
     setError(null)
     setRetry(null)
 
-    const jeanSegment = chatSegment({
+    const jeanSegment = conversationSegment({
       text: option.text,
       speaker: JEAN_ID,
       emotion: toneEmotion(option.tone),
-      reactions: { [npcId]: 'curious' },
+      reactions: { [npcId]: NPC_LISTENING_EMOTION },
     })
 
     try {
@@ -273,13 +329,13 @@ export function useNpcChat(npcId, npcName, onClose) {
 
       // Call the respond endpoint
       const response = await npcChat.respond(npcKey, option.text, option.tone)
-      if (!isMountedRef.current) return
+      if (!isCurrentTurn(seq)) return
       const data = response.data
 
       // Add NPC response to messages and to the portrait-backed conversation stage.
       setConversationSegments((prev) => [
         ...prev,
-        chatSegment({
+        conversationSegment({
           text: data.npc_response,
           speaker: npcId,
           emotion: qualityEmotion(data.conversation_quality),
@@ -301,7 +357,7 @@ export function useNpcChat(npcId, npcName, onClose) {
         setPhase('waiting_jean')
       }
     } catch (err) {
-      if (!isMountedRef.current) return
+      if (!isCurrentTurn(seq)) return
       console.error('[npcChat] respond failed:', serverDetail(err))
       // Roll back the optimistic segment — the retry re-adds it.
       setConversationSegments((prev) => prev.filter((segment) => segment !== jeanSegment))
@@ -309,11 +365,23 @@ export function useNpcChat(npcId, npcName, onClose) {
       setError(RESPOND_FAILED_MESSAGE)
       setPhase('waiting_jean')
     } finally {
-      if (isMountedRef.current) setLoading(false)
+      if (isCurrentTurn(seq)) setLoading(false)
     }
   }
 
+  /**
+   * Close the panel, ending the server-side conversation first.
+   *
+   * This is the ONLY sanctioned way out of the panel — the ✕, the overlay
+   * click, Escape and the End Conversation button all route through it. Wiring
+   * any of them straight to `onClose` leaves `player._active_chat_npc_id` and
+   * the conversation record set server-side, which is what the dialog chrome
+   * used to do on every dismissal that was not the button.
+   */
   const handleEndConversation = async () => {
+    // One dismissal, one `/end`, one `onClose` — see `endingRef`.
+    if (endingRef.current) return
+
     // `/open` never resolved (or failed outright), so there is no server-side
     // conversation to end — closing is the whole of the work.
     if (!npcKey) {
@@ -321,6 +389,7 @@ export function useNpcChat(npcId, npcName, onClose) {
       return
     }
 
+    endingRef.current = true
     try {
       await npcChat.end(npcKey)
     } catch (err) {
@@ -330,7 +399,10 @@ export function useNpcChat(npcId, npcName, onClose) {
       // at once.
       console.error('[npcChat] end failed; closing anyway:', serverDetail(err))
     } finally {
-      onClose()
+      // The one async path that used to close unconditionally: if the panel is
+      // already gone when `/end` settles, `onClose` would ask its owner to
+      // close a panel that no longer exists.
+      if (isMountedRef.current) onClose()
     }
   }
 

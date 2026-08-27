@@ -34,6 +34,7 @@ __all__ = [
     "StubAdapter",
     "ScriptedAdapter",
     "ready_npc",
+    "wired_chat_npc",
 ]
 
 
@@ -77,7 +78,7 @@ def chat_npc(init=True, **overrides):
     return npc
 
 
-def qc_npc(allowed_proper_nouns=None, prohibited=(), name="TestNPC"):
+def qc_npc(allowed_proper_nouns=None, prohibited=(), name="TestNPC", **overrides):
     """A host wired for the ``_qc_npc_text`` pipeline specifically.
 
     ``_qc_npc_text`` reads exactly two pieces of instance state —
@@ -86,6 +87,11 @@ def qc_npc(allowed_proper_nouns=None, prohibited=(), name="TestNPC"):
     factory makes all three explicit at the call site so a test can never
     accidentally exercise the empty-allow-list path while claiming to test the
     populated one.
+
+    ``**overrides`` passes straight through to :func:`chat_npc`, for callers
+    that need one attribute beyond those three (``_chat_personality``, say)
+    without forking the factory — which is exactly how the hand-rolled copies
+    in ``test_npc_chat_qc_hardening.py`` started.
     """
     facts = {}
     if allowed_proper_nouns is not None:
@@ -95,6 +101,7 @@ def qc_npc(allowed_proper_nouns=None, prohibited=(), name="TestNPC"):
         name=name,
         _chat_world_facts=facts,
         _prohibited_patterns=prohibit(*prohibited),
+        **overrides,
     )
 
 
@@ -203,4 +210,59 @@ def ready_npc(adapter=None, **overrides):
     }
     defaults.update(overrides)
     defaults["_chat_adapter"] = ScriptedAdapter() if adapter is None else adapter
+    return chat_npc(init=False, **defaults)
+
+
+def wired_chat_npc(adapter, persist=False, **overrides):
+    """A mixin host wired for a real ``chat_open``/``chat_respond`` round.
+
+    Unlike :func:`ready_npc`, which only carries attributes, this also stubs the
+    *methods* those two entry points call out to — loquacity computation, npc
+    key/chapter lookup, personality generation, adapter selection — so a test
+    can drive the whole chat path without a player, a save file, or a provider.
+
+    ``persist=False`` (the default) also stubs the persistence read and write,
+    which is what a test asserting on the returned turn wants. Pass
+    ``persist=True`` to leave the real ``_load_history_from_persistence`` /
+    ``_save_exchange_to_persistence`` in place, which is what a test asserting
+    on *what got written* needs.
+
+    This replaced three near-identical builders — two of which declared an inner
+    class with the same name, ``WiredNPC``, in different files — that differed
+    only in ``_chat_fallback_idx`` and ``loquacity_recovery`` being present in
+    one copy and absent in another. Both are set here, because a host missing an
+    attribute the mixin reads is the failure mode this whole module exists to
+    stop.
+
+    The stubs are set as plain instance attributes rather than class methods, so
+    they take the caller's arguments *without* a ``self`` — attribute lookup on
+    an instance does not bind.
+    """
+    defaults = {
+        "name": "Mara",
+        "_chat_world_facts": {"allowed_proper_nouns": ["Mara", "Jean"]},
+        "_chat_char_config": None,
+        "_chat_personality": {"given_name": "Mara", "voice": "terse"},
+        "_chat_history": [],
+        "_chat_npc_key": "mara",
+        "_prohibited_patterns": [],
+        "_chat_fallback_idx": 0,
+        "growth_profile": None,
+        "known_moves": [],
+        "loquacity_current": 80,
+        "loquacity_max": 100,
+        "loquacity_threshold": 10,
+        "loquacity_recovery": 2,
+        "_compute_loquacity": lambda player: None,
+        "_get_npc_key": lambda player: "mara",
+        "_get_chapter": lambda player: "01",
+        "_ensure_personality": lambda player: None,
+        "_get_adapter": lambda: adapter,
+    }
+    if not persist:
+        defaults["_load_history_from_persistence"] = lambda player: None
+        defaults["_save_exchange_to_persistence"] = (
+            lambda player, npc, jean, tick, chapter: None
+        )
+    defaults.update(overrides)
     return chat_npc(init=False, **defaults)

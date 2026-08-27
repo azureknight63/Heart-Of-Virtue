@@ -177,6 +177,19 @@ export const commonStyles = {
         border: `1px solid rgba(255, 68, 68, 0.3)`,
         fontFamily: fonts.main,
     },
+    /**
+     * The small uppercase caption that labels a block without competing with
+     * it — "Previously", a speaker's name over their line, "3 turns on record".
+     * Spread it and override only what genuinely differs (size, colour,
+     * weight); it was copied out by hand at four call sites across the
+     * conversation UI before it lived here.
+     */
+    eyebrowLabel: {
+        fontFamily: fonts.main,
+        fontSize: '11px',
+        letterSpacing: '1px',
+        textTransform: 'uppercase',
+    },
     infoCard: {
         backgroundColor: 'rgba(0, 0, 0, 0.3)',
         border: `1px solid ${colors.border.light}`,

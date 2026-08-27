@@ -1,6 +1,6 @@
 import BaseDialog from './BaseDialog'
 import ConversationTranscript from './ConversationTranscript'
-import { colors, spacing, fonts } from '../styles/theme'
+import { colors, spacing, commonStyles } from '../styles/theme'
 
 /**
  * ConversationHistoryDialog — the full record of a conversation, on demand.
@@ -33,11 +33,8 @@ export default function ConversationHistoryDialog({
             <div
                 data-testid="conversation-history-count"
                 style={{
+                    ...commonStyles.eyebrowLabel,
                     color: colors.text.dim,
-                    fontFamily: fonts.main,
-                    fontSize: '11px',
-                    letterSpacing: '1px',
-                    textTransform: 'uppercase',
                     marginBottom: spacing.md,
                 }}
             >

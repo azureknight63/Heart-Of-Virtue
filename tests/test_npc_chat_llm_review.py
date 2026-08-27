@@ -16,6 +16,8 @@ from unittest.mock import MagicMock
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
+from tests._npc_fixtures import qc_npc  # noqa: E402
+from tests.llm_doubles import make_chat_adapter  # noqa: E402
 
 
 def _make_npc(**overrides):
@@ -206,13 +208,7 @@ class TestGracefulClosure:
 
 class TestProperNounQC:
     def _npc(self):
-        class QCNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {"allowed_proper_nouns": []}
-                self._prohibited_patterns = []
-
-        return QCNPC()
+        return qc_npc(allowed_proper_nouns=[])
 
     def test_sentence_initial_words_preserved(self):
         npc = self._npc()
@@ -339,12 +335,9 @@ class TestLoquacityRecovery:
 
 class TestAdapterGenerateTurn:
     def _adapter(self, raw):
-        import ai.llm_client as llm
-
-        adapter = llm.NpcChatLLMAdapter.__new__(llm.NpcChatLLMAdapter)
-        adapter.enabled = True
-        adapter._call_llm = lambda *a, **k: raw
-        return adapter
+        return make_chat_adapter(
+            provider=None, api_key=None, _call_llm=lambda *a, **k: raw
+        )
 
     def test_parses_and_clamps(self):
         adapter = self._adapter(

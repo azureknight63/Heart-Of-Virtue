@@ -25,7 +25,13 @@ import warnings
 
 import pytest
 
-# Provider configuration these tests need restored from .env.
+from tests.llm_doubles import PROVIDER_KEY_ENVS
+
+# Provider configuration these tests need restored from .env. The credential
+# half is derived from the provider registry (see tests/llm_doubles.py): a
+# provider registered but missing from this tuple would be left blanked by
+# tests/conftest.py for the whole live run, so the chain would quietly serve
+# every call from a different provider than the one under test.
 _LIVE_KEYS = (
     "MYNX_LLM_ENABLED",
     "MYNX_LLM_PROVIDER",
@@ -34,13 +40,10 @@ _LIVE_KEYS = (
     "NPC_CHAT_LLM_PROVIDER",
     "NPC_CHAT_LLM_MODEL",
     "NPC_CHAT_LLM_TIMEOUT",
-    "OPENROUTER_API_KEY",
     "OPENROUTER_SITE",
     "OPENROUTER_SITE_TITLE",
-    "GROQ_API_KEY",
-    "CEREBRAS_API_KEY",
     "OLLAMA_BASE_URL",
-)
+) + PROVIDER_KEY_ENVS
 
 
 def live_llm_enabled() -> bool:

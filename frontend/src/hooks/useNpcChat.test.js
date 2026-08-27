@@ -1,7 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useNpcChat, toneEmotion, qualityEmotion, npcCast, JEAN_ID } from './useNpcChat'
-import { portraitUrl } from '../utils/portraits'
+import {
+  useNpcChat,
+  toneEmotion,
+  qualityEmotion,
+  npcCast,
+  JEAN_ID,
+  TONE_EMOTIONS,
+  QUALITY_EMOTIONS,
+  NPC_LISTENING_EMOTION,
+  __resetPreloadedPortraits,
+} from './useNpcChat'
+import { portraitUrl, EMOTIONS } from '../utils/portraits'
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
 
 vi.mock('../api/npcChat', () => ({
@@ -57,6 +67,10 @@ describe('useNpcChat', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // The portrait preload registry is module-level and survives between
+    // tests, so without this the "each URL only once" counts below would
+    // depend on which describe block ran first.
+    __resetPreloadedPortraits()
     // The hook logs the raw server detail on every failure path (it is never
     // rendered — that text is provider-SDK exception detail). Silenced so the
     // expected-failure tests do not spew, and spied so "logged, not shown" is
@@ -76,9 +90,11 @@ describe('useNpcChat', () => {
   // -------------------------------------------------------------------------
   // Portrait preloading
   //
-  // Declared FIRST on purpose: `preloadedPortraits` is a module-level Set that
-  // deliberately outlives any one conversation, so these tests only see a clean
-  // registry while nothing else in the file has mounted the hook yet.
+  // `preloadedPortraits` is a module-level Set that deliberately outlives any
+  // one conversation. The file-wide `beforeEach` clears it via
+  // `__resetPreloadedPortraits`, so the exact-count assertions below hold no
+  // matter where this block sits or what runs before it -- they used to pass
+  // only because this block was declared first.
   // -------------------------------------------------------------------------
   describe('portrait preloading', () => {
     let realImage
@@ -118,13 +134,19 @@ describe('useNpcChat', () => {
       const urls = built.map((img) => img.src)
       expect(new Set(urls).size).toBe(urls.length)
       // Jean wears the tone of whichever option is clicked (2 distinct here);
-      // the NPC's reaction is one of the four conversation-quality emotions.
+      // the NPC wears the listening emotion while she speaks and then one of
+      // the four conversation-quality emotions.
       expect(urls).toContain(portraitUrl(JEAN_ID, 'curious'))
       expect(urls).toContain(portraitUrl(JEAN_ID, 'skeptical'))
-      for (const emotion of ['happy', 'neutral', 'concerned', 'angry']) {
+      // Iterated from the tables themselves — a hand-copied list cannot fail
+      // when an emotion is added to one of them without being preloaded, which
+      // is the only regression this assertion exists to catch.
+      for (const emotion of [NPC_LISTENING_EMOTION, ...Object.values(QUALITY_EMOTIONS)]) {
         expect(urls).toContain(portraitUrl('PreloadableAlpha', emotion))
       }
-      expect(urls).toHaveLength(6)
+      // 2 Jean tones + every distinct NPC emotion above.
+      const npcEmotions = new Set([NPC_LISTENING_EMOTION, ...Object.values(QUALITY_EMOTIONS)])
+      expect(urls).toHaveLength(2 + npcEmotions.size)
 
       // A second turn serving the same option tones must not re-request them.
       built.length = 0
@@ -138,6 +160,29 @@ describe('useNpcChat', () => {
         await result.current.handleOptionClick({ text: 'a', tone: 'open' })
       })
       expect(built).toHaveLength(0)
+    })
+
+    it('warms the emotion the NPC is guaranteed to wear on every Jean beat', async () => {
+      // `handleOptionClick` stages the NPC with NPC_LISTENING_EMOTION on EVERY
+      // turn. While that was a bare literal it was also the one emotion the
+      // preload set never covered, so a speaker shipping partial art (gorran/
+      // has two portraits) 404'd it once per beat — uncached, undeduped, and
+      // invisible to `preloadedPortraits`, which only remembers what it asked for.
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ jean_options: [makeJeanOption({ tone: 'direct' })] }),
+      })
+      const { result } = await mountOpened('PreloadableGamma')
+
+      expect(built.map((img) => img.src)).toContain(
+        portraitUrl('PreloadableGamma', NPC_LISTENING_EMOTION)
+      )
+      // ...and it is the same constant the optimistic Jean segment reacts with.
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi', tone: 'direct' })
+      })
+      expect(result.current.conversationSegments[1].reactions).toEqual({
+        PreloadableGamma: NPC_LISTENING_EMOTION,
+      })
     })
 
     it('marks preloads for asynchronous decode', async () => {
@@ -180,15 +225,6 @@ describe('useNpcChat', () => {
       }
     )
 
-    it('resolves to art that exists in the portrait vocabulary', () => {
-      // A mapped emotion outside utils/portraits' EMOTIONS list would be
-      // normalised away to neutral in the URL while still reading as mapped
-      // here — a mapping that silently does nothing.
-      for (const tone of ['direct', 'guarded', 'open']) {
-        const emotion = toneEmotion(tone)
-        expect(portraitUrl(JEAN_ID, emotion)).toContain(`/${emotion}.png`)
-      }
-    })
   })
 
   describe('qualityEmotion', () => {
@@ -207,6 +243,49 @@ describe('useNpcChat', () => {
         expect(qualityEmotion(quality)).toBe('neutral')
       }
     )
+  })
+
+  describe('the emotion tables as a whole', () => {
+    // One derived test over BOTH tables plus the listening emotion, iterating
+    // the tables themselves rather than a hand-copied list of their keys. The
+    // guard used to exist for TONE_EMOTIONS only, and even that walked a
+    // literal `['direct','guarded','open']` — so a mapping added to either
+    // table, or the guaranteed listening emotion, could point at art the
+    // vocabulary does not know about and nothing would notice.
+    // `utils/combatSfx`'s ALL_COMBAT_CUES is the same pattern.
+    const everyMappedEmotion = () => [
+      ...Object.values(TONE_EMOTIONS),
+      ...Object.values(QUALITY_EMOTIONS),
+      NPC_LISTENING_EMOTION,
+    ]
+
+    it('maps only to emotions utils/portraits actually registers', () => {
+      // An emotion outside EMOTIONS is coerced to 'neutral' when the URL is
+      // built, so the mapping still READS as mapped here while doing nothing
+      // — a silent no-op rather than a failure.
+      expect(everyMappedEmotion().length).toBeGreaterThan(0)
+      for (const emotion of everyMappedEmotion()) {
+        expect(EMOTIONS, `"${emotion}" is not a registered portrait emotion`)
+          .toContain(emotion)
+      }
+    })
+
+    it('resolves every mapping to art at its own emotion path', () => {
+      for (const emotion of everyMappedEmotion()) {
+        expect(portraitUrl(JEAN_ID, emotion)).toContain(`/${emotion}.png`)
+      }
+    })
+
+    it('resolves every tone and quality the engine emits through those tables', () => {
+      // Keys, not values: proves the lookups are wired to the tables under
+      // test and that neither has silently lost an entry.
+      for (const tone of Object.keys(TONE_EMOTIONS)) {
+        expect(toneEmotion(tone)).toBe(TONE_EMOTIONS[tone])
+      }
+      for (const quality of Object.keys(QUALITY_EMOTIONS)) {
+        expect(qualityEmotion(quality)).toBe(QUALITY_EMOTIONS[quality])
+      }
+    })
   })
 
   describe('npcCast', () => {
@@ -481,6 +560,76 @@ describe('useNpcChat', () => {
       })
     })
 
+    it('drops a /respond that resolves after the hook is pointed at another NPC', async () => {
+      // The `[npcId]` open effect has a supersession guard; `handleOptionClick`
+      // had none, so a reply still in flight for NPC A landed in NPC B's
+      // segments, options, loquacity and relationship. Latent today only
+      // because InteractPanel keys the panel — but switching NPC is advertised
+      // in this hook's own contract.
+      const pending = deferred()
+      npcChat.respond.mockReturnValue(pending.promise)
+      const { result, rerender } = await mountOpened('Mynx')
+
+      act(() => {
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+      await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
+
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          npc_key: 'npc_session_999',
+          npc_name: 'Gorran',
+          npc_opening: 'You again.',
+          loquacity_current: 4,
+          loquacity_max: 4,
+          jean_options: [makeJeanOption({ text: 'Peace, Gorran.', tone: 'open' })],
+        }),
+      })
+      await act(async () => rerender({ id: 'Gorran', name: 'Gorran' }))
+      await waitFor(() => expect(result.current.phase).toBe('waiting_jean'))
+
+      await act(async () => {
+        pending.resolve({
+          data: makeNpcChatRespond({
+            npc_response: 'Mynx answers, far too late.',
+            jean_options: [makeJeanOption({ text: 'Stale option', tone: 'direct' })],
+            loquacity_current: 1,
+            loquacity_max: 5,
+          }),
+        })
+      })
+
+      // Gorran's conversation is untouched: one opening line, his options, his
+      // loquacity, and still his turn.
+      expect(result.current.conversationSegments).toHaveLength(1)
+      expect(result.current.conversationSegments[0].text).toBe('You again.')
+      expect(result.current.currentOptions.map((o) => o.text)).toEqual(['Peace, Gorran.'])
+      expect(result.current.loquacity).toEqual({ current: 4, max: 4 })
+      expect(result.current.phase).toBe('waiting_jean')
+    })
+
+    it('drops a /respond REJECTION that lands after a switch, rather than erroring on the new NPC', async () => {
+      const pending = deferred()
+      npcChat.respond.mockReturnValue(pending.promise)
+      const { result, rerender } = await mountOpened('Mynx')
+
+      act(() => {
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+      await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
+
+      npcChat.open.mockResolvedValue({ data: makeNpcChatOpen({ npc_key: 'k2', npc_name: 'Gorran' }) })
+      await act(async () => rerender({ id: 'Gorran', name: 'Gorran' }))
+      await waitFor(() => expect(result.current.phase).toBe('waiting_jean'))
+
+      await act(async () => { pending.reject(new Error('Mynx timed out')) })
+
+      // No error copy, no Retry replaying Mynx's option against Gorran's key.
+      expect(result.current.error).toBeNull()
+      expect(result.current.retry).toBeNull()
+      expect(consoleError).not.toHaveBeenCalled()
+    })
+
     it('ignores a click before the session key exists', async () => {
       const pending = deferred()
       npcChat.open.mockReturnValue(pending.promise)
@@ -604,6 +753,24 @@ describe('useNpcChat', () => {
       )
     })
 
+    it('spends one /end and one close no matter how often it is invoked', async () => {
+      // The panel now stays on screen for the whole `/end` round trip, because
+      // the ✕, the overlay click and Escape all route through here rather than
+      // dismissing instantly. That opens a window a second click lands in.
+      const pending = deferred()
+      npcChat.end.mockReturnValue(pending.promise)
+      const { result } = await mountOpened()
+
+      act(() => {
+        result.current.handleEndConversation()
+        result.current.handleEndConversation()
+      })
+      await act(async () => { pending.resolve({ data: { success: true } }) })
+
+      expect(npcChat.end).toHaveBeenCalledTimes(1)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
     it('closes without calling the server when there is no session key', async () => {
       npcChat.open.mockRejectedValue(new Error('boom'))
       const { result } = mount()
@@ -670,6 +837,46 @@ describe('useNpcChat', () => {
   })
 
   describe('unmount safety', () => {
+    it('drops an /open response that lands after unmount', async () => {
+      const pending = deferred()
+      npcChat.open.mockReturnValue(pending.promise)
+      const { unmount } = mount()
+
+      unmount()
+      await act(async () => { pending.resolve({ data: openData }) })
+
+      // No setState on an unmounted hook, and nothing schedules a close.
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('drops an /open rejection that lands after unmount', async () => {
+      const pending = deferred()
+      npcChat.open.mockReturnValue(pending.promise)
+      const { unmount } = mount()
+
+      unmount()
+      await act(async () => { pending.reject(new Error('late failure')) })
+
+      expect(consoleError).not.toHaveBeenCalled()
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('does not close after unmount when a slow /end finally settles', async () => {
+      // `handleEndConversation`'s `finally` was the one async path with no
+      // mount check: it asked the owner to close a panel that had already gone.
+      const pending = deferred()
+      npcChat.end.mockReturnValue(pending.promise)
+      const { result, unmount } = await mountOpened()
+
+      act(() => { result.current.handleEndConversation() })
+      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
+      unmount()
+
+      await act(async () => { pending.resolve({ data: { success: true } }) })
+
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
     it('drops a /respond response that lands after unmount', async () => {
       const pending = deferred()
       npcChat.respond.mockReturnValue(pending.promise)

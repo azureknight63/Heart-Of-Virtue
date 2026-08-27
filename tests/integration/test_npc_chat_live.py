@@ -344,13 +344,23 @@ def guard_npc():
 
 
 def _guarded(npc, adapter, system_prompt, turn):
+    """Run one raw turn dict through the guard, returning the cleaned ``Turn``.
+
+    ``_guard_turn`` takes a :class:`Turn` and returns a ``GuardedTurn``; the
+    ``.turn`` here is what makes the three-way unpack below match the shape
+    every unit call site in ``tests/test_npc_chat_state_guard.py`` uses.
+    """
+    from src.npc._chat_llm import Turn
+
     return npc._guard_turn(
         adapter,
         system_prompt,
-        turn.get("npc_text", ""),
-        turn.get("npc_flavor", "") or "",
-        [dict(o) for o in (turn.get("jean_options") or [])],
-    )
+        Turn(
+            turn.get("npc_text", ""),
+            turn.get("npc_flavor", "") or "",
+            [dict(o) for o in (turn.get("jean_options") or [])],
+        ),
+    ).turn
 
 
 @pytest.fixture(scope="module")

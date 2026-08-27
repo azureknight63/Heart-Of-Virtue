@@ -343,4 +343,26 @@ describe('CombatInputDialog', () => {
     fireEvent.click(button);
     expect(mockOnSelect).toHaveBeenCalledWith('Option');
   });
+  it('sizes itself against the battlefield panel it sits in, not the viewport', () => {
+    // This dialog is `containerCentered` — it is positioned inside the
+    // battlefield panel, not the viewport. It also passes maxWidth="600px", so
+    // BaseDialog's viewport-relative `min(94vw, 600px)` default resolves to a
+    // width wider than its own container on any panel narrower than 600px and
+    // overflows it. Container-relative is the only correct default here.
+    const { container } = render(
+      <CombatInputDialog
+        inputType="generic"
+        options={['Option']}
+        onSelect={mockOnSelect}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    const overlay = container.querySelector('.modal-overlay');
+    expect(overlay).toHaveStyle({ position: 'absolute' });
+    expect(container.querySelector('.modal-content')).toHaveStyle({
+      width: '90%',
+      maxWidth: '600px',
+    });
+  });
 });

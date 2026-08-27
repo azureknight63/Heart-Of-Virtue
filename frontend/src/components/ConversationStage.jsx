@@ -213,7 +213,14 @@ function Portrait({ member, isSpeaker, wide = false }) {
  * `"live"` mode `onComplete` is never invoked, even when that timer walks the
  * stage off its final beat.
  *
- * @param {Array}    segments   - ordered beats from the event payload
+ * Segments follow the shared contract in utils/conversationSegment. The stage
+ * is the renderer that honours ALL of it — `reactions`, `in_conversation`,
+ * `thought`, `enter` and `exit` included — where `ConversationTranscript`
+ * deliberately reads only the four per-line fields. That module is where a new
+ * field gets declared.
+ *
+ * @param {import('../utils/conversationSegment').ConversationSegment[]} segments
+ *   - ordered beats from the event payload
  * @param {Object}   conversation - { cast: [...] } initial roster (optional)
  * @param {Function} onComplete - called once after the final beat is revealed (never in `"live"` mode)
  * @param {number}   [speed]    - typewriter speed (ms/char)
@@ -312,7 +319,8 @@ function ConversationStage({
     const isThought = Boolean(current.thought)
     const isWide = layout === 'wide'
 
-    const renderColumn = (cols, area) => (
+    /** One flank of the stage: the cast members standing on `area`'s side. */
+    const renderColumn = (columnMembers, area) => (
         <div
             className="conversation-stage__portrait-column"
             style={{
@@ -329,7 +337,7 @@ function ConversationStage({
                 transition: 'min-width 0.35s ease',
             }}
         >
-            {cols.map((m) => (
+            {columnMembers.map((m) => (
                 <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} wide={isWide} />
             ))}
         </div>

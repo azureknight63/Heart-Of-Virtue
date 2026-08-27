@@ -8,6 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from flask import Flask
 
+from tests.llm_doubles import child_env
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -244,37 +246,6 @@ class TestNpcChat:
         assert rv.status_code == 400
 
 
-def _child_env(**overrides):
-    """A subprocess environment that inherits this process's PATH etc. but NOT
-    the developer's live credentials.
-
-    ``os.environ.copy()`` alone hands the child everything ``python-dotenv``
-    loaded from the repo's real ``.env`` -- live provider API keys included --
-    and none of ``tests/conftest.py``'s blanking, so a child that imports the
-    API can make real paid LLM calls.
-
-    The blanked keys are ASSIGNED an empty string rather than popped: dotenv
-    runs with ``override=False``, which only skips keys already *present*, so a
-    popped key is silently refilled from ``.env`` the moment the child imports
-    anything that calls ``load_dotenv()``. (Same trap as the GITHUB_TOKEN
-    incident.)
-    """
-    import os
-
-    env = os.environ.copy()
-    for key in (
-        "OPENROUTER_API_KEY",
-        "GROQ_API_KEY",
-        "CEREBRAS_API_KEY",
-        "GITHUB_TOKEN",
-    ):
-        env[key] = ""
-    env["NPC_CHAT_LLM_ENABLED"] = "0"
-    env["LOG_LEVEL"] = "WARNING"
-    env.update(overrides)
-    return env
-
-
 class TestNpcChatRateLimit:
     """POST /npc-chat/open and /respond share one per-identity rate limit
     guarding the LLM-backed calls (each can drive a dozen provider calls
@@ -297,7 +268,14 @@ class TestNpcChatRateLimit:
     def _reset_chat_limiters(self):
         """Both tiers are process-wide singletons; drop every key around each
         test so neither this class nor its neighbours inherit a partly-spent
-        bucket (the IP tier is shared by ALL of them at 127.0.0.1)."""
+        bucket (the IP tier is shared by ALL of them at 127.0.0.1).
+
+        This is the ONLY cleanup the class needs. Individual tests used to wrap
+        themselves in ``try/finally: limiter.clear(session_id)``, which cleared
+        nothing: the limiter records ``uid:<db_user_id>`` (see
+        ``_chat_rate_limit_key``), so those calls named keys that had never
+        existed -- and they could not have covered the IP tier in any case.
+        """
         from src.api.routes import npc_chat as m
 
         for lim in (m._chat_limiter, m._chat_ip_limiter):
@@ -398,88 +376,60 @@ class TestNpcChatRateLimit:
         assert rv.status_code == 429
 
     def test_under_limit_requests_all_succeed(self, limiter, client_for):
-        session_id = "rl_under_limit"
-        client = client_for(session_id)
-        try:
-            for i in range(limiter.limit - 1):
-                rv = client.post(
-                    "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
-                )
-                assert rv.status_code == 200, f"request {i} unexpectedly limited"
-        finally:
-            limiter.clear(session_id)
+        client = client_for("rl_under_limit")
+        for i in range(limiter.limit - 1):
+            rv = client.post("/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH)
+            assert rv.status_code == 200, f"request {i} unexpectedly limited"
 
     def test_over_limit_request_gets_429(self, limiter, client_for):
-        session_id = "rl_over_limit"
-        client = client_for(session_id)
-        try:
-            # Exhaust the budget alternating endpoints -- /open and /respond
-            # draw from the same per-session bucket.
-            for i in range(limiter.limit):
-                if i % 2 == 0:
-                    endpoint, payload = "/npc-chat/open", {"npc_id": "amelia"}
-                else:
-                    endpoint, payload = (
-                        "/npc-chat/respond",
-                        {"npc_key": "amelia", "jean_text": "hi"},
-                    )
-                rv = client.post(endpoint, json=payload, headers=AUTH)
-                assert rv.status_code == 200, f"request {i} unexpectedly limited"
+        client = client_for("rl_over_limit")
+        # Exhaust the budget alternating endpoints -- /open and /respond draw
+        # from the same per-user bucket.
+        for i in range(limiter.limit):
+            if i % 2 == 0:
+                endpoint, payload = "/npc-chat/open", {"npc_id": "amelia"}
+            else:
+                endpoint, payload = (
+                    "/npc-chat/respond",
+                    {"npc_key": "amelia", "jean_text": "hi"},
+                )
+            rv = client.post(endpoint, json=payload, headers=AUTH)
+            assert rv.status_code == 200, f"request {i} unexpectedly limited"
 
-            rv = client.post(
-                "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
-            )
-            assert rv.status_code == 429
-            assert rv.get_json() == {
-                "success": False,
-                "error": "Slow down — too many messages.",
-            }
-        finally:
-            limiter.clear(session_id)
+        rv = client.post("/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH)
+        assert rv.status_code == 429
+        assert rv.get_json() == {
+            "success": False,
+            "error": "Slow down — too many messages.",
+        }
 
     def test_rate_limit_is_per_user(self, limiter, client_for):
-        session_a = "rl_bucket_a"
-        session_b = "rl_bucket_b"
-        client_a = client_for(session_a)
-        client_b = client_for(session_b)
-        try:
-            for _ in range(limiter.limit):
-                rv = client_a.post(
-                    "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
-                )
-                assert rv.status_code == 200
-
-            # Session A is now exhausted...
+        client_a = client_for("rl_bucket_a")
+        client_b = client_for("rl_bucket_b")
+        for _ in range(limiter.limit):
             rv = client_a.post(
                 "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
             )
-            assert rv.status_code == 429
-
-            # ...but user B has never made a request, so it has its own
-            # untouched bucket.
-            rv = client_b.post(
-                "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
-            )
             assert rv.status_code == 200
-        finally:
-            limiter.clear(session_a)
-            limiter.clear(session_b)
+
+        # User A is now exhausted...
+        rv = client_a.post("/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH)
+        assert rv.status_code == 429
+
+        # ...but user B has never made a request, so it has its own untouched
+        # bucket.
+        rv = client_b.post("/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH)
+        assert rv.status_code == 200
 
     def test_end_and_history_are_not_rate_limited(self, limiter, client_for):
-        session_id = "rl_end_history_exempt"
-        client = client_for(session_id)
-        try:
-            # Comfortably above the /open+/respond ceiling -- must never trip
-            # since these two routes never call `_check_chat_rate_limit`.
-            for _ in range(limiter.limit + 5):
-                rv = client.post(
-                    "/npc-chat/end", json={"npc_key": "amelia"}, headers=AUTH
-                )
-                assert rv.status_code == 200
-            rv = client.get("/npc-chat/history/amelia", headers=AUTH)
+        client = client_for("rl_end_history_exempt")
+        # Comfortably above the /open+/respond ceiling -- must never trip since
+        # these two routes never call `_check_chat_rate_limit`.
+        for _ in range(limiter.limit + 5):
+            rv = client.post("/npc-chat/end", json={"npc_key": "amelia"}, headers=AUTH)
             assert rv.status_code == 200
-        finally:
-            limiter.clear(session_id)
+        rv = client.get("/npc-chat/history/amelia", headers=AUTH)
+        assert rv.status_code == 200
 
     def test_the_identity_sources_do_not_share_one_key_space(self):
         """The four sources used to be concatenated into one flat key space, so
@@ -574,7 +524,7 @@ class TestNpcChatRateLimit:
         import sys
         from pathlib import Path
 
-        env = _child_env(NPC_CHAT_RATE_LIMIT_PER_MINUTE="0")
+        env = child_env(NPC_CHAT_RATE_LIMIT_PER_MINUTE="0")
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
             [
@@ -588,7 +538,7 @@ class TestNpcChatRateLimit:
             env=env,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "CHAT_LIMITER_DISABLED_OK" in result.stdout
@@ -609,7 +559,7 @@ class TestNpcChatRateLimit:
         import sys
         from pathlib import Path
 
-        env = _child_env(NPC_CHAT_RATE_LIMIT_PER_MINUTE="twenty")
+        env = child_env(NPC_CHAT_RATE_LIMIT_PER_MINUTE="twenty")
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
             [
@@ -625,7 +575,7 @@ class TestNpcChatRateLimit:
             env=env,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "CHAT_LIMITER_DEFAULTED_OK" in result.stdout

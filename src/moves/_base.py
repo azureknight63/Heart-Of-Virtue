@@ -283,6 +283,18 @@ class Move:  # master class for all moves
     # Concrete engine moves must declare a player-facing name. Internal `name`
     # values remain stable for command routing and AI logic.
     display_name = None
+    # Power multiple this move applies to its user's base damage.
+    #
+    # Declared HERE, on the base class, so it is part of the Move interface
+    # rather than a private attribute the serializer happens to probe for. The
+    # wire's `damage_multiplier` (src/api/serializers/combat.py) is read off
+    # it, and the Tactical Advisor decides POTENTIALLY LETHAL from that number
+    # — so a heavy move that leaves this at 1.0 understates itself to the
+    # model. Any move that hits for more (or less) than its user's raw damage
+    # overrides it; the ones that roll a range declare the bounds and derive
+    # this as their midpoint, so retuning the roll moves the wire value with
+    # it. See TelegraphedSurge and GorranClub in src/moves/_npc.py.
+    _DAMAGE_MULTIPLIER: float = 1.0
 
     def __init__(
         self,

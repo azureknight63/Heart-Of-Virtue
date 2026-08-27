@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
-import { useNpcChat, npcCast } from '../hooks/useNpcChat'
+import { useNpcChat, npcCast, JEAN_ID } from '../hooks/useNpcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import ConversationStage from './ConversationStage'
 import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
-import { colors, spacing, fonts } from '../styles/theme'
+import { colors, spacing, fonts, commonStyles } from '../styles/theme'
 
 /**
  * ChatLoadingIndicator — shared loading affordance for the conversation
@@ -46,6 +46,52 @@ function ChatLoadingIndicator({ message, variant = 'block' }) {
 }
 
 /**
+ * ReplyAnnouncer — the screen-reader channel for the feature's actual payload.
+ *
+ * The dialog SHELL is accessible (focus trap, Escape, aria-modal, per-instance
+ * labelling, `role="status"` on the loader) but the NPC's reply itself lands in
+ * a plain `<div>` on the stage, so a screen-reader user was told a reply was
+ * being fetched and then never told it had arrived.
+ *
+ * Fed the COMPLETED line, never `ConversationStage`'s per-character typewriter
+ * text: a polite live region re-announced on every keystroke is worse than
+ * silence. Jean's own beats are skipped — the player just chose those words,
+ * and echoing them back interrupts the reply they are waiting on.
+ *
+ * Visually hidden rather than `display: none`, which would take it out of the
+ * accessibility tree along with everything else.
+ */
+function ReplyAnnouncer({ segments }) {
+  const latest = segments[segments.length - 1]
+  const announced =
+    latest && latest.speaker && latest.speaker !== JEAN_ID
+      ? [latest.flavor, latest.text].filter(Boolean).join('. ')
+      : ''
+
+  return (
+    <div
+      data-testid="npc-chat-announcer"
+      aria-live="polite"
+      aria-atomic="true"
+      style={{
+        position: 'absolute',
+        width: '1px',
+        height: '1px',
+        margin: '-1px',
+        padding: 0,
+        border: 0,
+        overflow: 'hidden',
+        clip: 'rect(0 0 0 0)',
+        clipPath: 'inset(50%)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {announced}
+    </div>
+  )
+}
+
+/**
  * PreviousLineRecap — the "Previously" strip showing the turn immediately
  * before the one on stage (see the comment above its call site for why it
  * exists). Renders nothing when there is no prior turn yet.
@@ -56,17 +102,137 @@ function PreviousLineRecap({ segment, cast }) {
     <div data-testid="npc-chat-previous-line" style={{ marginBottom: spacing.sm }}>
       <div
         style={{
+          ...commonStyles.eyebrowLabel,
           color: colors.text.dim,
-          fontFamily: fonts.main,
           fontSize: '10px',
-          letterSpacing: '1px',
-          textTransform: 'uppercase',
           marginBottom: spacing.xs,
         }}
       >
         Previously
       </div>
       <TranscriptEntry segment={segment} cast={cast} variant="compact" />
+    </div>
+  )
+}
+
+/**
+ * Loquacity bar colour, purely as a function of how much conversation is left.
+ * Zero (including the malformed-payload `max: 0` case, which renders a
+ * zero-width bar anyway) reads as spent, same as any other empty meter.
+ */
+function barColorFor(percentage) {
+  if (percentage > 60) return colors.primary // Green
+  if (percentage > 30) return colors.secondary // Orange
+  return colors.danger // Red
+}
+
+/**
+ * Relationship badge colour, purely as a function of the NPC's attitude.
+ * Module-level and pure for the same reason as `barColorFor` beside it: it
+ * closes over nothing, so keeping it inside the component only meant rebuilding
+ * the closure on every typewriter re-render and hiding a lookup table inside a
+ * render body.
+ */
+function relationshipColorFor(relationship) {
+  switch (relationship?.attitude) {
+    case 'friendly':
+    case 'favorable':
+      return colors.primary
+    case 'wary':
+    case 'hostile':
+    case 'enemy':
+      return colors.danger
+    default:
+      return colors.text.muted
+  }
+}
+
+/** LoquacityBar — how much conversation the NPC has left, as a meter. */
+function LoquacityBar({ percentage }) {
+  return (
+    <div
+      style={{
+        height: '4px',
+        backgroundColor: colors.bg.panelLight,
+        border: `1px solid ${colors.border.light}`,
+        borderRadius: '2px',
+        marginBottom: spacing.md,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          height: '100%',
+          width: `${percentage}%`,
+          backgroundColor: barColorFor(percentage),
+          transition: 'all 0.3s ease-out',
+        }}
+      />
+    </div>
+  )
+}
+
+/** RelationshipBadge — the NPC's standing towards Jean: emoji, attitude, trust. */
+function RelationshipBadge({ relationship }) {
+  if (!relationship) return null
+  return (
+    <div
+      data-testid="relationship-badge"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: spacing.sm,
+        marginBottom: spacing.md,
+        fontFamily: fonts.main,
+        fontSize: '12px',
+        color: relationshipColorFor(relationship),
+      }}
+    >
+      <span>{relationship.emoji}</span>
+      <span style={{ textTransform: 'capitalize' }}>{relationship.attitude}</span>
+      <span style={{ color: colors.text.dim }}>&middot; {relationship.trust_level}</span>
+    </div>
+  )
+}
+
+/**
+ * ChatErrorBox — the failure notice and its Retry.
+ *
+ * The copy is the hook's own fixed string; the server's `error` field carries
+ * diagnostic detail and is only ever logged.
+ */
+function ChatErrorBox({ error, retry, disabled }) {
+  if (!error) return null
+  return (
+    <div
+      style={{
+        color: colors.danger,
+        fontFamily: fonts.main,
+        fontSize: '12px',
+        padding: spacing.md,
+        backgroundColor: 'rgba(255, 68, 68, 0.1)',
+        border: `1px solid ${colors.danger}`,
+        borderRadius: '6px',
+        marginBottom: spacing.md,
+      }}
+    >
+      {error}
+      {retry && (
+        <div style={{ marginTop: spacing.sm }}>
+          <GameButton
+            variant="secondary"
+            size="small"
+            onClick={() => retry()}
+            // Retry re-issues a PAID `/open` or `/respond`. It was the one
+            // control left live behind the stacked transcript, so a click that
+            // landed on the panel underneath spent a provider turn the player
+            // never saw. Every other control here is gated the same way.
+            disabled={disabled}
+          >
+            Retry
+          </GameButton>
+        </div>
+      )}
     </div>
   )
 }
@@ -100,17 +266,6 @@ function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onE
       )}
     </div>
   )
-}
-
-/**
- * Loquacity bar colour, purely as a function of how much conversation is left.
- * Zero (including the malformed-payload `max: 0` case, which renders a
- * zero-width bar anyway) reads as spent, same as any other empty meter.
- */
-function barColorFor(percentage) {
-  if (percentage > 60) return colors.primary // Green
-  if (percentage > 30) return colors.secondary // Orange
-  return colors.danger // Red
 }
 
 /**
@@ -171,22 +326,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       ? conversationSegments[conversationSegments.length - 2]
       : null
 
-  // Color the relationship badge by attitude
-  const getRelationshipColor = () => {
-    if (!relationship) return colors.text.muted
-    switch (relationship.attitude) {
-      case 'friendly':
-      case 'favorable':
-        return colors.primary
-      case 'wary':
-      case 'hostile':
-      case 'enemy':
-        return colors.danger
-      default:
-        return colors.text.muted
-    }
-  }
-
   // The conversation stage body is one of three mutually exclusive states —
   // named branches read more plainly here than a nested ternary.
   let stageBody
@@ -219,52 +358,23 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   return (
     <BaseDialog
       title={displayName}
-      onClose={onClose}
+      // NOT `onClose`. This is BaseDialog's handler for ✕, the overlay click
+      // AND Escape, and wiring it straight to `onClose` dismissed the panel
+      // without ever calling `POST /npc/chat/end` — leaving
+      // `player._active_chat_npc_id` and the conversation record set
+      // server-side on what is by far the most common way out of the panel.
+      // `handleEndConversation` short-circuits to `onClose()` when there is no
+      // session key and closes in `finally` even if the request fails, so it is
+      // safe on every path this fires on.
+      onClose={handleEndConversation}
       variant="default"
       maxWidth="1100px"
       padding={spacing.lg}
       zIndex={2100}
     >
-      {/* Loquacity Bar */}
-      <div
-        style={{
-          height: '4px',
-          backgroundColor: colors.bg.panelLight,
-          border: `1px solid ${colors.border.light}`,
-          borderRadius: '2px',
-          marginBottom: spacing.md,
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            height: '100%',
-            width: `${loquacityPercentage}%`,
-            backgroundColor: barColorFor(loquacityPercentage),
-            transition: 'all 0.3s ease-out',
-          }}
-        />
-      </div>
+      <LoquacityBar percentage={loquacityPercentage} />
 
-      {/* Relationship Badge */}
-      {relationship && (
-        <div
-          data-testid="relationship-badge"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: spacing.sm,
-            marginBottom: spacing.md,
-            fontFamily: fonts.main,
-            fontSize: '12px',
-            color: getRelationshipColor(),
-          }}
-        >
-          <span>{relationship.emoji}</span>
-          <span style={{ textTransform: 'capitalize' }}>{relationship.attitude}</span>
-          <span style={{ color: colors.text.dim }}>&middot; {relationship.trust_level}</span>
-        </div>
-      )}
+      <RelationshipBadge relationship={relationship} />
 
       {/* Recap of the turn just before the one on stage — the question an answer
           is answering, kept in the same visual language as the history dialog. */}
@@ -278,33 +388,10 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         {loading && conversationSegments.length > 0 && (
           <ChatLoadingIndicator message={`${displayName} is gathering a reply…`} variant="inline" />
         )}
+        <ReplyAnnouncer segments={conversationSegments} />
       </div>
 
-      {/* Error State. The copy is the hook's own fixed string — the server's
-          error field is provider-SDK exception text and is only logged. */}
-      {error && (
-        <div
-          style={{
-            color: colors.danger,
-            fontFamily: fonts.main,
-            fontSize: '12px',
-            padding: spacing.md,
-            backgroundColor: 'rgba(255, 68, 68, 0.1)',
-            border: `1px solid ${colors.danger}`,
-            borderRadius: '6px',
-            marginBottom: spacing.md,
-          }}
-        >
-          {error}
-          {retry && (
-            <div style={{ marginTop: spacing.sm }}>
-              <GameButton variant="secondary" size="small" onClick={() => retry()}>
-                Retry
-              </GameButton>
-            </div>
-          )}
-        </div>
-      )}
+      <ChatErrorBox error={error} retry={retry} disabled={loading || historyOpen} />
 
       {/* Options */}
       {phase === 'waiting_jean' && !error && (

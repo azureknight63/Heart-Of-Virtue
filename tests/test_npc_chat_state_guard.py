@@ -24,22 +24,40 @@ from pathlib import Path
 import pytest
 
 from src.npc import _chat_guard as guard
-from src.npc._chat_llm import ConversationalNPCMixin, Turn
+from src.npc._chat_llm import Turn
+from tests._npc_fixtures import chat_npc, wired_chat_npc
+from tests.llm_doubles import make_chat_adapter
+
+
+def _assert_statement_lines(source):
+    """Line numbers of every ``assert`` statement in ``source``.
+
+    Extracted so the scan can be tested in its own right — see
+    ``test_the_assert_scan_itself_sees_through_formatting``.
+    """
+    return [
+        node.lineno
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Assert)
+    ]
 
 
 def _npc(char_config=None, personality=None, growth=None, moves=None, world=None):
-    class GuardNPC(ConversationalNPCMixin):
-        def __init__(self):
-            self.name = "Mara"
-            self._chat_world_facts = world or {"allowed_proper_nouns": ["Mara", "Jean"]}
-            self._chat_char_config = char_config
-            self._chat_personality = personality
-            self._chat_history = []
-            self._prohibited_patterns = []
-            self.growth_profile = growth
-            self.known_moves = moves or []
+    """A bare guard host: the attributes the tripwire and prompt build read.
 
-    return GuardNPC()
+    Deliberately *not* wired for a chat round — see :func:`_wired_npc` for that.
+    """
+    return chat_npc(
+        init=False,
+        name="Mara",
+        _chat_world_facts=world or {"allowed_proper_nouns": ["Mara", "Jean"]},
+        _chat_char_config=char_config,
+        _chat_personality=personality,
+        _chat_history=[],
+        _prohibited_patterns=[],
+        growth_profile=growth,
+        known_moves=moves or [],
+    )
 
 
 class _Move:
@@ -485,18 +503,12 @@ class TestPromptPrevention:
 
 class TestAdapterReviseTurn:
     def _adapter(self, raw, captured=None):
-        import ai.llm_client as llm
-
-        adapter = llm.NpcChatLLMAdapter.__new__(llm.NpcChatLLMAdapter)
-        adapter.enabled = True
-
         def _call(system, user, **kw):
             if captured is not None:
                 captured.append({"system": system, "user": user, "kw": kw})
             return raw
 
-        adapter._call_llm = _call
-        return adapter
+        return make_chat_adapter(provider=None, api_key=None, _call_llm=_call)
 
     def test_parses_revision(self):
         adapter = self._adapter(
@@ -570,44 +582,7 @@ class _WiredAdapter:
 
 def _wired_npc(adapter):
     """An NPC with persistence and loquacity stubbed out, but the real chat path."""
-
-    class WiredNPC(ConversationalNPCMixin):
-        def __init__(self):
-            self.name = "Mara"
-            self._chat_world_facts = {"allowed_proper_nouns": ["Mara", "Jean"]}
-            self._chat_char_config = None
-            self._chat_personality = {"given_name": "Mara", "voice": "terse"}
-            self._chat_history = []
-            self._chat_npc_key = "mara"
-            self._prohibited_patterns = []
-            self.growth_profile = None
-            self.known_moves = []
-            self.loquacity_current = 80
-            self.loquacity_max = 100
-            self.loquacity_threshold = 10
-
-        def _compute_loquacity(self, player):
-            return None
-
-        def _get_npc_key(self, player):
-            return "mara"
-
-        def _get_chapter(self, player):
-            return "01"
-
-        def _load_history_from_persistence(self, player):
-            return None
-
-        def _save_exchange_to_persistence(self, player, npc, jean, tick, chapter):
-            return None
-
-        def _ensure_personality(self, player):
-            return None
-
-        def _get_adapter(self):
-            return adapter
-
-    return WiredNPC()
+    return wired_chat_npc(adapter)
 
 
 class _Player:
@@ -675,39 +650,7 @@ class _HistoryCapturingAdapter(_WiredAdapter):
 
 def _persisting_npc(adapter):
     """Like _wired_npc but with the real persistence read/write path."""
-
-    class PersistingNPC(ConversationalNPCMixin):
-        def __init__(self):
-            self.name = "Mara"
-            self._chat_world_facts = {"allowed_proper_nouns": ["Mara", "Jean"]}
-            self._chat_char_config = None
-            self._chat_personality = {"given_name": "Mara", "voice": "terse"}
-            self._chat_history = []
-            self._chat_npc_key = "mara"
-            self._prohibited_patterns = []
-            self.growth_profile = None
-            self.known_moves = []
-            self.loquacity_current = 80
-            self.loquacity_max = 100
-            self.loquacity_threshold = 10
-            self.loquacity_recovery = 2
-
-        def _compute_loquacity(self, player):
-            return None
-
-        def _get_npc_key(self, player):
-            return self._chat_npc_key
-
-        def _get_chapter(self, player):
-            return "01"
-
-        def _ensure_personality(self, player):
-            return None
-
-        def _get_adapter(self):
-            return adapter
-
-    return PersistingNPC()
+    return wired_chat_npc(adapter, persist=True)
 
 
 class _PersistPlayer:
@@ -1153,11 +1096,39 @@ class TestScanScopeIsDerivedNotHandSpelled:
         """``python -O`` strips ``assert``, which would restore exactly the
         silent fail-open these guards exist to prevent — in the one
         configuration nobody runs the test suite under."""
-        tree = ast.parse(Path(guard.__file__).read_text(encoding="utf-8"))
-        offenders = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Assert)]
+        offenders = _assert_statement_lines(
+            Path(guard.__file__).read_text(encoding="utf-8")
+        )
         assert offenders == [], (
             "assert statements at lines {} vanish under python -O".format(offenders)
         )
+
+    def test_the_assert_scan_itself_sees_through_formatting(self):
+        """Guard-the-guard, after ``test_rate_limiter.py``'s
+        ``test_the_guard_itself_sees_through_formatting``.
+
+        An AST scan that silently matched nothing would report a clean module
+        forever. These pin both directions: every spelling of a real ``assert``
+        is found, and the word appearing in prose or a string is not.
+        """
+        found = [
+            "assert x",
+            "assert x, 'message'",
+            "if y:\n    assert x",
+            "def f():\n    assert x is None",
+            "assert (\n    x\n), 'wrapped'",
+        ]
+        for snippet in found:
+            assert _assert_statement_lines(snippet), snippet
+
+        not_found = [
+            "x = 'assert x'",
+            "# assert x\n",
+            '"""A docstring mentioning assert x."""',
+            "def assertish():\n    return 1",
+        ]
+        for snippet in not_found:
+            assert _assert_statement_lines(snippet) == [], snippet
 
 
 # ---------------------------------------------------------------------------

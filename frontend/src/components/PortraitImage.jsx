@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from '../utils/portraits'
 
 /**
@@ -17,6 +17,14 @@ import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from 
  * (rather than remounting per emotion) also avoids the flicker a keyed `<img>`
  * caused on every beat that changed a speaker's expression.
  *
+ * It is a LAYOUT effect, not a passive one, and that is the whole of the fix:
+ * a passive effect runs after the browser has been handed the commit, so React
+ * writes the new `src` while the stale marker is still set. For an emotion the
+ * browser has already 404'd, the error event can be dispatched in that window
+ * — the handler then reads the previous emotion's marker and skips straight to
+ * the placeholder instead of trying this speaker's `neutral.png`. Clearing it
+ * during the commit closes the gap.
+ *
  * @param {string} speaker  - character id used for the folder slug
  * @param {string} [name]   - display name for the alt text (defaults to `speaker`)
  * @param {string} emotion  - tagged emotion; normalized for the path, raw in the alt
@@ -28,7 +36,7 @@ import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from 
 export default function PortraitImage({ speaker, name, emotion, style, className, lazy = false }) {
     const imgRef = useRef(null)
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (imgRef.current) delete imgRef.current.dataset.fallback
     }, [speaker, emotion])
 

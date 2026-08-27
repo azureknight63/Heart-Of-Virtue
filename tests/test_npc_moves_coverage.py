@@ -2395,6 +2395,11 @@ class TestDeclaredDamageMultiplier:
     CASES = [
         ("GorranClub", 2.25),
         ("VenomClaw", 0.8),
+        # 1.0 is also the serializer's default for a move that declares
+        # nothing, so SpiderBite was the one case where a stale wire value
+        # would have looked correct. It is here precisely because it is the
+        # easiest one to get wrong without noticing.
+        ("SpiderBite", 1.0),
         ("BatBite", 0.9),
         ("SeismicSlam", 0.7),
         ("TwinFangs", 1.2),

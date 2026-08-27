@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 from flask import Flask
 
 from src.api.routes.npc_chat import npc_chat_bp
+from tests.llm_doubles import make_chat_adapter
 
 
 # ---------------------------------------------------------------------------
@@ -189,12 +190,9 @@ def test_non_string_fields_return_400_not_500():
 # ---------------------------------------------------------------------------
 
 def _adapter(raw):
-    import ai.llm_client as llm
-
-    adapter = llm.NpcChatLLMAdapter.__new__(llm.NpcChatLLMAdapter)
-    adapter.enabled = True
-    adapter._call_llm = lambda *a, **k: raw
-    return adapter
+    return make_chat_adapter(
+        provider=None, api_key=None, _call_llm=lambda *a, **k: raw
+    )
 
 
 @pytest.mark.parametrize("seed", [2, 99, 20240101])

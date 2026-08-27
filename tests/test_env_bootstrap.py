@@ -26,7 +26,6 @@ Every test here drives ``load_dotenv`` through a stub, so no real ``.env`` is
 read and no credential from the developer's machine reaches the assertions.
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from src import env_bootstrap
+from tests.llm_doubles import child_env
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -116,33 +116,11 @@ class TestPathResolution:
 # ---------------------------------------------------------------------------
 
 
-def _child_env(**overrides):
-    """A child environment without the developer's live credentials.
-
-    Blanked keys are ASSIGNED an empty string rather than popped: dotenv runs
-    with ``override=False``, which only skips keys already *present*, so a
-    popped key is silently refilled from ``.env`` the moment the child loads
-    it. (Same trap as the GITHUB_TOKEN incident.)
-    """
-    env = os.environ.copy()
-    for key in (
-        "OPENROUTER_API_KEY",
-        "GROQ_API_KEY",
-        "CEREBRAS_API_KEY",
-        "GITHUB_TOKEN",
-    ):
-        env[key] = ""
-    env["NPC_CHAT_LLM_ENABLED"] = "0"
-    env["LOG_LEVEL"] = "WARNING"
-    env.update(overrides)
-    return env
-
-
 def _run_child(code, cwd, **env_overrides):
     result = subprocess.run(
         [sys.executable, "-c", code],
         cwd=str(cwd),
-        env=_child_env(**env_overrides),
+        env=child_env(**env_overrides),
         capture_output=True,
         text=True,
         timeout=60,
@@ -173,18 +151,26 @@ class TestFromAnotherWorkingDirectory:
 
     def test_an_explicitly_set_variable_is_not_overridden_by_the_file(self, tmp_path):
         """``override=False`` is what makes ``VAR=x python tools/run_api.py``
-        mean what it says. Asserted on a key this test sets itself, so it holds
-        whether or not the developer's ``.env`` mentions it."""
+        mean what it says.
+
+        Uses a tmp ``.env`` that genuinely disagrees with the environment, the
+        same technique as its sibling below. The previous version asserted that
+        ``NPC_CHAT_LLM_ENABLED=0`` and ``LOG_LEVEL=WARNING`` survived the load
+        -- but ``child_env`` is what set both, and unless the developer's
+        ``.env`` happened to name them with a *different* value the assertion
+        held identically under ``override=True``. It proved nothing.
+        """
+        env_file = tmp_path / ".env"
+        env_file.write_text("HOV_BOOTSTRAP_PROBE=from-file\n", encoding="utf-8")
         code = (
             "import os, sys; sys.path.insert(0, %r)\n"
-            "from src.env_bootstrap import ENV_PATH, load_project_env\n"
-            "load_project_env()\n"
-            "print('VALUE=' + os.environ.get('NPC_CHAT_LLM_ENABLED', '<unset>'))\n"
-            "print('LOGLEVEL=' + os.environ.get('LOG_LEVEL', '<unset>'))\n"
-        ) % str(REPO_ROOT)
-        out = _run_child(code, cwd=tmp_path)
-        assert "VALUE=0" in out
-        assert "LOGLEVEL=WARNING" in out
+            "from src import env_bootstrap\n"
+            "env_bootstrap.ENV_PATH = __import__('pathlib').Path(%r)\n"
+            "env_bootstrap.load_project_env()\n"
+            "print('VALUE=' + os.environ.get('HOV_BOOTSTRAP_PROBE', '<unset>'))\n"
+        ) % (str(REPO_ROOT), str(env_file))
+        out = _run_child(code, cwd=tmp_path, HOV_BOOTSTRAP_PROBE="from-process")
+        assert "VALUE=from-process" in out
 
     def test_override_true_does_let_the_file_win(self, tmp_path):
         """The escape hatch exists and works; nothing in the entry points uses

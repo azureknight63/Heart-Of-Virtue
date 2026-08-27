@@ -141,8 +141,6 @@ class TestLoggingConfiguration:
     """
 
     def test_does_not_destroy_a_pre_existing_root_handler(self, caplog):
-        import logging
-
         with caplog.at_level(logging.WARNING):
             _make_app()
             logging.getLogger("hov.probe").warning("still captured")

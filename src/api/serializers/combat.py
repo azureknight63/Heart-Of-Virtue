@@ -376,11 +376,27 @@ class CombatantSerializer:
         name) — so ``SlimeVolley`` arrived as ``"Slime Volley"``, missed the
         table, and the heaviest hits in the game were estimated at 1.0x.
 
-        ``TelegraphedSurge`` subclasses (src/moves/_npc.py) declare
-        ``_DAMAGE_MULTIPLIER`` as a class attribute; everything else deals
-        standard ``NpcAttack``-range damage, hence the 1.0 default. Coerced
-        defensively because this is a private engine attribute, not part of
-        any declared move interface.
+        ``Move`` (src/moves/_base.py) declares ``_DAMAGE_MULTIPLIER = 1.0``,
+        so every move answers this and the default below is only a coercion
+        guard. ANY move that hits for more or less than its user's raw damage
+        must override it — that is not a ``TelegraphedSurge`` privilege, and
+        most of the declarations in src/moves/_npc.py are on plain ``Move``
+        subclasses (GorranClub, VenomClaw, SpiderBite, BatBite, SeismicSlam,
+        TwinFangs). This docstring used to say the opposite, which would tell
+        an agent auditing "which moves need this?" that a new heavy plain
+        ``Move`` needs nothing — re-creating the 1.0-understatement the
+        attribute was added to fix.
+
+        Two ways to declare it, both in src/moves/_npc.py:
+          * a move with a fixed factor states it outright (SeismicSlam);
+          * a move that rolls a range declares ``_POWER_ROLL_MIN``/``_MAX``
+            and derives this as their midpoint, so retuning the roll moves
+            the wire value with it (GorranClub and its four twins).
+        Midpoint, not ceiling: ``_estimate_incoming_damage`` already renders
+        it as a ±20% band and flags lethality off the band's midpoint.
+
+        ``tests/test_npc_moves_coverage.py::TestDeclaredDamageMultiplier``
+        pins every declaration against what ``evaluate()`` really rolls.
         """
         try:
             return float(getattr(move, "_DAMAGE_MULTIPLIER", 1.0))

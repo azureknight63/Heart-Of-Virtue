@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import BaseDialog from './BaseDialog'
+import BaseDialog, { resolveDialogWidth } from './BaseDialog'
 import { colors } from '../styles/theme'
 
 /** jsdom normalises inline colours to rgb(); theme.js mixes hex and rgba(). */
@@ -215,6 +215,44 @@ describe('BaseDialog', () => {
       expect(screen.getByText('Content').parentElement.style.overflowY).toBe(expected)
     })
 
+    it.each([
+      // jsdom's cssstyle drops `min()` from style.width outright, so the
+      // viewport branch is asserted on the resolver rather than the DOM.
+      [{ maxWidth: '600px' }, 'min(94vw, 600px)'],
+      [{ maxWidth: '1100px' }, 'min(94vw, 1100px)'],
+      // containerCentered: see the test below for why this must not be 94vw.
+      [{ maxWidth: '600px', containerCentered: true }, '90%'],
+      // An explicit width always wins, either way.
+      [{ maxWidth: '600px', width: '320px' }, '320px'],
+      [{ maxWidth: '600px', width: '320px', containerCentered: true }, '320px'],
+    ])('resolveDialogWidth(%o) -> %s', (props, expected) => {
+      expect(resolveDialogWidth(props)).toBe(expected)
+    })
+
+    it('keeps the width container-relative when containerCentered', () => {
+      // The viewport-relative default is wrong for a dialog centred inside a
+      // positioned ancestor: CombatInputDialog passes maxWidth="600px" AND
+      // containerCentered, so inside a battlefield panel narrower than 600px
+      // `min(94vw, 600px)` resolves to a width wider than its own container
+      // and overflows it. Container-relative is what every caller had before
+      // the viewport default was introduced.
+      const { container } = render(
+        <BaseDialog maxWidth="600px" containerCentered onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(container.querySelector('.modal-content')).toHaveStyle({ width: '90%' })
+    })
+
+    it('lets an explicit width win over either default', () => {
+      const { container } = render(
+        <BaseDialog width="320px" maxWidth="600px" containerCentered onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(container.querySelector('.modal-content')).toHaveStyle({ width: '320px' })
+    })
+
     it('respects containerCentered prop', () => {
       const { container } = render(
         <BaseDialog containerCentered={true} onClose={mockOnClose}>
@@ -416,6 +454,26 @@ describe('BaseDialog', () => {
       )
       // The header (with the ✕ close button) precedes children in DOM order.
       expect(document.activeElement).toHaveTextContent('✕')
+    })
+
+    it('does not let an outer dialog steal focus from one nested inside it', () => {
+      // React fires a CHILD component's effects before its parent's, so when a
+      // nested pair mounts in a single commit the inner dialog focuses first
+      // and the outer one's mount effect runs afterwards. Focusing
+      // unconditionally there dragged the caret out of the dialog on top and
+      // into the one behind it.
+      const { container } = render(
+        <BaseDialog title="Outer" onClose={mockOnClose}>
+          <BaseDialog title="Inner" onClose={mockOnClose}>
+            <button>Inner control</button>
+          </BaseDialog>
+        </BaseDialog>
+      )
+
+      const [outer, inner] = Array.from(container.querySelectorAll('[role="dialog"]'))
+      expect(inner.contains(document.activeElement)).toBe(true)
+      // Not merely "inside the outer subtree" — the inner dialog IS inside it.
+      expect(outer.querySelector(':scope > div > button')).not.toBe(document.activeElement)
     })
 
     it('focuses the dialog container itself when it has no focusable elements', () => {

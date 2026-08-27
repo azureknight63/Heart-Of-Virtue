@@ -33,7 +33,11 @@ from typing import Dict, Any, List
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-from src.npc._chat_llm import ConversationalNPCMixin
+from src.npc._chat_llm import (
+    MAX_OPTION_CHARS,
+    _MIN_OPTION_CHARS,
+    ConversationalNPCMixin,
+)
 from tests._gs_fixtures import live_world
 from tests._npc_fixtures import (
     ScriptedAdapter,
@@ -1579,10 +1583,15 @@ class TestQCJeanOptions:
         ]
         assert npc._qc_jean_options(options)[0]["text"] == "Padded out here"
 
-    @pytest.mark.parametrize("length", [5, 160])
+    @pytest.mark.parametrize("length", [_MIN_OPTION_CHARS, MAX_OPTION_CHARS])
     def test_the_length_bounds_are_inclusive(self, npc, length):
-        """160 is ``MAX_OPTION_CHARS`` — the single shared bound the llm_client
-        truncates at and this filter drops at (S7)."""
+        """``MAX_OPTION_CHARS`` is the single shared bound the llm_client
+        truncates at and this filter drops at (S7).
+
+        Imported rather than written as 160: a literal here is the bug written
+        down as a test — retune the constant and this keeps asserting the old
+        number, which is precisely the drift the shared constant exists to stop.
+        """
         options = [
             {"text": "x" * length},
             {"text": "Second option"},

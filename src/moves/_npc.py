@@ -712,6 +712,20 @@ class SpiderBite(Move):  # Poisonous attack
     display_name = 'Spider Bite'
     web_animation = "quick_attack"
 
+    # Power roll bounds; _DAMAGE_MULTIPLIER is their midpoint and is what the
+    # serializer puts on the wire for the Tactical Advisor's threat estimate.
+    # Derived rather than re-typed, so retuning the roll cannot leave the wire
+    # value stale (see GorranClub for why the midpoint and not the ceiling).
+    #
+    # The midpoint here is 1.0, which is also what the serializer defaults to
+    # for a move that declares nothing — so this move's wire value happened to
+    # be correct while the bounds sat as a bare literal in evaluate(). Nothing
+    # recorded that coincidence, and shifting either bound by a tenth would
+    # have broken it silently.
+    _POWER_ROLL_MIN = 0.8
+    _POWER_ROLL_MAX = 1.2
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -777,7 +791,9 @@ class SpiderBite(Move):  # Poisonous attack
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(0.8, 1.2)
+        power = self.user.damage * random.uniform(
+            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
+        )
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -1660,6 +1676,19 @@ class TwinFangs(Move):
     # Power multiple on the user's base damage, before _QUARRY_BONUS. Named
     # because the serializer reads it off the class as the wire's
     # `damage_multiplier`; evaluate() below is its only other reader.
+    #
+    # DELIBERATELY EXCLUDES _QUARRY_BONUS, which execute() applies only when
+    # the target carries Quarried — so against a marked target the wire value
+    # understates the real hit by 50%. Documented rather than fixed, because
+    # the wire field is a property of the MOVE and this factor is a property
+    # of the TARGET: the serializer reads a class attribute with no target in
+    # hand, and folding the bonus in unconditionally would overstate every
+    # unmarked hit instead. It costs nothing today — TwinFangs is Mara's, an
+    # ally, so it is never serialized as an incoming threat and the Tactical
+    # Advisor never estimates damage from it. If an ENEMY ever gets this move,
+    # the honest fix is a per-instance multiplier written in evaluate() from
+    # the actual target's states, which the serializer's ``getattr(move, ...)``
+    # would then pick up off the instance.
     _DAMAGE_MULTIPLIER = 1.2
 
     def __init__(self, npc):

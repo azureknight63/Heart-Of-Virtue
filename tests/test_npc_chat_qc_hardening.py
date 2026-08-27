@@ -31,21 +31,21 @@ from pathlib import Path
 from src.npc import _chat_llm
 from src.npc._chat_llm import MAX_OPTION_CHARS, ConversationalNPCMixin
 from ai.llm_client import NpcChatLLMAdapter, _JSONTools
+from tests._npc_fixtures import qc_npc, wired_chat_npc
 
 
 def _npc(allowed_nouns=None, personality=None, prohibited=None):
-    class QCNPC(ConversationalNPCMixin):
-        def __init__(self):
-            self.name = "TestNPC"
-            self._chat_world_facts = {
-                "allowed_proper_nouns": allowed_nouns or []
-            }
-            self._chat_personality = personality
-            self._prohibited_patterns = [
-                re.compile(re.escape(p), re.IGNORECASE) for p in (prohibited or [])
-            ]
+    """Thin adapter onto the shared ``qc_npc`` harness.
 
-    return QCNPC()
+    Kept as a local name only because ~90 call sites in this file spell it, and
+    because the harness takes ``allowed_proper_nouns=None`` to mean "no
+    allow-list key at all" where this file has always meant "an empty one".
+    """
+    return qc_npc(
+        allowed_proper_nouns=allowed_nouns or [],
+        prohibited=[re.escape(p) for p in (prohibited or [])],
+        _chat_personality=personality,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -866,44 +866,8 @@ class _ScriptedRealAdapter(NpcChatLLMAdapter):
 
 
 def _end_to_end_npc(adapter):
-    class WiredNPC(ConversationalNPCMixin):
-        def __init__(self):
-            self.name = "Mara"
-            self._chat_world_facts = {"allowed_proper_nouns": ["Mara", "Jean"]}
-            self._chat_char_config = None
-            self._chat_personality = {"given_name": "Mara", "voice": "terse"}
-            self._chat_history = []
-            self._chat_npc_key = "mara"
-            self._prohibited_patterns = []
-            self._chat_fallback_idx = 0
-            self.growth_profile = None
-            self.known_moves = []
-            self.loquacity_current = 80
-            self.loquacity_max = 100
-            self.loquacity_threshold = 10
-
-        def _compute_loquacity(self, player):
-            return None
-
-        def _get_npc_key(self, player):
-            return "mara"
-
-        def _get_chapter(self, player):
-            return "01"
-
-        def _load_history_from_persistence(self, player):
-            return None
-
-        def _save_exchange_to_persistence(self, player, npc, jean, tick, chapter):
-            return None
-
-        def _ensure_personality(self, player):
-            return None
-
-        def _get_adapter(self):
-            return adapter
-
-    return WiredNPC()
+    """A host wired for the real chat_open path, adapter supplied."""
+    return wired_chat_npc(adapter)
 
 
 class _EndToEndPlayer:

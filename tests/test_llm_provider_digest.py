@@ -11,24 +11,27 @@ returning something unparseable.
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 import ai.provider_digest as digest
 from ai.llm_client import GenericLLMClient
+from tests.llm_doubles import Resp
+from tests.llm_doubles import isolate_llm_class_state  # noqa: F401  (autouse)
 
 
-class _Resp:
-    def __init__(self, status=204):
-        self.status_code = status
-        self.text = ""
+@pytest.fixture(autouse=True)
+def _settle_scheduler():
+    """``start_digest_scheduler`` is boot wiring: it latches ``_scheduler_settled``
+    so a second call is a no-op for the life of the process. Left set, every
+    scheduler test after the first would assert on a short-circuit.
 
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise RuntimeError("HTTP %s" % self.status_code)
-
-
-class _HeaderResp:
-    def __init__(self, headers=None, status=200):
-        self.headers = headers or {}
-        self.status_code = status
+    Separate from ``isolate_llm_class_state`` because this flag belongs to
+    ``provider_digest``, not to ``GenericLLMClient``; the shared fixture stays
+    honest about what it owns.
+    """
+    digest._scheduler_settled = False
+    yield
+    digest._scheduler_settled = False
 
 
 def _record(provider, limit=None, remaining=None, outcome="ok"):
@@ -38,16 +41,10 @@ def _record(provider, limit=None, remaining=None, outcome="ok"):
             "x-ratelimit-limit": str(limit),
             "x-ratelimit-remaining": str(remaining),
         }
-    GenericLLMClient._record_provider_usage(provider, _HeaderResp(headers), outcome)
+    GenericLLMClient._record_provider_usage(provider, Resp(headers=headers), outcome)
 
 
 class TestSnapshotAndReset:
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_counters_are_cleared_for_the_next_window(self):
         _record("groq", 100, 50)
         _record("groq", 100, 49)
@@ -71,12 +68,6 @@ class TestSnapshotAndReset:
 
 
 class TestBuildDigest:
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def _snapshot(self):
         _record("openrouter", 50, 0, outcome="rate_limited")
         _record("groq", 6000, 5100)
@@ -124,12 +115,6 @@ class TestBuildDigest:
 
 
 class TestSendDigest:
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_missing_webhook_is_a_quiet_skip(self, monkeypatch):
         posted = []
         monkeypatch.delenv("HOV_ANALYTICS_WEBHOOK_URL", raising=False)
@@ -144,7 +129,7 @@ class TestSendDigest:
             sent["url"] = url
             sent["json"] = json
             sent["kwargs"] = kwargs
-            return _Resp()
+            return Resp()
 
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
         monkeypatch.setattr(digest.requests, "post", fake_post)
@@ -164,7 +149,7 @@ class TestSendDigest:
 
         def fake_post(url, json=None, headers=None, timeout=None, **kwargs):
             sent.update(kwargs)
-            return _Resp()
+            return Resp()
 
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
         monkeypatch.setattr(digest.requests, "post", fake_post)
@@ -183,13 +168,13 @@ class TestSendDigest:
 
     def test_http_error_does_not_raise(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
-        monkeypatch.setattr(digest.requests, "post", lambda *a, **k: _Resp(500))
+        monkeypatch.setattr(digest.requests, "post", lambda *a, **k: Resp(500))
         assert digest.send_digest() is False
 
     def test_a_failed_post_keeps_the_window_open(self, monkeypatch):
         """An outage costs a digest, not the traffic it was describing."""
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
-        monkeypatch.setattr(digest.requests, "post", lambda *a, **k: _Resp(500))
+        monkeypatch.setattr(digest.requests, "post", lambda *a, **k: Resp(500))
         _record("groq", 100, 50)
         assert digest.send_digest() is False
         providers = GenericLLMClient.provider_saturation()["providers"]
@@ -197,7 +182,7 @@ class TestSendDigest:
 
     def test_sending_resets_the_window(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
-        monkeypatch.setattr(digest.requests, "post", lambda *a, **k: _Resp())
+        monkeypatch.setattr(digest.requests, "post", lambda *a, **k: Resp())
         _record("groq", 100, 50)
         digest.send_digest()
         assert GenericLLMClient.provider_saturation()["providers"]["groq"]["requests"] == 0
@@ -236,9 +221,9 @@ class TestSendDigest:
         def flaky_post(url, json=None, headers=None, timeout=None, **kwargs):
             calls["n"] += 1
             if calls["n"] == 1:
-                return _Resp(500)
+                return Resp(500)
             posted.append(json)
-            return _Resp()
+            return Resp()
 
         monkeypatch.setattr(digest.requests, "post", flaky_post)
 
@@ -260,7 +245,7 @@ class TestSendDigest:
 
         def flaky_post(url, json=None, headers=None, timeout=None, **kwargs):
             _record("groq", 100, 40)  # a call landing mid-POST
-            return _Resp(500)
+            return Resp(500)
 
         monkeypatch.setattr(digest.requests, "post", flaky_post)
         _record("groq", 100, 50)  # a call recorded before send_digest started
@@ -296,12 +281,6 @@ class _NullThread:
 
 class TestDigestScheduler:
     """The digest is worthless if nothing ever fires it."""
-
-    def setup_method(self):
-        digest._scheduler_settled = False
-
-    def teardown_method(self):
-        digest._scheduler_settled = False
 
     def test_no_webhook_means_no_thread(self, monkeypatch):
         started = []
@@ -444,12 +423,6 @@ class TestWebhookValidation:
     """The webhook must be an https:// discord.com/discordapp.com URL, or a
     copy-paste mistake could turn this into a beacon for an arbitrary host."""
 
-    def setup_method(self):
-        digest._scheduler_settled = False
-
-    def teardown_method(self):
-        digest._scheduler_settled = False
-
     def test_discord_com_is_valid(self):
         assert digest._webhook_url_is_valid(
             "https://discord.com/api/webhooks/1/tok"
@@ -506,21 +479,13 @@ class TestAdaptiveCadence:
     digest arrives too late to act on.
     """
 
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def _saturate(self, provider, limit, remaining):
         GenericLLMClient._record_provider_usage(
             provider,
-            _HeaderResp(
-                {
+            Resp(headers={
                     "x-ratelimit-limit": str(limit),
                     "x-ratelimit-remaining": str(remaining),
-                }
-            ),
+                }),
         )
 
     def test_baseline_is_weekly(self, monkeypatch):
@@ -582,7 +547,7 @@ class TestAdaptiveCadence:
         assert digest._should_alert() is False
 
     def test_no_reported_limits_means_no_alert(self):
-        GenericLLMClient._record_provider_usage("groq", _HeaderResp({}))
+        GenericLLMClient._record_provider_usage("groq", Resp(headers={}))
         assert digest._should_alert() is False
 
     def test_required_interval_switches_with_saturation(self):
@@ -609,12 +574,6 @@ class TestAdaptiveCadence:
 
 
 class TestAlertDigestIsMarked:
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_routine_digest_is_not_flagged(self):
         embed = digest.build_digest(GenericLLMClient.usage_snapshot(), alert=False)
         assert "Low headroom" not in str(embed)
@@ -630,10 +589,10 @@ class TestAlertDigestIsMarked:
 
         def fake_post(url, json=None, headers=None, timeout=None, **kwargs):
             sent["json"] = json
-            return _Resp()
+            return Resp()
 
         GenericLLMClient._record_provider_usage(
-            "groq", _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"})
+            "groq", Resp(headers={"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"})
         )
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h")
         monkeypatch.setattr(digest.requests, "post", fake_post)
@@ -643,12 +602,6 @@ class TestAlertDigestIsMarked:
 
 class TestRetryBackoff:
     """A Discord blip must not cost a full cadence of silence."""
-
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
 
     def test_success_starts_the_next_window_from_zero(self):
         assert digest._elapsed_after_attempt(True) == 0.0
@@ -663,7 +616,7 @@ class TestRetryBackoff:
     def test_failure_during_an_alert_retries_within_the_alert_cadence(self):
         GenericLLMClient._record_provider_usage(
             "groq",
-            _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"}),
+            Resp(headers={"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"}),
         )
         resumed = digest._elapsed_after_attempt(False)
         assert resumed == 3600 - digest.SEND_RETRY_BACKOFF_SECONDS
@@ -672,7 +625,7 @@ class TestRetryBackoff:
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "0.01")
         GenericLLMClient._record_provider_usage(
             "groq",
-            _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"}),
+            Resp(headers={"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"}),
         )
         assert digest._elapsed_after_attempt(False) == 0.0
 
@@ -684,12 +637,6 @@ class TestThresholdIsForgiving:
     # body instead -- so a failing assert above that line skipped the reset
     # entirely and handed the recorded usage to whatever ran next on the
     # worker. The same pair every sibling class here uses.
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_percentage_form_is_understood(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_THRESHOLD", "75")
         assert digest._alert_threshold() == 0.75
@@ -706,18 +653,12 @@ class TestThresholdIsForgiving:
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_THRESHOLD", "75")
         GenericLLMClient._record_provider_usage(
             "groq",
-            _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "10"}),
+            Resp(headers={"x-ratelimit-limit": "100", "x-ratelimit-remaining": "10"}),
         )
         assert digest._should_alert() is True
 
 
 class TestAlertBannerMatchesConfig:
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_banner_quotes_the_configured_cadence(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "3")
         embed = digest.build_digest(GenericLLMClient.usage_snapshot(), alert=True)

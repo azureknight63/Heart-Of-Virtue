@@ -9,7 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ai.combat_strategist import CombatStrategist, _incoming_beats
+from ai.combat_strategist import (
+    CombatStrategist,
+    _DEFENSIVE_WINDOW_BEATS,
+    _incoming_beats,
+)
 
 
 class FakeLLMClient:
@@ -604,6 +608,84 @@ class TestIncomingBeats:
         # move_in_progress keeps returning a move through recoil/cooldown; the
         # engine answers None, and the old copy announced a phantom attack.
         assert _incoming_beats({"beats_until_resolve": None}) is None
+
+
+class TestDefensiveWindowMatchesDodgesRealCost:
+    """``_DEFENSIVE_WINDOW_BEATS`` must be Dodge's own ``beats_until_resolve``.
+
+    The constant answers one question: how late can Jean still spend a beat on
+    defense and have it matter? That is exactly how long a Dodge takes to
+    resolve, on the same scale `_incoming_beats` reads the threat off — the
+    engine's ``Move.beats_until_resolve``.
+
+    It has been wrong before, and silently. The strategist used to compute
+    incoming beats itself with a `_beats_until_impact` helper that ran about
+    two beats short of the engine; when that helper was deleted in favour of
+    the wire field, the threshold calibrated against it was carried over
+    unchanged. The alert then fired two beats *after* the last beat Jean could
+    have acted on — the advice was wrong at precisely the moment it mattered.
+    Nothing failed, because no test compared the number to the move.
+
+    So this test does not assert a literal. It builds the real Dodge and asks
+    the engine.
+    """
+
+    @staticmethod
+    def _real_defensive_move(cls):
+        from src.npc._enemies import Slime
+        from src.player import Player
+
+        player = Player()
+        player.combat_exp = {}
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 1}
+        return cls(player)
+
+    @pytest.mark.parametrize("move_name", ["Dodge", "Parry"])
+    def test_the_window_is_the_engines_own_resolve_cost(self, move_name):
+        import src.moves as moves
+
+        move = self._real_defensive_move(getattr(moves, move_name))
+        assert move.beats_until_resolve() == _DEFENSIVE_WINDOW_BEATS, (
+            f"a freshly cast {move_name} resolves in "
+            f"{move.beats_until_resolve()} beats but the strategist alerts at "
+            f"{_DEFENSIVE_WINDOW_BEATS}. Whichever moved, the 'Dodge/Parry NOW' "
+            "alert no longer fires on a beat Jean can act on. Re-derive "
+            "_DEFENSIVE_WINDOW_BEATS (ai/combat_strategist.py) from the move, "
+            "and let the _SYSTEM_PROMPT f-string follow."
+        )
+
+    def test_the_prompt_quotes_the_same_number_it_alerts_on(self):
+        """The static prompt is an f-string over the constant — keep it that way."""
+        from ai.combat_strategist import _SYSTEM_PROMPT
+
+        assert f"land {_DEFENSIVE_WINDOW_BEATS} beats after casting" in _SYSTEM_PROMPT
+        assert f"impact ≤ {_DEFENSIVE_WINDOW_BEATS}" in _SYSTEM_PROMPT
+
+    def test_a_hit_at_the_window_boundary_is_still_called_actionable(self):
+        """The boundary beat gets "NOW", the one under it gets the late warning."""
+        strategist = CombatStrategist(client=FakeLLMClient())
+
+        def alert_for(bui):
+            _, alerts = strategist._enemy_block(
+                [{
+                    "name": "Rumbler",
+                    "id": "e1",
+                    "hp": 30,
+                    "max_hp": 30,
+                    "stats": {"damage": 10},
+                    "move_in_process": {"name": "Gore", "beats_until_resolve": bui},
+                }],
+                {"stats": {"evasion": 30, "defense": 30}},
+                player_hp=100,
+            )
+            return alerts[0] if alerts else ""
+
+        assert "NOW" in alert_for(_DEFENSIVE_WINDOW_BEATS)
+        assert "too late" in alert_for(_DEFENSIVE_WINDOW_BEATS - 1)
+        assert alert_for(_DEFENSIVE_WINDOW_BEATS + 1) == ""
 
 
 class TestEstimateIncomingDamage:

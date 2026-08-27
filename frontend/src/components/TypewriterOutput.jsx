@@ -73,13 +73,17 @@ export default function TypewriterOutput({ text, speed = 30, style = {}, onCompl
                 <span style={{
                     borderRight: `3px solid ${colors.secondary}`,
                     marginLeft: '4px',
+                    // `blink` is index.css's, not a component-local copy.
+                    // Keyframe names are document-global no matter which
+                    // element injects them, so the `@keyframes blink` that used
+                    // to sit right here shadowed the stylesheet's definition
+                    // app-wide for as long as any typewriter was mid-line —
+                    // the same collision the NPC chat panel's `pulse` caused
+                    // for HeroPanel and BattlefieldGrid.
                     animation: 'blink 1s step-end infinite'
                 }}>&nbsp;</span>
             )}
             <div ref={bottomRef} style={{ height: 0, overflow: 'hidden' }} />
-            <style>{`
-                @keyframes blink { 50% { opacity: 0; } }
-            `}</style>
         </div>
     )
 }
