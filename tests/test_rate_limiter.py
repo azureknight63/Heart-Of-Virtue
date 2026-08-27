@@ -1,15 +1,36 @@
-"""Tests for the shared bounded rate limiter (src/api/rate_limiter.py).
+"""Tests for the shared rate-limiting module (src/api/rate_limiter.py).
 
-Covers GitHub issue #284's bounded-growth requirement: a spray attack across
-many distinct keys (usernames/IPs, session ids) must not grow the in-memory
-store unboundedly for the lifetime of the process.
+Covers three things the route blueprints all depend on:
+
+* GitHub issue #284's bounded-growth requirement: a spray attack across many
+  distinct keys (usernames/IPs, session ids) must not grow the in-memory store
+  unboundedly for the lifetime of the process.
+* ``client_ip`` -- the one client-identity rule every IP-keyed limiter shares:
+  routable IPv6 collapsed to /64, everything else (IPv4, IPv4-mapped IPv6,
+  loopback) kept whole. Getting that order wrong mapped every IPv4 client on a
+  dual-stack listener onto a single key and locked the login endpoint out for
+  all of them.
+* ``limiter_from_env`` -- the one env-var parse, whose whole reason for
+  existing is that a malformed value must never take the API down at boot nor
+  read as "unlimited".
 """
 
+import ast
+import logging
+import pathlib
 import time
 from contextlib import contextmanager
 from unittest.mock import patch
 
-from src.api.rate_limiter import RateLimiter, _SWEEP_INTERVAL
+import pytest
+from flask import Flask
+
+from src.api.rate_limiter import (
+    RateLimiter,
+    _SWEEP_INTERVAL,
+    client_ip,
+    limiter_from_env,
+)
 
 
 @contextmanager
@@ -400,3 +421,416 @@ class TestRateLimiterBoundedGrowth:
         # The casual keys compete for the remaining slots by recency.
         assert "casual-0" not in survivors
         assert "casual-3" in survivors
+
+
+class TestClientIp:
+    """``client_ip`` is the one client-identity rule every IP-keyed limiter in
+    the API shares. It used to be copy-pasted into both ``auth.py`` and
+    ``npc_chat.py``; these tests moved here with the function.
+    """
+
+    def test_outside_request_context_is_unknown(self):
+        """Direct helper calls (no request context) must not raise."""
+        assert client_ip() == "unknown"
+
+    def test_collapses_ipv6_to_64_prefix(self):
+        """IPv6 clients are throttled per /64 so an attacker can't rotate the
+        low bits within their allocation to dodge the limit."""
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/", environ_base={"REMOTE_ADDR": "2001:db8:abcd:1234::dead:beef"}
+        ):
+            assert client_ip() == "2001:db8:abcd:1234::"
+
+    def test_two_addresses_in_one_allocation_share_a_key(self):
+        """The point of the collapsing: rotating the low 64 bits buys nothing."""
+        app = Flask(__name__)
+        keys = set()
+        for suffix in ("::1", "::2", ":ffff:ffff:ffff:ffff"):
+            with app.test_request_context(
+                "/", environ_base={"REMOTE_ADDR": f"2001:db8:abcd:1234{suffix}"}
+            ):
+                keys.add(client_ip())
+        assert keys == {"2001:db8:abcd:1234::"}
+
+    def test_passes_ipv4_through(self):
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/", environ_base={"REMOTE_ADDR": "198.51.100.7"}
+        ):
+            assert client_ip() == "198.51.100.7"
+
+    def test_unparseable_colon_value_is_used_verbatim(self):
+        """A malformed address must still produce a usable (if coarse) key
+        rather than raising on the request path."""
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/", environ_base={"REMOTE_ADDR": "not:an:address"}
+        ):
+            assert client_ip() == "not:an:address"
+
+    def test_missing_remote_addr_is_unknown(self):
+        app = Flask(__name__)
+        with app.test_request_context("/", environ_base={"REMOTE_ADDR": None}):
+            assert client_ip() == "unknown"
+
+    def test_ipv4_mapped_clients_do_not_share_a_key(self):
+        """A dual-stack (``[::]``) listener reports IPv4 peers as
+        ``::ffff:a.b.c.d``. Those have all-zero top 64 bits, so collapsing
+        before unwrapping them mapped *every* IPv4 client onto the single key
+        ``"::"`` -- ten failed logins from anywhere locked one account out for
+        everyone, and sixty locked out the login endpoint entirely.
+        """
+        app = Flask(__name__)
+        keys = []
+        for mapped in ("::ffff:198.51.100.7", "::ffff:203.0.113.9"):
+            with app.test_request_context(
+                "/", environ_base={"REMOTE_ADDR": mapped}
+            ):
+                keys.append(client_ip())
+        assert keys == ["198.51.100.7", "203.0.113.9"]
+        assert len(set(keys)) == 2
+
+    def test_ipv4_mapped_key_matches_the_bare_ipv4_key(self):
+        """The same client must get the same budget whether it arrives on an
+        IPv4-only or a dual-stack listener."""
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/", environ_base={"REMOTE_ADDR": "::ffff:198.51.100.7"}
+        ):
+            mapped_key = client_ip()
+        with app.test_request_context(
+            "/", environ_base={"REMOTE_ADDR": "198.51.100.7"}
+        ):
+            bare_key = client_ip()
+        assert mapped_key == bare_key == "198.51.100.7"
+
+    def test_ipv6_loopback_is_distinct_from_mapped_ipv4_loopback(self):
+        """``::1`` and ``::ffff:127.0.0.1`` are different clients; both used to
+        collapse to ``"::"`` alongside every other IPv4-mapped address."""
+        app = Flask(__name__)
+        with app.test_request_context("/", environ_base={"REMOTE_ADDR": "::1"}):
+            v6_loopback = client_ip()
+        with app.test_request_context(
+            "/", environ_base={"REMOTE_ADDR": "::ffff:127.0.0.1"}
+        ):
+            mapped_loopback = client_ip()
+        assert v6_loopback == "::1"
+        assert mapped_loopback == "127.0.0.1"
+        assert v6_loopback != mapped_loopback
+
+    def test_real_ipv6_still_collapses_to_its_allocation(self):
+        """The fix must not weaken the /64 collapse for genuine IPv6: two
+        addresses in one allocation still share a key."""
+        app = Flask(__name__)
+        keys = set()
+        for suffix in ("::1", "::feed:face"):
+            with app.test_request_context(
+                "/", environ_base={"REMOTE_ADDR": f"2001:db8:dead:beef{suffix}"}
+            ):
+                keys.add(client_ip())
+        assert keys == {"2001:db8:dead:beef::"}
+
+    def test_distinct_ipv6_allocations_do_not_share_a_key(self):
+        app = Flask(__name__)
+        keys = set()
+        for prefix in ("2001:db8:1:1", "2001:db8:1:2"):
+            with app.test_request_context(
+                "/", environ_base={"REMOTE_ADDR": f"{prefix}::5"}
+            ):
+                keys.add(client_ip())
+        assert keys == {"2001:db8:1:1::", "2001:db8:1:2::"}
+
+    def test_scoped_ipv6_does_not_raise(self):
+        """``ip_network(f"{ip}/64")`` rejects a scope id outright; the integer
+        mask does not."""
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/", environ_base={"REMOTE_ADDR": "fe80::1%eth0"}
+        ):
+            assert client_ip() == "fe80::"
+
+
+class TestLimiterFromEnv:
+    """Every limiter in the API is built by this factory at blueprint *import*
+    time. A bare ``int()`` here once turned a typo in an env file into a
+    ValueError during import and took the whole API down at boot, so the
+    contract is: garbled falls back to the default (limiter stays ON) with a
+    warning, and only an exact 0 disables.
+    """
+
+    VAR = "TEST_RATE_LIMIT_FROM_ENV"
+
+    def test_unset_uses_the_default(self, monkeypatch):
+        monkeypatch.delenv(self.VAR, raising=False)
+        limiter = limiter_from_env(self.VAR, 7, 60)
+        assert limiter is not None
+        assert limiter.limit == 7
+        assert limiter.window_seconds == 60
+
+    def test_blank_uses_the_default(self, monkeypatch):
+        monkeypatch.setenv(self.VAR, "   ")
+        assert limiter_from_env(self.VAR, 7, 60).limit == 7
+
+    def test_explicit_value_wins(self, monkeypatch):
+        monkeypatch.setenv(self.VAR, " 3 ")
+        assert limiter_from_env(self.VAR, 7, 60).limit == 3
+
+    def test_zero_disables(self, monkeypatch):
+        monkeypatch.setenv(self.VAR, "0")
+        assert limiter_from_env(self.VAR, 7, 60) is None
+
+    def test_garbled_value_falls_back_to_default_with_a_warning(
+        self, monkeypatch, caplog
+    ):
+        """The boot outage this factory exists to prevent: a one-character
+        typo must not raise, and must not silently disable the limiter."""
+        monkeypatch.setenv(self.VAR, "twenty")
+        with caplog.at_level(logging.WARNING, logger="src.api.rate_limiter"):
+            limiter = limiter_from_env(self.VAR, 7, 60)
+        assert limiter is not None, "a typo must never read as unlimited"
+        assert limiter.limit == 7
+        assert self.VAR in caplog.text
+
+    def test_negative_value_falls_back_to_default_with_a_warning(
+        self, monkeypatch, caplog
+    ):
+        """A negative value parses cleanly, so it used to slip past the typo
+        guard and through the call site's ``> 0`` test into an unlimited,
+        unlogged endpoint. Only an exact 0 is the documented disable.
+        """
+        monkeypatch.setenv(self.VAR, "-1")
+        with caplog.at_level(logging.WARNING, logger="src.api.rate_limiter"):
+            limiter = limiter_from_env(self.VAR, 7, 60)
+        assert limiter is not None, "a negative value must never read as unlimited"
+        assert limiter.limit == 7
+        assert self.VAR in caplog.text
+
+    def test_valid_value_logs_nothing(self, monkeypatch, caplog):
+        monkeypatch.setenv(self.VAR, "5")
+        with caplog.at_level(logging.WARNING, logger="src.api.rate_limiter"):
+            limiter_from_env(self.VAR, 7, 60)
+        assert caplog.text == ""
+
+    def test_zero_is_refused_when_disabling_is_not_allowed(self, monkeypatch, caplog):
+        """``allow_disable=False`` is for throttles whose absence is a security
+        hole. A configured 0 must behave like a garbled value -- warn, keep the
+        default -- not switch the throttle off.
+        """
+        monkeypatch.setenv(self.VAR, "0")
+        with caplog.at_level(logging.WARNING, logger="src.api.rate_limiter"):
+            limiter = limiter_from_env(self.VAR, 7, 60, allow_disable=False)
+        assert limiter is not None, "this throttle must not be disableable"
+        assert limiter.limit == 7
+        assert self.VAR in caplog.text
+
+    def test_positive_value_still_tunes_a_non_disableable_limiter(
+        self, monkeypatch, caplog
+    ):
+        """``allow_disable=False`` blocks only 0; the threshold stays tunable."""
+        monkeypatch.setenv(self.VAR, "3")
+        with caplog.at_level(logging.WARNING, logger="src.api.rate_limiter"):
+            limiter = limiter_from_env(self.VAR, 7, 60, allow_disable=False)
+        assert limiter.limit == 3
+        assert caplog.text == ""
+
+    def test_garbled_warning_says_a_non_disableable_limiter_cannot_be_disabled(
+        self, monkeypatch, caplog
+    ):
+        """The operator must not be told to use 0 to disable a var where 0 is
+        refused."""
+        monkeypatch.setenv(self.VAR, "twenty")
+        with caplog.at_level(logging.WARNING, logger="src.api.rate_limiter"):
+            limiter_from_env(self.VAR, 7, 60, allow_disable=False)
+        assert "cannot be disabled" in caplog.text
+        assert "0 to disable" not in caplog.text
+
+    def test_a_non_disableable_limiter_refuses_a_zero_default(self, monkeypatch):
+        """The ``allow_disable=False`` contract is "this cannot return None",
+        and the login helpers dereference their limiters without a None check
+        on the strength of it. ``default=0`` walked straight past both guards
+        to the final ``if limit == 0: return None`` and broke that promise, so
+        it is refused at build time -- a source-code mistake with no operator
+        to warn and nothing to fall back to.
+        """
+        monkeypatch.delenv(self.VAR, raising=False)
+        with pytest.raises(ValueError, match="positive default"):
+            limiter_from_env(self.VAR, 0, 60, allow_disable=False)
+
+    def test_a_disableable_limiter_may_default_to_off(self, monkeypatch):
+        """The refusal above applies only where None is not a legal answer."""
+        monkeypatch.delenv(self.VAR, raising=False)
+        assert limiter_from_env(self.VAR, 0, 60) is None
+
+
+def _limiter_constructions(source: str):
+    """Line numbers of every ``RateLimiter(...)`` call in ``source``.
+
+    Parsed with ``ast`` rather than searched for as a substring: a guard that a
+    line break, an extra space (``RateLimiter (...)``) or a module-qualified
+    call (``rate_limiter.RateLimiter(...)``) could walk past would read as
+    coverage while providing none. ``ast`` also ignores the name appearing in a
+    comment or docstring, so the guard does not fire on prose either.
+    """
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        if _called_name(node) == "RateLimiter":
+            found.append(node.lineno)
+    return found
+
+
+def _called_name(node: "ast.Call"):
+    """The bare function name of a call, whether or not it is dotted."""
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def _limiter_from_env_calls(source: str):
+    """Every ``limiter_from_env(...)`` call in ``source``, as
+    ``(lineno, env_var_name, {keyword: value_node})``.
+
+    ``env_var_name`` is the first positional argument when it is a literal, and
+    ``None`` otherwise. It is what lets a caller tell one tier from another:
+    ``auth.py`` builds three limiters and only the two *login* ones may be
+    non-disableable.
+    """
+    calls = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        if _called_name(node) != "limiter_from_env":
+            continue
+        var = None
+        if node.args and isinstance(node.args[0], ast.Constant):
+            var = node.args[0].value
+        calls.append(
+            (node.lineno, var, {kw.arg: kw.value for kw in node.keywords if kw.arg})
+        )
+    return calls
+
+
+def _routes_dir():
+    return pathlib.Path(__file__).resolve().parent.parent / "src/api/routes"
+
+
+class TestEveryLimiterUsesTheSharedFactory:
+    """DRY guard: the parse guard above is only worth anything if the *next*
+    limiter added gets it too. Each route module must expose limiters built by
+    ``limiter_from_env`` (or ``None`` when disabled), not hand-rolled ones.
+    """
+
+    def test_route_limiters_are_rate_limiter_instances_or_disabled(self):
+        from src.api.routes import auth, feedback, npc_chat
+
+        limiters = {
+            "auth._login_limiter": auth._login_limiter,
+            "auth._ip_limiter": auth._ip_limiter,
+            "auth._register_limiter": auth._register_limiter,
+            "feedback._feedback_limiter": feedback._feedback_limiter,
+            "npc_chat._chat_limiter": npc_chat._chat_limiter,
+            "npc_chat._chat_ip_limiter": npc_chat._chat_ip_limiter,
+        }
+        for name, limiter in limiters.items():
+            assert limiter is None or isinstance(limiter, RateLimiter), name
+
+    def test_no_route_module_hand_rolls_a_limiter(self):
+        """``RateLimiter(...)`` must be constructed in exactly one place."""
+        offenders = {
+            path.name: _limiter_constructions(path.read_text(encoding="utf-8"))
+            for path in _routes_dir().glob("*.py")
+        }
+        offenders = {name: lines for name, lines in offenders.items() if lines}
+        assert offenders == {}, (
+            "route modules must build limiters via limiter_from_env so the "
+            f"malformed-value guard cannot be skipped: {offenders}"
+        )
+
+    def test_the_guard_itself_sees_through_formatting(self):
+        """Guard-the-guard: the check above must not be defeatable by writing
+        the same construction differently."""
+        evasions = [
+            "RateLimiter(limit=1, window_seconds=1)",
+            "RateLimiter (limit=1, window_seconds=1)",
+            "rate_limiter.RateLimiter(limit=1, window_seconds=1)",
+            "RateLimiter(\n    limit=1,\n    window_seconds=1,\n)",
+        ]
+        for snippet in evasions:
+            assert _limiter_constructions(snippet), snippet
+        # ...and must not fire on the name merely being mentioned in prose.
+        assert _limiter_constructions('x = "RateLimiter("  # a RateLimiter(') == []
+
+
+class TestLoginThrottlesCannotBeDisabled:
+    """The login throttles are the brute-force defence on the credential path.
+    An operator typing 0 -- or copying a 0 out of a dev ``.env`` -- must not be
+    able to remove them, and the app must say so when they try.
+    """
+
+    #: The auth limiters whose absence is an open door rather than an
+    #: inconvenience. The registration tier is deliberately NOT here: it
+    #: throttles account farming, which is cost and spam, and turning it off
+    #: locally is legitimate (see ``limiter_from_env``'s asymmetry note).
+    LOGIN_VARS = ("LOGIN_RATE_LIMIT_PER_15_MIN", "LOGIN_IP_RATE_LIMIT_PER_15_MIN")
+
+    def test_auth_builds_both_login_limiters_with_allow_disable_false(self):
+        """Pinned structurally so a future edit cannot quietly re-open this:
+        every *login* ``limiter_from_env`` call in auth.py must pass
+        ``allow_disable=False``.
+        """
+        source = (_routes_dir() / "auth.py").read_text(encoding="utf-8")
+        calls = _limiter_from_env_calls(source)
+        login_calls = [c for c in calls if c[1] in self.LOGIN_VARS]
+        assert len(login_calls) == 2, f"expected both login tiers, found {calls}"
+        for lineno, var, keywords in login_calls:
+            node = keywords.get("allow_disable")
+            assert node is not None, (
+                f"auth.py:{lineno} builds login limiter {var} without "
+                "allow_disable=False"
+            )
+            assert (
+                isinstance(node, ast.Constant) and node.value is False
+            ), f"auth.py:{lineno} ({var}) must pass allow_disable=False"
+
+    def test_every_auth_limiter_names_its_env_var_as_a_literal(self):
+        """The guard above tells the tiers apart by that literal; a computed
+        variable name would silently drop a tier out of its scope."""
+        source = (_routes_dir() / "auth.py").read_text(encoding="utf-8")
+        unnamed = [
+            (lineno, kw)
+            for lineno, var, kw in _limiter_from_env_calls(source)
+            if var is None
+        ]
+        assert unnamed == [], f"auth.py limiters without a literal env var: {unnamed}"
+
+    def test_zero_still_yields_a_live_limiter_at_the_default(self, monkeypatch, caplog):
+        """Exercised through the real auth constants, so this breaks if either
+        the variable name or the default drifts."""
+        from src.api.routes import auth
+
+        for var, default in (
+            ("LOGIN_RATE_LIMIT_PER_15_MIN", auth._LOGIN_RATE_LIMIT),
+            ("LOGIN_IP_RATE_LIMIT_PER_15_MIN", auth._IP_RATE_LIMIT),
+        ):
+            monkeypatch.setenv(var, "0")
+            caplog.clear()
+            with caplog.at_level(logging.WARNING, logger="src.api.rate_limiter"):
+                limiter = limiter_from_env(
+                    var, default, auth._LOGIN_RATE_WINDOW, allow_disable=False
+                )
+            assert limiter is not None, f"{var}=0 disabled a login throttle"
+            assert limiter.limit == default
+            assert var in caplog.text, f"{var}=0 was refused silently"
+
+    def test_the_live_login_limiters_are_not_none(self):
+        """Whatever the environment says, the imported blueprint has both --
+        which is what lets auth.py dereference them without a None guard."""
+        from src.api.routes import auth
+
+        assert auth._login_limiter is not None
+        assert auth._ip_limiter is not None

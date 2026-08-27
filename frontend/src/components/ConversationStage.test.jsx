@@ -470,12 +470,14 @@ describe('ConversationStage rendering', () => {
     })
 
     it('can render as a non-interactive live stage without an advance hint', () => {
+        // `mode` is the whole behavioural contract: interactivity, the advance
+        // hint and tail-following always travel together, so there are no
+        // separate props to switch off.
         render(
             <ConversationStage
                 segments={[{ text: 'Live line.', speaker: 'Mara', in_conversation: true }]}
                 conversation={{ cast: CAST }}
-                interactive={false}
-                showAdvanceHint={false}
+                mode="live"
             />
         )
 
@@ -493,12 +495,42 @@ describe('ConversationStage rendering', () => {
         )
 
         const stage = screen.getByTestId('conversation-stage')
+        // The wide grid geometry (display/tracks/areas/gap/min-height) lives in
+        // `.conversation-stage--wide` in styles/index.css, so the phone media
+        // query can override it by ordinary cascade rather than 7 `!important`
+        // declarations. The component's job is to apply the class and to place
+        // each column into a named grid area; jsdom does not load the
+        // stylesheet, so the tracks themselves are not assertable here.
         expect(stage).toHaveClass('conversation-stage--wide')
-        expect(stage).toHaveStyle({
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)',
-        })
-        expect(screen.getByAltText(/Jean/).parentElement.parentElement).toHaveStyle({ gridArea: 'left' })
-        expect(screen.getByAltText(/Amelia/).parentElement.parentElement).toHaveStyle({ gridArea: 'right' })
+        expect(stage).not.toHaveStyle({ display: 'flex' })
+
+        const leftColumn = screen.getByAltText(/Jean/).parentElement.parentElement
+        const rightColumn = screen.getByAltText(/Amelia/).parentElement.parentElement
+        expect(leftColumn).toHaveClass('conversation-stage__portrait-column')
+        expect(leftColumn).toHaveStyle({ gridArea: 'left' })
+        expect(rightColumn).toHaveStyle({ gridArea: 'right' })
+        // The dialogue card takes the middle area and drops its inline padding /
+        // min-height so the breakpoint can retune both.
+        const dialogue = stage.querySelector('.conversation-stage__dialogue')
+        expect(dialogue).toHaveStyle({ gridArea: 'dialogue' })
+        expect(dialogue.style.padding).toBe('')
+        expect(dialogue.style.minHeight).toBe('')
+    })
+
+    it('keeps the default layout styling itself inline', () => {
+        // The counterpart to the assertion above: only `--wide` handed its
+        // geometry to CSS, so the default layout must still carry its own.
+        render(
+            <ConversationStage
+                segments={[{ text: 'A narrow line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+            />
+        )
+
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage).toHaveClass('conversation-stage--default')
+        expect(stage).toHaveStyle({ display: 'flex', minHeight: '300px' })
+        expect(stage.querySelector('.conversation-stage__dialogue').style.minHeight).toBe('220px')
     })
 
     it('resets beatIndex and re-arms onComplete when a new segments array arrives mid-conversation', () => {
@@ -600,7 +632,7 @@ describe('ConversationStage rendering', () => {
         expect(onComplete).toHaveBeenCalledTimes(2)
     })
 
-    it('shows only the newest segment when followTail is set and a longer segments array arrives', () => {
+    it('shows only the newest segment in live mode when a longer segments array arrives', () => {
         // Mirrors NpcChatPanel's usage: the stage never shows the full history,
         // only the latest beat — each new turn hands the same mounted instance
         // a longer segments array and the display must jump straight to its tail.
@@ -616,9 +648,7 @@ describe('ConversationStage rendering', () => {
             <ConversationStage
                 segments={initialSegments}
                 conversation={{ cast: CAST }}
-                followTail
-                interactive={false}
-                showAdvanceHint={false}
+                mode="live"
             />
         )
         act(() => vi.advanceTimersByTime(3000))
@@ -628,9 +658,7 @@ describe('ConversationStage rendering', () => {
             <ConversationStage
                 segments={longerSegments}
                 conversation={{ cast: CAST }}
-                followTail
-                interactive={false}
-                showAdvanceHint={false}
+                mode="live"
             />
         )
         act(() => vi.advanceTimersByTime(3000))
@@ -816,18 +844,28 @@ describe('ConversationStage mode prop', () => {
         expect(onComplete).toHaveBeenCalledTimes(1)
     })
 
-    it('lets an explicit prop override the mode default', () => {
-        // mode="live" defaults to non-interactive, but an explicit interactive
-        // prop must still win — the mode only supplies defaults.
+    it('does not bind Enter/Space to advance in live mode', () => {
+        // The click half of non-interactivity is covered above; the keyboard
+        // listener is a separate effect and is the half a player in an NPC chat
+        // actually reaches, because the dialog's focus trap parks focus on the
+        // option buttons behind the stage.
+        const segments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Beat two.', speaker: 'Amelia', emotion: 'happy', in_conversation: true },
+        ]
         render(
-            <ConversationStage
-                segments={[{ text: 'Overridden.', speaker: 'Jean', in_conversation: true }]}
-                conversation={{ cast: CAST }}
-                mode="live"
-                interactive
-            />
+            <ConversationStage segments={segments} conversation={{ cast: CAST }} mode="live" />
         )
-        expect(screen.getByTestId('conversation-stage')).toHaveAttribute('tabindex', '-1')
+        act(() => vi.advanceTimersByTime(3000))
+
+        // Live mode parks on the tail, so "did not advance" means it did not
+        // wrap or re-fire onto anything else; the tail stays put.
+        const stage = screen.getByTestId('conversation-stage')
+        fireEvent.keyDown(stage, { key: 'Enter' })
+        fireEvent.keyDown(stage, { key: ' ' })
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat two.')).toBeInTheDocument()
+        expect(stage).not.toHaveAttribute('tabindex')
     })
 })
 

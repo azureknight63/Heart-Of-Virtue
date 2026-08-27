@@ -140,7 +140,12 @@ class TestNpcChatOpen:
         result = game_service.npc_chat_open(player, "Gorran")
 
         assert result["success"] is False
-        assert "llm down" in result["error"]
+        # S5: the exception string used to be interpolated into the
+        # client-facing error and rendered verbatim in the player's panel.
+        # A provider SDK exception stringifies to endpoint URL, model id,
+        # status body and request id; the detail belongs in the server log.
+        assert result["error"] == "Could not start that conversation."
+        assert "llm down" not in result["error"]
         assert "_active_chat_npc_id" not in player.__dict__
 
     def test_immediate_brush_off_clears_the_active_marker(self, game_service, player, tile):
@@ -200,7 +205,8 @@ class TestNpcChatRespond:
         tile.npcs_here = [ExplodingNPC(name="Gorran")]
         result = game_service.npc_chat_respond(player, "Gorran", "Hi")
         assert result["success"] is False
-        assert "llm down" in result["error"]
+        assert result["error"] == "Could not deliver that reply."
+        assert "llm down" not in result["error"]
 
 
 class TestNpcChatEndAndHistory:

@@ -34,6 +34,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 from src.npc._chat_llm import ConversationalNPCMixin
+from tests._gs_fixtures import live_world
+from tests._npc_fixtures import (
+    ScriptedAdapter,
+    chat_npc,
+    prohibit,
+    qc_npc,
+    ready_npc,
+)
 
 
 class TestInitChatAttrs:
@@ -102,70 +110,92 @@ class TestInitChatAttrs:
         npc = TestNPC()
         assert npc._chat_char_config is None
 
-    def test_init_chat_attrs_prohibited_patterns_setup(self):
-        """Test that prohibited patterns are pre-compiled."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._init_chat_attrs()
-
-        npc = TestNPC()
-        assert isinstance(npc._prohibited_patterns, list)
+    def test_prohibited_patterns_are_empty_without_a_character_config(self):
+        """Generic NPCs have no authored prohibitions."""
+        assert chat_npc()._prohibited_patterns == []
 
 
 class TestGetAdapter:
-    """Test _get_adapter lazy-loading."""
+    """``_get_adapter`` lazy-loading, caching and failure sentinel.
 
-    def test_get_adapter_not_yet_loaded(self):
-        """Test adapter is None on first call when import fails."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_adapter = None
-                self._ADAPTER_FAILED = object()
+    Two of the tests this replaces (``test_get_adapter_not_yet_loaded`` and
+    ``test_get_adapter_spec_none``) called ``_get_adapter()`` and then asserted
+    *nothing* — their only comments were "Either None (failed) or a mock
+    adapter" and "Will fail gracefully". Worse, they invoked the real
+    ``_load_llm_client_module``, importing ``ai/llm_client.py`` from disk. These
+    stub the loader so the outcome is decided by the test, not the environment.
+    """
 
-        npc = TestNPC()
-        # Adapter loading should fail gracefully
-        adapter = npc._get_adapter()
-        # Either None (failed) or a mock adapter
+    def test_a_successful_load_is_cached_after_the_first_call(self):
+        sentinel = object()
+        module = MagicMock()
+        module.NpcChatLLMAdapter.get_instance.return_value = sentinel
+        npc = chat_npc(init=False, _chat_adapter=None)
 
-    def test_get_adapter_caching(self):
-        """Test adapter is cached after first load."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_adapter = "cached_adapter"
-                self._ADAPTER_FAILED = object()
+        with patch(
+            "src.npc._chat_llm._load_llm_client_module", return_value=module
+        ) as loader:
+            assert npc._get_adapter() is sentinel
+            assert npc._get_adapter() is sentinel
 
-        npc = TestNPC()
-        adapter1 = npc._get_adapter()
-        adapter2 = npc._get_adapter()
-        assert adapter1 == adapter2 == "cached_adapter"
+        # Cached: the module is loaded once, not once per conversation turn.
+        assert loader.call_count == 1
+        assert npc._chat_adapter is sentinel
 
-    def test_get_adapter_failed_state(self):
-        """Test adapter returns None when marked as failed."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_adapter = ConversationalNPCMixin._ADAPTER_FAILED
-                self._ADAPTER_FAILED = ConversationalNPCMixin._ADAPTER_FAILED
+    def test_an_unavailable_module_is_remembered_as_failed(self):
+        npc = chat_npc(init=False, _chat_adapter=None)
 
-        npc = TestNPC()
-        adapter = npc._get_adapter()
-        assert adapter is None
+        with patch(
+            "src.npc._chat_llm._load_llm_client_module", return_value=None
+        ) as loader:
+            assert npc._get_adapter() is None
+            assert npc._get_adapter() is None
+
+        # The failure sentinel short-circuits, so a missing LLM does not cost a
+        # filesystem import attempt on every single turn.
+        assert loader.call_count == 1
+        assert npc._chat_adapter is ConversationalNPCMixin._ADAPTER_FAILED
+
+    def test_a_raising_loader_is_swallowed_into_the_failed_sentinel(self):
+        """CLAUDE.md: prefer silent recovery over crashing the game loop."""
+        npc = chat_npc(init=False, _chat_adapter=None)
+
+        with patch(
+            "src.npc._chat_llm._load_llm_client_module",
+            side_effect=ImportError("no llm_client on disk"),
+        ):
+            assert npc._get_adapter() is None
+
+        assert npc._chat_adapter is ConversationalNPCMixin._ADAPTER_FAILED
+
+    def test_an_adapter_that_raises_on_get_instance_is_also_swallowed(self):
+        module = MagicMock()
+        module.NpcChatLLMAdapter.get_instance.side_effect = RuntimeError("boom")
+        npc = chat_npc(init=False, _chat_adapter=None)
+
+        with patch("src.npc._chat_llm._load_llm_client_module", return_value=module):
+            assert npc._get_adapter() is None
+
+        assert npc._chat_adapter is ConversationalNPCMixin._ADAPTER_FAILED
+
+    def test_an_already_cached_adapter_is_returned_without_loading(self):
+        npc = chat_npc(init=False, _chat_adapter="cached_adapter")
+
+        with patch("src.npc._chat_llm._load_llm_client_module") as loader:
+            assert npc._get_adapter() == "cached_adapter"
+
+        loader.assert_not_called()
+
+    def test_the_failed_sentinel_reports_none_rather_than_leaking(self):
+        """The sentinel is an internal marker; callers must only ever see None."""
+        npc = chat_npc(
+            init=False, _chat_adapter=ConversationalNPCMixin._ADAPTER_FAILED
+        )
+
+        with patch("src.npc._chat_llm._load_llm_client_module") as loader:
+            assert npc._get_adapter() is None
+
+        loader.assert_not_called()
 
 
 class TestStoryMethod:
@@ -806,134 +836,212 @@ class TestSaveExchangeToPersistence:
 
 
 class TestBuildSystemPrompt:
-    """Test _build_system_prompt."""
+    """``_build_system_prompt`` — the thing actually sent to the model.
 
-    def test_build_system_prompt_no_world_facts(self):
-        """Test building prompt when world facts are empty."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._chat_char_config = None
-                self._chat_personality = {"given_name": "Ren", "voice": "sparse"}
+    Every test here previously passed ``MagicMock()`` as the player. That mock
+    answers ``player.universe.story.get("chapter")`` with a *MagicMock*, which
+    the prompt then f-string-interpolates, so the assembled prompt really read
+    ``It is currently chapter <MagicMock name='mock.universe.story.get()'
+    id='140461507550032'>``. Every assertion still passed, because they only
+    looked for substrings elsewhere in the text. These use a real
+    ``Player``/``Universe`` and assert no mock repr survives.
+    """
 
-        npc = TestNPC()
-        prompt = npc._build_system_prompt(MagicMock())
-        assert "Jean is he/him" in prompt
-        assert "Ren" in prompt
+    @pytest.fixture
+    def player(self):
+        return live_world()[0]
 
-    def test_build_system_prompt_story_npc(self):
-        """Test prompt building for story NPC."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_world_facts = {}
-                self._chat_char_config = {"system_prompt_snippet": "Gorran is a friend"}
-                self._chat_personality = None
+    def test_generic_npc_prompt_is_built_from_its_personality(self, player):
+        npc = chat_npc(
+            init=False,
+            name="Nomad",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality={
+                "given_name": "Tal",
+                "voice": "methodical",
+                "knowledge": ["trade routes", "water caches"],
+            },
+        )
 
-        npc = TestNPC()
-        prompt = npc._build_system_prompt(MagicMock())
+        prompt = npc._build_system_prompt(player)
+
+        assert "You are Tal, a nomad. methodical." in prompt
+        assert "You know about trade routes, water caches." in prompt
+        assert "Jean is he/him. Do not write Jean's dialogue." in prompt
+        assert "MagicMock" not in prompt
+
+    def test_generic_npc_prompt_falls_back_with_no_personality(self, player):
+        npc = chat_npc(
+            init=False,
+            name="Nomad",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality=None,
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert "You are Nomad, a nomad. terse." in prompt
+        assert "You know about survival." in prompt
+
+    def test_story_npc_prompt_carries_the_authored_config(self, player):
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_world_facts={},
+            _chat_char_config={
+                "system_prompt_snippet": "Gorran is a Golemite who travels with Jean.",
+                "role": "companion",
+                "knowledge_scope": ["Golemite rites", "stonework"],
+                "personality_notes": ["Speaks rarely.", "Watches first."],
+            },
+            _chat_personality=None,
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert "Gorran is a Golemite who travels with Jean." in prompt
+        assert "Role: companion." in prompt
+        assert "You can speak to: Golemite rites; stonework." in prompt
+        assert "About you: Speaks rarely. Watches first." in prompt
+        # A story NPC must NOT also get the synthesized nomad block.
+        assert "a nomad." not in prompt
+
+    def test_story_npc_prompt_omits_absent_config_sections(self, player):
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_world_facts={},
+            _chat_char_config={"system_prompt_snippet": "Gorran is a friend"},
+            _chat_personality=None,
+        )
+
+        prompt = npc._build_system_prompt(player)
+
         assert "Gorran is a friend" in prompt
+        assert "Role:" not in prompt
+        assert "You can speak to:" not in prompt
+        assert "About you:" not in prompt
 
-    def test_build_system_prompt_generic_npc(self):
-        """Test prompt building for generic NPC."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Nomad"
-                self._chat_world_facts = {}
-                self._chat_char_config = None
-                self._chat_personality = {
-                    "given_name": "Tal",
-                    "voice": "methodical",
-                    "knowledge": ["trade routes"],
-                }
+    def test_world_facts_block_is_assembled_in_full(self, player):
+        npc = chat_npc(
+            init=False,
+            name="TestNPC",
+            _chat_world_facts={
+                "world_name": "Aurelion",
+                "brief_description": "A dangerous world",
+                "geography": ["Badlands", "Grondite"],
+                "factions_and_peoples": ["Crusaders", "Nomads"],
+                "world_rules": ["Magic is forbidden"],
+                "tone_notes": "Dark and medieval",
+            },
+            _chat_char_config=None,
+            _chat_personality=None,
+        )
 
-        npc = TestNPC()
-        prompt = npc._build_system_prompt(MagicMock())
-        assert "Tal" in prompt
-        assert "methodical" in prompt
-        assert "trade routes" in prompt
+        prompt = npc._build_system_prompt(player)
 
-    def test_build_system_prompt_includes_world_facts(self):
-        """Test prompt includes world facts."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {
-                    "world_name": "Aurelion",
-                    "brief_description": "A dangerous world",
-                    "geography": ["Badlands", "Grondite"],
-                    "factions_and_peoples": ["Crusaders", "Nomads"],
-                    "world_rules": ["Magic is forbidden"],
-                    "tone_notes": "Dark and medieval",
-                }
-                self._chat_char_config = None
-                self._chat_personality = None
+        assert prompt.startswith(
+            "WORLD: Aurelion. A dangerous world\n"
+            "Places: Badlands, Grondite.\n"
+            "Peoples: Crusaders, Nomads.\n"
+            "Magic is forbidden\n"
+            "Tone: Dark and medieval"
+        )
 
-        npc = TestNPC()
-        prompt = npc._build_system_prompt(MagicMock())
-        assert "Aurelion" in prompt
-        assert "Badlands" in prompt
-        assert "Crusaders" in prompt
+    def test_no_world_facts_means_no_world_block(self, player):
+        npc = chat_npc(
+            init=False,
+            name="TestNPC",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality={"given_name": "Ren", "voice": "sparse"},
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert "WORLD:" not in prompt
+        assert prompt.startswith("You are Ren, a nomad.")
+
+    @pytest.mark.parametrize("chapter", ["1", "2", "7"])
+    def test_the_real_story_chapter_reaches_the_spoiler_guard(self, player, chapter):
+        """The spoiler guard is only meaningful if it names the true chapter."""
+        player.universe.story["chapter"] = chapter
+        npc = chat_npc(
+            init=False,
+            name="TestNPC",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality=None,
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert f"It is currently chapter {chapter}." in prompt
+        assert f"JEAN'S KNOWN CONTEXT (chapter {chapter})" in prompt
+
+    def test_chapter_defaults_to_one_for_a_fresh_game(self, player):
+        npc = chat_npc(
+            init=False,
+            name="TestNPC",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality=None,
+        )
+
+        assert "It is currently chapter 1." in npc._build_system_prompt(player)
 
 
 class TestBuildJeanContextBlock:
-    """Test _build_jean_context_block — chapter-gates Jean's own dialogue options."""
+    """``_build_jean_context_block`` — chapter-gates Jean's own dialogue options."""
 
-    class _Universe:
-        def __init__(self, story):
-            self.story = story
+    @pytest.fixture
+    def player(self):
+        return live_world()[0]
 
-    class _Player:
-        def __init__(self, story):
-            self.universe = TestBuildJeanContextBlock._Universe(story)
+    @pytest.fixture
+    def npc(self):
+        return chat_npc(
+            init=False,
+            name="TestNPC",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality={"given_name": "Ren", "voice": "sparse"},
+        )
 
-    def _npc(self):
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-        return TestNPC()
+    def test_includes_chapter_number(self, npc, player):
+        assert "chapter 2" in npc._build_jean_context_block(player, "2")
 
-    def test_includes_chapter_number(self):
-        npc = self._npc()
-        player = self._Player({})
-        block = npc._build_jean_context_block(player, "2")
-        assert "chapter 2" in block
-
-    def test_defaults_to_no_unusual_developments(self):
-        npc = self._npc()
-        player = self._Player({})
+    def test_defaults_to_no_unusual_developments(self, npc, player):
         block = npc._build_jean_context_block(player, "1")
         assert "Nothing unusual beyond ordinary travel" in block
+        assert "words rather than only gesture" not in block
 
-    def test_includes_gorran_language_flag_when_set(self):
-        npc = self._npc()
-        player = self._Player({"gorran_language_stage": "2"})
+    @pytest.mark.parametrize("stage", ["1", "2", "3"])
+    def test_includes_gorran_language_flag_once_he_speaks(self, npc, player, stage):
+        player.universe.story["gorran_language_stage"] = stage
         block = npc._build_jean_context_block(player, "1")
         assert "Gorran" in block
         assert "words rather than only gesture" in block
+        assert "Nothing unusual beyond ordinary travel" not in block
 
-    def test_omits_gorran_flag_at_stage_zero(self):
-        npc = self._npc()
-        player = self._Player({"gorran_language_stage": "0"})
+    def test_omits_gorran_flag_at_stage_zero(self, npc, player):
+        """A fresh game starts at stage "0" — the string is truthy, so the flag
+        has to be compared, not merely tested for presence. A MagicMock player
+        made this branch unreachable."""
+        assert player.universe.story["gorran_language_stage"] == "0"
         block = npc._build_jean_context_block(player, "1")
         assert "words rather than only gesture" not in block
 
-    def test_included_in_full_system_prompt(self):
+    def test_included_in_full_system_prompt(self, npc, player):
         """The Jean-context block must actually be wired into the system prompt
         the adapter receives, not just callable in isolation."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._chat_char_config = None
-                self._chat_personality = {"given_name": "Ren", "voice": "sparse"}
-
-        npc = TestNPC()
-        player = self._Player({"gorran_language_stage": "1"})
+        player.universe.story["gorran_language_stage"] = "1"
         prompt = npc._build_system_prompt(player)
         assert "JEAN'S KNOWN CONTEXT" in prompt
         assert "words rather than only gesture" in prompt
+        assert npc._build_jean_context_block(player, "1") in prompt
 
 
 class TestEnsurePersonality:
@@ -963,23 +1071,90 @@ class TestEnsurePersonality:
         npc._ensure_personality(MagicMock())
         assert npc._chat_personality == {"given_name": "Ren"}
 
-    def test_ensure_personality_fallback_deterministic(self):
-        """Test fallback personality is deterministic."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "NomadA"
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_personality = None
-                self._chat_npc_key = "NomadA_0"
+    def test_ensure_personality_fallback_picks_a_real_generic_profile(self):
+        """With no adapter, the NPC must still end up with a usable persona.
 
-            def _get_adapter(self):
-                return None
+        The old assertion (``is not None`` plus ``"given_name" in ...``) would
+        have passed on any dict the fallback happened to build. This pins the
+        chosen profile to an actual entry of ``_GENERIC_FALLBACKS`` and proves
+        it is a *copy*, so mutating one nomad's persona cannot rewrite the
+        shared module-level pool for every other nomad in the world.
+        """
+        from src.npc._chat_llm import _GENERIC_FALLBACKS
 
-        npc = TestNPC()
-        npc._ensure_personality(MagicMock())
-        assert npc._chat_personality is not None
-        assert "given_name" in npc._chat_personality
+        npc = chat_npc(
+            init=False,
+            name="NomadA",
+            _chat_char_config=None,
+            _chat_personality=None,
+            _chat_npc_key="NomadA_0",
+        )
+        npc._get_adapter = lambda: None
+
+        npc._ensure_personality(live_world()[0])
+
+        assert npc._chat_personality in _GENERIC_FALLBACKS
+        assert all(npc._chat_personality is not f for f in _GENERIC_FALLBACKS)
+        npc._chat_personality["given_name"] = "Mutated"
+        assert all(f.get("given_name") != "Mutated" for f in _GENERIC_FALLBACKS)
+
+    def test_ensure_personality_is_stable_for_one_npc_key(self):
+        """The same persistence key must resolve to the same persona.
+
+        NB: only *within a process*. ``_ensure_personality`` selects via
+        ``hash(key)``, and Python randomizes string hashing per interpreter
+        run, so the same nomad draws a different persona on each game launch
+        until the first conversation is persisted. Reported as a product bug
+        alongside this change; asserting cross-process stability here would
+        make this test flaky rather than fix it.
+        """
+        def build():
+            npc = chat_npc(
+                init=False,
+                name="NomadA",
+                _chat_char_config=None,
+                _chat_personality=None,
+                _chat_npc_key="NomadA_0",
+            )
+            npc._get_adapter = lambda: None
+            npc._ensure_personality(live_world()[0])
+            return npc._chat_personality
+
+        assert build() == build()
+
+    def test_different_keys_can_draw_different_personas(self):
+        """The pool is indexed by key, so distinct nomads are not all identical."""
+        from src.npc._chat_llm import _GENERIC_FALLBACKS
+
+        personas = set()
+        for i in range(40):
+            npc = chat_npc(
+                init=False,
+                name=f"Nomad{i}",
+                _chat_char_config=None,
+                _chat_personality=None,
+                _chat_npc_key=f"Nomad_{i}",
+            )
+            npc._get_adapter = lambda: None
+            npc._ensure_personality(live_world()[0])
+            personas.add(npc._chat_personality.get("given_name"))
+
+        assert len(personas) == len(_GENERIC_FALLBACKS)
+
+    def test_a_story_npc_with_a_config_keeps_its_authored_persona(self):
+        """``_ensure_personality`` is a no-op once a character config exists."""
+        npc = chat_npc(
+            init=False,
+            _chat_char_config={"given_name": "Mara"},
+            _chat_personality=None,
+        )
+        npc._get_adapter = lambda: (_ for _ in ()).throw(
+            AssertionError("must not consult the LLM for a story NPC")
+        )
+
+        npc._ensure_personality(live_world()[0])
+
+        assert npc._chat_personality is None
 
 
 class TestJaccard:
@@ -1032,410 +1207,623 @@ class TestJaccard:
 
 
 class TestQCNpcText:
-    """Test _qc_npc_text QC pipeline."""
+    """The ``_qc_npc_text`` pipeline, asserted on its actual output text.
 
-    def test_qc_empty_text(self):
-        """Test QC rejects empty text."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
+    Every case here previously asserted ``result is not None`` (or hid behind
+    ``if result:``), which passes for *any* string the pipeline happens to
+    return — including the mangled ones two of these now pin deliberately.
+    """
 
-        npc = TestNPC()
-        result = npc._qc_npc_text("", [])
-        assert result is None
+    @pytest.mark.parametrize(
+        "noise",
+        ["", "   ", "k", "-- ...", "...", "-", "!?"],
+        ids=["empty", "whitespace", "one-char", "dashes-dots", "ellipsis", "dash", "punct"],
+    )
+    def test_rejects_near_empty_noise(self, noise):
+        """Below the 2-char floor, or no alphanumeric content at all."""
+        assert qc_npc()._qc_npc_text(noise, []).text is None
 
-    def test_qc_rejects_single_char_noise(self):
-        """QC still rejects genuinely near-empty noise (below the 2-char floor)."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        assert npc._qc_npc_text("k", []) is None
-
-    def test_qc_rejects_punctuation_only_noise(self):
-        """QC rejects text with no actual word content, regardless of length."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        assert npc._qc_npc_text("-- ...", []) is None
-
-    def test_qc_allows_terse_in_character_replies(self):
-        """Regression test: several NPCs are authored with terse, economical
-        voices (Mara: "Says half of what she means") and can legitimately
-        reply with something under 10 characters. A flat length floor used to
-        reject these in-character replies on every single turn.
+    @pytest.mark.parametrize("terse", ["No.", "I see.", "Not now.", "Fine."])
+    def test_allows_terse_in_character_replies(self, terse):
+        """Regression: several NPCs are authored with terse, economical voices
+        (Mara: "Says half of what she means") and can legitimately reply with
+        something under 10 characters. A flat length floor used to reject these
+        on every single turn, forcing a retry or fallback for exactly the NPCs
+        whose voice most called for short answers. The text must come back
+        *unchanged* — not merely non-None.
         """
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
+        assert qc_npc()._qc_npc_text(terse, []).text == terse
 
-        npc = TestNPC()
-        for terse in ["No.", "I see.", "Not now.", "Fine."]:
-            result = npc._qc_npc_text(terse, [])
-            assert result is not None, f"{terse!r} should have passed QC"
-            assert result == terse
+    def test_clean_text_passes_through_verbatim(self):
+        assert qc_npc()._qc_npc_text("This is a valid sentence.", []).text == (
+            "This is a valid sentence."
+        )
 
-    def test_qc_valid_text(self):
-        """Test QC passes valid text."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
+    @pytest.mark.parametrize(
+        "jean_line",
+        [
+            "Jean said hello to me today.",
+            "Jean replied that the road was closed.",
+            "Jean asked about the mountain.",
+            "Jean told me the truth.",
+            'Jean: "Hello"',
+            "jean: 'go on'",
+        ],
+    )
+    def test_rejects_text_that_puts_words_in_jeans_mouth(self, jean_line):
+        """The NPC speaks only for itself; narrating Jean is a hard reject."""
+        assert qc_npc()._qc_npc_text(jean_line, []).text is None
 
-        npc = TestNPC()
-        result = npc._qc_npc_text("This is a valid sentence.", [])
-        assert result is not None
+    def test_mentioning_jean_without_speech_verbs_is_allowed(self):
+        """The guard is about Jean *speaking*, not about naming him."""
+        assert qc_npc()._qc_npc_text("Jean looks tired from the road.", []).text == (
+            "Jean looks tired from the road."
+        )
 
-    def test_qc_rejects_jean_dialogue(self):
-        """Test QC rejects Jean-dialogue pattern."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("Jean said hello to me today.", [])
-        assert result is None
-
-    def test_qc_rejects_jean_quote(self):
-        """Test QC rejects Jean quotes."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text('Jean: "Hello"', [])
-        assert result is None
-
-    def test_qc_truncates_long_text(self):
-        """Test QC truncates text over 300 chars."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        long_text = "This is a very long text. " * 20  # Over 300 chars
-        result = npc._qc_npc_text(long_text, [])
-        assert result is not None
+    def test_truncates_over_300_chars_at_a_sentence_boundary(self):
+        """Cut back to the last ``.!?`` before position 300, then capped at 3
+        sentences — so the result is the first three sentences, whole."""
+        long_text = "This is a very long text. " * 20
+        assert len(long_text) > 300
+        result = qc_npc()._qc_npc_text(long_text, []).text
+        assert result == (
+            "This is a very long text. This is a very long text. "
+            "This is a very long text."
+        )
         assert len(result) <= 300
 
-    def test_qc_detects_slang(self):
-        """Test QC removes slang."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("Yeah, that's cool okay?", [])
-        # Slang removed, text might be too short after removal
-        if result:
-            assert "yeah" not in result.lower()
-
-    def test_qc_detects_invented_proper_nouns(self):
-        """Test QC handles invented proper nouns."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {"allowed_proper_nouns": ["Grondite"]}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("I saw Xanthor in the wilderness.", [])
-        assert result is not None
-        assert "Xanthor" not in result or "they" in result
-
-    def test_qc_adds_terminal_punctuation(self):
-        """Test QC adds period if missing."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("This is a sentence without punctuation", [])
+    def test_truncation_falls_back_to_a_hard_cut_without_a_boundary(self):
+        """No ``.!?`` in the first 300 chars means a flat 300-char slice."""
+        result = qc_npc()._qc_npc_text("word " * 100, []).text
+        # 300-char slice, then terminal punctuation, then the 3-sentence cap
+        # leaves a single sentence.
         assert result.endswith(".")
+        assert len(result) <= 301
+        assert result.startswith("word word word")
 
-    def test_qc_caps_sentences_to_three(self):
-        """Test QC keeps only first 3 sentences."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            # The removed span is cleaned up after the substitution: no doubled
+            # space, no orphan leading comma, and the sentence is recapitalised.
+            # (Master pinned the doubled-space/orphan-comma artifacts as "the
+            # engine's real output"; this branch fixed them, so the expectations
+            # move rather than the behaviour.)
+            ("Okay that's cool to me.", "That's cool to me."),
+            ("I wanna tell you something important.", "I tell you something important."),
+            ("Those guns are dangerous weapons.", "Those are dangerous weapons."),
+            ("Yeah, that's cool okay?", "That's cool?"),
+        ],
+        ids=["okay", "wanna", "guns", "stacked"],
+    )
+    def test_strips_modern_slang(self, raw, expected):
+        assert qc_npc()._qc_npc_text(raw, []).text == expected
 
-        npc = TestNPC()
-        result = npc._qc_npc_text("First. Second. Third. Fourth. Fifth.", [])
-        sentences = result.split(". ")
-        assert len(sentences) <= 3
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            # -ia / -on / -or read as places; anything else as a person/group.
+            (
+                "I saw Mysteria in the wilderness last night.",
+                "I saw that place in the wilderness last night.",
+            ),
+            (
+                "The journey to Oblivion was long and dangerous.",
+                "The journey to that place was long and dangerous.",
+            ),
+            # Heuristic limitation, pinned deliberately: a *person* whose title
+            # ends in -or is also rewritten as a place.
+            ("I met Emperor at the gate last week.", "I met that place at the gate last week."),
+            ("I saw Xanthor in the wilderness.", "I saw that place in the wilderness."),
+            ("I spoke with Bellweather yesterday.", "I spoke with someone yesterday."),
+        ],
+        ids=["ia", "on", "or-person", "or", "person"],
+    )
+    def test_replaces_invented_proper_nouns(self, raw, expected):
+        assert qc_npc(allowed_proper_nouns=[])._qc_npc_text(raw, []).text == expected
 
-    def test_qc_detects_repetition(self):
-        """Test QC rejects text similar to history."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
+    def test_replaces_every_occurrence_of_an_invented_noun(self):
+        result = qc_npc(allowed_proper_nouns=[])._qc_npc_text(
+            "The kingdom of Mysteria has many towers and the people of Mysteria "
+            "speak of Mysteria with great pride.",
+            [],
+        ).text
+        assert "Mysteria" not in result
+        assert result.count("that place") == 3
 
-        npc = TestNPC()
-        # Exact duplicate should be detected as > 0.7 Jaccard
+    def test_world_allowed_nouns_survive_the_scan(self):
+        npc = qc_npc(allowed_proper_nouns=["Grondite"])
+        assert npc._qc_npc_text("The vein of Grondite runs deep.", []).text == (
+            "The vein of Grondite runs deep."
+        )
+
+    @pytest.mark.parametrize("always_allowed", ["Jean", "Gorran", "TestNPC"])
+    def test_the_speaker_jean_and_gorran_are_always_allowed(self, always_allowed):
+        """``_qc_npc_text`` adds these three to the allow-list unconditionally."""
+        text = f"I walked with {always_allowed} through the pass."
+        assert qc_npc(allowed_proper_nouns=[])._qc_npc_text(text, []).text == text
+
+    def test_sentence_initial_capitals_are_not_treated_as_proper_nouns(self):
+        """Ordinary capitalization must not be mangled into "they"."""
+        text = "Rain falls hard. Cold seeps through the stone."
+        assert qc_npc(allowed_proper_nouns=[])._qc_npc_text(text, []).text == text
+
+    def test_adds_terminal_punctuation(self):
+        assert qc_npc()._qc_npc_text("This is a sentence without punctuation", []).text == (
+            "This is a sentence without punctuation."
+        )
+
+    def test_caps_output_at_three_sentences(self):
+        assert qc_npc()._qc_npc_text("First. Second. Third. Fourth. Fifth.", []).text == (
+            "First. Second. Third."
+        )
+
+    def test_rejects_a_near_duplicate_of_a_recent_line(self):
+        """Jaccard > 0.7 against any of the last 8 NPC lines is a reject; the
+        caller's retry loop then asks the model again."""
         history = [{"npc": "The river is cold this time of year"}]
-        result = npc._qc_npc_text("The river is cold this time of year", history)
-        # With such a close match (identical), it should be rejected
-        assert result is None
+        assert qc_npc()._qc_npc_text("The river is cold this time of year", history).text is None
 
-    def test_qc_applies_prohibited_phrases(self):
-        """Test QC applies prohibited phrase substitution."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = [re.compile("forbidden", re.IGNORECASE)]
+    def test_allows_a_merely_similar_line(self):
+        """Below the 0.7 threshold the line goes through unchanged."""
+        history = [{"npc": "The river is cold this time of year"}]
+        text = "The mountain pass is closed until spring."
+        assert qc_npc()._qc_npc_text(text, history).text == text
 
-        npc = TestNPC()
-        result = npc._qc_npc_text("This forbidden word should be replaced.", [])
-        assert result is not None
+    def test_repetition_guard_only_looks_at_the_last_eight_lines(self):
+        """A line repeated from nine turns ago is allowed back."""
+        history = [{"npc": "The river is cold this time of year"}] + [
+            {"npc": f"filler line number {i} here"} for i in range(8)
+        ]
+        assert qc_npc()._qc_npc_text("The river is cold this time of year", history).text == (
+            "The river is cold this time of year."
+        )
+
+    def test_applies_prohibited_phrase_substitution(self):
+        """Story-character prohibited phrases are excised, not placeholdered.
+
+        Master pinned the old output verbatim -- ``This [. ] word should be
+        replaced.`` -- because step 9 split the ``[...]`` placeholder's dots as
+        sentence boundaries.  This branch removes the span and closes the gap
+        instead, so the placeholder never reaches the player.  The assertion is
+        still on the exact text: the previous one was ``result is not None``,
+        which is why nobody noticed the artifact for so long.
+        """
+        npc = qc_npc(prohibited=["forbidden"])
+        assert npc._qc_npc_text("This forbidden word should be replaced.", []).text == (
+            "This word should be replaced."
+        )
+        assert "[" not in npc._qc_npc_text("A forbidden thing.", []).text
+
+    def test_prohibited_phrase_matching_is_case_insensitive(self):
+        npc = qc_npc(prohibited=["forbidden"])
+        assert "Forbidden" not in npc._qc_npc_text("A Forbidden thing was seen.", []).text
 
 
 class TestQCJeanOptions:
-    """Test _qc_jean_options QC pipeline."""
+    """``_qc_jean_options`` — the three replies offered to the player.
 
-    def test_qc_jean_options_not_list(self):
-        """Test QC rejects non-list options."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
+    Rewritten from eight copy-pasted methods, one of which
+    (``test_qc_jean_options_dedup``) called the method and then asserted
+    *nothing at all*, and one of which hid its only assertion behind
+    ``if result:``.
 
-        npc = TestNPC()
-        result = npc._qc_jean_options("not a list")
-        assert result is None
+    The salvage policy is this branch's: a malformed option is dropped on its
+    own rather than discarding the whole set, and the caller
+    (``_top_up_jean_options``) refills from the authored pool. The method
+    therefore returns a possibly-empty ``list`` and **never** ``None``.
+    """
 
-    def test_qc_jean_options_less_than_3(self):
-        """Salvage policy: fewer than 3 valid options are kept as-is — the
-        caller (_top_up_jean_options) fills the set back up to three."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
+    @pytest.fixture(scope="class")
+    def npc(self):
+        return chat_npc(init=False)
 
-        npc = TestNPC()
-        result = npc._qc_jean_options(
-            [{"text": "Option one here"}, {"text": "Something different"}]
-        )
-        assert result is not None
-        assert len(result) == 2
+    @pytest.mark.parametrize(
+        "options",
+        ["not a list", None, {"text": "a dict, not a list"}, [], 7],
+        ids=["string", "none", "dict", "empty", "int"],
+    )
+    def test_an_unusable_container_yields_an_empty_list(self, npc, options):
+        """Never ``None`` — a ``None`` return would blow up the caller's
+        ``_top_up_jean_options(...)`` slice."""
+        assert npc._qc_jean_options(options) == []
 
-    def test_qc_jean_options_valid(self):
-        """Test QC passes valid options."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        options = [
-            {"text": "Tell me more", "tone": "open"},
-            {"text": "I'll keep that in mind", "tone": "guarded"},
-            {"text": "What else?", "tone": "direct"},
-        ]
-        result = npc._qc_jean_options(options)
-        assert result is not None
-        assert len(result) == 3
-
-    def test_qc_jean_options_missing_text(self):
-        """Salvage policy: an option without text is dropped, not the whole set."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        options = [
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "a bare string, not a dict",
+            None,
             {"tone": "open"},
-            {"text": "Tell me about the road"},
-            {"text": "Where were you headed"},
-        ]
-        result = npc._qc_jean_options(options)
-        assert result is not None
-        assert len(result) == 2
-
-    def test_qc_jean_options_invalid_length(self):
-        """Salvage policy: an out-of-bounds option is dropped, others kept."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        options = [
-            {"text": "x"},  # Too short — dropped
-            {"text": "Tell me about the road"},
-            {"text": "Where were you headed"},
-        ]
-        result = npc._qc_jean_options(options)
-        assert result is not None
-        assert len(result) == 2
-        assert all(len(o["text"]) >= 5 for o in result)
-
-    def test_qc_jean_options_rejects_meta_speech(self):
-        """Salvage policy: a meta-speech option is dropped, others kept."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        options = [
+            {"text": "x"},
+            {"text": "x" * 161},
+            {"text": "   "},
             {"text": "[Option 1] Choose wisely"},
-            {"text": "What brought you out here"},
-            {"text": "I should keep moving soon"},
+            {"text": "As Jean, I would ask about the road"},
+            {"text": "I don't know what to say"},
+            # The guard's regex is "I don.t know what to say" — the wildcard
+            # covers a curly apostrophe as well as a straight one.
+            {"text": "I don’t know what to say"},
+        ],
+        ids=[
+            "not-a-dict",
+            "none-entry",
+            "missing-text",
+            "too-short",
+            "too-long",
+            "blank",
+            "bracketed",
+            "as-jean",
+            "straight-apostrophe",
+            "curly-apostrophe",
+        ],
+    )
+    def test_one_bad_option_is_dropped_and_the_rest_survive(self, npc, bad):
+        """Salvage, not wholesale rejection: the two good siblings must reach
+        the player even though the first entry is unusable."""
+        result = npc._qc_jean_options(
+            [bad, {"text": "Tell me about the road"}, {"text": "Where were you headed"}]
+        )
+        assert [o["text"] for o in result] == [
+            "Tell me about the road",
+            "Where were you headed",
         ]
-        result = npc._qc_jean_options(options)
-        assert result is not None
-        assert len(result) == 2
-        assert all("[Option" not in o["text"] for o in result)
 
-    def test_qc_jean_options_dedup(self):
-        """Test QC rejects duplicate options."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
+    def test_a_dropped_leading_option_does_not_leave_a_hole_in_the_tone_cycle(
+        self, npc
+    ):
+        """Tones are keyed on the KEPT position, not the source position, so a
+        dropped option at index 0 must not cost the player the "direct" reply."""
+        result = npc._qc_jean_options(
+            [
+                {"text": "x"},
+                {"text": "Tell me about the road"},
+                {"text": "Where were you headed"},
+            ]
+        )
+        assert [o["tone"] for o in result] == ["direct", "guarded"]
 
-        npc = TestNPC()
+    def test_a_missing_apostrophe_slips_past_the_meta_speech_guard(self, npc):
+        """Pinned limitation: the regex requires *some* character where the
+        apostrophe goes, so "I dont know what to say" reaches the player."""
+        options = [
+            {"text": "I dont know what to say"},
+            {"text": "Second option"},
+            {"text": "Third option"},
+        ]
+        assert npc._qc_jean_options(options)[0]["text"] == "I dont know what to say"
+
+    def test_the_later_of_a_near_duplicate_pair_is_dropped(self, npc):
+        """Jaccard > 0.6 between any pair. The test this replaces ended with a
+        comment ("Might be rejected due to similarity") and no assertion."""
         options = [
             {"text": "Tell me more about this"},
-            {"text": "Tell me more about that"},  # Very similar
+            {"text": "Tell me more about that"},
             {"text": "Something completely different"},
         ]
-        result = npc._qc_jean_options(options)
-        # Might be rejected due to similarity
-        # Depends on Jaccard threshold
+        assert [o["text"] for o in npc._qc_jean_options(options)] == [
+            "Tell me more about this",
+            "Something completely different",
+        ]
 
-    def test_qc_jean_options_tone_mapping(self):
-        """Test QC maps tone correctly."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
+    def test_valid_options_pass_through_with_their_tones(self, npc):
+        options = [
+            {"text": "Tell me more", "tone": "open"},
+            {"text": "I will keep that in mind", "tone": "guarded"},
+            {"text": "What else?", "tone": "direct"},
+        ]
+        assert npc._qc_jean_options(options) == [
+            {"tone": "open", "text": "Tell me more"},
+            {"tone": "guarded", "text": "I will keep that in mind"},
+            {"tone": "direct", "text": "What else?"},
+        ]
 
-        npc = TestNPC()
+    def test_an_unusable_tone_falls_back_to_the_positional_default(self, npc):
+        """Missing or nonsense tones become direct/guarded/open by position, so
+        the UI always has one button of each colour."""
         options = [
             {"text": "Tell me more", "tone": "invalid"},
             {"text": "Second option"},
             {"text": "Third option"},
         ]
+        assert npc._qc_jean_options(options) == [
+            {"tone": "direct", "text": "Tell me more"},
+            {"tone": "guarded", "text": "Second option"},
+            {"tone": "open", "text": "Third option"},
+        ]
+
+    def test_tone_matching_is_case_insensitive(self, npc):
+        options = [
+            {"text": "Tell me more", "tone": "OPEN"},
+            {"text": "Second option"},
+            {"text": "Third option"},
+        ]
+        assert npc._qc_jean_options(options)[0]["tone"] == "open"
+
+    def test_only_the_first_three_options_are_kept(self, npc):
+        options = [
+            {"text": "Aaaa aaaa"},
+            {"text": "Bbbb bbbb"},
+            {"text": "Cccc cccc"},
+            {"text": "Dddd dddd"},
+        ]
         result = npc._qc_jean_options(options)
-        if result:
-            # First option should be mapped to default
-            assert result[0]["tone"] in ("direct", "guarded", "open")
+        assert [o["text"] for o in result] == ["Aaaa aaaa", "Bbbb bbbb", "Cccc cccc"]
+
+    def test_the_whole_list_is_validated_before_it_is_cut_to_three(self, npc):
+        """Slicing first made a good option at index 3 unreachable whenever an
+        earlier one was malformed — the salvage this exists to provide,
+        defeated by the first line of its own loop."""
+        options = [
+            {"text": "x"},
+            {"text": "y"},
+            {"text": "z"},
+            {"text": "Aaaa aaaa"},
+            {"text": "Bbbb bbbb"},
+        ]
+        assert [o["text"] for o in npc._qc_jean_options(options)] == [
+            "Aaaa aaaa",
+            "Bbbb bbbb",
+        ]
+
+    def test_only_the_first_twelve_candidates_are_scanned(self, npc):
+        """``_MAX_OPTION_CANDIDATES`` bounds the work a hostile or rambling
+        model can cause; the 13th entry is never looked at."""
+        options = [{"text": "x"}] * 12 + [{"text": "Reachable option here"}]
+        assert npc._qc_jean_options(options) == []
+
+    def test_option_text_is_stripped(self, npc):
+        options = [
+            {"text": "   Padded out here   "},
+            {"text": "Second option"},
+            {"text": "Third option"},
+        ]
+        assert npc._qc_jean_options(options)[0]["text"] == "Padded out here"
+
+    @pytest.mark.parametrize("length", [5, 160])
+    def test_the_length_bounds_are_inclusive(self, npc, length):
+        """160 is ``MAX_OPTION_CHARS`` — the single shared bound the llm_client
+        truncates at and this filter drops at (S7)."""
+        options = [
+            {"text": "x" * length},
+            {"text": "Second option"},
+            {"text": "Third option"},
+        ]
+        assert npc._qc_jean_options(options)[0]["text"] == "x" * length
 
 
 class TestChatOpen:
-    """Test chat_open flow."""
+    """``chat_open`` — the first turn of a conversation."""
 
-    def test_chat_open_success(self):
-        """Test successful chat open."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = None
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_adapter = None
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 0
-                self.loquacity_max = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._init_chat_attrs = lambda: None
+    @pytest.fixture
+    def player(self):
+        return live_world()[0]
 
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.universe.game_tick = 10
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
-        player.npc_chat_histories = {}
+    def test_the_llm_line_reaches_the_player_and_the_history(self, player):
+        """The old version of this test asserted ``"npc_opening" in result`` and
+        ``isinstance(result["jean_options"], list)`` — both true for *any*
+        opening, including an empty string and an empty list."""
+        adapter = ScriptedAdapter(npc_text="The pass is shut until the thaw.")
+        npc = ready_npc(adapter)
 
         result = npc.chat_open(player)
+
         assert result["success"] is True
-        assert "npc_opening" in result
-        assert isinstance(result["jean_options"], list)
+        assert result["npc_opening"] == "The pass is shut until the thaw."
+        assert result["npc_name"] == "Ren"
+        assert result["llm_available"] is True
+        assert result["turn"] == 0
+        assert result["conversation_ended"] is False
+        assert [o["text"] for o in result["jean_options"]] == [
+            o["text"] for o in ScriptedAdapter.VALID_OPTIONS
+        ]
+        assert [o["tone"] for o in result["jean_options"]] == [
+            "direct",
+            "guarded",
+            "open",
+        ]
+        # ...and it is persisted, so a reload resumes mid-conversation.
+        stored = player.npc_chat_histories[result["npc_key"]]["exchanges"]
+        assert stored == [
+            {
+                "npc": "The pass is shut until the thaw.",
+                "jean": "",
+                "game_tick": 0,
+                "chapter": "1",
+            }
+        ]
 
-    def test_chat_open_loquacity_exhausted(self):
-        """Test chat open when loquacity is exhausted."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = None
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_adapter = None
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 5
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
+    def test_the_adapter_receives_the_assembled_system_prompt(self, player):
+        """What is *sent* is the part a mock-return assertion never checks."""
+        adapter = ScriptedAdapter()
+        npc = ready_npc(
+            adapter,
+            _chat_world_facts={
+                "world_name": "Aurelion",
+                "geography": ["Badlands"],
+                "factions_and_peoples": ["Crusaders"],
+            },
+            _chat_personality={"given_name": "Tal", "voice": "methodical"},
+        )
 
-            def _compute_loquacity(self, player):
-                pass  # Already set
+        npc.chat_open(player)
 
-            def _get_npc_key(self, player):
-                return "test_key"
+        assert len(adapter.prompts) == 1
+        prompt = adapter.prompts[0]
+        assert "WORLD: Aurelion." in prompt          # world state
+        assert "You are Tal, a nomad. methodical." in prompt  # persona
+        assert "It is currently chapter 1." in prompt         # spoiler guard
+        assert "Do not write Jean's dialogue" in prompt
+        assert "MagicMock" not in prompt
 
-            def _load_history_from_persistence(self, player):
-                pass
-
-            def _display_name(self):
-                return self.name
-
-            def _get_brush_off_line(self):
-                return "Not interested."
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.npc_chat_histories = {}
+    def test_a_disabled_adapter_falls_back_to_the_authored_pool(self, player):
+        npc = ready_npc(ScriptedAdapter(enabled=False))
 
         result = npc.chat_open(player)
+
+        assert result["success"] is True
+        assert result["llm_available"] is False
+        assert result["npc_opening"] == "Nothing to say right now."
+        assert len(result["jean_options"]) == 3
+
+    def test_qc_rejected_llm_text_falls_back_rather_than_shipping_it(self, player):
+        """A model that narrates Jean must not reach the player at all."""
+        npc = ready_npc(ScriptedAdapter(npc_text="Jean said he was tired."))
+
+        result = npc.chat_open(player)
+
+        assert "Jean said" not in result["npc_opening"]
+        assert result["npc_opening"] == "Nothing to say right now."
+        assert result["llm_available"] is False
+
+    def test_exhausted_loquacity_brushes_jean_off_without_options(self, player):
+        """A story NPC's authored closing line is used verbatim."""
+        npc = ready_npc(
+            loquacity_current=5,
+            loquacity_threshold=20,
+            _chat_char_config={"closing_lines_when_exhausted": ["I have said enough."]},
+        )
+        npc._compute_loquacity = lambda player: None
+
+        result = npc.chat_open(player)
+
         assert result["success"] is True
         assert result["conversation_ended"] is True
         assert result["jean_options"] == []
+        assert result["npc_opening"] == "I have said enough."
 
-    def test_chat_open_error_handling(self):
-        """Test chat open handles errors gracefully."""
-        class BrokenNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "BrokenNPC"
+    def test_a_generic_npc_brushes_off_with_a_line_from_the_pool(self, player):
+        """No authored config, so one of three generic lines.
 
-            def _compute_loquacity(self, player):
-                raise ValueError("Test error")
+        NB: which one is selected via ``hash(self.name) % 3``, and Python
+        randomizes string hashing per interpreter run — so the same NPC gives a
+        different brush-off on every game launch. Reported as a product bug
+        alongside this change; asserting a specific line here would be flaky.
+        """
+        npc = ready_npc(loquacity_current=5, loquacity_threshold=20)
+        npc._compute_loquacity = lambda player: None
 
-        npc = BrokenNPC()
-        player = MagicMock()
         result = npc.chat_open(player)
+
+        assert result["npc_opening"] in (
+            "They're not in the mood to talk.",
+            "A brief shake of the head.",
+            "Not now.",
+        )
+        assert result["conversation_ended"] is True
+        assert result["jean_options"] == []
+
+    def test_an_internal_error_returns_a_structured_failure(self, player):
+        """``chat_open`` must never propagate — the game loop keeps running.
+
+        Master asserted the raw ``"Test error"`` string here; A05 (S5) made the
+        client-facing message a fixed generic one, with the detail kept
+        server-side by ``logger.error(..., exc_info=True)``.
+        """
+        npc = ready_npc()
+        npc._compute_loquacity = lambda player: (_ for _ in ()).throw(
+            ValueError("Test error")
+        )
+
+        result = npc.chat_open(player)
+
+        assert result == {
+            "success": False,
+            "error": "Conversation failed — try again.",
+        }
+
+    @pytest.mark.parametrize(
+        "malformed",
+        [None, {}, {"npc_text": ""}, {"npc_text": None}],
+        ids=["none", "empty-dict", "empty-text", "null-text"],
+    )
+    def test_an_empty_llm_response_falls_back_cleanly(self, player, malformed):
+        class _Empty:
+            enabled = True
+
+            def generate_npc_turn(self, *args, **kwargs):
+                return malformed
+
+            def generate_jean_options(self, *args, **kwargs):
+                return None
+
+            def generate_personality(self, class_name):
+                return None
+
+        result = ready_npc(_Empty()).chat_open(player)
+
+        assert result["success"] is True
+        assert result["llm_available"] is False
+        assert result["npc_opening"] == "Nothing to say right now."
+
+    @pytest.mark.parametrize(
+        "malformed, leaked_detail",
+        [
+            ("just a string", "has no attribute"),
+            ([1, 2, 3], "has no attribute"),
+            ({"npc_text": 12345}, "has no attribute"),
+        ],
+        ids=["string", "list", "non-string-text"],
+    )
+    def test_a_malformed_llm_response_aborts_instead_of_falling_back(
+        self, player, malformed, leaked_detail
+    ):
+        """PRODUCT BUG, pinned here so it is visible rather than silent.
+
+        An adapter that *raises* is now handled (S8 — see the test below), but a
+        response of the wrong *shape* still escapes ``_generate_turn`` into
+        ``chat_open``'s outer handler, so Jean gets ``success: False`` instead of
+        the authored fallback line the pool exists to provide. CLAUDE.md's
+        stated policy is "prefer silent recovery over crashing the game loop",
+        and ``_run_npc_turn`` already documents itself as returning None "if the
+        caller should fall back".
+
+        The conversation is at least not *crashed*, and per A05 (S5) the raw
+        ``AttributeError`` text no longer reaches the client. When the fallback
+        is fixed, this test should expect ``success: True`` and the pool line.
+        """
+        class _Malformed:
+            enabled = True
+
+            def generate_npc_turn(self, *args, **kwargs):
+                return malformed
+
+            def generate_jean_options(self, *args, **kwargs):
+                return None
+
+            def generate_personality(self, class_name):
+                return None
+
+        result = ready_npc(_Malformed()).chat_open(player)
+
+        assert isinstance(result, dict)
         assert result["success"] is False
-        assert "error" in result
+        assert result["error"] == "Conversation failed — try again."
+        assert leaked_detail not in result["error"]
+
+    def test_an_adapter_that_raises_falls_back_to_the_authored_line(self, player):
+        """S8: a timeout or connection error from the LLM must never cost the
+        player a turn. Master pinned the old behaviour (the exception escaped
+        to ``chat_open``'s handler and ended the conversation); the adapter call
+        is now wrapped, so the authored fallback pool takes over."""
+        class _Boom:
+            enabled = True
+
+            def generate_npc_turn(self, *args, **kwargs):
+                raise RuntimeError("llm timed out")
+
+            def generate_jean_options(self, *args, **kwargs):
+                return None
+
+            def generate_personality(self, class_name):
+                return None
+
+        result = ready_npc(_Boom()).chat_open(player)
+
+        assert result["success"] is True
+        assert result["llm_available"] is False
+        assert result["npc_opening"]
+        assert "llm timed out" not in result["npc_opening"]
+        assert len(result["jean_options"]) == 3
 
     def test_chat_open_error_message_is_generic_not_raw_exception(self):
         """A05: the client never sees raw internal exception text.
@@ -2096,23 +2484,64 @@ class TestCacheManagement:
 
 
 class TestProhibitedPatternsSetup:
-    """Test prohibited patterns initialization."""
+    """Prohibited phrases are compiled from the character config."""
 
-    def test_prohibited_patterns_with_config(self):
-        """Test prohibited patterns are compiled from config."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = "/fake/path.json"
-                self._init_chat_attrs()
+    @pytest.fixture(autouse=True)
+    def _isolate_config_cache(self):
+        """``_char_config_cache`` is a *class-level* dict shared by every NPC in
+        the process. Snapshot and restore it so these tests cannot leak a cached
+        config into an unrelated test (or into a parallel worker's file)."""
+        saved = dict(ConversationalNPCMixin._char_config_cache)
+        yield
+        ConversationalNPCMixin._char_config_cache.clear()
+        ConversationalNPCMixin._char_config_cache.update(saved)
 
-        # Before _init_chat_attrs, this would fail, but with our mock it should work
-        npc = TestNPC()
-        # Patterns should be a list
-        assert isinstance(npc._prohibited_patterns, list)
+    def test_patterns_are_compiled_from_config_and_actually_match(self, tmp_path):
+        config = tmp_path / "char.json"
+        config.write_text(
+            json.dumps({"prohibited_phrases": ["the Conclave", "blood price"]}),
+            encoding="utf-8",
+        )
+
+        npc = chat_npc(config_path=str(config))
+
+        assert len(npc._prohibited_patterns) == 2
+        # The point of compiling them: they must fire, case-insensitively, on
+        # the authored phrase and not on unrelated text.
+        assert npc._prohibited_patterns[0].search("we spoke of THE CONCLAVE once")
+        assert npc._prohibited_patterns[1].search("a Blood Price was paid")
+        assert not npc._prohibited_patterns[0].search("we spoke of the council")
+
+    def test_phrases_are_regex_escaped_not_interpreted(self, tmp_path):
+        """``re.escape`` means a phrase containing regex metacharacters matches
+        literally instead of blowing up or matching everything."""
+        config = tmp_path / "char.json"
+        config.write_text(
+            json.dumps({"prohibited_phrases": ["what (really) happened?"]}),
+            encoding="utf-8",
+        )
+
+        npc = chat_npc(config_path=str(config))
+
+        assert npc._prohibited_patterns[0].search("I know what (really) happened?")
+        assert not npc._prohibited_patterns[0].search("I know what really happened?")
+
+    def test_an_unreadable_config_leaves_the_npc_speaking(self, tmp_path):
+        """A missing config must degrade to "no prohibitions", not raise —
+        CLAUDE.md: prefer silent recovery over crashing the game loop."""
+        npc = chat_npc(config_path=str(tmp_path / "does-not-exist.json"))
+
+        assert npc._chat_char_config is None
+        assert npc._prohibited_patterns == []
+
+    def test_malformed_config_json_is_swallowed(self, tmp_path):
+        config = tmp_path / "char.json"
+        config.write_text("{not json at all", encoding="utf-8")
+
+        npc = chat_npc(config_path=str(config))
+
+        assert npc._chat_char_config is None
+        assert npc._prohibited_patterns == []
 
 
 class TestEquipmentHandling:
@@ -2198,113 +2627,6 @@ class TestEquipmentHandling:
         npc._compute_loquacity(player)
         # Should get equipment bonus
         assert npc.loquacity_max > 60
-
-
-class TestTextTruncation:
-    """Test text truncation at sentence boundaries."""
-
-    def test_qc_truncates_at_sentence_boundary(self):
-        """Test QC truncates at sentence boundary."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        # Create text exactly at and over 300 chars with punctuation
-        text = "This is sentence one. " * 10  # Repeated, ~220 chars
-        text += "This is sentence two which is very long and goes over the three hundred character limit without any natural breaks."
-        text += "This should be cut off."
-
-        result = npc._qc_npc_text(text, [])
-        assert result is not None
-        assert len(result) <= 301  # Allow 1 char margin for period
-
-
-class TestSlangRemoval:
-    """Test slang pattern removal."""
-
-    def test_qc_removes_okay(self):
-        """Test QC removes 'okay' slang."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("Okay that's cool to me.", [])
-        # Text might be invalid after slang removal
-        if result:
-            assert "okay" not in result.lower()
-
-    def test_qc_removes_wanna(self):
-        """Test QC removes 'wanna' slang."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("I wanna tell you something important.", [])
-        if result:
-            assert "wanna" not in result.lower()
-
-    def test_qc_removes_guns_slang(self):
-        """Test QC removes 'guns' slang."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("Those guns are dangerous weapons.", [])
-        if result:
-            assert "guns" not in result.lower()
-
-
-class TestProperNounReplacement:
-    """Test proper noun detection and replacement."""
-
-    def test_qc_replaces_ia_ending(self):
-        """Test QC replaces -ia ending nouns."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {"allowed_proper_nouns": []}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("I saw Mysteria in the wilderness last night.", [])
-        assert result is not None
-        assert "that place" in result or "Mysteria" not in result
-
-    def test_qc_replaces_on_ending(self):
-        """Test QC replaces -on ending nouns."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {"allowed_proper_nouns": []}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("The journey to Oblivion was long and dangerous.", [])
-        assert result is not None
-
-    def test_qc_replaces_or_ending(self):
-        """Test QC replaces -or ending nouns."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {"allowed_proper_nouns": []}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("I met Emperor at the gate last week.", [])
-        assert result is not None
 
 
 class TestChatOpenWithLLM:
@@ -2523,21 +2845,6 @@ class TestChatRespondWithLLM:
         assert player.reputation["TestNPC"] == -100
 
 
-class TestAdapterLoadingPaths:
-    """Test different adapter loading scenarios."""
-
-    def test_get_adapter_spec_none(self):
-        """Test adapter loading when spec is None."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_adapter = None
-
-        npc = TestNPC()
-        adapter = npc._get_adapter()
-        # Will fail gracefully
-
-
 class TestHistoryUpdating:
     """Test chat history update logic in chat_respond."""
 
@@ -2612,26 +2919,55 @@ class TestHistoryUpdating:
 
 
 class TestWorldFactsLoading:
-    """Test world facts loading error handling."""
+    """World facts loading, including the failure path."""
 
-    def test_world_facts_load_error(self):
-        """Test graceful handling of world facts load errors."""
-        # Reset cache to force loading
+    @pytest.fixture(autouse=True)
+    def _isolate_world_facts_cache(self):
+        """``_world_facts_cache`` is class-level state shared process-wide.
+        The test this replaces set it to ``None`` and never restored it, so
+        whichever test ran next re-read the file (or saw this test's ``{}``)."""
+        saved = ConversationalNPCMixin._world_facts_cache
         ConversationalNPCMixin._world_facts_cache = None
+        yield
+        ConversationalNPCMixin._world_facts_cache = saved
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_world_facts_cache = None
-                self._init_chat_attrs()
+    def test_an_unreadable_world_facts_file_yields_an_empty_dict(self):
+        """The old test asserted ``_chat_world_facts is not None`` while
+        injecting no error at all — it exercised the *success* path and would
+        have passed whatever the failure path did."""
+        with patch(
+            "src.npc._chat_llm._WORLD_FACTS_PATH",
+            Path("/nonexistent/world_facts.json"),
+        ):
+            npc = chat_npc()
 
-        npc = TestNPC()
-        # Should handle error and set to empty dict
-        assert npc._chat_world_facts is not None
+        assert npc._chat_world_facts == {}
+        # QC still runs with no allow-list rather than raising.
+        assert npc._qc_npc_text("The road is long.", []).text == "The road is long."
+
+    def test_malformed_world_facts_json_yields_an_empty_dict(self, tmp_path):
+        bad = tmp_path / "world_facts.json"
+        bad.write_text("[[[", encoding="utf-8")
+
+        with patch("src.npc._chat_llm._WORLD_FACTS_PATH", bad):
+            npc = chat_npc()
+
+        assert npc._chat_world_facts == {}
+
+    def test_world_facts_are_read_once_and_shared(self, tmp_path):
+        facts = tmp_path / "world_facts.json"
+        facts.write_text(
+            json.dumps({"allowed_proper_nouns": ["Grondite"]}), encoding="utf-8"
+        )
+
+        with patch("src.npc._chat_llm._WORLD_FACTS_PATH", facts):
+            first = chat_npc()
+            facts.write_text(json.dumps({"allowed_proper_nouns": []}), encoding="utf-8")
+            second = chat_npc()
+
+        # The second NPC reuses the cached parse rather than re-reading.
+        assert first._chat_world_facts == {"allowed_proper_nouns": ["Grondite"]}
+        assert second._chat_world_facts is first._chat_world_facts
 
 
 class TestCharConfigLoading:
@@ -2727,150 +3063,128 @@ class TestALLMRetryLogic:
 
 
 class TestConversationQualityDrains:
-    """Test loquacity drain based on conversation quality."""
+    """Loquacity arithmetic across one ``chat_respond`` round.
 
-    def test_loquacity_drain_offensive(self):
-        """Test offensive conversation drains max loquacity."""
-        class MockAdapter:
-            enabled = True
+    Driven against a *real* ``Player``/``Universe`` (via ``live_world``) rather
+    than a ``MagicMock``: ``chat_respond`` writes ``player.reputation`` and
+    ``player.npc_chat_histories``, neither of which exists on a fresh Player, so
+    a MagicMock silently answers both and the lazy-initialization branches go
+    untested.
+    """
 
-            def generate_npc_turn(self, system, history, is_opening=False, jean_text=None):
-                return {
-                    "npc_text": "You're insulting!",
-                    "conversation_quality": "offensive",
-                }
+    @pytest.fixture
+    def player(self):
+        return live_world()[0]
 
-            def generate_jean_options(self, name, voice, response, history, turn):
-                return [
-                    {"text": "Sorry.", "tone": "guarded"},
-                    {"text": "Whatever.", "tone": "direct"},
-                    {"text": "I don't care.", "tone": "open"},
-                ]
+    @pytest.mark.parametrize(
+        "quality, expected",
+        [
+            ("positive", 47),   # drain 3
+            ("neutral", 42),    # drain 8
+            ("negative", 35),   # drain 15
+            ("offensive", 20),  # drain 30
+            # An unrecognised quality string falls back to the neutral drain
+            # rather than raising or draining nothing.
+            ("unknown_quality", 42),
+        ],
+    )
+    def test_quality_selects_the_drain_amount(self, player, quality, expected):
+        npc = ready_npc(
+            ScriptedAdapter(npc_text="A plain answer.", quality=quality),
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+        )
+        result = npc.chat_respond(player, "How dare you", "direct")
 
-            def generate_personality(self, class_name):
-                return None
+        assert npc.loquacity_current == expected
+        assert result["loquacity_current"] == expected
+        assert result["loquacity_max"] == 100
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapter()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
+    def test_an_explicit_delta_from_the_model_overrides_the_quality_drain(self, player):
+        """The model may signal a *gain* when Jean raises an interesting topic."""
+        npc = ready_npc(
+            ScriptedAdapter(quality="negative", loquacity_delta=+10),
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+        )
+        npc.chat_respond(player, "Tell me of the mines", "open")
+        # +10, not the -15 "negative" drain.
+        assert npc.loquacity_current == 60
 
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.game_tick = 10
-        player.universe.story = {}
-        player.npc_chat_histories = {}
+    @pytest.mark.parametrize(
+        "delta, expected",
+        [(-1000, 10), (1000, 65), (-40, 10), (15, 65)],
+        ids=["clamped-drain", "clamped-gain", "at-drain-limit", "at-gain-limit"],
+    )
+    def test_the_model_supplied_delta_is_clamped_to_minus40_plus15(
+        self, player, delta, expected
+    ):
+        """A hostile or buggy model must not empty or refill the meter at will."""
+        npc = ready_npc(
+            ScriptedAdapter(quality="neutral", loquacity_delta=delta),
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+        )
+        npc.chat_respond(player, "hello", "direct")
+        assert npc.loquacity_current == expected
 
-        npc.chat_respond(player, "How dare you", "direct")
-        # Offensive drain = 30
+    def test_loquacity_floors_at_zero(self, player):
+        """The real floor, exercised through ``chat_respond``.
+
+        The test this replaces computed ``max(0, 5 - 30)`` *in the test body*
+        and asserted the answer was 0 — no engine code ran at all.
+        """
+        npc = ready_npc(
+            ScriptedAdapter(quality="offensive"),
+            loquacity_current=5,
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+        )
+        npc.chat_respond(player, "You are a fool", "direct")
+        assert npc.loquacity_current == 0
+
+    def test_loquacity_ceilings_at_max(self, player):
+        npc = ready_npc(
+            ScriptedAdapter(quality="positive", loquacity_delta=15),
+            loquacity_current=95,
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+        )
+        npc.chat_respond(player, "Well met", "open")
+        assert npc.loquacity_current == 100
+
+    def test_dropping_below_the_threshold_ends_the_conversation(self, player):
+        npc = ready_npc(
+            ScriptedAdapter(quality="offensive"),
+            loquacity_current=25,
+            loquacity_threshold=20,
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+        )
+        result = npc.chat_respond(player, "You are a fool", "direct")
+        assert npc.loquacity_current == 0
+        assert result["conversation_ended"] is True
+
+    def test_staying_on_the_threshold_keeps_the_conversation_open(self, player):
+        """The comparison is strict ``<``, so exactly the threshold survives."""
+        npc = ready_npc(
+            ScriptedAdapter(quality="offensive"),
+            loquacity_current=50,
+            loquacity_threshold=20,
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+        )
+        result = npc.chat_respond(player, "How dare you", "direct")
         assert npc.loquacity_current == 20
-
-    def test_loquacity_drain_negative(self):
-        """Test negative conversation drains significant loquacity."""
-        class MockAdapter:
-            enabled = True
-
-            def generate_npc_turn(self, system, history, is_opening=False, jean_text=None):
-                return {
-                    "npc_text": "I don't like this.",
-                    "conversation_quality": "negative",
-                }
-
-            def generate_jean_options(self, name, voice, response, history, turn):
-                return [
-                    {"text": "Sorry.", "tone": "guarded"},
-                    {"text": "Whatever.", "tone": "direct"},
-                    {"text": "OK.", "tone": "open"},
-                ]
-
-            def generate_personality(self, class_name):
-                return None
-
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapter()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.game_tick = 10
-        player.universe.story = {}
-        player.npc_chat_histories = {}
-
-        npc.chat_respond(player, "You're mean", "direct")
-        # Negative drain = 15
-        assert npc.loquacity_current == 35
+        assert result["conversation_ended"] is False
 
 
 class TestEdgeCasesAndBoundaries:
-    """Test edge cases and boundary conditions."""
+    """Boundary conditions in the text pipeline."""
 
-    def test_loquacity_never_negative(self):
-        """Test loquacity doesn't go below zero."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_current = 5
-                self.loquacity_max = 100
+    def test_an_exclamation_survives_the_sentence_cap(self):
+        """The sentence cap used to rejoin on ``". "``, flattening every ``!``
+        and ``?`` into a full stop. It now preserves the terminator it found, so
+        an NPC can still shout."""
+        assert qc_npc()._qc_npc_text("You are insulting!", []).text == (
+            "You are insulting!"
+        )
 
-        npc = TestNPC()
-        npc.loquacity_current = max(0, npc.loquacity_current - 30)
-        assert npc.loquacity_current == 0
-
-    def test_text_with_only_periods(self):
-        """Test text that's only punctuation."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        result = npc._qc_npc_text("...", [])
-        assert result is None
-
-    def test_very_long_proper_noun_replacement(self):
-        """Test proper noun replacement in long text."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {"allowed_proper_nouns": []}
-                self._prohibited_patterns = []
-
-        npc = TestNPC()
-        long_text = "The kingdom of Mysteria has many towers and the people of Mysteria speak of Mysteria with great pride."
-        result = npc._qc_npc_text(long_text, [])
-        assert result is not None
+    def test_a_question_mark_likewise_survives(self):
+        assert qc_npc()._qc_npc_text("Who sent you?", []).text == "Who sent you?"
 
 
 class TestCharConfigPathHandling:
@@ -3001,61 +3315,6 @@ class TestJeanOptionsQCRetry:
         assert result["success"] is True
         # Should use fallback options
         assert len(result["jean_options"]) == 3
-
-
-class TestUnknownConversationQuality:
-    """Test handling of unknown conversation quality values."""
-
-    def test_unknown_conversation_quality_default_drain(self):
-        """Test unknown quality uses default drain amount."""
-        class MockAdapter:
-            enabled = True
-
-            def generate_npc_turn(self, system, history, is_opening=False, jean_text=None):
-                return {
-                    "npc_text": "Some response.",
-                    "conversation_quality": "unknown_quality",
-                }
-
-            def generate_jean_options(self, name, voice, response, history, turn):
-                return [
-                    {"text": "OK.", "tone": "direct"},
-                    {"text": "Sure.", "tone": "guarded"},
-                    {"text": "Yes.", "tone": "open"},
-                ]
-
-            def generate_personality(self, class_name):
-                return None
-
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapter()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.game_tick = 10
-        player.universe.story = {}
-        player.npc_chat_histories = {}
-
-        npc.chat_respond(player, "Hello", "direct")
-        # Unknown quality uses neutral drain (8)
-        assert npc.loquacity_current == 42
 
 
 class TestHistoryPersistenceAppend:

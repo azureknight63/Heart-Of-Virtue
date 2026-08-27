@@ -50,11 +50,6 @@ from ai.llm_client import GenericLLMClient
 
 logger = logging.getLogger(__name__)
 
-# The digest renders provider-reported reset times the same way the per-call
-# saturation log line does; bound once rather than reaching into llm_client on
-# every render. llm_client owns the format — this module just borrows it.
-_format_reset = GenericLLMClient._format_reset
-
 WEBHOOK_ENV = "HOV_ANALYTICS_WEBHOOK_URL"
 SECTIONS_ENV = "HOV_ANALYTICS_SECTIONS"
 INTERVAL_ENV = "HOV_ANALYTICS_INTERVAL_HOURS"
@@ -76,17 +71,41 @@ DEFAULT_ALERT_THRESHOLD = 0.75
 # a rise mid-wait escalates promptly, large enough to cost nothing.
 SCHEDULER_TICK_SECONDS = 60
 
+# How much slack the usage window gets over the digest cadence before
+# llm_client's own auto-roll is allowed to end it.
+#
+# It has to be strictly greater than 1. The scheduler measures its cadence by
+# counting ticks (SCHEDULER_TICK_SECONDS each), and `time.sleep` overshoots, so
+# the real elapsed time always runs *ahead* of that counter. With the bound set
+# to exactly the cadence, the window therefore goes stale strictly BEFORE
+# `_send_due` fires — and any inference call landing in that gap rolls the
+# window and zeroes the counters the digest is about to snapshot, so the traffic
+# and reliability sections report "No calls this window" for a window that had
+# plenty. Doubling it puts the auto-roll where it belongs: a backstop for a
+# scheduler that has died, not a race with a scheduler that is working.
+WINDOW_SLACK_MULTIPLIER = 2
+
 # How soon to retry after Discord rejects a digest. Without this a single
 # transient blip would push the next attempt a full cadence away — a week, on
 # the routine schedule — even though the window is still sitting there unsent.
 SEND_RETRY_BACKOFF_SECONDS = 300
 
-# Set once the background scheduler is running, so repeated calls from the
-# prewarm path (which fires on world loads) cannot stack up threads. Guarded
-# by _scheduler_lock because that prewarm path can run on two concurrent world
-# loads (e.g. two players' first requests landing together) — without the
-# lock both could read _scheduler_started as False and each start a thread.
-_scheduler_started = False
+# Set once this process has SETTLED the scheduling question — thread started,
+# or determined not to be wanted. Not "started": latching only the success
+# branch left the far commoner unconfigured case (no webhook, which is the
+# default) re-taking the lock, re-reading the environment and emitting an INFO
+# line on every call, forever — and the prewarm path calls this from a world
+# load. Callers still learn whether a thread started from the return value, so
+# nothing needs the distinction kept as state.
+#
+# Configuration is therefore read exactly once per process: a webhook exported
+# after the first call is deliberately not picked up. This is boot wiring, not
+# a live setting.
+#
+# Guarded by _scheduler_lock because the prewarm path can run on two concurrent
+# world loads (e.g. two players' first requests landing together) — without the
+# lock both could read the flag as False and each start a thread.
+_scheduler_settled = False
 _scheduler_lock = threading.Lock()
 
 # Discord blurple, matching Chester's report; red for a low-headroom alert so
@@ -121,6 +140,29 @@ def _webhook_url_is_valid(url: str) -> bool:
     )
 
 
+def _configured_webhook(action: str) -> Optional[str]:
+    """The webhook to post to, or None with a log line saying why not.
+
+    ``start_digest_scheduler`` and ``send_digest`` both have to answer exactly
+    this question with exactly these two rejections, and each used to spell out
+    its own copy — including its own copy of the message explaining what an
+    acceptable URL looks like. ``action`` is the tail of that message
+    ("provider digest scheduler not started" / "skipping the provider digest"),
+    which is the only part that legitimately differed.
+    """
+    webhook = os.getenv(WEBHOOK_ENV, "").strip()
+    if not webhook:
+        logger.info("%s is not set — %s.", WEBHOOK_ENV, action)
+        return None
+    if not _webhook_url_is_valid(webhook):
+        logger.warning(
+            "%s is not an https:// discord.com/discordapp.com URL — %s.",
+            WEBHOOK_ENV, action,
+        )
+        return None
+    return webhook
+
+
 def _pct(value: Optional[float]) -> str:
     return "unknown" if value is None else "%.0f%%" % (value * 100)
 
@@ -141,33 +183,30 @@ def format_saturation(snapshot: Dict[str, Any]) -> str:
     for name, stats in sorted(providers.items(), key=key):
         saturation = stats.get("saturation")
         line = "`%s` — %s used" % (name, _pct(saturation))
-        if stats.get("limit") is not None:
-            line += " (%g/%g %s left" % (
-                stats.get("remaining"),
-                stats.get("limit"),
-                stats.get("dimension") or "units",
-            )
-            reset = stats.get("reset")
-            # Parenthesised and split like llm_client's log_provider_saturation:
-            # `%` binds tighter than the conditional here so this is correct as
-            # one line too, but that is exactly the kind of thing a reader
-            # should not have to verify at a glance.
-            line += (
-                ", resets %s)" % _format_reset(reset)
-                if reset
-                else ")"
-            )
+        # Shared with llm_client's log_provider_saturation, which renders the
+        # same figures from the same record. llm_client owns the format; calling
+        # its public method beats re-publishing it under a second module-level
+        # name here, which is how one function ends up with two spellings.
+        line += GenericLLMClient.format_headroom(stats)
         if saturation is not None and saturation >= 1.0:
             line += " **EXHAUSTED**"
+        if stats.get("saturation_inferred"):
+            # This figure was guessed from a headerless 429, not reported by
+            # the provider. Saying so is the difference between "the day's
+            # quota is gone" and "one request bounced off a per-minute bucket",
+            # which is the whole decision the reader of this digest is making.
+            line += " _(inferred)_"
         lines.append(line)
 
-    total = snapshot.get("total_saturation")
+    effective = snapshot.get("effective_saturation")
+    inferred = snapshot.get("providers_exhausted_inferred", 0)
     lines.append(
-        "\n**Effective: %s** (%d of %d reporting providers exhausted)"
+        "\n**Effective: %s** (%d of %d reporting providers exhausted%s)"
         % (
-            _pct(total),
+            _pct(effective),
             snapshot.get("providers_exhausted", 0),
             snapshot.get("providers_reporting", 0),
+            ", %d inferred" % inferred if inferred else "",
         )
     )
     return "\n".join(lines)
@@ -339,14 +378,14 @@ def _alert_threshold() -> float:
 def _should_alert() -> bool:
     """True when the chain as a whole is short of headroom.
 
-    Keyed on ``total_saturation``, which is the *least* saturated provider that
-    reported a limit: one host with room means the chain is fine no matter how
-    spent the others are, and conversely crossing this line means even the
+    Keyed on ``effective_saturation``, which is the *least* saturated provider
+    that reported a limit: one host with room means the chain is fine no matter
+    how spent the others are, and conversely crossing this line means even the
     best-placed provider is nearly out. None (nobody reported a limit) is not an
     alert — an unknown is not bad news.
     """
-    total = GenericLLMClient.provider_saturation().get("total_saturation")
-    return total is not None and total >= _alert_threshold()
+    effective = GenericLLMClient.provider_saturation().get("effective_saturation")
+    return effective is not None and effective >= _alert_threshold()
 
 
 def _required_interval_seconds() -> int:
@@ -388,31 +427,37 @@ def start_digest_scheduler() -> bool:
     or pointed somewhere other than Discord — in all of those cases nothing is
     spawned at all.
 
-    The whole check-configured / not-already-running / start-and-flag sequence
-    runs under ``_scheduler_lock`` so two callers racing (e.g. two players'
-    world loads landing at once, both calling this from the prewarm path)
-    cannot both see ``_scheduler_started`` as False and each spin up a thread.
+    Genuinely once per process on EVERY path, not just the one that starts a
+    thread: each terminal branch latches ``_scheduler_settled``, so a caller on
+    a hot route pays one lock acquisition and one environment read for the life
+    of the process even in the default no-webhook configuration.
+
+    The whole check-settled / check-configured / start-and-latch sequence runs
+    under ``_scheduler_lock`` so two callers racing (e.g. two players' world
+    loads landing at once, both calling this from the prewarm path) cannot both
+    see the flag as False and each spin up a thread.
     """
-    global _scheduler_started
+    global _scheduler_settled
     with _scheduler_lock:
-        if _scheduler_started:
+        if _scheduler_settled:
             return False
-        webhook = os.getenv(WEBHOOK_ENV, "").strip()
-        if not webhook:
-            logger.info(
-                "%s is not set — provider digest scheduler not started.", WEBHOOK_ENV
-            )
-            return False
-        if not _webhook_url_is_valid(webhook):
-            logger.warning(
-                "%s is not an https:// discord.com/discordapp.com URL — "
-                "provider digest scheduler not started.",
-                WEBHOOK_ENV,
-            )
+        if _configured_webhook("provider digest scheduler not started") is None:
+            _scheduler_settled = True
             return False
         if _baseline_interval_seconds() <= 0:
             logger.info("%s disables the provider digest scheduler.", INTERVAL_ENV)
+            _scheduler_settled = True
             return False
+
+        # This scheduler now owns the usage window: tell llm_client, whose
+        # periodic auto-roll would otherwise cut a weekly digest's span down to
+        # a day. Without a digest running that auto-roll is the only thing that
+        # ever resets the counters, so it cannot simply be removed — it just has
+        # to stay behind this scheduler rather than racing it. See
+        # WINDOW_SLACK_MULTIPLIER for why the bound is not the bare cadence.
+        GenericLLMClient.set_usage_window_seconds(
+            _baseline_interval_seconds() * WINDOW_SLACK_MULTIPLIER
+        )
 
         def _digest_loop():
             # Wait in short ticks rather than one long sleep: the cadence is
@@ -426,9 +471,15 @@ def start_digest_scheduler() -> bool:
                 try:
                     if _send_due(elapsed):
                         elapsed = _elapsed_after_attempt(send_digest())
-                except Exception as e:  # send_digest already swallows; belt and braces
+                except Exception:  # send_digest already swallows; belt and braces
+                    # Full traceback, unlike send_digest's own handler: the
+                    # credential rationale there is about a *requests*
+                    # exception carrying the webhook URL, and send_digest never
+                    # lets one of those out. Anything reaching here is a bug in
+                    # this loop, and a bare exception name is not enough to fix
+                    # one in a daemon thread nobody is watching.
                     logger.warning(
-                        "Provider digest loop error: %s", type(e).__name__
+                        "Provider digest loop error; retrying.", exc_info=True
                     )
                     elapsed = _elapsed_after_attempt(False)
 
@@ -436,10 +487,12 @@ def start_digest_scheduler() -> bool:
             target=_digest_loop, daemon=True, name="llm-provider-digest"
         )
         thread.start()
-        # Only claim the scheduler is running once it actually is — setting
-        # this first would permanently block retries if the thread failed to
-        # spawn.
-        _scheduler_started = True
+        # Latch only once the thread actually is running: setting this first
+        # would permanently block retries if the spawn raised. (An exception
+        # from ``start()`` leaves the flag False and the next caller tries
+        # again — which is the one case where re-reading the environment is
+        # the right thing to do.)
+        _scheduler_settled = True
         logger.info(
             "Provider digest scheduler started (routine every %.1fh, %.1fh while "
             "saturation is at or above %.0f%%).",
@@ -466,16 +519,8 @@ def send_digest() -> bool:
     was built from is folded back in with ``merge_usage`` so it is not lost —
     a failed post costs a digest, not the traffic it was meant to describe.
     """
-    webhook = os.getenv(WEBHOOK_ENV, "").strip()
-    if not webhook:
-        logger.info("%s is not set — skipping the provider digest.", WEBHOOK_ENV)
-        return False
-    if not _webhook_url_is_valid(webhook):
-        logger.warning(
-            "%s is not an https:// discord.com/discordapp.com URL — "
-            "skipping the provider digest.",
-            WEBHOOK_ENV,
-        )
+    webhook = _configured_webhook("skipping the provider digest")
+    if webhook is None:
         return False
 
     snap = GenericLLMClient.snapshot_and_reset()
@@ -487,6 +532,11 @@ def send_digest() -> bool:
             json={"embeds": [embed]},
             headers={"Content-Type": "application/json"},
             timeout=POST_TIMEOUT_SECONDS,
+            # requests follows redirects by default, which would bind
+            # _webhook_url_is_valid's host allow-list to the FIRST hop only: a
+            # 302 off a discord.com URL would carry the body anywhere. There is
+            # no legitimate redirect on a webhook POST.
+            allow_redirects=False,
         )
         response.raise_for_status()
     except Exception as e:

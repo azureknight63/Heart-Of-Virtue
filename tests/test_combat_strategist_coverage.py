@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ai.combat_strategist import CombatStrategist
+from ai.combat_strategist import CombatStrategist, _incoming_beats
 
 
 class FakeLLMClient:
@@ -56,13 +56,20 @@ class TestGetSuggestionsLLMPath:
         result = strategist.get_suggestions(ctx, max_suggestions=1)
         assert result[0]["move_name"] == "Slash"
 
-    def test_list_response_used_directly(self):
+    def test_a_bare_list_response_is_not_a_valid_payload(self):
+        """E-diff3: ``generate_structured`` is ``Optional[Dict[str, Any]]`` and
+        ``llm_client`` returns None for anything that is not a dict, so the old
+        ``elif isinstance(raw_response, list)`` branch was unreachable
+        adaptation debris. It told the next reader bare lists were a live
+        response shape; they are not, and one falls back to the heuristics."""
         client = FakeLLMClient(structured_response=[
             {"move_name": "Dodge", "target_id": None, "score": 50, "reasoning": "safety"}
         ])
         strategist = CombatStrategist(client=client)
-        result = strategist.get_suggestions({"available_moves": []}, max_suggestions=1)
-        assert result[0]["move_name"] == "Dodge"
+        ctx = {"player": {"hp": 100, "max_hp": 100, "fatigue": 100, "max_fatigue": 100},
+               "enemies": [], "available_moves": [{"name": "Slash", "category": "Offensive"}]}
+        result = strategist.get_suggestions(ctx, max_suggestions=1)
+        assert result[0]["move_name"] == "Slash"
 
     def test_non_dict_item_in_suggestions_skipped(self):
         client = FakeLLMClient(structured_response={"suggestions": ["not-a-dict", {"move_name": "Slash", "score": 10}]})
@@ -145,7 +152,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 200}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1},
+            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+                                "damage_multiplier": 1.0},
             "status_effects": [],
         }
         ctx = _base_ctx(enemies=[enemy], available_moves=[
@@ -160,7 +168,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 1}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1},
+            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+                                "damage_multiplier": 1.0},
             "status_effects": [],
         }
         ctx = _base_ctx(enemies=[enemy], available_moves=[
@@ -175,7 +184,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 200}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1},
+            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+                                "damage_multiplier": 1.0},
             "status_effects": [],
         }
         ctx = _base_ctx(enemies=[enemy], available_moves=[
@@ -189,7 +199,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 20}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1},
+            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+                                "damage_multiplier": 1.0},
             "status_effects": [],
         }
         ctx = _base_ctx(enemies=[enemy], available_moves=[
@@ -203,7 +214,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 5}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1},
+            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+                                "damage_multiplier": 1.0},
             "status_effects": [],
         }
         ctx = _base_ctx(enemies=[enemy], available_moves=[
@@ -422,7 +434,8 @@ class TestBuildUserPromptComprehensive:
                 "name": "Slime", "id": "enemy_1", "hp": 20, "max_hp": 20,
                 "fatigue": 10, "max_fatigue": 50,
                 "position": {"x": 2, "y": 2}, "distance": 3,
-                "move_in_process": {"name": "SlimeVolley", "beats_left": 1, "current_stage": 1},
+                "move_in_process": {"name": "SlimeVolley", "beats_until_resolve": 1,
+                                    "damage_multiplier": 2.2},
                 "status_effects": [{"name": "Parrying", "beats_left": 1}],
             }],
             "available_moves": [], "history": [],
@@ -564,31 +577,47 @@ class TestFormatStatusEffects:
         result = CombatStrategist._format_status_effects(["JustAName"])
         assert "JustAName" in result
 
-    def test_enemy_notes_param(self):
-        from ai.combat_strategist import _STATUS_TACTICAL_NOTES_ENEMY
+    def test_enemy_perspective_param(self):
         result = CombatStrategist._format_status_effects(
-            [{"name": "Parrying", "beats_left": 2}], notes=_STATUS_TACTICAL_NOTES_ENEMY
+            [{"name": "Parrying", "beats_left": 2}], perspective="enemy"
         )
         assert "Do not attack" in result
 
+    def test_player_perspective_is_the_default(self):
+        result = CombatStrategist._format_status_effects(
+            [{"name": "Parrying", "beats_left": 2}]
+        )
+        assert "Do not attack" not in result
 
-class TestBeatsUntilImpact:
-    def test_none_mip_returns_99(self):
-        assert CombatStrategist._beats_until_impact(None) == 99
 
-    def test_prep_stage_adds_one(self):
-        assert CombatStrategist._beats_until_impact({"beats_left": 2, "current_stage": 0}) == 3
+class TestIncomingBeats:
+    """``_beats_until_impact`` re-walked the engine's stage machine here and had
+    drifted from it; ``_incoming_beats`` is a pure read of the wire field."""
 
-    def test_execute_stage_returns_beats_left(self):
-        assert CombatStrategist._beats_until_impact({"beats_left": 1, "current_stage": 1}) == 1
+    def test_none_mip_is_not_incoming(self):
+        assert _incoming_beats(None) is None
+
+    def test_the_engine_value_passes_straight_through(self):
+        assert _incoming_beats({"beats_until_resolve": 3}) == 3
+
+    def test_a_move_past_impact_is_not_incoming(self):
+        # move_in_progress keeps returning a move through recoil/cooldown; the
+        # engine answers None, and the old copy announced a phantom attack.
+        assert _incoming_beats({"beats_until_resolve": None}) is None
 
 
 class TestEstimateIncomingDamage:
-    def test_known_multiplier_used(self):
-        result = CombatStrategist._estimate_incoming_damage(
-            {"name": "SlimeVolley"}, {"stats": {"damage": 10}}, player_hp=100
+    def test_the_wire_multiplier_is_applied(self):
+        plain = CombatStrategist._estimate_incoming_damage(
+            {"name": "Slime Volley"}, {"stats": {"damage": 10}}, player_hp=100
         )
-        assert result["midpoint"] > 0
+        boosted = CombatStrategist._estimate_incoming_damage(
+            {"name": "Slime Volley", "damage_multiplier": 2.2},
+            {"stats": {"damage": 10}},
+            player_hp=100,
+        )
+        assert plain["midpoint"] == 10
+        assert boosted["midpoint"] == 21
 
     def test_unknown_move_defaults_multiplier_one(self):
         result = CombatStrategist._estimate_incoming_damage(
@@ -598,7 +627,9 @@ class TestEstimateIncomingDamage:
 
     def test_lethal_flag_true_when_midpoint_over_half_hp(self):
         result = CombatStrategist._estimate_incoming_damage(
-            {"name": "TidalSurge"}, {"stats": {"damage": 100}}, player_hp=50
+            {"name": "Tidal Surge", "damage_multiplier": 2.5},
+            {"stats": {"damage": 100}},
+            player_hp=50,
         )
         assert result["potentially_lethal"] is True
 
@@ -612,24 +643,29 @@ class TestEstimateIncomingDamage:
 class TestWorstIncomingThreat:
     def test_no_enemies_returns_default(self, strategist):
         result = strategist._worst_incoming_threat([], player_hp=100)
-        assert result["beats_until_impact"] == 99
+        assert result["beats_until_resolve"] is None
 
     def test_enemy_without_mip_skipped(self, strategist):
         result = strategist._worst_incoming_threat([{"move_in_process": None}], player_hp=100)
-        assert result["beats_until_impact"] == 99
+        assert result["beats_until_resolve"] is None
 
     def test_picks_soonest_threat(self, strategist):
         enemies = [
-            {"stats": {"damage": 5}, "move_in_process": {"name": "BatBite", "beats_left": 3, "current_stage": 1}},
-            {"stats": {"damage": 5}, "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1}},
+            {"stats": {"damage": 5},
+             "move_in_process": {"name": "BatBite", "beats_until_resolve": 3}},
+            {"stats": {"damage": 5},
+             "move_in_process": {"name": "BatBite", "beats_until_resolve": 1}},
         ]
         result = strategist._worst_incoming_threat(enemies, player_hp=100)
-        assert result["beats_until_impact"] == 1
+        assert result["beats_until_resolve"] == 1
 
     def test_tie_prefers_lethal(self, strategist):
         enemies = [
-            {"stats": {"damage": 1}, "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1}},
-            {"stats": {"damage": 300}, "move_in_process": {"name": "TidalSurge", "beats_left": 1, "current_stage": 1}},
+            {"stats": {"damage": 1},
+             "move_in_process": {"name": "BatBite", "beats_until_resolve": 1}},
+            {"stats": {"damage": 300},
+             "move_in_process": {"name": "TidalSurge", "beats_until_resolve": 1,
+                                 "damage_multiplier": 2.5}},
         ]
         result = strategist._worst_incoming_threat(enemies, player_hp=50)
         assert result["potentially_lethal"] is True
@@ -640,7 +676,9 @@ class TestBuildTargetPriority:
         enemies = [
             {"name": "Weak", "id": "e1", "hp": 5, "max_hp": 10},
             {"name": "Deadly", "id": "e2", "hp": 10, "max_hp": 10,
-             "stats": {"damage": 300}, "move_in_process": {"name": "TidalSurge", "beats_left": 1, "current_stage": 1}},
+             "stats": {"damage": 300},
+             "move_in_process": {"name": "TidalSurge", "beats_until_resolve": 1,
+                                 "damage_multiplier": 2.5}},
         ]
         result = strategist._build_target_priority(enemies, player_hp=50)
         assert result.index("Deadly") < result.index("Weak")
@@ -663,7 +701,8 @@ class TestBuildTargetPriority:
     def test_non_lethal_charge_reason(self, strategist):
         enemies = [
             {"name": "Charging", "id": "e1", "hp": 10, "max_hp": 10,
-             "stats": {"damage": 1}, "move_in_process": {"name": "BatBite", "beats_left": 1, "current_stage": 1}},
+             "stats": {"damage": 1},
+             "move_in_process": {"name": "BatBite", "beats_until_resolve": 1}},
         ]
         result = strategist._build_target_priority(enemies, player_hp=100)
         assert "incoming charge" in result

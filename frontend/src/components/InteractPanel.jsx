@@ -667,6 +667,12 @@ function InteractPanel({
         </BaseDialog>
         {showChatPanel && selectedTarget && (
             <NpcChatPanel
+                // Keyed on the NPC so switching targets remounts the panel
+                // instead of mutating its props in place — a conversation is
+                // per-NPC state, and reusing the instance left the previous
+                // NPC's portraits and options on screen for the whole of the
+                // new `/open` round trip.
+                key={selectedTarget.npc_class || selectedTarget.name}
                 npcId={selectedTarget.npc_class || selectedTarget.name}
                 npcName={selectedTarget.name}
                 onClose={() => {

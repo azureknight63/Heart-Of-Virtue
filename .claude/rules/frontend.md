@@ -32,7 +32,7 @@ The client reads a field name the serializer never emits; because reads sit behi
 
 ## Build-time checks (`npm run build` → `prebuild`)
 - `scripts/check-changelog-freshness.mjs`: the newest `CHANGELOG.md` version must appear in `src/data/changelog.js` (login-screen changelog panel) — prepend a `{ version, date, highlights }` entry when you cut a release.
-- `scripts/generate-sfx-durations.mjs --check`: `utils/sfxDurations.js` must match the WAVs in `public/assets/sounds/` — run `npm run sfx:durations` after adding or regenerating sounds.
+- `scripts/generate-sfx-durations.mjs --check`: `utils/sfxDurations.js` must match the WAVs in `public/assets/sounds/sfx/` — run `npm run sfx:durations` after adding or regenerating sounds.
 
 ## Gotchas
 - Style math on tokens: `spacing.sm` is the string `'8px'`; `-spacing.sm` is `NaN` (React warns "NaN is an invalid css value"). Use a template string: `` `-${spacing.sm}` ``.

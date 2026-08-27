@@ -1,11 +1,24 @@
 """Adversarial guard against implied game-state changes in LLM chat output.
 
-Conversations are lore and character exploration only. No hook exists between
-anything said in a chat and the engine: an NPC who says "here, take this blade"
-does not create an item, one who says "I'll come with you" does not join the
-party, and one who says "that sword of yours is failing" is guessing at an
-inventory it cannot read. Every such line is a promise the game will not keep,
-and the player is the one who discovers that.
+Conversations are lore and character exploration only. Nothing an NPC *says*
+is wired to the engine: an NPC who says "here, take this blade" does not create
+an item, one who says "I'll come with you" does not join the party, and one who
+says "that sword of yours is failing" is guessing at an inventory it cannot
+read. Every such line is a promise the game will not keep, and the player is
+the one who discovers that.
+
+Two *structured* fields of the same model response DO reach the engine, so the
+prose above is about the prose only:
+
+* ``reputation_delta`` is clamped and then written to ``player.reputation`` by
+  ``ConversationalNPCMixin._apply_reputation``, and ``ShopSerializer`` turns
+  that number into real charged prices (up to +/-15% at +/-100). A turn that
+  trips this guard therefore has its ``reputation_delta`` zeroed by
+  ``_guard_turn``'s caller — a line the model had to be talked out of does not
+  also get to move the player's standing.
+* ``loquacity_delta`` is the second channel: it drains (or restores) the NPC's
+  willingness to keep talking and persists in the save file. It is clamped, and
+  it can only end a conversation early, so it is left alone.
 
 This module is the interception layer. It is deliberately split into a cheap
 part and an expensive part:
@@ -20,8 +33,10 @@ part and an expensive part:
   call is unavailable or comes back still dirty. It never invents new prose
   beyond a fixed hedge per category.
 
-Four violation classes, in the order they are scanned (the first flag decides
-how the turn is described to the reviser):
+Four violation classes. Which of the two scans covers each is a table
+(``_SCAN_SCOPE``), not a hand-written tuple per scan, and within a scan they are
+walked in the order below — the first flag decides how the turn is described to
+the reviser, so the category a scan exists to catch leads it:
 
 ``transaction``   handing over goods, escorting Jean, teaching, mending
 ``state_claim``   claims about Jean's gear, wounds, coin, or past deeds
@@ -43,10 +58,12 @@ CATEGORY_SOLICIT = "solicit"
 # topic is legitimate. Handing over goods and arranging meetings are never
 # excusable, however on-topic they are — otherwise a knowledge_scope entry like
 # "the ferry crossing" would license "I'll give you a knife for the crossing".
-# NOTE: no pattern emits subcategory "growth" today — the entry is reserved
-# for a future growth-flavoured pattern; growth talk is currently excused via
-# topic words on "teaching" flags.
-_EXCUSABLE_SUBCATEGORIES = frozenset({"teaching", "growth"})
+# Talk about an ally's own growth is excused via topic words on "teaching"
+# flags; there is no separate "growth" subcategory (an entry naming one sat
+# here unreachable, and the integrity check below now makes that class of typo
+# fail at import instead of failing *open* — an unmatched name silently
+# excuses nothing).
+_EXCUSABLE_SUBCATEGORIES = frozenset({"teaching"})
 
 # The state_claim patterns are written in the second person because they exist
 # to catch an NPC guessing at *Jean's* gear, wounds, coin, or deeds. Inside a
@@ -59,10 +76,24 @@ _OPTION_SKIP_SUBCATEGORIES = frozenset({"belongings", "condition", "deeds", "coi
 # Sentence splitter that KEEPS each sentence's own terminator ("Stay back!"
 # stays an exclamation; "What do you want?" stays a question; "Well... maybe."
 # keeps its ellipsis). Splitting on [.!?] and re-joining with ". " — the old
-# approach — flattened every ! and ? in NPC dialogue into a period. Shared
-# with _chat_llm (aliased there under the same name) since both modules need
-# the identical split.
+# approach — flattened every ! and ? in NPC dialogue into a period. Private to
+# this module: _chat_llm consumes the split through :func:`split_sentences`
+# rather than re-deriving it from the pattern.
 _SENTENCE_PATTERN = re.compile(r"[^.!?]+[.!?]*")
+
+# Sentence terminators and quote characters, spelled once. These were
+# hand-written seven times across this module and _chat_llm in four mutually
+# inconsistent variants (`".!?"`, `'.!?"''`, `'"'”’'`, `'.!?"'*'`), which is
+# exactly how curly quotes came to be handled at one site and not its
+# neighbour. _QUOTE_CHARS covers both directions because a token can open a
+# quotation as well as close one; _CLOSING_QUOTES is the subset that can
+# legitimately trail a terminator.
+_TERMINATORS = ".!?"
+_CLOSING_QUOTES = "\"'”’»"
+_QUOTE_CHARS = "\"'“”‘’«»"
+_SENTENCE_BOUNDARY_CHARS = _TERMINATORS + _QUOTE_CHARS
+
+_ALNUM_PATTERN = re.compile(r"[A-Za-z0-9]")
 
 # Topics are matched as whole words: substring containment let a four-letter
 # topic like "edge" excuse any sentence containing "knowledge".
@@ -332,11 +363,146 @@ _GUIDANCE = {
     ),
 }
 
+# The *prevention* half of the guard: one clause per category, interpolated
+# into the system prompt by :func:`prompt_rules_line`. It lived as hand-written
+# prose in ``_chat_llm._build_system_prompt`` and had already drifted — it
+# covered transaction, state_claim and commitment but omitted CATEGORY_SOLICIT
+# entirely, so every soliciting Jean option the model produced had to trip the
+# tripwire and pay a real revision round trip that the other three categories
+# were cheap enough to avoid. Written in the second person, addressed to the
+# NPC, and terse: this block is static and re-sent every round.
+PROMPT_RULES: Dict[str, str] = {
+    CATEGORY_TRANSACTION: (
+        "never give, lend, sell, mend, or hand anything over, and never travel "
+        "with Jean"
+    ),
+    CATEGORY_STATE_CLAIM: (
+        "never describe his belongings, wounds, or coin — you cannot see them"
+    ),
+    CATEGORY_COMMITMENT: (
+        "never promise to meet him later or to do him a favour another day"
+    ),
+    CATEGORY_SOLICIT: (
+        "never write a reply for Jean that asks you for goods, escort, or training"
+    ),
+}
+
+SCAN_NPC = "npc"
+SCAN_OPTION = "option"
+_SCANS = frozenset({SCAN_NPC, SCAN_OPTION})
+
+# Which of the two scans each category takes part in. ``scan_npc_text`` and
+# ``scan_option_text`` used to hand-spell their own category tuples, which put
+# them *outside* the integrity check below: a category could be given a row in
+# all four tables above — prevented in the prompt, hedged, and explained to the
+# reviser — and still never be scanned for. That is the identical fail-open
+# shape as the CATEGORY_SOLICIT bug this module already closed, one table
+# further along. Both scans are derived from this table instead.
+#
+# The second-person state_claim patterns fire on legitimate lore questions when
+# they sit in a Jean option ("Where did you get your sword?"), which is what
+# _OPTION_SKIP_SUBCATEGORIES trims — the category itself still belongs to both
+# scans.
+_SCAN_SCOPE: Dict[str, frozenset] = {
+    CATEGORY_TRANSACTION: frozenset({SCAN_NPC}),
+    CATEGORY_STATE_CLAIM: frozenset({SCAN_NPC, SCAN_OPTION}),
+    CATEGORY_COMMITMENT: frozenset({SCAN_NPC, SCAN_OPTION}),
+    CATEGORY_SOLICIT: frozenset({SCAN_OPTION}),
+}
+
 # To add a category: define its CATEGORY_* constant, then give it a row in ALL
-# THREE tables above (_PATTERNS, _HEDGES, _GUIDANCE) — hedge_npc_text and
-# guidance_for index the latter two directly, so a missing row is a runtime
-# KeyError mid-turn. This assert makes the omission fail at import instead.
-assert set(_PATTERNS) == set(_HEDGES) == set(_GUIDANCE)
+# FIVE tables above (_PATTERNS, _HEDGES, _GUIDANCE, PROMPT_RULES, _SCAN_SCOPE).
+# hedge_npc_text, guidance_for and prompt_rules_line index three of them
+# directly, so a missing row is a runtime KeyError mid-turn (or, for
+# PROMPT_RULES, a silently unprevented category); a missing _SCAN_SCOPE row is
+# a category that is prevented and hedged but never actually scanned for.
+# :func:`_check_tables` makes every such omission fail at import instead.
+#
+# Every subcategory any pattern can actually emit is derived from _PATTERNS
+# rather than restated. The two subcategory allow/skip sets above are matched
+# by *name* at scan time, so a typo in either of them fails OPEN — the flag is
+# simply never excused or never skipped, with nothing to notice it. Deriving
+# the universe and checking containment turns that into an import error too.
+SUBCATEGORIES = frozenset(
+    subcategory for rows in _PATTERNS.values() for subcategory, _pattern in rows
+)
+
+
+def _check_tables() -> None:
+    """Fail at import if the category/subcategory tables have drifted apart.
+
+    Deliberately ``raise`` rather than ``assert``: these are integrity guards,
+    not debugging aids, and ``python -O`` strips ``assert`` — which would
+    restore the exact silent fail-open (a missing table row, a mistyped
+    subcategory) they exist to prevent, in the one configuration nobody tests.
+    """
+    categories = set(_PATTERNS)
+    for name, table in (
+        ("_HEDGES", _HEDGES),
+        ("_GUIDANCE", _GUIDANCE),
+        ("PROMPT_RULES", PROMPT_RULES),
+        ("_SCAN_SCOPE", _SCAN_SCOPE),
+    ):
+        if set(table) != categories:
+            raise RuntimeError(
+                "_chat_guard: {} does not cover the same categories as _PATTERNS "
+                "(missing={}, extra={})".format(
+                    name,
+                    sorted(categories - set(table)),
+                    sorted(set(table) - categories),
+                )
+            )
+    for category, scans in _SCAN_SCOPE.items():
+        if not scans or not scans <= _SCANS:
+            raise RuntimeError(
+                "_chat_guard: _SCAN_SCOPE[{!r}]={} must be a non-empty subset of "
+                "{}".format(category, sorted(scans), sorted(_SCANS))
+            )
+    for name, subcategories in (
+        ("_EXCUSABLE_SUBCATEGORIES", _EXCUSABLE_SUBCATEGORIES),
+        ("_OPTION_SKIP_SUBCATEGORIES", _OPTION_SKIP_SUBCATEGORIES),
+    ):
+        unknown = subcategories - SUBCATEGORIES
+        if unknown:
+            raise RuntimeError(
+                "_chat_guard: {} names subcategories no pattern emits: {}".format(
+                    name, sorted(unknown)
+                )
+            )
+
+
+_check_tables()
+
+
+def _scan_categories(scan: str) -> Tuple[str, ...]:
+    """Categories ``scan`` covers, in the order :func:`_scan` walks them.
+
+    ``_scan`` appends flags category by category and the first flag decides how
+    the turn is described to the reviser, so the category a scan exists to
+    catch has to lead. That is exactly the category scoped to this scan alone
+    (``transaction`` for an NPC line, ``solicit`` for a Jean option); the
+    categories shared with the other scan follow in declaration order. Derived
+    rather than written out, so adding a category cannot leave one scan behind.
+    """
+    scoped = [c for c in _PATTERNS if scan in _SCAN_SCOPE[c]]
+    return tuple(sorted(scoped, key=lambda c: len(_SCAN_SCOPE[c]) > 1))
+
+
+_NPC_CATEGORIES = _scan_categories(SCAN_NPC)
+_OPTION_CATEGORIES = _scan_categories(SCAN_OPTION)
+
+
+def prompt_rules_line() -> str:
+    """Render :data:`PROMPT_RULES` as the system prompt's prevention clause.
+
+    Built from the same table the tripwire is checked against, so a category
+    can never again be scanned for but not prevented.
+    """
+    return (
+        "Talk changes nothing here: "
+        + "; ".join(PROMPT_RULES.values())
+        + ". Speak of such things in the past or in general instead."
+    )
 
 
 class GuardFlag(NamedTuple):
@@ -352,15 +518,64 @@ class GuardFlag(NamedTuple):
     sentence: str
 
 
-def _sentences(text: str) -> List[str]:
-    return [s for s in _SENTENCE_PATTERN.findall(text or "") if s.strip()]
+def split_sentences(text: str) -> List[str]:
+    """Split ``text`` into sentences, each keeping its own terminator.
+
+    ``_SENTENCE_PATTERN`` cuts immediately after ``.!?``, which strands the
+    closing quote of a quoted sentence at the head of the *next* fragment:
+    ``He said "no." Fine by me.`` split as ``['He said "no.', '" Fine by me.']``
+    and the re-join then inserted a space before the quote, shipping
+    ``He said "no. " Fine by me.`` to the player. A leading run of closing
+    quotes belongs to the sentence before it, so it is re-attached and whatever
+    follows stays a sentence of its own — the old repair only handled a
+    fragment with no alphanumerics at all, i.e. only at end of text.
+
+    The run must be followed by whitespace or end-of-fragment; ``'Tis`` opens a
+    sentence with an apostrophe and must not be dismembered.
+    """
+    out: List[str] = []
+    for raw in _SENTENCE_PATTERN.findall(text or ""):
+        piece = raw.strip()
+        if not piece:
+            # Load-bearing for the two `out[-1][-1]`/`piece[0]` indexings
+            # below: every element appended past this point is non-empty, so
+            # neither can raise. Reordering this skip breaks that.
+            continue
+        if out and out[-1][-1] in _TERMINATORS and piece[0] in _CLOSING_QUOTES:
+            run = len(piece) - len(piece.lstrip(_CLOSING_QUOTES))
+            if run == len(piece) or piece[run].isspace():
+                out[-1] += piece[:run]
+                rest = piece[run:].strip()
+                if rest:
+                    out.append(rest)
+                continue
+        if out and not _ALNUM_PATTERN.search(piece):
+            # Pure punctuation debris (an orphaned dash, a stray bracket).
+            out[-1] += piece
+            continue
+        out.append(piece)
+    return out
+
+
+def ensure_terminal_punctuation(text: str) -> str:
+    """Append a period unless ``text`` already ends a sentence.
+
+    Looks *through* a trailing closing quote, so ``... the long road."`` is
+    already terminated and does not gain a stray period after the quote.
+    """
+    if not text:
+        return text
+    last = text.rstrip(_CLOSING_QUOTES)[-1:]
+    if last and last not in _TERMINATORS:
+        return text + "."
+    return text
 
 
 def _excused(flag: GuardFlag, allowed_topics: Set[str]) -> bool:
     """True when a whitelisted topic licenses this flag.
 
-    Only teaching- and growth-flavoured hits are excusable, and only when the
-    sentence actually names an allowed topic.
+    Only ``teaching`` hits are excusable (see _EXCUSABLE_SUBCATEGORIES), and
+    only when the sentence actually names an allowed topic.
     """
     if flag.subcategory not in _EXCUSABLE_SUBCATEGORIES:
         return False
@@ -386,11 +601,20 @@ def _scan(
     allowed_topics: Iterable[str] = (),
     skip_subcategories: Iterable[str] = (),
 ) -> List[GuardFlag]:
+    """Return every tripwire hit in ``text`` for the given ``categories``.
+
+    The one routine both public scans go through. Runs each category's patterns
+    over each sentence in declaration order — the first flag is what names the
+    violation to the reviser (see :func:`_scan_categories`) — skipping any
+    subcategory in ``skip_subcategories`` and dropping any hit a whitelisted
+    topic excuses. Pure and allocation-light: it is on every turn, and only a
+    non-empty result costs a round trip.
+    """
     if not text:
         return []
     topics = {str(t).lower() for t in (allowed_topics or ())}
     skip = frozenset(skip_subcategories or ())
-    sentences = _sentences(text)
+    sentences = split_sentences(text)
     flags: List[GuardFlag] = []
     for category in categories:
         for subcategory, pattern in _PATTERNS[category]:
@@ -409,20 +633,13 @@ def _scan(
 
 def scan_npc_text(text: str, allowed_topics: Iterable[str] = ()) -> List[GuardFlag]:
     """Flag state-implying content in an NPC's spoken line or flavor beat."""
-    return _scan(
-        text,
-        (CATEGORY_TRANSACTION, CATEGORY_STATE_CLAIM, CATEGORY_COMMITMENT),
-        allowed_topics,
-    )
+    return _scan(text, _NPC_CATEGORIES, allowed_topics)
 
 
 def scan_option_text(text: str, allowed_topics: Iterable[str] = ()) -> List[GuardFlag]:
     """Flag a Jean dialogue option that solicits or assumes a state change."""
     return _scan(
-        text,
-        (CATEGORY_SOLICIT, CATEGORY_STATE_CLAIM, CATEGORY_COMMITMENT),
-        allowed_topics,
-        _OPTION_SKIP_SUBCATEGORIES,
+        text, _OPTION_CATEGORIES, allowed_topics, _OPTION_SKIP_SUBCATEGORIES
     )
 
 
@@ -440,13 +657,17 @@ def hedge_npc_text(text: str, flags: Sequence[GuardFlag]) -> str:
         hedge_by_sentence.setdefault(flag.sentence, _HEDGES[flag.category])
 
     out: List[str] = []
-    for sentence in _sentences(text):
+    for sentence in split_sentences(text):
         replacement = hedge_by_sentence.get(sentence)
         piece = replacement if replacement is not None else sentence.strip()
         # A line that ends inside quotes ("... here.'") splits into a trailing
         # fragment of pure punctuation. Keeping it produced visible wreckage
-        # ("We'll be here. '.") once the terminal-punctuation fixup ran.
-        if not piece or not any(ch.isalnum() for ch in piece):
+        # ("We'll be here. '.") once the terminal-punctuation fixup ran. The
+        # same "has word content" test as split_sentences', and deliberately
+        # the same spelling: str.isalnum() is Unicode-aware where
+        # _ALNUM_PATTERN is ASCII-only, so writing it by hand here (as this
+        # did) made two copies of one rule disagree on accented text.
+        if not piece or not _ALNUM_PATTERN.search(piece):
             continue
         # Collapse only repeated *hedges* — a legitimately repeated sentence
         # ("No. No.") is the author's/model's cadence, not stutter.
@@ -457,9 +678,7 @@ def hedge_npc_text(text: str, flags: Sequence[GuardFlag]) -> str:
     result = " ".join(out).strip()
     if not result:
         result = _HEDGES[flags[0].category]
-    if result[-1] not in ".!?":
-        result += "."
-    return result
+    return ensure_terminal_punctuation(result)
 
 
 def guidance_for(flags: Iterable[GuardFlag]) -> str:

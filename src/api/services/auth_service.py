@@ -26,7 +26,19 @@ class AuthService:
         # don't need one configured.
         self.encryption_key = os.getenv("ENCRYPTION_KEY")
         if not self.encryption_key:
-            if os.environ.get("FLASK_ENV") == "production":
+            # normalized_env(), not a bare == "production": this guard is
+            # fail-open, so a case difference silently costs data. FLASK_ENV is
+            # operator-typed and both entry points that select the config class
+            # lowercase it, so "Production" reaches here and, compared raw,
+            # skips this raise and mints an ephemeral Fernet key — orphaning
+            # every already-encrypted email on the next restart, with nothing
+            # reporting the loss. src/api/config.py's SECRET_KEY guard, which
+            # the comment above says this mirrors, had the identical defect and
+            # was normalised; sharing the helper is what stops them drifting
+            # apart a third time.
+            from src.api.config import normalized_env
+
+            if normalized_env() == "production":
                 raise RuntimeError("ENCRYPTION_KEY must be set in production")
             self.encryption_key = Fernet.generate_key()
         self.fernet = Fernet(self.encryption_key)

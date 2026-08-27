@@ -26,6 +26,36 @@ import ai.llm_client as llm
 from ai.llm_client import GenericLLMClient, NpcChatLLMAdapter
 
 
+@pytest.fixture(autouse=True)
+def _reset_llm_class_state(tmp_path, monkeypatch):
+    """Isolate class-level shared state and the disk cache per test.
+
+    The same fixture ``tests/test_llm_client_coverage.py`` uses. This file had
+    none: nine of its classes hand-rolled a ``setup_method``/``teardown_method``
+    pair, three more called ``reset_class_state()`` inline in one test body, and
+    the rest -- ``TestMergeUsage`` among them -- reset nothing at all and left
+    ``_provider_usage["openrouter"]`` sitting at three requests for whichever
+    file the xdist worker picked up next. ``TestProviderChain`` and
+    ``TestCallLlmFallsThrough`` passed only because they sit ABOVE
+    ``TestProviderSaturation`` in file order, which is not a property a test
+    file should depend on.
+    """
+    GenericLLMClient.reset_class_state()
+    GenericLLMClient._nightly_refresh_started = False
+    monkeypatch.setattr(llm, "_MODEL_CACHE_FILE", str(tmp_path / ".model_cache.json"))
+    # Clean baseline; individual tests override as needed.
+    monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
+    monkeypatch.setenv("MYNX_LLM_PROVIDER", "none")
+    monkeypatch.delenv("MYNX_LLM_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("NPC_CHAT_LLM_ENABLED", raising=False)
+    monkeypatch.delenv("NPC_CHAT_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("NPC_CHAT_LLM_MODEL", raising=False)
+    yield
+    GenericLLMClient.reset_class_state()
+    GenericLLMClient._nightly_refresh_started = False
+
+
 def _model(mid, params=None, intelligence=None, created=1):
     m = {
         "id": mid,
@@ -354,27 +384,62 @@ class TestUnparseablePenalty:
     through to canned dialogue — indefinitely, and silently.
     """
 
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def _minutes_left(self, model_id):
-        from datetime import datetime
+        """Bench expiries are aware UTC (Sec-A#4), so this must be too --
+        subtracting a naive ``datetime.now()`` from one raises TypeError."""
+        from datetime import datetime, timezone
 
         expiry = GenericLLMClient._failed_models.get(model_id)
         assert expiry is not None, "model was not penalized at all"
-        return (expiry - datetime.now()).total_seconds() / 60.0
+        assert expiry.tzinfo is not None, "bench expiry must be timezone-aware"
+        return (expiry - datetime.now(timezone.utc)).total_seconds() / 60.0
 
     def test_first_offence_is_a_short_penalty(self):
         GenericLLMClient._penalize_unparseable("chatty")
         assert 5 <= self._minutes_left("chatty") <= 60
 
-    def test_repeat_offence_escalates_to_a_long_penalty(self):
+    def test_repeat_offence_escalates_to_a_longer_penalty(self):
+        GenericLLMClient._penalize_unparseable("chatty")
+        first = self._minutes_left("chatty")
+        GenericLLMClient._penalize_unparseable("chatty")
+        assert self._minutes_left("chatty") > first
+
+    def test_the_repeat_penalty_is_hours_not_the_rest_of_the_day(self):
+        """S3: this bench is process-wide state shared by every player, and the
+        output that trips it is shaped by whatever the player typed. At 720
+        minutes two crafted turns took the primary free model out for everyone
+        until the next morning, repeatably down the ranked list."""
         GenericLLMClient._penalize_unparseable("chatty")
         GenericLLMClient._penalize_unparseable("chatty")
-        assert self._minutes_left("chatty") > 600
+        assert self._minutes_left("chatty") <= 4 * 60
+
+    def test_strikes_decay_so_two_stumbles_hours_apart_are_not_a_repeat(self):
+        """S3: the strike count used to be cleared only by a later parse
+        success ON THAT MODEL. A model nothing happened to call again carried
+        its strike for the life of the process and took the escalated penalty
+        on its next stumble, however long afterwards."""
+        GenericLLMClient._penalize_unparseable("chatty")
+        # Age the strike past the decay window, and clear the first bench so
+        # the next penalty's expiry is the one being measured.
+        GenericLLMClient._unparseable_strike_at["chatty"] = (
+            datetime.now(timezone.utc)
+            - timedelta(minutes=llm._UNPARSEABLE_STRIKE_DECAY_MINUTES + 1)
+        )
+        GenericLLMClient._failed_models.pop("chatty", None)
+
+        GenericLLMClient._penalize_unparseable("chatty")
+
+        assert GenericLLMClient._unparseable_strikes["chatty"] == 1
+        assert self._minutes_left("chatty") <= 60
+
+    def test_strikes_inside_the_decay_window_still_escalate(self):
+        GenericLLMClient._penalize_unparseable("chatty")
+        GenericLLMClient._unparseable_strike_at["chatty"] = (
+            datetime.now(timezone.utc)
+            - timedelta(minutes=llm._UNPARSEABLE_STRIKE_DECAY_MINUTES - 1)
+        )
+        GenericLLMClient._penalize_unparseable("chatty")
+        assert GenericLLMClient._unparseable_strikes["chatty"] == 2
 
     def test_a_good_response_clears_the_strike_count(self):
         GenericLLMClient._penalize_unparseable("flaky")
@@ -400,18 +465,13 @@ class TestUnparseablePenalty:
 
     def test_reset_class_state_clears_strikes(self):
         GenericLLMClient._penalize_unparseable("chatty")
+        assert GenericLLMClient._unparseable_strikes  # precondition
         GenericLLMClient.reset_class_state()
         assert GenericLLMClient._unparseable_strikes == {}
 
 
 class TestAdapterPenalizesOnParseFailure:
     """The penalty must actually be wired to the chat call sites."""
-
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
 
     def _adapter_returning(self, raw):
         a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
@@ -502,6 +562,152 @@ class TestProviderChain:
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
         chain = self._adapter("groq")._provider_chain()
         assert chain.count("groq") == 1
+
+
+class TestProviderChainNeedsAnExplicitProvider:
+    """A credential in the environment is not consent to dial its host.
+
+    ``.env`` is loaded process-wide, so keys belonging to Mynx and to the
+    combat strategist are sitting in the environment of every other feature.
+    The chain used to seed itself with ``self.provider`` and append every
+    provider whose key merely existed -- and ``self.provider`` is a *default*
+    (``... or "ollama"``) when nobody set one. So ``NPC_CHAT_LLM_ENABLED=1``
+    and nothing else produced [ollama, openrouter, groq, cerebras], and a box
+    with no Ollama running shipped player-authored conversation text to a
+    remote host the operator never nominated for chat.
+
+    These build real adapters rather than ``__new__`` stand-ins: the whole
+    point is what the *environment* implies, so the environment has to be what
+    drives them. ``NPC_CHAT_LLM_ENABLED`` stays 0 throughout, which keeps
+    ``__init__`` off the network without weakening the assertions --
+    ``_provider_chain`` never consults the gate.
+    """
+
+    @staticmethod
+    def _all_credentials(monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or")
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+        monkeypatch.setenv("CEREBRAS_API_KEY", "c")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
+
+    def test_a_defaulted_provider_gets_no_remote_fallbacks(self, monkeypatch):
+        self._all_credentials(monkeypatch)
+        monkeypatch.delenv("NPC_CHAT_LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("MYNX_LLM_PROVIDER", raising=False)
+
+        adapter = NpcChatLLMAdapter()
+
+        assert adapter.provider == llm.DEFAULT_PROVIDER
+        assert adapter._provider_explicit is False
+        # The local default stays dialable -- it needs no credential and never
+        # leaves the machine. Everything remote is withheld.
+        assert adapter._provider_chain() == ["ollama"]
+
+    def test_an_explicit_provider_arms_the_whole_chain(self, monkeypatch):
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "openrouter")
+
+        adapter = NpcChatLLMAdapter()
+
+        assert adapter._provider_explicit is True
+        chain = adapter._provider_chain()
+        assert chain[0] == "openrouter"
+        assert set(chain) == {"openrouter", "groq", "cerebras", "ollama"}
+
+    def test_naming_ollama_keeps_player_text_on_the_box(self, monkeypatch):
+        """S1: naming the local host is a consent statement, not just routing.
+
+        The rule used to distinguish NAMED from DEFAULTED only, so
+        ``NPC_CHAT_LLM_PROVIDER=ollama`` -- the strongest "keep this on the
+        machine" statement an operator can make -- still armed
+        ``[ollama, openrouter, groq, cerebras]``, and player free-text went to
+        whichever remote key happened to be in ``.env`` for another feature the
+        moment the local host was down.
+        """
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "ollama")
+        monkeypatch.delenv("NPC_CHAT_LLM_FALLBACK", raising=False)
+
+        chain = NpcChatLLMAdapter()._provider_chain()
+
+        assert chain == ["ollama"]
+
+    def test_an_ollama_pin_can_opt_back_into_the_remote_chain(self, monkeypatch):
+        """"Which host" and "may this leave the box" are two decisions, so they
+        have two settings. NPC_CHAT_LLM_FALLBACK=1 is the second one."""
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("NPC_CHAT_LLM_FALLBACK", "1")
+
+        chain = NpcChatLLMAdapter()._provider_chain()
+
+        assert chain[0] == "ollama"
+        assert set(chain) == {"ollama", "openrouter", "groq", "cerebras"}
+
+    def test_the_fallback_opt_in_fails_closed(self, monkeypatch):
+        """Anything but a true value means no. A gate on real network spend
+        does not get to be generous about typos."""
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "ollama")
+        for value in ("0", "no", "yes", "", "  ", "TRUE!"):
+            monkeypatch.setenv("NPC_CHAT_LLM_FALLBACK", value)
+            assert NpcChatLLMAdapter()._provider_chain() == ["ollama"], value
+
+    def test_naming_a_remote_provider_still_arms_the_whole_chain(self, monkeypatch):
+        """The narrowing above is about ollama specifically: an operator who
+        names a remote host has already agreed the text leaves the machine, and
+        the fallback chain is the whole point of naming one."""
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.delenv("NPC_CHAT_LLM_FALLBACK", raising=False)
+
+        chain = NpcChatLLMAdapter()._provider_chain()
+
+        assert chain[0] == "groq"
+        assert set(chain) == {"ollama", "openrouter", "groq", "cerebras"}
+
+    def test_the_mynx_provider_still_counts_as_explicit_for_chat(self, monkeypatch):
+        """NPC chat falls back to MYNX_LLM_PROVIDER by design (a one-model
+        deployment configures one place), and a value read through that
+        fallback was still typed by the operator."""
+        self._all_credentials(monkeypatch)
+        monkeypatch.delenv("NPC_CHAT_LLM_PROVIDER", raising=False)
+        monkeypatch.setenv("MYNX_LLM_PROVIDER", "groq")
+
+        adapter = NpcChatLLMAdapter()
+
+        assert adapter.provider == "groq"
+        assert adapter._provider_explicit is True
+        assert len(adapter._provider_chain()) > 1
+
+    def test_the_disabled_sentinel_still_yields_nothing(self, monkeypatch):
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", llm.PROVIDER_DISABLED)
+
+        assert NpcChatLLMAdapter()._provider_chain() == []
+
+    def test_assigning_the_provider_is_itself_a_choice(self, monkeypatch):
+        """The flag lives on the ``provider`` setter, not in ``__init__``.
+
+        Subclasses and tests both pin a provider by assignment; a flag set only
+        during ``__init__`` would read False for every one of them.
+        """
+        self._all_credentials(monkeypatch)
+        adapter = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+        adapter.provider = "groq"
+
+        assert adapter._provider_explicit is True
+        assert len(adapter._provider_chain()) > 1
+
+    def test_an_uninitialised_adapter_defaults_to_no_fallbacks(self, monkeypatch):
+        """``__new__`` skips ``__init__``; the class-level defaults have to be
+        the conservative answer, not an AttributeError and not consent."""
+        self._all_credentials(monkeypatch)
+        adapter = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+
+        assert adapter.provider == llm.DEFAULT_PROVIDER
+        assert adapter._provider_chain() == ["ollama"]
 
 
 class TestCallLlmFallsThrough:
@@ -636,19 +842,23 @@ class TestOpenAiCompatibleCall:
     # mechanism that let two dead providers pass as 46/47 green for days.
     @pytest.mark.parametrize("status", [401, 402, 404])
     def test_permanent_client_error_benches_the_model(self, status, monkeypatch):
-        llm.GenericLLMClient.reset_class_state()
+        """C4: an HTTP failure now yields None like every other chain method.
+
+        This used to assert ``pytest.raises(RuntimeError)`` -- the one method in
+        the chain that re-raised, which is why ``_call_llm`` needed a broad
+        ``except`` just to absorb it. The bench still has to land, or a retired
+        slug is re-dialled on every single turn.
+        """
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("GROQ_MODEL", "retired-slug")
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: _Resp(status, text="nope")
         )
         a = self._adapter()
-        with pytest.raises(RuntimeError):
-            a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
+        assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
         assert a._is_model_failed("groq:retired-slug")
 
     def test_benched_model_is_not_re_dialled(self, monkeypatch):
-        llm.GenericLLMClient.reset_class_state()
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("GROQ_MODEL", "retired-slug")
         posts = []
@@ -659,8 +869,7 @@ class TestOpenAiCompatibleCall:
 
         monkeypatch.setattr(llm, "_post_chat_completion", counting_post)
         a = self._adapter()
-        with pytest.raises(RuntimeError):
-            a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
+        assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
 
         # Second turn: the guard at the top of the method must short-circuit.
         assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
@@ -669,15 +878,13 @@ class TestOpenAiCompatibleCall:
     def test_transient_server_error_is_not_benched(self, monkeypatch):
         # 5xx says nothing about the slug's validity; benching it would take a
         # healthy provider out of the chain over one bad minute.
-        llm.GenericLLMClient.reset_class_state()
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("GROQ_MODEL", "fine-slug")
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: _Resp(503, text="try later")
         )
         a = self._adapter()
-        with pytest.raises(RuntimeError):
-            a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
+        assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
         assert not a._is_model_failed("groq:fine-slug")
 
 
@@ -699,12 +906,6 @@ class TestProviderSaturation:
     its own dialect. Reading them turns "chat went quiet" into a number that can
     be watched in the logs, in dev and after deployment.
     """
-
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
 
     def test_request_style_headers_are_read(self):
         GenericLLMClient._record_provider_usage(
@@ -787,12 +988,6 @@ class TestProviderSaturation:
 class TestTotalSaturation:
     """The headline number: is there capacity left anywhere in the chain?"""
 
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def _usage(self, provider, limit, remaining):
         GenericLLMClient._record_provider_usage(
             provider,
@@ -805,33 +1000,34 @@ class TestTotalSaturation:
         self._usage("openrouter", 50, 0)
         self._usage("groq", 100, 90)
         total = GenericLLMClient.provider_saturation()
-        assert total["total_saturation"] == pytest.approx(0.10)
+        assert total["effective_saturation"] == pytest.approx(0.10)
         assert total["providers_exhausted"] == 1
 
     def test_all_exhausted_reports_full_saturation(self):
         self._usage("openrouter", 50, 0)
         self._usage("groq", 100, 0)
         total = GenericLLMClient.provider_saturation()
-        assert total["total_saturation"] == 1.0
+        assert total["effective_saturation"] == 1.0
         assert total["providers_exhausted"] == 2
 
     def test_total_is_none_when_nothing_reported_limits(self):
         GenericLLMClient._record_provider_usage("groq", _HeaderResp())
-        assert GenericLLMClient.provider_saturation()["total_saturation"] is None
+        assert GenericLLMClient.provider_saturation()["effective_saturation"] is None
+
+    def test_the_deprecated_total_saturation_alias_is_gone(self):
+        """It said the opposite of what it held (the *least* saturated
+        provider, not a total), and every consumer renamed it at the point of
+        use. Kept alive only by these assertions; they have moved."""
+        assert "total_saturation" not in GenericLLMClient.provider_saturation()
 
     def test_reset_clears_usage(self):
         self._usage("groq", 100, 5)
+        assert GenericLLMClient.provider_saturation()["providers"]  # precondition
         GenericLLMClient.reset_class_state()
         assert GenericLLMClient.provider_saturation()["providers"] == {}
 
 
 class TestSaturationLogging:
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_saturation_line_is_logged_at_info(self, caplog):
         GenericLLMClient._record_provider_usage(
             "openrouter",
@@ -845,26 +1041,26 @@ class TestSaturationLogging:
         assert "100" in blob
 
     def test_epoch_millisecond_reset_is_rendered_readably(self):
-        assert GenericLLMClient._format_reset("1787443200000").startswith("2026-")
+        assert GenericLLMClient.format_reset("1787443200000").startswith("2026-")
 
     def test_epoch_second_reset_is_rendered_readably(self):
-        assert GenericLLMClient._format_reset("1787443200").startswith("2026-")
+        assert GenericLLMClient.format_reset("1787443200").startswith("2026-")
 
     def test_human_reset_value_is_passed_through(self):
-        assert GenericLLMClient._format_reset("2m59s") == "2m59s"
+        assert GenericLLMClient.format_reset("2m59s") == "2m59s"
 
     def test_empty_reset_is_blank(self):
-        assert GenericLLMClient._format_reset("") == ""
+        assert GenericLLMClient.format_reset("") == ""
 
     def test_absurd_reset_does_not_raise(self):
-        assert GenericLLMClient._format_reset("999999999999999999999")
+        assert GenericLLMClient.format_reset("999999999999999999999")
 
     def test_logging_with_no_data_does_not_raise(self, caplog):
         with caplog.at_level("INFO", logger="ai.llm_client"):
             GenericLLMClient.log_provider_saturation()
 
     def test_seconds_until_reset_is_not_rendered_as_1970(self):
-        assert "1970" not in GenericLLMClient._format_reset("60")
+        assert "1970" not in GenericLLMClient.format_reset("60")
 
 
 # ---------------------------------------------------------------------------
@@ -927,12 +1123,6 @@ class TestBenchedProviderModelIsSkipped:
     reads, and the same host is re-dialled on every turn forever.
     """
 
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_benched_model_makes_no_request(self, monkeypatch):
         called = []
         monkeypatch.setenv("GROQ_API_KEY", "g")
@@ -984,22 +1174,37 @@ class TestInferredSaturationDoesNotStick:
     process, long past the daily reset.
     """
 
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def test_success_after_a_headerless_429_clears_the_guess(self):
         GenericLLMClient._record_provider_usage(
             "openrouter", _HeaderResp(429), "rate_limited"
         )
-        assert GenericLLMClient.provider_saturation()["providers_exhausted"] == 1
+        # A headerless 429 is a GUESS, not a figure the provider stood behind,
+        # and it is as often a per-minute bucket as a spent day. It used to be
+        # counted in `providers_exhausted` with the same weight as a reported
+        # one, in the single number an operator reads to decide whether the
+        # chain is finished for the day.
+        snapshot = GenericLLMClient.provider_saturation()
+        assert snapshot["providers_exhausted"] == 0
+        assert snapshot["providers_exhausted_inferred"] == 1
 
         GenericLLMClient._record_provider_usage("openrouter", _HeaderResp(), "ok")
         snapshot = GenericLLMClient.provider_saturation()
         assert snapshot["providers_exhausted"] == 0
-        assert snapshot["total_saturation"] is None
+        assert snapshot["providers_exhausted_inferred"] == 0
+        assert snapshot["effective_saturation"] is None
+
+    def test_a_reported_exhaustion_still_counts(self):
+        """The narrowing must not hide a provider that really did say it is
+        spent -- that is the case the number exists for."""
+        GenericLLMClient._record_provider_usage(
+            "groq",
+            _HeaderResp(
+                headers={"x-ratelimit-limit": "10", "x-ratelimit-remaining": "0"}
+            ),
+        )
+        snapshot = GenericLLMClient.provider_saturation()
+        assert snapshot["providers_exhausted"] == 1
+        assert snapshot["providers_exhausted_inferred"] == 0
 
     def test_a_reported_figure_is_never_overwritten_by_a_later_success(self):
         GenericLLMClient._record_provider_usage(
@@ -1029,12 +1234,6 @@ class TestSaturationCutoff:
     dollar credit, which stays at zero on a free tier no matter how much of the
     50/day request cap is spent, so response headers are the only real signal.
     """
-
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
 
     def _seen(self, provider, limit, remaining, reset=None):
         headers = {
@@ -1138,12 +1337,6 @@ class TestSaturationCutoff:
 
 
 class TestChainSkipsSaturatedProviders:
-    def setup_method(self):
-        GenericLLMClient.reset_class_state()
-
-    def teardown_method(self):
-        GenericLLMClient.reset_class_state()
-
     def _adapter(self):
         a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
         a.enabled = True
@@ -1331,7 +1524,6 @@ class TestOllamaTrafficIsMetered:
                 return {"message": {"content": "{}"}}
 
         monkeypatch.setattr(llm.requests, "post", lambda *a, **kw: _R())
-        GenericLLMClient.reset_class_state()
         self._adapter()._call_ollama("sys", "user", 100, 0.5)
         snap = GenericLLMClient.usage_snapshot()
         ollama = snap["providers"].get("ollama")
@@ -1342,7 +1534,6 @@ class TestOllamaTrafficIsMetered:
             raise AssertionError("benched ollama model was dialled")
 
         monkeypatch.setattr(llm.requests, "post", _bomb)
-        GenericLLMClient.reset_class_state()
         GenericLLMClient._bench_model("ollama:local-llama", duration_minutes=15)
         assert self._adapter()._call_ollama("sys", "user", 100, 0.5) is None
 
@@ -1360,20 +1551,19 @@ class TestResetHeaderHardening:
         assert GenericLLMClient._parse_reset_at("99999999999d") is not None
 
     def test_format_reset_strips_newlines_and_markdown(self):
-        rendered = GenericLLMClient._format_reset("2m59s\nFORGED **bold**")
+        rendered = GenericLLMClient.format_reset("2m59s\nFORGED **bold**")
         assert "\n" not in rendered
         assert "*" not in rendered
         assert rendered.startswith("2m59s")
 
     def test_format_reset_keeps_plain_durations(self):
-        assert GenericLLMClient._format_reset("2m59s") == "2m59s"
+        assert GenericLLMClient.format_reset("2m59s") == "2m59s"
 
 
 class TestMergeUsage:
     """A failed digest post must give its window counters back."""
 
     def test_merged_counts_return_to_the_live_window(self):
-        GenericLLMClient.reset_class_state()
         GenericLLMClient._record_provider_usage("openrouter", None, "ok")
         GenericLLMClient._record_provider_usage("openrouter", None, "error")
         snap = GenericLLMClient.snapshot_and_reset()
@@ -1386,3 +1576,145 @@ class TestMergeUsage:
         assert live["requests"] == 3
         assert live["successes"] == 2
         assert live["errors"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 429 -> metering, end to end
+# ---------------------------------------------------------------------------
+
+
+class Test429ReachesTheMeter:
+    """The whole reason the provider chain exists, asserted end to end.
+
+    Every other 429 test in this file either asserts only ``is None`` or calls
+    ``_record_provider_usage`` *directly*. Neither proves the path that matters:
+    a provider refusing a real call has to make that provider *unavailable*, or
+    the chain re-dials a host that has already said no -- against an
+    account-wide 50/day free tier, on a synchronous request the player is
+    watching a spinner on.
+    """
+
+    def _adapter(self, provider="openrouter"):
+        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+        a.enabled = True
+        a.provider = provider
+        a.model = "m"
+        a._openrouter_api_key = "or-key"
+        a._openrouter_site = ""
+        a._openrouter_site_title = ""
+        return a
+
+    def test_an_openai_compatible_429_marks_the_provider_spent(self, monkeypatch):
+        monkeypatch.setenv("CEREBRAS_API_KEY", "c")
+        monkeypatch.setattr(
+            llm, "_post_chat_completion", lambda *a, **k: _Resp(429, text="slow down")
+        )
+
+        assert (
+            self._adapter("cerebras")._call_openai_compatible(
+                "cerebras", "s", "u", 10, 0.5
+            )
+            is None
+        )
+
+        usage = GenericLLMClient._provider_usage["cerebras"]
+        assert usage["rate_limited"] == 1
+        assert usage["requests"] == 1
+        # The refusal has to survive the call, or the next turn dials it again.
+        assert GenericLLMClient._provider_available("cerebras") is False
+
+    def test_a_second_provider_is_untouched_by_the_first_ones_429(self, monkeypatch):
+        monkeypatch.setenv("CEREBRAS_API_KEY", "c")
+        monkeypatch.setattr(
+            llm, "_post_chat_completion", lambda *a, **k: _Resp(429, text="slow down")
+        )
+        self._adapter("cerebras")._call_openai_compatible("cerebras", "s", "u", 10, 0.5)
+        assert GenericLLMClient._provider_available("groq") is True
+
+
+class TestOpenrouterAttempt:
+    """``_openrouter_attempt`` is the single metered OpenRouter transport.
+
+    Both OpenRouter call paths funnel through it (C1), so this is where a 429
+    has to become saturation and a bench -- and where a success has to clear a
+    stale inferred guess. The base client's own HTTP path used to record
+    nothing, so a combat 429 could not raise saturation and a combat success
+    could not clear NPC chat's guess.
+    """
+
+    def _adapter(self):
+        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+        a.enabled = True
+        a.provider = "openrouter"
+        a.model = "primary/model"
+        a._openrouter_api_key = "or-key"
+        a._openrouter_site = ""
+        a._openrouter_site_title = ""
+        return a
+
+    def test_a_429_meters_the_provider_and_benches_the_model(self, monkeypatch):
+        monkeypatch.setattr(GenericLLMClient, "_free_models_cache", [])
+        monkeypatch.setattr(
+            llm, "_post_chat_completion", lambda *a, **k: _Resp(429, text="slow down")
+        )
+        a = self._adapter()
+
+        assert a._call_openrouter("sys", "user", 100, 0.5) is None
+
+        usage = GenericLLMClient._provider_usage["openrouter"]
+        assert usage["rate_limited"] == 1
+        assert GenericLLMClient._provider_available("openrouter") is False
+        assert a._is_model_failed("primary/model") is True
+
+    def test_a_429_stops_the_candidate_loop(self, monkeypatch):
+        """C3: the free tier is metered per ACCOUNT, so once one model has been
+        refused every remaining candidate is a guaranteed 429 too. Walking the
+        rest only spends the player's latency budget proving what the first
+        refusal already said."""
+        monkeypatch.setattr(
+            GenericLLMClient, "_free_models_cache", ["second/model", "third/model"]
+        )
+        dialled = []
+
+        def counting_post(url, payload, headers, timeout):
+            dialled.append(payload["model"])
+            return _Resp(429, text="slow down")
+
+        monkeypatch.setattr(llm, "_post_chat_completion", counting_post)
+        assert self._adapter()._call_openrouter("sys", "user", 100, 0.5) is None
+        assert dialled == ["primary/model"]
+
+    def test_a_non_429_failure_does_advance_to_the_next_candidate(self, monkeypatch):
+        """A 404 says the *slug* is dead, not that the account is spent, so the
+        chain must keep walking -- the distinction the 429 short-circuit rests
+        on."""
+        monkeypatch.setattr(GenericLLMClient, "_free_models_cache", ["second/model"])
+        dialled = []
+
+        def post(url, payload, headers, timeout):
+            dialled.append(payload["model"])
+            if payload["model"] == "second/model":
+                return _Resp()
+            return _Resp(404, text="model_not_found")
+
+        monkeypatch.setattr(llm, "_post_chat_completion", post)
+        out = self._adapter()._call_openrouter("sys", "user", 100, 0.5)
+
+        assert out == '{"npc_text": "Fine."}'
+        assert "second/model" in dialled
+        assert GenericLLMClient._provider_available("openrouter") is True
+
+    def test_a_success_clears_a_stale_inferred_saturation(self, monkeypatch):
+        """OpenRouter sends no rate-limit headers on chat completions, so the
+        only saturation ever recorded for it is the 1.0 guessed from a 429. If
+        a later success could not clear it, the provider would read as spent for
+        the life of the process, long past the daily reset."""
+        monkeypatch.setattr(GenericLLMClient, "_free_models_cache", [])
+        GenericLLMClient._record_provider_usage("openrouter", _Resp(429), "rate_limited")
+        assert GenericLLMClient._provider_available("openrouter") is False
+
+        monkeypatch.setattr(llm, "_post_chat_completion", lambda *a, **k: _Resp())
+        a = self._adapter()
+        a.model = "fresh/model"
+        assert a._call_openrouter("sys", "user", 100, 0.5)
+        assert GenericLLMClient._provider_available("openrouter") is True

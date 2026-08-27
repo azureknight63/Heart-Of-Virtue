@@ -140,8 +140,13 @@ def _disable_chat_rate_limit(monkeypatch):
     input handling, not the /open + /respond LLM-call rate limiter added in
     npc_chat.py — leaving the limiter live would trip on fuzz volume alone
     and mask the 400/500 assertions these tests actually care about.
+
+    Both tiers must be nulled: they are independent, so disabling only the
+    identity tier leaves the IP tier (every test request arrives from the same
+    address) free to 429 the run.
     """
     monkeypatch.setattr("src.api.routes.npc_chat._chat_limiter", None)
+    monkeypatch.setattr("src.api.routes.npc_chat._chat_ip_limiter", None)
 
 
 @pytest.mark.parametrize("seed", [1, 7, 1337])

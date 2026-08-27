@@ -27,7 +27,6 @@ export default function ConversationHistoryDialog({
             onClose={onClose}
             variant="default"
             maxWidth="720px"
-            width="min(94vw, 720px)"
             padding={spacing.lg}
             zIndex={2200}
         >

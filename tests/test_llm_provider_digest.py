@@ -9,6 +9,8 @@ much free-tier headroom is left, and how often a model had to be benched for
 returning something unparseable.
 """
 
+from datetime import datetime, timedelta, timezone
+
 import ai.provider_digest as digest
 from ai.llm_client import GenericLLMClient
 
@@ -138,9 +140,10 @@ class TestSendDigest:
     def test_posts_an_embed_to_the_webhook(self, monkeypatch):
         sent = {}
 
-        def fake_post(url, json=None, headers=None, timeout=None):
+        def fake_post(url, json=None, headers=None, timeout=None, **kwargs):
             sent["url"] = url
             sent["json"] = json
+            sent["kwargs"] = kwargs
             return _Resp()
 
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
@@ -151,6 +154,24 @@ class TestSendDigest:
         assert sent["url"] == "https://discord.com/api/webhooks/1/test-hook"
         assert "embeds" in sent["json"]
         assert len(sent["json"]["embeds"]) == 1
+
+    def test_the_post_does_not_follow_redirects(self, monkeypatch):
+        """_webhook_url_is_valid checks ONE host. requests follows redirects by
+        default, so without allow_redirects=False a 302 off a discord.com URL
+        would carry the digest body to an arbitrary host and the allow-list
+        would have bound only the first hop."""
+        sent = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None, **kwargs):
+            sent.update(kwargs)
+            return _Resp()
+
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-hook")
+        monkeypatch.setattr(digest.requests, "post", fake_post)
+        _record("groq", 100, 50)
+
+        assert digest.send_digest() is True
+        assert sent.get("allow_redirects") is False
 
     def test_a_failed_post_does_not_raise(self, monkeypatch):
         def boom(*a, **k):
@@ -212,7 +233,7 @@ class TestSendDigest:
         calls = {"n": 0}
         posted = []
 
-        def flaky_post(url, json=None, headers=None, timeout=None):
+        def flaky_post(url, json=None, headers=None, timeout=None, **kwargs):
             calls["n"] += 1
             if calls["n"] == 1:
                 return _Resp(500)
@@ -237,7 +258,7 @@ class TestSendDigest:
         webhook = "https://discord.com/api/webhooks/1/test-hook"
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", webhook)
 
-        def flaky_post(url, json=None, headers=None, timeout=None):
+        def flaky_post(url, json=None, headers=None, timeout=None, **kwargs):
             _record("groq", 100, 40)  # a call landing mid-POST
             return _Resp(500)
 
@@ -277,10 +298,10 @@ class TestDigestScheduler:
     """The digest is worthless if nothing ever fires it."""
 
     def setup_method(self):
-        digest._scheduler_started = False
+        digest._scheduler_settled = False
 
     def teardown_method(self):
-        digest._scheduler_started = False
+        digest._scheduler_settled = False
 
     def test_no_webhook_means_no_thread(self, monkeypatch):
         started = []
@@ -334,16 +355,100 @@ class TestDigestScheduler:
         monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "not-a-number")
         assert digest._baseline_interval_seconds() == 168 * 3600
 
+    def test_the_usage_window_gets_slack_over_the_cadence(self, monkeypatch):
+        """R7: the auto-roll bound used to be set to EXACTLY the cadence.
+
+        The scheduler measures its cadence by counting SCHEDULER_TICK_SECONDS
+        ticks and ``time.sleep`` overshoots, so real elapsed time always runs
+        ahead of that counter -- the window therefore went stale strictly
+        *before* ``_send_due`` fired, and any inference call landing in that gap
+        rolled the window and zeroed the counters the digest was about to
+        snapshot. The traffic and reliability sections then reported "No calls
+        this window" for a window that had had plenty.
+        """
+        monkeypatch.setenv(
+            "HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h"
+        )
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "24")
+        monkeypatch.setattr(digest, "threading", _FakeThreading([]))
+
+        assert digest.start_digest_scheduler() is True
+
+        cadence = digest._baseline_interval_seconds()
+        assert cadence == 24 * 3600
+        assert GenericLLMClient._usage_window_max_seconds > cadence
+        assert GenericLLMClient._usage_window_max_seconds == (
+            cadence * digest.WINDOW_SLACK_MULTIPLIER
+        )
+
+    def test_a_window_at_the_cadence_is_not_rolled_out_from_under_the_digest(
+        self, monkeypatch
+    ):
+        """The behavioural half of the test above: a call recorded when the
+        window is exactly one cadence old must still be in the snapshot."""
+        monkeypatch.setenv(
+            "HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h"
+        )
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "24")
+        monkeypatch.setattr(digest, "threading", _FakeThreading([]))
+        digest.start_digest_scheduler()
+
+        _record("groq", 100, 50)
+        cadence = digest._baseline_interval_seconds()
+        # Age the window past the cadence, the way tick drift does.
+        GenericLLMClient._usage_window_start = datetime.now(timezone.utc) - timedelta(
+            seconds=cadence + 60
+        )
+        GenericLLMClient._roll_usage_window_if_stale()
+
+        assert GenericLLMClient.provider_saturation()["providers"]["groq"]["requests"] == 1
+
+    def test_an_unconfigured_call_settles_the_question_for_the_process(
+        self, monkeypatch, caplog
+    ):
+        """The no-webhook default is the common case, and it latches too.
+
+        Latching only the thread-started branch left every later call
+        re-taking the lock, re-reading the environment and emitting an INFO
+        line — from the prewarm path, i.e. off the hottest route in the game.
+        """
+        monkeypatch.delenv("HOV_ANALYTICS_WEBHOOK_URL", raising=False)
+        assert digest.start_digest_scheduler() is False
+
+        consulted = []
+        monkeypatch.setattr(
+            digest, "_configured_webhook", lambda action: consulted.append(action)
+        )
+        with caplog.at_level("INFO", logger="ai.provider_digest"):
+            assert digest.start_digest_scheduler() is False
+        assert consulted == []
+        assert caplog.records == []
+
+    def test_a_zero_interval_settles_the_question_too(self, monkeypatch):
+        monkeypatch.setenv(
+            "HOV_ANALYTICS_WEBHOOK_URL", "https://discord.com/api/webhooks/1/test-h"
+        )
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "0")
+        started = []
+        monkeypatch.setattr(digest, "threading", _FakeThreading(started))
+        assert digest.start_digest_scheduler() is False
+
+        # Configuring it properly afterwards changes nothing: this is boot
+        # wiring, read once per process by design.
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "168")
+        assert digest.start_digest_scheduler() is False
+        assert started == []
+
 
 class TestWebhookValidation:
     """The webhook must be an https:// discord.com/discordapp.com URL, or a
     copy-paste mistake could turn this into a beacon for an arbitrary host."""
 
     def setup_method(self):
-        digest._scheduler_started = False
+        digest._scheduler_settled = False
 
     def teardown_method(self):
-        digest._scheduler_started = False
+        digest._scheduler_settled = False
 
     def test_discord_com_is_valid(self):
         assert digest._webhook_url_is_valid(
@@ -395,7 +500,7 @@ class TestWebhookValidation:
 class TestAdaptiveCadence:
     """Weekly normally; hourly while the chain is running out of headroom.
 
-    total_saturation is the *least* saturated reporting provider, so crossing
+    effective_saturation is the *least* saturated reporting provider, so crossing
     the alert threshold means even the best-off provider is that far spent —
     i.e. the whole chain is close to silent, which is exactly when a weekly
     digest arrives too late to act on.
@@ -523,7 +628,7 @@ class TestAlertDigestIsMarked:
     def test_send_digest_marks_the_alert(self, monkeypatch):
         sent = {}
 
-        def fake_post(url, json=None, headers=None, timeout=None):
+        def fake_post(url, json=None, headers=None, timeout=None, **kwargs):
             sent["json"] = json
             return _Resp()
 
@@ -575,6 +680,16 @@ class TestRetryBackoff:
 class TestThresholdIsForgiving:
     """The digest prints a percentage, so someone will write one here."""
 
+    # This class had neither, and reset class state at the END of one test
+    # body instead -- so a failing assert above that line skipped the reset
+    # entirely and handed the recorded usage to whatever ran next on the
+    # worker. The same pair every sibling class here uses.
+    def setup_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def teardown_method(self):
+        GenericLLMClient.reset_class_state()
+
     def test_percentage_form_is_understood(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_THRESHOLD", "75")
         assert digest._alert_threshold() == 0.75
@@ -594,10 +709,15 @@ class TestThresholdIsForgiving:
             _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "10"}),
         )
         assert digest._should_alert() is True
-        GenericLLMClient.reset_class_state()
 
 
 class TestAlertBannerMatchesConfig:
+    def setup_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def teardown_method(self):
+        GenericLLMClient.reset_class_state()
+
     def test_banner_quotes_the_configured_cadence(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "3")
         embed = digest.build_digest(GenericLLMClient.usage_snapshot(), alert=True)

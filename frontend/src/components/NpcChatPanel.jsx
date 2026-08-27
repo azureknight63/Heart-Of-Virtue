@@ -1,15 +1,12 @@
 import { useState, useMemo } from 'react'
-import { useNpcChat, JEAN_ID, npcCast } from '../hooks/useNpcChat'
+import { useNpcChat, npcCast } from '../hooks/useNpcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import GameText from './GameText'
 import ConversationStage from './ConversationStage'
 import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
 import { colors, spacing, fonts } from '../styles/theme'
-
-// Re-exported for callers that referenced these pure helpers directly off
-// NpcChatPanel before the API-state logic moved into useNpcChat.
-export { toneEmotion, qualityEmotion } from '../hooks/useNpcChat'
 
 /**
  * ChatLoadingIndicator — shared loading affordance for the conversation
@@ -21,36 +18,30 @@ export { toneEmotion, qualityEmotion } from '../hooks/useNpcChat'
 function ChatLoadingIndicator({ message, variant = 'block' }) {
   const isInline = variant === 'inline'
   return (
-    <div
+    <GameText
+      as="div"
+      variant="muted"
+      align="center"
+      size={isInline ? 'xs' : 'sm'}
       data-testid="npc-chat-loading"
       role="status"
       aria-live="polite"
-      style={
-        isInline
-          ? {
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: spacing.sm,
-              color: colors.text.muted,
-              fontFamily: fonts.main,
-              fontSize: '12px',
-              padding: spacing.sm,
-              animation: 'pulse 1s infinite',
-            }
-          : {
-              color: colors.text.muted,
-              fontFamily: fonts.main,
-              fontSize: '14px',
-              textAlign: 'center',
-              padding: spacing.xl,
-              animation: 'pulse 1s infinite',
-            }
-      }
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        padding: isInline ? spacing.sm : spacing.xl,
+        // `pulse-opacity` (index.css) rather than a locally-defined `pulse`:
+        // keyframe names are document-global, so redefining `pulse` here
+        // silently re-pointed HeroPanel's and BattlefieldGrid's animations at
+        // this variant for as long as a chat was open.
+        animation: 'pulse-opacity 1s infinite',
+      }}
     >
       <span className="npc-chat-spinner" aria-hidden="true" />
       <span>{message}</span>
-    </div>
+    </GameText>
   )
 }
 
@@ -112,6 +103,17 @@ function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onE
 }
 
 /**
+ * Loquacity bar colour, purely as a function of how much conversation is left.
+ * Zero (including the malformed-payload `max: 0` case, which renders a
+ * zero-width bar anyway) reads as spent, same as any other empty meter.
+ */
+function barColorFor(percentage) {
+  if (percentage > 60) return colors.primary // Green
+  if (percentage > 30) return colors.secondary // Orange
+  return colors.danger // Red
+}
+
+/**
  * NpcChatPanel - A full NPC conversation UI component
  *
  * @param {string} npcId - NPC class name (e.g., 'Mynx', 'Gorran')
@@ -130,7 +132,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     loading,
     error,
     relationship,
-    retryFnRef,
+    retry,
     handleOptionClick,
     handleEndConversation,
     cancelAutoClose,
@@ -149,28 +151,21 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     if (phase === 'ended') onClose()
   }
 
-  // Calculate loquacity bar color
-  const getLoquacityColor = () => {
-    if (!loquacity.max || loquacity.max === 0) return colors.primary
-    const percentage = (loquacity.current / loquacity.max) * 100
-    if (percentage > 60) return colors.primary // Green
-    if (percentage > 30) return colors.secondary // Orange
-    return colors.danger // Red
-  }
+  const loquacityPercentage = loquacity.max > 0 ? (loquacity.current / loquacity.max) * 100 : 0
 
-  const loquacityPercentage =
-    loquacity.max > 0 ? (loquacity.current / loquacity.max) * 100 : 0
-
-  // The stage only ever shows the newest beat (`followTail`), which used to
-  // make Jean's own line vanish the moment the NPC answered it. The recap
-  // strip keeps the turn immediately before the current one on screen so the
-  // reply always has its question next to it; everything older lives in the
-  // history dialog.
+  // The stage only ever shows the newest beat, which used to make Jean's own
+  // line vanish the moment the NPC answered it. The recap strip keeps the turn
+  // immediately before the current one on screen so the reply always has its
+  // question next to it; everything older lives in the history dialog.
   // conversationCast is only null before the first `open()` response lands,
   // so the fallback is memoized rather than rebuilt (a new array) every
   // render once the real cast has already taken over.
   const fallbackCast = useMemo(() => npcCast(npcId, displayName), [npcId, displayName])
   const cast = conversationCast || fallbackCast
+  // ConversationStage is React.memo'd; an object literal here would defeat that
+  // on every render, which is exactly what memoizing `fallbackCast` above was
+  // for. The wrapper object has to be memoized too, not just its contents.
+  const conversationProp = useMemo(() => ({ cast }), [cast])
   const previousSegment =
     conversationSegments.length > 1
       ? conversationSegments[conversationSegments.length - 2]
@@ -199,7 +194,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     stageBody = (
       <ConversationStage
         segments={conversationSegments}
-        conversation={{ cast }}
+        conversation={conversationProp}
         speed={20}
         mode="live"
         layout="wide"
@@ -209,17 +204,15 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     stageBody = <ChatLoadingIndicator message={`Waiting for ${displayName}…`} />
   } else {
     stageBody = (
-      <div
-        style={{
-          color: colors.text.muted,
-          fontFamily: fonts.main,
-          fontSize: '12px',
-          textAlign: 'center',
-          padding: spacing.md,
-        }}
+      <GameText
+        as="div"
+        variant="muted"
+        align="center"
+        size="xs"
+        style={{ padding: spacing.md }}
       >
         Waiting for NPC to speak…
-      </div>
+      </GameText>
     )
   }
 
@@ -229,7 +222,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       onClose={onClose}
       variant="default"
       maxWidth="1100px"
-      width="min(96vw, 1100px)"
       padding={spacing.lg}
       zIndex={2100}
     >
@@ -248,7 +240,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
           style={{
             height: '100%',
             width: `${loquacityPercentage}%`,
-            backgroundColor: getLoquacityColor(),
+            backgroundColor: barColorFor(loquacityPercentage),
             transition: 'all 0.3s ease-out',
           }}
         />
@@ -288,7 +280,8 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         )}
       </div>
 
-      {/* Error State */}
+      {/* Error State. The copy is the hook's own fixed string — the server's
+          error field is provider-SDK exception text and is only logged. */}
       {error && (
         <div
           style={{
@@ -303,13 +296,9 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
           }}
         >
           {error}
-          {retryFnRef.current && (
+          {retry && (
             <div style={{ marginTop: spacing.sm }}>
-              <GameButton
-                variant="secondary"
-                size="small"
-                onClick={() => retryFnRef.current?.()}
-              >
+              <GameButton variant="secondary" size="small" onClick={() => retry()}>
                 Retry
               </GameButton>
             </div>
@@ -327,9 +316,13 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
             marginBottom: spacing.md,
           }}
         >
-          {currentOptions.map((option, idx) => (
+          {currentOptions.map((option) => (
+            // Keyed on the text, not the index: the option list is replaced
+            // wholesale every turn, and an index key makes React reuse the
+            // previous turn's button DOM for a different choice — so keyboard
+            // focus parked on "option 2" silently becomes another answer.
             <GameButton
-              key={idx}
+              key={option.text}
               variant="secondary"
               size="medium"
               onClick={() => handleOptionClick(option)}
@@ -378,38 +371,16 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
       {/* Auto-close on conversation end */}
       {phase === 'ended' && (
-        <div
-          style={{
-            color: colors.text.muted,
-            fontFamily: fonts.main,
-            fontSize: '13px',
-            textAlign: 'center',
-            padding: spacing.md,
-          }}
+        <GameText
+          as="div"
+          variant="muted"
+          align="center"
+          size="sm"
+          style={{ padding: spacing.md }}
         >
           Conversation ended.
-        </div>
+        </GameText>
       )}
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        .npc-chat-spinner {
-          display: inline-block;
-          width: 12px;
-          height: 12px;
-          border: 2px solid ${colors.border.light};
-          border-top-color: ${colors.secondary};
-          border-radius: 50%;
-          animation: npc-chat-spin 0.8s linear infinite;
-          vertical-align: -2px;
-        }
-        @keyframes npc-chat-spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </BaseDialog>
   )
 }

@@ -43,4 +43,25 @@ describe('PortraitImage', () => {
 
         expect(screen.getByRole('img')).toHaveAttribute('alt', 'Gorran (sad)')
     })
+
+    it('defers loading only when asked to', () => {
+        // `lazy` is for off-screen thumbnails (the history transcript mounts
+        // one per turn inside a 65vh scroller). The stage portrait is on screen
+        // from the first frame, so it must NOT carry loading="lazy" — a lazy
+        // stage portrait visibly pops in.
+        const { rerender } = render(<PortraitImage speaker="Mynx" emotion="neutral" lazy />)
+        expect(screen.getByRole('img')).toHaveAttribute('loading', 'lazy')
+
+        rerender(<PortraitImage speaker="Mynx" emotion="neutral" />)
+        // Absent, not `loading="eager"`: eager would defeat the browser's own
+        // priority heuristics for an image that is already in the viewport.
+        expect(screen.getByRole('img')).not.toHaveAttribute('loading')
+    })
+
+    it('decodes off the main thread', () => {
+        // ~270 KB RGBA PNGs are swapped on essentially every conversation turn;
+        // a synchronous decode stalls the typewriter mid-line.
+        render(<PortraitImage speaker="Mynx" emotion="neutral" />)
+        expect(screen.getByRole('img')).toHaveAttribute('decoding', 'async')
+    })
 })

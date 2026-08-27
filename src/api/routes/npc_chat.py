@@ -8,16 +8,9 @@ Provides REST API endpoints for:
 - Retrieving conversation history
 """
 
-import logging
-import os
-
 from flask import Blueprint, request, jsonify, current_app
 from src.api.middleware.auth import get_session_and_player
-from src.api.rate_limiter import RateLimiter
-
-# Module-level: the rate limit is read at import, before an app context (and
-# therefore current_app.logger) exists.
-logger = logging.getLogger(__name__)
+from src.api.rate_limiter import client_ip, limiter_from_env
 
 npc_chat_bp = Blueprint("npc_chat", __name__)
 
@@ -28,76 +21,105 @@ npc_chat_bp = Blueprint("npc_chat", __name__)
 # no legitimate dialogue line is ever clipped.
 _MAX_FIELD_LEN = 4000
 
-# Rate limit for the LLM-backed endpoints (open/respond). Each call can drive
-# up to ~3 provider calls through the fallback chain (see ai/llm_client.py),
-# so an unthrottled client can burn the operator's shared free-tier LLM quota
-# fast. 20/minute per session is well above anything a human clicking through
-# dialogue options can produce, but trivially exceeded by a script.
-# Configurable via NPC_CHAT_RATE_LIMIT_PER_MINUTE; 0 disables the limiter
-# entirely. Per-worker (not shared across Gunicorn workers) — see GitHub issue
-# #284 and `src.api.rate_limiter` for the bounded-store rationale, shared with
+# Rate limit for the LLM-backed endpoints (open/respond). One call composes
+# several provider stages — up to two QC attempts, a state-guard revision, and
+# (on a legacy adapter) a separate Jean-options call — and each stage walks the
+# whole provider fallback chain, so the worst case is closer to a dozen provider
+# calls than to the ~3 this comment used to claim. `_CHAT_DEADLINE_SECONDS` in
+# src/npc/_chat_llm.py bounds how many provider *stages* one call may open (a
+# stage starts only while a full round timeout still fits, so the real ceiling
+# is that budget plus one chain walk); this bounds how many calls a client may
+# start. Both matter: the operator's free-tier LLM quota is account-wide and a
+# script can drain it in seconds.
+#
+# 10/minute per player is well above anything a human clicking through dialogue
+# options can produce (each round trip takes seconds), and trivially exceeded
+# by a script. Configurable via NPC_CHAT_RATE_LIMIT_PER_MINUTE; 0 disables this
+# tier. Per-worker (not shared across Gunicorn workers) — see GitHub issue #284
+# and `src.api.rate_limiter` for the bounded-store rationale, shared with
 # auth.py's login throttle and feedback.py's submission throttle.
-_RATE_LIMIT_DEFAULT_PER_MINUTE = 20
+_RATE_LIMIT_DEFAULT_PER_MINUTE = 10
 
+# Second, independent throttle keyed on IP alone, mirroring auth.py's two-tier
+# pattern. The identity-keyed limiter above is only as strong as the identity:
+# an attacker who can log in repeatedly gets a fresh budget per account. This
+# one caps a single source regardless. Set well above what several players
+# behind one NAT would produce, so it is defense-in-depth against spray rather
+# than a per-player gate. Same per-worker caveat as above.
+_IP_RATE_LIMIT_DEFAULT_PER_MINUTE = 40
 
-def _rate_limit_from_env():
-    """Read the limit, surviving a malformed value.
-
-    This runs at blueprint import, so a bare ``int()`` turned a typo in an env
-    file (``NPC_CHAT_RATE_LIMIT_PER_MINUTE=twenty``) into a ValueError during
-    import and took the whole API down at boot. Falling back to the default
-    keeps the limiter *on*, which is the safe direction to fail: a garbled
-    value must never be read as "unlimited".
-    """
-    raw = os.environ.get("NPC_CHAT_RATE_LIMIT_PER_MINUTE", "")
-    if not raw.strip():
-        return _RATE_LIMIT_DEFAULT_PER_MINUTE
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        logger.warning(
-            "NPC_CHAT_RATE_LIMIT_PER_MINUTE=%r is not an integer; "
-            "falling back to %d/minute.",
-            raw,
-            _RATE_LIMIT_DEFAULT_PER_MINUTE,
-        )
-        return _RATE_LIMIT_DEFAULT_PER_MINUTE
-
-
-_RATE_LIMIT_PER_MINUTE = _rate_limit_from_env()
 _RATE_WINDOW_SECONDS = 60
-_chat_limiter = (
-    RateLimiter(limit=_RATE_LIMIT_PER_MINUTE, window_seconds=_RATE_WINDOW_SECONDS)
-    if _RATE_LIMIT_PER_MINUTE > 0
-    else None
+
+# Both tiers are built at blueprint *import* time by the shared factory, which
+# carries the boot-outage rationale for never letting a garbled env value read
+# as "unlimited". Each tier is disabled independently by setting its own var to
+# 0; a disabled tier simply never trips.
+_chat_limiter = limiter_from_env(
+    "NPC_CHAT_RATE_LIMIT_PER_MINUTE",
+    _RATE_LIMIT_DEFAULT_PER_MINUTE,
+    _RATE_WINDOW_SECONDS,
+)
+_chat_ip_limiter = limiter_from_env(
+    "NPC_CHAT_IP_RATE_LIMIT_PER_MINUTE",
+    _IP_RATE_LIMIT_DEFAULT_PER_MINUTE,
+    _RATE_WINDOW_SECONDS,
 )
 
 
-def _chat_rate_limit_key(session):
-    """Key the chat rate limiter on the session id.
+def _chat_rate_limit_key(session) -> str:
+    """Key the chat rate limiter on a *stable*, unambiguous identity.
 
-    Falls back to the request's remote address if a session with no
-    ``session_id`` somehow reaches here (defensive — ``get_session_and_player``
-    always resolves a real session before this is called).
+    This used to key on ``session.session_id``, which is a fresh uuid4 minted
+    on every login (``session_manager.create_session``), while the login
+    throttle records only *failed* attempts. So the budget could be reset at
+    will: log in, spend the quota, log in again, indefinitely. The database
+    user id survives re-login; username is the fallback for a session that
+    predates it, and the session id (then the client IP) only for a session
+    with no identity at all.
+
+    Each source is prefixed because the four of them are otherwise one flat key
+    space: a user free to choose a ``username`` equal to another principal's
+    ``db_user_id`` (or to a session uuid, or to an IP literal) shares that
+    principal's bucket, which is a denial of service against them and a
+    doubled budget for whoever collides deliberately. The prefix makes the
+    namespaces disjoint, which is what "stable identity" was supposed to mean.
     """
-    session_id = getattr(session, "session_id", None)
-    if session_id:
-        return str(session_id)
-    try:
-        return request.remote_addr or "unknown"
-    except RuntimeError:  # working outside of request context
-        return "unknown"
+    for prefix, value in (
+        ("uid", getattr(session, "db_user_id", None)),
+        ("user", getattr(session, "username", None)),
+        ("sid", getattr(session, "session_id", None)),
+    ):
+        if value:
+            return "{}:{}".format(prefix, value)
+    return "ip:{}".format(client_ip())
 
 
 def _check_chat_rate_limit(session):
-    """Return a ``(response, 429)`` tuple if `session` is over the LLM chat
-    rate limit, else ``None``. A no-op when the limiter is disabled
-    (``NPC_CHAT_RATE_LIMIT_PER_MINUTE=0``).
+    """Return a ``(response, 429)`` tuple if this call is over the LLM chat
+    rate limit, else ``None``.
+
+    Either tier trips it, and each tier is skipped when it is disabled
+    (``NPC_CHAT_RATE_LIMIT_PER_MINUTE=0`` /
+    ``NPC_CHAT_IP_RATE_LIMIT_PER_MINUTE=0``); set both to 0 to turn npc-chat
+    throttling off entirely.
+
+    The identity tier goes through ``check_and_record``, which is one locked
+    operation. Checking both tiers and only then recording either left a window
+    in which N concurrent requests all read "not limited" before any of them
+    wrote, so a burst could spend N times the budget — on the endpoint whose
+    whole purpose is protecting an account-wide LLM quota from exactly that.
+    The IP tier still records separately: two limiters cannot be updated
+    atomically *together*, so the choice is which one gets the atomic path, and
+    it is the one keyed on the identity an attacker cannot rotate for free.
+    Its bucket is therefore charged even when the identity tier already
+    rejected — a caller being throttled has still cost this worker a request.
     """
-    if _chat_limiter is None:
-        return None
-    key = _chat_rate_limit_key(session)
-    if _chat_limiter.check_and_record(key):
+    limited = False
+    if _chat_limiter is not None:
+        limited = _chat_limiter.check_and_record(_chat_rate_limit_key(session))
+    if _chat_ip_limiter is not None:
+        limited = _chat_ip_limiter.check_and_record(client_ip()) or limited
+    if limited:
         return (
             jsonify({"success": False, "error": "Slow down — too many messages."}),
             429,

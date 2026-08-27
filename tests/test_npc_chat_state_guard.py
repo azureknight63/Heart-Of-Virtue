@@ -18,12 +18,13 @@ Design decisions under test (user-approved, 2026-08-21):
   hedge is spliced over the offending sentence — the turn still ships.
 """
 
-import re
+import ast
+from pathlib import Path
 
 import pytest
 
 from src.npc import _chat_guard as guard
-from src.npc._chat_llm import ConversationalNPCMixin
+from src.npc._chat_llm import ConversationalNPCMixin, Turn
 
 
 def _npc(char_config=None, personality=None, growth=None, moves=None, world=None):
@@ -308,14 +309,14 @@ class TestGuardTurn:
         text, flavor, options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "The river runs high this season.",
-            "She watches the far bank.",
-            _opts(
-                "How long have you worked this crossing?",
-                "Why stay?",
-                "Tell me about the water.",
-            ),
-        )
+            Turn("The river runs high this season.",
+                 "She watches the far bank.",
+                 _opts(
+                     "How long have you worked this crossing?",
+                     "Why stay?",
+                     "Tell me about the water.",
+                 )),
+        ).turn
         assert adapter.calls == []
         assert text == "The river runs high this season."
         assert flavor == "She watches the far bank."
@@ -336,14 +337,14 @@ class TestGuardTurn:
         text, _flavor, options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts(
-                "Will you come with me?",
-                "Why stay here?",
-                "Tell me about the river.",
-            ),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts(
+                     "Will you come with me?",
+                     "Why stay here?",
+                     "Tell me about the river.",
+                 )),
+        ).turn
         assert len(adapter.calls) == 1
         assert text == "The blade on that rack was my father's work."
         assert all(guard.scan_option_text(o["text"]) == [] for o in options)
@@ -354,9 +355,9 @@ class TestGuardTurn:
         npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Why stay?", "Go on.", "And then?"),
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Why stay?", "Go on.", "And then?")),
         )
         guidance = adapter.calls[0]["guidance"]
         assert guard.CATEGORY_TRANSACTION in guidance
@@ -369,10 +370,10 @@ class TestGuardTurn:
         text, _flavor, _options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert guard.scan_npc_text(text) == []
         assert "knife" not in text
         # ONE escalation even when the revision comes back still dirty.
@@ -384,10 +385,10 @@ class TestGuardTurn:
         text, _flavor, _options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert guard.scan_npc_text(text) == []
         # ONE escalation even when the reviser raises.
         assert len(adapter.calls) == 1
@@ -401,10 +402,10 @@ class TestGuardTurn:
         text, _flavor, _options = npc._guard_turn(
             Legacy(),
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert guard.scan_npc_text(text) == []
 
     def test_no_adapter_at_all_still_guards(self):
@@ -412,10 +413,10 @@ class TestGuardTurn:
         text, _flavor, _options = npc._guard_turn(
             None,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert guard.scan_npc_text(text) == []
 
     def test_soliciting_option_is_dropped_and_topped_up(self):
@@ -426,8 +427,8 @@ class TestGuardTurn:
             "Why stay somewhere this hard?",
         )
         _text, _flavor, out = npc._guard_turn(
-            None, "SYSTEM", "The river runs high.", "", options
-        )
+            None, "SYSTEM", Turn("The river runs high.", "", options)
+        ).turn
         assert len(out) == 3
         assert all(guard.scan_option_text(o["text"]) == [] for o in out)
         assert "come with me" not in " ".join(o["text"].lower() for o in out)
@@ -437,10 +438,10 @@ class TestGuardTurn:
         _text, flavor, _options = npc._guard_turn(
             None,
             "SYSTEM",
-            "The river runs high.",
-            "She presses a coin into your palm.",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("The river runs high.",
+                 "She presses a coin into your palm.",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert flavor == ""
 
     def test_whitelisted_ally_line_does_not_escalate(self):
@@ -452,10 +453,10 @@ class TestGuardTurn:
         text, _flavor, _options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "I could teach you Rivercut, though it took me years to learn.",
-            "",
-            _opts("Why that grip?", "Go on.", "And then?"),
-        )
+            Turn("I could teach you Rivercut, though it took me years to learn.",
+                 "",
+                 _opts("Why that grip?", "Go on.", "And then?")),
+        ).turn
         assert adapter.calls == []
         assert "Rivercut" in text
 
@@ -545,17 +546,20 @@ class TestAdapterReviseTurn:
 class _WiredAdapter:
     enabled = True
 
-    def __init__(self, npc_text, options, revision=None):
+    def __init__(self, npc_text, options, revision=None, reputation_delta=0,
+                 npc_flavor=""):
         self.npc_text = npc_text
         self.options = options
         self.revision = revision
+        self.reputation_delta = reputation_delta
+        self.npc_flavor = npc_flavor
 
     def generate_turn(self, system, history, is_opening=False, jean_text=None):
         return {
             "npc_text": self.npc_text,
-            "npc_flavor": "",
+            "npc_flavor": self.npc_flavor,
             "conversation_quality": "neutral",
-            "reputation_delta": 0,
+            "reputation_delta": self.reputation_delta,
             "loquacity_delta": -5,
             "jean_options": self.options,
         }
@@ -899,10 +903,10 @@ class TestRevisionGoesThroughTheNormalQC:
         text, _flavor, _options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert "Xanthus" not in text
         assert guard.scan_npc_text(text) == []
 
@@ -921,10 +925,10 @@ class TestRevisionGoesThroughTheNormalQC:
         _text, _flavor, options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Will you come with me?", "Go on.", "And then?"),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Will you come with me?", "Go on.", "And then?")),
+        ).turn
         assert len(options) == 3
         assert not any("[Option" in o["text"] for o in options)
 
@@ -939,10 +943,10 @@ class TestRevisionGoesThroughTheNormalQC:
         _text, _flavor, options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "The river runs high.",
-            "",
-            _opts("Will you come with me?", "Go on.", "And then?"),
-        )
+            Turn("The river runs high.",
+                 "",
+                 _opts("Will you come with me?", "Go on.", "And then?")),
+        ).turn
         assert len(options) == 3
         assert all(len(o["text"]) <= 160 for o in options)
 
@@ -956,10 +960,10 @@ class TestFlavorOnlyFlagDoesNotEscalate:
         text, flavor, options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "The river runs high this season.",
-            "She presses a coin into your palm.",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("The river runs high this season.",
+                 "She presses a coin into your palm.",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert adapter.calls == []
         assert flavor == ""
         assert text == "The river runs high this season."
@@ -971,9 +975,9 @@ class TestFlavorOnlyFlagDoesNotEscalate:
         npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "She presses a coin into your palm.",
-            _opts("Why stay?", "Go on.", "And then?"),
+            Turn("Here, take this blade.",
+                 "She presses a coin into your palm.",
+                 _opts("Why stay?", "Go on.", "And then?")),
         )
         assert len(adapter.calls) == 1
 
@@ -1031,10 +1035,10 @@ class TestReviserReturnHardening:
         text, _flavor, options = npc._guard_turn(
             adapter,
             "SYSTEM",
-            "Here, take this blade.",
-            "",
-            _opts("Why stay?", "Go on.", "And then?"),
-        )
+            Turn("Here, take this blade.",
+                 "",
+                 _opts("Why stay?", "Go on.", "And then?")),
+        ).turn
         assert guard.scan_npc_text(text) == []
         assert len(options) == 3
 
@@ -1059,9 +1063,221 @@ class TestGuardedOptionsSalvageOriginals:
             "Who else works this bank with you?",
         )
         _text, _flavor, rebuilt = npc._guard_turn(
-            adapter, "SYSTEM", "Here, take this blade.", "", options
-        )
+            adapter, "SYSTEM", Turn("Here, take this blade.", "", options)
+        ).turn
         texts = [o["text"] for o in rebuilt]
         assert len(rebuilt) == 3
         assert "Tell me about the river's moods." in texts
         assert "Who else works this bank with you?" in texts
+
+
+# ---------------------------------------------------------------------------
+# The scan scope table — the fail-open shape, one table further along
+# ---------------------------------------------------------------------------
+
+
+class TestScanScopeIsDerivedNotHandSpelled:
+    """``scan_npc_text`` and ``scan_option_text`` used to hard-spell their own
+    category tuples, which put them OUTSIDE the import-time integrity check.
+    A category could be given a row in all four other tables — prevented in the
+    prompt, hedged, and explained to the reviser — and still never be scanned
+    for: the identical fail-open shape as the CATEGORY_SOLICIT bug this module
+    already closed.
+    """
+
+    def test_both_scans_come_from_the_one_table(self):
+        assert set(guard._NPC_CATEGORIES) == {
+            c for c, scans in guard._SCAN_SCOPE.items() if guard.SCAN_NPC in scans
+        }
+        assert set(guard._OPTION_CATEGORIES) == {
+            c for c, scans in guard._SCAN_SCOPE.items() if guard.SCAN_OPTION in scans
+        }
+
+    def test_every_category_is_scanned_by_at_least_one_scan(self):
+        assert set(guard._PATTERNS) == set(guard._NPC_CATEGORIES) | set(
+            guard._OPTION_CATEGORIES
+        )
+
+    def test_the_category_a_scan_exists_for_leads_it(self):
+        """The first flag decides how the turn is described to the reviser."""
+        assert guard._NPC_CATEGORIES[0] == guard.CATEGORY_TRANSACTION
+        assert guard._OPTION_CATEGORIES[0] == guard.CATEGORY_SOLICIT
+
+    def test_the_scan_order_is_unchanged_by_the_derivation(self):
+        assert guard._NPC_CATEGORIES == (
+            guard.CATEGORY_TRANSACTION,
+            guard.CATEGORY_STATE_CLAIM,
+            guard.CATEGORY_COMMITMENT,
+        )
+        assert guard._OPTION_CATEGORIES == (
+            guard.CATEGORY_SOLICIT,
+            guard.CATEGORY_STATE_CLAIM,
+            guard.CATEGORY_COMMITMENT,
+        )
+
+    def test_a_category_prevented_but_never_scanned_fails_at_import(
+        self, monkeypatch
+    ):
+        """Add a fifth category to every table the old assert covered, and
+        forget the scan scope: that used to import cleanly."""
+        monkeypatch.setattr(
+            guard, "_PATTERNS", dict(guard._PATTERNS, bribery=())
+        )
+        for table in ("_HEDGES", "_GUIDANCE"):
+            monkeypatch.setattr(
+                guard, table, dict(getattr(guard, table), bribery="...")
+            )
+        monkeypatch.setattr(
+            guard, "PROMPT_RULES", dict(guard.PROMPT_RULES, bribery="never bribe")
+        )
+        with pytest.raises(RuntimeError, match="_SCAN_SCOPE"):
+            guard._check_tables()
+
+    def test_an_empty_scan_scope_row_is_rejected(self, monkeypatch):
+        monkeypatch.setattr(
+            guard,
+            "_SCAN_SCOPE",
+            dict(guard._SCAN_SCOPE, **{guard.CATEGORY_SOLICIT: frozenset()}),
+        )
+        with pytest.raises(RuntimeError, match="non-empty subset"):
+            guard._check_tables()
+
+    def test_a_mistyped_subcategory_is_rejected(self, monkeypatch):
+        monkeypatch.setattr(
+            guard, "_EXCUSABLE_SUBCATEGORIES", frozenset({"teachng"})
+        )
+        with pytest.raises(RuntimeError, match="no pattern emits"):
+            guard._check_tables()
+
+    def test_the_integrity_guards_are_not_assert_statements(self):
+        """``python -O`` strips ``assert``, which would restore exactly the
+        silent fail-open these guards exist to prevent — in the one
+        configuration nobody runs the test suite under."""
+        tree = ast.parse(Path(guard.__file__).read_text(encoding="utf-8"))
+        offenders = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Assert)]
+        assert offenders == [], (
+            "assert statements at lines {} vanish under python -O".format(offenders)
+        )
+
+
+# ---------------------------------------------------------------------------
+# The two structured fields that DO reach the engine
+# ---------------------------------------------------------------------------
+
+
+class TestReputationIsNotAwardedForAGuardedTurn:
+    """``reputation_delta`` is not prose: ``_apply_reputation`` writes it to
+    ``player.reputation``, which ``ShopSerializer`` turns into real charged
+    prices. A turn whose words had to be hedged or rewritten does not also get
+    to move Jean's standing on the strength of the same model response.
+    """
+
+    def test_a_tripped_turn_awards_nothing(self):
+        adapter = _WiredAdapter(
+            "Here, take this blade.",
+            _opts("Why stay?", "Go on.", "Tell me about the river."),
+            reputation_delta=5,
+        )
+        player = _Player()
+        result = _wired_npc(adapter).chat_respond(player, "Nice blade.", "direct")
+        assert result["reputation_delta"] == 0
+        assert result["reputation"] == 0
+        assert player.reputation["Mara"] == 0
+
+    def test_a_tripped_turn_awards_nothing_even_when_the_revision_is_clean(self):
+        """Accepting the reviser's line does not un-trip the tripwire."""
+        adapter = _WiredAdapter(
+            "Here, take this blade.",
+            _opts("Why stay?", "Go on.", "Tell me about the river."),
+            revision={"npc_text": "The rack by the door holds my father's work."},
+            reputation_delta=5,
+        )
+        player = _Player()
+        result = _wired_npc(adapter).chat_respond(player, "Nice blade.", "direct")
+        assert result["npc_response"] == "The rack by the door holds my father's work."
+        assert result["reputation_delta"] == 0
+        assert player.reputation["Mara"] == 0
+
+    def test_a_clean_turn_still_awards_its_delta(self):
+        adapter = _WiredAdapter(
+            "River's high. It usually is, this time of year.",
+            _opts("How long have you worked it?", "Why stay?", "Tell me about it."),
+            reputation_delta=3,
+        )
+        player = _Player()
+        result = _wired_npc(adapter).chat_respond(player, "Rough water.", "direct")
+        assert result["reputation_delta"] == 3
+        assert player.reputation["Mara"] == 3
+
+    def test_a_flavor_only_trip_also_forfeits_the_delta(self):
+        """Flagged flavor never escalates, but it is still the model implying a
+        transfer, so it is still not a turn to be rewarded for."""
+        adapter = _WiredAdapter(
+            "River's high. It usually is, this time of year.",
+            _opts("How long have you worked it?", "Why stay?", "Tell me about it."),
+            reputation_delta=4,
+            npc_flavor="She presses a coin into your palm.",
+        )
+        player = _Player()
+        result = _wired_npc(adapter).chat_respond(player, "Rough water.", "direct")
+        assert result["npc_flavor"] == ""
+        assert result["reputation_delta"] == 0
+        assert player.reputation["Mara"] == 0
+
+    def test_the_guard_reports_whether_it_tripped(self):
+        npc = _npc()
+        clean = npc._guard_turn(
+            None,
+            "SYSTEM",
+            Turn("The river runs high.", "", _opts("Why stay?", "Go on.", "And?")),
+        )
+        assert clean.tripped is False
+        dirty = npc._guard_turn(
+            None,
+            "SYSTEM",
+            Turn("Here, take this blade.", "", _opts("Why stay?", "Go on.", "And?")),
+        )
+        assert dirty.tripped is True
+
+
+# ---------------------------------------------------------------------------
+# The module docstring's claim about what reaches the engine
+# ---------------------------------------------------------------------------
+
+
+class TestAllowedTopicsMemo:
+    """The topic set is memoised because it runs on every turn, but an ally
+    that learns a technique APPENDS to ``known_moves`` in place, so keying the
+    cache on the list object would answer with the stale set and the guard
+    would start rewriting the very talk the whitelist exists to permit."""
+
+    def test_a_newly_learned_move_joins_the_whitelist(self):
+        npc = _npc(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
+        assert "rivercut" in npc._guard_allowed_topics()
+        assert "stonebreak" not in npc._guard_allowed_topics()
+
+        npc.known_moves.append(_Move("Stonebreak", "an overhead blow"))
+        assert "stonebreak" in npc._guard_allowed_topics()
+
+    def test_the_set_is_reused_when_nothing_changed(self):
+        npc = _npc(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
+        assert npc._guard_allowed_topics() is npc._guard_allowed_topics()
+
+    def test_a_newly_learned_move_is_not_rewritten_by_the_guard(self):
+        npc = _npc(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
+        line = "I could teach you Stonebreak, though it took me years."
+        assert npc._guard_turn(None, "SYSTEM", Turn(line)).tripped is True
+
+        npc.known_moves.append(_Move("Stonebreak", "an overhead blow"))
+        guarded = npc._guard_turn(None, "SYSTEM", Turn(line))
+        assert guarded.tripped is False
+        assert guarded.turn.npc_text == line
+
+
+def test_the_module_docstring_names_the_two_engine_hooks():
+    """It used to say "No hook exists between anything said in a chat and the
+    engine", which is true of the prose and false of the structured fields
+    shipped in the same response."""
+    doc = guard.__doc__ or ""
+    assert "reputation_delta" in doc
+    assert "loquacity_delta" in doc

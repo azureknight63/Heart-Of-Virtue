@@ -283,7 +283,12 @@ describe('BaseDialog', () => {
         </BaseDialog>
       )
 
-      const [outer, inner] = Array.from(container.querySelectorAll('[aria-modal="true"]'))
+      // Queried on `[role="dialog"]`, not `[aria-modal="true"]`: only the
+      // INNERMOST dialog is modal now, so the outer one reports
+      // aria-modal="false" by design and would drop out of that selector.
+      const [outer, inner] = Array.from(container.querySelectorAll('[role="dialog"]'))
+      expect(outer.getAttribute('aria-modal')).toBe('false')
+      expect(inner.getAttribute('aria-modal')).toBe('true')
       const outerLabel = outer.getAttribute('aria-labelledby')
       const innerLabel = inner.getAttribute('aria-labelledby')
       expect(outerLabel).not.toBe(innerLabel)
@@ -327,6 +332,58 @@ describe('BaseDialog', () => {
       fireEvent.keyDown(document, { key: 'Escape' })
       expect(innerClose).toHaveBeenCalledTimes(1)
       expect(outerClose).not.toHaveBeenCalled()
+    })
+
+    it('closes only the most-recently-mounted SIBLING dialog on Escape', () => {
+      // The `topLevelStack` path, which nesting never reaches: two dialogs
+      // rendered as Fragment siblings are unrelated by DialogParentContext, so
+      // ordering them relies entirely on the module-level stack. Component
+      // comment names this exact pair (InteractPanel + the NpcChatPanel it
+      // opens alongside itself) as why the stack exists.
+      //
+      // With only one top-level dialog mounted, `topLevelStack[length - 1]` and
+      // `topLevelStack[0]` are indistinguishable — this is the only test that
+      // can tell them apart, or notice a missing `splice` on unmount.
+      const firstClose = vi.fn()
+      const secondClose = vi.fn()
+      const { rerender } = render(
+        <>
+          <BaseDialog title="First" onClose={firstClose}>
+            <p>Behind</p>
+          </BaseDialog>
+          <BaseDialog title="Second" onClose={secondClose}>
+            <p>In front</p>
+          </BaseDialog>
+        </>
+      )
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(secondClose).toHaveBeenCalledTimes(1)
+      expect(firstClose).not.toHaveBeenCalled()
+
+      // ...and the one behind is background content while it is covered.
+      const [first, second] = Array.from(document.querySelectorAll('[role="dialog"]'))
+      expect(first.getAttribute('aria-modal')).toBe('false')
+      expect(first.getAttribute('aria-hidden')).toBe('true')
+      expect(second.getAttribute('aria-modal')).toBe('true')
+      expect(second.hasAttribute('aria-hidden')).toBe(false)
+
+      // Unmounting the top sibling must pop it off the stack, handing Escape
+      // (and modality) back to the one underneath.
+      rerender(
+        <>
+          <BaseDialog title="First" onClose={firstClose}>
+            <p>Behind</p>
+          </BaseDialog>
+        </>
+      )
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(firstClose).toHaveBeenCalledTimes(1)
+      expect(secondClose).toHaveBeenCalledTimes(1)
+      const [remaining] = Array.from(document.querySelectorAll('[role="dialog"]'))
+      expect(remaining.getAttribute('aria-modal')).toBe('true')
+      expect(remaining.hasAttribute('aria-hidden')).toBe(false)
     })
 
     it('closes the outer dialog on Escape once the inner one has unmounted', () => {

@@ -701,7 +701,15 @@ class TestCombatantSerializer:
         )["distance"] == 10
 
     def test_serialize_status_effects(self, live_player):
-        """Real ``State`` objects are serialized with their name and beats left."""
+        """Real ``State`` objects are serialized with their name and beats left.
+
+        ``description`` is the player-facing prose the status panel shows;
+        ``tactical_mechanics`` is the engine's terse statement of the modifiers
+        and tick interval it actually applies, which the combat LLM prompt
+        reads (see ai/combat_strategist.py). Both are taken off the state
+        rather than restated here, because restating them is precisely the
+        drift tests/test_states_tactical_mechanics.py exists to prevent.
+        """
         from src.states import Poisoned
 
         poison = Poisoned(live_player)
@@ -715,10 +723,14 @@ class TestCombatantSerializer:
                 "name": "Poisoned",
                 "type": "ailment",
                 "description": poison.description,
+                "tactical_mechanics": poison.tactical_mechanics,
                 "severity": "severe",
                 "beats_left": 5,
             }
         ]
+        # Not vacuous: the state really does declare one, and it really does
+        # quote the interval effect() runs at.
+        assert "every 5 beats" in poison.tactical_mechanics
 
     def test_serialize_equipment(self, live_player):
         """Equipment mirrors the real equipped weapon, not a placeholder."""

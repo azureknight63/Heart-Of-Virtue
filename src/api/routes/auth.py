@@ -4,7 +4,7 @@ import logging
 
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import resolve_session
-from src.api.rate_limiter import RateLimiter
+from src.api.rate_limiter import client_ip, limiter_from_env
 from src.api.services.auth_service import auth_service
 from functools import wraps
 import asyncio
@@ -16,12 +16,21 @@ logger = logging.getLogger(__name__)
 # Simple in-memory login throttle: 10 failed attempts per username+IP per 15
 # minutes. Per-worker (not shared across Gunicorn workers) — see GitHub issue
 # #284 and `src.api.rate_limiter` for the bounded-store rationale, shared with
-# feedback.py's submission throttle. Only failed (invalid-credential) attempts
-# count, so retries after a typo or a flaky DB call don't lock out a
-# legitimate player.
+# feedback.py's submission throttle and npc_chat.py's chat throttles. Only
+# failed (invalid-credential) attempts count, so retries after a typo or a
+# flaky DB call don't lock out a legitimate player.
+# The threshold is tunable via LOGIN_RATE_LIMIT_PER_15_MIN, but this throttle
+# cannot be switched off: `allow_disable=False` makes a configured 0 warn and
+# fall back to the default, exactly like a garbled value (see
+# `limiter_from_env`). Both login limiters below are therefore never None.
 _LOGIN_RATE_LIMIT = 10
 _LOGIN_RATE_WINDOW = 900  # 15 minutes
-_login_limiter = RateLimiter(limit=_LOGIN_RATE_LIMIT, window_seconds=_LOGIN_RATE_WINDOW)
+_login_limiter = limiter_from_env(
+    "LOGIN_RATE_LIMIT_PER_15_MIN",
+    _LOGIN_RATE_LIMIT,
+    _LOGIN_RATE_WINDOW,
+    allow_disable=False,
+)
 
 # Second, independent throttle keyed on IP alone. The username+IP limiter above
 # resets its budget every time the username changes, so a single IP can spray
@@ -31,51 +40,72 @@ _login_limiter = RateLimiter(limit=_LOGIN_RATE_LIMIT, window_seconds=_LOGIN_RATE
 # fail in the window, so it's defense-in-depth against spray, not a per-account
 # gate. Same per-worker caveat as above (issue #284): the effective limit is
 # _IP_RATE_LIMIT * worker_count, so treat it as raising the cost of spray, not
-# an airtight cap. It keys on request.remote_addr, which is the direct client
-# IP by default (no proxy/load balancer in this deployment) and automatically
-# becomes the real client IP if the opt-in ProxyFix is ever configured (see
-# _apply_proxy_fix / TRUSTED_PROXY_COUNT and tests/test_proxy_fix.py).
+# an airtight cap. Tunable via LOGIN_IP_RATE_LIMIT_PER_15_MIN and, like the
+# tier above, not disableable by configuration. See
+# `src.api.rate_limiter.client_ip` for how a client is keyed.
 _IP_RATE_LIMIT = 60
 _IP_RATE_WINDOW = 900  # 15 minutes
-_ip_limiter = RateLimiter(limit=_IP_RATE_LIMIT, window_seconds=_IP_RATE_WINDOW)
+_ip_limiter = limiter_from_env(
+    "LOGIN_IP_RATE_LIMIT_PER_15_MIN",
+    _IP_RATE_LIMIT,
+    _IP_RATE_WINDOW,
+    allow_disable=False,
+)
 
 
-def _client_ip() -> str:
-    """The client's IP, collapsed to a /64 prefix for IPv6.
+# Third tier, on the *other* credential-path endpoint. `/auth/register` had no
+# throttle at all, which mattered twice over: account creation is unbounded
+# work against the DB (bcrypt per attempt), and a fresh account is a fresh
+# session — which is how feedback.py's per-session cap on real GitHub issue
+# creation used to be walked past. Keyed on the source alone, since there is no
+# account to key on yet. The ceiling is deliberately far above any human
+# (nobody signs up thirty times an hour) and far below an account farm; unlike
+# the two login tiers this one *is* disableable, because its absence is spam
+# and cost rather than an open door to credential guessing.
+_REGISTER_RATE_LIMIT = 30
+_REGISTER_RATE_WINDOW = 3600  # 1 hour
+_register_limiter = limiter_from_env(
+    "REGISTER_RATE_LIMIT_PER_HOUR",
+    _REGISTER_RATE_LIMIT,
+    _REGISTER_RATE_WINDOW,
+)
 
-    Full IPv6 addresses (/128) are cheap for an attacker to rotate within their
-    allocation, which would defeat an IP-keyed throttle; a typical end-site is a
-    /64, so keying on that prefix throttles the whole allocation. IPv4 and
-    unparseable values are used verbatim. Returns ``"unknown"`` when called
-    outside a request context (e.g. direct helper calls in tests).
+
+def _is_register_rate_limited() -> bool:
+    """True if this source has spent its account-creation budget.
+
+    Counts the call unless already limited. ``None`` (the documented
+    ``REGISTER_RATE_LIMIT_PER_HOUR=0`` disable) never limits.
     """
-    try:
-        ip = request.remote_addr or "unknown"
-    except RuntimeError:  # working outside of request context
-        return "unknown"
-    if ":" in ip:  # IPv6
-        try:
-            import ipaddress
-
-            network = ipaddress.ip_network(f"{ip}/64", strict=False)
-            return str(network.network_address)
-        except ValueError:
-            return ip
-    return ip
+    if _register_limiter is None:
+        return False
+    return _register_limiter.check_and_record(client_ip())
 
 
 def _login_rate_limit_key(username: str) -> str:
-    return f"{(username or '').strip().lower()}:{request.remote_addr or 'unknown'}"
+    """Bucket a login attempt by account *and* source.
+
+    Uses the same ``client_ip()`` collapsing as the IP-only tier: keying this
+    half on the raw ``remote_addr`` would let an IPv6 attacker mint a fresh
+    username+IP budget per address in their /64, which is precisely what the
+    collapsing exists to prevent.
+    """
+    return f"{(username or '').strip().lower()}:{client_ip()}"
+
+
+# Neither limiter is ever None (`allow_disable=False` above), so the helpers
+# below dereference them directly. A None guard here would be dead code that
+# reads as though switching a login throttle off were a supported state.
 
 
 def _is_login_rate_limited(key: str) -> bool:
     """True if either the username+IP or the IP-only throttle is tripped."""
-    return _login_limiter.is_limited(key) or _ip_limiter.is_limited(_client_ip())
+    return _login_limiter.is_limited(key) or _ip_limiter.is_limited(client_ip())
 
 
 def _record_failed_login(key: str) -> None:
     _login_limiter.record(key)
-    _ip_limiter.record(_client_ip())
+    _ip_limiter.record(client_ip())
 
 
 def _clear_login_attempts(key: str) -> None:
@@ -198,6 +228,21 @@ async def register():
         username = data["username"].strip()
         password = data["password"]
         email = data["email"].strip()
+
+        # Throttled after shape validation and before create_user: a malformed
+        # payload costs nothing and should not spend anyone's budget, while a
+        # well-formed one is about to hash a password and write a row.
+        if _is_register_rate_limited():
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "rate_limited",
+                        "message": "Too many registration attempts. Please try again later.",
+                    }
+                ),
+                429,
+            )
 
         # Registration logic using auth_service
         try:

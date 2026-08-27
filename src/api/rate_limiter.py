@@ -1,13 +1,21 @@
 """Shared in-memory sliding-window rate limiter.
 
-Used by ``src/api/routes/auth.py`` (login throttle) and
-``src/api/routes/feedback.py`` (feedback submission throttle).
+Used by ``src/api/routes/auth.py`` (login username+IP, login per-IP, and
+registration per-IP throttles), ``src/api/routes/feedback.py`` (feedback
+submission throttle) and ``src/api/routes/npc_chat.py`` (per-identity + per-IP
+LLM chat throttles).
+
+Everything a throttled route needs lives here, so no call site has to
+re-derive it: the store itself (:class:`RateLimiter`), the rule for turning a
+request into a client identity (:func:`client_ip`), and the rule for reading a
+limit out of the environment without taking the process down
+(:func:`limiter_from_env`).
 
 **Known limitation (tracked in GitHub issue #284):** this store is
 per-process. Under multiple Gunicorn workers, the *effective* limit for a
 given key is ``limit * worker_count`` because each worker keeps its own
 independent store. Moving to a shared store (e.g. Redis) is a larger
-infrastructure decision than either call site warrants today, and this
+infrastructure decision than any of these call sites warrants today, and this
 project does not currently depend on Redis or flask-limiter — see CLAUDE.md's
 dependency policy. This module only fixes the *unbounded growth* half of the
 issue: a spray attack across many distinct keys (usernames/IPs, session ids)
@@ -23,9 +31,33 @@ Bounding strategy:
       between sweeps or under a sustained flood of distinct keys.
 """
 
+import ipaddress
+import logging
+import os
 import threading
 import time
 from collections import OrderedDict
+from typing import Optional
+
+from flask import request
+
+from src.env_bootstrap import load_project_env
+
+logger = logging.getLogger(__name__)
+
+# Every limiter in this API is built by :func:`limiter_from_env` at *blueprint
+# import* time — ``auth.py``, ``feedback.py``, ``npc_chat.py`` all call it in
+# their module bodies, long before ``create_app()`` runs. So ``.env`` has to be
+# in ``os.environ`` by then, and until this line it was only by accident:
+# ``auth.py`` imports ``auth_service``, which happens to pull in
+# ``src/api/db.py``, which loads it. Reordering an unrelated import would have
+# silently pinned every throttle to its default, with nothing logged.
+#
+# Loading it here — in the module that owns the read — makes the order
+# irrelevant, because this body necessarily runs before any call to the
+# function below. ``load_project_env`` is idempotent and defaults to
+# ``override=False``, so it never overwrites a deliberately-set variable.
+load_project_env()
 
 # How many writes to allow between full sweeps of expired keys. Keeps the
 # amortized cost of sweeping low while still reclaiming idle keys promptly.
@@ -35,6 +67,79 @@ _SWEEP_INTERVAL = 200
 # legitimate traffic; it exists purely as a backstop against unbounded growth,
 # not as a tuned production limit.
 _DEFAULT_MAX_KEYS = 5000
+
+# Prefix length an IPv6 address is collapsed to before it is used as a limiter
+# key. A typical end-site allocation is a /64, so this throttles the whole
+# allocation rather than a single address out of it.
+_IPV6_KEY_PREFIX = 64
+
+# The /64 collapse as an integer mask. Masking ``int(addr)`` rather than
+# round-tripping through ``ip_network(f"{ip}/64")`` also tolerates a scoped
+# address (``fe80::1%eth0``), which ``ip_network`` rejects outright.
+_IPV6_KEY_MASK = ((1 << _IPV6_KEY_PREFIX) - 1) << (128 - _IPV6_KEY_PREFIX)
+
+
+def _collapse_ip(ip: str) -> str:
+    """Turn one address string into the limiter key that stands for it.
+
+    The order of the branches below is load-bearing, and getting it wrong is
+    an availability bug rather than a security one. ``::ffff:203.0.113.9``
+    (an IPv4 client on a dual-stack ``[::]`` listener — the default on many
+    PaaS hosts) and ``::1`` both have all-zero top 64 bits, so collapsing
+    *before* unwrapping them mapped **every** such client onto the single key
+    ``"::"``: ten failed logins from anywhere would lock one account out for
+    everyone, and sixty would lock out the login endpoint entirely.
+
+    So: IPv4 and IPv4-mapped IPv6 keep their full address, loopback keeps its
+    own identity, and only a genuine routable IPv6 address is collapsed —
+    which is the only case the collapse was ever aimed at, since /128s are
+    cheap for an attacker to rotate within one allocation but IPv4 addresses
+    are not.
+
+    Unparseable values (including ``"unknown"``) are used verbatim: a coarse
+    key beats raising on the request path.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+
+    if addr.version == 4:
+        return str(addr)
+
+    mapped = addr.ipv4_mapped
+    if mapped is not None:
+        return str(mapped)
+
+    if addr.is_loopback:  # ::1 — one host, not an allocation
+        return str(addr)
+
+    return str(ipaddress.IPv6Address(int(addr) & _IPV6_KEY_MASK))
+
+
+def client_ip() -> str:
+    """The client's IP, collapsed to a /64 prefix for routable IPv6.
+
+    See :func:`_collapse_ip` for the exact rule. Returns ``"unknown"`` when
+    called outside a request context (e.g. direct helper calls in tests).
+
+    This is the single client-identity rule for every IP-keyed limiter in the
+    API. It lives here rather than in a blueprint because two blueprints
+    (``auth`` and ``npc_chat``) each grew their own copy, and a client-identity
+    rule that disagrees between endpoints is a limiter one of them can be
+    walked past.
+
+    It reads ``request.remote_addr``, which is the direct client IP by default
+    (no proxy/load balancer in this deployment) and automatically becomes the
+    real client IP if the opt-in ProxyFix is ever configured (see
+    ``src/api/app.py::_apply_proxy_fix`` / ``TRUSTED_PROXY_COUNT`` and
+    ``tests/test_proxy_fix.py``).
+    """
+    try:
+        ip = request.remote_addr or "unknown"
+    except RuntimeError:  # working outside of request context
+        return "unknown"
+    return _collapse_ip(ip)
 
 
 class RateLimiter:
@@ -167,3 +272,140 @@ class RateLimiter:
         """Number of distinct keys currently tracked (for tests/monitoring)."""
         with self._lock:
             return len(self._store)
+
+
+def limiter_from_env(
+    var: str,
+    default: int,
+    window_seconds: float,
+    allow_disable: bool = True,
+) -> Optional[RateLimiter]:
+    """Build a limiter whose threshold comes from env var ``var``, surviving a
+    malformed value.
+
+    Every limiter in this API is built at *blueprint import* time, so a bare
+    ``int()`` here turned a typo in an env file
+    (``NPC_CHAT_RATE_LIMIT_PER_MINUTE=twenty``) into a ValueError during import
+    and took the whole API down at boot. Falling back to the default keeps the
+    limiter *on*, which is the safe direction to fail: a garbled value must
+    never be read as "unlimited".
+
+    A *negative* value is garbled too, and used to parse cleanly and then fall
+    through the ``> 0`` test at the call site into an unlimited, unlogged
+    endpoint — the exact outcome the paragraph above promises cannot happen.
+    Only an exact 0 is the documented disable.
+
+    Every limiter goes through this function rather than hand-rolling the parse,
+    because the guard is only worth anything if the *next* limiter added gets it
+    too. The three that predated it did not.
+
+    **Why ``allow_disable`` is not uniform.** The two login throttles pass
+    ``allow_disable=False``; the register, npc-chat and feedback throttles do
+    not. That asymmetry is a decision, not an oversight. Those three throttle
+    *cost and spam* — LLM quota, GitHub issue noise, account farming — and
+    turning one off in local development is legitimate and self-correcting. The
+    login throttles are a brute-force defence on the *credential-guessing*
+    path: a ``0`` typed there, or copied out of a dev ``.env`` into production,
+    silently removes the only thing standing between an attacker and unlimited
+    password guesses, and nothing in the running app would report the loss.
+    That is the same failure the paragraphs above exist to prevent, one
+    variable further along, so ``0`` on those vars is treated exactly like a
+    garbled value: warn, and keep the default.
+
+    Args:
+        var: Name of the environment variable holding the limit, as an integer
+            count of permitted requests per window. Unset or blank means
+            "use ``default``".
+        default: Limit applied when ``var`` is unset, blank, or unusable. Must
+            be positive when ``allow_disable`` is False — see Raises.
+        window_seconds: Width of the sliding window the limit applies over.
+        allow_disable: Whether ``0`` may switch this throttle off. Pass ``False``
+            for any limiter whose absence is a security hole rather than an
+            inconvenience; ``0`` then warns and falls back to ``default``, and
+            this function cannot return ``None``.
+
+    Returns:
+        A configured :class:`RateLimiter`, or ``None`` when ``var`` is exactly
+        ``0`` *and* ``allow_disable`` is true — the one documented way to
+        disable a throttle. Callers must treat ``None`` as "this tier never
+        limits".
+
+    Raises:
+        ValueError: if ``allow_disable`` is False and ``default`` is not
+            positive. That combination is a *source-code* mistake, not a
+            deployment one — and it would quietly defeat the "cannot return
+            ``None``" guarantee the callers of the login tiers rely on to
+            dereference their limiters without a ``None`` check. Unlike a
+            garbled env value there is nothing to fall back to and no operator
+            to warn, so it fails at import, on every run, including the tests.
+    """
+    if not allow_disable and default <= 0:
+        raise ValueError(
+            "%s: a throttle built with allow_disable=False needs a positive "
+            "default (got %r); 0 would disable the very limiter that is not "
+            "permitted to be disabled." % (var, default)
+        )
+
+    limit = _parse_env_limit(var, default, window_seconds, allow_disable)
+    if limit == 0:
+        return None
+    return RateLimiter(limit=limit, window_seconds=window_seconds)
+
+
+def _parse_env_limit(
+    var: str, default: int, window_seconds: float, allow_disable: bool
+) -> int:
+    """The limit ``var`` asks for, or ``default`` if it does not ask usably.
+
+    Split out so the parse failure is handled where it happens: the previous
+    shape reused ``limit`` as both the parsed integer and a ``None``
+    parse-failure sentinel, which meant every later comparison had to keep
+    remembering that ``limit`` might not be a number.
+    """
+    raw = os.environ.get(var, "")
+    if not raw.strip():
+        return default
+
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "%s=%r is not a usable limit (%s); falling back to %d per "
+            "%g seconds.",
+            var,
+            raw,
+            (
+                "expected 0 to disable, or a positive integer"
+                if allow_disable
+                else "expected a positive integer; this throttle cannot be "
+                "disabled"
+            ),
+            default,
+            window_seconds,
+        )
+        return default
+
+    if limit < 0:
+        logger.warning(
+            "%s=%r is not a usable limit (a negative limit used to parse "
+            "cleanly and then read as 'unlimited' at the call site); falling "
+            "back to %d per %g seconds.",
+            var,
+            raw,
+            default,
+            window_seconds,
+        )
+        return default
+
+    if limit == 0 and not allow_disable:
+        logger.warning(
+            "%s=0 would switch off a throttle that is not permitted to be "
+            "disabled (it guards the credential path); falling back to %d "
+            "per %g seconds.",
+            var,
+            default,
+            window_seconds,
+        )
+        return default
+
+    return limit

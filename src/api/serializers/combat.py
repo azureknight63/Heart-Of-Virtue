@@ -128,7 +128,6 @@ class CombatStateSerializer:
             "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),
             "last_move_name": getattr(player, "last_move_name", None),
-
             "last_move_target_id": getattr(player, "last_move_target_id", None),
             "player_consumables": CombatStateSerializer._get_consumables(player),
         }
@@ -244,7 +243,11 @@ class CombatStateSerializer:
                             "subtype": getattr(item, "subtype", None),
                             "weight": getattr(item, "weight", None),
                             "value": getattr(item, "value", None),
-                            "enchantment_count": getattr(item, "_enchantment_count", getattr(item, "enchantment_count", 0)),
+                            "enchantment_count": getattr(
+                                item,
+                                "_enchantment_count",
+                                getattr(item, "enchantment_count", 0),
+                            ),
                             "description": getattr(item, "description", ""),
                         }
                     )
@@ -355,8 +358,34 @@ class CombatantSerializer:
                 "target_id": CombatantSerializer._serialize_move_target_id(move),
                 "mvrange": CombatantSerializer._serialize_move_range(move),
                 "falloff": CombatantSerializer._serialize_move_falloff(move),
+                "damage_multiplier": (
+                    CombatantSerializer._serialize_damage_multiplier(move)
+                ),
             }
         return None
+
+    @staticmethod
+    def _serialize_damage_multiplier(move: Any) -> float:
+        """Power multiple this move applies to its user's base damage.
+
+        Read off the move object so the number has exactly one owner. The
+        Tactical Advisor estimates incoming damage from this to decide whether
+        a telegraphed hit is potentially lethal; it used to carry its own
+        ``{move name: multiplier}`` table instead, which was keyed on CLASS
+        names while the wire carries ``move.name`` (the runtime *instance*
+        name) — so ``SlimeVolley`` arrived as ``"Slime Volley"``, missed the
+        table, and the heaviest hits in the game were estimated at 1.0x.
+
+        ``TelegraphedSurge`` subclasses (src/moves/_npc.py) declare
+        ``_DAMAGE_MULTIPLIER`` as a class attribute; everything else deals
+        standard ``NpcAttack``-range damage, hence the 1.0 default. Coerced
+        defensively because this is a private engine attribute, not part of
+        any declared move interface.
+        """
+        try:
+            return float(getattr(move, "_DAMAGE_MULTIPLIER", 1.0))
+        except (TypeError, ValueError):
+            return 1.0
 
     @staticmethod
     def _serialize_move_target_id(move: Any) -> Optional[str]:
@@ -709,6 +738,16 @@ class StateEffectSerializer:
         """
         Serialize individual status effect.
 
+        ``description`` is the player-facing prose the status panel shows;
+        ``tactical_mechanics`` is the engine's own terse statement of what the
+        effect actually does — the applied modifiers and the tick interval —
+        which ai/combat_strategist.py puts in the combat LLM prompt. Both live
+        on ``State`` (src/states.py) and are interpolated from the same class
+        constants the ``add_*`` assignments use, so neither can drift from the
+        real numbers; the strategist used to hand-copy that column and had
+        already gone stale on three effects. Defaults to "" for a state that
+        declares none, which the strategist falls back out of.
+
         Args:
             state: State object from states.py
 
@@ -719,6 +758,7 @@ class StateEffectSerializer:
             "name": getattr(state, "name", "Unknown Effect"),
             "type": StateEffectSerializer._get_effect_type(state),
             "description": getattr(state, "description", ""),
+            "tactical_mechanics": getattr(state, "tactical_mechanics", ""),
             "severity": StateEffectSerializer._get_severity(state),
             "beats_left": getattr(state, "beats_left", 0),
         }

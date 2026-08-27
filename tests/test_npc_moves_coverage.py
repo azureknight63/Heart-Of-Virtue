@@ -2370,3 +2370,77 @@ class TestWailStrikeEdgeCases:
             ws.execute(npc)
         assert p.hp == hp_before
         assert npc.fatigue == fatigue_before - ws.fatigue_cost
+
+
+# ---------------------------------------------------------------------------
+# _DAMAGE_MULTIPLIER — the wire's `damage_multiplier`
+# ---------------------------------------------------------------------------
+
+
+class TestDeclaredDamageMultiplier:
+    """A move's declared multiplier must be the one ``evaluate()`` really applies.
+
+    ``CombatantSerializer._serialize_damage_multiplier`` reads
+    ``_DAMAGE_MULTIPLIER`` off the class and the Tactical Advisor estimates
+    incoming damage — and raises POTENTIALLY LETHAL — from it, so a class whose
+    declaration disagrees with its roll understates a threat to the model.
+    GorranClub was exactly that case: it applied ``uniform(1.5, 3)`` and
+    declared nothing, so it serialized 1.0.
+
+    Each case patches ``random.uniform`` to return the midpoint of whatever
+    bounds it is handed, which is the same centre ``_DAMAGE_MULTIPLIER`` names.
+    """
+
+    # (class name, declared multiplier)
+    CASES = [
+        ("GorranClub", 2.25),
+        ("VenomClaw", 0.8),
+        ("BatBite", 0.9),
+        ("SeismicSlam", 0.7),
+        ("TwinFangs", 1.2),
+    ]
+
+    @pytest.mark.parametrize("cls_name,expected", CASES)
+    def test_declared_value(self, cls_name, expected):
+        import src.moves as moves
+
+        assert getattr(moves, cls_name)._DAMAGE_MULTIPLIER == pytest.approx(expected)
+
+    @pytest.mark.parametrize("cls_name,expected", CASES)
+    def test_evaluate_centres_power_on_the_declared_multiplier(self, cls_name, expected):
+        import src.moves as moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=100, speed=5, endurance=10)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+
+        with patch("builtins.print"), patch(
+            "random.uniform", side_effect=lambda a, b: (a + b) / 2
+        ):
+            move = getattr(moves, cls_name)(npc)
+            move.evaluate()
+
+        assert move.power == pytest.approx(100 * expected), (
+            f"{cls_name} declares _DAMAGE_MULTIPLIER={expected} but evaluate() "
+            f"centres power at {move.power / 100}x the user's damage"
+        )
+
+    def test_telegraphed_surges_still_apply_theirs_functionally(self):
+        """The TelegraphedSurge family uses the attribute at runtime; the moves
+        above only declare it. Both readings must stay in agreement."""
+        import src.moves as moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=100, speed=5, endurance=10)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+
+        with patch("builtins.print"), patch(
+            "random.uniform", side_effect=lambda a, b: (a + b) / 2
+        ):
+            volley = moves.SlimeVolley(npc)
+            volley.evaluate()
+
+        assert moves.SlimeVolley._DAMAGE_MULTIPLIER == 2.2
+        assert volley.power == pytest.approx(100 * 2.2)

@@ -3902,12 +3902,16 @@ class GameService:
         # Call NPC's chat_open method
         try:
             result = npc.chat_open(player)
-        except Exception as e:
+        except Exception:
             # The conversation never actually started — clear the flag so
             # loquacity recovery isn't stuck disabled for the rest of the
             # session (see #336).
             player.__dict__.pop("_active_chat_npc_id", None)
-            return {"success": False, "error": f"Failed to open chat: {str(e)}"}
+            # str(e) on a provider SDK exception carries the endpoint URL, the
+            # model id, the upstream status/body and a request id, and this
+            # string is rendered verbatim in the player-facing error panel.
+            _log.error("npc_chat_open failed for npc_id=%r", npc_id, exc_info=True)
+            return {"success": False, "error": "Could not start that conversation."}
 
         # Mirror npc_chat_respond's teardown: a failed open or an immediate
         # brush-off (loquacity exhausted) ends the "conversation" before it
@@ -3954,8 +3958,11 @@ class GameService:
             if result.get("conversation_ended"):
                 player.__dict__.pop("_active_chat_npc_id", None)
             return self._enrich_chat_result_with_relationship(result, npc)
-        except Exception as e:
-            return {"success": False, "error": f"Failed to respond: {str(e)}"}
+        except Exception:
+            # Same disclosure risk as npc_chat_open above: log the detail, send
+            # the player a fixed string.
+            _log.error("npc_chat_respond failed for npc_key=%r", npc_key, exc_info=True)
+            return {"success": False, "error": "Could not deliver that reply."}
 
     def _enrich_chat_result_with_relationship(
         self, result: Dict[str, Any], npc

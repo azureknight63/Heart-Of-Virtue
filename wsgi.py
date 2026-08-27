@@ -10,23 +10,28 @@ Or with flask run (dev):
     python tools/run_api.py
 """
 
-import os
 import sys
 from pathlib import Path
 
-# Add project root to path. src/ is deliberately NOT added: every local import
-# uses the canonical `src.` path, and keeping bare names unimportable makes any
-# regression fail loudly instead of silently duplicating module state.
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# Minimal path bootstrap so src.env_bootstrap itself is importable; it owns
+# the rationale and the .env load for both entry points.
+_ROOT = str(Path(__file__).resolve().parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-from dotenv import load_dotenv  # noqa: E402
-load_dotenv()
+from src.env_bootstrap import load_project_env  # noqa: E402
+
+# Must precede the src.api imports below. Not because config.py reads the
+# environment at import — it no longer does; runtime_config() does that at
+# create_app() time — but because importing src.api pulls in src/api/db.py and
+# the LLM modules, which read their settings during their own import. Anything
+# not in os.environ by this line is invisible to them.
+load_project_env()
 
 from src.api.app import create_app  # noqa: E402
-from src.api.config import ProductionConfig, DevelopmentConfig  # noqa: E402
+from src.api.config import config_for_env  # noqa: E402
 
-_env = os.environ.get("FLASK_ENV", "development").lower()
-_config = ProductionConfig if _env == "production" else DevelopmentConfig
-app, socketio = create_app(_config)
+# One shared FLASK_ENV -> config-class rule, so this entry point and
+# tools/run_api.py cannot drift apart again (they already had: only run_api.py
+# knew about FLASK_ENV=testing).
+app, socketio = create_app(config_for_env())

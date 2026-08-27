@@ -28,15 +28,64 @@ Instance attributes (set by _init_chat_attrs):
 import json
 import logging
 import re
+import time
 import zlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Sequence,
+    Set,
+    Tuple,
+    TypeGuard,
+)
 
 from . import _chat_guard
 from ._llm import _load_llm_client_module
 from src.narration import narrate
+from src.text_safety import neutralise_player_text
 
 logger = logging.getLogger(__name__)
+
+# Length caps, tone names and delta bounds belong to ai/llm_client.py — the
+# lower layer that *generates* the values this module then filters. They were
+# spelled independently in both places and had already drifted: llm_client
+# truncated a Jean option at 200 characters while this module dropped it at
+# 160, so every option between those lengths survived generation only to be
+# silently eaten downstream.
+#
+# The import is guarded because ai/llm_client.py calls load_dotenv() at import
+# time and pulls in the HTTP stack; the game engine must stay importable on a
+# box with no AI dependencies configured. The fallback spells the same numbers
+# so behaviour is identical either way, and llm_client stays the one place to
+# change them.
+try:  # pragma: no cover - trivially exercised by importing this module
+    from ai.llm_client import (
+        JEAN_TONES,
+        LOQUACITY_DELTA_BOUNDS,
+        LOQUACITY_DELTA_DEFAULT,
+        MAX_FLAVOR_CHARS,
+        MAX_JEAN_TEXT_CHARS,
+        MAX_NPC_SENTENCES,
+        MAX_NPC_TEXT_CHARS,
+        MAX_OPTION_CHARS,
+        REPUTATION_DELTA_BOUNDS,
+    )
+except Exception:  # pragma: no cover - no AI stack installed/configured
+    JEAN_TONES = ("direct", "guarded", "open")
+    MAX_NPC_TEXT_CHARS = 300
+    MAX_FLAVOR_CHARS = 200
+    MAX_OPTION_CHARS = 160
+    MAX_JEAN_TEXT_CHARS = 500
+    MAX_NPC_SENTENCES = 3
+    REPUTATION_DELTA_BOUNDS = (-5, 5)
+    LOQUACITY_DELTA_BOUNDS = (-40, 15)
+    LOQUACITY_DELTA_DEFAULT = -8
 
 _AI_DIR = Path(__file__).resolve().parent.parent.parent / "ai"
 _HUMAN_NPC_DIR = _AI_DIR / "npc" / "human"
@@ -50,10 +99,17 @@ _SLANG_PATTERN = re.compile(
     r"\b(?:okay|hey there|yeah|yep|nope|awesome|literally|basically|"
     r"gonna|wanna|gotta|no worries|guns?|bombs?|bullets?|internet)\b"
     r"|\byou know\?"
-    # "cool" is period-correct as a temperature/temperament word ("the cool
-    # water", "a cool head"); only the bare interjection — sentence-final or
-    # followed by a comma — is slang.
-    r"|\bcool(?=\s*(?:[,.!?]|$))",
+    # "cool" is period-correct as a temperature/temperament word. Requiring
+    # only a following comma or terminator — as this did — still ate the
+    # commonest legitimate use, the sentence-final predicate adjective ("The
+    # water was cool.", "Keep your head cool."), and a false positive here
+    # costs a real retry. Both slang shapes are clause-final AND either stand
+    # alone as their own clause ("Cool.", "It's fine, cool.") or predicate a
+    # bare demonstrative ("That's cool.", "It is cool, I suppose."), neither of
+    # which a temperature reading ever does: "The water was cool." has a
+    # concrete subject, and "That's cool to me." is not clause-final.
+    r"|(?:^|(?<=[.!?,;:—]))\s*\bcool\b(?=\s*(?:[,.!?]|$))"
+    r"|\b(?:that|this|it)(?:['’]s|\s+is)\s+(?:\w+\s+)?cool\b(?=\s*(?:[,.!?]|$))",
     re.IGNORECASE,
 )
 
@@ -72,13 +128,26 @@ _JEAN_DIALOG_PATTERN = re.compile(
 _BOLD_MD_PATTERN = re.compile(r"\*\*([^*]+)\*\*")
 _ACTION_ASIDE_PATTERN = re.compile(r"\*([^*\n]{2,160})\*")
 
-# Sentence splitter — shared with _chat_guard, which owns the definition and
-# the terminator-preserving rationale comment. Aliased under this module's
-# existing name so its one call site (in _qc_npc_text_ex) stays untouched.
-_SENTENCE_PATTERN = _chat_guard._SENTENCE_PATTERN
+# Terminators and quote characters, owned by _chat_guard (see the rationale
+# comment there). Aliased here so this module never hand-spells another
+# variant — the class of bug that let a curly-quoted line have its first spoken
+# word scrubbed as an invented proper noun while the straight-quoted form was
+# fine.
+_TERMINATORS = _chat_guard._TERMINATORS
+_CLOSING_QUOTES = _chat_guard._CLOSING_QUOTES
+_SENTENCE_BOUNDARY_CHARS = _chat_guard._SENTENCE_BOUNDARY_CHARS
+
+# Sentence splitting — _chat_guard owns the definition, the
+# terminator-preserving rationale and the displaced-closing-quote repair.
+_split_sentences = _chat_guard.split_sentences
+_ensure_terminal_punctuation = _chat_guard.ensure_terminal_punctuation
 
 # Capitalized token finder (for invented proper noun scan)
 _CAP_TOKEN_PATTERN = re.compile(r"\b([A-Z][A-Za-z\-]{2,})\b")
+
+# Words long enough to carry subject matter, pulled out of a character's
+# authored knowledge_scope entries to seed the state guard's topic whitelist.
+_TOPIC_WORD_PATTERN = re.compile(r"[a-z]{4,}")
 
 # Common capitalized words that are NOT invented proper nouns. Sentence-initial
 # words are skipped positionally; this set catches legitimate capitalized words
@@ -87,13 +156,63 @@ _CAP_TOKEN_PATTERN = re.compile(r"\b([A-Z][A-Za-z\-]{2,})\b")
 _COMMON_CAP_WORDS = frozenset(
     w.lower()
     for w in (
-        "The", "This", "That", "These", "Those", "There", "Then", "Here",
-        "What", "When", "Where", "Why", "Who", "How", "But", "And", "Not",
-        "Now", "Yes", "Well", "Come", "Look", "Listen", "Maybe", "Perhaps",
-        "Nothing", "Something", "Someone", "Anyone", "Everyone", "Nobody",
-        "He", "She", "His", "Her", "Him", "They", "Them", "Their", "You",
-        "Your", "We", "Our", "Its", "God", "Lord", "Heaven", "Hell", "Father",
-        "North", "South", "East", "West", "River", "Sun", "Moon", "Storm",
+        "The",
+        "This",
+        "That",
+        "These",
+        "Those",
+        "There",
+        "Then",
+        "Here",
+        "What",
+        "When",
+        "Where",
+        "Why",
+        "Who",
+        "How",
+        "But",
+        "And",
+        "Not",
+        "Now",
+        "Yes",
+        "Well",
+        "Come",
+        "Look",
+        "Listen",
+        "Maybe",
+        "Perhaps",
+        "Nothing",
+        "Something",
+        "Someone",
+        "Anyone",
+        "Everyone",
+        "Nobody",
+        "He",
+        "She",
+        "His",
+        "Her",
+        "Him",
+        "They",
+        "Them",
+        "Their",
+        "You",
+        "Your",
+        "We",
+        "Our",
+        "Its",
+        "God",
+        "Lord",
+        "Heaven",
+        "Hell",
+        "Father",
+        "North",
+        "South",
+        "East",
+        "West",
+        "River",
+        "Sun",
+        "Moon",
+        "Storm",
     )
 )
 
@@ -108,7 +227,12 @@ _COMMON_CAP_WORDS = frozenset(
 # garbage filtering (e.g. "..." or "-").
 _MIN_NPC_TEXT_LEN = 2
 
-_HAS_ALNUM_PATTERN = re.compile(r"[A-Za-z0-9]")
+# "Has word content, not just punctuation" — owned by _chat_guard, which needs
+# the identical test to spot punctuation debris while splitting sentences.
+# There were three spellings of this rule across the two modules, one of them
+# `any(ch.isalnum())`, which is Unicode-aware where the compiled patterns are
+# ASCII-only: they disagreed on accented text.
+_HAS_ALNUM_PATTERN = _chat_guard._ALNUM_PATTERN
 
 
 def _has_real_npc_text(text: str) -> bool:
@@ -117,15 +241,260 @@ def _has_real_npc_text(text: str) -> bool:
     return len(text) >= _MIN_NPC_TEXT_LEN and bool(_HAS_ALNUM_PATTERN.search(text))
 
 
-# QC pipeline size/count/similarity thresholds, named so the numbers used in
-# _qc_npc_text_ex / _qc_flavor_text / _qc_jean_options / _top_up_jean_options
-# read as policy rather than unexplained literals scattered through the file.
-_MAX_NPC_TEXT_CHARS = 300  # NPC line truncation cap (_qc_npc_text_ex step 2)
-_MAX_OPTION_CHARS = 160  # Jean dialogue option length cap
-_MAX_FLAVOR_CHARS = 200  # npc_flavor truncation cap
-_JEAN_OPTION_COUNT = 3  # Jean is always offered exactly three options
+# Span-repair patterns, compiled once at import rather than on every call. The
+# text pipeline runs these on every NPC line and every flavor beat, and the
+# module's own convention (see _OPTION_META_PATTERN above) is module-level
+# compilation.
+_WS_RUN_PATTERN = re.compile(r"\s+")
+_SPACE_BEFORE_PUNCT_PATTERN = re.compile(r"\s+([,.!?;:])")
+_REPEATED_SEPARATOR_PATTERN = re.compile(r"([,;:])(?:\s*\1)+")
+_SEPARATOR_BEFORE_TERMINATOR_PATTERN = re.compile(r"[,;:]+(?=[.!?])")
+_LEADING_SEPARATOR_PATTERN = re.compile(r"^[\s,;:]+")
+_LEADING_TERMINATOR_PATTERN = re.compile(r"^[.!?]+[\s,;:]*")
+_TRAILING_SEPARATOR_PATTERN = re.compile(r"[\s,;:]+$")
+_SENTENCE_START_PATTERN = re.compile(r"(^|(?<!\.\.)[.!?]\s+)([a-z])")
+
+# Prompt-injection neutralisation for player-supplied text, applied at ingress
+# — before the text is handed to the adapter *and* before it is written to the
+# history that later prompts replay. Jean's line is not merely sent to the
+# provider once: it goes into the persisted exchange history, which is replayed
+# into the system prompt on every later turn and survives into the save file, so
+# a single crafted line keeps working for the rest of the conversation and a
+# length cap alone (all this used to do) does nothing about it.
+#
+# The rule itself lives in src/text_safety.py, which ai/llm_client.py imports
+# too. There were two implementations, and the adapter's — the one guarding the
+# replayed history — was the weaker of the pair, so this module's extra rules
+# protected the live turn and nothing else. That module is stdlib-only by
+# design, so unlike the ai.llm_client constants above this import needs no
+# fallback: it cannot fail on a box with no AI stack.
+_sanitize_player_text = neutralise_player_text
+
+
+# One provider call's network timeout, used as the size of a stage the gates
+# below decide whether to open. The adapter owns the real number
+# (``NpcChatLLMAdapter._round_timeout`` reads ``NPC_CHAT_LLM_TIMEOUT``); this
+# is the fallback for a test double or an adapter that predates it, and is
+# deliberately not another env read — importing ai.llm_client to ask is exactly
+# the dependency this module refuses to take at import time.
+_DEFAULT_ROUND_TIMEOUT_SECONDS = 6.0
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    """Read an adapter-supplied number defensively.
+
+    Both signed deltas a turn carries (``reputation_delta``,
+    ``loquacity_delta``) come off an untrusted adapter and are clamped before
+    use, but the clamp itself is arithmetic: a bare ``int()`` on a string or
+    None raises one frame later, inside the caller's ``try`` for *provider*
+    failures, and loses the whole turn. Only ``reputation_delta`` had this
+    guard; ``loquacity_delta`` called ``int()`` bare, two methods apart.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _round_timeout(adapter: Any) -> float:
+    """How long one provider call may take, as the deadline gates see it."""
+    probe = getattr(adapter, "_round_timeout", None)
+    if callable(probe):
+        try:
+            return float(probe())
+        except Exception:  # a test double's attribute, not a contract
+            pass
+    return _DEFAULT_ROUND_TIMEOUT_SECONDS
+
+
+def _no_stage_budget(deadline: Optional[float], adapter: Any = None) -> bool:
+    """True when the turn cannot afford to open another provider stage.
+
+    Gating on "has the deadline passed?" alone let a stage start with
+    milliseconds left and then run a *whole* provider chain — the budget was
+    checked but never actually enforced. A stage is only opened when a full
+    round timeout still fits inside it, so overrunning costs at most the tail
+    of one call rather than the length of a chain walk.
+
+    ``None`` means no budget was set — direct unit-test calls and any caller
+    that has not opted in still behave exactly as before.
+    """
+    if deadline is None:
+        return False
+    return deadline - time.monotonic() <= _round_timeout(adapter)
+
+
+class QcResult(NamedTuple):
+    """The verdict of one pass of the NPC-text QC pipeline.
+
+    ``text`` is None exactly when ``reason`` is set; the reason is fed back to
+    the model as retry guidance. ``aside`` is any stage direction pulled out of
+    the spoken line, for relocation into npc_flavor.
+    """
+
+    text: Optional[str]
+    reason: Optional[str]
+    aside: str
+
+
+class FilterResult(NamedTuple):
+    """What one content-filter stage did to the working text.
+
+    ``reason`` is set only when the stage rejected the line (strict mode, or a
+    rewrite that left nothing usable). ``rewrote`` drives the capitalization
+    repair the driver runs at the end.
+    """
+
+    text: str
+    reason: Optional[str]
+    rewrote: bool
+
+
+class Turn(NamedTuple):
+    """One assembled conversational turn — what the player actually sees.
+
+    Named rather than a positional 3-tuple so the state guard's input and its
+    output read the same at every call site; still unpacks positionally for
+    callers that only want the three pieces.
+    """
+
+    npc_text: str
+    npc_flavor: str = ""
+    jean_options: Sequence[Dict[str, str]] = ()
+
+
+class GuardedTurn(NamedTuple):
+    """A :class:`Turn` that has been through the state guard.
+
+    ``tripped`` says whether the tripwire fired at all, which the caller needs
+    for more than logging: the model's structured ``reputation_delta`` is one
+    of the two fields of a chat response that really does reach the engine
+    (see ``_chat_guard``'s module docstring), and a turn the model had to be
+    talked out of does not also get to move the player's standing.
+    """
+
+    turn: Turn
+    tripped: bool = False
+
+
+class TurnOutcome(NamedTuple):
+    """One raw turn as it came back from the adapter, coerced and clamped.
+
+    The mixin used to carry a turn in two live representations at once — this
+    normalized dict, mutated in place, *and* a :class:`Turn` assembled beside
+    it — so "a turn" meant different things two lines apart and adding one
+    clamped field cost ten edit sites. This is the model-facing half (what the
+    adapter said, including the fields the player never sees); :class:`Turn` is
+    the player-facing half.
+
+    ``loquacity_delta`` is None when the adapter supplied none, which is what
+    selects the quality-based drain. ``raw_options`` is None on the legacy
+    two-call adapter, which produces options through a separate request.
+    """
+
+    npc_text: str
+    npc_flavor: str = ""
+    conversation_quality: str = "neutral"
+    reputation_delta: int = 0
+    loquacity_delta: Optional[int] = None
+    raw_options: Optional[Any] = None
+
+
+class CombinedChatAdapter(Protocol):
+    """The adapter shape this mixin prefers: one call per turn.
+
+    The contract was previously implicit in ``hasattr`` probes scattered across
+    five call sites, with ``hasattr(adapter, "generate_turn")`` re-derived in
+    two of them under different handling of a ``None`` adapter. Declaring it
+    puts the members a reader has to satisfy in one place. ``enabled``,
+    ``revise_turn`` and ``generate_personality`` are shared with the legacy
+    two-call shape (which supplies ``generate_npc_turn`` and
+    ``generate_jean_options`` in place of ``generate_turn``, at the cost of a
+    second round trip); ``generate_turn`` is what tells the two apart.
+
+    Structural, not nominal: ``ai.llm_client.NpcChatLLMAdapter`` does not
+    import this module, and test doubles supply whichever subset they need.
+    """
+
+    enabled: bool
+
+    def generate_turn(
+        self,
+        system_prompt: str,
+        history: List[Dict[str, str]],
+        is_opening: bool,
+        jean_text: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        ...
+
+    def revise_turn(
+        self,
+        system_prompt: str,
+        npc_text: str,
+        jean_options: List[Dict[str, str]],
+        guidance: str,
+    ) -> Optional[Dict[str, Any]]:
+        ...
+
+    def generate_personality(self, npc_class_display: str) -> Optional[Dict[str, Any]]:
+        ...
+
+
+def _is_combined_adapter(adapter: Any) -> TypeGuard[CombinedChatAdapter]:
+    """True when ``adapter`` produces the NPC line and Jean's options together.
+
+    One spelling for a probe that was written twice with different null
+    handling: the legacy two-call adapter (``generate_npc_turn`` plus
+    ``generate_jean_options``) costs a second round trip, so "is this the
+    combined shape" decides whether the options path may spend one.
+    """
+    return adapter is not None and hasattr(adapter, "generate_turn")
+
+
+# QC pipeline count/similarity thresholds owned by this module. The *length*
+# caps and the tone names live in ai/llm_client.py (imported above) because the
+# generator has to obey the same numbers the filter enforces.
+_JEAN_OPTION_COUNT = len(JEAN_TONES)  # Jean is always offered exactly three
 _OPTION_SIMILARITY_MAX = 0.6  # Jaccard ceiling before two options count as duplicates
 _NPC_REPEAT_SIMILARITY = 0.7  # Jaccard floor before an NPC line counts as a repeat
+
+# Upper bound on how many invented proper nouns are named back to the model in
+# the retry guidance. The list is model-chosen text going into the system
+# prompt, so it is bounded like any other untrusted span.
+_MAX_NAMED_INVENTED_NOUNS = 8
+
+# Upper bound on how many raw options are inspected. Options past the first
+# three are now validated too (a malformed option at index 0 used to make three
+# good ones at 1-3 unreachable), but the model's list is untrusted input and
+# must not be able to make QC do unbounded work.
+_MAX_OPTION_CANDIDATES = 12
+
+# Floor on a Jean option's length. Below this it is not a reply — models emit
+# "x", "...", a bare tone name — and there is nothing to salvage.
+_MIN_OPTION_CHARS = 5
+
+# A truncation boundary is only worth taking in the second half of the window.
+# The backwards scan used to accept the LAST terminator at or below the cap
+# wherever it fell, so a 461-character reply opening "Aye. " with no further
+# punctuation was amputated to "Aye." — the discard QC policy 2 exists to
+# forbid.
+_MIN_TRUNCATION_KEEP_RATIO = 0.5
+
+# Bounds how many provider STAGES one player message may open — not, despite
+# the name, how long it may take. A turn composes several LLM stages (up to two
+# QC attempts, a state-guard revision, and on a legacy adapter a separate
+# options call), and each stage walks the whole provider fallback chain, so a
+# single stage can cost `chain x models x 2 x round timeout`. Nothing bounded
+# the *sum* at all, and the worst case ran well over a minute on a synchronous
+# Flask worker with the player watching a spinner.
+#
+# A stage is opened only while a full round timeout still fits in the remaining
+# budget (see :func:`_no_stage_budget`), so the real ceiling is this value plus
+# one chain walk — the tail of the last stage to start. Once the budget is
+# spent the turn drops to the deterministic fallbacks that already exist
+# (_get_fallback_npc_line, _chat_guard.hedge_npc_text, and the rewrite-mode QC
+# salvage in _run_npc_turn) rather than opening another stage.
+_CHAT_DEADLINE_SECONDS = 12.0
 
 # Meta-speech markers ("[Option 2]", "As Jean, I...") that mean the model
 # broke character while generating one of Jean's dialogue options. Hoisted to
@@ -142,7 +511,7 @@ _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30
 # Craft vocabulary a progressing ally is licensed to teach about. The system
 # prompt's COMBAT SELF-KNOWLEDGE block exists precisely so an ally can discuss
 # its own growth, so these keep the state guard from rewriting intended content.
-# They only ever excuse a teaching/growth flag — never a handover or a promise.
+# They only ever excuse a `teaching` flag — never a handover or a promise.
 _ALLY_CRAFT_TOPICS = frozenset(
     {
         "technique",
@@ -161,7 +530,7 @@ _ALLY_CRAFT_TOPICS = frozenset(
 )
 
 # Words that carry no subject matter, dropped when knowledge_scope entries are
-# reduced to guard topics. A topic only ever excuses a teaching/growth flag, but
+# reduced to guard topics. A topic only ever excuses a `teaching` flag, but
 # it excuses it for the whole sentence, so a generic word slipping through
 # switches that half of the guard off for the character entirely: the authored
 # scopes yield "will" (Liss), "like"/"wait" (Devet) and "work"/"knows"
@@ -303,14 +672,21 @@ class ConversationalNPCMixin:
             if self._chat_config_path not in ConversationalNPCMixin._char_config_cache:
                 try:
                     with open(self._chat_config_path, "r", encoding="utf-8") as f:
-                        ConversationalNPCMixin._char_config_cache[self._chat_config_path] = (
-                            json.load(f)
-                        )
+                        ConversationalNPCMixin._char_config_cache[
+                            self._chat_config_path
+                        ] = json.load(f)
                 except Exception as e:
-                    logger.debug(
-                        f"Could not load chat config from {self._chat_config_path}: {e}"
+                    # Cached as a permanent None below, so this NPC runs with no
+                    # character config for the rest of the process — a silent,
+                    # unrecoverable degradation that must not sit at DEBUG.
+                    logger.warning(
+                        "Could not load chat config from %s: %s",
+                        self._chat_config_path,
+                        e,
                     )
-                    ConversationalNPCMixin._char_config_cache[self._chat_config_path] = None
+                    ConversationalNPCMixin._char_config_cache[
+                        self._chat_config_path
+                    ] = None
             self._chat_char_config = ConversationalNPCMixin._char_config_cache[
                 self._chat_config_path
             ]
@@ -321,7 +697,12 @@ class ConversationalNPCMixin:
                 with open(_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
                     ConversationalNPCMixin._world_facts_cache = json.load(f)
             except Exception as e:
-                logger.debug(f"Could not load world facts: {e}")
+                # Also cached permanently: every NPC in the process then runs
+                # with an empty allow-list, which silently turns the invented
+                # proper-noun scrubber into a scrubber of *all* proper nouns.
+                logger.warning(
+                    "Could not load world facts from %s: %s", _WORLD_FACTS_PATH, e
+                )
                 ConversationalNPCMixin._world_facts_cache = {}
         self._chat_world_facts: Optional[Dict[str, Any]] = (
             ConversationalNPCMixin._world_facts_cache
@@ -338,6 +719,17 @@ class ConversationalNPCMixin:
 
         # LLM adapter (lazy-loaded)
         self._chat_adapter: Optional[Any] = None
+
+        # Memo for _allowed_noun_tokens / _guard_allowed_topics — both rebuild
+        # a set from static config that only changes when the NPC's own name,
+        # personality or world facts do. Declared here rather than sprung into
+        # existence inside the accessors, so the instance's attribute surface
+        # is readable in one place (the accessors still use getattr, for hosts
+        # that skip this initializer).
+        self._allowed_noun_cache: Optional[Tuple[Any, str, str, Set[str]]] = None
+        self._guard_topic_cache: Optional[
+            Tuple[Any, Tuple[str, ...], Set[str]]
+        ] = None
 
         # Fallback rotation index (Jean's options pool)
         self._chat_fallback_idx: int = 0
@@ -389,7 +781,12 @@ class ConversationalNPCMixin:
             else:
                 self._chat_adapter = self._ADAPTER_FAILED
         except Exception as e:
-            logger.debug(f"ConversationalNPCMixin: could not load adapter: {e}")
+            # _ADAPTER_FAILED is sticky for the instance's lifetime, so this NPC
+            # never speaks with the LLM again — worth a warning and a traceback,
+            # not a DEBUG line nobody sees at the default level.
+            logger.warning(
+                "ConversationalNPCMixin: could not load adapter: %s", e, exc_info=True
+            )
             self._chat_adapter = self._ADAPTER_FAILED
 
         return (
@@ -405,6 +802,15 @@ class ConversationalNPCMixin:
     def _get_chapter(self, player) -> str:
         """Get current chapter as string."""
         return str(self._story(player).get("chapter", "1"))
+
+    @staticmethod
+    def _game_tick(player) -> int:
+        """Current world tick, or 0 when the player has no universe yet.
+
+        The `or 0` matters as much as the getattr chain: a universe whose tick
+        is None must still stamp an exchange with a number.
+        """
+        return getattr(getattr(player, "universe", None), "game_tick", 0) or 0
 
     def _compute_loquacity(self, player):
         """Compute and set loquacity_max, threshold, and recovery. Only on first call."""
@@ -582,7 +988,9 @@ class ConversationalNPCMixin:
         hists = getattr(player, "npc_chat_histories", None)
         key = self._chat_npc_key
         if hists is not None and key in hists:
-            hists[key]["conversation_count"] = hists[key].get("conversation_count", 0) + 1
+            hists[key]["conversation_count"] = (
+                hists[key].get("conversation_count", 0) + 1
+            )
 
     def _build_system_prompt(self, player) -> str:
         """Build system prompt from world facts + character block."""
@@ -613,9 +1021,7 @@ class ConversationalNPCMixin:
                 extras.append(f"Role: {role}.")
             knowledge = cfg.get("knowledge_scope") or []
             if knowledge:
-                extras.append(
-                    "You can speak to: " + "; ".join(knowledge) + "."
-                )
+                extras.append("You can speak to: " + "; ".join(knowledge) + ".")
             notes = cfg.get("personality_notes") or []
             if notes:
                 extras.append("About you: " + " ".join(notes))
@@ -653,12 +1059,12 @@ class ConversationalNPCMixin:
             # Prevention half of the state guard: nothing said in a chat reaches
             # the engine, so an offer or an appointment is a promise the game
             # cannot keep. Cheaper to not generate one than to catch and revise
-            # it (see src/npc/_chat_guard.py). Terse by design — this block is
-            # static and re-sent every round.
-            "Talk changes nothing here: never give, lend, sell, mend, or hand "
-            "anything over; never travel with Jean or promise to meet him later; "
-            "never describe his belongings, wounds, or coin — you cannot see "
-            "them. Speak of such things in the past or in general instead.\n"
+            # it. Rendered from _chat_guard.PROMPT_RULES, which the import-time
+            # assert there keeps in step with the tripwire tables — hand-written
+            # here, this clause had already lost the `solicit` category, so
+            # every soliciting option had to be caught and revised at the cost
+            # of a real round trip the other three categories avoided.
+            + _chat_guard.prompt_rules_line() + "\n"
             f"It is currently chapter {chapter}. Only reference things your character "
             "would plausibly know by now. Never reveal or hint at events, places, "
             "people, or revelations from later in the story."
@@ -733,7 +1139,9 @@ class ConversationalNPCMixin:
             if not name or not desc:
                 continue
             techniques.append(f"{name} ({desc})")
-        technique_text = "; ".join(techniques) if techniques else "none beyond basic fighting"
+        technique_text = (
+            "; ".join(techniques) if techniques else "none beyond basic fighting"
+        )
         return (
             f"COMBAT SELF-KNOWLEDGE: You fight alongside Jean and you are {tier}. "
             f"Techniques you have mastered: {technique_text}. "
@@ -752,7 +1160,14 @@ class ConversationalNPCMixin:
         class_name = type(self).__name__
 
         if adapter and adapter.enabled:
-            self._chat_personality = adapter.generate_personality(class_name)
+            try:
+                self._chat_personality = adapter.generate_personality(class_name)
+            except Exception as e:  # provider errors must never cost the player a turn
+                logger.warning(
+                    "_ensure_personality generate_personality failed (%s); "
+                    "using the deterministic fallback personality.",
+                    e,
+                )
 
         # Fallback if LLM unavailable. crc32 (not the built-in hash()) because
         # hash() is salted per process — the "deterministic" pick would
@@ -762,20 +1177,47 @@ class ConversationalNPCMixin:
             idx = zlib.crc32(key.encode("utf-8")) % len(_GENERIC_FALLBACKS)
             self._chat_personality = _GENERIC_FALLBACKS[idx].copy()
 
-    def _jaccard(self, text_a: str, text_b: str) -> float:
-        """Compute Jaccard similarity of two texts (word-level tokenization)."""
-        set_a = set(text_a.lower().split())
-        set_b = set(text_b.lower().split())
+    @staticmethod
+    def _tokenize(text: str) -> Set[str]:
+        """Word-level tokens for similarity comparison."""
+        return set(text.lower().split())
 
+    @staticmethod
+    def _jaccard_tokens(set_a: Set[str], set_b: Set[str]) -> float:
+        """Jaccard similarity of two already-tokenized texts.
+
+        Split out from :meth:`_jaccard` so a loop comparing one text against
+        many (the repetition guard walks eight history rows) tokenizes that one
+        text once instead of once per row.
+        """
         if not set_a and not set_b:
             return 1.0
         if not set_a or not set_b:
             return 0.0
-
-        intersection = len(set_a & set_b)
         union = len(set_a | set_b)
+        return len(set_a & set_b) / union if union > 0 else 0.0
 
-        return intersection / union if union > 0 else 0.0
+    def _jaccard(self, text_a: str, text_b: str) -> float:
+        """Compute Jaccard similarity of two texts (word-level tokenization)."""
+        return self._jaccard_tokens(self._tokenize(text_a), self._tokenize(text_b))
+
+    def _is_near_duplicate(self, text: str, kept_texts: Iterable[str]) -> bool:
+        """True when ``text`` reads too close to an option already kept.
+
+        "Is this option too close to one we are keeping" was written out three
+        times — twice as "skip it if *any* kept option is too similar" and once,
+        inverted, as "keep it if *every* kept option is far enough". Two
+        spellings of one rule, one negation apart, is how a dedup silently stops
+        deduping; this is the only spelling now.
+
+        Re-tokenizes ``text`` per comparison rather than taking the
+        :meth:`_jaccard_tokens` shortcut ``_qc_check_repetition`` needs: an
+        option set is at most three long, so the shortcut buys nothing and
+        costs the reader a second way to spell the same comparison.
+        """
+        return any(
+            self._jaccard(text, kept) > _OPTION_SIMILARITY_MAX for kept in kept_texts
+        )
 
     # ------------------------------------------------------------------
     # NPC-text QC pipeline
@@ -790,18 +1232,18 @@ class ConversationalNPCMixin:
         "cool" from "that's cool, okay" yields "that's" rather than
         "that's  , ".
         """
-        text = re.sub(r"\s+", " ", text)
-        text = re.sub(r"\s+([,.!?;:])", r"\1", text)
-        text = re.sub(r"([,;:])(?:\s*\1)+", r"\1", text)
+        text = _WS_RUN_PATTERN.sub(" ", text)
+        text = _SPACE_BEFORE_PUNCT_PATTERN.sub(r"\1", text)
+        text = _REPEATED_SEPARATOR_PATTERN.sub(r"\1", text)
         # A removed sentence-final span leaves its comma glued to the
         # terminator ("It's fine, cool." -> "It's fine,."): drop it.
-        text = re.sub(r"[,;:]+(?=[.!?])", "", text)
+        text = _SEPARATOR_BEFORE_TERMINATOR_PATTERN.sub("", text)
         # Strip leading separators — but a leading ellipsis is intentional
         # hesitation ("...fine."), not an orphan, so keep it.
-        text = re.sub(r"^[\s,;:]+", "", text)
+        text = _LEADING_SEPARATOR_PATTERN.sub("", text)
         if not text.startswith("..."):
-            text = re.sub(r"^[.!?]+[\s,;:]*", "", text)
-        text = re.sub(r"[\s,;:]+$", "", text)
+            text = _LEADING_TERMINATOR_PATTERN.sub("", text)
+        text = _TRAILING_SEPARATOR_PATTERN.sub("", text)
         return text.strip()
 
     @staticmethod
@@ -811,37 +1253,60 @@ class ConversationalNPCMixin:
         The lookbehind keeps an ellipsis from counting as a sentence end, so
         "Well... maybe." is not rewritten to "Well... Maybe.".
         """
-        return re.sub(
-            r"(^|(?<!\.\.)[.!?]\s+)([a-z])",
+        return _SENTENCE_START_PATTERN.sub(
             lambda m: m.group(1) + m.group(2).upper(),
             text,
         )
 
-    def _extract_action_asides(self, text: str) -> tuple:
+    def _extract_action_asides(self, text: str) -> Tuple[str, str]:
         """Pull *asterisk action* stage directions out of spoken text.
 
-        Returns (text_without_asides, aside_text). Markdown bold markers are
-        unwrapped (the words stay), single-asterisk spans at a sentence
-        boundary (start of text, after terminal punctuation, or end of text)
-        are stage directions and are extracted for relocation into npc_flavor,
-        single-asterisk spans embedded mid-sentence are markdown emphasis and
-        are unwrapped in place ("I would *never* sell" keeps "never"), and
-        stray markers are dropped.
+        Returns ``(text_without_asides, aside_text)``. Markdown bold markers are
+        unwrapped (the words stay); a single-asterisk span at a sentence
+        boundary is a stage direction and is extracted for relocation into
+        npc_flavor; one embedded mid-sentence is markdown emphasis and is
+        unwrapped in place ("I would *never* sell" keeps "never"); stray
+        markers are dropped.
+
+        Two rules here were learned from real model output:
+
+        * A span sitting *after a terminator* only counts as a stage direction
+          when what follows it starts afresh. "Fine. *never* again." is
+          emphasis inside one sentence — treating it as a beat deleted the word
+          and spoke "Fine. again."
+        * An odd asterisk count means the model never closed its marker
+          ("*nods slowly Fine, then."). No pair matches, so the lone marker used
+          to be replaced with a space and the stage direction was SPOKEN. The
+          run from the lone marker to the next terminator is treated as the
+          aside instead. The repair used to fire only when the unclosed marker
+          opened the text, which left the two commonest shapes speaking their
+          stage direction anyway: "Fine. *nods slowly and turns away" and
+          "*nods* Fine. *shrugs" — the latter because the first, *closed* aside
+          moves the lone marker off the front.
         """
         if "*" not in text:
             return text, ""
         text = _BOLD_MD_PATTERN.sub(r"\1", text)
         asides: List[str] = []
 
+        # Bound to the pre-substitution string: re.sub rebinds ``text`` only
+        # after the whole walk, but reading the name the loop is about to
+        # replace is a trap worth closing explicitly.
+        source = text
+
         def _classify(match: "re.Match") -> str:
-            before = text[: match.start()].rstrip()
-            after = text[match.end():].lstrip()
-            # "*" counts as a boundary so consecutive asides ("*nods*
-            # *smiles* Fine.") are both extracted — the second one sees the
-            # first's not-yet-substituted "*" as its left neighbour.
-            at_boundary = (
-                not before or before[-1] in ".!?\"'*" or not after
-            )
+            before = source[: match.start()].rstrip()
+            after = source[match.end() :].lstrip()
+            if not before or before[-1] == "*" or not after:
+                # Start of text, straight after another aside (so consecutive
+                # asides are both extracted), or end of text.
+                at_boundary = True
+            elif before[-1] in _SENTENCE_BOUNDARY_CHARS:
+                at_boundary = (
+                    after[0] == "*" or not after[0].isalpha() or after[0].isupper()
+                )
+            else:
+                at_boundary = False
             if at_boundary:
                 inner = match.group(1).strip()
                 if inner:
@@ -849,11 +1314,40 @@ class ConversationalNPCMixin:
                 return " "
             return match.group(1)
 
-        text = _ACTION_ASIDE_PATTERN.sub(_classify, text)
+        text = _ACTION_ASIDE_PATTERN.sub(_classify, source)
+        if text.count("*") % 2 == 1:
+            text = self._take_unclosed_aside(text, asides)
         text = text.replace("*", " ")
         return self._cleanup_removed_spans(text), " ".join(asides)
 
-    def _allowed_noun_tokens(self) -> set:
+    @staticmethod
+    def _take_unclosed_aside(text: str, asides: List[str]) -> str:
+        """Consume an unterminated ``*stage direction`` from anywhere in ``text``.
+
+        Appends what it took to ``asides`` and returns the spoken text with
+        that span removed — everything *before* the lone marker is left intact,
+        so "Fine. *nods slowly" keeps "Fine." instead of losing the whole line.
+        The direction runs from the marker to the next sentence terminator (or
+        to the end of the text), since that is where the model's unclosed beat
+        reliably ends. When the marker opens the text there is nothing before
+        it, so a reply that was *entirely* an unclosed stage direction still
+        leaves nothing spoken and correctly fails QC.
+        """
+        start = text.find("*")
+        if start < 0:
+            return text
+        body = text[start + 1 :]
+        cut = len(body)
+        for index, char in enumerate(body):
+            if char in _TERMINATORS:
+                cut = index + 1
+                break
+        inner = body[:cut].strip().strip(_TERMINATORS).strip()
+        if inner:
+            asides.append(inner)
+        return text[:start] + body[cut:]
+
+    def _allowed_noun_tokens(self) -> Set[str]:
         """Lowercased single-word tokens the proper-noun scan must not touch.
 
         Multi-word allowlist entries ("Echoing Caves", "Pillar Readers") are
@@ -864,24 +1358,34 @@ class ConversationalNPCMixin:
         generics, the generated given_name — an NPC must be able to say its
         own name.
         """
-        tokens: set = set()
-        sources: List[str] = list(
-            (getattr(self, "_chat_world_facts", None) or {}).get(
-                "allowed_proper_nouns", []
-            )
-        )
-        sources.extend(["Jean", "Gorran", str(getattr(self, "name", "") or "")])
+        facts = getattr(self, "_chat_world_facts", None)
+        name = str(getattr(self, "name", "") or "")
         personality = getattr(self, "_chat_personality", None) or {}
-        given = personality.get("given_name")
+        given = str(personality.get("given_name") or "")
+
+        # Memoised: the scan calls this for every NPC line and every flavor
+        # beat, and it rebuilt the same set from the same class-level world
+        # facts each time. The cache holds a strong reference to the facts
+        # object it was built from, so the identity check below is meaningful.
+        cached = getattr(self, "_allowed_noun_cache", None)
+        if cached is not None:
+            cached_facts, cached_name, cached_given, tokens = cached
+            if cached_facts is facts and cached_name == name and cached_given == given:
+                return tokens
+
+        tokens: Set[str] = set()
+        sources: List[str] = list((facts or {}).get("allowed_proper_nouns", []))
+        sources.extend(["Jean", "Gorran", name])
         if given:
-            sources.append(str(given))
+            sources.append(given)
         for noun in sources:
             for part in str(noun).replace("-", " ").split():
                 tokens.add(part.lower())
+        self._allowed_noun_cache = (facts, name, given, tokens)
         return tokens
 
     @staticmethod
-    def _is_allowed_noun(low: str, allowed: set) -> bool:
+    def _is_allowed_noun(low: str, allowed: Set[str]) -> bool:
         """Token-level allowlist check with light inflection tolerance.
 
         Accepts exact matches, singular/plural variants (Golemite/Golemites),
@@ -907,10 +1411,14 @@ class ConversationalNPCMixin:
         allowed = self._allowed_noun_tokens()
 
         def _is_sentence_initial(match_start: int) -> bool:
+            # Curly quotes count. Omitting them made the first word of curly-
+            # quoted speech look mid-sentence, so `He only said, "Leave it."`
+            # came out as `"someone it."` — and in strict mode was rejected as
+            # "names not in the allowed list: Leave", burning a retry.
             j = match_start - 1
             while j >= 0 and text[j].isspace():
                 j -= 1
-            return j < 0 or text[j] in ".!?\"'"
+            return j < 0 or text[j] in _SENTENCE_BOUNDARY_CHARS
 
         def _is_known(low: str) -> bool:
             return low in _COMMON_CAP_WORDS or self._is_allowed_noun(low, allowed)
@@ -939,23 +1447,263 @@ class ConversationalNPCMixin:
             )
         return replacements
 
+    @staticmethod
+    def _replace_tokens(text: str, replacements: Dict[str, str]) -> str:
+        """Apply every invented-noun substitution in a single pass.
+
+        One alternation rather than a compiled pattern plus a full walk of the
+        string per token. Longest first so a shorter token can never shadow a
+        longer one that starts with it.
+        """
+        if not replacements:
+            return text
+        alternation = "|".join(
+            re.escape(token) for token in sorted(replacements, key=len, reverse=True)
+        )
+        return re.sub(
+            r"\b(" + alternation + r")\b",
+            lambda match: replacements[match.group(1)],
+            text,
+        )
+
+    # ------------------------------------------------------------------
+    # QC pipeline stages
+    #
+    # Each stage takes the working text and reports back what it did: the text,
+    # a rejection reason (None when it is happy) and whether it rewrote
+    # anything. The driver below composes them in order. The numbered step
+    # comments this pipeline used to carry are now these functions' docstrings.
+    # ------------------------------------------------------------------
+
+    def _qc_strip_and_check(self, text: str) -> QcResult:
+        """Stage 1: pull out stage directions, then reject empty/noise text."""
+        text, aside = self._extract_action_asides(text.strip())
+        text = text.strip()
+        if not _has_real_npc_text(text):
+            return QcResult(None, "the reply had no spoken text", aside)
+        if aside and text[0].islower():
+            # The spoken line started after a leading aside ("*shrugs* fine.")
+            text = text[0].upper() + text[1:]
+        return QcResult(text, None, aside)
+
+    @staticmethod
+    def _truncate_at_sentence_boundary(text: str, limit: int) -> str:
+        """Stage 2: cut ``text`` to ``limit`` characters, preferring a boundary.
+
+        The boundary must fall in the second half of the window. The old
+        backwards scan took the last terminator at or below the cap wherever it
+        landed, so a 461-character reply opening "Aye. " with no further
+        punctuation was amputated to "Aye." — discarding everything the
+        character actually said, the outcome QC policy 2 exists to forbid.
+        Below that floor the text is cut at the last whole word instead and the
+        dangling fragment is handled by :meth:`_qc_normalise_sentences`.
+
+        Shared with the flavor path, which used to cut mid-word.
+        """
+        if len(text) <= limit:
+            return text
+        floor = int(limit * _MIN_TRUNCATION_KEEP_RATIO)
+        for index in range(limit - 1, floor - 1, -1):
+            if text[index] in _TERMINATORS:
+                end = index + 1
+                # Keep a closing quote with the sentence it closes.
+                while end < len(text) and text[end] in _CLOSING_QUOTES:
+                    end += 1
+                return text[:end].strip()
+        window = text[:limit]
+        return (window.rsplit(" ", 1)[0] if " " in window else window).strip()
+
+    @staticmethod
+    def _qc_check_jean_dialogue(text: str) -> Optional[str]:
+        """Stage 3: reject a line that speaks for Jean.
+
+        Always a rejection, in both modes — the NPC must never write Jean's
+        dialogue and there is no safe rewrite.
+        """
+        if _JEAN_DIALOG_PATTERN.search(text):
+            logger.debug("_qc_npc_text rejected: Jean-dialogue pattern. text=%r", text)
+            return "it wrote Jean's dialogue or narrated Jean speaking"
+        return None
+
+    def _qc_invented_nouns(self, text: str, allow_rewrite: bool) -> FilterResult:
+        """Stage 4: names that are not in the world allow-list.
+
+        Rejects in strict mode so the retry can name the offending tokens back
+        to the model; substitutes in place on the final attempt so one invented
+        word never costs an otherwise good line.
+        """
+        replacements = self._find_invented_nouns(text)
+        if not replacements:
+            return FilterResult(text, None, False)
+        if not allow_rewrite:
+            logger.debug(
+                "_qc_npc_text rejected: invented nouns %s. text=%r",
+                sorted(replacements),
+                text,
+            )
+            # This list is spliced into the [RETRY GUIDANCE] block of the
+            # *system* prompt, and every token in it was chosen by the model.
+            # The character class (\b[A-Z][A-Za-z\-]{2,}\b) makes structural
+            # forgery impossible — no newline, colon, or angle bracket can get
+            # in — but an unbounded list can still crowd the real instructions
+            # out of the retry, so name at most the first few.
+            named = sorted(replacements)[:_MAX_NAMED_INVENTED_NOUNS]
+            return FilterResult(
+                text,
+                "it used names not in the allowed list: " + ", ".join(named),
+                False,
+            )
+        return FilterResult(self._replace_tokens(text, replacements), None, True)
+
+    def _qc_slang(self, text: str, allow_rewrite: bool) -> FilterResult:
+        """Stage 5: modern slang and anachronisms."""
+        if not _SLANG_PATTERN.search(text):
+            return FilterResult(text, None, False)
+        if not allow_rewrite:
+            logger.debug("_qc_npc_text rejected: slang. text=%r", text)
+            return FilterResult(
+                text, "it used modern slang or anachronistic wording", False
+            )
+        text = self._cleanup_removed_spans(_SLANG_PATTERN.sub(" ", text))
+        if not _has_real_npc_text(text):
+            logger.debug(
+                "_qc_npc_text rejected: no real text after slang filter. text=%r", text
+            )
+            return FilterResult(text, "nothing remained after removing slang", True)
+        return FilterResult(text, None, True)
+
+    def _qc_prohibited(self, text: str, allow_rewrite: bool) -> FilterResult:
+        """Stage 6: phrases this character must never say.
+
+        Removed cleanly — the old "[...]" placeholder was a visible artifact in
+        player-facing dialogue. The emptiness check below is guarded by whether
+        a pattern actually fired: unconditional, it reported *every other*
+        failure (a truncated reply included) to the model as "nothing remained
+        after removing prohibited phrasing", even for the many NPCs that have
+        no prohibited patterns at all — and that string is spliced verbatim
+        into the retry guidance block.
+        """
+        removed = False
+        for pattern in getattr(self, "_prohibited_patterns", ()):
+            if not pattern.search(text):
+                continue
+            if not allow_rewrite:
+                logger.debug("_qc_npc_text rejected: prohibited phrase. text=%r", text)
+                return FilterResult(
+                    text, "it used a phrase this character must never say", False
+                )
+            text = self._cleanup_removed_spans(pattern.sub(" ", text))
+            removed = True
+        if removed and not _has_real_npc_text(text):
+            logger.debug(
+                "_qc_npc_text rejected: no real text after prohibited filter. text=%r",
+                text,
+            )
+            return FilterResult(
+                text, "nothing remained after removing prohibited phrasing", True
+            )
+        return FilterResult(text, None, removed)
+
+    def _apply_content_filters(self, text: str, allow_rewrite: bool) -> FilterResult:
+        """Run the content filters in order, stopping at the first rejection.
+
+        Shared by the NPC-line pipeline and the flavor pipeline. Flavor used to
+        carry a reduced copy of this and had drifted three ways — most of all,
+        it skipped the prohibited-phrase patterns entirely, so a phrase a
+        character must never say was blocked in the spoken line and printed in
+        the beat right beside it. Every caller therefore runs all three stages;
+        there is no way to opt out of the prohibited-phrase pass, because
+        wanting to is what caused the drift.
+        """
+        rewrote = False
+        stages = (self._qc_invented_nouns, self._qc_slang, self._qc_prohibited)
+        for stage in stages:
+            text, reason, stage_rewrote = stage(text, allow_rewrite)
+            rewrote = rewrote or stage_rewrote
+            if reason:
+                return FilterResult(text, reason, rewrote)
+        return FilterResult(text, None, rewrote)
+
+    def _qc_check_repetition(
+        self, text: str, history: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Stage 7: reject a line already said earlier in this conversation.
+
+        The caller's retry loop handles the second attempt. ``text`` is
+        tokenized once for the whole scan, and the similarity score is computed
+        once rather than recomputed inside an eagerly-evaluated log argument.
+        """
+        tokens = self._tokenize(text)
+        for prior in history[-8:]:
+            prior_npc = prior.get("npc", "")
+            if not prior_npc:
+                continue
+            score = self._jaccard_tokens(tokens, self._tokenize(prior_npc))
+            if score > _NPC_REPEAT_SIMILARITY:
+                logger.debug(
+                    "_qc_npc_text rejected: repetition guard. "
+                    "jaccard=%.2f text=%r prior=%r",
+                    score,
+                    text,
+                    prior_npc,
+                )
+                return "it repeated a line already said earlier in this conversation"
+        return None
+
+    @staticmethod
+    def _split_dropping_dangling_fragment(text: str) -> List[str]:
+        """QC policy 2 at the prose level: split, minus a cut-off tail.
+
+        A reply that arrives cut off mid-clause ("The ferry runs at dawn. The
+        man who keeps it is") used to be handed a cosmetic period, manufacturing
+        a sentence the character never finished. The dangling fragment is
+        dropped when the complete sentences before it carry at least as much of
+        the reply, and kept — and closed by the caller — otherwise. That second
+        half matters: discarding it unconditionally is the *inverse* failure of
+        the same policy, and would amputate a 461-character reply that opens
+        "Aye. " and then runs on with no further punctuation down to "Aye.".
+
+        Shared by the spoken line and the flavor beat, which used to truncate at
+        a word boundary and then add the cosmetic period this rule exists to
+        forbid. Sentence splitting (including the displaced-closing-quote
+        repair) comes from _chat_guard.
+        """
+        sentences = _split_sentences(text)
+        # The sentence regex cannot capture a leading ellipsis (it needs a
+        # non-terminator first), so re-attach intentional hesitation.
+        if sentences and text.lstrip().startswith("..."):
+            sentences[0] = "..." + sentences[0]
+        if len(sentences) > 1:
+            tail = sentences[-1].rstrip(_CLOSING_QUOTES)
+            if (not tail or tail[-1] not in _TERMINATORS) and len(
+                " ".join(sentences[:-1])
+            ) >= len(sentences[-1]):
+                sentences.pop()
+        return sentences
+
+    def _qc_normalise_sentences(self, text: str) -> str:
+        """Stage 8: cap the reply at three sentences and close it properly.
+
+        Drops a cut-off trailing fragment first (see
+        :meth:`_split_dropping_dangling_fragment`), then applies the quote-aware
+        terminal punctuation from _chat_guard.
+
+        The final whitespace collapse is a containment step, not cosmetics: the
+        accepted line is written back into prompts that are structured by
+        newlines (``revise_turn``'s options block, ``_format_history``'s
+        speaker-labelled rows), so a newline surviving QC would let model output
+        forge a row there. The production adapter happens to collapse whitespace
+        upstream; the legacy adapter path this module still supports does not,
+        so the guarantee belongs here, at the last point every line passes.
+        """
+        sentences = self._split_dropping_dangling_fragment(text)
+        joined = " ".join(sentences[:MAX_NPC_SENTENCES])
+        return _ensure_terminal_punctuation(_WS_RUN_PATTERN.sub(" ", joined).strip())
+
     def _qc_npc_text(
         self, text: str, history: List[Dict[str, Any]], allow_rewrite: bool = True
-    ) -> Optional[str]:
-        """Apply QC pipeline. Return cleaned text or None.
-
-        Compatibility wrapper over ``_qc_npc_text_ex`` (which also reports the
-        rejection reason and any extracted action aside).
-        """
-        cleaned, _reason, _aside = self._qc_npc_text_ex(
-            text, history, allow_rewrite=allow_rewrite
-        )
-        return cleaned
-
-    def _qc_npc_text_ex(
-        self, text: str, history: List[Dict[str, Any]], allow_rewrite: bool = True
-    ) -> tuple:
-        """QC pipeline core. Returns (cleaned_text_or_None, reason, action_aside).
+    ) -> QcResult:
+        """Run the QC pipeline over one raw NPC line.
 
         Policy (per design decision): content violations — invented proper
         nouns, modern slang, prohibited phrases — REJECT the line when
@@ -966,178 +1714,147 @@ class ConversationalNPCMixin:
         punctuation) always applies.
         """
         original = text
-        # Step 1: extract roleplay *action* asides, then strip / garbage check
-        text, aside = self._extract_action_asides(text.strip())
-        text = text.strip()
-        if not _has_real_npc_text(text):
-            logger.debug("_qc_npc_text rejected: no real text after strip. original=%r", original)
-            return None, "the reply had no spoken text", aside
-        if aside and text[0].islower():
-            # The spoken line started after a leading aside ("*shrugs* fine.")
-            text = text[0].upper() + text[1:]
-
-        # Step 2: Truncate at sentence boundary if too long
-        if len(text) > _MAX_NPC_TEXT_CHARS:
-            boundary_pos = -1
-            for i in range(_MAX_NPC_TEXT_CHARS - 1, -1, -1):
-                if text[i] in ".!?":
-                    boundary_pos = i + 1
-                    break
-            text = (
-                text[:boundary_pos].strip()
-                if boundary_pos > 0
-                else text[:_MAX_NPC_TEXT_CHARS].strip()
+        text, reason, aside = self._qc_strip_and_check(text)
+        if reason:
+            logger.debug(
+                "_qc_npc_text rejected: no real text after strip. original=%r", original
             )
+            return QcResult(None, reason, aside)
 
-        # Step 3: Reject if Jean-dialogue pattern found (always a rejection —
-        # the NPC must never speak for Jean, and there is no safe rewrite)
-        if _JEAN_DIALOG_PATTERN.search(text):
-            logger.debug("_qc_npc_text rejected: Jean-dialogue pattern. text=%r", text)
-            return None, "it wrote Jean's dialogue or narrated Jean speaking", aside
+        text = self._truncate_at_sentence_boundary(text, MAX_NPC_TEXT_CHARS)
+        reason = self._qc_check_jean_dialogue(text)
+        if reason:
+            return QcResult(None, reason, aside)
 
-        # Step 4: Invented proper noun scan
-        replacements = self._find_invented_nouns(text)
-        rewrote = False
-        if replacements:
-            if not allow_rewrite:
-                logger.debug("_qc_npc_text rejected: invented nouns %s. text=%r", sorted(replacements), text)
-                return (
-                    None,
-                    "it used names not in the allowed list: "
-                    + ", ".join(sorted(replacements)),
-                    aside,
-                )
-            for token, repl in replacements.items():
-                text = re.sub(r"\b" + re.escape(token) + r"\b", repl, text)
-            rewrote = True
+        text, reason, rewrote = self._apply_content_filters(text, allow_rewrite)
+        if reason:
+            return QcResult(None, reason, aside)
 
-        # Step 5: Slang filter
-        if _SLANG_PATTERN.search(text):
-            if not allow_rewrite:
-                logger.debug("_qc_npc_text rejected: slang. text=%r", text)
-                return None, "it used modern slang or anachronistic wording", aside
-            text = self._cleanup_removed_spans(_SLANG_PATTERN.sub(" ", text))
-            rewrote = True
-            if not _has_real_npc_text(text):
-                logger.debug("_qc_npc_text rejected: no real text after slang filter. text=%r", text)
-                return None, "nothing remained after removing slang", aside
+        reason = self._qc_check_repetition(text, history)
+        if reason:
+            return QcResult(None, reason, aside)
 
-        # Step 6: Prohibited phrases (story chars only, patterns pre-compiled
-        # in _init_chat_attrs). Removed cleanly — the old "[...]" placeholder
-        # was a visible artifact in player-facing dialogue.
-        for pattern in self._prohibited_patterns:
-            if pattern.search(text):
-                if not allow_rewrite:
-                    logger.debug("_qc_npc_text rejected: prohibited phrase. text=%r", text)
-                    return None, "it used a phrase this character must never say", aside
-                text = self._cleanup_removed_spans(pattern.sub(" ", text))
-                rewrote = True
+        text = self._qc_normalise_sentences(text)
         if not _has_real_npc_text(text):
-            logger.debug("_qc_npc_text rejected: no real text after prohibited filter. text=%r", text)
-            return None, "nothing remained after removing prohibited phrasing", aside
-
-        # Step 7: Repetition guard — caller's retry loop handles the second attempt
-        for prior in history[-8:]:
-            prior_npc = prior.get("npc", "")
-            if prior_npc and self._jaccard(text, prior_npc) > _NPC_REPEAT_SIMILARITY:
-                logger.debug("_qc_npc_text rejected: repetition guard. jaccard=%.2f text=%r prior=%r", self._jaccard(text, prior_npc), text, prior_npc)
-                return None, "it repeated a line already said earlier in this conversation", aside
-
-        # Step 8: Sentence cap (keep first 3 sentences, preserving each
-        # sentence's own terminator) + terminal punctuation. A fragment with
-        # no alphanumeric content (a closing quote split off by the sentence
-        # regex) belongs to the previous sentence, not the cap count —
-        # otherwise 'He called it "the long road."' gains a stray period.
-        sentences: List[str] = []
-        for raw_sentence in _SENTENCE_PATTERN.findall(text):
-            piece = raw_sentence.strip()
-            if not piece:
-                continue
-            if sentences and not any(ch.isalnum() for ch in piece):
-                sentences[-1] += piece
-                continue
-            sentences.append(piece)
-        # The sentence regex can't capture a leading ellipsis (it requires a
-        # non-terminator first), so re-attach intentional hesitation.
-        if sentences and text.lstrip().startswith("..."):
-            sentences[0] = "..." + sentences[0]
-        text = " ".join(sentences[:3])
-        # Terminal punctuation — looking through a closing quote so
-        # '... road."' does not gain a stray period after the quote.
-        if text and text.rstrip("\"'”’")[-1:] not in (".", "!", "?", ""):
-            text += "."
-
-        # Step 9: If substitutions ran, repair capitalization at sentence starts
+            # Distinct from the content filters' own emptiness checks: this is
+            # what a reply that was nothing but a cut-off fragment leaves.
+            logger.debug(
+                "_qc_npc_text rejected: nothing survived truncation repair. "
+                "original=%r",
+                original,
+            )
+            return QcResult(
+                None, "the reply was cut off before it said anything", aside
+            )
         if rewrote:
             text = self._capitalize_sentence_starts(text)
-
-        logger.debug("_qc_npc_text passed. cleaned_chars=%s original_chars=%s", len(text), len(original))
-        return text, None, aside
+        logger.debug(
+            "_qc_npc_text passed. cleaned_chars=%s original_chars=%s",
+            len(text),
+            len(original),
+        )
+        return QcResult(text, None, aside)
 
     def _qc_flavor_text(self, flavor: str) -> str:
         """Rewrite-only QC for npc_flavor. Returns cleaned flavor or "".
 
-        Flavor is decorative — it is never worth failing a whole turn over, so
-        this never rejects: invented nouns are substituted, slang removed,
-        markers stripped, and anything left unusable simply drops the flavor.
+        Flavor is decorative — never worth failing a whole *turn* over — so
+        content violations are repaired rather than rejected, and anything left
+        unusable simply drops the beat.
+
+        The Jean-dialogue rule is the exception, and it is why this is not just
+        ``_apply_content_filters``. "Do not write Jean's dialogue" is a hard
+        rule the spoken path always rejects on, but flavor is also where an
+        extracted stage direction is *relocated* — and an aside carries across
+        a retry — so a model beat like ``*Jean said, "Leave it."*`` used to be
+        pulled out of the line the rule protects and printed verbatim in the
+        channel beside it. There is no safe rewrite for a line that speaks for
+        Jean, and no turn to fail here, so the beat is dropped.
         """
         if not flavor:
             return ""
-        flavor = _BOLD_MD_PATTERN.sub(r"\1", str(flavor)).replace("*", " ").strip()
-        for token, repl in self._find_invented_nouns(flavor).items():
-            flavor = re.sub(r"\b" + re.escape(token) + r"\b", repl, flavor)
-        flavor = self._cleanup_removed_spans(_SLANG_PATTERN.sub(" ", flavor))
+        flavor = self._cleanup_removed_spans(
+            _BOLD_MD_PATTERN.sub(r"\1", str(flavor)).replace("*", " ")
+        )
+        if self._qc_check_jean_dialogue(flavor):
+            logger.debug("_qc_flavor_text dropped: it wrote Jean's dialogue.")
+            return ""
+        flavor, _reason, _rewrote = self._apply_content_filters(
+            flavor, allow_rewrite=True
+        )
         if not _has_real_npc_text(flavor):
             return ""
-        flavor = flavor[:_MAX_FLAVOR_CHARS].strip()
-        if flavor[-1] not in ".!?":
-            flavor += "."
+        flavor = self._truncate_at_sentence_boundary(flavor, MAX_FLAVOR_CHARS)
+        # QC policy 2 applies to the beat as well as the line: truncating at a
+        # word boundary and then adding a period manufactured a sentence the
+        # model never finished ("She sets down the ledger and looks at the.").
+        flavor = " ".join(self._split_dropping_dangling_fragment(flavor))
+        if not _has_real_npc_text(flavor):
+            return ""
+        flavor = _ensure_terminal_punctuation(flavor)
         if flavor[0].islower():
             flavor = flavor[0].upper() + flavor[1:]
         return flavor
 
-    def _qc_jean_options(self, options: Any) -> Optional[List[Dict[str, str]]]:
-        """QC Jean dialogue options. Return the salvageable subset, or None.
+    def _qc_jean_options(self, options: Any) -> List[Dict[str, str]]:
+        """QC Jean dialogue options. Return the salvageable subset, possibly empty.
 
         Per design decision this salvages rather than rejecting wholesale: each
         option is validated independently, near-duplicates drop only the later
         member of the pair, and the caller tops the set back up to three from
-        the fallback pool. One malformed option no longer throws away two good,
-        context-aware ones.
+        the fallback pool.
+
+        The whole list is validated *before* it is cut to three. Slicing first
+        meant a malformed option at index 0 made a perfectly good option at
+        index 3 unreachable — the salvage this exists to provide, defeated by
+        the first line of its own loop. Tone defaults are keyed on the KEPT
+        position rather than the source position, so a dropped option cannot
+        leave the player with no "direct" reply on offer.
         """
         if not isinstance(options, list) or not options:
-            return None
+            return []
 
-        expected_tones = ["direct", "guarded", "open"]
-        validated = []
-        for i, opt in enumerate(options[:_JEAN_OPTION_COUNT]):
+        validated: List[Tuple[Optional[str], str]] = []
+        for opt in options[:_MAX_OPTION_CANDIDATES]:
             if not isinstance(opt, dict) or "text" not in opt:
                 continue
 
             text = str(opt.get("text", "")).strip()
-            if not (5 <= len(text) <= _MAX_OPTION_CHARS):
+            # Over-length options are DROPPED, not clipped. ai/llm_client.py
+            # trims to the same `MAX_OPTION_CHARS` at a word boundary before
+            # this ever runs, so anything still over-length came from an
+            # adapter that does not apply the cap (the legacy shape, a test
+            # double) and is unbounded untrusted text; the top-up refills the
+            # slot from the authored pool. Clipping it here instead would ship
+            # the mid-word amputation the shared cap exists to prevent.
+            if not (_MIN_OPTION_CHARS <= len(text) <= MAX_OPTION_CHARS):
                 continue
 
             # No meta-speech
             if _OPTION_META_PATTERN.search(text):
                 continue
 
-            tone = str(opt.get("tone", expected_tones[i % _JEAN_OPTION_COUNT])).lower()
-            if tone not in ("direct", "guarded", "open"):
-                tone = expected_tones[i % _JEAN_OPTION_COUNT]
+            tone = str(opt.get("tone", "")).lower()
+            validated.append((tone if tone in JEAN_TONES else None, text))
 
-            validated.append({"tone": tone, "text": text})
+        # Dedup: keep the earlier of any too-similar pair, and stop as soon as
+        # three survive — the cut to three happens *after* validation and
+        # dedup, which is the whole point of scanning past the first three.
+        kept: List[Tuple[Optional[str], str]] = []
+        for tone, text in validated:
+            if self._is_near_duplicate(text, [t for _tone, t in kept]):
+                continue
+            kept.append((tone, text))
+            if len(kept) >= _JEAN_OPTION_COUNT:
+                break
 
-        # Dedup: keep the earlier of any too-similar pair
-        deduped: List[Dict[str, str]] = []
-        for opt in validated:
-            if all(
-                self._jaccard(opt["text"], kept["text"]) <= _OPTION_SIMILARITY_MAX
-                for kept in deduped
-            ):
-                deduped.append(opt)
-
-        return deduped or None
+        # Tone defaults are assigned last, over the final kept list, so neither
+        # a malformed option nor a near-duplicate can leave a hole in the
+        # direct/guarded/open cycle the UI colours its three buttons from.
+        return [
+            {"tone": tone or JEAN_TONES[index % len(JEAN_TONES)], "text": text}
+            for index, (tone, text) in enumerate(kept)
+        ]
 
     def _top_up_jean_options(
         self, options: List[Dict[str, str]]
@@ -1158,10 +1875,7 @@ class ConversationalNPCMixin:
                 break
             if fb["tone"] in used_tones:
                 continue
-            if any(
-                self._jaccard(fb["text"], o["text"]) > _OPTION_SIMILARITY_MAX
-                for o in options
-            ):
+            if self._is_near_duplicate(fb["text"], [o["text"] for o in options]):
                 continue
             options.append(dict(fb))
             used_tones.add(fb["tone"])
@@ -1177,7 +1891,7 @@ class ConversationalNPCMixin:
     # Adversarial state-implication guard
     # ------------------------------------------------------------------
 
-    def _guard_allowed_topics(self) -> set:
+    def _guard_allowed_topics(self) -> Set[str]:
         """Subject matter this NPC is deliberately licensed to speak about.
 
         Some real game state is fed into the system prompt on purpose: a
@@ -1185,23 +1899,49 @@ class ConversationalNPCMixin:
         Gorran's speech stage (JEAN'S KNOWN CONTEXT), and a story character's
         authored ``knowledge_scope``. Naming those here keeps intended content
         out of the reviser's way. The licence is narrow by construction — a
-        topic can only excuse a teaching/growth flag, never a handover or an
+        topic can only excuse a `teaching` flag, never a handover or an
         appointment (see ``_chat_guard._EXCUSABLE_SUBCATEGORIES``), so a
         knowledge_scope entry like "the ferry crossing" can never license
         "I'll give you a knife for the crossing".
+
+        Memoised for the same reason as :meth:`_allowed_noun_tokens`: it runs on
+        every turn and rebuilds the same set by re-scanning static authored
+        config with a regex.
+
+        The cache key is the move *names*, not the ``known_moves`` list object.
+        An ally that learns a technique appends to that list in place
+        (``_combat.py``'s ``learn_move``), so an identity check would go on
+        answering with the stale set and the guard would start rewriting the
+        very talk the whitelist exists to permit. The config dict is keyed by
+        identity: it comes from the class-level JSON cache and is never mutated.
+        The *raw* attribute is what is cached, not ``config or {}`` — an NPC
+        with no character config would otherwise build a fresh empty dict on
+        every call and never match its own cache, which is every generic nomad.
         """
+        config = getattr(self, "_chat_char_config", None)
+        move_names: Tuple[str, ...] = ()
+        if getattr(self, "growth_profile", None):
+            move_names = tuple(
+                str(getattr(move, "name", "")).lower()
+                for move in (getattr(self, "known_moves", None) or ())
+                if getattr(move, "name", "")
+            )
+
+        cached = getattr(self, "_guard_topic_cache", None)
+        if cached is not None:
+            cached_config, cached_names, cached_topics = cached
+            if cached_config is config and cached_names == move_names:
+                return cached_topics
+
         topics = {"gorran"}
         if getattr(self, "growth_profile", None):
             topics |= set(_ALLY_CRAFT_TOPICS)
-            for move in getattr(self, "known_moves", None) or []:
-                name = getattr(move, "name", "")
-                if name:
-                    topics.add(str(name).lower())
-        config = getattr(self, "_chat_char_config", None) or {}
-        for entry in config.get("knowledge_scope") or []:
-            for word in re.findall(r"[a-z]{4,}", str(entry).lower()):
+            topics |= set(move_names)
+        for entry in (config or {}).get("knowledge_scope") or []:
+            for word in _TOPIC_WORD_PATTERN.findall(str(entry).lower()):
                 if word not in _TOPIC_STOPWORDS:
                     topics.add(word)
+        self._guard_topic_cache = (config, move_names, topics)
         return topics
 
     def _request_guard_revision(
@@ -1230,38 +1970,87 @@ class ConversationalNPCMixin:
             logger.warning("_request_guard_revision revise_turn failed: %s", e)
             return None
 
+    def _resolve_guarded_text(
+        self,
+        npc_text: str,
+        text_flags: List[_chat_guard.GuardFlag],
+        revision: Optional[Dict[str, Any]],
+        topics: Set[str],
+    ) -> str:
+        """Return a clean NPC line after the tripwire fired on the original.
+
+        Prefers the reviser's line and falls back to the deterministic hedge of
+        the original, which is at least a known quantity. Extracted for the same
+        reason the options path already was: the two are structurally identical
+        (take the revision if it survives a re-scan, else repair
+        deterministically) and this one sat inline inside a hundred-line
+        orchestrator while its twin was a method.
+        """
+        # The revision comes straight off the provider and has never been
+        # through the normal QC pipeline, so it can carry invented proper
+        # nouns, slang, or a prohibited phrase that _run_npc_turn would have
+        # caught. Clean it the same way before re-scanning it.
+        candidate = (revision or {}).get("npc_text")
+        if isinstance(candidate, str) and candidate.strip():
+            candidate = self._qc_npc_text(
+                candidate, self._chat_history, allow_rewrite=True
+            ).text
+        else:
+            candidate = None
+        if candidate and not _chat_guard.scan_npc_text(candidate, topics):
+            logger.info("_guard_turn accepted revised npc_text.")
+            return candidate
+        logger.info("_guard_turn hedged npc_text deterministically.")
+        return _chat_guard.hedge_npc_text(npc_text, text_flags)
+
     def _guard_turn(
         self,
         adapter,
         system: str,
-        npc_text: str,
-        npc_flavor: str,
-        jean_options: List[Dict[str, str]],
-    ) -> tuple:
+        turn: Turn,
+        deadline: Optional[float] = None,
+    ) -> GuardedTurn:
         """Strip implied game-state changes from a turn before the player sees it.
 
-        Conversations are lore only — nothing said in one is wired to the engine
-        — so an offered blade, an offered escort, a claim about Jean's pack, or a
-        meeting arranged for dawn is a promise the game cannot keep. Returns
-        ``(npc_text, npc_flavor, jean_options)``.
+        Conversations are lore only — nothing an NPC *says* is wired to the
+        engine — so an offered blade, an offered escort, a claim about Jean's
+        pack, or a meeting arranged for dawn is a promise the game cannot keep.
 
         Costs nothing when the tripwire stays quiet, which is the common case. A
-        tripped turn spends at most one extra call; if that call is unavailable
-        or comes back still dirty, the deterministic hedge ships instead, so the
-        player always gets a turn.
+        tripped turn spends at most one extra call; if that call is unavailable,
+        out of time, or comes back still dirty, the deterministic hedge ships
+        instead, so the player always gets a turn.
+
+        Returns the cleaned turn *and* whether the tripwire fired, because the
+        same response's ``reputation_delta`` — one of the two structured fields
+        that really does reach the engine — is the caller's to zero when it did.
         """
-        options = [dict(o) for o in (jean_options or [])]
+        npc_text = turn.npc_text
+        npc_flavor = turn.npc_flavor
+        options = [dict(o) for o in (turn.jean_options or [])]
         topics = self._guard_allowed_topics()
-        text_flags = _chat_guard.scan_npc_text(npc_text or "", topics)
-        flavor_flags = _chat_guard.scan_npc_text(npc_flavor or "", topics)
-        option_flags = [
+        text_flags: List[_chat_guard.GuardFlag] = _chat_guard.scan_npc_text(
+            npc_text or "", topics
+        )
+        flavor_flags: List[_chat_guard.GuardFlag] = _chat_guard.scan_npc_text(
+            npc_flavor or "", topics
+        )
+        option_flags: List[List[_chat_guard.GuardFlag]] = [
             _chat_guard.scan_option_text(o.get("text", ""), topics) for o in options
         ]
-        all_flags = list(text_flags) + list(flavor_flags)
+
+        # Only the line and the options can be *repaired*; flagged flavor is
+        # dropped outright below. Escalating on flavor alone would spend a real
+        # round trip whose answer is then thrown away, so the guidance — and the
+        # decision to call at all — is built from the repairable flags only. Both
+        # sets come out of one walk: the escalation set used to be a second loop
+        # re-accumulating a subset of the first.
+        escalation_flags = list(text_flags)
         for flags in option_flags:
-            all_flags.extend(flags)
+            escalation_flags.extend(flags)
+        all_flags = escalation_flags + list(flavor_flags)
         if not all_flags:
-            return npc_text, npc_flavor, options
+            return GuardedTurn(Turn(npc_text, npc_flavor, options), False)
 
         logger.info(
             "_guard_turn tripwire hit npc=%s categories=%s line_flags=%s flavor_flags=%s option_flags=%s",
@@ -1272,40 +2061,23 @@ class ConversationalNPCMixin:
             sum(len(f) for f in option_flags),
         )
 
-        # Only the line and the options can be *repaired*; flagged flavor is
-        # dropped outright below. Escalating on flavor alone would spend a real
-        # round trip whose answer is then thrown away, so the guidance — and the
-        # decision to call at all — is built from the repairable flags only.
-        escalation_flags = list(text_flags)
-        for flags in option_flags:
-            escalation_flags.extend(flags)
         revision = None
         if escalation_flags:
-            revision = self._request_guard_revision(
-                adapter, system, npc_text, options, escalation_flags
-            )
-
-        # NPC line: accept the revision only if it comes back clean; otherwise
-        # hedge the original, which is at least a known quantity.
-        final_text = npc_text
-        if text_flags:
-            # The revision comes straight off the provider and has never been
-            # through the normal QC pipeline, so it can carry invented proper
-            # nouns, slang, or a prohibited phrase that _run_npc_turn would have
-            # caught. Clean it the same way before re-scanning it.
-            candidate = (revision or {}).get("npc_text")
-            if isinstance(candidate, str) and candidate.strip():
-                candidate, _reason, _aside = self._qc_npc_text_ex(
-                    candidate, self._chat_history, allow_rewrite=True
+            if _no_stage_budget(deadline, adapter):
+                logger.warning(
+                    "_guard_turn skipping revision: the turn's provider budget is "
+                    "spent; hedging deterministically instead."
                 )
             else:
-                candidate = None
-            if candidate and not _chat_guard.scan_npc_text(candidate, topics):
-                final_text = candidate
-                logger.info("_guard_turn accepted revised npc_text.")
-            else:
-                final_text = _chat_guard.hedge_npc_text(npc_text, text_flags)
-                logger.info("_guard_turn hedged npc_text deterministically.")
+                revision = self._request_guard_revision(
+                    adapter, system, npc_text, options, escalation_flags
+                )
+
+        final_text = npc_text
+        if text_flags:
+            final_text = self._resolve_guarded_text(
+                npc_text, text_flags, revision, topics
+            )
 
         # Flavor is decorative (same policy as _qc_flavor_text) — a flagged beat
         # is dropped rather than rewritten. It is never worth a turn.
@@ -1319,14 +2091,14 @@ class ConversationalNPCMixin:
                 options, option_flags, revision, topics
             )
 
-        return final_text, final_flavor, final_options
+        return GuardedTurn(Turn(final_text, final_flavor, final_options), True)
 
     def _rebuild_guarded_options(
         self,
         options: List[Dict[str, str]],
-        option_flags: List[List[Any]],
+        option_flags: List[List[_chat_guard.GuardFlag]],
         revision: Optional[Dict[str, Any]],
-        topics: set,
+        topics: Set[str],
     ) -> List[Dict[str, str]]:
         """Return three clean Jean options after at least one was flagged."""
         rebuilt: List[Dict[str, str]] = []
@@ -1334,9 +2106,8 @@ class ConversationalNPCMixin:
         if isinstance(revised, list):
             # Same QC the generated options get (length caps, meta-speech
             # filter, tone defaulting, near-duplicate dedup) — the reviser's
-            # output has never seen it, and its own cap is _MAX_FLAVOR_CHARS
-            # (200) against _qc_jean_options' _MAX_OPTION_CHARS (160).
-            for opt in self._qc_jean_options(revised) or []:
+            # output has never seen it.
+            for opt in self._qc_jean_options(revised):
                 if _chat_guard.scan_option_text(opt["text"], topics):
                     continue
                 rebuilt.append(dict(opt))
@@ -1346,30 +2117,26 @@ class ConversationalNPCMixin:
         for opt, flags in zip(options, option_flags):
             if flags:
                 continue
-            if any(
-                self._jaccard(opt["text"], kept["text"]) > _OPTION_SIMILARITY_MAX
-                for kept in rebuilt
-            ):
+            if self._is_near_duplicate(opt["text"], [k["text"] for k in rebuilt]):
                 continue
             rebuilt.append(dict(opt))
         return self._top_up_jean_options(rebuilt)
 
     def _generate_turn(
         self, adapter, system: str, is_opening: bool, jean_text: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[TurnOutcome]:
         """Dispatch one raw NPC turn to the adapter.
 
         Prefers the combined ``generate_turn`` (NPC reply + Jean options in one
         call — the round-latency budget depends on this), and falls back to the
         legacy two-method adapter interface for backwards compatibility.
 
-        Returns a normalized dict with keys npc_text, npc_flavor,
-        conversation_quality, reputation_delta, loquacity_delta (None if the
-        adapter did not supply one), and raw_options (the combined call's
-        options list, or None when the adapter produces options via a separate
-        call). Returns None on failure.
+        Returns a :class:`TurnOutcome` with the adapter's fields coerced and
+        clamped, or None on failure — including a provider that raises, which
+        must never escape past the retry loop and the deterministic fallback
+        into the catch-all "Conversation failed" error.
         """
-        combined = hasattr(adapter, "generate_turn")
+        combined = _is_combined_adapter(adapter)
         if combined:
             method, label = adapter.generate_turn, "combined"
         else:
@@ -1379,10 +2146,16 @@ class ConversationalNPCMixin:
                 "_generate_turn using legacy two-call adapter. is_opening=%s",
                 is_opening,
             )
-        if is_opening:
-            res = method(system, self._chat_history, is_opening=True)
-        else:
-            res = method(system, self._chat_history, is_opening=False, jean_text=jean_text)
+        try:
+            if is_opening:
+                res = method(system, self._chat_history, is_opening=True)
+            else:
+                res = method(
+                    system, self._chat_history, is_opening=False, jean_text=jean_text
+                )
+        except Exception as e:  # provider errors must never cost the player a turn
+            logger.warning("_generate_turn %s adapter raised: %s", label, e)
+            return None
         if not res or not res.get("npc_text"):
             logger.warning(
                 "_generate_turn %s adapter returned no npc_text. is_opening=%s keys=%s",
@@ -1400,67 +2173,102 @@ class ConversationalNPCMixin:
         # Defence in depth: production adapters already coerce and clamp the
         # delta, but a nonconforming value must not raise one frame later in
         # chat_respond's arithmetic.
-        try:
-            reputation_delta = int(res.get("reputation_delta", 0))
-        except (TypeError, ValueError):
-            reputation_delta = 0
-        return {
-            "npc_text": res.get("npc_text"),
-            "npc_flavor": res.get("npc_flavor", "") or "",
-            "conversation_quality": res.get("conversation_quality", "neutral"),
-            "reputation_delta": max(-5, min(5, reputation_delta)),
-            "loquacity_delta": res.get("loquacity_delta"),
-            "raw_options": res.get("jean_options") if combined else None,
-        }
+        rep_low, rep_high = REPUTATION_DELTA_BOUNDS
+        return TurnOutcome(
+            npc_text=res.get("npc_text"),
+            npc_flavor=res.get("npc_flavor", "") or "",
+            conversation_quality=res.get("conversation_quality", "neutral"),
+            reputation_delta=max(
+                rep_low, min(rep_high, _coerce_int(res.get("reputation_delta"), 0))
+            ),
+            loquacity_delta=res.get("loquacity_delta"),
+            raw_options=res.get("jean_options") if combined else None,
+        )
 
     def _run_npc_turn(
-        self, adapter, system: str, llm_available: bool, is_opening: bool, jean_text
-    ) -> Optional[Dict[str, Any]]:
+        self,
+        adapter,
+        system: str,
+        llm_available: bool,
+        is_opening: bool,
+        jean_text,
+        deadline: Optional[float] = None,
+    ) -> Optional[TurnOutcome]:
         """Produce a QC'd NPC turn, or None if the caller should fall back.
 
         Attempt 1 runs QC in strict mode: content violations (invented nouns,
         slang, prohibited phrases) reject the line, and the retry carries the
         rejection reason back to the model as corrective guidance — resending
         the identical prompt at the same temperature mostly reproduced the same
-        violation. The final attempt runs QC in rewrite mode so a usable line
-        is salvaged in place rather than dropping to the deterministic
-        fallback. Successful calls are still a single round trip.
+        violation. The final attempt runs QC in rewrite mode so a usable line is
+        salvaged in place rather than dropping to the deterministic fallback.
+        Successful calls are still a single round trip.
+
+        When the turn's provider budget runs out before that final attempt, the
+        rewrite is applied to the line already in hand rather than cancelled
+        along with the retry. The deadline used to take both, so a line rejected
+        only for a *content* violation — exactly what rewrite mode exists to
+        salvage — was discarded for a generic deterministic fallback, and the
+        carried aside went with it. The salvage costs no provider call, which is
+        why it is allowed to run after the budget is spent.
 
         Roleplay *action asides* extracted from the spoken text are relocated
         into npc_flavor (the designated home for physical beats) when the model
-        did not supply flavor of its own; flavor then gets its own rewrite-only
-        QC pass.
+        did not supply flavor of its own. An aside carries across attempts: a
+        reply that was *entirely* a stage direction fails QC with nothing
+        spoken, and its beat used to be thrown away with it.
         """
         if not llm_available or adapter is None:
-            logger.debug("_run_npc_turn skipped: llm_available=%s has_adapter=%s", llm_available, adapter is not None)
+            logger.debug(
+                "_run_npc_turn skipped: llm_available=%s has_adapter=%s",
+                llm_available,
+                adapter is not None,
+            )
             return None
         max_attempts = 2
         reject_reason: Optional[str] = None
+        carried_aside = ""
+        last_rejected: Optional[TurnOutcome] = None
         for attempt in range(1, max_attempts + 1):
-            logger.info("_run_npc_turn attempt=%s/%s is_opening=%s", attempt, max_attempts, is_opening)
+            if attempt > 1 and _no_stage_budget(deadline, adapter):
+                logger.warning(
+                    "_run_npc_turn abandoning retry after attempt=%s: the turn's "
+                    "provider budget is spent.",
+                    attempt - 1,
+                )
+                return self._salvage_rejected_turn(last_rejected, carried_aside)
+            logger.info(
+                "_run_npc_turn attempt=%s/%s is_opening=%s",
+                attempt,
+                max_attempts,
+                is_opening,
+            )
             sys_prompt = system
             if reject_reason:
                 sys_prompt = (
-                    system
-                    + "\n\n[RETRY GUIDANCE] Your previous reply was rejected by "
+                    system + "\n\n[RETRY GUIDANCE] Your previous reply was rejected by "
                     "quality control because " + reject_reason + ". Write a "
                     "fresh reply that avoids this problem."
                 )
-            turn = self._generate_turn(adapter, sys_prompt, is_opening, jean_text)
-            if turn and turn.get("npc_text"):
-                cleaned, reason, aside = self._qc_npc_text_ex(
-                    turn["npc_text"],
+            model_turn = self._generate_turn(adapter, sys_prompt, is_opening, jean_text)
+            if model_turn and model_turn.npc_text:
+                cleaned, reason, aside = self._qc_npc_text(
+                    model_turn.npc_text,
                     self._chat_history,
                     allow_rewrite=(attempt == max_attempts),
                 )
+                if aside:
+                    carried_aside = aside
                 if cleaned:
-                    logger.info("_run_npc_turn QC passed on attempt=%s/%s", attempt, max_attempts)
-                    turn["npc_text"] = cleaned
-                    flavor = turn.get("npc_flavor") or ""
-                    if not flavor and aside:
-                        flavor = aside
-                    turn["npc_flavor"] = self._qc_flavor_text(flavor)
-                    return turn
+                    logger.info(
+                        "_run_npc_turn QC passed on attempt=%s/%s",
+                        attempt,
+                        max_attempts,
+                    )
+                    return self._finish_turn(
+                        model_turn, cleaned, aside or carried_aside
+                    )
+                last_rejected = model_turn
                 reject_reason = reason or "it was unusable"
                 logger.warning(
                     "_run_npc_turn QC rejected npc_text on attempt=%s/%s reason=%s text=%r",
@@ -1469,39 +2277,359 @@ class ConversationalNPCMixin:
                     reject_reason,
                     # WARNING is default-visible and LOG_FILE-persisted; the
                     # full raw line (which can echo player text) stays on the
-                    # DEBUG records inside _qc_npc_text_ex.
-                    (turn.get("npc_text") or "")[:80],
+                    # DEBUG records inside _qc_npc_text.
+                    (model_turn.npc_text or "")[:80],
                 )
             else:
-                logger.warning("_run_npc_turn generate_turn returned no npc_text on attempt=%s/%s", attempt, max_attempts)
-        logger.error("_run_npc_turn exhausted attempts=%s; caller should use deterministic fallback.", max_attempts)
+                logger.warning(
+                    "_run_npc_turn generate_turn returned no npc_text on attempt=%s/%s",
+                    attempt,
+                    max_attempts,
+                )
+        logger.error(
+            "_run_npc_turn exhausted attempts=%s; caller should use deterministic fallback.",
+            max_attempts,
+        )
         return None
 
+    def _finish_turn(
+        self, model_turn: TurnOutcome, npc_text: str, aside: str
+    ) -> TurnOutcome:
+        """Put the QC'd line and relocated beat back on the adapter's turn.
+
+        The model's own ``npc_flavor`` wins when it supplied one; an extracted
+        stage direction fills the channel only when it did not.
+        """
+        return model_turn._replace(
+            npc_text=npc_text,
+            npc_flavor=self._qc_flavor_text(model_turn.npc_flavor or aside),
+        )
+
+    def _salvage_rejected_turn(
+        self, last_rejected: Optional[TurnOutcome], carried_aside: str
+    ) -> Optional[TurnOutcome]:
+        """Re-run QC in rewrite mode on the last line strict mode rejected.
+
+        Rewrite mode is what turns "it used one name that is not in the world
+        allow-list" from a discarded turn into a repaired one. When the budget
+        expires before the attempt that would have run it, running it here
+        recovers exactly those lines without opening a provider stage.
+        Structural rejections (Jean's dialogue, repetition, nothing spoken) fail
+        in rewrite mode too, so they still fall through to None and the
+        deterministic fallback.
+        """
+        if last_rejected is None:
+            return None
+        cleaned, _reason, aside = self._qc_npc_text(
+            last_rejected.npc_text, self._chat_history, allow_rewrite=True
+        )
+        if not cleaned:
+            return None
+        logger.info(
+            "_run_npc_turn salvaged the rejected line in rewrite mode after the "
+            "provider budget expired."
+        )
+        return self._finish_turn(last_rejected, cleaned, aside or carried_aside)
+
     def _resolve_jean_options(
-        self, turn: Optional[Dict[str, Any]], adapter, npc_line: str, turn_number: int
+        self,
+        turn: Optional[TurnOutcome],
+        adapter,
+        npc_line: str,
+        turn_number: int,
+        deadline: Optional[float] = None,
     ) -> List[Dict[str, str]]:
         """Return three QC'd Jean options.
 
         Uses options already returned by a combined turn; otherwise requests them
-        from a legacy adapter; otherwise falls back to the deterministic pool.
-        Never makes a second LLM call on the combined path (protects the budget).
+        from a legacy adapter (unless the turn's provider budget is spent);
+        otherwise falls back to the deterministic pool. Never makes a second LLM
+        call on the combined path (protects the budget).
         """
-        combined = adapter is not None and hasattr(adapter, "generate_turn")
-        if turn is not None and combined:
-            options = self._qc_jean_options(turn.get("raw_options") or [])
-            return self._top_up_jean_options(options or [])
-        if turn is not None and adapter is not None:
+        if turn is not None and _is_combined_adapter(adapter):
+            return self._top_up_jean_options(
+                self._qc_jean_options(turn.raw_options or [])
+            )
+        if (
+            turn is not None
+            and adapter is not None
+            and not _no_stage_budget(deadline, adapter)
+        ):
             voice = (self._chat_char_config or {}).get("voice_summary") or (
                 self._chat_personality or {}
             ).get("voice", "")
-            raw = adapter.generate_jean_options(
-                self._display_name(), voice, npc_line, self._chat_history, turn_number
-            )
+            try:
+                raw = adapter.generate_jean_options(
+                    self._display_name(),
+                    voice,
+                    npc_line,
+                    self._chat_history,
+                    turn_number,
+                )
+            except Exception as e:  # provider errors must never cost the player a turn
+                logger.warning(
+                    "_resolve_jean_options generate_jean_options failed: %s", e
+                )
+                raw = None
             if raw:
                 options = self._qc_jean_options(raw)
                 if options:
                     return self._top_up_jean_options(options)
         return self._get_fallback_jean_options()
+
+    # ------------------------------------------------------------------
+    # Turn assembly shared by both chat entry points
+    # ------------------------------------------------------------------
+
+    def _load_turn_state(self, player) -> str:
+        """Loquacity, persistence key and stored history.
+
+        The identical opening three steps of chat_open and chat_respond.
+        """
+        self._compute_loquacity(player)
+        npc_key = self._get_npc_key(player)
+        self._load_history_from_persistence(player)
+        return npc_key
+
+    def _prepare_turn_context(self, player) -> Tuple[str, Any, bool]:
+        """Personality, system prompt and adapter.
+
+        The identical closing three steps of both entry points' setup. Returns
+        ``(system_prompt, adapter, llm_available)``.
+        """
+        self._ensure_personality(player)
+        system = self._build_system_prompt(player)
+        adapter = self._get_adapter()
+        return system, adapter, adapter is not None and adapter.enabled
+
+    def _record_jean_line(self, player, jean_text: str) -> None:
+        """Attach Jean's line to the open history row, or start one.
+
+        The row persisted at the end of a round is ``{npc: <line>, jean: ""}``,
+        so the normal path fills it in place; the append branch only covers a
+        conversation whose first stored row is Jean's.
+        """
+        if self._chat_history and not self._chat_history[-1].get("jean"):
+            self._chat_history[-1]["jean"] = jean_text
+            return
+        self._chat_history.append(
+            {
+                "npc": "",
+                "jean": jean_text,
+                "game_tick": self._game_tick(player),
+                "chapter": self._get_chapter(player),
+            }
+        )
+
+    def _apply_loquacity_delta(
+        self, loquacity_delta: Optional[int], conversation_quality: str
+    ) -> Tuple[int, bool]:
+        """Apply the round's loquacity change; report whether the talk is over.
+
+        The LLM may signal a signed delta (usually a drain, occasionally a GAIN
+        when Jean raises a topic the NPC finds interesting). When no explicit
+        delta is supplied (legacy adapter or deterministic fallback), the
+        quality-based drain applies so conversations still wind down.
+
+        The "ended" verdict is resolved here rather than separately for the
+        fallback-line decision and the response payload, so the two can never
+        drift out of sync.
+        """
+        if loquacity_delta is None:
+            drain = _LOQUACITY_DRAIN.get(conversation_quality)
+            loquacity_delta = -drain if drain is not None else LOQUACITY_DELTA_DEFAULT
+        low, high = LOQUACITY_DELTA_BOUNDS
+        loquacity_delta = max(
+            low, min(high, _coerce_int(loquacity_delta, LOQUACITY_DELTA_DEFAULT))
+        )
+        self.loquacity_current = max(
+            0, min(self.loquacity_max, self.loquacity_current + loquacity_delta)
+        )
+        return loquacity_delta, self.loquacity_current < self.loquacity_threshold
+
+    def _resolve_fallback_response(
+        self, player, conversation_ended: bool
+    ) -> Tuple[str, bool]:
+        """Deterministic reply for a turn the LLM could not produce.
+
+        Called only after loquacity is resolved, so the line can tell whether
+        this exchange is actually ending the conversation (use the authored
+        "done talking" closing lines) or is just a mid-conversation LLM hiccup
+        (use in-character filler instead of a false goodbye).
+
+        Authored fallback pools are small (often three lines), so a conversation
+        that leans on fallback for several turns in a row will otherwise cycle
+        back to a line already said in THIS conversation. Rotation alone cannot
+        prevent that once the pool wraps, so once it does, the conversation ends
+        gracefully instead of visibly repeating.
+
+        Every row in ``self._chat_history`` is a genuinely prior statement at
+        this point — including the last one, which was completed with Jean's
+        current line before this fallback was generated, while this round's own
+        response has not been persisted yet. So the comparison set is the full
+        list: slicing off the last entry would blind the check to a duplicate of
+        the single most recent line, which is visible whenever an authored pool
+        has only one entry (rotation itself only guarantees that no two
+        *consecutive* draws collide, and only for pools of two or more).
+        """
+        response = self._get_fallback_npc_line(
+            is_opening=False, player=player, exhausted=conversation_ended
+        )
+        logger.warning(
+            "chat_respond using deterministic fallback response. npc=%s response_chars=%s",
+            self.name,
+            len(response or ""),
+        )
+        already_said = {
+            entry.get("npc") for entry in self._chat_history if entry.get("npc")
+        }
+        if not conversation_ended and response in already_said:
+            conversation_ended = True
+            response = self._get_fallback_npc_line(
+                is_opening=False, player=player, exhausted=True
+            )
+            logger.info(
+                "chat_respond fallback pool exhausted; forcing conversation_ended. npc=%s",
+                self.name,
+            )
+        return response, conversation_ended
+
+    def _apply_reputation(self, player, reputation_delta: int) -> int:
+        """Apply the NPC's in-character reaction to Jean's reputation."""
+        if not hasattr(player, "reputation"):
+            player.reputation = {}
+        old_reputation = player.reputation.get(self.name, 0)
+        new_reputation = max(-100, min(100, old_reputation + reputation_delta))
+        player.reputation[self.name] = new_reputation
+        return new_reputation
+
+    def _guard_and_persist(
+        self,
+        player,
+        adapter,
+        system: str,
+        assembled: Turn,
+        guardable: bool,
+        deadline: Optional[float],
+    ) -> GuardedTurn:
+        """Run the state guard over an assembled turn, then persist it.
+
+        The identical closing block of both entry points, in the order that
+        order matters: the guard runs BEFORE the persist because
+        ``_load_history_from_persistence`` hands the saved rows straight back to
+        the model next round, so persisting the raw line would feed the
+        implication back in and breed more of them. Only guarded text is ever
+        written.
+
+        ``guardable`` is False when the line is authored rather than generated
+        (an LLM turn that failed, so the fallback pools supplied both the line
+        and the options). The tripwire is not a judge of hand-written prose:
+        Mara's chapter-1 starter says "inventory, not greeting" and Kaelen's
+        closing line says "come back when you need something sharpened", and it
+        would replace both with a generic hedge — after spending a revision call
+        to do it.
+        """
+        guarded = GuardedTurn(assembled, False)
+        if guardable:
+            guarded = self._guard_turn(adapter, system, assembled, deadline)
+        self._save_exchange_to_persistence(
+            player,
+            guarded.turn.npc_text,
+            "",
+            self._game_tick(player),
+            self._get_chapter(player),
+        )
+        return guarded
+
+    def _base_payload(
+        self,
+        npc_key: str,
+        player,
+        turn: Turn,
+        llm_available: bool,
+        conversation_ended: bool,
+    ) -> Dict[str, Any]:
+        """The nine fields every chat response carries, whatever happened.
+
+        ``chat_open`` used to build two twelve-key dicts inline while
+        ``chat_respond`` had been given a builder — which is how the brush-off
+        payload came to be spelled out a third time, one edit away from
+        disagreeing with its sibling about what a response looks like.
+        """
+        return {
+            "success": True,
+            "npc_key": npc_key,
+            "npc_flavor": turn.npc_flavor,
+            "jean_options": list(turn.jean_options),
+            "loquacity_current": self.loquacity_current,
+            "loquacity_max": self.loquacity_max,
+            "llm_available": llm_available,
+            "conversation_ended": conversation_ended,
+            "reputation": getattr(player, "reputation", {}).get(self.name, 0),
+        }
+
+    def _open_payload(
+        self,
+        npc_key: str,
+        player,
+        turn: Turn,
+        llm_available: bool,
+        conversation_ended: bool,
+    ) -> Dict[str, Any]:
+        """Assemble the /open response body.
+
+        The exchange count is always 0: this IS the first exchange. The
+        brush-off path passes a bare :class:`Turn` (no flavor, no options) and
+        ``conversation_ended=True``.
+        """
+        payload = self._base_payload(
+            npc_key, player, turn, llm_available, conversation_ended
+        )
+        payload.update(
+            {
+                "npc_name": self._display_name(),
+                "npc_opening": turn.npc_text,
+                "turn": 0,
+            }
+        )
+        return payload
+
+    def _respond_payload(
+        self,
+        npc_key: str,
+        player,
+        turn: Turn,
+        conversation_quality: str,
+        conversation_ended: bool,
+        llm_available: bool,
+        reputation: int,
+        reputation_delta: int,
+    ) -> Dict[str, Any]:
+        """Assemble the /respond response body.
+
+        Call after the round has been persisted and the reputation applied: the
+        exchange count reads ``self._chat_history``, which aliases the persisted
+        list, and ``reputation`` is the post-application total.
+
+        Pass everything past ``npc_key`` by keyword. The sole call site used to
+        pass all seven positionally, with two adjacent bools followed by two
+        adjacent ints, so transposing either pair compiled cleanly and shipped a
+        wrong payload — a conversation reported as ended because it was reported
+        as LLM-backed, or a reputation reported as its own delta.
+        """
+        payload = self._base_payload(
+            npc_key, player, turn, llm_available, conversation_ended
+        )
+        payload.update(
+            {
+                "npc_response": turn.npc_text,
+                "conversation_quality": conversation_quality,
+                "turn": len(self._chat_history),
+                "reputation": reputation,
+                "reputation_delta": reputation_delta,
+            }
+        )
+        return payload
 
     def chat(self, player):
         """Interact-system entry point for the 'chat' keyword.
@@ -1521,92 +2649,94 @@ class ConversationalNPCMixin:
     def chat_open(self, player) -> Dict[str, Any]:
         """Start conversation. Returns opening line + 3 Jean options."""
         try:
-            self._compute_loquacity(player)
-            npc_key = self._get_npc_key(player)
-            self._load_history_from_persistence(player)
+            deadline = time.monotonic() + _CHAT_DEADLINE_SECONDS
+            npc_key = self._load_turn_state(player)
 
             # Loquacity cutoff
             if self.loquacity_current < self.loquacity_threshold:
-                brush_off = self._get_brush_off_line()
-                logger.info("chat_open loquacity cutoff. npc=%s current=%s threshold=%s", self.name, self.loquacity_current, self.loquacity_threshold)
-                return {
-                    "success": True,
-                    "npc_key": npc_key,
-                    "npc_name": self._display_name(),
-                    "npc_opening": brush_off,
-                    "npc_flavor": "",
-                    "jean_options": [],
-                    "loquacity_current": self.loquacity_current,
-                    "loquacity_max": self.loquacity_max,
-                    "turn": 0,
-                    "llm_available": False,
-                    "conversation_ended": True,
-                    "reputation": getattr(player, "reputation", {}).get(self.name, 0),
-                }
+                logger.info(
+                    "chat_open loquacity cutoff. npc=%s current=%s threshold=%s",
+                    self.name,
+                    self.loquacity_current,
+                    self.loquacity_threshold,
+                )
+                return self._open_payload(
+                    npc_key,
+                    player,
+                    Turn(self._get_brush_off_line()),
+                    llm_available=False,
+                    conversation_ended=True,
+                )
 
-            self._ensure_personality(player)
-            system = self._build_system_prompt(player)
-            adapter = self._get_adapter()
-            llm_available = adapter is not None and adapter.enabled
-            logger.info("chat_open start npc=%s llm_available=%s has_adapter=%s history_len=%s", self.name, llm_available, adapter is not None, len(self._chat_history))
+            system, adapter, llm_available = self._prepare_turn_context(player)
+            logger.info(
+                "chat_open start npc=%s llm_available=%s has_adapter=%s history_len=%s",
+                self.name,
+                llm_available,
+                adapter is not None,
+                len(self._chat_history),
+            )
 
             # Generate the NPC opening (and, on a combined adapter, Jean's options
             # in the same call). Opening lines never drain loquacity.
-            turn = self._run_npc_turn(
-                adapter, system, llm_available, is_opening=True, jean_text=None
+            model_turn = self._run_npc_turn(
+                adapter,
+                system,
+                llm_available,
+                is_opening=True,
+                jean_text=None,
+                deadline=deadline,
             )
-            if turn is not None:
-                npc_opening = turn["npc_text"]
-                logger.info("chat_open LLM opening succeeded. npc=%s npc_text_chars=%s", self.name, len(npc_opening))
+            if model_turn is not None:
+                npc_opening = model_turn.npc_text
+                logger.info(
+                    "chat_open LLM opening succeeded. npc=%s npc_text_chars=%s",
+                    self.name,
+                    len(npc_opening),
+                )
             else:
-                npc_opening = self._get_fallback_npc_line(is_opening=True, player=player)
+                npc_opening = self._get_fallback_npc_line(
+                    is_opening=True, player=player
+                )
                 llm_available = False
-                logger.warning("chat_open using deterministic fallback opening. npc=%s", self.name)
-
-            jean_options = self._resolve_jean_options(turn, adapter, npc_opening, 0)
-            logger.info("chat_open resolved jean_options count=%s llm_available=%s", len(jean_options), llm_available)
-
-            # State guard runs on the assembled turn (line + flavor + options)
-            # so one escalation call covers all three, and runs BEFORE the
-            # persist below: _load_history_from_persistence hands the saved
-            # rows straight back to the model next round, so persisting the
-            # raw line would feed the implication back in and breed more of
-            # them. Only the guarded text is ever written.
-            #
-            # Only model output is guarded. When turn is None everything here
-            # is authored — the fallback opening comes from the character's
-            # conversation_starters and the options from _JEAN_FALLBACK_POOL —
-            # and the tripwire is not a judge of hand-written lines: Mara's
-            # chapter-1 starter says "inventory, not greeting" and Kaelen's
-            # closing line says "come back when you need something sharpened",
-            # both of which it would replace with a generic hedge (and spend a
-            # revision call doing it).
-            npc_flavor = turn.get("npc_flavor", "") if turn else ""
-            if turn is not None:
-                npc_opening, npc_flavor, jean_options = self._guard_turn(
-                    adapter, system, npc_opening, npc_flavor, jean_options
+                logger.warning(
+                    "chat_open using deterministic fallback opening. npc=%s", self.name
                 )
 
-            game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
-            chapter = self._get_chapter(player)
-            self._save_exchange_to_persistence(
-                player, npc_opening, "", game_tick, chapter
+            jean_options = self._resolve_jean_options(
+                model_turn, adapter, npc_opening, 0, deadline=deadline
+            )
+            logger.info(
+                "chat_open resolved jean_options count=%s llm_available=%s",
+                len(jean_options),
+                llm_available,
             )
 
-            return {
-                "success": True,
-                "npc_key": npc_key,
-                "npc_name": self._display_name(),
-                "npc_opening": npc_opening,
-                "npc_flavor": npc_flavor,
-                "jean_options": jean_options,
-                "loquacity_current": self.loquacity_current,
-                "loquacity_max": self.loquacity_max,
-                "turn": 0,
-                "llm_available": llm_available,
-                "conversation_ended": False,
-                "reputation": getattr(player, "reputation", {}).get(self.name, 0),
-            }
+            # The state guard runs on the assembled turn (line + flavor +
+            # options) so one escalation call covers all three; see
+            # _guard_and_persist for why it runs before the persist, and why an
+            # authored fallback opening is exempt.
+            assembled = Turn(
+                npc_opening,
+                model_turn.npc_flavor if model_turn else "",
+                jean_options,
+            )
+            guarded = self._guard_and_persist(
+                player,
+                adapter,
+                system,
+                assembled,
+                guardable=model_turn is not None,
+                deadline=deadline,
+            )
+
+            return self._open_payload(
+                npc_key,
+                player,
+                guarded.turn,
+                llm_available=llm_available,
+                conversation_ended=False,
+            )
         except Exception as e:
             # Detail stays server-side (the logger call above); the client
             # never sees raw exception text, which can leak internals.
@@ -1614,44 +2744,50 @@ class ConversationalNPCMixin:
             return {"success": False, "error": "Conversation failed — try again."}
 
     def chat_respond(self, player, jean_text: str, jean_tone: str) -> Dict[str, Any]:
-        """Process Jean's response. Returns NPC reply + 3 new Jean options."""
+        """Process Jean's response. Returns NPC reply + 3 new Jean options.
+
+        ``jean_tone`` is accepted for API shape only and deliberately unused.
+        The tone the player picked is already carried by the *text* of the
+        option they picked — which is what reaches the model, verbatim, as
+        Jean's line — so re-stating it in the prompt would tell the model
+        nothing the line does not, and telling it "Jean is being guarded" while
+        handing it a warm line is worse than silent. The route still validates
+        and forwards it (see ``src/api/routes/npc_chat.py``) so a client can
+        keep sending it and a future prompt change can start reading it without
+        a contract change.
+        """
         try:
-            # Bound the engine-side copy. The route caps the field at 4000
-            # chars, but persisted rows are replayed into every later prompt
-            # (last 8 rows), so an over-long line multiplies token spend for
-            # the rest of the conversation. 500 chars is generous next to the
-            # 300-char NPC lines and 160-char options.
-            jean_text = (jean_text or "")[:500]
-            self._compute_loquacity(player)
-            npc_key = self._get_npc_key(player)
-            self._load_history_from_persistence(player)
+            deadline = time.monotonic() + _CHAT_DEADLINE_SECONDS
 
-            # Update last history entry with jean_text, or append new
-            if self._chat_history and not self._chat_history[-1].get("jean"):
-                self._chat_history[-1]["jean"] = jean_text
-            else:
-                game_tick = (
-                    getattr(getattr(player, "universe", None), "game_tick", 0) or 0
-                )
-                chapter = self._get_chapter(player)
-                self._chat_history.append(
-                    {
-                        "npc": "",
-                        "jean": jean_text,
-                        "game_tick": game_tick,
-                        "chapter": chapter,
-                    }
-                )
+            # Sanitize before anything else. This text is not merely sent to the
+            # provider once: it is written into the persisted history that every
+            # later prompt in the conversation replays, and that history reaches
+            # the save file — so a crafted line keeps working for the rest of the
+            # conversation and beyond. Then bound the engine-side copy: the route
+            # caps the field at 4000 chars, but replayed rows multiply token
+            # spend for the rest of the conversation, and 500 is generous next to
+            # the 300-char NPC lines and 160-char options.
+            jean_text = _sanitize_player_text(jean_text)[:MAX_JEAN_TEXT_CHARS]
 
-            self._ensure_personality(player)
-            system = self._build_system_prompt(player)
-            adapter = self._get_adapter()
-            llm_available = adapter is not None and adapter.enabled
-            logger.info("chat_respond start npc=%s llm_available=%s history_len=%s jean_text_chars=%s", self.name, llm_available, len(self._chat_history), len(jean_text or ""))
+            npc_key = self._load_turn_state(player)
+            self._record_jean_line(player, jean_text)
+            system, adapter, llm_available = self._prepare_turn_context(player)
+            logger.info(
+                "chat_respond start npc=%s llm_available=%s history_len=%s jean_text_chars=%s",
+                self.name,
+                llm_available,
+                len(self._chat_history),
+                len(jean_text or ""),
+            )
 
             # Generate NPC response (combined adapters also return Jean's options)
-            turn = self._run_npc_turn(
-                adapter, system, llm_available, is_opening=False, jean_text=jean_text
+            model_turn = self._run_npc_turn(
+                adapter,
+                system,
+                llm_available,
+                is_opening=False,
+                jean_text=jean_text,
+                deadline=deadline,
             )
             conversation_quality = "neutral"
             reputation_delta = 0
@@ -1659,147 +2795,96 @@ class ConversationalNPCMixin:
             npc_response = None
             npc_flavor = ""
 
-            if turn is not None:
-                npc_response = turn["npc_text"]
-                npc_flavor = turn.get("npc_flavor", "") or ""
-                conversation_quality = turn["conversation_quality"]
-                reputation_delta = turn["reputation_delta"]
-                loquacity_delta = turn["loquacity_delta"]
-                logger.info("chat_respond LLM turn succeeded. npc=%s npc_text_chars=%s quality=%s", self.name, len(npc_response or ""), conversation_quality)
+            if model_turn is not None:
+                npc_response = model_turn.npc_text
+                npc_flavor = model_turn.npc_flavor
+                conversation_quality = model_turn.conversation_quality
+                reputation_delta = model_turn.reputation_delta
+                loquacity_delta = model_turn.loquacity_delta
+                logger.info(
+                    "chat_respond LLM turn succeeded. npc=%s npc_text_chars=%s quality=%s",
+                    self.name,
+                    len(npc_response or ""),
+                    conversation_quality,
+                )
             else:
-                logger.warning("chat_respond LLM turn failed; will use deterministic fallback. npc=%s", self.name)
+                logger.warning(
+                    "chat_respond LLM turn failed; will use deterministic fallback. npc=%s",
+                    self.name,
+                )
 
-            # Apply loquacity change. The LLM may signal a signed delta (usually a
-            # drain, occasionally a GAIN when Jean raises a topic the NPC finds
-            # interesting). When no explicit delta is supplied (legacy adapter or
-            # deterministic fallback), fall back to the quality-based drain so
-            # conversations still wind down.
-            if loquacity_delta is None:
-                loquacity_delta = -_LOQUACITY_DRAIN.get(conversation_quality, 8)
-            loquacity_delta = max(-40, min(15, int(loquacity_delta)))
-            self.loquacity_current = max(
-                0, min(self.loquacity_max, self.loquacity_current + loquacity_delta)
+            loquacity_delta, conversation_ended = self._apply_loquacity_delta(
+                loquacity_delta, conversation_quality
+            )
+            logger.info(
+                "chat_respond loquacity resolved. npc=%s delta=%s current=%s threshold=%s ended=%s",
+                self.name,
+                loquacity_delta,
+                self.loquacity_current,
+                self.loquacity_threshold,
+                conversation_ended,
             )
 
-            # Resolved once here (rather than separately for the fallback-line
-            # decision and the later response payload) so the two can never
-            # drift out of sync.
-            conversation_ended = self.loquacity_current < self.loquacity_threshold
-            logger.info("chat_respond loquacity resolved. npc=%s delta=%s current=%s threshold=%s ended=%s", self.name, loquacity_delta, self.loquacity_current, self.loquacity_threshold, conversation_ended)
-
-            # Fall back only after loquacity is resolved, so a fallback line can
-            # tell whether this exchange is actually ending the conversation
-            # (use a "done talking" closing line) or just a mid-conversation LLM
-            # hiccup (use in-character filler instead of a false goodbye).
             if npc_response is None:
-                npc_response = self._get_fallback_npc_line(
-                    is_opening=False, player=player, exhausted=conversation_ended
+                npc_response, conversation_ended = self._resolve_fallback_response(
+                    player, conversation_ended
                 )
                 llm_available = False
-                logger.warning("chat_respond using deterministic fallback response. npc=%s response_chars=%s", self.name, len(npc_response or ""))
-
-                # Authored fallback pools are small (often 3 lines), so a
-                # conversation that leans on fallback for several turns in a
-                # row (LLM disabled, or repeatedly failing QC) will otherwise
-                # cycle back to a line already said earlier in THIS
-                # conversation. Rotation alone can't prevent that once the
-                # pool wraps, so once it does, end the conversation gracefully
-                # instead of visibly repeating.
-                #
-                # Every row currently in self._chat_history is a genuinely
-                # prior statement at this point — including the last one: the
-                # "fill jean into last entry" step above already completed it
-                # with Jean's current line before this fallback was generated,
-                # and this round's own response hasn't been persisted yet (that
-                # happens further down). So the comparison set is the full
-                # list, not history[:-1] — slicing off the last entry would
-                # blind the check to a duplicate against the single most
-                # recent line (visible whenever an authored pool has only one
-                # entry, since rotation itself only guarantees no two
-                # *consecutive* draws collide for pools of two or more).
-                already_said = {
-                    entry.get("npc") for entry in self._chat_history if entry.get("npc")
-                }
-                if not conversation_ended and npc_response in already_said:
-                    conversation_ended = True
-                    npc_response = self._get_fallback_npc_line(
-                        is_opening=False, player=player, exhausted=True
-                    )
-                    logger.info("chat_respond fallback pool exhausted; forcing conversation_ended. npc=%s", self.name)
-
-            # Apply the NPC's in-character reaction to Jean's reputation
-            if not hasattr(player, "reputation"):
-                player.reputation = {}
-            old_reputation = player.reputation.get(self.name, 0)
-            new_reputation = max(-100, min(100, old_reputation + reputation_delta))
-            player.reputation[self.name] = new_reputation
 
             # Jean's options for the next round. Once loquacity is spent the
             # options are omitted so the NPC's own (lore- and context-aware) reply
             # stands as the graceful closing line, with nothing left to say back.
-            # Resolved before the persist below (it used to come after) so the
-            # state guard can review the line, the flavor, and the options in a
-            # single pass — and, more importantly, so only guarded text is ever
-            # written: _load_history_from_persistence feeds the saved rows
-            # straight back to the model next round, and a persisted "here, take
-            # this blade" would keep breeding offers for the rest of the
-            # conversation. +1 on the turn number preserves the old value, which
-            # was read after the persist appended this round's row.
+            # Resolved before the guard so it can review the line, the flavor and
+            # the options in a single pass.
             jean_options: List[Dict[str, str]] = []
             if not conversation_ended:
                 turn_number = len(self._chat_history) + 1
                 jean_options = self._resolve_jean_options(
-                    turn, adapter, npc_response, turn_number
+                    model_turn, adapter, npc_response, turn_number, deadline=deadline
                 )
 
-            # Model output only — see chat_open for why authored fallback
-            # lines are left alone.
-            if turn is not None:
-                npc_response, npc_flavor, jean_options = self._guard_turn(
-                    adapter, system, npc_response, npc_flavor, jean_options
-                )
-
-            # Persist exchange as a new row awaiting Jean's next line, mirroring
-            # chat_open's row shape ({npc: <this line>, jean: ""}) so next
-            # round's "fill jean into last entry" step (top of this method)
-            # updates it in place instead of falling into that step's own
-            # append-a-placeholder branch. Passing the real jean_text here
-            # (as this used to) made BOTH that fill step AND this persist call
-            # append a row every single round — every turn was saved twice,
-            # once as a bare {npc: "", jean: ...} placeholder and once
-            # complete. jean_text="" avoids that, and also keeps
-            # _format_history's per-row "NPC line, then Jean line" print order
-            # chronologically correct (Jean's reply prints right after the
-            # line it replied to, not attached to the line it *prompted*).
-            # conversation_count is bumped separately (_bump_conversation_count,
-            # below) — _save_exchange_to_persistence has no counter logic of
-            # its own to ride on.
-            game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
-            chapter = self._get_chapter(player)
-            self._save_exchange_to_persistence(
-                player, npc_response, "", game_tick, chapter
+            guarded = self._guard_and_persist(
+                player,
+                adapter,
+                system,
+                Turn(npc_response, npc_flavor, jean_options),
+                guardable=model_turn is not None,
+                deadline=deadline,
             )
             self._bump_conversation_count(player)
 
-            return {
-                "success": True,
-                "npc_key": npc_key,
-                "npc_response": npc_response,
-                "npc_flavor": npc_flavor,
-                "jean_options": jean_options,
-                "conversation_quality": conversation_quality,
-                "loquacity_current": self.loquacity_current,
-                "loquacity_max": self.loquacity_max,
-                "turn": len(self._chat_history),
-                "llm_available": llm_available,
-                "conversation_ended": conversation_ended,
-                "reputation": new_reputation,
-                "reputation_delta": reputation_delta,
-            }
+            # Reputation is applied AFTER the guard, and only if the guard stayed
+            # quiet. reputation_delta is one of the two structured fields of a
+            # chat response that really does reach the engine (ShopSerializer
+            # turns player.reputation into charged prices), so a turn whose prose
+            # had to be hedged or rewritten does not also get to move Jean's
+            # standing on the strength of the same model response.
+            if guarded.tripped and reputation_delta:
+                logger.info(
+                    "chat_respond zeroing reputation_delta=%s: the state guard "
+                    "tripped on this turn. npc=%s",
+                    reputation_delta,
+                    self.name,
+                )
+                reputation_delta = 0
+            new_reputation = self._apply_reputation(player, reputation_delta)
+
+            return self._respond_payload(
+                npc_key,
+                player,
+                guarded.turn,
+                conversation_quality=conversation_quality,
+                conversation_ended=conversation_ended,
+                llm_available=llm_available,
+                reputation=new_reputation,
+                reputation_delta=reputation_delta,
+            )
         except Exception as e:
             # Detail stays server-side (the logger call above); the client
             # never sees raw exception text, which can leak internals.
-            logger.error("ConversationalNPCMixin.chat_respond error: %s", e, exc_info=True)
+            logger.error(
+                "ConversationalNPCMixin.chat_respond error: %s", e, exc_info=True
+            )
             return {"success": False, "error": "Conversation failed — try again."}
 
     def loquacity_tick(self):
@@ -1902,7 +2987,11 @@ class ConversationalNPCMixin:
                 text
                 for text in (
                     speech,
-                    f"{given_name} falls quiet a moment, considering." if speech else None,
+                    (
+                        f"{given_name} falls quiet a moment, considering."
+                        if speech
+                        else None
+                    ),
                     f"Ask again about {knowledge[0]}, maybe." if knowledge else None,
                 )
                 if text

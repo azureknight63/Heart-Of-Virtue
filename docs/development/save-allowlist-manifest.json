@@ -1210,7 +1210,31 @@
     },
     {
       "module": "src.npc._chat_llm",
+      "name": "CombinedChatAdapter"
+    },
+    {
+      "module": "src.npc._chat_llm",
       "name": "ConversationalNPCMixin"
+    },
+    {
+      "module": "src.npc._chat_llm",
+      "name": "FilterResult"
+    },
+    {
+      "module": "src.npc._chat_llm",
+      "name": "GuardedTurn"
+    },
+    {
+      "module": "src.npc._chat_llm",
+      "name": "QcResult"
+    },
+    {
+      "module": "src.npc._chat_llm",
+      "name": "Turn"
+    },
+    {
+      "module": "src.npc._chat_llm",
+      "name": "TurnOutcome"
     },
     {
       "module": "src.npc._combat",
@@ -1913,10 +1937,14 @@
       "name": "Any"
     },
     {
+      "module": "typing",
+      "name": "Protocol"
+    },
+    {
       "module": "uuid",
       "name": "UUID"
     }
   ],
-  "count": 479,
+  "count": 486,
   "header_version": 1
 }

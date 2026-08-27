@@ -4,6 +4,7 @@ Coverage tests for smaller route files:
 """
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from flask import Flask
 
@@ -243,17 +244,69 @@ class TestNpcChat:
         assert rv.status_code == 400
 
 
+def _child_env(**overrides):
+    """A subprocess environment that inherits this process's PATH etc. but NOT
+    the developer's live credentials.
+
+    ``os.environ.copy()`` alone hands the child everything ``python-dotenv``
+    loaded from the repo's real ``.env`` -- live provider API keys included --
+    and none of ``tests/conftest.py``'s blanking, so a child that imports the
+    API can make real paid LLM calls.
+
+    The blanked keys are ASSIGNED an empty string rather than popped: dotenv
+    runs with ``override=False``, which only skips keys already *present*, so a
+    popped key is silently refilled from ``.env`` the moment the child imports
+    anything that calls ``load_dotenv()``. (Same trap as the GITHUB_TOKEN
+    incident.)
+    """
+    import os
+
+    env = os.environ.copy()
+    for key in (
+        "OPENROUTER_API_KEY",
+        "GROQ_API_KEY",
+        "CEREBRAS_API_KEY",
+        "GITHUB_TOKEN",
+    ):
+        env[key] = ""
+    env["NPC_CHAT_LLM_ENABLED"] = "0"
+    env["LOG_LEVEL"] = "WARNING"
+    env.update(overrides)
+    return env
+
+
 class TestNpcChatRateLimit:
-    """POST /npc-chat/open and /respond share one per-session rate limit
-    guarding the LLM-backed calls (each can drive up to ~3 provider calls
-    through the fallback chain against the operator's shared free-tier
+    """POST /npc-chat/open and /respond share one per-identity rate limit
+    guarding the LLM-backed calls (each can drive a dozen provider calls
+    through the fallback chain against the operator's account-wide free-tier
     quota). /end and /history never touch the LLM and are exempt.
 
-    The limiter (``npc_chat._chat_limiter``) is a module-level singleton
-    shared by every test in the process, so each test below uses its own
-    uniquely-named session id to avoid cross-test bucket collisions, and
-    clears that key when done.
+    Two limiters are in play. ``_chat_limiter`` buckets on the *database user
+    id* -- deliberately NOT on ``session_id``, which is a fresh uuid4 per login
+    and so let a client reset its own budget by logging in again (S2). A second
+    ``_chat_ip_limiter`` caps a single source regardless of identity, mirroring
+    auth.py's two-tier pattern.
+
+    Both are module-level singletons shared by every test in the process. The
+    IP tier in particular cannot be isolated by varying anything the test
+    controls -- every request from a Flask test client arrives from 127.0.0.1 --
+    so ``_reset_chat_limiters`` clears both around each test.
     """
+
+    @pytest.fixture(autouse=True)
+    def _reset_chat_limiters(self):
+        """Both tiers are process-wide singletons; drop every key around each
+        test so neither this class nor its neighbours inherit a partly-spent
+        bucket (the IP tier is shared by ALL of them at 127.0.0.1)."""
+        from src.api.routes import npc_chat as m
+
+        for lim in (m._chat_limiter, m._chat_ip_limiter):
+            if lim is not None:
+                lim.clear_all()
+        yield
+        for lim in (m._chat_limiter, m._chat_ip_limiter):
+            if lim is not None:
+                lim.clear_all()
 
     @pytest.fixture
     def limiter(self):
@@ -266,27 +319,86 @@ class TestNpcChatRateLimit:
         return _chat_limiter
 
     @pytest.fixture
+    def ip_limiter(self):
+        from src.api.routes.npc_chat import _chat_ip_limiter
+
+        assert _chat_ip_limiter is not None
+        return _chat_ip_limiter
+
+    @pytest.fixture
     def client_for(self, app_for, make_stub_session):
-        """``client_for(session_id)`` -- a one-blueprint app keyed to that
-        session id, via the shared ``app_for``/``make_stub_session`` fixtures
-        (the rate limiter buckets on ``session.session_id``, not the bearer
-        token, so every request still authenticates with the shared ``AUTH``
-        header regardless of which session id this builds)."""
+        """``client_for(db_user_id)`` -- a one-blueprint app keyed to that
+        database user, via the shared ``app_for``/``make_stub_session``
+        fixtures.
+
+        The identity limiter buckets on ``session.db_user_id`` (see
+        ``_chat_rate_limit_key``), not on the bearer token and no longer on
+        ``session_id``, so that is the field a test must vary to get its own
+        bucket. Every request still authenticates with the shared ``AUTH``
+        header.
+        """
         from src.api.routes.npc_chat import npc_chat_bp
 
-        def _client_for(session_id):
+        def _client_for(db_user_id):
             app = app_for(
                 npc_chat_bp,
                 url_prefix="/npc-chat",
-                session=make_stub_session(session_id=session_id),
+                session=make_stub_session(
+                    session_id=f"sess_{db_user_id}", db_user_id=db_user_id
+                ),
             )
             return app.test_client()
 
         return _client_for
 
+    def test_the_bucket_survives_a_new_session_id(self, limiter, client_for, app_for,
+                                                  make_stub_session):
+        """S2 regression: keying on ``session_id`` let a client mint a fresh
+        budget just by logging in again, because ``create_session`` issues a new
+        uuid4 every time and the login throttle records only *failures*."""
+        from src.api.routes.npc_chat import npc_chat_bp
+
+        first = client_for("db_relogin")
+        for _ in range(limiter.limit):
+            assert first.post(
+                "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+            ).status_code == 200
+
+        # Same user, brand new session id -- as a re-login would produce.
+        relogged = app_for(
+            npc_chat_bp,
+            url_prefix="/npc-chat",
+            session=make_stub_session(
+                session_id="a-completely-new-uuid", db_user_id="db_relogin"
+            ),
+        ).test_client()
+        rv = relogged.post("/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH)
+        assert rv.status_code == 429
+
+    def test_the_ip_tier_trips_independently_of_identity(
+        self, limiter, ip_limiter, client_for
+    ):
+        """Defense in depth: distinct users behind one source still hit the
+        IP cap, so an attacker cycling accounts cannot spray past the
+        identity-keyed tier."""
+        sent = 0
+        user = 0
+        while sent < ip_limiter.limit:
+            client = client_for(f"db_spray_{user}")
+            user += 1
+            # Each synthetic user stays inside its own identity budget.
+            for _ in range(min(limiter.limit, ip_limiter.limit - sent)):
+                assert client.post(
+                    "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+                ).status_code == 200
+                sent += 1
+        rv = client_for("db_spray_fresh").post(
+            "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+        )
+        assert rv.status_code == 429
+
     def test_under_limit_requests_all_succeed(self, limiter, client_for):
         session_id = "rl_under_limit"
-        limiter.clear(session_id)
         client = client_for(session_id)
         try:
             for i in range(limiter.limit - 1):
@@ -299,7 +411,6 @@ class TestNpcChatRateLimit:
 
     def test_over_limit_request_gets_429(self, limiter, client_for):
         session_id = "rl_over_limit"
-        limiter.clear(session_id)
         client = client_for(session_id)
         try:
             # Exhaust the budget alternating endpoints -- /open and /respond
@@ -326,11 +437,9 @@ class TestNpcChatRateLimit:
         finally:
             limiter.clear(session_id)
 
-    def test_rate_limit_is_per_session(self, limiter, client_for):
+    def test_rate_limit_is_per_user(self, limiter, client_for):
         session_a = "rl_bucket_a"
         session_b = "rl_bucket_b"
-        limiter.clear(session_a)
-        limiter.clear(session_b)
         client_a = client_for(session_a)
         client_b = client_for(session_b)
         try:
@@ -346,7 +455,7 @@ class TestNpcChatRateLimit:
             )
             assert rv.status_code == 429
 
-            # ...but session B has never made a request, so it has its own
+            # ...but user B has never made a request, so it has its own
             # untouched bucket.
             rv = client_b.post(
                 "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
@@ -358,7 +467,6 @@ class TestNpcChatRateLimit:
 
     def test_end_and_history_are_not_rate_limited(self, limiter, client_for):
         session_id = "rl_end_history_exempt"
-        limiter.clear(session_id)
         client = client_for(session_id)
         try:
             # Comfortably above the /open+/respond ceiling -- must never trip
@@ -373,6 +481,87 @@ class TestNpcChatRateLimit:
         finally:
             limiter.clear(session_id)
 
+    def test_the_identity_sources_do_not_share_one_key_space(self):
+        """The four sources used to be concatenated into one flat key space, so
+        a user free to choose a ``username`` equal to another principal's
+        ``db_user_id`` (or to a session uuid, or to an IP literal) shared that
+        principal's bucket -- a denial of service against them, and a doubled
+        budget for whoever collided deliberately."""
+        from src.api.routes.npc_chat import _chat_rate_limit_key
+
+        by_id = SimpleNamespace(db_user_id="alice", username=None, session_id=None)
+        by_name = SimpleNamespace(db_user_id=None, username="alice", session_id=None)
+        by_session = SimpleNamespace(db_user_id=None, username=None, session_id="alice")
+
+        keys = [
+            _chat_rate_limit_key(by_id),
+            _chat_rate_limit_key(by_name),
+            _chat_rate_limit_key(by_session),
+        ]
+        assert keys == ["uid:alice", "user:alice", "sid:alice"]
+        assert len(set(keys)) == 3
+
+    def test_a_colliding_username_does_not_spend_another_users_budget(
+        self, limiter, client_for, app_for, make_stub_session
+    ):
+        from src.api.routes.npc_chat import npc_chat_bp
+
+        victim = client_for("db_collide")
+        for _ in range(limiter.limit):
+            assert victim.post(
+                "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+            ).status_code == 200
+
+        # A different principal whose *username* is the victim's db_user_id.
+        impostor = app_for(
+            npc_chat_bp,
+            url_prefix="/npc-chat",
+            session=make_stub_session(
+                session_id="sess_impostor",
+                username="db_collide",
+                db_user_id=None,
+            ),
+        ).test_client()
+        rv = impostor.post("/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH)
+        assert rv.status_code == 200
+
+    def test_the_identity_tier_checks_and_records_in_one_operation(
+        self, monkeypatch
+    ):
+        """Checking both tiers and only then recording either left a window in
+        which N concurrent requests all read "not limited" before any of them
+        wrote -- N times the budget, on the endpoint whose whole purpose is
+        protecting an account-wide LLM quota from exactly that."""
+        from src.api.routes import npc_chat as m
+
+        seen = []
+
+        class _Spy:
+            limit = 10
+
+            def is_limited(self, key):
+                seen.append(("is_limited", key))
+                return False
+
+            def record(self, key):
+                seen.append(("record", key))
+
+            def check_and_record(self, key):
+                seen.append(("check_and_record", key))
+                return False
+
+            def clear_all(self):  # the class's autouse reset fixture calls this
+                seen.clear()
+
+        monkeypatch.setattr(m, "_chat_limiter", _Spy())
+        monkeypatch.setattr(m, "_chat_ip_limiter", None)
+
+        session = SimpleNamespace(
+            db_user_id="db_atomic", username=None, session_id=None
+        )
+        assert m._check_chat_rate_limit(session) is None
+        assert seen == [("check_and_record", "uid:db_atomic")]
+
     def test_rate_limit_disabled_via_env_var(self):
         """NPC_CHAT_RATE_LIMIT_PER_MINUTE=0 disables the limiter at import
         time (``_chat_limiter`` is built once, at module import).
@@ -381,13 +570,11 @@ class TestNpcChatRateLimit:
         singleton every other test in this process depends on, so mutating
         its live state here (or reloading it) would leak into them.
         """
-        import os
         import subprocess
         import sys
         from pathlib import Path
 
-        env = os.environ.copy()
-        env["NPC_CHAT_RATE_LIMIT_PER_MINUTE"] = "0"
+        env = _child_env(NPC_CHAT_RATE_LIMIT_PER_MINUTE="0")
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
             [
@@ -418,13 +605,11 @@ class TestNpcChatRateLimit:
         Subprocess for the same reason as the test above: the module is a
         process-wide singleton.
         """
-        import os
         import subprocess
         import sys
         from pathlib import Path
 
-        env = os.environ.copy()
-        env["NPC_CHAT_RATE_LIMIT_PER_MINUTE"] = "twenty"
+        env = _child_env(NPC_CHAT_RATE_LIMIT_PER_MINUTE="twenty")
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
             [
@@ -432,7 +617,8 @@ class TestNpcChatRateLimit:
                 "-c",
                 "import src.api.routes.npc_chat as m; "
                 "assert m._chat_limiter is not None, 'limiter silently disabled'; "
-                "assert m._RATE_LIMIT_PER_MINUTE == 20, m._RATE_LIMIT_PER_MINUTE; "
+                "assert m._chat_limiter.limit "
+                "== m._RATE_LIMIT_DEFAULT_PER_MINUTE, m._chat_limiter.limit; "
                 "print('CHAT_LIMITER_DEFAULTED_OK')",
             ],
             cwd=str(repo_root),

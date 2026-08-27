@@ -235,12 +235,22 @@ function HeroPanel({
             objectFit: 'contain',
             filter: `drop-shadow(0 0 10px ${colors.primary}44)`,
             zIndex: 1,
-            animation: `pulse ${animationDuration} infinite ease-in-out`,
+            animation: `hero-heartbeat ${animationDuration} infinite ease-in-out`,
           }}
         />
         <style>
           {`
-            @keyframes pulse {
+            /* Namespaced, and deliberately not named "pulse": keyframe names are
+               document-global regardless of which component's <style> declares them,
+               and last-injected wins. index.css already owns a "pulse" (scale + opacity)
+               that BattlefieldGrid's targeting reticle uses. Because HeroPanel sits in
+               the persistent HUD, a "pulse" declared here mounted after the stylesheet
+               and silently replaced the reticle's animation with this heartbeat.
+
+               This one stays inline rather than moving to index.css because it
+               interpolates colors.primary from the JS theme, and index.css exposes no
+               token for it. */
+            @keyframes hero-heartbeat {
               0% { transform: scale(1); filter: drop-shadow(0 0 10px ${colors.primary}44); }
               10% { transform: scale(1.007); filter: drop-shadow(0 0 14px ${colors.primary}66); }
               20% { transform: scale(1); filter: drop-shadow(0 0 10px ${colors.primary}44); }

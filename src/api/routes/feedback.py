@@ -9,7 +9,7 @@ import logging
 import requests
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player
-from src.api.rate_limiter import RateLimiter
+from src.api.rate_limiter import client_ip, limiter_from_env
 
 
 logger = logging.getLogger(__name__)
@@ -37,17 +37,90 @@ MAX_TITLE_LENGTH = 256
 MAX_FIELD_LENGTH = 2000
 _MARKDOWN_UNSAFE = re.compile(r"[*_`\[\]()#\\]")
 
-# Simple in-memory rate limiter: 10 submissions per session per hour.
+# Zero-width space. Inserted after a sigil so GitHub stops treating it as a
+# cross-reference while a human still reads the text unchanged.
+_ZWSP = "​"
+
+# The constructs that make GitHub *act* on player-supplied text rather than
+# merely display it: "@name" notifies a real account, "#123" cross-links (and
+# back-links) a real issue, and "](" is the half of a markdown link that lets
+# the visible label disagree with the destination. Everything else about the
+# player's prose is left alone deliberately — see _neutralise_github_markup.
+_GITHUB_ACTIVATORS = re.compile(r"(?<![0-9A-Za-z_])[@#](?=[0-9A-Za-z])|\]\(")
+
+# Control characters that have no business in an issue body. Newline, tab and
+# carriage return are kept; ESC (which would otherwise reach any terminal that
+# cats the issue) and the rest are not.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _neutralise_github_markup(text: str) -> str:
+    """Defuse the GitHub markup that *acts*, leaving prose readable.
+
+    Player-supplied field values are interpolated verbatim into an issue body
+    on a repo the player does not own, so ``@maintainer`` notified a real
+    person and ``#123`` posted a back-reference onto a real issue — a write
+    into the project's tracker from an authenticated game client.
+
+    The username and title are scrubbed with :data:`_MARKDOWN_UNSAFE` instead,
+    because both are short labels and losing their punctuation costs nothing.
+    Doing the same to a bug report's *body* would be a bad trade: it strips
+    parentheses, underscores and backticks out of the reproduction steps the
+    report exists to convey. So the bodies get this narrower rule, which
+    removes the activation and keeps the text.
+    """
+    text = _CONTROL_CHARS.sub("", text)
+    return _GITHUB_ACTIVATORS.sub(
+        lambda m: m.group(0)[0] + _ZWSP + m.group(0)[1:], text
+    )
+
+
+# Simple in-memory rate limiter: 10 submissions per client per hour.
 # Per-worker (not shared across Gunicorn workers) — see GitHub issue #284 and
-# `src.api.rate_limiter` for the bounded-store rationale, shared with
-# auth.py's login throttle.
+# `src.api.rate_limiter` for the bounded-store rationale, shared with auth.py's
+# login throttle and npc_chat.py's chat throttles.
+# Override with FEEDBACK_RATE_LIMIT_PER_HOUR; 0 disables the limiter.
 _RATE_LIMIT = 10
 _RATE_WINDOW = 3600  # seconds
-_feedback_limiter = RateLimiter(limit=_RATE_LIMIT, window_seconds=_RATE_WINDOW)
+_feedback_limiter = limiter_from_env(
+    "FEEDBACK_RATE_LIMIT_PER_HOUR", _RATE_LIMIT, _RATE_WINDOW
+)
 
 
-def _is_rate_limited(session_id: str) -> bool:
-    return _feedback_limiter.check_and_record(session_id)
+def _throttle_keys(session) -> list:
+    """The identities a feedback submission is counted against.
+
+    **Not the session id.** This throttle guards *real GitHub issue creation*,
+    and a session id is minted by the client at will: every ``/auth/login``
+    returns a fresh one, so the cap was bypassed simply by re-authenticating
+    between submissions. ``client_ip()`` is not client-selectable (see
+    ``src/api/app.py::_apply_proxy_fix`` for the one case where a header can
+    influence it, which is off by default), so it is the tier that actually
+    holds.
+
+    The account tier is added on top when the session is linked to a DB user:
+    it survives an IP change, which the IP tier does not.
+    """
+    keys = ["ip:%s" % client_ip()]
+    db_user_id = getattr(session, "db_user_id", None)
+    if db_user_id is not None:
+        keys.append("user:%s" % db_user_id)
+    return keys
+
+
+def _is_rate_limited(session) -> bool:
+    """True if this client has spent its submission budget.
+
+    Counts the call against every tier unless that tier is already limited. A
+    disabled limiter (env var set to 0) is ``None`` and never limits.
+    """
+    if _feedback_limiter is None:
+        return False
+    # List, not a generator: `any` short-circuits, and a short-circuit here
+    # would leave the second tier uncounted whenever the first one tripped.
+    return any(
+        [_feedback_limiter.check_and_record(key) for key in _throttle_keys(session)]
+    )
 
 
 def _build_bug_body(fields, attribution):
@@ -219,7 +292,7 @@ def submit_feedback():
     if error:
         return error[0], error[1]
 
-    if _is_rate_limited(session.session_id):
+    if _is_rate_limited(session):
         return (
             jsonify(
                 {
@@ -241,7 +314,14 @@ def submit_feedback():
         raw_type = data.get("type", "")
         feedback_type = raw_type.lower() if isinstance(raw_type, str) else ""
         raw_title = data.get("title") or ""
-        title = raw_title.strip() if isinstance(raw_title, str) else ""
+        # Same scrub as the username: a title is a short label, so stripping
+        # its markdown punctuation costs nothing and keeps it from carrying a
+        # mention or a cross-reference into the tracker.
+        title = (
+            _MARKDOWN_UNSAFE.sub("", raw_title).strip()
+            if isinstance(raw_title, str)
+            else ""
+        )
         anonymous = bool(data.get("anonymous", False))
         fields = data.get("fields") or {}
         if not isinstance(fields, dict):
@@ -264,9 +344,16 @@ def submit_feedback():
                 400,
             )
 
-        # Truncate oversized text fields to avoid enormous GitHub issues
+        # Truncate oversized text fields to avoid enormous GitHub issues, then
+        # defuse the markup GitHub would act on. Truncation runs first so the
+        # bound applies to what the player actually wrote; the neutralising
+        # pass adds at most one zero-width character per activator.
         fields = {
-            k: (v[:MAX_FIELD_LENGTH] if isinstance(v, str) else v)
+            k: (
+                _neutralise_github_markup(v[:MAX_FIELD_LENGTH])
+                if isinstance(v, str)
+                else v
+            )
             for k, v in fields.items()
         }
 

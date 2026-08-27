@@ -95,3 +95,33 @@ def get_session_and_player():
         )
 
     return session_manager, session, player, None
+
+
+def require_game_service():
+    """Resolve ``current_app.game_service`` for the current request.
+
+    Companion to :func:`get_session_and_player`, and returns the same
+    ``(value, error)`` shape so a route reads the two the same way::
+
+        game_service, error = require_game_service()
+        if error:
+            return error
+
+    ``create_app`` always assigns ``app.game_service``, but
+    :func:`~src.api.app._init_universe` falls back to a universe-less service
+    when startup fails, and several tests substitute a falsy one — so routes
+    check. That check was copy-pasted, verbatim and including the error
+    string, into fifteen handlers across ``world.py`` and ``player.py``; a
+    fix or a rewording had fifteen places to reach, which is fourteen chances
+    to miss one.
+
+    Returns:
+        Tuple of (game_service, None) on success, or (None, (response, 500)).
+    """
+    game_service = getattr(current_app, "game_service", None)
+    if not game_service:
+        return (
+            None,
+            (jsonify({"success": False, "error": "Game service not initialized"}), 500),
+        )
+    return game_service, None

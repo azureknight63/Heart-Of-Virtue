@@ -20,8 +20,12 @@ import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from 
  * @param {string} speaker  - character id used for the folder slug
  * @param {string} [name]   - display name for the alt text (defaults to `speaker`)
  * @param {string} emotion  - tagged emotion; normalized for the path, raw in the alt
+ * @param {boolean} [lazy]  - defer loading until the image scrolls into view.
+ *   For off-screen thumbnails only (the history transcript mounts one per turn
+ *   inside a 65vh scroller); never for the stage portrait, which is on screen
+ *   from the first frame and would visibly pop in.
  */
-export default function PortraitImage({ speaker, name, emotion, style, className }) {
+export default function PortraitImage({ speaker, name, emotion, style, className, lazy = false }) {
     const imgRef = useRef(null)
 
     useEffect(() => {
@@ -37,6 +41,11 @@ export default function PortraitImage({ speaker, name, emotion, style, className
             onError={handlePortraitError}
             alt={`${name || speaker} (${emotion})`}
             draggable={false}
+            loading={lazy ? 'lazy' : undefined}
+            // Portraits are ~270 KB RGBA PNGs swapped on essentially every
+            // turn; decoding off the main thread keeps the swap from stalling
+            // the typewriter mid-line.
+            decoding="async"
             className={className}
             style={style}
         />

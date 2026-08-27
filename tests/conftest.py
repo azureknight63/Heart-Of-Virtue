@@ -30,6 +30,12 @@ os.environ["OPENROUTER_API_KEY"] = ""
 os.environ["GROQ_API_KEY"] = ""
 os.environ["CEREBRAS_API_KEY"] = ""
 os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
+# Same reason, different cost: .env ships LOG_LEVEL=DEBUG, so once db.py's
+# load_dotenv() has run the whole suite pays formatting and stderr writes for
+# every logger.debug in the engine. create_app() also pins WARNING for TESTING
+# configs; this covers the code that never builds an app. Assigned, not
+# .pop()ed, for the reason above.
+os.environ["LOG_LEVEL"] = "WARNING"
 
 # Hermes itself exposes a top-level utils.py; the project map editor uses the
 # repository's utils/ package. Remove the already-loaded helper module so the

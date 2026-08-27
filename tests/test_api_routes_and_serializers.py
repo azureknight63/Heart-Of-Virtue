@@ -18,7 +18,9 @@ failures in test_api_final_tier3.py.
 """
 
 import json
+import uuid
 import pytest
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 from flask import Flask
@@ -514,31 +516,119 @@ class TestFeedbackHelpers:
     def test_build_rating_row_none(self):
         assert self._build_rating_row("X", None) is None
 
+    @staticmethod
+    def _session(db_user_id=None):
+        """A stand-in for the session object the route passes in."""
+        return SimpleNamespace(session_id="whatever", db_user_id=db_user_id)
+
+    @contextmanager
+    def _from_ip(self, ip):
+        """Evaluate the throttle as if the request came from ``ip``."""
+        app = Flask(__name__)
+        with app.test_request_context("/", environ_base={"REMOTE_ADDR": ip}):
+            yield
+
     def test_rate_limit_not_triggered_initially(self):
-        # Use a session that hasn't been used
-        assert self._is_rate_limited("fresh_session_xyz") is False
+        self._feedback_limiter.clear_all()
+        with self._from_ip("198.51.100.1"):
+            assert self._is_rate_limited(self._session()) is False
 
     def test_rate_limit_triggered_after_10(self):
-        sid = "session_rate_test_999"
-        # Clear any previous state
-        self._feedback_limiter.clear(sid)
-        for i in range(10):
-            # Assert the transition, not just the end state: an off-by-one
-            # that blocked at the 9th submission would still satisfy a lone
-            # "the 11th is limited" assertion.
-            assert self._is_rate_limited(sid) is False, f"blocked early at call {i}"
-        assert self._is_rate_limited(sid) is True
+        self._feedback_limiter.clear_all()
+        with self._from_ip("198.51.100.2"):
+            for i in range(10):
+                # Assert the transition, not just the end state: an off-by-one
+                # that blocked at the 9th submission would still satisfy a lone
+                # "the 11th is limited" assertion.
+                assert (
+                    self._is_rate_limited(self._session()) is False
+                ), f"blocked early at call {i}"
+            assert self._is_rate_limited(self._session()) is True
 
-    def test_rate_limit_is_scoped_to_one_session(self):
-        """The key is the session id; one player's quota must not throttle
-        another's."""
-        noisy, quiet = "rate_noisy_session", "rate_quiet_session"
-        self._feedback_limiter.clear(noisy)
-        self._feedback_limiter.clear(quiet)
-        for _ in range(11):
-            self._is_rate_limited(noisy)
-        assert self._is_rate_limited(noisy) is True
-        assert self._is_rate_limited(quiet) is False
+    def test_a_fresh_session_id_does_not_buy_a_fresh_budget(self):
+        """The throttle used to key on ``session.session_id``, which the client
+        mints at will -- every ``/auth/login`` returns a new one, so the cap on
+        *real GitHub issue creation* was walked past by re-authenticating.
+        """
+        self._feedback_limiter.clear_all()
+        with self._from_ip("198.51.100.3"):
+            for _ in range(10):
+                self._is_rate_limited(
+                    SimpleNamespace(session_id=uuid.uuid4().hex, db_user_id=None)
+                )
+            # A brand-new session id from the same client is still limited.
+            assert (
+                self._is_rate_limited(
+                    SimpleNamespace(session_id=uuid.uuid4().hex, db_user_id=None)
+                )
+                is True
+            )
+
+    def test_rate_limit_is_scoped_to_one_client(self):
+        """One player's quota must not throttle another's."""
+        self._feedback_limiter.clear_all()
+        with self._from_ip("198.51.100.4"):
+            for _ in range(11):
+                self._is_rate_limited(self._session())
+            assert self._is_rate_limited(self._session()) is True
+        with self._from_ip("198.51.100.5"):
+            assert self._is_rate_limited(self._session()) is False
+
+    def test_a_logged_in_account_is_throttled_across_ip_changes(self):
+        """The account tier exists so moving to a new address does not reset
+        the budget; the IP tier alone would."""
+        self._feedback_limiter.clear_all()
+        with self._from_ip("198.51.100.6"):
+            for _ in range(10):
+                self._is_rate_limited(self._session(db_user_id=4242))
+        with self._from_ip("203.0.113.99"):
+            assert self._is_rate_limited(self._session(db_user_id=4242)) is True
+            # ...and a different account from that same new address is not
+            # collateral damage.
+            assert self._is_rate_limited(self._session(db_user_id=99)) is False
+
+    def test_mentions_are_defused(self):
+        """Field values are interpolated verbatim into an issue body on a repo
+        the player does not own, so ``@maintainer`` notified a real person."""
+        from src.api.routes.feedback import _neutralise_github_markup
+
+        out = _neutralise_github_markup("cc @azureknight63 about this")
+        assert "@azureknight63" not in out
+        assert "azureknight63" in out
+
+    def test_issue_cross_references_are_defused(self):
+        from src.api.routes.feedback import _neutralise_github_markup
+
+        out = _neutralise_github_markup("same as #284 and #410")
+        assert "#284" not in out
+        assert "284" in out
+
+    def test_markdown_link_label_spoofing_is_defused(self):
+        from src.api.routes.feedback import _neutralise_github_markup
+
+        out = _neutralise_github_markup("[github.com](https://evil.example)")
+        assert "](" not in out
+
+    def test_escape_sequences_are_stripped(self):
+        from src.api.routes.feedback import _neutralise_github_markup
+
+        assert "\x1b" not in _neutralise_github_markup("red\x1b[31mtext")
+
+    def test_ordinary_prose_survives_intact(self):
+        """The username gets the blunt ``_MARKDOWN_UNSAFE`` scrub because it is
+        a short label. Doing that to a bug report's body would strip the
+        parentheses, underscores and backticks out of the reproduction steps
+        the report exists to convey."""
+        from src.api.routes.feedback import _neutralise_github_markup
+
+        prose = "I pressed (n), then `look`, and my_hp went to 0.\nThen it hung."
+        assert _neutralise_github_markup(prose) == prose
+
+    def test_an_email_address_is_not_mangled(self):
+        """The mention rule requires the ``@`` to start a word."""
+        from src.api.routes.feedback import _neutralise_github_markup
+
+        assert _neutralise_github_markup("jean@example.com") == "jean@example.com"
 
     def test_create_github_issue_no_token(self):
         import os

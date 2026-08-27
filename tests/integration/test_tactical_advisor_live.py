@@ -32,9 +32,22 @@ import time
 import pytest
 
 def _make_client():
-    """Return a GenericLLMClient. Returns None if unavailable."""
-    from ai.llm_client import GenericLLMClient
-    client = GenericLLMClient()
+    """Return the client the strategist actually uses in production, or None.
+
+    Deliberately ``CombatLLMAdapter`` and not a bare ``GenericLLMClient``. Two
+    reasons, both of which made this suite measure the wrong thing:
+
+    * ``CombatStrategist`` defaults to ``CombatLLMAdapter``, so a bare client
+      here exercised a different provider/model resolution path than
+      production — and silently ignored ``COMBAT_LLM_PROVIDER``/``_MODEL``,
+      the whole point of which is that combat can be pointed somewhere cheap.
+    * The base client path records no provider usage, so every run of this
+      suite drained the shared account-wide free tier invisibly: the metering
+      that decides whether NPC chat pre-emptively skips a spent provider never
+      saw these calls. The adapter is metered.
+    """
+    from ai.combat_strategist import CombatLLMAdapter
+    client = CombatLLMAdapter()
     if not client.available():
         return None
     return client

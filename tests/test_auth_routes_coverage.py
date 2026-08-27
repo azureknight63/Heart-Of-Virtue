@@ -428,32 +428,27 @@ class TestLoginPerIpThrottle:
         assert rv.status_code == 429
         assert _ip_limiter.is_limited(ip_key) is True
 
-    def test_client_ip_outside_request_context_is_unknown(self):
-        """Direct helper calls (no request context) must not raise."""
-        from src.api.routes.auth import _client_ip
+    def test_login_key_collapses_ipv6_to_the_same_64_prefix_as_the_ip_tier(self):
+        """The username+IP key must key on the same collapsed client identity
+        the IP-only tier uses. Keying this half on the raw ``remote_addr``
+        would hand an IPv6 attacker a fresh per-username budget for every
+        address in their /64.
 
-        assert _client_ip() == "unknown"
-
-    def test_client_ip_collapses_ipv6_to_64_prefix(self):
-        """IPv6 clients are throttled per /64 so an attacker can't rotate the
-        low bits within their allocation to dodge the limit."""
-        from src.api.routes.auth import _client_ip
-
-        app = Flask(__name__)
-        with app.test_request_context(
-            "/auth/login",
-            environ_base={"REMOTE_ADDR": "2001:db8:abcd:1234::dead:beef"},
-        ):
-            assert _client_ip() == "2001:db8:abcd:1234::"
-
-    def test_client_ip_passes_ipv4_through(self):
-        from src.api.routes.auth import _client_ip
+        ``client_ip`` itself is tested in ``tests/test_rate_limiter.py``, where
+        it now lives -- it was previously copy-pasted into both this blueprint
+        and ``npc_chat.py``.
+        """
+        from src.api.routes.auth import _login_rate_limit_key
 
         app = Flask(__name__)
-        with app.test_request_context(
-            "/auth/login", environ_base={"REMOTE_ADDR": "198.51.100.7"}
-        ):
-            assert _client_ip() == "198.51.100.7"
+        keys = set()
+        for suffix in ("::dead:beef", "::1"):
+            with app.test_request_context(
+                "/auth/login",
+                environ_base={"REMOTE_ADDR": f"2001:db8:abcd:1234{suffix}"},
+            ):
+                keys.add(_login_rate_limit_key("SprayTarget"))
+        assert keys == {"spraytarget:2001:db8:abcd:1234::"}
 
 
 # ===========================================================================
@@ -657,3 +652,97 @@ class TestSettings:
                 headers=NO_AUTH,
             )
         assert rv.status_code == 401
+
+
+# ===========================================================================
+# POST /auth/register -- the throttle
+# ===========================================================================
+
+
+class TestRegisterThrottle:
+    """``/auth/register`` had no throttle at all, which mattered twice over:
+    account creation is unbounded work against the DB (a bcrypt hash per
+    attempt), and a fresh account is a fresh session -- which is how
+    ``feedback.py``'s per-session cap on *real GitHub issue creation* used to
+    be walked past.
+    """
+
+    @pytest.fixture
+    def app(self, auth_app):
+        return auth_app()
+
+    @pytest.fixture(autouse=True)
+    def _clear_limiter(self):
+        from src.api.routes import auth as auth_module
+
+        auth_module._register_limiter.clear_all()
+        yield
+        auth_module._register_limiter.clear_all()
+
+    @staticmethod
+    def _register(client, ip, username="Jean"):
+        return client.post(
+            "/auth/register",
+            json={
+                "username": username,
+                "password": "secret",
+                "email": "j@test.com",
+            },
+            environ_base={"REMOTE_ADDR": ip},
+        )
+
+    def test_the_limiter_exists_and_is_tunable(self):
+        from src.api.rate_limiter import RateLimiter
+        from src.api.routes import auth as auth_module
+
+        assert isinstance(auth_module._register_limiter, RateLimiter)
+        assert auth_module._register_limiter.limit == auth_module._REGISTER_RATE_LIMIT
+
+    def test_the_budget_runs_out(self, app):
+        from src.api.routes import auth as auth_module
+
+        mock_user = {"id": "u", "username": "Jean", "timezone": "America/New_York"}
+        limit = auth_module._register_limiter.limit
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                for i in range(limit):
+                    assert self._register(c, "198.51.100.20").status_code == 201, i
+                rv = self._register(c, "198.51.100.20")
+        assert rv.status_code == 429
+        assert rv.get_json()["error"] == "rate_limited"
+
+    def test_it_is_keyed_per_source(self, app):
+        from src.api.routes import auth as auth_module
+
+        mock_user = {"id": "u", "username": "Jean", "timezone": "America/New_York"}
+        limit = auth_module._register_limiter.limit
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                for _ in range(limit + 1):
+                    self._register(c, "198.51.100.21")
+                # A different client is not collateral damage.
+                rv = self._register(c, "198.51.100.22")
+        assert rv.status_code == 201
+
+    def test_a_malformed_payload_does_not_spend_the_budget(self, app):
+        """Throttled after shape validation: a request that never reaches
+        ``create_user`` costs nothing and should not count against anyone."""
+        from src.api.routes import auth as auth_module
+
+        with app.test_client() as c:
+            for _ in range(auth_module._register_limiter.limit + 5):
+                rv = c.post(
+                    "/auth/register",
+                    json={"username": "Jean"},
+                    environ_base={"REMOTE_ADDR": "198.51.100.23"},
+                )
+                assert rv.status_code == 400
+        assert auth_module._register_limiter.is_limited("198.51.100.23") is False

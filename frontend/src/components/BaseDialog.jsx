@@ -19,12 +19,49 @@ const DialogParentContext = createContext(null)
 // pushed wins" is correct here.
 const topLevelStack = []
 
+// Dialogs re-render when their position in `topLevelStack` changes, so a dialog
+// that has been covered by a sibling can drop its `aria-modal` and hide itself
+// from assistive tech. Plain module state can't do that on its own — nothing
+// re-renders the dialog underneath — hence the subscriber set.
+const topLevelSubscribers = new Set()
+
+function notifyTopLevelChanged() {
+    topLevelSubscribers.forEach((notify) => notify())
+}
+
+function pushTopLevel(id) {
+    topLevelStack.push(id)
+    notifyTopLevelChanged()
+}
+
+function removeTopLevel(id) {
+    const idx = topLevelStack.indexOf(id)
+    if (idx !== -1) topLevelStack.splice(idx, 1)
+    notifyTopLevelChanged()
+}
+
+/** True when `id` is the most-recently-mounted top-level dialog (or none are). */
+function isTopOfStack(id) {
+    return topLevelStack.length === 0 || topLevelStack[topLevelStack.length - 1] === id
+}
+
 const FOCUSABLE_SELECTOR =
     'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+/**
+ * Whether `el` is visible enough to belong in the focus trap.
+ *
+ * Resolved through `getComputedStyle`, so an element hidden by a stylesheet
+ * rule or a media query counts as hidden. The previous implementation read
+ * `el.style`, which sees inline styles only — anything hidden by a class (the
+ * conversation stage's own phone breakpoint, for one) read as visible and was
+ * pulled into the Tab cycle. `offsetParent` is deliberately not consulted:
+ * jsdom always reports it as null, which would empty the trap under test.
+ */
 function isVisible(el) {
     if (el.hidden || el.getAttribute('aria-hidden') === 'true') return false
-    const { display, visibility } = el.style
+    const view = el.ownerDocument?.defaultView
+    const { display, visibility } = view ? view.getComputedStyle(el) : el.style
     return display !== 'none' && visibility !== 'hidden'
 }
 
@@ -42,7 +79,9 @@ export default function BaseDialog({
     onClose,
     variant = 'default', // 'default', 'danger', 'warning', 'no-blur'
     maxWidth = '400px',
-    width = '90%',
+    // Defaults to "as wide as it wants, minus a margin" so callers don't have
+    // to restate their own maxWidth pixel value in a second `min()` expression.
+    width,
     minWidth = '0',
     zIndex = 1000,
     showCloseButton = true,
@@ -67,17 +106,45 @@ export default function BaseDialog({
     // that ancestor's registration API; null for a top-level dialog.
     const parentDialog = useContext(DialogParentContext)
     const activeChildCountRef = useRef(0)
+    // The ref is what the keydown handler reads (its closure is created once
+    // per mount and must not go stale); the state is what render reads, so
+    // `aria-modal` can actually change when a nested dialog opens. Refs are
+    // never read during render — see react-hooks/refs, and the mutable-ref
+    // bug this same rule caught in useNpcChat's Retry button.
+    const [hasActiveChild, setHasActiveChild] = useState(false)
+    const [isTopMost, setIsTopMost] = useState(true)
     // Lazy initializer runs once, so this stays referentially stable across
-    // re-renders without reading a ref during render (refs may only be read
-    // in effects/handlers, not render — see react-hooks/refs).
+    // re-renders. `setHasActiveChild` is itself stable, so capturing it here
+    // is safe.
     const [dialogApi] = useState(() => ({
         registerChild: () => {
             activeChildCountRef.current += 1
+            setHasActiveChild(true)
         },
         unregisterChild: () => {
             activeChildCountRef.current = Math.max(0, activeChildCountRef.current - 1)
+            setHasActiveChild(activeChildCountRef.current > 0)
         },
     }))
+
+    // Stack membership + "am I still on top?" tracking. Split out of the
+    // focus/keyboard effect below so the two concerns can be read separately;
+    // relative ordering between the two is fixed by declaration order, and the
+    // keydown handler only consults the stack at event time, long after both
+    // have run.
+    useEffect(() => {
+        if (parentDialog) {
+            parentDialog.registerChild()
+            return () => parentDialog.unregisterChild()
+        }
+        const syncTopMost = () => setIsTopMost(isTopOfStack(titleId))
+        topLevelSubscribers.add(syncTopMost)
+        pushTopLevel(titleId)
+        return () => {
+            topLevelSubscribers.delete(syncTopMost)
+            removeTopLevel(titleId)
+        }
+    }, [titleId, parentDialog])
 
     // Escape-to-close (innermost active dialog only) + a Tab/Shift+Tab focus
     // trap, plus moving focus into the dialog on mount and restoring it on
@@ -93,12 +160,6 @@ export default function BaseDialog({
             focusables[0].focus()
         } else {
             container.focus()
-        }
-
-        if (parentDialog) {
-            parentDialog.registerChild()
-        } else {
-            topLevelStack.push(titleId)
         }
 
         // A dialog only responds to Escape/Tab when it's the innermost
@@ -144,12 +205,6 @@ export default function BaseDialog({
 
         return () => {
             document.removeEventListener('keydown', handleKeyDown)
-            if (parentDialog) {
-                parentDialog.unregisterChild()
-            } else {
-                const idx = topLevelStack.indexOf(titleId)
-                if (idx !== -1) topLevelStack.splice(idx, 1)
-            }
             if (previouslyFocused && document.contains(previouslyFocused) && typeof previouslyFocused.focus === 'function') {
                 previouslyFocused.focus()
             }
@@ -159,6 +214,17 @@ export default function BaseDialog({
         // instance's nesting context ever changes); onClose is read through
         // onCloseRef so it doesn't need to be a dependency here.
     }, [titleId, parentDialog])
+
+    // Only the innermost dialog is genuinely modal. Two `aria-modal="true"`
+    // dialogs on screen at once (the InteractPanel/NpcChatPanel sibling pair,
+    // or the chat panel with its transcript stacked inside it) leaves a screen
+    // reader free to browse whichever one it lands on first.
+    const isInnermost = !hasActiveChild && (parentDialog ? true : isTopMost)
+    // A top-level dialog covered by a *sibling* is background content, so it is
+    // hidden from assistive tech outright. Deliberately never applied when the
+    // dialog on top is one of this dialog's own children — that subtree lives
+    // inside this one, and hiding the parent would hide the child with it.
+    const isCoveredBySibling = !parentDialog && !isTopMost
 
     const isDanger = variant === 'danger'
     const isWarning = variant === 'warning'
@@ -193,13 +259,14 @@ export default function BaseDialog({
                 ref={containerRef}
                 className={`modal-content ${contentClassName}`}
                 role="dialog"
-                aria-modal="true"
+                aria-modal={isInnermost}
+                aria-hidden={isCoveredBySibling ? 'true' : undefined}
                 aria-labelledby={title ? titleId : undefined}
                 tabIndex={-1}
                 style={{
                     maxWidth,
                     minWidth,
-                    width,
+                    width: width || `min(94vw, ${maxWidth})`,
                     backgroundColor: themeStyles.backgroundColor,
                     border: `3px solid ${themeStyles.borderColor}`,
                     borderRadius: '8px',

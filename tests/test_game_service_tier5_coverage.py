@@ -1991,7 +1991,12 @@ class TestNpcChat:
         mock_player.current_room.npcs_here = [npc]
         result = game_service.npc_chat_open(mock_player, "Gorran")
         assert result["success"] is False
-        assert "Failed to open chat" in result["error"]
+        # S5: the exception text used to be interpolated into the client-facing
+        # error and rendered verbatim in the player's panel; provider SDK
+        # exceptions stringify to endpoint URL, model id, status body and
+        # request id. The detail now stays in the server log.
+        assert result["error"] == "Could not start that conversation."
+        assert "no llm" not in result["error"]
 
     def test_npc_chat_open_exception_clears_active_chat_flag(self, game_service, mock_player):
         """Regression test for #336: a chat_open() failure must not leave
@@ -2077,7 +2082,8 @@ class TestNpcChat:
         mock_player.current_room.npcs_here = [npc]
         result = game_service.npc_chat_respond(mock_player, "Gorran", "hi")
         assert result["success"] is False
-        assert "Failed to respond" in result["error"]
+        assert result["error"] == "Could not deliver that reply."
+        assert "bad" not in result["error"]
 
     def test_enrich_chat_result_no_reputation_key(self, game_service):
         result = {"success": True}

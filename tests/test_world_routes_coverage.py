@@ -890,3 +890,175 @@ class TestSearchRoom:
         with app.test_client() as c:
             rv = c.post("/world/search", headers=AUTH)
         assert rv.status_code == 500
+
+# ---------------------------------------------------------------------------
+# M14 — the branch's headline behaviour, in both directions
+# ---------------------------------------------------------------------------
+
+
+class TestBackgroundServicesStartup:
+    """``_ensure_background_services_started`` — the startup wiring C7 lifted
+    out of ``GET /world``.
+
+    Only the negative half was covered: nothing asserted the prewarm DOES fire
+    outside TESTING, or that it fires exactly once. Both matter. It is behind a
+    module-level latch precisely because /world is the hottest route in the
+    game — and the latch is about the *import*, not the callees: reaching
+    ``ai.llm_client`` pulls in a 3000-line module that imports ``requests`` and
+    calls ``load_project_env()``. The two services are individually idempotent
+    (``start_digest_scheduler()`` latches every terminal branch including the
+    unconfigured ones, ``prewarm()`` claims its attempt under a lock), so these
+    tests pin the latch's own behaviour rather than relying on theirs.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_latch(self):
+        """The latch is a module global; a test that trips it would otherwise
+        make every later test in the process a silent no-op."""
+        from src.api.routes import world as world_module
+
+        world_module._background_services_started = False
+        yield
+        world_module._background_services_started = False
+
+    @pytest.fixture
+    def live_app(self):
+        """An app that is NOT in TESTING mode, which is the whole gate."""
+        from flask import Flask
+
+        app = Flask(__name__)
+        app.config["TESTING"] = False
+        return app
+
+    def test_prewarm_fires_outside_testing(self, live_app):
+        from src.api.routes import world as world_module
+
+        with patch("ai.llm_client.NpcChatLLMAdapter.prewarm") as prewarm, patch(
+            "ai.llm_client.NpcChatLLMAdapter.is_prewarmed", return_value=False
+        ), patch("ai.provider_digest.start_digest_scheduler", return_value=False), patch(
+            "src.api.routes.world.threading.Thread"
+        ) as thread:
+            world_module._ensure_background_services_started(live_app)
+
+        # Started on a daemon thread, not inline: the constructor does real
+        # network discovery and model validation — seconds of blocking I/O —
+        # and gunicorn runs a single worker. (It does NOT hold the class-wide
+        # _instances_lock throughout; prewarm claims the attempt under the lock
+        # and builds outside it.)
+        assert thread.call_count == 1
+        kwargs = thread.call_args.kwargs
+        assert kwargs["target"] is prewarm
+        assert kwargs["daemon"] is True
+
+    def test_the_digest_scheduler_is_started_outside_testing(self, live_app):
+        from src.api.routes import world as world_module
+
+        with patch(
+            "ai.llm_client.NpcChatLLMAdapter.is_prewarmed", return_value=True
+        ), patch(
+            "ai.provider_digest.start_digest_scheduler", return_value=True
+        ) as scheduler:
+            world_module._ensure_background_services_started(live_app)
+
+        scheduler.assert_called_once_with()
+
+    def test_it_fires_exactly_once_across_many_world_loads(self, live_app):
+        from src.api.routes import world as world_module
+
+        with patch("ai.llm_client.NpcChatLLMAdapter.prewarm"), patch(
+            "ai.llm_client.NpcChatLLMAdapter.is_prewarmed", return_value=False
+        ), patch(
+            "ai.provider_digest.start_digest_scheduler", return_value=False
+        ) as scheduler, patch(
+            "src.api.routes.world.threading.Thread"
+        ) as thread:
+            for _ in range(5):
+                world_module._ensure_background_services_started(live_app)
+
+        assert thread.call_count == 1
+        assert scheduler.call_count == 1
+
+    def test_a_failure_inside_the_block_does_not_retry_forever(self, live_app, caplog):
+        """The latch is set BEFORE the work, so a raise cannot turn the hottest
+        route in the game into a retry loop. It is logged at WARNING because
+        WARNING is the level this app configures by default — a DEBUG record
+        here would be invisible in exactly the deployment that needs it."""
+        import logging
+
+        from src.api.routes import world as world_module
+
+        with patch(
+            "ai.llm_client.NpcChatLLMAdapter.is_prewarmed",
+            side_effect=RuntimeError("no llm stack"),
+        ) as probe, patch(
+            "ai.provider_digest.start_digest_scheduler", return_value=False
+        ):
+            with caplog.at_level(logging.WARNING, logger="src.api.routes.world"):
+                for _ in range(3):
+                    world_module._ensure_background_services_started(live_app)
+
+        assert probe.call_count == 1
+        assert world_module._background_services_started is True
+        assert caplog.records
+
+    def test_a_prewarm_failure_does_not_disable_the_digest(self, live_app, caplog):
+        """The two services get separate ``try`` blocks. One shared block meant
+        an exception raised before ``start_digest_scheduler()`` — e.g. from the
+        ``ai.llm_client`` import or the ``is_prewarmed`` probe — disabled the
+        provider digest for the lifetime of the process behind a single warning
+        about "background services", and the latch guaranteed it never got
+        another chance.
+        """
+        import logging
+
+        from src.api.routes import world as world_module
+
+        with patch(
+            "ai.llm_client.NpcChatLLMAdapter.is_prewarmed",
+            side_effect=RuntimeError("no llm stack"),
+        ), patch(
+            "ai.provider_digest.start_digest_scheduler", return_value=True
+        ) as scheduler:
+            with caplog.at_level(logging.WARNING, logger="src.api.routes.world"):
+                world_module._ensure_background_services_started(live_app)
+
+        scheduler.assert_called_once_with()
+        assert any("prewarm" in r.message for r in caplog.records)
+
+    def test_a_scheduler_that_does_not_start_is_reported_at_warning(
+        self, live_app, caplog
+    ):
+        """"Webhook configured but nothing scheduled" is the outage this return
+        value exists to surface, and it was being announced at INFO — below the
+        level this app configures, i.e. into a sink nobody was listening to."""
+        import logging
+
+        from src.api.routes import world as world_module
+
+        with patch(
+            "ai.llm_client.NpcChatLLMAdapter.is_prewarmed", return_value=True
+        ), patch("ai.provider_digest.start_digest_scheduler", return_value=False):
+            with caplog.at_level(logging.WARNING, logger="src.api.routes.world"):
+                world_module._ensure_background_services_started(live_app)
+
+        assert any("digest scheduler" in r.message for r in caplog.records)
+
+    def test_testing_mode_does_not_latch(self, live_app):
+        """Gated on TESTING deliberately WITHOUT latching, so a test app can
+        never poison a later real one in the same process."""
+        from flask import Flask
+
+        from src.api.routes import world as world_module
+
+        test_app = Flask(__name__)
+        test_app.config["TESTING"] = True
+
+        with patch("ai.llm_client.NpcChatLLMAdapter.is_prewarmed") as probe:
+            world_module._ensure_background_services_started(test_app)
+        assert probe.call_count == 0
+        assert world_module._background_services_started is False
+
+        with patch("ai.llm_client.NpcChatLLMAdapter.is_prewarmed", return_value=True), \
+                patch("ai.provider_digest.start_digest_scheduler", return_value=False):
+            world_module._ensure_background_services_started(live_app)
+        assert world_module._background_services_started is True

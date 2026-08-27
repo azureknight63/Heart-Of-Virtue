@@ -1,4 +1,5 @@
 import PortraitImage from './PortraitImage'
+import GameText from './GameText'
 import { colors, spacing, fonts } from '../styles/theme'
 
 /**
@@ -39,21 +40,21 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
 
     if (!speaker) {
         return (
-            <div
+            <GameText
+                as="div"
+                variant="muted"
+                align="center"
+                size={isCompact ? 'xs' : 'sm'}
                 data-testid="transcript-entry"
                 data-side="center"
                 style={{
-                    color: colors.text.muted,
-                    fontFamily: fonts.main,
-                    fontSize: isCompact ? '12px' : '13px',
                     fontStyle: 'italic',
                     lineHeight: 1.6,
-                    textAlign: 'center',
                     padding: spacing.sm,
                 }}
             >
                 {text}
-            </div>
+            </GameText>
         )
     }
 
@@ -108,6 +109,10 @@ export function TranscriptEntry({ segment = {}, cast = [], variant = 'full' }) {
                 speaker={speaker}
                 name={name}
                 emotion={emotion}
+                // The full transcript mounts one of these per turn inside a
+                // 65vh scroller, so all but the first screenful start off
+                // screen. The compact recap strip is always visible.
+                lazy={!isCompact}
                 style={{
                     width: size,
                     // Portrait art is a framed card (328x468 with a drawn
@@ -195,19 +200,16 @@ export default function ConversationTranscript({
 }) {
     if (segments.length === 0) {
         return (
-            <div
+            <GameText
+                as="div"
+                variant="muted"
+                align="center"
+                size="sm"
                 data-testid="transcript-empty"
-                style={{
-                    color: colors.text.muted,
-                    fontFamily: fonts.main,
-                    fontSize: '13px',
-                    fontStyle: 'italic',
-                    textAlign: 'center',
-                    padding: spacing.xl,
-                }}
+                style={{ fontStyle: 'italic', padding: spacing.xl }}
             >
                 {emptyText}
-            </div>
+            </GameText>
         )
     }
 

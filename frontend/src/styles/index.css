@@ -9,6 +9,18 @@
   font-style: normal;
 }
 
+/*
+ * The handful of values shared between this stylesheet and the inline styles
+ * in styles/theme.js. Anything a rule here and a component both need to agree
+ * on belongs in this block rather than being re-typed as a literal in each.
+ * `--space-*` mirror the identically-named keys in `spacing`.
+ */
+:root {
+  --stage-portrait-width: 130px;
+  --space-md: 12px;
+  --space-lg: 16px;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -79,29 +91,46 @@ input, select, textarea {
  * readable dialogue in the center. At phone widths the same stage becomes a
  * two-column portrait row above a full-width dialogue card.
  *
- * CSS owns wide-layout portrait sizing outright (no competing inline value
- * from ConversationStage.jsx) — the desktop clamp below and the mobile
- * override in the media query differ only by breakpoint, so the override
- * doesn't need !important to win: same selector, later in source order.
+ * THE RULE: CSS owns the whole of the wide layout's geometry — display, grid
+ * tracks and areas, gap, min-heights, padding and portrait sizing. Nothing in
+ * ConversationStage.jsx sets any of them inline for `layout="wide"`; the only
+ * inline styles left on that stage are per-member dynamic values (opacity,
+ * transform, speaker border) and the `grid-area` each column is assigned.
+ * Because the desktop rules and the mobile overrides now share a selector and
+ * differ only by breakpoint, the media query wins on source order alone — it
+ * previously needed eight `!important` declarations to beat inline styles.
  */
+.conversation-stage--wide {
+  display: grid;
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-areas: "left dialogue right";
+  gap: var(--space-lg);
+  min-height: 360px;
+}
+
 .conversation-stage--wide .conversation-stage__portrait-column {
   min-width: 0;
   width: 100%;
 }
 
 .conversation-stage--wide .conversation-stage__portrait-column img {
-  width: clamp(130px, 12vw, 185px);
+  width: clamp(var(--stage-portrait-width), 12vw, 185px);
+}
+
+.conversation-stage--wide .conversation-stage__dialogue {
+  min-height: 220px;
+  padding: var(--space-lg);
 }
 
 @media (max-width: 767px) {
   .conversation-stage--wide {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
       "left right"
-      "dialogue dialogue" !important;
-    gap: 12px !important;
-    min-height: 0 !important;
+      "dialogue dialogue";
+    gap: var(--space-md);
+    min-height: 0;
   }
 
   .conversation-stage--wide .conversation-stage__portrait-column {
@@ -113,8 +142,35 @@ input, select, textarea {
   }
 
   .conversation-stage--wide .conversation-stage__dialogue {
-    min-height: 190px !important;
-    padding: 12px !important;
+    min-height: 190px;
+    padding: var(--space-md);
+  }
+}
+
+/*
+ * NPC chat "gathering a reply" spinner. Lives here rather than in a React
+ * `<style>` tag inside NpcChatPanel: keyframe names are document-global no
+ * matter which element injects them, so a component-local `@keyframes` block
+ * silently competes with every other definition of the same name in the app.
+ * (The `pulse` that used to sit alongside this rule did exactly that to
+ * HeroPanel's and BattlefieldGrid's animations; the chat now uses the shared
+ * `pulse-opacity` below instead.)
+ */
+.npc-chat-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  /* colors.border.light / colors.secondary from styles/theme.js */
+  border: 2px solid rgba(255, 170, 0, 0.1);
+  border-top-color: #ffaa00;
+  border-radius: 50%;
+  animation: npc-chat-spin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
+@keyframes npc-chat-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

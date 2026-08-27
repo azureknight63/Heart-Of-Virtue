@@ -1,7 +1,12 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import PortraitImage from './PortraitImage'
 import { colors, spacing, fonts } from '../styles/theme'
+
+// Referentially stable stand-in for "no initial roster". `computeStage` is
+// memoized on its arguments, and a fresh `[]` per render would miss that cache
+// on every keystroke of the typewriter — which is the whole point of the memo.
+const EMPTY_CAST = []
 
 // A fading exit with no author-supplied span ghosts for one extra beat before
 // leaving. Span 1 would drop the member on the exit beat itself — visually
@@ -156,8 +161,9 @@ function Portrait({ member, isSpeaker, wide = false }) {
                     // Wide-layout width is owned by CSS (index.css's
                     // `.conversation-stage--wide .conversation-stage__portrait-column img`,
                     // including its mobile override) so it isn't duplicated
-                    // here with a competing inline value.
-                    width: wide ? undefined : '130px',
+                    // here with a competing inline value. The default layout's
+                    // width reads the same custom property the CSS clamp does.
+                    width: wide ? undefined : 'var(--stage-portrait-width)',
                     height: 'auto',
                     borderRadius: '6px',
                     border: `2px solid ${isSpeaker ? colors.secondary : colors.border.light}`,
@@ -192,16 +198,14 @@ function Portrait({ member, isSpeaker, wide = false }) {
  * emphasized; listeners persist, dimmed, until a beat changes their emotion.
  * Pre-conversation beats (no `in_conversation`) render as plain centered prose.
  *
- * `mode` sets the defaults for the `interactive` / `showAdvanceHint` /
- * `followTail` trio, which always travel together for a given caller:
+ * `mode` is the whole behavioural contract, because interactivity, the advance
+ * hint and tail-following always travel together for a given caller:
  * `"authored"` (default) is a clickable scene that starts at beat 0, shows the
  * advance hint, and fires `onComplete` once the final beat is revealed —
  * EventDialog's authored events. `"live"` is a non-interactive, tail-following
  * display with no advance hint that never fires `onComplete` — NpcChatPanel's
  * streamed chat, which tracks its own completion off the API response rather
- * than the stage. Each of the three booleans remains a fully functional prop
- * in its own right and overrides the mode's default whenever passed
- * explicitly (e.g. `mode="live" interactive` still ends up interactive).
+ * than the stage.
  *
  * The blank-beat safety-valve timer (auto-advancing a silent enter/exit beat
  * after its fade has a moment to play) stays armed in both modes — a blank
@@ -213,10 +217,7 @@ function Portrait({ member, isSpeaker, wide = false }) {
  * @param {Object}   conversation - { cast: [...] } initial roster (optional)
  * @param {Function} onComplete - called once after the final beat is revealed (never in `"live"` mode)
  * @param {number}   [speed]    - typewriter speed (ms/char)
- * @param {'authored'|'live'} [mode] - sets the default interactive/showAdvanceHint/followTail trio
- * @param {boolean}  [interactive] - whether click/keyboard advances the stage (overrides the mode default)
- * @param {boolean}  [showAdvanceHint] - whether to show the advance affordance (overrides the mode default)
- * @param {boolean}  [followTail] - keep the newest appended beat visible (overrides the mode default)
+ * @param {'authored'|'live'} [mode] - interactive+hinted+from-beat-0, or non-interactive+tail-following
  * @param {'default'|'wide'} [layout] - layout density for the conversation stage
  */
 function ConversationStage({
@@ -225,24 +226,29 @@ function ConversationStage({
     onComplete,
     speed = 25,
     mode = 'authored',
-    interactive,
-    showAdvanceHint,
-    followTail,
     layout = 'default',
 }) {
     const isLive = mode === 'live'
-    const resolvedInteractive = interactive ?? !isLive
-    const resolvedShowAdvanceHint = showAdvanceHint ?? !isLive
-    const resolvedFollowTail = followTail ?? isLive
 
     const [beatIndex, setBeatIndex] = useState(0)
     const completedRef = useRef(false)
     const containerRef = useRef(null)
 
-    const initialCast = conversation?.cast || []
+    const initialCast = conversation?.cast || EMPTY_CAST
     const lastIndex = segments.length - 1
     const current = segments[beatIndex] || {}
-    const { members, activeSpeaker, staged } = computeStage(segments, beatIndex, initialCast)
+    // Memoized because `computeStage` replays the conversation from beat 0 and
+    // `useTypewriter` below re-renders once per character: unmemoized, a
+    // 300-character reply replayed the whole conversation ~300 times, each
+    // replay allocating two Maps and a spread per cast member.
+    const { members, activeSpeaker, staged, leftMembers, rightMembers } = useMemo(() => {
+        const stage = computeStage(segments, beatIndex, initialCast)
+        return {
+            ...stage,
+            leftMembers: stage.members.filter((m) => m.side === 'left'),
+            rightMembers: stage.members.filter((m) => m.side === 'right'),
+        }
+    }, [segments, beatIndex, initialCast])
 
     const { displayedText, isComplete, finishImmediately } = useTypewriter(current.text || '', speed)
 
@@ -257,9 +263,9 @@ function ConversationStage({
     // event are often the same length, and a length-keyed reset leaves the stage
     // parked on the previous stage's last beat with onComplete already spent.
     useEffect(() => {
-        setBeatIndex(resolvedFollowTail ? Math.max(0, segments.length - 1) : 0)
+        setBeatIndex(isLive ? Math.max(0, segments.length - 1) : 0)
         completedRef.current = false
-    }, [segments, resolvedFollowTail])
+    }, [segments, isLive])
 
     const advance = useCallback(() => {
         if (!isComplete) {
@@ -288,7 +294,7 @@ function ConversationStage({
 
     // Enter/Space advance the conversation while it is active.
     useEffect(() => {
-        if (!resolvedInteractive) return undefined
+        if (isLive) return undefined
         const node = containerRef.current
         if (!node) return undefined
         const onKey = (e) => {
@@ -300,10 +306,8 @@ function ConversationStage({
         }
         node.addEventListener('keydown', onKey)
         return () => node.removeEventListener('keydown', onKey)
-    }, [advance, resolvedInteractive])
+    }, [advance, isLive])
 
-    const leftMembers = members.filter((m) => m.side === 'left')
-    const rightMembers = members.filter((m) => m.side === 'right')
     const isDialogue = Boolean(current.speaker)
     const isThought = Boolean(current.thought)
     const isWide = layout === 'wide'
@@ -335,24 +339,24 @@ function ConversationStage({
         <div
             ref={containerRef}
             data-testid="conversation-stage"
-            tabIndex={resolvedInteractive ? -1 : undefined}
+            tabIndex={isLive ? undefined : -1}
             onClick={(e) => {
                 e.stopPropagation()
-                if (resolvedInteractive) advance()
+                if (!isLive) advance()
             }}
             className={`conversation-stage conversation-stage--${layout}`}
             style={{
-                alignItems: 'stretch',
-                gap: spacing.lg,
-                cursor: resolvedInteractive ? 'pointer' : 'default',
+                cursor: isLive ? 'default' : 'pointer',
                 outline: 'none',
-                ...(isWide ? {
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)',
-                    gridTemplateAreas: '"left dialogue right"',
-                    minHeight: '360px',
-                } : {
+                // Wide-layout geometry (display, grid tracks, gap, min-height)
+                // lives entirely in index.css's `.conversation-stage--wide`
+                // rules so the phone media query can override it by ordinary
+                // cascade instead of eight `!important` declarations. Only the
+                // default layout still styles itself inline.
+                ...(isWide ? {} : {
                     display: 'flex',
+                    alignItems: 'stretch',
+                    gap: spacing.lg,
                     minHeight: '300px',
                 }),
             }}
@@ -369,12 +373,13 @@ function ConversationStage({
                     flexDirection: 'column',
                     justifyContent: 'center',
                     gap: spacing.sm,
-                    padding: spacing.lg,
                     border: `2px solid ${colors.secondary}`,
                     borderRadius: '8px',
                     backgroundColor: colors.bg.panelDeep,
-                    minHeight: '220px',
                     transition: 'min-height 0.3s ease',
+                    // As above: the wide card's padding and min-height are the
+                    // two values the phone breakpoint retunes, so CSS owns them.
+                    ...(isWide ? {} : { padding: spacing.lg, minHeight: '220px' }),
                 }}
             >
                 {isDialogue && (
@@ -419,7 +424,7 @@ function ConversationStage({
                 >
                     {displayedText}
                 </div>
-                {resolvedShowAdvanceHint && (
+                {!isLive && (
                     <span
                         data-testid="conversation-advance-hint"
                         style={{

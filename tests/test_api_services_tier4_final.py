@@ -141,6 +141,35 @@ class TestAuthServiceEncryptionKey:
         token = service.fernet.encrypt(b"jean@example.com").decode()
         assert service.decrypt_email(token) == "jean@example.com"
 
+    @pytest.mark.parametrize(
+        "flask_env", ["Production", "PRODUCTION", " production ", "pRoDuCtIoN"]
+    )
+    def test_the_guard_is_not_case_sensitive(self, monkeypatch, flask_env):
+        """A case difference must not turn a fail-closed guard into a fail-open one.
+
+        ``FLASK_ENV`` is operator-typed, and both entry points that select the
+        config class lowercase it — so ``Production`` really does select
+        ``ProductionConfig``. Compared raw here, it skipped this raise and minted
+        an ephemeral Fernet key instead, orphaning every already-encrypted email
+        on the next restart with nothing reporting the loss.
+
+        The identical defect existed in ``src/api/config.py``'s SECRET_KEY guard
+        — which this one's own comment says it mirrors — and both now share
+        ``normalized_env()``. This test exists so they cannot drift a third time.
+        """
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+        monkeypatch.setenv("FLASK_ENV", flask_env)
+        with pytest.raises(
+            RuntimeError, match="ENCRYPTION_KEY must be set in production"
+        ):
+            AuthService()
+
+    def test_a_non_production_env_still_falls_back(self, monkeypatch):
+        """The normalisation must not over-reach and break dev/test startup."""
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+        monkeypatch.setenv("FLASK_ENV", "development")
+        assert AuthService().encryption_key is not None
+
     def test_non_production_falls_back_to_a_generated_key(self, monkeypatch):
         monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
         monkeypatch.setenv("FLASK_ENV", "development")

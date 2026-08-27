@@ -260,12 +260,41 @@ def test_legacy_bare_modules_covers_all_src_modules():
     Persisted data (map JSON __module__/__class_type__, legacy pickles) stores
     bare module names; canonical_module_name() only rewrites names in that
     frozenset. A new top-level module missing from it would silently fail to
-    resolve when referenced by map or save data. ('api' is excluded — it never
-    appears in persisted engine data.)
+    resolve when referenced by map or save data.
+
+    Exemptions are DERIVED, not listed by name. A hand-maintained exclusion set
+    is the wrong shape here: it lets someone quiet this test by appending a
+    module name, which is exactly the drift the test exists to catch. So a
+    top-level module is exempt only when one of these holds:
+
+      * it is 'api' — the Flask layer, architecturally never persisted. This is
+        the one irreducible judgement call, so it is the only literal here.
+      * it defines no classes at all. Nothing persisted can name a class the
+        module does not have, and listing such a module would only pull an
+        inert name into the pickle rewrite map and into allow-list derivation.
+
+    The second rule is checked against the source each run, so a module that
+    later grows a class stops being exempt automatically and this test fires.
     """
     from src.functions import LEGACY_BARE_MODULES
 
-    missing = _LOCAL_MODULES - {"api"} - LEGACY_BARE_MODULES
+    def _defines_a_class(name: str) -> bool:
+        """True if this top-level module (or any module in this package) has a class."""
+        target = _SRC / f"{name}.py"
+        paths = [target] if target.is_file() else sorted((_SRC / name).rglob("*.py"))
+        for path in paths:
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except (OSError, SyntaxError):
+                # Unreadable/unparseable: assume it *could* define a class, so the
+                # module stays in scope rather than being silently exempted.
+                return True
+            if any(isinstance(node, ast.ClassDef) for node in ast.walk(tree)):
+                return True
+        return False
+
+    exempt = {"api"} | {m for m in _LOCAL_MODULES if not _defines_a_class(m)}
+    missing = _LOCAL_MODULES - exempt - LEGACY_BARE_MODULES
     assert not missing, (
         "Top-level src/ modules missing from functions.LEGACY_BARE_MODULES "
         f"(persisted bare-name references to them won't resolve): {sorted(missing)}"

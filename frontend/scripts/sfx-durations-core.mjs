@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const SOUNDS_DIR = join(__dirname, '..', 'public', 'assets', 'sounds', 'sfx');
+const SOUNDS_DIR = join(__dirname, '..', 'public', 'assets', 'sounds', 'sfx');
 
 /**
  * Exact duration (ms) of a PCM WAV from its header: data-chunk bytes / byteRate.

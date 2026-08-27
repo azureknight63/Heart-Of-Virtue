@@ -385,6 +385,24 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     display_name = 'Club Strike'
     web_animation = "heavy_attack"
 
+    # Power roll bounds, and _DAMAGE_MULTIPLIER as their midpoint. The wire's
+    # `damage_multiplier` (src/api/serializers/combat.py) reads
+    # `_DAMAGE_MULTIPLIER` off the class, so the Tactical Advisor's threat
+    # estimate is only as honest as this attribute. Deriving it from the same
+    # bounds evaluate() rolls between means there is no second literal to keep
+    # in step — retune the roll and the wire follows.
+    #
+    # The MIDPOINT, not the ceiling: ai/combat_strategist.py
+    # `_estimate_incoming_damage` renders the wire value as a ±20% band and
+    # flags POTENTIALLY LETHAL when the band's midpoint reaches HALF the
+    # player's HP. That 0.5 already IS the margin for a high roll, so a
+    # ceiling here would double-count it and cry wolf; it would also make this
+    # attribute mean something different from the TelegraphedSurge multipliers
+    # above, which are the exact factor applied.
+    _POWER_ROLL_MIN = 1.5
+    _POWER_ROLL_MAX = 3.0
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -453,7 +471,9 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(1.5, 3)
+        power = self.user.damage * random.uniform(
+            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
+        )
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -536,6 +556,14 @@ class VenomClaw(Move):  # Poisonous attack
     display_name = 'Venom Claw'
     web_animation = "attack"
 
+    # Power roll bounds; _DAMAGE_MULTIPLIER is their midpoint and is what the
+    # serializer puts on the wire for the Tactical Advisor's threat estimate.
+    # Derived rather than re-typed, so retuning the roll cannot leave the wire
+    # value stale (see GorranClub for why the midpoint and not the ceiling).
+    _POWER_ROLL_MIN = 0.6
+    _POWER_ROLL_MAX = 1.0
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -598,7 +626,9 @@ class VenomClaw(Move):  # Poisonous attack
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(0.6, 1)
+        power = self.user.damage * random.uniform(
+            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
+        )
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -831,6 +861,14 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
     display_name = 'Bat Bite'
     web_animation = "quick_attack"
 
+    # Power roll bounds; _DAMAGE_MULTIPLIER is their midpoint and is what the
+    # serializer puts on the wire for the Tactical Advisor's threat estimate.
+    # Derived rather than re-typed, so retuning the roll cannot leave the wire
+    # value stale (see GorranClub for why the midpoint and not the ceiling).
+    _POWER_ROLL_MIN = 0.7
+    _POWER_ROLL_MAX = 1.1
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = "A quick bite that steals a little life from the target."
         prep = 0
@@ -894,7 +932,9 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(0.7, 1.1)
+        power = self.user.damage * random.uniform(
+            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
+        )
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -1339,6 +1379,10 @@ class SeismicSlam(Move):
 
     _RADIUS = 6
     _STAGGER_CHANCE = 0.25
+    # Power multiple on the user's base damage. Named because the serializer
+    # reads it off the class as the wire's `damage_multiplier`; evaluate()
+    # below is its only other reader, so the number exists once.
+    _DAMAGE_MULTIPLIER = 0.7
 
     def __init__(self, npc):
         description = (
@@ -1391,7 +1435,7 @@ class SeismicSlam(Move):
 
     def evaluate(self):
         if hasattr(self.user, "damage"):
-            self.power = self.user.damage * 0.7
+            self.power = self.user.damage * self._DAMAGE_MULTIPLIER
 
     def execute(self, user):
         cprint(
@@ -1613,6 +1657,10 @@ class TwinFangs(Move):
     web_animation = "quick_attack"
 
     _QUARRY_BONUS = 1.5
+    # Power multiple on the user's base damage, before _QUARRY_BONUS. Named
+    # because the serializer reads it off the class as the wire's
+    # `damage_multiplier`; evaluate() below is its only other reader.
+    _DAMAGE_MULTIPLIER = 1.2
 
     def __init__(self, npc):
         description = (
@@ -1661,7 +1709,7 @@ class TwinFangs(Move):
 
     def evaluate(self):
         if hasattr(self.user, "damage"):
-            self.power = self.user.damage * 1.2
+            self.power = self.user.damage * self._DAMAGE_MULTIPLIER
 
     def execute(self, user):
         target = self.target

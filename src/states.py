@@ -9,6 +9,17 @@ import random
 import src.functions as functions
 
 
+def _pct(fraction):
+    """Render a 0-1 modifier fraction as the integer percentage a state quotes.
+
+    Every percentage a state shows the player (``description``) or the Tactical
+    Advisor (``tactical_mechanics``) is interpolated through this from the very
+    same class constant the ``add_*`` assignment multiplies by, so the prose and
+    the applied modifier cannot drift apart.
+    """
+    return f"{int(round(fraction * 100))}%"
+
+
 class State:  # master class for all states
     """
     If beats_max is 0 (default), the state will not expire after n beats.
@@ -30,9 +41,26 @@ class State:  # master class for all states
         compounding=False,
         statustype="generic",
         persistent=False,
+        tactical_mechanics="",
     ):
         self.name = name
         self.description = description
+        # Terse, engine-owned mechanical summary for the combat LLM prompt.
+        #
+        # ``description`` is player-facing prose; this is the same facts written
+        # for a tactical reader — the applied modifiers and the tick interval,
+        # nothing else. It exists because ai/combat_strategist.py used to carry
+        # a hand-typed copy of these numbers, which had already gone stale in
+        # three places (it told the model Poisoned ticks every beat when
+        # ``execute_on`` is 5, that Enflamed ticks every 3 beats when it ticks
+        # every one, and that Slimed drains fatigue, which it has never done).
+        # A wrong number in a combat prompt is worse than a missing one, so the
+        # numbers live here, next to the code that applies them, and the adapter
+        # only chooses a perspective to narrate them from.
+        #
+        # tests/test_states_tactical_mechanics.py fails if this text and the
+        # state's real ``add_*`` deltas or ``execute_on`` interval disagree.
+        self.tactical_mechanics = tactical_mechanics
         self.beats_max = int(beats_max)  # combat beats
         self.beats_left = int(self.beats_max)
         self.steps_max = int(steps_max)  # world steps
@@ -95,7 +123,13 @@ class Dodging(State):
     def __init__(
         self, target
     ):  # increases the target's dodging ability for a short duration
-        super().__init__(name="Dodging", target=target, beats_max=7, hidden=True)
+        super().__init__(
+            name="Dodging",
+            target=target,
+            beats_max=7,
+            hidden=True,
+            tactical_mechanics="+evasion (large finesse bonus) while the stance holds",
+        )
         f = 50 + int(target.finesse / 3)
         self.add_fin = f
 
@@ -104,10 +138,20 @@ class Parrying(State):
     def __init__(
         self, target
     ):  # parries the next attack, giving the aggressor a large recoil duration
-        super().__init__(name="Parrying", target=target, beats_max=7, hidden=True)
+        super().__init__(
+            name="Parrying",
+            target=target,
+            beats_max=7,
+            hidden=True,
+            tactical_mechanics="Parry stance active",
+        )
 
 
 class Poisoned(State):
+    # Beat interval between damage ticks. Quoted by tactical_mechanics below,
+    # so the model is never told a rate the effect does not run at.
+    _EXECUTE_ON = 5
+
     def __init__(self, target):
         duration = random.randint(50, 150)
         steps = random.randint(20, 80)
@@ -121,11 +165,11 @@ class Poisoned(State):
             statustype="poison",
             persistent=True,
             description="Deals escalating HP damage every few beats. Worsens if reapplied.",
+            tactical_mechanics=f"escalating HP DoT every {self._EXECUTE_ON} beats",
         )
         self.tick = 0  # increases at each effect cycle
-        self.execute_on = (
-            5  # when the tick is a multiple of this number, execute the effect
-        )
+        # when the tick is a multiple of this number, execute the effect
+        self.execute_on = self._EXECUTE_ON
 
     def on_application(self, target):
         cprint("{} has been poisoned!".format(target.name), "magenta")
@@ -201,6 +245,11 @@ class Enflamed(
                 "Deals fire damage every beat, reduced by fire resistance. Each beat "
                 "carries a chance to burn out early based on fire resistance. "
                 "Stacks up to {} times.".format(ENFLAMED_MAX_STACKS)
+            ),
+            # No execute_on gate: effect() runs, and burns, on EVERY beat.
+            tactical_mechanics=(
+                f"fire DoT every beat, stacking up to {ENFLAMED_MAX_STACKS}×; "
+                "reduced by fire resistance"
             ),
         )
         self.stacks = 1
@@ -304,6 +353,9 @@ class Disoriented(State):
     suffering reduced finesse and protection until the status expires.
     """
 
+    _FINESSE_PENALTY = 0.30
+    _PROTECTION_PENALTY = 0.25
+
     def __init__(self, target):
         duration = random.randint(8, 15)
         super().__init__(
@@ -315,10 +367,18 @@ class Disoriented(State):
             world=False,
             statustype="disoriented",
             persistent=False,
-            description="Finesse -30%, Protection -25%. Defensive positioning is compromised.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY)}, "
+                f"Protection -{_pct(self._PROTECTION_PENALTY)}. "
+                "Defensive positioning is compromised."
+            ),
+            tactical_mechanics=(
+                f"−{_pct(self._FINESSE_PENALTY)} finesse, "
+                f"−{_pct(self._PROTECTION_PENALTY)} protection"
+            ),
         )
-        self.add_fin = -int(target.finesse * 0.3)  # Reduce finesse by 30%
-        self.add_protection = -int(target.protection * 0.25)  # Reduce protection by 25%
+        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY)
+        self.add_protection = -int(target.protection * self._PROTECTION_PENALTY)
 
     def on_application(self, target):
         cprint(
@@ -335,7 +395,13 @@ class Hawkeye(State):
     def __init__(
         self, target
     ):  # increases the target's accuracy with a ranged weapon for a short duration
-        super().__init__(name="Hawkeye", target=target, beats_max=30, description="Ranged accuracy greatly increased.")
+        super().__init__(
+            name="Hawkeye",
+            target=target,
+            beats_max=30,
+            description="Ranged accuracy greatly increased.",
+            tactical_mechanics="+ranged accuracy",
+        )
 
 
 class Slimed(State):
@@ -344,6 +410,10 @@ class Slimed(State):
     The slime doesn't wash off. It seeps into every joint, every stitched seam,
     filling cracks Jean didn't know he had. The smell alone is enough to turn the stomach.
     """
+
+    _FINESSE_PENALTY = 0.20
+    _PROTECTION_PENALTY = 0.15
+    _EXECUTE_ON = 6
 
     def __init__(self, target):
         duration = random.randint(30, 80)
@@ -358,12 +428,21 @@ class Slimed(State):
             world=True,
             statustype="slimed",
             persistent=True,
-            description="Finesse -20%, Protection -15%. Deals periodic acid damage. Worsens if reapplied.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY)}, "
+                f"Protection -{_pct(self._PROTECTION_PENALTY)}. "
+                "Deals periodic acid damage. Worsens if reapplied."
+            ),
+            tactical_mechanics=(
+                f"−{_pct(self._FINESSE_PENALTY)} finesse, "
+                f"−{_pct(self._PROTECTION_PENALTY)} protection, "
+                f"acid DoT every {self._EXECUTE_ON} beats"
+            ),
         )
         self.tick = 0
-        self.execute_on = 6
-        self.add_fin = -int(target.finesse * 0.20)
-        self.add_protection = -int(target.protection * 0.15)
+        self.execute_on = self._EXECUTE_ON
+        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY)
+        self.add_protection = -int(target.protection * self._PROTECTION_PENALTY)
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -400,6 +479,9 @@ class Resonant(State):
     with equal indifference. The wail does not stop at the skin.
     """
 
+    _FINESSE_PENALTY = 0.25
+    _EXECUTE_ON = 5
+
     def __init__(self, target):
         duration = random.randint(12, 22)
         super().__init__(
@@ -411,11 +493,18 @@ class Resonant(State):
             world=False,
             statustype="stun",
             persistent=False,
-            description="Finesse -25%. Deals periodic armor-bypassing damage from resonant vibration.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY)}. Deals periodic "
+                "armor-bypassing damage from resonant vibration."
+            ),
+            tactical_mechanics=(
+                f"−{_pct(self._FINESSE_PENALTY)} finesse, "
+                f"armor-piercing DoT every {self._EXECUTE_ON} beats"
+            ),
         )
         self.tick = 0
-        self.execute_on = 5
-        self.add_fin = -int(target.finesse * 0.25)
+        self.execute_on = self._EXECUTE_ON
+        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY)
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -483,6 +572,11 @@ class Petrified(State):
     costs too much. The crust is heavier than it looks. It is also harder.
     """
 
+    _FINESSE_PENALTY = 0.20
+    _SPEED_PENALTY = 0.35
+    _PROTECTION_BONUS = 0.25
+    _EXECUTE_ON = 6
+
     def __init__(self, target):
         duration = random.randint(20, 45)
         steps = random.randint(15, 30)
@@ -496,13 +590,24 @@ class Petrified(State):
             world=True,
             statustype="stone",
             persistent=False,
-            description="Finesse -20%, Speed -35%, Protection +25%. Drains Fatigue every few beats. Worsens if reapplied.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY)}, "
+                f"Speed -{_pct(self._SPEED_PENALTY)}, "
+                f"Protection +{_pct(self._PROTECTION_BONUS)}. "
+                "Drains Fatigue every few beats. Worsens if reapplied."
+            ),
+            tactical_mechanics=(
+                f"−{_pct(self._FINESSE_PENALTY)} finesse, "
+                f"−{_pct(self._SPEED_PENALTY)} speed, "
+                f"+{_pct(self._PROTECTION_BONUS)} protection, "
+                f"fatigue drain every {self._EXECUTE_ON} beats"
+            ),
         )
         self.tick = 0
-        self.execute_on = 6
-        self.add_fin = -int(target.finesse * 0.20)
-        self.add_speed = -int(target.speed * 0.35)
-        self.add_protection = int(target.protection * 0.25)
+        self.execute_on = self._EXECUTE_ON
+        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY)
+        self.add_speed = -int(target.speed * self._SPEED_PENALTY)
+        self.add_protection = int(target.protection * self._PROTECTION_BONUS)
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -552,6 +657,11 @@ class Hollowed(State):
     as a wound that can be inflicted and — with enough time, or the right presence — healed.
     """
 
+    _FAITH_PENALTY = 3
+    _CHARISMA_PENALTY = 2
+    _ENDURANCE_PENALTY = 2
+    _EXECUTE_ON = 8
+
     def __init__(self, target):
         duration = random.randint(40, 80)
         steps = random.randint(30, 60)
@@ -565,13 +675,24 @@ class Hollowed(State):
             world=True,
             statustype="apathy",
             persistent=True,
-            description="Faith -3, Charisma -2, Endurance -2. Drains HP and Fatigue every few beats.",
+            description=(
+                f"Faith -{self._FAITH_PENALTY}, "
+                f"Charisma -{self._CHARISMA_PENALTY}, "
+                f"Endurance -{self._ENDURANCE_PENALTY}. "
+                "Drains HP and Fatigue every few beats."
+            ),
+            tactical_mechanics=(
+                f"−{self._FAITH_PENALTY} faith, "
+                f"−{self._CHARISMA_PENALTY} charisma, "
+                f"−{self._ENDURANCE_PENALTY} endurance; "
+                f"HP+fatigue drain every {self._EXECUTE_ON} beats"
+            ),
         )
         self.tick = 0
-        self.execute_on = 8
-        self.add_faith = -3
-        self.add_charisma = -2
-        self.add_endurance = -2
+        self.execute_on = self._EXECUTE_ON
+        self.add_faith = -self._FAITH_PENALTY
+        self.add_charisma = -self._CHARISMA_PENALTY
+        self.add_endurance = -self._ENDURANCE_PENALTY
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -600,6 +721,11 @@ class Fervent(State):
     that counts for something.
     """
 
+    _STRENGTH_BONUS = 0.30
+    _FINESSE_BONUS = 0.15
+    _ENDURANCE_PENALTY = 3
+    _EXECUTE_ON = 5
+
     def __init__(self, target):
         duration = random.randint(25, 50)
         super().__init__(
@@ -611,13 +737,24 @@ class Fervent(State):
             world=False,
             statustype="enraged",
             persistent=False,
-            description="Strength +30%, Finesse +15%. Endurance -3. Drains HP and Fatigue every few beats.",
+            description=(
+                f"Strength +{_pct(self._STRENGTH_BONUS)}, "
+                f"Finesse +{_pct(self._FINESSE_BONUS)}. "
+                f"Endurance -{self._ENDURANCE_PENALTY}. "
+                "Drains HP and Fatigue every few beats."
+            ),
+            tactical_mechanics=(
+                f"+{_pct(self._STRENGTH_BONUS)} strength, "
+                f"+{_pct(self._FINESSE_BONUS)} finesse, "
+                f"−{self._ENDURANCE_PENALTY} endurance; "
+                f"HP+fatigue drain every {self._EXECUTE_ON} beats"
+            ),
         )
         self.tick = 0
-        self.execute_on = 5
-        self.add_str = int(target.strength * 0.30)
-        self.add_fin = int(target.finesse * 0.15)
-        self.add_endurance = -3
+        self.execute_on = self._EXECUTE_ON
+        self.add_str = int(target.strength * self._STRENGTH_BONUS)
+        self.add_fin = int(target.finesse * self._FINESSE_BONUS)
+        self.add_endurance = -self._ENDURANCE_PENALTY
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)

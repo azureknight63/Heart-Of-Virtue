@@ -216,21 +216,29 @@ class TestProperNounQC:
 
     def test_sentence_initial_words_preserved(self):
         npc = self._npc()
-        result = npc._qc_npc_text("The storm is coming. She warned us before.", [])
+        result = npc._qc_npc_text("The storm is coming. She warned us before.", []).text
         assert "The" in result
         assert "She" in result
         assert "they" not in result.split()
 
     def test_common_words_preserved_midsentence(self):
         npc = self._npc()
-        result = npc._qc_npc_text("I trust in God when the North wind rises.", [])
+        result = npc._qc_npc_text("I trust in God when the North wind rises.", []).text
         assert "God" in result
         assert "North" in result
 
     def test_invented_noun_still_scrubbed(self):
+        """``result`` is the QC'd STRING here.
+
+        This assertion used to run against the ``QcResult`` NamedTuple, where
+        ``"Xanthor" not in result`` compares against the three *fields* and is
+        therefore true no matter what the pipeline produced.
+        """
         npc = self._npc()
-        result = npc._qc_npc_text("I saw Xanthor near the ridge.", [])
+        result = npc._qc_npc_text("I saw Xanthor near the ridge.", []).text
+        assert isinstance(result, str)
         assert "Xanthor" not in result
+        assert "someone" in result or "that place" in result
 
 
 # ---------------------------------------------------------------------------

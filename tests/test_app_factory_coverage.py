@@ -14,9 +14,12 @@ Tests:
 - Production mode (non-dev config)
 """
 
+import logging
 import os
 import json
 import tempfile
+
+import pytest
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -146,12 +149,31 @@ class TestLoggingConfiguration:
 
         assert "still captured" in caplog.text
 
-    def test_repeated_calls_do_not_stack_duplicate_handlers(self):
-        import logging
+    @pytest.fixture
+    def pristine_root_logger(self):
+        """Snapshot and restore the REAL root logger around this test.
 
+        ``_configure_logging()`` mutates the process-wide root logger, and this
+        test called it twice and restored nothing — so every test that ran
+        afterwards on the same xdist worker inherited whatever handler set and
+        level the app factory happened to leave behind, including caplog's own
+        capture arrangement.
+        """
+        root = logging.getLogger()
+        handlers = root.handlers[:]
+        level = root.level
+        try:
+            yield root
+        finally:
+            root.handlers[:] = handlers
+            root.setLevel(level)
+
+    def test_repeated_calls_do_not_stack_duplicate_handlers(
+        self, pristine_root_logger
+    ):
         from src.api.app import _configure_logging
 
-        root = logging.getLogger()
+        root = pristine_root_logger
         _configure_logging()
         after_first = len(root.handlers)
         _configure_logging()
@@ -789,20 +811,27 @@ class TestUniverseBuildSuccessPath:
 
 
 class TestConfigFileParsingError:
-    def test_malformed_startposition_is_caught_and_logged(self, capsys):
+    def test_malformed_startposition_is_caught_and_logged(self, caplog):
         """A non-numeric startposition raises ValueError inside the parsing
         try block; the factory should catch it, log a warning, and continue
-        with default position rather than crashing."""
+        with default position rather than crashing.
+
+        S19: this was a bare ``print()``, which bypassed the rotating LOG_FILE
+        handler the module had just gained — so the two most consequential
+        startup failures in the file were the two least likely to be recorded.
+        It is a module-logger warning now, hence caplog rather than capsys.
+        """
         fd, path = tempfile.mkstemp(suffix=".ini")
         with os.fdopen(fd, "w") as f:
             f.write("[game]\nstartposition = (a, b)\n")
         try:
-            app, _ = _make_app(env={"CONFIG_FILE": path})
+            with caplog.at_level(logging.WARNING, logger="src.api.app"):
+                app, _ = _make_app(env={"CONFIG_FILE": path})
         finally:
             os.unlink(path)
         assert app is not None
-        captured = capsys.readouterr()
-        assert "Warning: Could not load config" in captured.out
+        assert "Could not load config" in caplog.text
+        assert any(r.levelno >= logging.WARNING for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -893,3 +922,345 @@ class TestDebugRoutesGuard:
         assert resp.status_code == 404
         data = json.loads(resp.data)
         assert data["success"] is False
+
+    def test_debug_routes_is_not_registered_at_all_when_not_testing(self):
+        """One mechanism, not two. The route used to be registered
+        unconditionally and 404 from inside its own body, beside a
+        ``_register_test_routes`` that gates on TESTING -- so "test-only
+        endpoint" had two spellings in one file and only one of them was the
+        one a reader would find."""
+        app, _ = _make_app(config=_ProdConfig)
+        assert "/api/debug/routes" not in {str(r) for r in app.url_map.iter_rules()}
+
+
+# ---------------------------------------------------------------------------
+# /health -- unauthenticated, so what it says matters
+# ---------------------------------------------------------------------------
+
+
+class TestHealthDisclosure:
+    def test_production_health_omits_the_session_gauge(self):
+        """``/health`` has no auth. On a public deployment the live session
+        count is an occupancy oracle for a single-player game: anyone can poll
+        "is someone online?" and watch the number move."""
+        app, _ = _make_app(config=_ProdConfig)
+        data = json.loads(app.test_client().get("/health").data)
+        assert data["status"] == "healthy"
+        assert "sessions" not in data
+
+    def test_non_production_health_still_reports_it(self):
+        app, _ = _make_app(config=_FastTestConfig)
+        app.config["TESTING"] = True
+        data = json.loads(app.test_client().get("/health").data)
+        assert "sessions" in data
+
+
+# ---------------------------------------------------------------------------
+# Secret redaction on the way into the log handlers
+# ---------------------------------------------------------------------------
+
+
+class TestSecretRedaction:
+    """``_RedactSecretsFilter`` is the last thing between a credential and a
+    log file that persists at the default umask.
+    """
+
+    @staticmethod
+    def _record(msg, args=(), exc_info=None):
+        return logging.LogRecord(
+            name="src.probe",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg=msg,
+            args=args,
+            exc_info=exc_info,
+        )
+
+    def _filtered(self, record):
+        from src.api.app import _RedactSecretsFilter
+
+        _RedactSecretsFilter().filter(record)
+        return record
+
+    @pytest.mark.parametrize(
+        "secret",
+        [
+            "sk-abcdefghijklmnop",
+            "gsk_abcdefghijklmnopqrstuvwx",
+            "ghp_abcdefghijklmnopqrstuvwxyz0123",
+            "github_pat_11ABCDEFG0abcdefghijkl",
+            "https://discord.com/api/webhooks/123456/abcdefghijklmnop",
+            "eyJhbGciOiJFZERTQSJ9.eyJpZCI6IngifQ.c2lnbmF0dXJl",
+            "Bearer abcdefghijklmnop",
+        ],
+    )
+    def test_every_credential_family_in_this_tree_is_scrubbed(self, secret):
+        """The pattern used to know only ``sk-`` and ``Bearer``. This repo has
+        shipped a live GITHUB_TOKEN in ``.env``, talks to Groq and Discord, and
+        holds a JWT-shaped Turso auth token."""
+        record = self._filtered(self._record("creds=%s", (secret,)))
+        assert secret not in record.getMessage()
+        assert "[REDACTED]" in record.getMessage()
+
+    def test_a_traceback_is_scrubbed_too(self):
+        """The payload most likely to carry a key is a provider-SDK traceback,
+        and ``exc_text`` is rendered by ``Formatter.format`` *after* every
+        filter has run -- so scrubbing only ``getMessage()`` missed every
+        ``logger.exception`` site in the app."""
+        import sys
+
+        try:
+            raise RuntimeError("upstream rejected sk-abcdefghijklmnop")
+        except RuntimeError:
+            record = self._record("provider call failed", exc_info=sys.exc_info())
+
+        formatted = logging.Formatter("%(message)s").format(self._filtered(record))
+        assert "sk-abcdefghijklmnop" not in formatted
+        assert "[REDACTED]" in formatted
+
+    def test_a_clean_record_is_left_alone(self):
+        record = self._filtered(self._record("moved to %s", ("the north gate",)))
+        assert record.getMessage() == "moved to the north gate"
+
+    def test_the_filter_is_on_every_handler_this_module_installs(self):
+        """Filters run per handler. The StreamHandler is appended first, so a
+        file-handler-only filter emitted the unredacted record to stderr before
+        the redacting handler ever saw it."""
+        from src.api.app import (
+            _HOV_HANDLER_ATTR,
+            _RedactSecretsFilter,
+            _configure_logging,
+        )
+
+        root = logging.getLogger()
+        handlers, level = root.handlers[:], root.level
+        try:
+            _configure_logging()
+            ours = [h for h in root.handlers if getattr(h, _HOV_HANDLER_ATTR, False)]
+            assert ours, "expected at least the StreamHandler"
+            for handler in ours:
+                assert any(
+                    isinstance(f, _RedactSecretsFilter) for f in handler.filters
+                ), handler
+        finally:
+            root.handlers[:] = handlers
+            root.setLevel(level)
+
+
+# ---------------------------------------------------------------------------
+# Namespace log levels -- the TESTING pin must be reversible
+# ---------------------------------------------------------------------------
+
+
+class TestNamespaceLogLevels:
+    @pytest.fixture(autouse=True)
+    def _restore(self):
+        from src.api.app import _APP_LOG_NAMESPACES
+
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        saved = {n: logging.getLogger(n).level for n in _APP_LOG_NAMESPACES}
+        yield
+        for name, level in saved.items():
+            logging.getLogger(name).setLevel(level)
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)
+
+    def test_an_unset_log_level_restores_inheritance(self, monkeypatch):
+        """``level is None`` used to mean "change nothing", which made the
+        TESTING pin one-way: after one create_app(TestingConfig) the ``src``
+        and ``ai`` loggers stayed at WARNING for the life of the process, and a
+        later non-TESTING create_app() never gave them back. It also outranked
+        a bare ``caplog.set_level(INFO)``, which raises only the root level --
+        the vacuous-pass shape all over again."""
+        from src.api.app import _APP_LOG_NAMESPACES, _configure_logging
+
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
+        for name in _APP_LOG_NAMESPACES:
+            logging.getLogger(name).setLevel(logging.WARNING)
+
+        _configure_logging()
+
+        for name in _APP_LOG_NAMESPACES:
+            assert logging.getLogger(name).level == logging.NOTSET, name
+
+    def test_an_explicit_log_level_is_applied(self, monkeypatch):
+        from src.api.app import _APP_LOG_NAMESPACES, _configure_logging
+
+        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+        _configure_logging()
+        for name in _APP_LOG_NAMESPACES:
+            assert logging.getLogger(name).level == logging.DEBUG, name
+
+    def test_testing_pins_warning_only_when_log_level_is_set(self, monkeypatch):
+        """The pin exists to neutralise a developer's LOG_LEVEL=DEBUG leaking
+        out of ``.env`` into pytest. With LOG_LEVEL unset there is nothing to
+        neutralise, and pinning anyway would defeat caplog for every app
+        record."""
+        from src.api.app import _testing_log_level
+
+        class _Testing:
+            TESTING = True
+
+        class _NotTesting:
+            TESTING = False
+
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
+        assert _testing_log_level(_Testing) is None
+
+        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+        assert _testing_log_level(_Testing) == "WARNING"
+        assert _testing_log_level(_NotTesting) is None
+
+
+# ---------------------------------------------------------------------------
+# FLASK_ENV -> config class, and the production guards that hang off it
+# ---------------------------------------------------------------------------
+
+
+class TestEnvToConfigMapping:
+    """The mapping lived in three places and had diverged three ways:
+    run_api.py knew about ``testing``, wsgi.py did not, and
+    ``runtime_config()`` compared ``FLASK_ENV`` without normalising it.
+    """
+
+    def test_the_mapping_is_case_and_whitespace_insensitive(self):
+        from src.api.config import (
+            DevelopmentConfig,
+            ProductionConfig,
+            TestingConfig,
+            config_for_env,
+        )
+
+        assert config_for_env("production") is ProductionConfig
+        assert config_for_env("  Production ") is ProductionConfig
+        assert config_for_env("TESTING") is TestingConfig
+        assert config_for_env("development") is DevelopmentConfig
+
+    def test_an_unrecognised_env_falls_back_to_development(self):
+        from src.api.config import DevelopmentConfig, config_for_env
+
+        assert config_for_env("prodcution") is DevelopmentConfig
+        assert config_for_env("") is DevelopmentConfig
+
+    def test_mixed_case_production_still_hits_the_secret_key_guard(self, monkeypatch):
+        """The bug this closes: the class was selected with ``.lower()`` while
+        the guard compared the raw value, so ``FLASK_ENV=Production`` chose
+        ProductionConfig *and* skipped "SECRET_KEY must be set in production",
+        minting a fresh ``os.urandom(24)`` key per worker. A guard that fails
+        open is worse than no guard."""
+        from src.api.config import Config, config_for_env
+
+        monkeypatch.setenv("FLASK_ENV", "Production")
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+
+        assert config_for_env().__name__ == "ProductionConfig"
+        with pytest.raises(RuntimeError, match="SECRET_KEY must be set in production"):
+            Config.runtime_config()
+
+    def test_lowercase_production_is_guarded_too(self, monkeypatch):
+        from src.api.config import Config
+
+        monkeypatch.setenv("FLASK_ENV", "production")
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="SECRET_KEY must be set in production"):
+            Config.runtime_config()
+
+    def test_development_mints_an_ephemeral_key_instead(self, monkeypatch):
+        from src.api.config import Config
+
+        monkeypatch.setenv("FLASK_ENV", "development")
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        assert Config.runtime_config()["SECRET_KEY"]
+
+
+class TestEnvFlagParsing:
+    """One truthiness parser. There were two, 87 lines apart, and they had
+    already diverged on whether an empty value means off.
+    """
+
+    VAR = "HOV_TEST_ENV_FLAG"
+
+    def test_unset_uses_the_default(self, monkeypatch):
+        from src.api.config import _env_flag
+
+        monkeypatch.delenv(self.VAR, raising=False)
+        assert _env_flag(self.VAR, default=False) is False
+        assert _env_flag(self.VAR, default=True) is True
+
+    @pytest.mark.parametrize("value", ["0", "false", "FALSE", " no ", "off", ""])
+    def test_falsey_values(self, monkeypatch, value):
+        from src.api.config import _env_flag
+
+        monkeypatch.setenv(self.VAR, value)
+        assert _env_flag(self.VAR, default=True) is False
+
+    @pytest.mark.parametrize("value", ["1", "true", "TRUE", " yes ", "on"])
+    def test_truthy_values(self, monkeypatch, value):
+        from src.api.config import _env_flag
+
+        monkeypatch.setenv(self.VAR, value)
+        assert _env_flag(self.VAR, default=False) is True
+
+    def test_runtime_config_is_the_only_place_streaming_is_read(self, monkeypatch):
+        """``create_app`` used to read COMBAT_SOCKET_STREAMING directly on the
+        line after ``runtime_config()`` -- bypassing ``_pinned_by_subclass``,
+        which is the one thing that knows whether a subclass already decided."""
+        from src.api.config import TestingConfig
+
+        monkeypatch.setenv("COMBAT_SOCKET_STREAMING", "true")
+        assert TestingConfig.runtime_config()["COMBAT_SOCKET_STREAMING"] is True
+
+        monkeypatch.setenv("COMBAT_SOCKET_STREAMING", "0")
+        assert TestingConfig.runtime_config()["COMBAT_SOCKET_STREAMING"] is False
+
+    def test_a_subclass_that_pins_the_flag_wins(self, monkeypatch):
+        from src.api.config import Config
+
+        class _Pinned(Config):
+            COMBAT_SOCKET_STREAMING = True
+
+        monkeypatch.setenv("COMBAT_SOCKET_STREAMING", "0")
+        assert "COMBAT_SOCKET_STREAMING" not in _Pinned.runtime_config()
+
+
+class TestRunApiRefusesProduction:
+    """``tools/run_api.py`` only ever serves the Werkzeug development server.
+
+    flask-socketio's own guard is ``sys.stdin.isatty()`` -- a proxy for "this
+    is a daemonized launch" -- so it is simply true when someone types
+    ``FLASK_ENV=production python tools/run_api.py`` at a terminal, and the dev
+    server then serves production traffic with nothing said.
+    """
+
+    @staticmethod
+    def _load():
+        import importlib.util
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        spec = importlib.util.spec_from_file_location(
+            "hov_run_api_under_test", root / "tools" / "run_api.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_production_is_refused_with_a_pointer_to_wsgi(self, monkeypatch):
+        import sys
+
+        monkeypatch.setattr(sys, "argv", ["run_api.py"])
+        monkeypatch.setenv("FLASK_ENV", "production")
+        with pytest.raises(SystemExit, match="gunicorn"):
+            self._load().main()
+
+    def test_the_refusal_is_case_insensitive(self, monkeypatch):
+        """It shares ``normalized_env()`` with the config-class mapping, so the
+        two cannot disagree about what counts as production."""
+        import sys
+
+        monkeypatch.setattr(sys, "argv", ["run_api.py"])
+        monkeypatch.setenv("FLASK_ENV", " Production ")
+        with pytest.raises(SystemExit, match="gunicorn"):
+            self._load().main()

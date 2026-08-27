@@ -13,17 +13,15 @@
  *
  * See docs/development/combat-streaming-plan.md.
  *
- * The duration-computation logic itself lives in ./sfx-durations-core.mjs
- * (re-exported below for backward compatibility) so it can be imported from
- * tests without dragging in this file's shebang line — see that module's
- * header comment for why that matters.
+ * This file is a CLI entry point and nothing else: the duration-computation
+ * logic lives in ./sfx-durations-core.mjs so it can be imported from tests
+ * without dragging in the shebang line above — see that module's header
+ * comment for why that matters. Do not import from here; import the core.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { computeDurations, wavDurationMs } from './sfx-durations-core.mjs';
-
-export { computeDurations, wavDurationMs };
+import { computeDurations } from './sfx-durations-core.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_FILE = join(__dirname, '..', 'src', 'utils', 'sfxDurations.js');
@@ -53,11 +51,26 @@ function main() {
   const next = renderManifest(durations);
 
   if (check) {
+    // Fail on warnings BEFORE comparing. An unparseable WAV is omitted from
+    // both the freshly computed map and (because the last generator run
+    // skipped it too) the committed manifest, so the two match and the gate
+    // would otherwise pass while a shipped cue has no duration at all.
+    if (warnings.length) {
+      console.error(
+        `[sfx-durations] ${warnings.length} WAV file(s) could not be parsed, so they ` +
+          'have no duration in the manifest. Fix or re-render them.'
+      );
+      process.exit(1);
+    }
+
     let current = '';
     try {
       current = readFileSync(OUT_FILE, 'utf8');
-    } catch {
-      /* missing file -> stale */
+    } catch (err) {
+      // Only a MISSING manifest means "stale". EACCES/EISDIR/a decode failure
+      // are real faults; reporting them as staleness sends the operator to
+      // `npm run sfx:durations`, which cannot fix a permissions problem.
+      if (err.code !== 'ENOENT') throw err;
     }
     // Compare with CRLF normalized to LF: on a Windows checkout with
     // core.autocrlf=true, the on-disk file has CRLF line endings while
@@ -79,10 +92,4 @@ function main() {
   );
 }
 
-// Compare resolved URLs (not a string-pasted `file://${argv[1]}`): on Windows
-// process.argv[1] is a backslash path lacking import.meta.url's `///C:/...`
-// form, so the naive string comparison never matched and main() silently
-// never ran when this script was invoked directly with `node`.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
-}
+main();
