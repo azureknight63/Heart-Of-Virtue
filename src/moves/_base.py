@@ -168,10 +168,12 @@ def facing_damage_multiplier(attacker, defender, steepness=1.0):
 
     ``steepness`` scales the baseline curve's *deviation* from 1.0 rather than
     the multiplier itself, so a steeper move stays anchored to the same shape:
-    ``1.0 + (baseline - 1.0) * steepness``. At steepness 1.0 this is exactly
-    ``positions.get_damage_modifier`` (0.85 front / 1.15 flank / 1.25 deep
-    flank / 1.40 rear); at 2.0 every band's bonus and penalty doubles. One
-    table, one shape, one place to retune.
+    ``1.0 + (baseline - 1.0) * steepness``. At steepness 1.0 it short-circuits
+    to ``positions.get_damage_modifier`` itself (0.85 front / 1.15 flank /
+    1.25 deep flank / 1.40 rear) rather than round-tripping through that
+    arithmetic, which is not exact in binary floating point; at 2.0 every
+    band's bonus and penalty doubles. One table, one shape, one place to
+    retune.
 
     Returns 1.0 (no-op) when positions are unavailable or anything goes wrong.
     """
@@ -180,6 +182,12 @@ def facing_damage_multiplier(attacker, defender, steepness=1.0):
         if angle_diff is None:
             return 1.0
         baseline = positions.get_damage_modifier(angle_diff)
+        if steepness == 1.0:
+            # Return the table value untouched rather than round-tripping
+            # it through 1.0 + (x - 1.0): 1.15 is not exactly representable,
+            # so that arithmetic yields 1.1499999999999999 and int() then
+            # truncates a 115-damage flank to 114.
+            return baseline
         return 1.0 + (baseline - 1.0) * float(steepness)
     except Exception:
         return 1.0

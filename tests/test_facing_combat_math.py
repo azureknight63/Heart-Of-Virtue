@@ -113,9 +113,10 @@ class TestAttackAngleConvention:
         scored the result using the opposite one, so an NPC that successfully
         manoeuvred to a blind side was rewarded with the *frontal* penalty.
         """
+        from unittest.mock import MagicMock
         from src.npc_ai_config import NPCAIConfig
 
-        config = NPCAIConfig()
+        config = NPCAIConfig(MagicMock())
         defender = _defender()
         for coords in (IN_FRONT, RIGHT_FLANK, LEFT_FLANK, BEHIND):
             attacker = _Combatant(*coords)
@@ -166,7 +167,11 @@ class TestFacingDamageIsUniversal:
         front = apply_facing_damage(_Combatant(*IN_FRONT), defender, 100)
 
         assert front < 100 < flank < rear
-        assert (front, flank, rear) == (85, 115, 140)
+        # 114, not 115: power is truncated with int(), and 100 * 1.15 is
+        # 114.99999999999999 in binary floating point. Matches what
+        # Backstab has always done, which is why the shared path truncates
+        # rather than rounds.
+        assert (front, flank, rear) == (85, 114, 140)
 
     def test_standard_execute_attack_deals_more_damage_from_behind(self):
         """End to end through the real pipeline, not just the helper."""
