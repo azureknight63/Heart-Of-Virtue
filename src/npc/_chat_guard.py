@@ -16,9 +16,15 @@ prose above is about the prose only:
   trips this guard therefore has its ``reputation_delta`` zeroed by
   ``_guard_turn``'s caller — a line the model had to be talked out of does not
   also get to move the player's standing.
-* ``loquacity_delta`` is the second channel: it drains (or restores) the NPC's
-  willingness to keep talking and persists in the save file. It is clamped, and
-  it can only end a conversation early, so it is left alone.
+* ``loquacity_delta`` is the second channel: it drains **or restores** the
+  NPC's willingness to keep talking, and it persists in the save file. It was
+  left alone here on the grounds that it "can only end a conversation early",
+  which the same paragraph contradicts: a *positive* delta buys the turn more
+  conversation, and therefore more provider spend, on the strength of a line
+  the guard had to talk the model out of. ``_guard_turn``'s caller retracts a
+  gain on a tripped turn for the same reason it zeroes ``reputation_delta``. A
+  drain still applies — cancelling that would let a conversation that trips
+  every turn run forever, which is the opposite of the intent.
 
 This module is the interception layer. It is deliberately split into a cheap
 part and an expensive part:
@@ -61,9 +67,10 @@ CATEGORY_SOLICIT = "solicit"
 # Talk about an ally's own growth is excused via topic words on "teaching"
 # flags; there is no separate "growth" subcategory (an entry naming one sat
 # here unreachable, and the integrity check below now makes that class of typo
-# fail at import instead of failing *open* — an unmatched name silently
-# excuses nothing).
-_EXCUSABLE_SUBCATEGORIES = frozenset({"teaching"})
+# fail at import instead of failing *open* — an unmatched key silently
+# excuses nothing). Keyed on ``(category, subcategory)``: see
+# _OPTION_SKIP_SUBCATEGORIES below for why a bare name is not enough.
+_EXCUSABLE_SUBCATEGORIES = frozenset({(CATEGORY_TRANSACTION, "teaching")})
 
 # The state_claim patterns are written in the second person because they exist
 # to catch an NPC guessing at *Jean's* gear, wounds, coin, or deeds. Inside a
@@ -71,7 +78,22 @@ _EXCUSABLE_SUBCATEGORIES = frozenset({"teaching"})
 # so those same patterns fire on perfectly good lore questions ("Where did you
 # get your sword?", "You're wounded — should you be working?"). Only the
 # subcategories that stay wrong in either mouth are scanned on options.
-_OPTION_SKIP_SUBCATEGORIES = frozenset({"belongings", "condition", "deeds", "coin"})
+#
+# Keyed on ``(category, subcategory)`` like its sibling above. A bare
+# subcategory *name* is matched across every category, so adding a ``coin``
+# subcategory to ``solicit`` — a Jean option offering payment, which is exactly
+# the shape ``payment`` already covers — would have silently switched the
+# option scan off for it. That is the third instance of one bug in this module
+# (a table keyed loosely enough to fail open); :func:`_check_tables` now
+# enforces the qualified key for every such table rather than this one.
+_OPTION_SKIP_SUBCATEGORIES = frozenset(
+    {
+        (CATEGORY_STATE_CLAIM, "belongings"),
+        (CATEGORY_STATE_CLAIM, "condition"),
+        (CATEGORY_STATE_CLAIM, "deeds"),
+        (CATEGORY_STATE_CLAIM, "coin"),
+    }
+)
 
 # Sentence splitter that KEEPS each sentence's own terminator ("Stay back!"
 # stays an exclamation; "What do you want?" stays a question; "Well... maybe."
@@ -85,15 +107,22 @@ _SENTENCE_PATTERN = re.compile(r"[^.!?]+[.!?]*")
 # hand-written seven times across this module and _chat_llm in four mutually
 # inconsistent variants (`".!?"`, `'.!?"''`, `'"'”’'`, `'.!?"'*'`), which is
 # exactly how curly quotes came to be handled at one site and not its
-# neighbour. _QUOTE_CHARS covers both directions because a token can open a
-# quotation as well as close one; _CLOSING_QUOTES is the subset that can
-# legitimately trail a terminator.
-_TERMINATORS = ".!?"
-_CLOSING_QUOTES = "\"'”’»"
-_QUOTE_CHARS = "\"'“”‘’«»"
-_SENTENCE_BOUNDARY_CHARS = _TERMINATORS + _QUOTE_CHARS
+# neighbour. Public names: _chat_llm consumes all four, and a private name
+# imported across a module boundary is a contract whichever way it is spelled.
+#
+# QUOTE_CHARS covers both directions because a token can open a quotation as
+# well as close one, and is DERIVED from the two directional sets rather than
+# listed a third time — the straight quote and apostrophe belong to both, and a
+# hand-written union sitting in the module whose own comment blames "four
+# mutually inconsistent variants" is that bug queued up again. CLOSING_QUOTES
+# is the subset that can legitimately trail a terminator.
+TERMINATORS = ".!?"
+_OPENING_QUOTES = "\"'“‘«"
+CLOSING_QUOTES = "\"'”’»"
+QUOTE_CHARS = "".join(dict.fromkeys(_OPENING_QUOTES + CLOSING_QUOTES))
+SENTENCE_BOUNDARY_CHARS = TERMINATORS + QUOTE_CHARS
 
-_ALNUM_PATTERN = re.compile(r"[A-Za-z0-9]")
+ALNUM_PATTERN = re.compile(r"[A-Za-z0-9]")
 
 # Topics are matched as whole words: substring containment let a four-letter
 # topic like "edge" excuse any sentence containing "knowledge".
@@ -123,6 +152,34 @@ _POSSESSIONS = (
 _NUMBERS = (
     r"\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
     r"twenty|thirty|forty|fifty|a hundred"
+)
+
+# Game vocabulary an in-world character can never have. Spelled once and used
+# for BOTH halves of the rule — the tripwire pattern that detects it, and the
+# prompt clause in PROMPT_RULES that prevents it.
+#
+# The two halves used to be written independently and had drifted in both
+# directions: the prompt named 'level', 'experience points' and 'stats' while
+# the tripwire matched experience/hit/stat points, inventory, equipment slot
+# and XP — one term in common. Worse, the prompt half lived in _chat_llm's
+# COMBAT SELF-KNOWLEDGE block, emitted only for NPCs with a growth_profile,
+# while this tripwire scans every NPC: for every non-ally the rule was detected
+# but never prevented, costing a revision round trip the other categories
+# avoid.
+#
+# Membership is limited to terms the tripwire can match without false
+# positives, because a term it cannot safely catch would put the two halves
+# back out of step. 'level' is the one deliberate omission: "the ground's level
+# past the ridge" is ordinary speech, and a false positive costs a real round
+# trip.
+_GAME_TERMS = (
+    "experience points",
+    "hit points",
+    "stat points",
+    "stats",
+    "inventory",
+    "equipment slot",
+    "XP",
 )
 
 # (subcategory, compiled pattern) per category. Subcategories drive both the
@@ -243,7 +300,7 @@ _PATTERNS: Dict[str, Sequence[Tuple[str, re.Pattern]]] = {
         (
             "game_terms",
             re.compile(
-                r"\b(?:experience points|hit points|stat points|inventory|equipment slot)\b|\bXP\b",
+                r"\b(?:" + "|".join(re.escape(t) for t in _GAME_TERMS) + r")\b",
                 re.IGNORECASE,
             ),
         ),
@@ -377,7 +434,9 @@ PROMPT_RULES: Dict[str, str] = {
         "with Jean"
     ),
     CATEGORY_STATE_CLAIM: (
-        "never describe his belongings, wounds, or coin — you cannot see them"
+        "never describe his belongings, wounds, or coin — you cannot see them — "
+        "and never use game words (" + ", ".join(_GAME_TERMS) + "), which do "
+        "not exist in your world"
     ),
     CATEGORY_COMMITMENT: (
         "never promise to meet him later or to do him a favour another day"
@@ -410,64 +469,96 @@ _SCAN_SCOPE: Dict[str, frozenset] = {
     CATEGORY_SOLICIT: frozenset({SCAN_OPTION}),
 }
 
-# To add a category: define its CATEGORY_* constant, then give it a row in ALL
-# FIVE tables above (_PATTERNS, _HEDGES, _GUIDANCE, PROMPT_RULES, _SCAN_SCOPE).
-# hedge_npc_text, guidance_for and prompt_rules_line index three of them
-# directly, so a missing row is a runtime KeyError mid-turn (or, for
-# PROMPT_RULES, a silently unprevented category); a missing _SCAN_SCOPE row is
-# a category that is prevented and hedged but never actually scanned for.
-# :func:`_check_tables` makes every such omission fail at import instead.
+# Every lookup table in this module is keyed either by CATEGORY or by
+# (CATEGORY, SUBCATEGORY), and every one of them is registered below so that
+# :func:`_check_tables` covers it. That registration IS the rule, and it exists
+# because this module has now produced the same bug three times, each time one
+# table further along: CATEGORY_SOLICIT missing from the prompt clause; the two
+# scans hand-spelling their own category tuples outside the check; the two
+# subcategory sets keyed on a bare name that matched across every category, so
+# a `coin` subcategory added to `solicit` would have switched the option scan
+# off for it. Each was fixed in isolation. The registry is what is meant to
+# stop the fourth.
 #
-# Every subcategory any pattern can actually emit is derived from _PATTERNS
-# rather than restated. The two subcategory allow/skip sets above are matched
-# by *name* at scan time, so a typo in either of them fails OPEN — the flag is
-# simply never excused or never skipped, with nothing to notice it. Deriving
-# the universe and checking containment turns that into an import error too.
-SUBCATEGORIES = frozenset(
-    subcategory for rows in _PATTERNS.values() for subcategory, _pattern in rows
-)
+# To add a CATEGORY: define its CATEGORY_* constant and give it a row in
+# _PATTERNS and in every table named in _CATEGORY_TABLES. hedge_npc_text,
+# guidance_for and prompt_rules_line index three of those directly, so a
+# missing row is a runtime KeyError mid-turn (or, for PROMPT_RULES, a silently
+# unprevented category); a missing _SCAN_SCOPE row is a category that is
+# prevented and hedged but never actually scanned for.
+#
+# To add a TABLE: name it in _CATEGORY_TABLES or _SUBCATEGORY_TABLES. A table
+# in neither is a table nothing checks — which is the whole shape above.
+_CATEGORY_TABLES = ("_HEDGES", "_GUIDANCE", "PROMPT_RULES", "_SCAN_SCOPE")
+_SUBCATEGORY_TABLES = ("_EXCUSABLE_SUBCATEGORIES", "_OPTION_SKIP_SUBCATEGORIES")
+
+
+def _subcategory_keys(patterns) -> Set[Tuple[str, str]]:
+    """Every ``(category, subcategory)`` key ``patterns`` can actually emit.
+
+    Derived rather than restated: the subcategory tables are matched by key at
+    scan time, so a wrong key in one of them fails OPEN — the flag is simply
+    never excused or never skipped, with nothing to notice it.
+    """
+    return {
+        (category, subcategory)
+        for category, rows in patterns.items()
+        for subcategory, _pattern in rows
+    }
 
 
 def _check_tables() -> None:
     """Fail at import if the category/subcategory tables have drifted apart.
 
+    Tables are resolved by *name* out of the module globals rather than closed
+    over, so a caller (this module's own tests are the only one) can patch a
+    table and have the check actually look at the patched object. A check that
+    quietly inspected the originals would pass on every table it is meant to
+    police.
+
     Deliberately ``raise`` rather than ``assert``: these are integrity guards,
     not debugging aids, and ``python -O`` strips ``assert`` — which would
-    restore the exact silent fail-open (a missing table row, a mistyped
-    subcategory) they exist to prevent, in the one configuration nobody tests.
+    restore the exact silent fail-open (a missing table row, a wrong
+    subcategory key) they exist to prevent, in the one configuration nobody
+    tests.
     """
-    categories = set(_PATTERNS)
-    for name, table in (
-        ("_HEDGES", _HEDGES),
-        ("_GUIDANCE", _GUIDANCE),
-        ("PROMPT_RULES", PROMPT_RULES),
-        ("_SCAN_SCOPE", _SCAN_SCOPE),
-    ):
-        if set(table) != categories:
+    tables = globals()
+    patterns = tables["_PATTERNS"]
+    scan_scope = tables["_SCAN_SCOPE"]
+    scans = tables["_SCANS"]
+
+    categories = set(patterns)
+    for name in _CATEGORY_TABLES:
+        if set(tables[name]) != categories:
             raise RuntimeError(
                 "_chat_guard: {} does not cover the same categories as _PATTERNS "
                 "(missing={}, extra={})".format(
                     name,
-                    sorted(categories - set(table)),
-                    sorted(set(table) - categories),
+                    sorted(categories - set(tables[name])),
+                    sorted(set(tables[name]) - categories),
                 )
             )
-    for category, scans in _SCAN_SCOPE.items():
-        if not scans or not scans <= _SCANS:
+    for category, category_scans in scan_scope.items():
+        if not category_scans or not category_scans <= scans:
             raise RuntimeError(
                 "_chat_guard: _SCAN_SCOPE[{!r}]={} must be a non-empty subset of "
-                "{}".format(category, sorted(scans), sorted(_SCANS))
+                "{}".format(category, sorted(category_scans), sorted(scans))
             )
-    for name, subcategories in (
-        ("_EXCUSABLE_SUBCATEGORIES", _EXCUSABLE_SUBCATEGORIES),
-        ("_OPTION_SKIP_SUBCATEGORIES", _OPTION_SKIP_SUBCATEGORIES),
-    ):
-        unknown = subcategories - SUBCATEGORIES
+    # The other direction: a scan no category claims runs over nothing and
+    # calls every line clean — the same fail-open shape, read the other way.
+    claimed = frozenset().union(*scan_scope.values()) if scan_scope else frozenset()
+    if claimed != scans:
+        raise RuntimeError(
+            "_chat_guard: no category is scanned by {} — _SCAN_SCOPE must claim "
+            "every scan in _SCANS".format(sorted(scans - claimed))
+        )
+    known = _subcategory_keys(patterns)
+    for name in _SUBCATEGORY_TABLES:
+        unknown = set(tables[name]) - known
         if unknown:
             raise RuntimeError(
-                "_chat_guard: {} names subcategories no pattern emits: {}".format(
-                    name, sorted(unknown)
-                )
+                "_chat_guard: {} names (category, subcategory) keys no pattern "
+                "emits: {}".format(name, sorted(unknown))
             )
 
 
@@ -481,11 +572,16 @@ def _scan_categories(scan: str) -> Tuple[str, ...]:
     the turn is described to the reviser, so the category a scan exists to
     catch has to lead. That is exactly the category scoped to this scan alone
     (``transaction`` for an NPC line, ``solicit`` for a Jean option); the
-    categories shared with the other scan follow in declaration order. Derived
+    categories shared with another scan follow in declaration order. Derived
     rather than written out, so adding a category cannot leave one scan behind.
+
+    The sort key is how many scans a category takes part in, ascending — not
+    the boolean "is it shared", which read as "shared with *the* other scan"
+    and was only true while _SCANS had exactly two members. ``sorted`` is
+    stable, so equal keys keep declaration order.
     """
     scoped = [c for c in _PATTERNS if scan in _SCAN_SCOPE[c]]
-    return tuple(sorted(scoped, key=lambda c: len(_SCAN_SCOPE[c]) > 1))
+    return tuple(sorted(scoped, key=lambda c: len(_SCAN_SCOPE[c])))
 
 
 _NPC_CATEGORIES = _scan_categories(SCAN_NPC)
@@ -541,15 +637,15 @@ def split_sentences(text: str) -> List[str]:
             # below: every element appended past this point is non-empty, so
             # neither can raise. Reordering this skip breaks that.
             continue
-        if out and out[-1][-1] in _TERMINATORS and piece[0] in _CLOSING_QUOTES:
-            run = len(piece) - len(piece.lstrip(_CLOSING_QUOTES))
+        if out and out[-1][-1] in TERMINATORS and piece[0] in CLOSING_QUOTES:
+            run = len(piece) - len(piece.lstrip(CLOSING_QUOTES))
             if run == len(piece) or piece[run].isspace():
                 out[-1] += piece[:run]
                 rest = piece[run:].strip()
                 if rest:
                     out.append(rest)
                 continue
-        if out and not _ALNUM_PATTERN.search(piece):
+        if out and not ALNUM_PATTERN.search(piece):
             # Pure punctuation debris (an orphaned dash, a stray bracket).
             out[-1] += piece
             continue
@@ -565,8 +661,8 @@ def ensure_terminal_punctuation(text: str) -> str:
     """
     if not text:
         return text
-    last = text.rstrip(_CLOSING_QUOTES)[-1:]
-    if last and last not in _TERMINATORS:
+    last = text.rstrip(CLOSING_QUOTES)[-1:]
+    if last and last not in TERMINATORS:
         return text + "."
     return text
 
@@ -575,9 +671,11 @@ def _excused(flag: GuardFlag, allowed_topics: Set[str]) -> bool:
     """True when a whitelisted topic licenses this flag.
 
     Only ``teaching`` hits are excusable (see _EXCUSABLE_SUBCATEGORIES), and
-    only when the sentence actually names an allowed topic.
+    only when the sentence actually names an allowed topic. Matched on the
+    ``(category, subcategory)`` key rather than the bare name: a subcategory
+    name is only unique inside its own category.
     """
-    if flag.subcategory not in _EXCUSABLE_SUBCATEGORIES:
+    if (flag.category, flag.subcategory) not in _EXCUSABLE_SUBCATEGORIES:
         return False
     low = flag.sentence.lower()
     words = set(_WORD_PATTERN.findall(low))
@@ -606,9 +704,9 @@ def _scan(
     The one routine both public scans go through. Runs each category's patterns
     over each sentence in declaration order — the first flag is what names the
     violation to the reviser (see :func:`_scan_categories`) — skipping any
-    subcategory in ``skip_subcategories`` and dropping any hit a whitelisted
-    topic excuses. Pure and allocation-light: it is on every turn, and only a
-    non-empty result costs a round trip.
+    ``(category, subcategory)`` key in ``skip_subcategories`` and dropping any
+    hit a whitelisted topic excuses. Pure and allocation-light: it is on every
+    turn, and only a non-empty result costs a round trip.
     """
     if not text:
         return []
@@ -618,7 +716,7 @@ def _scan(
     flags: List[GuardFlag] = []
     for category in categories:
         for subcategory, pattern in _PATTERNS[category]:
-            if subcategory in skip:
+            if (category, subcategory) in skip:
                 continue
             for sentence in sentences:
                 match = pattern.search(sentence)
@@ -665,9 +763,9 @@ def hedge_npc_text(text: str, flags: Sequence[GuardFlag]) -> str:
         # ("We'll be here. '.") once the terminal-punctuation fixup ran. The
         # same "has word content" test as split_sentences', and deliberately
         # the same spelling: str.isalnum() is Unicode-aware where
-        # _ALNUM_PATTERN is ASCII-only, so writing it by hand here (as this
+        # ALNUM_PATTERN is ASCII-only, so writing it by hand here (as this
         # did) made two copies of one rule disagree on accented text.
-        if not piece or not _ALNUM_PATTERN.search(piece):
+        if not piece or not ALNUM_PATTERN.search(piece):
             continue
         # Collapse only repeated *hedges* — a legitimately repeated sentence
         # ("No. No.") is the author's/model's cadence, not stutter.

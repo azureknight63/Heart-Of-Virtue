@@ -303,7 +303,15 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       toastSuccess('Feedback submitted! Thank you.')
       onClose()
     } catch (err) {
-      const msg = err?.response?.data?.error || 'Could not submit feedback — please try again later.'
+      // `message` first: a 429 from rate_limited_response() puts the machine
+      // token "rate_limited" in `error` and the human prose in `message`, so
+      // reading `error` alone toasts the token at the player. Every other
+      // failure here puts prose in `error` and sends no `message`.
+      const body = err?.response?.data
+      const msg =
+        body?.message ||
+        body?.error ||
+        'Could not submit feedback — please try again later.'
       toastError(msg)
     } finally {
       submittingRef.current = false

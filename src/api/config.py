@@ -5,7 +5,13 @@ copies:
 
 * :func:`config_for_env` — the ``FLASK_ENV`` -> config-class mapping. It used
   to be spelled once in ``tools/run_api.py`` and again in ``wsgi.py``, and the
-  two disagreed (only run_api.py knew about ``testing``).
+  two disagreed (only run_api.py knew about ``testing``; wsgi.py sent every
+  non-production value to ``DevelopmentConfig``). Note which half of that
+  disagreement was the safe one: unifying the mapping taught the *production*
+  entry point to honour ``FLASK_ENV=testing``, which registers
+  ``/api/test/session`` and ``/api/debug/*``. Sharing the mapping is still
+  right; the refusal that used to be an accident of the duplication is now
+  explicit in ``wsgi.py``, next to the reason.
 * :func:`normalized_env` — how ``FLASK_ENV`` is compared. Both entry points
   lowercased it; :meth:`Config.runtime_config` did not, so
   ``FLASK_ENV=Production`` selected ``ProductionConfig`` *and* skipped the
@@ -14,8 +20,11 @@ copies:
   guard, so the comparison is now shared.
 """
 
+import logging
 import os
 from datetime import timedelta
+
+_log = logging.getLogger(__name__)
 
 # Environment values that mean "off". The empty string is included: an
 # exported-but-blank variable is an operator saying nothing, not "on". This
@@ -177,6 +186,7 @@ class ProductionConfig(Config):
 # FLASK_ENV -> config class. The default is deliberately the *development*
 # config: an unset or misspelled value must not silently select production
 # behaviour (locked CORS origins, secure-only cookies) on a developer's box.
+# A *misspelled* value is loud about it, though — see config_for_env.
 _CONFIG_BY_ENV = {
     "development": DevelopmentConfig,
     "testing": TestingConfig,
@@ -192,5 +202,29 @@ def config_for_env(env=None):
     :meth:`Config.runtime_config` derives its ``production`` flag from the same
     :func:`normalized_env`, so "which class" and "is this production" can never
     disagree.
+
+    Unset and unrecognised are *not* the same thing, exactly as they are not
+    for ``LOG_LEVEL`` in ``src/api/app.py::_resolve_log_level``. Unset means
+    the operator said nothing and development is the right silent answer.
+    ``FLASK_ENV=prod`` means the operator said "production" and got
+    ``DEBUG=True``, ``SESSION_COOKIE_SECURE=False``, a fresh ``os.urandom(24)``
+    SECRET_KEY per worker, and localhost CORS origins — because *both*
+    production guards (``runtime_config``'s SECRET_KEY check and
+    ``AuthService``'s ENCRYPTION_KEY check) test ``normalized_env() ==
+    "production"``, so a near-miss skips them all with nothing said. Warning
+    rather than raising keeps a typo from taking a running deployment down,
+    but it does not let it pass in silence.
     """
-    return _CONFIG_BY_ENV.get(normalized_env(env), DevelopmentConfig)
+    name = normalized_env(env)
+    config = _CONFIG_BY_ENV.get(name)
+    if config is not None:
+        return config
+    if name:
+        _log.warning(
+            "Unrecognized FLASK_ENV %r; using DevelopmentConfig "
+            "(DEBUG on, insecure cookies, production guards skipped). "
+            "Accepted values: %s",
+            name,
+            ", ".join(_CONFIG_BY_ENV),
+        )
+    return DevelopmentConfig

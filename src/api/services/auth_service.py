@@ -19,11 +19,24 @@ _DUMMY_PASSWORD_HASH = (
 class AuthService:
     def __init__(self):
         self.ph = PasswordHasher()
-        # Mirrors the SECRET_KEY handling in src/api/config.py: production must
+        # Mirrors the SECRET_KEY *rule* in src/api/config.py: production must
         # set ENCRYPTION_KEY explicitly (an ephemeral key would silently orphan
         # already-encrypted data — e.g. user emails — on every restart). Testing
         # and development fall back to a generated key so the suite/dev server
         # don't need one configured.
+        #
+        # It does NOT mirror the timing, and that difference is the fragile
+        # part. config.py deliberately moved its guard off import time into
+        # runtime_config(), which create_app() calls — the entire premise of
+        # that module's docstring. This one still runs at *import* time,
+        # because the `auth_service = AuthService()` singleton at the bottom of
+        # this file is built in the module body. It reads the right value only
+        # because `from src.api.db import db` at the top of this file happens
+        # to load .env first: the same incidental-import dependency that
+        # src/api/rate_limiter.py's module-level load_project_env() exists to
+        # remove. Reordering that import would silently move this read ahead of
+        # the .env load. Deferring the check into a lazily-built singleton is
+        # the real fix; until then, do not reorder the imports above.
         self.encryption_key = os.getenv("ENCRYPTION_KEY")
         if not self.encryption_key:
             # normalized_env(), not a bare == "production": this guard is

@@ -914,12 +914,18 @@ class TestBackgroundServicesStartup:
     @pytest.fixture(autouse=True)
     def _reset_latch(self):
         """The latch is a module global; a test that trips it would otherwise
-        make every later test in the process a silent no-op."""
+        make every later test in the process a silent no-op.
+
+        Goes through ``_reset_background_services`` rather than assigning
+        the global here: the module owns the invariant, and a test that
+        reaches past it would keep passing if the latch ever grew a second
+        piece of state to clear.
+        """
         from src.api.routes import world as world_module
 
-        world_module._background_services_started = False
+        world_module._reset_background_services()
         yield
-        world_module._background_services_started = False
+        world_module._reset_background_services()
 
     @pytest.fixture
     def live_app(self):

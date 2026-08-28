@@ -24,7 +24,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.api.app import _API_CSP, _HTML_CSP, _STATIC_SECURITY_HEADERS
+from src.api.app import (
+    _API_CSP,
+    _HSTS_HEADER,
+    _HSTS_VALUE,
+    _HTML_CSP,
+    _STATIC_SECURITY_HEADERS,
+    serves_html_document,
+)
 
 
 class _FastTestConfig:
@@ -58,9 +65,21 @@ def app():
 
     # A stand-in for the SPA document this app does not serve today, so the
     # HTML branch of the policy is exercised rather than merely asserted about.
+    # It opts in by name, which is the whole of the branch: the policy follows
+    # a deliberate declaration, not a sniffed content type.
     @built.route("/__html_probe")
     def _html_probe():
-        return "<!doctype html><html><body>probe</body></html>"
+        from flask import make_response
+
+        return serves_html_document(
+            make_response("<!doctype html><html><body>probe</body></html>")
+        )
+
+    # The same body with no declaration -- the shape Werkzeug produces on its
+    # own for redirects and HTTPExceptions. It must stay strict.
+    @built.route("/__unmarked_html")
+    def _unmarked_html():
+        return "<!doctype html><html><body>not declared</body></html>"
 
     @built.route("/__opinionated")
     def _opinionated():
@@ -107,6 +126,63 @@ class TestHeadersArePresent:
         }
 
 
+class TestStrictTransportSecurity:
+    """HSTS is the one header here with a precondition, so it has its own gate.
+
+    The session id travels as ``Authorization: Bearer``, which
+    ``SESSION_COOKIE_SECURE`` does nothing for -- one plaintext request leaks
+    the credential outright. But a host not actually reachable over TLS that
+    sends this header has locked its own clients out for a year, so it is tied
+    to the flag by which the app already claims to be behind TLS.
+    """
+
+    def _build(self, config_class):
+        session_manager = MagicMock()
+        session_manager.get_active_session_count.return_value = 0
+        with (
+            patch("src.api.app.universe_module"),
+            patch("src.api.app.SessionManager", return_value=session_manager),
+            patch("src.api.app.GameService", return_value=MagicMock()),
+        ):
+            from src.api.app import create_app
+
+            built, _socketio = create_app(config_class)
+        return built
+
+    def test_a_non_tls_config_does_not_send_it(self, app):
+        """The default posture. Sending it here would be a promise the dev
+        server cannot keep, and browsers honour the promise, not the intent."""
+        response = app.test_client().get("/health")
+        assert _HSTS_HEADER not in response.headers
+
+    def test_a_tls_config_sends_it(self):
+        class _SecureConfig:
+            TESTING = True
+            DEBUG = False
+            SECRET_KEY = "test-secret"
+            CORS_ORIGINS = ["http://localhost:3000"]
+            SESSION_COOKIE_SECURE = True
+
+        response = self._build(_SecureConfig).test_client().get("/health")
+        assert response.headers[_HSTS_HEADER] == _HSTS_VALUE
+
+    def test_the_real_production_config_qualifies(self):
+        """The gate is only worth anything if the config it keys on is the one
+        production actually uses -- a private flag nothing sets would make the
+        two tests above agree with each other and with nothing else."""
+        from src.api.config import ProductionConfig
+
+        assert ProductionConfig.SESSION_COOKIE_SECURE is True
+
+    def test_it_claims_no_authority_over_sibling_hosts(self):
+        """``includeSubDomains`` from an API host asserts TLS on domains this
+        app knows nothing about, and ``preload`` makes that irreversible."""
+        assert "includeSubDomains" not in _HSTS_VALUE
+        assert "preload" not in _HSTS_VALUE
+        assert _HSTS_VALUE.startswith("max-age=")
+        assert int(_HSTS_VALUE.split("=")[1]) >= 31536000
+
+
 class TestThePolicyMatchesWhatTheResponseIs:
     """JSON never renders; HTML does. The two get different policies."""
 
@@ -118,16 +194,28 @@ class TestThePolicyMatchesWhatTheResponseIs:
         assert response.mimetype == "application/json"
         assert response.headers["Content-Security-Policy"] == _API_CSP
 
-    def test_html_responses_get_the_permissive_policy(self, app):
+    def test_a_declared_html_document_gets_the_permissive_policy(self, app):
         response = app.test_client().get("/__html_probe")
         assert response.mimetype == "text/html"
         assert response.headers["Content-Security-Policy"] == _HTML_CSP
 
+    def test_undeclared_html_still_gets_the_strict_policy(self, app):
+        """The inversion, stated as a test. Nothing in this app authors HTML,
+        so every ``text/html`` body it emits unbidden is Werkzeug's -- a
+        routing redirect, or an HTTPException that reached the WSGI layer.
+        Sniffing the content type handed the permissive policy to exactly those
+        unaudited error paths while the strict one covered the routes we
+        control. Opting in reverses that, and forgetting to opt in fails
+        visibly (a blank page) rather than silently."""
+        response = app.test_client().get("/__unmarked_html")
+        assert response.mimetype == "text/html"
+        assert response.content_length
+        assert response.headers["Content-Security-Policy"] == _API_CSP
+
     def test_an_empty_html_response_is_still_treated_as_non_rendering(self, app):
         """``handle_preflight`` answers OPTIONS with a bare ``make_response()``,
         whose Flask default content type is ``text/html`` with a zero-length
-        body. It renders nothing, so it must not be handed the permissive
-        policy on that technicality -- see ``_renders_as_html``."""
+        body. It declares nothing and renders nothing, so it stays strict."""
         response = app.test_client().open(
             "/api/info",
             method="OPTIONS",
@@ -241,27 +329,60 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
         assert "https://fonts.googleapis.com" in _directive(_HTML_CSP, "style-src")
         assert "https://fonts.gstatic.com" in _directive(_HTML_CSP, "font-src")
 
-    def test_style_src_admits_inline_because_the_frontend_injects_style_tags(self):
-        """Not a rubber stamp on the value -- a check that the justification
-        still holds. If no component injects a <style> element any more, the
-        concession should be removed rather than inherited."""
+    #: The components whose inline ``<style>`` blocks are the entire reason
+    #: ``style-src`` carries ``'unsafe-inline'``, as named in ``app.py``'s
+    #: rationale beside that directive.
+    #:
+    #: Pinned as a set, not counted, because the prose version of this list
+    #: went stale without anything noticing: it named six components, two of
+    #: which (TypewriterOutput, NpcChatPanel) had already had their keyframes
+    #: lifted into ``frontend/src/styles/index.css`` -- and one of those was
+    #: disproved by an assertion in the frontend's own test suite. A rationale
+    #: nothing checks decays into a rationale nobody can trust, and this is the
+    #: directive where that costs the most.
+    _STYLE_INJECTORS = {
+        "GameOverScreen.jsx",
+        "HeroPanel.jsx",
+        "ItemDetailDialog.jsx",
+        "ToastContext.jsx",
+        "InteractPanel.jsx",  # document.createElement('style')
+    }
+
+    def _injectors(self):
         frontend_src = (
             pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src"
         )
         if not frontend_src.exists():  # pragma: no cover - frontend not checked out
             pytest.skip("frontend/src not present")
-        injectors = []
+        injectors = set()
         for path in frontend_src.rglob("*.jsx"):
             if path.name.endswith(".test.jsx"):
                 continue
             body = path.read_text(encoding="utf-8", errors="replace")
             if "<style>" in body or "createElement('style')" in body:
-                injectors.append(path.name)
-        assert injectors, (
+                injectors.add(path.name)
+        return injectors
+
+    def test_style_src_admits_inline_because_the_frontend_injects_style_tags(self):
+        """Not a rubber stamp on the value -- a check that the justification
+        still holds. If no component injects a <style> element any more, the
+        concession should be removed rather than inherited."""
+        assert self._injectors(), (
             "no component injects a <style> element any more -- style-src's "
             "'unsafe-inline' has outlived its justification and should go"
         )
         assert "'unsafe-inline'" in _directive(_HTML_CSP, "style-src")
+
+    def test_the_rationale_names_exactly_the_components_that_still_inject(self):
+        """Fails in both directions on purpose. A component dropped from the
+        real list means the concession is closer to removable and the comment
+        overstates the need; a component added means the comment understates
+        it. Either way the prose beside the directive is now wrong, and this is
+        the only thing that will say so."""
+        assert self._injectors() == self._STYLE_INJECTORS, (
+            "the set of components injecting a <style> element has changed, so "
+            "app.py's style-src rationale (and this list) need updating"
+        )
 
 
 def _directive(policy: str, name: str):

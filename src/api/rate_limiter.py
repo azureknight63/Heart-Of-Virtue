@@ -7,9 +7,11 @@ LLM chat throttles).
 
 Everything a throttled route needs lives here, so no call site has to
 re-derive it: the store itself (:class:`RateLimiter`), the rule for turning a
-request into a client identity (:func:`client_ip`), and the rule for reading a
+request into a client identity (:func:`client_ip`), the rule for reading a
 limit out of the environment without taking the process down
-(:func:`limiter_from_env`).
+(:func:`limiter_from_env`), the ``None``-tolerant way to spend a tier's budget
+(:meth:`RateLimiter.check`), and the 429 body every throttled route returns
+(:func:`rate_limited_response`).
 
 **Known limitation (tracked in GitHub issue #284):** this store is
 per-process. Under multiple Gunicorn workers, the *effective* limit for a
@@ -37,9 +39,9 @@ import os
 import threading
 import time
 from collections import OrderedDict
-from typing import Optional
+from typing import Optional, Tuple
 
-from flask import request
+from flask import Response, jsonify, request
 
 from src.env_bootstrap import load_project_env
 
@@ -90,11 +92,11 @@ def _collapse_ip(ip: str) -> str:
     ``"::"``: ten failed logins from anywhere would lock one account out for
     everyone, and sixty would lock out the login endpoint entirely.
 
-    So: IPv4 and IPv4-mapped IPv6 keep their full address, loopback keeps its
-    own identity, and only a genuine routable IPv6 address is collapsed —
-    which is the only case the collapse was ever aimed at, since /128s are
-    cheap for an attacker to rotate within one allocation but IPv4 addresses
-    are not.
+    So: IPv4 and IPv4-mapped IPv6 keep their full address, anything whose /64
+    prefix is empty keeps its own identity, and only a genuine routable IPv6
+    address is collapsed — which is the only case the collapse was ever aimed
+    at, since /128s are cheap for an attacker to rotate within one allocation
+    but IPv4 addresses are not.
 
     Unparseable values (including ``"unknown"``) are used verbatim: a coarse
     key beats raising on the request path.
@@ -111,10 +113,19 @@ def _collapse_ip(ip: str) -> str:
     if mapped is not None:
         return str(mapped)
 
-    if addr.is_loopback:  # ::1 — one host, not an allocation
+    # The general form of the bug described above: *any* address whose /64
+    # prefix is all zeros collapses onto the single key ``"::"``, not just the
+    # two shapes named by name. ``::1`` (one host, not an allocation), the
+    # unspecified address ``::``, IPv4-compatible ``::a.b.c.d`` and
+    # IPv4-translated ``::ffff:0:a.b.c.d`` all land here. None of them is an
+    # allocation worth throttling as one, and lumping them together is the
+    # same shared-bucket lockout, so they keep their own identity. Testing the
+    # mask rather than a fixed shift keeps this true if _IPV6_KEY_PREFIX moves.
+    prefix = int(addr) & _IPV6_KEY_MASK
+    if prefix == 0:
         return str(addr)
 
-    return str(ipaddress.IPv6Address(int(addr) & _IPV6_KEY_MASK))
+    return str(ipaddress.IPv6Address(prefix))
 
 
 def client_ip() -> str:
@@ -257,6 +268,31 @@ class RateLimiter:
             self._maybe_sweep_locked(now)
             return False
 
+    @staticmethod
+    def check(limiter: "Optional[RateLimiter]", key: str) -> bool:
+        """:meth:`check_and_record` for a tier that may not exist.
+
+        ``limiter_from_env`` returns ``None`` for the documented
+        ``<VAR>=0`` disable, so every call site had to open with the same
+        ``if _limiter is None: return False`` before it could spend a budget —
+        four copies of it, and each one a place to get the polarity backwards
+        and read a *disabled* tier as a *tripped* one. A ``None`` limiter never
+        limits; that rule belongs to the module that invented ``None``.
+
+        Deliberately a static method rather than an instance one: the whole
+        point is to be callable when there is no instance. Call it on the
+        class (``RateLimiter.check(limiter, key)``); calling it on an instance
+        would pass the key as ``limiter`` and fail loudly on the missing second
+        argument.
+
+        Returns:
+            True if ``key`` is over ``limiter``'s budget (and this call was
+            *not* recorded), False otherwise (and this call was recorded).
+        """
+        if limiter is None:
+            return False
+        return limiter.check_and_record(key)
+
     def clear(self, key: str) -> None:
         """Forget all recorded attempts for `key` (e.g. on successful login)."""
         with self._lock:
@@ -272,6 +308,45 @@ class RateLimiter:
         """Number of distinct keys currently tracked (for tests/monitoring)."""
         with self._lock:
             return len(self._store)
+
+
+#: Machine-readable value of the 429 body's ``error`` field. A stable token,
+#: not prose: ``auth.py``'s neighbouring failures (``validation_error``,
+#: ``auth_error``, ``service_unavailable``) are tokens too, and a client that
+#: wants to back off should not have to string-match an English sentence that
+#: may be reworded.
+RATE_LIMITED_ERROR = "rate_limited"
+
+
+def rate_limited_response(message: str) -> Tuple[Response, int]:
+    """The 429 a throttled route returns, in the API's one 429 shape.
+
+    Four routes grew four 429 bodies in two incompatible shapes: ``auth.py``
+    paired the ``rate_limited`` token with human prose in ``message``, while
+    ``feedback.py`` and ``npc_chat.py`` put the prose straight into ``error``
+    and shipped no ``message`` at all. A client could therefore neither
+    branch on ``error`` nor read ``message`` without knowing which endpoint it
+    had called — and this module's own docstring already promised no call site
+    would have to re-derive any of this.
+
+    The ``error`` + ``message`` pairing wins because it is the one the
+    frontend reads: ``frontend/src/pages/LoginPage.jsx`` surfaces
+    ``response.data.message`` and would show nothing at all for a body that
+    omits it.
+
+    Args:
+        message: Player-facing prose. Endpoint-specific on purpose — "too many
+            failed login attempts" and "slow down" are different advice — so it
+            stays a parameter rather than being flattened into one house
+            string.
+
+    Returns:
+        The ``(response, 429)`` tuple, ready to ``return`` from a view.
+    """
+    return (
+        jsonify({"success": False, "error": RATE_LIMITED_ERROR, "message": message}),
+        429,
+    )
 
 
 def limiter_from_env(

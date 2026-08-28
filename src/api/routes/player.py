@@ -34,7 +34,7 @@ def get_status():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -76,7 +76,7 @@ def get_full_state():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -133,7 +133,7 @@ def get_stats():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -176,7 +176,7 @@ def get_skills():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -223,7 +223,7 @@ def learn_skill():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -284,7 +284,7 @@ def allocate_level_up_points():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         attribute = data.get("attribute")

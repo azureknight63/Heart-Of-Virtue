@@ -47,9 +47,19 @@ cp .env.example .env
 
 # Edit .env and ensure:
 FLASK_ENV=development
-FLASK_DEBUG=true
 PORT=5000
 ```
+
+There is deliberately **no `FLASK_DEBUG`**. Every config class pins `DEBUG`
+itself and `tools/run_api.py` passes that value to `socketio.run()` explicitly,
+so the variable never had any effect here — `FLASK_ENV` is the knob that
+actually selects development vs. production behaviour.
+
+`HOST` is optional and defaults to `127.0.0.1`, which is loopback only. If you
+need to reach the dev server from another machine, a phone, or a container,
+set `HOST=0.0.0.0` — but understand what you are exposing: with `DEBUG` on,
+Werkzeug serves an interactive `/console` and a full source traceback on every
+500, so `0.0.0.0` hands both to everything on the network.
 
 **For Rumbler bug testing specifically**, you'll want to start the server with the test configuration. See "Step 4: Run API Server with Test Config" below.
 
@@ -79,6 +89,7 @@ Heart of Virtue API - DEVELOPMENT
 ============================================================
 Environment: development
 Debug: true
+Host: 127.0.0.1
 Port: 5000
 URL: http://localhost:5000
 Health: http://localhost:5000/health
@@ -176,7 +187,8 @@ You'll see the login page. Create a test account or use the auto-login if you're
 - Flask will print error tracebacks if the API fails
 
 **Flask Debug Mode**:
-- The server runs with `FLASK_DEBUG=true` (from .env)
+- The server always runs with debug on — the config class selected by
+  `FLASK_ENV` pins it, and there is no `FLASK_DEBUG` variable to set
 - Exceptions will show detailed tracebacks
 - Code reloads on file changes
 
@@ -245,6 +257,16 @@ Ctrl+C
 | Flask API | 5000 | http://localhost:5000 |
 | React Frontend | 3000 | http://localhost:3000/games/HeartOfVirtue/ |
 | API Health Check | 5000 | http://localhost:5000/health |
+
+The API binds `127.0.0.1` unless `HOST` says otherwise, so the URLs above work
+from this machine only. See Step 2 for what `HOST=0.0.0.0` exposes.
+
+`/health` returns `{"status": "healthy"}` plus a `sessions` gauge — but the
+gauge is only present under a TESTING or DEBUG config. The route has no
+authentication, and on a public deployment a live session count for a
+single-player game is an occupancy oracle: anyone can poll it and watch the
+developer come and go. A production monitor that reads the `sessions` key must
+tolerate its absence, or read the number from an authenticated route instead.
 
 Frontend proxy routes:
 - `/api/*` → `http://localhost:5000/api/*`

@@ -398,9 +398,15 @@ class TestNpcChatRateLimit:
 
         rv = client.post("/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH)
         assert rv.status_code == 429
+        # The canonical 429 body, built by `rate_limited_response`: a stable
+        # token in `error` for a client to branch on, the endpoint's own
+        # prose in `message` for a human. This route used to put the prose
+        # in `error` and ship no `message` at all, which is the half of the
+        # shape auth.py disagreed with.
         assert rv.get_json() == {
             "success": False,
-            "error": "Slow down — too many messages.",
+            "error": "rate_limited",
+            "message": "Slow down — too many messages.",
         }
 
     def test_rate_limit_is_per_user(self, limiter, client_for):

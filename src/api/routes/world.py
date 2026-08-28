@@ -17,8 +17,30 @@ _log = logging.getLogger(__name__)
 
 # One-shot latch for the process-wide background services kicked off by the
 # first real world load. See _ensure_background_services_started.
+#
+# This is process-wide startup state living in a route module, which is not
+# where it belongs: ``src/api/app.py`` owns startup wiring, and the latch would
+# be better as app-scoped state set up there (the trigger would stay here,
+# since GET /world is the event, but the "has this process started them yet"
+# bit would not). Moving it is a cross-module change and this module cannot
+# make it alone; ``_reset_background_services`` below is the interim so at
+# least tests do not have to reach in and assign the global by hand.
 _background_services_lock = threading.Lock()
 _background_services_started = False
+
+
+def _reset_background_services() -> None:
+    """Re-arm the latch. Test-only.
+
+    The latch outlives any one test, so a test that trips it turns every later
+    one into a silent no-op — which is an ordering dependency, not a test. The
+    reset is exposed as a function rather than left to an assignment on
+    ``world._background_services_started`` at the call site, so the
+    invariant has one owner and the global stays private to this module.
+    """
+    global _background_services_started
+    with _background_services_lock:
+        _background_services_started = False
 
 
 def _ensure_background_services_started(app):
@@ -64,9 +86,11 @@ def _ensure_background_services_started(app):
         # every subsequent request.
         _background_services_started = True
 
-        # WARNING, not DEBUG, in both handlers below: WARNING is the level
-        # this app configures by default, so a debug-level record is invisible
-        # in exactly the runs where these services silently failed to start.
+        # WARNING, not DEBUG, in both handlers below: WARNING is Python's root
+        # default, which this app deliberately leaves in place
+        # (``app.py::_configure_logging`` sets no level at all unless
+        # ``LOG_LEVEL`` is), so a debug-level record is invisible in exactly
+        # the runs where these services silently failed to start.
 
         try:
             from ai.llm_client import NpcChatLLMAdapter
@@ -135,7 +159,7 @@ def get_current_room():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -186,7 +210,7 @@ def move_player():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "direction" not in data:
@@ -262,7 +286,7 @@ def submit_event_input():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "event_id" not in data or "user_input" not in data:
@@ -364,7 +388,7 @@ def get_tile():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         # Get query parameters
         x_str = request.args.get("x")
@@ -441,7 +465,7 @@ def get_explored_tiles():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -494,7 +518,7 @@ def get_tiles_batch():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "coordinates" not in data:
@@ -589,7 +613,7 @@ def get_available_commands():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -637,7 +661,7 @@ def interact_with_target():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "target_id" not in data or "action" not in data:
@@ -713,7 +737,7 @@ def trigger_room_events():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:
@@ -766,7 +790,7 @@ def get_pending_events():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         pending_events = []
         if "pending_events" in session.data:
@@ -800,7 +824,7 @@ def search_room():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         game_service, gs_error = require_game_service()
         if gs_error:

@@ -13,6 +13,9 @@ Covers three things the route blueprints all depend on:
 * ``limiter_from_env`` -- the one env-var parse, whose whole reason for
   existing is that a malformed value must never take the API down at boot nor
   read as "unlimited".
+* The two call-site helpers the parse guard is worthless without:
+  ``RateLimiter.check`` (a ``None`` tier never limits) and
+  ``rate_limited_response`` (one 429 body for the whole API).
 """
 
 import ast
@@ -26,10 +29,12 @@ import pytest
 from flask import Flask
 
 from src.api.rate_limiter import (
+    RATE_LIMITED_ERROR,
     RateLimiter,
     _SWEEP_INTERVAL,
     client_ip,
     limiter_from_env,
+    rate_limited_response,
 )
 
 
@@ -550,6 +555,50 @@ class TestClientIp:
         ):
             assert client_ip() == "fe80::"
 
+    #: Addresses with an all-zero /64 prefix that are neither IPv4-mapped
+    #: nor loopback, so the mapped/loopback branches never see them. Each
+    #: one used to survive those branches and then be flattened to ``"::"``
+    #: by the mask -- the residual half of the login DoS.
+    ZERO_PREFIX_ADDRESSES = (
+        "::",  # the unspecified address
+        "::203.0.113.9",  # IPv4-compatible (deprecated, still parses)
+        "::198.51.100.7",  # a second one, to prove they stay distinct
+        "::ffff:0:203.0.113.9",  # IPv4-translated (RFC 6145)
+        "::2",  # a bare low address that is not loopback
+    )
+
+    def test_zero_prefix_addresses_keep_their_own_key(self):
+        """Residual of the /64-collapse DoS: unwrapping IPv4-mapped and
+        loopback by name left every *other* all-zero-prefix address still
+        keying to ``"::"``. Distinct clients sharing one bucket is the same
+        lockout, one address family further along.
+        """
+        app = Flask(__name__)
+        keys = []
+        for addr in self.ZERO_PREFIX_ADDRESSES:
+            with app.test_request_context(
+                "/", environ_base={"REMOTE_ADDR": addr}
+            ):
+                keys.append(client_ip())
+        assert "::" not in keys[1:], f"still collapsing to the shared key: {keys}"
+        assert len(set(keys)) == len(self.ZERO_PREFIX_ADDRESSES), keys
+
+    def test_the_unspecified_address_is_still_its_own_key(self):
+        """``::`` is the one address whose verbatim key *is* ``"::"``. It
+        must keep it -- the bug was everyone else joining it, not this."""
+        app = Flask(__name__)
+        with app.test_request_context("/", environ_base={"REMOTE_ADDR": "::"}):
+            assert client_ip() == "::"
+
+    def test_zero_prefix_addresses_do_not_collide_with_loopback(self):
+        """The loopback branch used to be the only thing keeping ``::1`` out
+        of the shared bucket; the general rule must keep it out too."""
+        app = Flask(__name__)
+        with app.test_request_context("/", environ_base={"REMOTE_ADDR": "::1"}):
+            assert client_ip() == "::1"
+        with app.test_request_context("/", environ_base={"REMOTE_ADDR": "::2"}):
+            assert client_ip() == "::2"
+
 
 class TestLimiterFromEnv:
     """Every limiter in the API is built by this factory at blueprint *import*
@@ -715,8 +764,36 @@ def _limiter_from_env_calls(source: str):
     return calls
 
 
+def _api_dir():
+    return pathlib.Path(__file__).resolve().parent.parent / "src/api"
+
+
 def _routes_dir():
-    return pathlib.Path(__file__).resolve().parent.parent / "src/api/routes"
+    return _api_dir() / "routes"
+
+
+#: The one module allowed to say ``RateLimiter(...)``: the factory that
+#: owns the malformed-value guard lives there, so it is the definition
+#: rather than a copy.
+_LIMITER_FACTORY_MODULE = "rate_limiter.py"
+
+
+def _api_modules():
+    """Every module the scan below covers: all of ``src/api`` bar the
+    factory itself.
+
+    Scoped to ``routes/`` alone, the guard read as coverage while providing
+    none outside it -- a limiter hand-rolled in ``services/``, ``sockets.py``
+    or ``middleware/`` would have walked straight past, and the whole point
+    of the guard is that the *next* limiter cannot skip the parse guard
+    wherever someone puts it. Globbed recursively rather than listed, so a
+    new subpackage is covered on the day it is added.
+    """
+    return sorted(
+        path
+        for path in _api_dir().rglob("*.py")
+        if path.name != _LIMITER_FACTORY_MODULE
+    )
 
 
 class TestEveryLimiterUsesTheSharedFactory:
@@ -739,16 +816,47 @@ class TestEveryLimiterUsesTheSharedFactory:
         for name, limiter in limiters.items():
             assert limiter is None or isinstance(limiter, RateLimiter), name
 
-    def test_no_route_module_hand_rolls_a_limiter(self):
+    def test_no_api_module_hand_rolls_a_limiter(self):
         """``RateLimiter(...)`` must be constructed in exactly one place."""
+        api_dir = _api_dir()
         offenders = {
-            path.name: _limiter_constructions(path.read_text(encoding="utf-8"))
-            for path in _routes_dir().glob("*.py")
+            str(path.relative_to(api_dir)).replace("\\", "/"): lines
+            for path, lines in (
+                (p, _limiter_constructions(p.read_text(encoding="utf-8")))
+                for p in _api_modules()
+            )
+            if lines
         }
-        offenders = {name: lines for name, lines in offenders.items() if lines}
         assert offenders == {}, (
-            "route modules must build limiters via limiter_from_env so the "
-            f"malformed-value guard cannot be skipped: {offenders}"
+            "every module under src/api must build limiters via "
+            "limiter_from_env so the malformed-value guard cannot be "
+            f"skipped: {offenders}"
+        )
+
+    def test_the_scan_actually_reaches_beyond_routes(self):
+        """Guard-the-guard, scope half: the set of scanned files must
+        include modules outside ``routes/`` (and must exclude the factory,
+        which legitimately constructs one). A glob quietly narrowed back to
+        ``routes/*.py`` would still pass the scan above while covering
+        nothing new.
+        """
+        api_dir = _api_dir()
+        scanned = {
+            str(p.relative_to(api_dir)).replace("\\", "/") for p in _api_modules()
+        }
+        for expected in (
+            "middleware/auth.py",
+            "services/session_manager.py",
+            "sockets.py",
+            "app.py",
+            "routes/auth.py",
+        ):
+            assert expected in scanned, f"{expected} escapes the limiter scan"
+        assert _LIMITER_FACTORY_MODULE not in scanned
+        # ...and the factory really would trip the scan, so its exclusion is
+        # load-bearing rather than decorative.
+        assert _limiter_constructions(
+            (api_dir / _LIMITER_FACTORY_MODULE).read_text(encoding="utf-8")
         )
 
     def test_the_guard_itself_sees_through_formatting(self):
@@ -864,3 +972,166 @@ class TestLoginThrottlesCannotBeDisabled:
 
         assert auth._login_limiter is not None
         assert auth._ip_limiter is not None
+
+
+class TestNoneTolerantCheck:
+    """``RateLimiter.check`` -- the ``None``-as-disabled rule, in one place.
+
+    ``limiter_from_env`` returns ``None`` for the documented ``<VAR>=0``
+    disable, so before this helper every throttled route opened with its own
+    ``if _limiter is None: return False``. Four copies of a two-line rule is
+    four chances to invert it and read a *disabled* tier as a *tripped* one,
+    which turns a convenience switch into an outage.
+    """
+
+    def test_a_none_limiter_never_limits(self):
+        for _ in range(100):
+            assert RateLimiter.check(None, "any-key") is False
+
+    def test_a_real_limiter_still_checks_and_records(self):
+        limiter = RateLimiter(limit=2, window_seconds=60)
+        assert RateLimiter.check(limiter, "k") is False
+        assert RateLimiter.check(limiter, "k") is False
+        assert RateLimiter.check(limiter, "k") is True
+
+    def test_it_does_not_record_once_limited(self):
+        """Delegates to ``check_and_record``, whose contract is that a rejected
+        call is not counted -- otherwise a client hammering a tripped endpoint
+        would extend its own lockout indefinitely."""
+        limiter = RateLimiter(limit=1, window_seconds=60)
+        assert RateLimiter.check(limiter, "k") is False
+        for _ in range(5):
+            assert RateLimiter.check(limiter, "k") is True
+        assert len(hits_for(limiter, "k")) == 1
+
+    def test_keys_stay_independent(self):
+        limiter = RateLimiter(limit=1, window_seconds=60)
+        assert RateLimiter.check(limiter, "a") is False
+        assert RateLimiter.check(limiter, "b") is False
+        assert RateLimiter.check(limiter, "a") is True
+
+    def test_calling_it_on_an_instance_fails_loudly(self):
+        """It is a static method so it can be called when there is no
+        instance. The cost is that ``limiter.check(key)`` binds the key to the
+        ``limiter`` parameter -- which must raise rather than silently answer
+        the wrong question."""
+        limiter = RateLimiter(limit=1, window_seconds=60)
+        with pytest.raises(TypeError):
+            limiter.check("k")
+
+
+class TestRateLimitedResponse:
+    """One 429 body for the whole API.
+
+    Four routes grew four bodies in two incompatible shapes: ``auth.py``
+    paired a machine token in ``error`` with prose in ``message``, while
+    ``feedback.py`` and ``npc_chat.py`` put prose straight into ``error`` and
+    shipped no ``message`` at all. A client could branch on neither.
+    """
+
+    def test_it_returns_the_canonical_shape(self):
+        app = Flask(__name__)
+        with app.test_request_context("/"):
+            response, status = rate_limited_response("Slow down.")
+            assert status == 429
+            assert response.get_json() == {
+                "success": False,
+                "error": RATE_LIMITED_ERROR,
+                "message": "Slow down.",
+            }
+
+    def test_the_error_field_is_a_stable_token(self):
+        """Not prose. ``auth.py``'s neighbouring failures are tokens
+        (``validation_error``, ``auth_error``, ``service_unavailable``), and a
+        client backing off should not have to string-match an English sentence
+        that may be reworded."""
+        assert RATE_LIMITED_ERROR == "rate_limited"
+
+    def test_the_message_is_the_endpoint_s_own(self):
+        """The advice differs per endpoint -- "too many failed logins" is not
+        "slow down" -- so the prose stays a parameter rather than being
+        flattened into one house string."""
+        app = Flask(__name__)
+        with app.test_request_context("/"):
+            first = rate_limited_response("a")[0].get_json()["message"]
+            second = rate_limited_response("b")[0].get_json()["message"]
+        assert (first, second) == ("a", "b")
+
+    def test_the_frontend_s_field_is_present(self):
+        """``frontend/src/pages/LoginPage.jsx`` renders
+        ``err.response.data.message`` for any non-401, non-5xx auth failure. A
+        429 body without ``message`` degrades silently to the generic
+        "Authentication failed" copy, which is why ``message`` is the field the
+        canonical shape had to keep."""
+        app = Flask(__name__)
+        with app.test_request_context("/"):
+            body = rate_limited_response("Too many attempts.")[0].get_json()
+        assert body["message"] == "Too many attempts."
+
+
+def _rate_limit_status_literals(source: str):
+    """Line numbers where ``source`` hand-builds a ``(body, 429)`` return.
+
+    Structural, like the ``RateLimiter(...)`` scan: a ``429`` appearing in a
+    comment, a docstring or a test id is prose and must not fire. Only a bare
+    ``429`` sitting in a returned tuple is a hand-rolled 429 body.
+    """
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Return) or not isinstance(node.value, ast.Tuple):
+            continue
+        for element in node.value.elts:
+            if isinstance(element, ast.Constant) and element.value == 429:
+                found.append(node.lineno)
+    return found
+
+
+class TestEvery429GoesThroughTheHelper:
+    """DRY guard, mirroring ``TestEveryLimiterUsesTheSharedFactory``: the
+    shared 429 body is only worth anything if the *next* throttled route uses
+    it.
+
+    The four that predated ``rate_limited_response`` disagreed on the body
+    in a way no client could work around: ``auth.py`` put a machine token in
+    ``error`` and prose in ``message``, ``feedback.py`` and ``npc_chat.py``
+    put prose in ``error`` and shipped no ``message``. A fifth would have
+    picked one at random.
+    """
+
+    #: Modules still permitted to hand-roll a 429, with the reason. Empty is
+    #: the goal state, and it is currently empty; anything added here is a
+    #: debt, not a policy.
+    _429_EXEMPT = ()
+
+    def test_no_api_module_hand_rolls_a_429(self):
+        api_dir = _api_dir()
+        offenders = {}
+        for path in _api_modules():
+            name = str(path.relative_to(api_dir)).replace("\\", "/")
+            if name in self._429_EXEMPT:
+                continue
+            lines = _rate_limit_status_literals(path.read_text(encoding="utf-8"))
+            if lines:
+                offenders[name] = lines
+        assert offenders == {}, (
+            "throttled routes must return rate_limited_response() so the API "
+            f"has one 429 shape: {offenders}"
+        )
+
+    def test_the_429_scan_sees_a_hand_rolled_body(self):
+        """Guard-the-guard: the scan must fire on the shape it exists to catch,
+        however the body is spelled, and stay quiet on prose."""
+        offenders = [
+            'def v():\n    return jsonify({"error": "x"}), 429\n',
+            'def v():\n    return (\n        jsonify({"error": "x"}),\n        429,\n    )\n',
+        ]
+        for snippet in offenders:
+            assert _rate_limit_status_literals(snippet), snippet
+
+        quiet = [
+            'def v():\n    """Returns 429 when limited."""\n    return None\n',
+            'def v():\n    # a 429 is a rate limit\n    return rate_limited_response("x")\n',
+            'def v():\n    status = 429\n    return status\n',
+        ]
+        for snippet in quiet:
+            assert _rate_limit_status_literals(snippet) == [], snippet

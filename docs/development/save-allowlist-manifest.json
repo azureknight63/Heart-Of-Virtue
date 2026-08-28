@@ -1941,10 +1941,14 @@
       "name": "Protocol"
     },
     {
+      "module": "typing",
+      "name": "TypeVar"
+    },
+    {
       "module": "uuid",
       "name": "UUID"
     }
   ],
-  "count": 486,
+  "count": 487,
   "header_version": 1
 }

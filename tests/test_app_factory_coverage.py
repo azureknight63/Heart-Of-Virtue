@@ -1051,6 +1051,16 @@ class TestSecretRedaction:
 # ---------------------------------------------------------------------------
 
 
+def _testing_pin():
+    """What ``create_app`` passes ``_configure_logging`` for a TESTING config."""
+    from src.api.app import _testing_log_level
+
+    class _Testing:
+        TESTING = True
+
+    return _testing_log_level(_Testing)
+
+
 class TestNamespaceLogLevels:
     @pytest.fixture(autouse=True)
     def _restore(self):
@@ -1110,6 +1120,70 @@ class TestNamespaceLogLevels:
         monkeypatch.setenv("LOG_LEVEL", "DEBUG")
         assert _testing_log_level(_Testing) == "WARNING"
         assert _testing_log_level(_NotTesting) is None
+
+    @pytest.mark.parametrize("blank", ["", "   ", "	"])
+    def test_a_blank_log_level_counts_as_unset(self, monkeypatch, blank):
+        """``LOG_LEVEL=`` is an operator with no opinion, not a typo, so it
+        must not take the "unrecognized -> warn and use WARNING" path.
+
+        Load-bearing rather than cosmetic: blanking is the only way to say
+        "unset" that survives ``.env``. Every ``load_project_env()`` in the
+        tree runs with dotenv's ``override=False``, which refills a *deleted*
+        key -- and ``.env`` ships ``LOG_LEVEL=DEBUG``, so a popped variable
+        comes straight back the moment ``src/api/rate_limiter.py`` is
+        imported."""
+        from src.api.app import _log_level_setting, _resolve_log_level
+
+        monkeypatch.setenv("LOG_LEVEL", blank)
+        assert _log_level_setting() is None
+        assert _resolve_log_level() is None
+
+    def test_the_suite_itself_runs_with_log_level_unconfigured(self):
+        """The invariant that makes the branch above reachable in this repo.
+
+        ``_configure_logging``'s ``level is None`` -> NOTSET path is what lets
+        a bare ``caplog.set_level(INFO)`` see app records, and app.py documents
+        it as such -- but that documentation was false while ``conftest.py``
+        pinned ``LOG_LEVEL=WARNING`` at import, because every create_app() in
+        the suite then took the explicit-level path instead. The branch was
+        proved only by the two tests above, which delete the variable first,
+        i.e. in an environment the rest of the suite contradicted.
+
+        Deliberately takes no monkeypatch: the ambient process environment is
+        the thing under test."""
+        from src.api.app import _log_level_setting, _testing_log_level
+
+        class _Testing:
+            TESTING = True
+
+        assert _log_level_setting() is None, (
+            "tests/conftest.py must leave LOG_LEVEL unconfigured (it blanks "
+            "it); pinning a value makes app.py's caplog claim untestable"
+        )
+        assert _testing_log_level(_Testing) is None
+
+    def test_configuring_under_the_suites_env_costs_nothing_in_noise(self):
+        """The other half of the trade.
+
+        Blanking LOG_LEVEL is only free because ``_configure_logging`` refuses
+        to touch the root level and Python's root default is WARNING, so
+        "unset" leaves the namespaces inheriting a quiet root rather than
+        opening them to DEBUG. Measured against the ambient environment the
+        suite really runs in -- no monkeypatch -- but stated as "root is
+        unchanged" rather than "root is WARNING", so a neighbouring test that
+        legitimately raised it cannot make this flake."""
+        from src.api.app import _APP_LOG_NAMESPACES, _configure_logging
+
+        root = logging.getLogger()
+        before = root.level
+        for name in _APP_LOG_NAMESPACES:
+            logging.getLogger(name).setLevel(logging.DEBUG)
+
+        _configure_logging(_testing_pin())
+
+        assert root.level == before, "_configure_logging must never set root"
+        for name in _APP_LOG_NAMESPACES:
+            assert logging.getLogger(name).level == logging.NOTSET, name
 
 
 # ---------------------------------------------------------------------------
@@ -1262,3 +1336,148 @@ class TestRunApiRefusesProduction:
         monkeypatch.setenv("FLASK_ENV", " Production ")
         with pytest.raises(SystemExit, match="gunicorn"):
             self._load().main()
+
+
+class TestWsgiRefusesATestingConfig:
+    """``wsgi.py`` is the *production* entry point, and it must not serve a
+    TESTING config.
+
+    This hole was opened by a correct fix. The FLASK_ENV -> config-class
+    mapping used to be spelled twice and the two copies disagreed: run_api.py
+    knew about ``testing``, wsgi.py sent every non-production value to
+    ``DevelopmentConfig``. Unifying the mapping in ``config_for_env`` resolved
+    that disagreement in the permissive direction, and the half that went
+    missing was the safe half for this entry point -- a TESTING config makes
+    ``create_app`` register ``/api/test/session``, which mints a valid session
+    for any username with no credentials at all, plus the whole
+    ``/api/debug/*`` blueprint. Sharing the mapping is still right; the
+    refusal that used to be an accident of the duplication is now explicit.
+    """
+
+    @staticmethod
+    def _exec_wsgi():
+        import importlib.util
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        spec = importlib.util.spec_from_file_location(
+            "hov_wsgi_under_test", root / "wsgi.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        # Deliberately NOT registered in sys.modules: this is a throwaway
+        # execution of the entry point, not an import of it.
+        spec.loader.exec_module(module)
+        return module
+
+    @pytest.mark.parametrize("value", ["testing", "TESTING", "  Testing  "])
+    def test_a_testing_flask_env_refuses_to_boot(self, monkeypatch, value):
+        monkeypatch.setenv("FLASK_ENV", value)
+        with pytest.raises(SystemExit) as excinfo:
+            self._exec_wsgi()
+        message = str(excinfo.value)
+        # The message has to say *why*, or the next operator just sets the
+        # variable back and files a bug about gunicorn.
+        assert "/api/test/session" in message
+        assert "/api/debug/" in message
+
+    def test_the_refusal_fires_before_the_app_is_ever_built(self, monkeypatch):
+        """Refusing after ``create_app`` would still have registered the
+        blueprints and loaded the universe; the point is not to build it."""
+        import src.api.app as api_app
+
+        called = []
+        monkeypatch.setattr(
+            api_app, "create_app", lambda *a, **kw: called.append(a) or (None, None)
+        )
+        monkeypatch.setenv("FLASK_ENV", "testing")
+        with pytest.raises(SystemExit):
+            self._exec_wsgi()
+        assert called == []
+
+    def test_production_still_boots(self, monkeypatch):
+        """The negative control. A refusal that fired for everything would
+        pass the test above while breaking the only launch that matters."""
+        import src.api.app as api_app
+
+        sentinel = (object(), object())
+        monkeypatch.setattr(api_app, "create_app", lambda *a, **kw: sentinel)
+        monkeypatch.setenv("FLASK_ENV", "production")
+
+        module = self._exec_wsgi()
+        assert (module.app, module.socketio) == sentinel
+
+    def test_development_still_boots(self, monkeypatch):
+        """DevelopmentConfig has ``TESTING = False``, so the guard keys on the
+        attribute that actually gates the test-only routes rather than on the
+        string ``"testing"``."""
+        import src.api.app as api_app
+
+        sentinel = (object(), object())
+        monkeypatch.setattr(api_app, "create_app", lambda *a, **kw: sentinel)
+        monkeypatch.setenv("FLASK_ENV", "development")
+
+        module = self._exec_wsgi()
+        assert (module.app, module.socketio) == sentinel
+
+
+class TestUnrecognisedFlaskEnvIsNotSilent:
+    """``FLASK_ENV=prod`` used to be indistinguishable from ``FLASK_ENV``
+    unset.
+
+    Both landed on ``DevelopmentConfig``, so a one-word typo in a deployment
+    manifest bought ``DEBUG=True``, ``SESSION_COOKIE_SECURE=False``, localhost
+    CORS origins, and -- because both production guards test
+    ``normalized_env() == "production"`` -- a clean skip past "SECRET_KEY must
+    be set in production" *and* "ENCRYPTION_KEY must be set in production".
+    Silence is the wrong answer for a value the operator did supply.
+    """
+
+    LOGGER = "src.api.config"
+
+    def test_a_typo_warns_and_names_the_accepted_values(self, caplog):
+        from src.api.config import DevelopmentConfig, config_for_env
+
+        with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+            assert config_for_env("prod") is DevelopmentConfig
+
+        text = caplog.text
+        assert "prod" in text
+        # Naming the alternatives is the whole point: the operator who typed
+        # "prod" cannot fix it from "unrecognized" alone.
+        for accepted in ("development", "testing", "production"):
+            assert accepted in text
+
+    def test_the_warning_says_what_the_fallback_actually_costs(self, caplog):
+        from src.api.config import config_for_env
+
+        with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+            config_for_env("Prodcution")
+        assert "DevelopmentConfig" in caplog.text
+
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_an_empty_value_stays_silent(self, caplog, value):
+        """An exported-but-blank variable is an operator saying nothing, and
+        development is the right silent default for it -- the same reading
+        ``_FALSEY_ENV_VALUES`` already gives an empty flag. Warning here would
+        fire on every dev shell and every test run."""
+        from src.api.config import DevelopmentConfig, config_for_env
+
+        with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+            assert config_for_env(value) is DevelopmentConfig
+        assert caplog.records == []
+
+    def test_an_unset_flask_env_stays_silent(self, caplog, monkeypatch):
+        from src.api.config import DevelopmentConfig, config_for_env
+
+        monkeypatch.delenv("FLASK_ENV", raising=False)
+        with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+            assert config_for_env() is DevelopmentConfig
+        assert caplog.records == []
+
+    @pytest.mark.parametrize("value", ["development", "testing", "production"])
+    def test_a_recognised_value_stays_silent(self, caplog, value):
+        from src.api.config import config_for_env
+
+        with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+            config_for_env(value)
+        assert caplog.records == []

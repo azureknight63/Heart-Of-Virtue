@@ -107,12 +107,20 @@ def main():
         port=port,
         debug=debug,
         use_reloader=debug,
-        # Flask-SocketIO refuses to serve the Werkzeug dev server when stdin
-        # is not a tty — its proxy for "this is a daemonized/production
-        # launch" (flask_socketio/__init__.py, the `sys.stdin.isatty()` check
-        # guarding this flag). Overriding that refusal is defensible for a dev
-        # run; FLASK_ENV=production is already refused outright above, so this
-        # flag no longer has to carry that decision on its own.
+        # Constant True in practice, and deliberately so — do not read this
+        # as a live gate. FLASK_ENV=production is refused outright above, and
+        # DevelopmentConfig and TestingConfig both pin DEBUG = True, so every
+        # launch that reaches this line has debug=True.
+        #
+        # It stays spelled `=debug` rather than being hard-coded because it is
+        # the honest statement of the rule: allow the unsafe server exactly
+        # when this is a debug run. Flask-SocketIO refuses to serve the
+        # Werkzeug dev server when stdin is not a tty — its proxy for "this
+        # is a daemonized/production launch" (flask_socketio/__init__.py, the
+        # `sys.stdin.isatty()` check guarding this flag). Overriding that
+        # refusal is defensible for a dev run, and inverting this to
+        # `not debug` would be doubly wrong: it would break every non-tty dev
+        # launch AND permit the dev server in production.
         allow_unsafe_werkzeug=debug,
     )
 

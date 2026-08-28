@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 from typing import NamedTuple, Tuple
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from src.api.config import DevelopmentConfig
@@ -31,6 +31,12 @@ _LOG_FILE_BACKUP_COUNT = 3
 # day one of them is mistyped.
 _HOV_HANDLER_ATTR = "_hov_handler"
 
+# Read for two different questions ~700 lines apart — "what level?" in
+# _resolve_log_level and "is there anything to neutralise?" in
+# _testing_log_level — so both go through _log_level_setting() below rather
+# than through two literals that can drift apart.
+_LOG_LEVEL_ENV = "LOG_LEVEL"
+
 # Level names only — getattr(logging, name) would happily resolve any module
 # attribute (LOG_LEVEL=BASIC_FORMAT raised at import; NOTSET meant "log
 # everything").
@@ -48,8 +54,7 @@ _LOG_LEVELS = {
 # named for its module, so these two prefixes cover all of ours and none of
 # anyone else's.
 #
-# What this scoping does NOT do — stated plainly, because an earlier version of
-# this comment read as though it did: ``ai`` is *inside* the selected set, and
+# What this scoping does NOT do: ``ai`` is *inside* the selected set, and
 # ``ai.llm_client`` logs raw model output at DEBUG. So ``LOG_LEVEL=DEBUG`` plus
 # ``LOG_FILE`` does write player conversation text to disk, and no choice of
 # namespaces here would stop it.
@@ -59,9 +64,10 @@ _LOG_LEVELS = {
 # ``ai/llm_client.py`` caps the logged excerpt at an 80-character head by
 # default, and the full body is behind ``LLM_LOG_RAW_BODIES`` — a separate
 # switch on purpose, so that raising the log level to chase an unrelated bug
-# cannot start transcribing dialogue as a side effect. (Provider *error* bodies
-# are bounded but ungated, at ``_ERROR_BODY_LOG_CHARS``: they are the
-# provider's own diagnostics, not model output.)
+# cannot start transcribing dialogue as a side effect. Provider *error* bodies
+# follow the same rule: bounded by ``_ERROR_BODY_LOG_CHARS`` and released in
+# full by the same ``LLM_LOG_RAW_BODIES`` switch, because a provider that
+# echoes the rejected request back is echoing the player's dialogue back.
 _APP_LOG_NAMESPACES = ("src", "ai")
 
 # Blunt scrub for credential-shaped substrings on their way into any handler
@@ -119,6 +125,13 @@ class _RedactSecretsFilter(logging.Filter):
       what puts it inside the scrub. ``stack_info`` gets the same treatment
       for the same reason.
 
+    The ``exc_text`` cache is written only when the scrub actually changed
+    something. That reuse cuts both ways: a non-empty ``exc_text`` freezes the
+    traceback for *every* handler on root, so writing it unconditionally would
+    take ``formatException`` away from handlers that render it differently —
+    caplog's today, and the JSON formatter in ``src/api/structured_log.py``
+    once this branch catches up with master.
+
     Mutating the record makes it scrubbed for every handler that formats it
     afterwards as well — the safe direction to be wrong in.
     """
@@ -144,11 +157,32 @@ class _RedactSecretsFilter(logging.Filter):
             except Exception:  # pragma: no cover - defensive
                 text = None
         if text:
-            record.exc_text = _SECRET_RE.sub("[REDACTED]", text)
+            redacted = _SECRET_RE.sub("[REDACTED]", text)
+            if redacted != text:
+                record.exc_text = redacted
 
+        # ``stack_info`` is appended verbatim by every formatter rather than
+        # cached, so an unconditional write costs nothing and hides nothing.
         stack = getattr(record, "stack_info", None)
         if stack:
             record.stack_info = _SECRET_RE.sub("[REDACTED]", stack)
+
+
+def _log_level_setting():
+    """The configured LOG_LEVEL, or ``None`` when it is not configured.
+
+    Blank counts as unconfigured. ``LOG_LEVEL=`` in a ``.env`` reads as "no
+    opinion", and the test suite relies on that: ``.env`` ships
+    ``LOG_LEVEL=DEBUG``, and every ``load_project_env()`` in the tree
+    (``db.py``, ``rate_limiter.py``, ``ai/llm_client.py``) runs with
+    ``override=False``, which refills a *deleted* key but leaves an assigned
+    empty one alone. Blanking is therefore the only way ``tests/conftest.py``
+    can say "unset" and have it stick.
+    """
+    raw = os.environ.get(_LOG_LEVEL_ENV)
+    if raw is None or not str(raw).strip():
+        return None
+    return raw
 
 
 def _resolve_log_level(level_name=None):
@@ -160,7 +194,7 @@ def _resolve_log_level(level_name=None):
     in a variable whose entire purpose is "set this to see more" and used to
     produce a silent WARNING-level run with no explanation at all.
     """
-    raw = level_name if level_name is not None else os.environ.get("LOG_LEVEL")
+    raw = level_name if level_name is not None else _log_level_setting()
     if raw is None:
         return None
     name = str(raw).strip().upper()
@@ -275,13 +309,19 @@ def _configure_logging(level_name=None):
     #
     # NOTSET (not "skip the write") is what `level is None` means here, and
     # that matters twice over. It restores inheritance, so a bare
-    # `caplog.set_level(INFO)` — which raises the *root* level only — actually
-    # reaches app records instead of being silently outranked by an explicit
-    # namespace level: the same vacuous-pass shape as above, one field over
-    # again. And it makes the TESTING pin reversible: without it, one
+    # `caplog.set_level(INFO)` — which raises the *root* level only — reaches
+    # app records instead of being silently outranked by an explicit namespace
+    # level: the same vacuous-pass shape as above, one field over again. And it
+    # makes the TESTING pin reversible: without it, one
     # `create_app(TestingConfig)` left `src`/`ai` at WARNING for the rest of
     # the process, and a later non-TESTING create_app() took the
     # "change nothing" path and never gave them back.
+    #
+    # The caplog half only holds while the suite actually reaches this branch,
+    # which is why `tests/conftest.py` blanks LOG_LEVEL rather than pinning it
+    # to WARNING: a pinned value sends every pytest run down the explicit-level
+    # path instead, and the claim above becomes untestable by the suite that
+    # depends on it.
     resolved = logging.NOTSET if level is None else level
     for namespace in _APP_LOG_NAMESPACES:
         logging.getLogger(namespace).setLevel(resolved)
@@ -357,11 +397,11 @@ def _init_socketio(app):
 class StartConfig(NamedTuple):
     """The starting state ``CONFIG_FILE`` can override, as a typed record.
 
-    This used to be a bare 6-key dict indexed by string literal in
-    :func:`_build_dev_universe`, with neither function naming the keys — so a
-    typo was a ``KeyError`` raised deep inside universe construction and
-    swallowed whole by :func:`_init_universe`'s ``except``, leaving a
-    universe-less service and one log line about "initialization failed".
+    A record rather than a dict because the consumer is
+    :func:`_build_dev_universe`, whose own failures are swallowed by
+    :func:`_init_universe`'s ``except``: a missing key there surfaces only as a
+    universe-less service and one log line about "initialization failed". Field
+    access fails at the name instead.
     """
 
     start_x: int = 2
@@ -378,10 +418,20 @@ def _load_start_config() -> StartConfig:
     Returns a :class:`StartConfig`; the defaults come back unchanged when
     CONFIG_FILE is unset, missing, or unreadable.
     """
-    start = {}
+    defaults = StartConfig()
     config_file = os.environ.get("CONFIG_FILE")
     if not config_file:
-        return StartConfig()
+        return defaults
+
+    # Accumulated in locals rather than a dict keyed by string literals that
+    # have to match StartConfig's field names. Those literals were the last of
+    # the untyped indirection the NamedTuple was introduced to remove: a
+    # mistyped key built a StartConfig with a silent default and no error.
+    start_x, start_y = defaults.start_x, defaults.start_y
+    starting_exp = defaults.starting_exp
+    starting_map_name = defaults.starting_map_name
+    starting_gold = defaults.starting_gold
+    starting_equipment = defaults.starting_equipment
 
     try:
         # Remove quotes if present (from .env file)
@@ -402,28 +452,35 @@ def _load_start_config() -> StartConfig:
                 pos_str = pos_str.strip("() ")
                 coords = [int(x.strip()) for x in pos_str.split(",")]
                 if len(coords) == 2:
-                    start["start_x"], start["start_y"] = coords
+                    start_x, start_y = coords
 
             if parser.has_option("game", "starting_exp"):
-                start["starting_exp"] = parser.getint("game", "starting_exp")
+                starting_exp = parser.getint("game", "starting_exp")
 
             if parser.has_option("game", "startmap"):
-                start["starting_map_name"] = parser.get("game", "startmap")
+                starting_map_name = parser.get("game", "startmap")
 
             if parser.has_option("game", "starting_gold"):
-                start["starting_gold"] = parser.getint("game", "starting_gold")
+                starting_gold = parser.getint("game", "starting_gold")
 
             if parser.has_option("game", "starting_equipment"):
                 eq_str = parser.get("game", "starting_equipment")
-                start["starting_equipment"] = tuple(
+                starting_equipment = tuple(
                     item.strip() for item in eq_str.split(",") if item.strip()
                 )
     except Exception as exc:
         # Whatever was parsed before the failure is kept; the rest falls back
-        # to the StartConfig defaults. Unchanged from the dict version.
+        # to the StartConfig defaults.
         _log.warning("Could not load config: %s", exc)
 
-    return StartConfig(**start)
+    return StartConfig(
+        start_x=start_x,
+        start_y=start_y,
+        starting_exp=starting_exp,
+        starting_map_name=starting_map_name,
+        starting_gold=starting_gold,
+        starting_equipment=starting_equipment,
+    )
 
 
 def _apply_starting_equipment(test_player, starting_equipment):
@@ -692,31 +749,40 @@ _API_CSP = (
     "sandbox"
 )
 
-# The policy for HTML -- currently unreachable from this app (see above), and
-# deliberately kept anyway: it is the specification the SPA's host must mirror,
-# and it is what a future ``send_from_directory`` of ``frontend/dist`` would
-# need on day one. Derived from what the frontend measurably does, not from a
-# hardening checklist:
+# The policy for HTML -- unreachable from this app today (nothing calls
+# :func:`serves_html_document`), and deliberately kept anyway: it is the
+# specification the SPA's host must mirror, and it is what a future
+# ``send_from_directory`` of ``frontend/dist`` would need on day one. Derived
+# from what the frontend measurably does, not from a hardening checklist:
 #
 #   script-src 'self'  No inline <script>, no eval, no ``new Function``, no
 #       Worker and no blob: URL exists in ``frontend/src`` or ``index.html``
 #       (grepped: zero hits) -- index.html loads one module by src. So the
 #       directive that actually stops XSS stays strict, with no escape hatch.
 #
-#   style-src 'unsafe-inline'  Not aspirational laziness -- required. Six
-#       components render a literal <style> element (GameOverScreen, HeroPanel,
-#       ItemDetailDialog, ToastContext, TypewriterOutput, NpcChatPanel) and
-#       InteractPanel builds another via ``document.createElement('style')``,
-#       all of them for ``@keyframes``, whose names are document-global and so
-#       cannot move into a scoped CSS module. There is no nonce to offer them: a
-#       statically hosted, cached index.html has no per-response value to mint.
-#       The ~1000 ``style={{}}`` props are the weaker argument (React applies
-#       those through the CSSOM, which CSP does not police) but they are why a
-#       strict style policy would be one refactor away from a blank screen
-#       anyway. The concession is bounded: inline *style* cannot execute script,
-#       and the one place untrusted model text reaches the DOM as markup
-#       (CombatLog's ``dangerouslySetInnerHTML``) is already sanitised by
-#       DOMPurify -- CSP is the second line there, not the first.
+#   style-src 'unsafe-inline'  A measured cost, not a necessity. Four
+#       components render a literal <style> element (GameOverScreen:61,
+#       HeroPanel:241, ItemDetailDialog:778, ToastContext:172) plus
+#       InteractPanel:703, which builds one via
+#       ``document.createElement('style')`` -- all of them for ``@keyframes``.
+#       Those five are the whole of what forces the concession today, and the
+#       count is falling: TypewriterOutput's ``blink`` and NpcChatPanel's
+#       spinner keyframes have already been lifted into
+#       ``frontend/src/styles/index.css``, because keyframe names are
+#       document-global and a component-local block silently competes with
+#       every other definition of the same name. The same move would work for
+#       the remaining five, and if it is made this token should go with them.
+#       There is no nonce to offer them meanwhile: a statically hosted, cached
+#       index.html has no per-response value to mint. The ~1000 ``style={{}}``
+#       props are the weaker argument (React applies those through the CSSOM,
+#       which CSP does not police) but they are why a strict style policy would
+#       be one refactor away from a blank screen anyway. The concession is
+#       bounded: inline *style* cannot execute script, and the one place
+#       untrusted model text reaches the DOM as markup (CombatLog's
+#       ``dangerouslySetInnerHTML``) is already sanitised by DOMPurify -- CSP is
+#       the second line there, not the first. It is still an escape hatch
+#       written into a policy this file bills as the spec the SPA's host must
+#       mirror, so it is worth removing rather than inheriting.
 #
 #   fonts.googleapis.com / fonts.gstatic.com  index.html links a Google Fonts
 #       stylesheet, which in turn pulls its faces from the gstatic host. Both
@@ -773,22 +839,63 @@ _STATIC_SECURITY_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
 }
 
+# Strict-Transport-Security, production only.
+#
+# It is not in the set above because it is the one header here with a
+# precondition: a browser ignores HSTS over plaintext, but a host that is *not*
+# reachable over TLS and sends it anyway has locked its own clients out of it
+# for a year. So it is gated on ``SESSION_COOKIE_SECURE``, which is the flag by
+# which this app already says "I believe I am behind TLS" -- pinned True by
+# ProductionConfig and by ``runtime_config()`` for a production ``FLASK_ENV``.
+#
+# It matters more here than the cookie flag it rides on. The session id does
+# not travel in a cookie at all: ``src/api/middleware/auth.py`` reads it from
+# ``Authorization: Bearer``, which ``SESSION_COOKIE_SECURE`` does nothing to
+# protect. One ``http://`` request -- a typed URL, an old bookmark, a redirect
+# -- hands that credential to the network in clear text. HSTS is what stops the
+# request being made at all.
+#
+# One year, no ``includeSubDomains``, no ``preload``: the API is one host among
+# whatever else the operator runs under the same parent domain, and asserting
+# TLS on siblings this app knows nothing about is not its call to make.
+_HSTS_HEADER = "Strict-Transport-Security"
+_HSTS_VALUE = "max-age=31536000"
+
+
+# Marks a response as a real SPA document. Opt-in, and deliberately so.
+#
+# Sniffing ``mimetype == "text/html"`` reads the wrong way round. This app
+# authors no HTML, so every ``text/html`` response it emits today is written by
+# *Werkzeug*, not by us: routing redirects, and HTTPExceptions that reach the
+# WSGI layer with their default HTML bodies. Branching on the content type
+# therefore handed the permissive policy to exactly the responses nobody
+# designed -- the error paths an attacker reaches without credentials -- while
+# the strict one covered the routes we control. ``_register_preflight``'s bare
+# ``make_response()`` is a third case: Flask's default content type is
+# ``text/html``, so an empty preflight body looked like a document too.
+#
+# Inverted, the default is :data:`_API_CSP` and a view that genuinely serves
+# ``index.html`` asks for :data:`_HTML_CSP` by name. Forgetting to ask yields a
+# visibly blank page in development, which is the file's stated safe direction
+# to be wrong in; the sniffing version's failure was a policy that silently
+# stopped applying.
+_HTML_DOCUMENT_FLAG = "_hov_html_document"
+
+
+def serves_html_document(response):
+    """Mark ``response`` as an HTML document, so it gets :data:`_HTML_CSP`.
+
+    For whatever eventually serves ``frontend/dist`` from this app -- a
+    ``send_from_directory`` catch-all, or an SPA fallback route. Returns the
+    response, so it can wrap a return value in place.
+    """
+    setattr(response, _HTML_DOCUMENT_FLAG, True)
+    return response
+
 
 def _renders_as_html(response):
-    """True when a browser would render this response as a document.
-
-    The content-length half is not pedantry: :func:`_register_preflight` answers
-    every OPTIONS with a bare ``make_response()``, whose Flask default content
-    type is ``text/html``. An empty body renders nothing whatever it calls
-    itself, so it belongs under the strict policy with the rest of the API
-    rather than being handed the permissive one on a technicality.
-
-    A streamed response reports no content length and so lands on
-    :data:`_API_CSP` too. That is the safe direction to be wrong in: the failure
-    mode is a visibly blank page in development, not a policy that silently
-    stops applying.
-    """
-    return response.mimetype == "text/html" and bool(response.content_length)
+    """True when this response has been marked as a document to render."""
+    return bool(getattr(response, _HTML_DOCUMENT_FLAG, False))
 
 
 def _register_security_headers(app):
@@ -797,19 +904,26 @@ def _register_security_headers(app):
     Every header is written with ``setdefault``, so a reverse proxy or a route
     that has already made a deliberate choice keeps it, and repeated
     registration cannot stack or fight.
+
+    Covers Flask responses only. flask_socketio wraps ``app.wsgi_app``, so the
+    ``/socket.io/*`` handshake and polling responses are served beneath this
+    hook and carry none of these headers. Harmless -- they are not documents
+    and nothing frames them -- but the coverage is not total, and anything
+    that needs to be true of *every* response on the port has to be set at the
+    reverse proxy instead.
     """
 
     @app.after_request
     def set_security_headers(response):
         for header, value in _STATIC_SECURITY_HEADERS.items():
             response.headers.setdefault(header, value)
+        if app.config.get("SESSION_COOKIE_SECURE"):
+            response.headers.setdefault(_HSTS_HEADER, _HSTS_VALUE)
         response.headers.setdefault(
             "Content-Security-Policy",
             _HTML_CSP if _renders_as_html(response) else _API_CSP,
         )
         return response
-
-    return set_security_headers
 
 
 def _register_meta_routes(app):
@@ -817,8 +931,6 @@ def _register_meta_routes(app):
 
     @app.route("/health", methods=["GET"])
     def health():
-        from flask import jsonify
-
         payload = {"status": "healthy"}
         # The live session gauge is operational telemetry, and this route has
         # no auth at all: on a public deployment it is an occupancy oracle for
@@ -845,8 +957,6 @@ def _register_meta_routes(app):
     # payload with the general info fields above it.
     @app.route("/api/info", methods=["GET"])
     def api_info():
-        from flask import jsonify
-
         return jsonify(
             {
                 "version": "1.0.0",
@@ -879,8 +989,6 @@ def _register_test_routes(app):
         this file instead of two. Unregistered, it 404s through the normal
         error handler with the same ``success: False`` shape.
         """
-        from flask import jsonify
-
         routes = []
         for rule in app.url_map.iter_rules():
             routes.append(
@@ -894,7 +1002,7 @@ def _register_test_routes(app):
 
     @app.route("/api/test/session", methods=["POST"])
     def test_create_session():
-        from flask import jsonify, request as _req
+        from flask import request as _req
 
         username = (_req.get_json() or {}).get("username", "inquisitor_test")
         session_id, _ = app.session_manager.create_session(username)
@@ -906,7 +1014,6 @@ def _register_test_routes(app):
     @app.route("/api/test/heal", methods=["POST"])
     def test_heal_player():
         """Restore player to full HP and fatigue. Test mode only — never active in production."""
-        from flask import jsonify
         from src.api.middleware.auth import get_session_and_player
 
         session_manager, session, player, error = get_session_and_player()
@@ -936,7 +1043,7 @@ def _testing_log_level(config_class):
     """
     if not getattr(config_class, "TESTING", False):
         return None
-    if os.environ.get("LOG_LEVEL") is None:
+    if _log_level_setting() is None:
         return None
     return "WARNING"
 

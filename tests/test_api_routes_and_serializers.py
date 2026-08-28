@@ -630,6 +630,92 @@ class TestFeedbackHelpers:
 
         assert _neutralise_github_markup("jean@example.com") == "jean@example.com"
 
+    # -----------------------------------------------------------------------
+    # The four spellings of one autolink. GitHub's "Autolinked references and
+    # URLs" documentation lists "#26", "GH-26", "jlord/sheetsee.js#26" and the
+    # full ".../issues/26" URL as producing the *same* reference; a
+    # word-boundary rule on "#" alone defused exactly one of the four.
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _defused(text):
+        """True when the neutralised form differs from the input by nothing
+        except inserted zero-width spaces."""
+        from src.api.routes.feedback import _ZWSP, _neutralise_github_markup
+
+        out = _neutralise_github_markup(text)
+        assert out.replace(_ZWSP, "") == text, "mangled beyond a ZWSP: %r" % (out,)
+        return _ZWSP in out
+
+    def test_a_cross_repo_issue_reference_is_defused(self):
+        """``owner/repo#123`` has an alphanumeric immediately before the
+        ``#``, so the ``(?<![0-9A-Za-z_])`` lookbehind exempted it -- and
+        GitHub back-links it exactly as ``#123`` does."""
+        from src.api.routes.feedback import _ZWSP, _neutralise_github_markup
+
+        out = _neutralise_github_markup("also azureknight63/heart-of-virtue#284")
+        assert "virtue#284" not in out
+        assert out.endswith("#" + _ZWSP + "284")
+
+    def test_the_gh_prefixed_form_is_defused(self):
+        assert self._defused("see GH-284 for context")
+
+    def test_a_full_issue_url_is_defused(self):
+        assert self._defused(
+            "https://github.com/azureknight63/heart-of-virtue/issues/284"
+        )
+
+    def test_a_full_pull_request_url_is_defused(self):
+        assert self._defused("www.github.com/azureknight63/heart-of-virtue/pull/12")
+
+    def test_raw_anchor_html_is_defused(self):
+        """GitHub renders a sanitized HTML subset, ``<a>`` included, so a raw
+        anchor is the same label-vs-destination hazard as ``](``."""
+        assert self._defused('<a href="https://evil.example">refund</a>')
+
+    def test_raw_details_html_is_defused(self):
+        """``<details>``/``<summary>`` is documented under "Organizing
+        information with collapsed sections" -- it hides arbitrary content
+        behind a one-line summary in the rendered issue."""
+        assert self._defused("<details><summary>log</summary>hidden</details>")
+
+    def test_a_reference_style_link_is_defused(self):
+        """``[a][b]`` plus a ``[b]: url`` definition is the same spoof as
+        ``](url)`` spelled across two lines, and neither half contains
+        ``](``."""
+        assert self._defused("click [here][x]\n\n[x]: https://evil.example")
+
+    # -----------------------------------------------------------------------
+    # Negative controls. Widening this regex costs legibility in a bug report,
+    # so the boundaries are asserted, not assumed.
+    # -----------------------------------------------------------------------
+
+    def test_a_plain_repository_url_is_left_clickable(self):
+        """Only ``/issues/``, ``/pull/`` and ``/commit/`` URLs cross-reference
+        anything; mangling a link to the repo itself would be pure cost."""
+        assert not self._defused(
+            "the repo is https://github.com/azureknight63/heart-of-virtue"
+        )
+
+    def test_a_url_fragment_is_not_mistaken_for_a_repo_reference(self):
+        """``example.com/foo/bar#1`` matches the shape of ``owner/repo#1``.
+        The lookbehind excludes a path segment preceded by ``/``."""
+        assert not self._defused("https://example.com/docs/page#section")
+
+    def test_a_trailing_hash_in_prose_survives(self):
+        assert not self._defused("the C# port is unrelated")
+
+    def test_a_less_than_sign_in_prose_survives(self):
+        """The HTML rule requires a tag-shaped character after the ``<``."""
+        assert not self._defused("HP dropped from 50 < 60 and back")
+
+    def test_a_bare_commit_sha_is_left_alone_on_purpose(self):
+        """Also a documented autolink, and deliberately not defused: a 40-hex
+        run is what a pasted stack trace or save hash looks like, and a commit
+        link does not write into the issue tracker the way an issue
+        cross-reference does. Asserted so the trade stays a decision."""
+        assert not self._defused("sha a5c3785ed8d6a35868bc169f07e40e889087fd2e")
+
     def test_create_github_issue_no_token(self):
         import os
 
@@ -1003,6 +1089,164 @@ class TestFeedbackRoute:
                     headers=AUTH_HEADER,
                 )
         assert rv.status_code == 201
+
+    # -----------------------------------------------------------------------
+    # The composed issue body, asserted at the transport boundary. NEVER let
+    # these reach api.github.com: `_create_github_issue` has no TESTING-mode
+    # guard by design, and this repo's .env has historically carried a live
+    # GITHUB_TOKEN (10 harness runs once filed 20 real issues).
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    @contextmanager
+    def _captured_issue():
+        """Yield a callable returning the payload posted to GitHub."""
+        import os
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = {"html_url": "https://github.com/issues/1"}
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}):
+            with patch(
+                "src.api.routes.feedback.requests.post", return_value=mock_resp
+            ) as mock_post:
+                yield lambda: mock_post.call_args[1]["json"]
+
+    def test_an_at_prefixed_username_does_not_mention_anyone(self, client):
+        """``AuthService.create_user`` validates a username on length alone,
+        so ``@azureknight63`` is registrable -- and ``_MARKDOWN_UNSAFE``, the
+        only scrub the username used to get, contains no ``@``. Every
+        non-anonymous submission from that account mentioned a real person on
+        a repo the player does not own."""
+        from src.api.routes.feedback import _ZWSP
+
+        c, app = client
+        app._test_session.username = "@azureknight63"
+
+        with self._captured_issue() as payload:
+            rv = c.post(
+                "/api/feedback/issue",
+                json={"type": "general", "title": "Hello", "fields": {}},
+                headers=AUTH_HEADER,
+            )
+            body = payload()["body"]
+
+        assert rv.status_code == 201
+        assert "@azureknight63" not in body
+        # Defused, not deleted: the attribution still names who submitted it.
+        assert "azureknight63" in body
+        assert "@" + _ZWSP in body
+
+    def test_a_username_carrying_an_issue_reference_is_defused(self, client):
+        c, app = client
+        app._test_session.username = "player#284"
+
+        with self._captured_issue() as payload:
+            c.post(
+                "/api/feedback/issue",
+                json={"type": "general", "title": "Hello", "fields": {}},
+                headers=AUTH_HEADER,
+            )
+            body = payload()["body"]
+
+        assert "#284" not in body
+
+    def test_control_characters_are_stripped_from_the_title(self, client):
+        """Field bodies have had ESC stripped since ``_neutralise_github_markup``
+        existed; the title went to the tracker raw, and from there to every
+        terminal that cats the issue."""
+        c, _ = client
+
+        with self._captured_issue() as payload:
+            rv = c.post(
+                "/api/feedback/issue",
+                json={
+                    "type": "general",
+                    "title": "red\x1b[31m alert\x07",
+                    "fields": {},
+                },
+                headers=AUTH_HEADER,
+            )
+            title = payload()["title"]
+
+        assert rv.status_code == 201
+        assert "\x1b" not in title
+        assert "\x07" not in title
+        assert "red" in title and "alert" in title
+
+    def test_the_title_keeps_its_words_rather_than_being_zwsp_riddled(self, client):
+        """GitHub renders an issue *title* as plain text -- no markdown, no
+        autolinks -- so a title cannot carry a live mention and no
+        ``_neutralise_github_markup`` pass is applied to it. Asserted because
+        the comment that used to sit at this scrub claimed the opposite, and
+        the obvious "fix" for that comment is a pointless title guard."""
+        from src.api.routes.feedback import _ZWSP
+
+        c, _ = client
+
+        with self._captured_issue() as payload:
+            c.post(
+                "/api/feedback/issue",
+                json={"type": "general", "title": "crash near @gate #3", "fields": {}},
+                headers=AUTH_HEADER,
+            )
+            title = payload()["title"]
+
+        assert _ZWSP not in title
+        assert "@gate" in title
+
+    def test_a_field_body_still_carries_its_punctuation(self, client):
+        """The whole reason bodies get the narrow rule and labels get the
+        blunt one."""
+        c, _ = client
+        steps = "press (n), type `look`, watch my_hp hit 0"
+
+        with self._captured_issue() as payload:
+            c.post(
+                "/api/feedback/issue",
+                json={
+                    "type": "bug",
+                    "title": "Repro",
+                    "fields": {"steps": steps},
+                },
+                headers=AUTH_HEADER,
+            )
+            body = payload()["body"]
+
+        assert steps in body
+
+    def test_the_throttle_returns_the_shared_429_body(self, client):
+        """One 429 shape for the whole API: ``error`` is the machine token and
+        ``message`` the prose, which is what the frontend reads. This route
+        used to put the prose in ``error`` and ship no ``message`` at all."""
+        from src.api.rate_limiter import RATE_LIMITED_ERROR
+
+        c, _ = client
+        with patch("src.api.routes.feedback._is_rate_limited", return_value=True):
+            rv = c.post(
+                "/api/feedback/issue",
+                json={"type": "general", "title": "Hi", "fields": {}},
+                headers=AUTH_HEADER,
+            )
+
+        assert rv.status_code == 429
+        data = rv.get_json()
+        assert data["success"] is False
+        assert data["error"] == RATE_LIMITED_ERROR
+        assert "wait" in data["message"].lower()
+
+    def test_the_throttle_short_circuits_before_github(self, client):
+        """A 429 that still POSTed would defeat the point of the throttle,
+        which guards real issue creation rather than server load."""
+        c, _ = client
+        with patch("src.api.routes.feedback._is_rate_limited", return_value=True):
+            with patch("src.api.routes.feedback.requests.post") as mock_post:
+                c.post(
+                    "/api/feedback/issue",
+                    json={"type": "general", "title": "Hi", "fields": {}},
+                    headers=AUTH_HEADER,
+                )
+        mock_post.assert_not_called()
 
 
 # ===========================================================================

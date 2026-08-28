@@ -10,7 +10,12 @@ Provides REST API endpoints for:
 
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player, require_game_service
-from src.api.rate_limiter import client_ip, limiter_from_env
+from src.api.rate_limiter import (
+    RateLimiter,
+    client_ip,
+    limiter_from_env,
+    rate_limited_response,
+)
 
 npc_chat_bp = Blueprint("npc_chat", __name__)
 
@@ -36,8 +41,9 @@ _MAX_FIELD_LEN = 4000
 # options can produce (each round trip takes seconds), and trivially exceeded
 # by a script. Configurable via NPC_CHAT_RATE_LIMIT_PER_MINUTE; 0 disables this
 # tier. Per-worker (not shared across Gunicorn workers) — see GitHub issue #284
-# and `src.api.rate_limiter` for the bounded-store rationale, shared with
-# auth.py's login throttle and feedback.py's submission throttle.
+# and `src.api.rate_limiter` for the bounded-store rationale, the
+# `None`-tolerant `RateLimiter.check` and the shared 429 body, all of which
+# auth.py's login throttles and feedback.py's submission throttle use too.
 _RATE_LIMIT_DEFAULT_PER_MINUTE = 10
 
 # Second, independent throttle keyed on IP alone, mirroring auth.py's two-tier
@@ -98,10 +104,11 @@ def _check_chat_rate_limit(session):
     """Return a ``(response, 429)`` tuple if this call is over the LLM chat
     rate limit, else ``None``.
 
-    Either tier trips it, and each tier is skipped when it is disabled
-    (``NPC_CHAT_RATE_LIMIT_PER_MINUTE=0`` /
-    ``NPC_CHAT_IP_RATE_LIMIT_PER_MINUTE=0``); set both to 0 to turn npc-chat
-    throttling off entirely.
+    Either tier trips it, and a disabled tier simply never limits --
+    ``RateLimiter.check`` owns that rule, so neither tier repeats it here.
+    Set both ``NPC_CHAT_RATE_LIMIT_PER_MINUTE`` and
+    ``NPC_CHAT_IP_RATE_LIMIT_PER_MINUTE`` to 0 to turn npc-chat throttling
+    off entirely.
 
     The identity tier goes through ``check_and_record``, which is one locked
     operation. Checking both tiers and only then recording either left a window
@@ -114,16 +121,13 @@ def _check_chat_rate_limit(session):
     Its bucket is therefore charged even when the identity tier already
     rejected — a caller being throttled has still cost this worker a request.
     """
-    limited = False
-    if _chat_limiter is not None:
-        limited = _chat_limiter.check_and_record(_chat_rate_limit_key(session))
-    if _chat_ip_limiter is not None:
-        limited = _chat_ip_limiter.check_and_record(client_ip()) or limited
+    limited = RateLimiter.check(_chat_limiter, _chat_rate_limit_key(session))
+    # Not `or`-short-circuited: `RateLimiter.check` records, and a
+    # short-circuit would leave the IP tier uncounted whenever the identity
+    # tier tripped -- see the paragraph above on charging both buckets.
+    limited = RateLimiter.check(_chat_ip_limiter, client_ip()) or limited
     if limited:
-        return (
-            jsonify({"success": False, "error": "Slow down — too many messages."}),
-            429,
-        )
+        return rate_limited_response("Slow down — too many messages.")
     return None
 
 

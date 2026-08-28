@@ -381,6 +381,28 @@ describe('FeedbackDialog', () => {
       expect(mockOnClose).not.toHaveBeenCalled();
     });
 
+    it('shows the prose, not the machine token, when the server rate-limits the submission', async () => {
+      // The 429 body shape changed when the four hand-rolled rate-limit
+      // responses were unified behind rate_limited_response(): the machine
+      // token moved into `error` and the human prose into `message`. Reading
+      // `error` alone toasted the literal string "rate_limited" at the player.
+      feedbackApi.submitIssue.mockRejectedValue({
+        response: {
+          status: 429,
+          data: { error: 'rate_limited', message: 'Too many submissions — try again in an hour.' },
+        },
+      });
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+
+      fireEvent.change(screen.getByPlaceholderText(/Short description of the bug/i), { target: { value: 'Something broke' } });
+      fireEvent.click(screen.getByText('Submit Feedback'));
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith('Too many submissions — try again in an hour.');
+      });
+      expect(mockToastError).not.toHaveBeenCalledWith('rate_limited');
+    });
+
     it('falls back to a generic error message when submission throws without a server message', async () => {
       feedbackApi.submitIssue.mockRejectedValue(new Error('network down'));
       render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);

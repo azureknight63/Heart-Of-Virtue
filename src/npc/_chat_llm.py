@@ -43,14 +43,41 @@ from typing import (
     Set,
     Tuple,
     TypeGuard,
+    TypeVar,
 )
 
 from . import _chat_guard
 from ._llm import _load_llm_client_module
 from src.narration import narrate
-from src.text_safety import neutralise_player_text
+
+# Prompt-injection neutralisation, applied in BOTH directions of the chat.
+#
+# Player text is neutralised at ingress — before it is handed to the adapter
+# *and* before it is written to the history that later prompts replay. Jean's
+# line is not merely sent to the provider once: it goes into the persisted
+# exchange history, which is replayed into the system prompt on every later
+# turn and survives into the save file, so a single crafted line keeps working
+# for the rest of the conversation, and a length cap alone (all this used to
+# do) does nothing about it.
+#
+# Model text is neutralised at the end of QC and on every Jean option, because
+# an accepted line is written straight back into prompts that are structured by
+# newlines and tags (``revise_turn``'s options block, ``_format_history``'s
+# speaker-labelled rows).
+#
+# Both rules live in src/text_safety.py, which ai/llm_client.py imports too.
+# There were two implementations of the player half, and the adapter's — the
+# one guarding the replayed history — was the weaker of the pair, so this
+# module's extra rules protected the live turn and nothing else. That module is
+# stdlib-only by design, so unlike the ai.llm_client constants below these
+# imports need no fallback: they cannot fail on a box with no AI stack.
+from src.text_safety import neutralise_model_text, neutralise_player_text
 
 logger = logging.getLogger(__name__)
+
+# For the pool helpers, which are shared between a pool of NPC lines (str) and
+# a pool of Jean option sets (list of dicts).
+_T = TypeVar("_T")
 
 # Length caps, tone names and delta bounds belong to ai/llm_client.py — the
 # lower layer that *generates* the values this module then filters. They were
@@ -76,7 +103,20 @@ try:  # pragma: no cover - trivially exercised by importing this module
         MAX_OPTION_CHARS,
         REPUTATION_DELTA_BOUNDS,
     )
-except Exception:  # pragma: no cover - no AI stack installed/configured
+except Exception as _constants_import_error:  # pragma: no cover - no AI stack
+    # Bare ``Exception`` on purpose: the guard exists to keep the engine
+    # importable, and a provider dependency can fail in ways that are not
+    # ImportError. But a genuine error *inside* ai.llm_client degrades the chat
+    # to hard-coded numbers and used to do it invisibly, so say so once, with
+    # the exception type — the fallbacks below are only correct while they
+    # agree with llm_client, which tests/test_npc_chat_round_five.py asserts
+    # by reading both halves of this guard out of the source.
+    logger.warning(
+        "ai.llm_client constants unavailable (%s: %s); falling back to the "
+        "literal copies in _chat_llm.",
+        type(_constants_import_error).__name__,
+        _constants_import_error,
+    )
     JEAN_TONES = ("direct", "guarded", "open")
     MAX_NPC_TEXT_CHARS = 300
     MAX_FLAVOR_CHARS = 200
@@ -125,17 +165,27 @@ _JEAN_DIALOG_PATTERN = re.compile(
 # spoken line as *asterisk actions* ("*nods slowly* Fine.") even though
 # npc_flavor is the designated home for physical beats. These are extracted
 # and relocated, never shown verbatim.
+#
+# How wide a span an *asterisk aside* may cover. Unrelated to
+# MAX_OPTION_CHARS despite sharing the number: this one bounds a stage
+# direction inside one spoken line. Named so a later reader who spots the
+# coincidence does not "unify" the two.
+_MAX_ACTION_ASIDE_CHARS = 160
+
 _BOLD_MD_PATTERN = re.compile(r"\*\*([^*]+)\*\*")
-_ACTION_ASIDE_PATTERN = re.compile(r"\*([^*\n]{2,160})\*")
+_ACTION_ASIDE_PATTERN = re.compile(
+    r"\*([^*\n]{2," + str(_MAX_ACTION_ASIDE_CHARS) + r"})\*"
+)
 
 # Terminators and quote characters, owned by _chat_guard (see the rationale
 # comment there). Aliased here so this module never hand-spells another
 # variant — the class of bug that let a curly-quoted line have its first spoken
 # word scrubbed as an invented proper noun while the straight-quoted form was
-# fine.
-_TERMINATORS = _chat_guard._TERMINATORS
-_CLOSING_QUOTES = _chat_guard._CLOSING_QUOTES
-_SENTENCE_BOUNDARY_CHARS = _chat_guard._SENTENCE_BOUNDARY_CHARS
+# fine. Public names over there: four of them are consumed here, and a private
+# name read across a module boundary is a contract either way.
+_TERMINATORS = _chat_guard.TERMINATORS
+_CLOSING_QUOTES = _chat_guard.CLOSING_QUOTES
+_SENTENCE_BOUNDARY_CHARS = _chat_guard.SENTENCE_BOUNDARY_CHARS
 
 # Sentence splitting — _chat_guard owns the definition, the
 # terminator-preserving rationale and the displaced-closing-quote repair.
@@ -232,7 +282,7 @@ _MIN_NPC_TEXT_LEN = 2
 # There were three spellings of this rule across the two modules, one of them
 # `any(ch.isalnum())`, which is Unicode-aware where the compiled patterns are
 # ASCII-only: they disagreed on accented text.
-_HAS_ALNUM_PATTERN = _chat_guard._ALNUM_PATTERN
+_HAS_ALNUM_PATTERN = _chat_guard.ALNUM_PATTERN
 
 
 def _has_real_npc_text(text: str) -> bool:
@@ -249,26 +299,39 @@ _WS_RUN_PATTERN = re.compile(r"\s+")
 _SPACE_BEFORE_PUNCT_PATTERN = re.compile(r"\s+([,.!?;:])")
 _REPEATED_SEPARATOR_PATTERN = re.compile(r"([,;:])(?:\s*\1)+")
 _SEPARATOR_BEFORE_TERMINATOR_PATTERN = re.compile(r"[,;:]+(?=[.!?])")
+# A run of two or more terminators, which a removed clause-sized span leaves
+# glued together ("...at dawn. Okay. Mind the current." -> "...at dawn.. Mind
+# the current."). Collapsed by :func:`_collapse_terminator_run`, which spares a
+# deliberate ellipsis.
+_TERMINATOR_RUN_PATTERN = re.compile(r"[.!?]{2,}")
 _LEADING_SEPARATOR_PATTERN = re.compile(r"^[\s,;:]+")
 _LEADING_TERMINATOR_PATTERN = re.compile(r"^[.!?]+[\s,;:]*")
 _TRAILING_SEPARATOR_PATTERN = re.compile(r"[\s,;:]+$")
 _SENTENCE_START_PATTERN = re.compile(r"(^|(?<!\.\.)[.!?]\s+)([a-z])")
+# An intentional leading ellipsis plus whatever whitespace followed it. The
+# sentence splitter cannot capture either (it needs a non-terminator first, and
+# it strips each fragment), so both are re-attached by hand.
+_LEADING_ELLIPSIS_PATTERN = re.compile(r"^\.{3,}\s*")
 
-# Prompt-injection neutralisation for player-supplied text, applied at ingress
-# — before the text is handed to the adapter *and* before it is written to the
-# history that later prompts replay. Jean's line is not merely sent to the
-# provider once: it goes into the persisted exchange history, which is replayed
-# into the system prompt on every later turn and survives into the save file, so
-# a single crafted line keeps working for the rest of the conversation and a
-# length cap alone (all this used to do) does nothing about it.
-#
-# The rule itself lives in src/text_safety.py, which ai/llm_client.py imports
-# too. There were two implementations, and the adapter's — the one guarding the
-# replayed history — was the weaker of the pair, so this module's extra rules
-# protected the live turn and nothing else. That module is stdlib-only by
-# design, so unlike the ai.llm_client constants above this import needs no
-# fallback: it cannot fail on a box with no AI stack.
-_sanitize_player_text = neutralise_player_text
+
+def _collapse_terminator_run(match: "re.Match") -> str:
+    """Reduce a run of sentence terminators to the one that ends the sentence.
+
+    A slang or prohibited span removed mid-line takes its own terminator with
+    it and leaves the previous sentence's behind, one space away; the space
+    fixup then glues the two together and ``_qc_normalise_sentences`` passes
+    the result through untouched, so the player reads "at dawn.. Mind the
+    current."
+
+    A pure run of dots three or longer is the model's own ellipsis and is kept
+    (normalised to three, since the same repair can extend one); ".." never is.
+    A mixed run keeps its first character, which is the terminator the
+    surviving sentence actually ended on.
+    """
+    run = match.group(0)
+    if run.count(".") == len(run):
+        return "..." if len(run) > 2 else "."
+    return run[0]
 
 
 # One provider call's network timeout, used as the size of a stage the gates
@@ -322,6 +385,55 @@ def _no_stage_budget(deadline: Optional[float], adapter: Any = None) -> bool:
     if deadline is None:
         return False
     return deadline - time.monotonic() <= _round_timeout(adapter)
+
+
+# The one round timeout already reported as too wide for the fixed budget.
+# Remembered so the warning names a misconfiguration once rather than on every
+# turn of every conversation for the life of the process.
+_warned_round_timeout: Optional[float] = None
+
+
+def _turn_deadline(adapter: Any) -> float:
+    """The instant after which this turn may open no further provider stage.
+
+    ``_CHAT_DEADLINE_SECONDS`` is a fixed number, but the per-call timeout
+    :func:`_no_stage_budget` measures the remaining budget against is
+    ``NPC_CHAT_LLM_TIMEOUT`` — operator-tunable, with no upper bound. At the
+    default 6s two stages fit. At 8s the gate is already closed straight after
+    attempt one; at 12s or more it is closed on its FIRST evaluation of every
+    turn, which silently disables the QC retry, the state-guard revision call
+    and the legacy options call — while logging "the turn's provider budget is
+    spent", a cause that was never true and that sends a debugger the wrong
+    way.
+
+    So the budget scales with the timeout it is compared against: at least two
+    stages always fit, and the constant is the floor. A configured timeout wide
+    enough to force that is also worth saying out loud once, because it means
+    a single conversation round can now run for four times the number the
+    feature was designed around.
+    """
+    round_timeout = _round_timeout(adapter)
+    two_stages = 2 * round_timeout
+    if two_stages > _CHAT_DEADLINE_SECONDS:
+        _warn_round_timeout_over_budget(round_timeout, two_stages)
+    return time.monotonic() + max(_CHAT_DEADLINE_SECONDS, two_stages)
+
+
+def _warn_round_timeout_over_budget(round_timeout: float, widened: float) -> None:
+    """Report a per-call timeout too wide for the fixed turn budget, once."""
+    global _warned_round_timeout
+    if _warned_round_timeout == round_timeout:
+        return
+    _warned_round_timeout = round_timeout
+    logger.warning(
+        "NPC chat per-call timeout is %.1fs, so two provider stages (%.1fs) do "
+        "not fit the %.1fs turn budget; widening the budget to %.1fs. Lower "
+        "NPC_CHAT_LLM_TIMEOUT to keep a conversation round short.",
+        round_timeout,
+        widened,
+        _CHAT_DEADLINE_SECONDS,
+        widened,
+    )
 
 
 class QcResult(NamedTuple):
@@ -494,6 +606,10 @@ _MIN_TRUNCATION_KEEP_RATIO = 0.5
 # spent the turn drops to the deterministic fallbacks that already exist
 # (_get_fallback_npc_line, _chat_guard.hedge_npc_text, and the rewrite-mode QC
 # salvage in _run_npc_turn) rather than opening another stage.
+#
+# This is the FLOOR of the budget, not the whole rule: the per-call timeout it
+# is measured against is operator-tunable and unbounded, so :func:`_turn_deadline`
+# widens the budget to fit two calls whenever the configured timeout is large.
 _CHAT_DEADLINE_SECONDS = 12.0
 
 # Meta-speech markers ("[Option 2]", "As Jean, I...") that mean the model
@@ -616,6 +732,16 @@ _JEAN_FALLBACK_POOL = [
     ],
 ]
 
+# Brush-off lines for a generic NPC whose patience is spent, picked by a stable
+# digest of its name (see ConversationalNPCMixin._stable_pick). A module
+# constant like every sibling pool — this one was an inline literal rebuilt on
+# every call, in the one pool small enough for that to look harmless.
+_BRUSH_OFF_LINES = (
+    "They're not in the mood to talk.",
+    "A brief shake of the head.",
+    "Not now.",
+)
+
 # Generic nomad fallbacks (selected via a stable crc32 digest, not the
 # built-in hash(), so the pick is deterministic across process restarts)
 _GENERIC_FALLBACKS = [
@@ -661,49 +787,50 @@ class ConversationalNPCMixin:
     _world_facts_cache: Optional[Dict[str, Any]] = None
     _char_config_cache: Dict[str, Any] = {}
 
+    @staticmethod
+    def _read_json_config(path, label: str) -> Optional[Dict[str, Any]]:
+        """Read one JSON config file, or None with a WARNING on any failure.
+
+        Both callers cache what this returns — the failure included — so an
+        unreadable file degrades this NPC (or, for the world facts, every NPC
+        in the process) until the process restarts. A silent, unrecoverable
+        degradation must not sit at DEBUG, which is why the log line is here
+        rather than left to each caller: the two copies of this read differed
+        only in their message.
+        """
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning("Could not load %s from %s: %s", label, path, e)
+            return None
+
     def _init_chat_attrs(self):
         """Initialize all chat-related attributes. Called at end of host __init__."""
         # Config path can be set by subclass before calling this
         self._chat_config_path: Optional[str] = getattr(self, "_chat_config_path", None)
 
-        # Load character config if path provided (class-level cache)
+        # Load character config if path provided (class-level cache). The
+        # failure is cached too, so this NPC runs with no character config for
+        # the rest of the process.
         self._chat_char_config: Optional[Dict[str, Any]] = None
         if self._chat_config_path:
             if self._chat_config_path not in ConversationalNPCMixin._char_config_cache:
-                try:
-                    with open(self._chat_config_path, "r", encoding="utf-8") as f:
-                        ConversationalNPCMixin._char_config_cache[
-                            self._chat_config_path
-                        ] = json.load(f)
-                except Exception as e:
-                    # Cached as a permanent None below, so this NPC runs with no
-                    # character config for the rest of the process — a silent,
-                    # unrecoverable degradation that must not sit at DEBUG.
-                    logger.warning(
-                        "Could not load chat config from %s: %s",
-                        self._chat_config_path,
-                        e,
-                    )
-                    ConversationalNPCMixin._char_config_cache[
-                        self._chat_config_path
-                    ] = None
+                ConversationalNPCMixin._char_config_cache[self._chat_config_path] = (
+                    self._read_json_config(self._chat_config_path, "chat config")
+                )
             self._chat_char_config = ConversationalNPCMixin._char_config_cache[
                 self._chat_config_path
             ]
 
-        # Load world facts (class-level cache)
+        # Load world facts (class-level cache). Also cached on failure, and the
+        # empty dict matters: every NPC in the process then runs with an empty
+        # allow-list, which silently turns the invented proper-noun scrubber
+        # into a scrubber of *all* proper nouns.
         if ConversationalNPCMixin._world_facts_cache is None:
-            try:
-                with open(_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
-                    ConversationalNPCMixin._world_facts_cache = json.load(f)
-            except Exception as e:
-                # Also cached permanently: every NPC in the process then runs
-                # with an empty allow-list, which silently turns the invented
-                # proper-noun scrubber into a scrubber of *all* proper nouns.
-                logger.warning(
-                    "Could not load world facts from %s: %s", _WORLD_FACTS_PATH, e
-                )
-                ConversationalNPCMixin._world_facts_cache = {}
+            ConversationalNPCMixin._world_facts_cache = (
+                self._read_json_config(_WORLD_FACTS_PATH, "world facts") or {}
+            )
         self._chat_world_facts: Optional[Dict[str, Any]] = (
             ConversationalNPCMixin._world_facts_cache
         )
@@ -726,10 +853,8 @@ class ConversationalNPCMixin:
         # existence inside the accessors, so the instance's attribute surface
         # is readable in one place (the accessors still use getattr, for hosts
         # that skip this initializer).
-        self._allowed_noun_cache: Optional[Tuple[Any, str, str, Set[str]]] = None
-        self._guard_topic_cache: Optional[
-            Tuple[Any, Tuple[str, ...], Set[str]]
-        ] = None
+        self._allowed_noun_cache: Optional[Tuple[Any, Set[str]]] = None
+        self._guard_topic_cache: Optional[Tuple[Any, Set[str]]] = None
 
         # Fallback rotation index (Jean's options pool)
         self._chat_fallback_idx: int = 0
@@ -755,8 +880,16 @@ class ConversationalNPCMixin:
         # "talk" is already present on every host class's base keywords
         # (Friend, Merchant); it alone opens the LLM chat panel client-side,
         # so we deliberately do not also add "chat" as a second, redundant
-        # button (see chat()/InteractPanel.jsx — both keywords routed to the
-        # same panel, which meant NPCs showed two buttons for one action).
+        # button (see chat()/InteractPanel.jsx — both keywords route to the
+        # same panel, and InteractPanel renders one button per keyword with no
+        # dedupe, so NPCs showed two buttons for one action).
+        #
+        # Dropping it here was not enough on its own: src/universe.py setattrs
+        # a map payload's props over whatever __init__ produced, and
+        # eastern-descent-nomad-camp.json pinned ["talk", "chat"] on all 22 of
+        # its conversational NPCs — so the duplicate button survived for
+        # exactly the NPCs that have anything to say. Those entries have been
+        # stripped to ["talk"] too.
         if not hasattr(self, "keywords"):
             self.keywords = []
 
@@ -794,6 +927,32 @@ class ConversationalNPCMixin:
             if self._chat_adapter is not self._ADAPTER_FAILED
             else None
         )
+
+    def _memoised(self, attr: str, key: Any, build) -> Any:
+        """Return ``build()``'s result, cached on ``self.<attr>`` under ``key``.
+
+        Two accessors (:meth:`_allowed_noun_tokens`, :meth:`_guard_allowed_topics`)
+        each rebuild a set from static authored config on every turn, and each
+        had its own hand-rolled "unpack the tuple, compare the parts, maybe
+        rebuild" block. One shape, written twice.
+
+        The key is compared with ``==``, which is what the callers want even
+        where they mean identity: tuple comparison goes through
+        ``PyObject_RichCompareBool``, which short-circuits on identity, so a
+        key holding the very same config dict costs a pointer compare rather
+        than a deep one. A *different but equal* dict then compares equal too —
+        which the previous ``is`` checks would have rejected, and which is
+        harmless, since an equal config builds an equal set.
+
+        ``getattr`` with a default rather than a direct attribute read: minimal
+        test doubles and hosts that skip ``_init_chat_attrs`` must still work.
+        """
+        cached = getattr(self, attr, None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        value = build()
+        setattr(self, attr, (key, value))
+        return value
 
     def _story(self, player) -> Dict[str, Any]:
         """Get story dict from player.universe, or empty dict."""
@@ -993,27 +1152,50 @@ class ConversationalNPCMixin:
             )
 
     def _build_system_prompt(self, player) -> str:
-        """Build system prompt from world facts + character block."""
-        blocks = []
+        """Assemble the system prompt out of its blocks, in order.
 
-        # World facts block
-        if self._chat_world_facts:
-            geo = ", ".join(self._chat_world_facts.get("geography", []))
-            factions = ", ".join(self._chat_world_facts.get("factions_and_peoples", []))
-            rules = " ".join(self._chat_world_facts.get("world_rules", []))
-            tone = self._chat_world_facts.get("tone_notes", "")
+        Every block is a named builder returning "" when it has nothing to say,
+        so this reads as the prompt's table of contents. World facts and
+        character used to sit inline here — forty-odd lines and an if/else —
+        while the combat and Jean-context blocks beside them were already
+        methods.
+        """
+        chapter = self._get_chapter(player)
+        blocks = [
+            self._build_world_facts_block(),
+            self._build_character_block(),
+            # Combat self-knowledge (progressing allies only) — the chat is the
+            # sole surface for ally growth (no UI elements by design), so the
+            # NPC must be able to speak about its own techniques and experience.
+            self._build_combat_knowledge_block(),
+            self._build_conduct_block(chapter),
+            # Jean's own knowledge boundary — governs Jean's dialogue OPTIONS,
+            # generated in the same call as the NPC's line.
+            self._build_jean_context_block(player, chapter),
+        ]
+        return "\n\n".join(block for block in blocks if block)
 
-            blocks.append(
-                f"WORLD: {self._chat_world_facts.get('world_name', 'Aurelion')}. "
-                f"{self._chat_world_facts.get('brief_description', '')}\n"
-                f"Places: {geo}.\nPeoples: {factions}.\n{rules}\nTone: {tone}"
-            )
+    def _build_world_facts_block(self) -> str:
+        """The shared setting: places, peoples, world rules, tone."""
+        facts = self._chat_world_facts
+        if not facts:
+            return ""
+        geo = ", ".join(facts.get("geography", []))
+        factions = ", ".join(facts.get("factions_and_peoples", []))
+        rules = " ".join(facts.get("world_rules", []))
+        tone = facts.get("tone_notes", "")
+        return (
+            f"WORLD: {facts.get('world_name', 'Aurelion')}. "
+            f"{facts.get('brief_description', '')}\n"
+            f"Places: {geo}.\nPeoples: {factions}.\n{rules}\nTone: {tone}"
+        )
 
-        # Character block
-        if self._chat_char_config:
+    def _build_character_block(self) -> str:
+        """Who this NPC is — from authored config, or from a generated persona."""
+        cfg = self._chat_char_config
+        if cfg:
             # Story NPC: system_prompt_snippet plus the richer config fields
             # (role/knowledge/personality) that ground the model in-character.
-            cfg = self._chat_char_config
             snippet = cfg.get("system_prompt_snippet", "")
             extras = []
             role = cfg.get("role")
@@ -1025,35 +1207,25 @@ class ConversationalNPCMixin:
             notes = cfg.get("personality_notes") or []
             if notes:
                 extras.append("About you: " + " ".join(notes))
-            char_block = snippet
             if extras:
-                char_block = (snippet + "\n" + "\n".join(extras)).strip()
-            blocks.append(char_block)
-        else:
-            # Generic NPC: synthesize from personality
-            pers = self._chat_personality or {}
-            given_name = pers.get("given_name", "Nomad")
-            voice = pers.get("voice", "terse")
-            knowledge_list = pers.get("knowledge", [])
-            knowledge = ", ".join(knowledge_list) if knowledge_list else "survival"
+                return (snippet + "\n" + "\n".join(extras)).strip()
+            return snippet
 
-            blocks.append(
-                f"You are {given_name}, a nomad. {voice}. "
-                f"You know about {knowledge}. You speak in first person. "
-                "Keep responses to 1-3 sentences."
-            )
+        # Generic NPC: synthesize from personality
+        pers = self._chat_personality or {}
+        given_name = pers.get("given_name", "Nomad")
+        voice = pers.get("voice", "terse")
+        knowledge_list = pers.get("knowledge", [])
+        knowledge = ", ".join(knowledge_list) if knowledge_list else "survival"
+        return (
+            f"You are {given_name}, a nomad. {voice}. "
+            f"You know about {knowledge}. You speak in first person. "
+            f"Keep responses to 1-{MAX_NPC_SENTENCES} sentences."
+        )
 
-        # Combat self-knowledge block (progressing allies only) — the chat is
-        # the sole surface for ally growth (no UI elements by design), so the
-        # NPC must be able to speak about its own techniques and experience.
-        combat_block = self._build_combat_knowledge_block()
-        if combat_block:
-            blocks.append(combat_block)
-
-        # Jean instruction block + spoiler guard (governs what the NPC — not
-        # Jean — is allowed to reference)
-        chapter = self._get_chapter(player)
-        blocks.append(
+    def _build_conduct_block(self, chapter: str) -> str:
+        """What the NPC may not write, and how far into the story it may see."""
+        return (
             "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's "
             "internal state.\n"
             # Prevention half of the state guard: nothing said in a chat reaches
@@ -1069,12 +1241,6 @@ class ConversationalNPCMixin:
             "would plausibly know by now. Never reveal or hint at events, places, "
             "people, or revelations from later in the story."
         )
-
-        # Jean's own knowledge boundary — governs Jean's dialogue OPTIONS,
-        # generated in the same call as the NPC's line.
-        blocks.append(self._build_jean_context_block(player, chapter))
-
-        return "\n\n".join(blocks)
 
     def _build_jean_context_block(self, player, chapter: str) -> str:
         """Describe what Jean himself has actually experienced so far.
@@ -1142,13 +1308,20 @@ class ConversationalNPCMixin:
         technique_text = (
             "; ".join(techniques) if techniques else "none beyond basic fighting"
         )
+        # No game-terms clause here. It used to be hand-written into this
+        # block, which is emitted ONLY for NPCs with a growth_profile, while
+        # _chat_guard's `game_terms` tripwire scans every NPC — so for every
+        # non-ally the rule was detected but never prevented, costing a
+        # revision round trip the other categories avoid. The two halves had
+        # also drifted to one term in common. Both now come off
+        # _chat_guard._GAME_TERMS, rendered into every system prompt by
+        # prompt_rules_line() above.
         return (
             f"COMBAT SELF-KNOWLEDGE: You fight alongside Jean and you are {tier}. "
             f"Techniques you have mastered: {technique_text}. "
             "If Jean asks about your combat abilities, how you have grown, or your "
-            "techniques, answer naturally from this list in your own voice. Never "
-            "use game terms like 'level', 'experience points', or 'stats' — speak "
-            "of your craft the way a fighter would."
+            "techniques, answer naturally from this list in your own voice, the "
+            "way a fighter speaks of a craft."
         )
 
     def _ensure_personality(self, player):
@@ -1169,13 +1342,22 @@ class ConversationalNPCMixin:
                     e,
                 )
 
-        # Fallback if LLM unavailable. crc32 (not the built-in hash()) because
-        # hash() is salted per process — the "deterministic" pick would
-        # otherwise change every restart.
+        # Fallback if LLM unavailable.
         if not self._chat_personality:
             key = self._chat_npc_key or self.name
-            idx = zlib.crc32(key.encode("utf-8")) % len(_GENERIC_FALLBACKS)
-            self._chat_personality = _GENERIC_FALLBACKS[idx].copy()
+            self._chat_personality = self._stable_pick(key, _GENERIC_FALLBACKS).copy()
+
+    @staticmethod
+    def _stable_pick(key: str, pool: Sequence[_T]) -> _T:
+        """Pick one entry from ``pool``, deterministically for a given ``key``.
+
+        crc32 rather than the built-in ``hash()``: hash() is salted per
+        process, so a "deterministic" pick would change on every restart and
+        the same NPC would brush the player off with a different line each time
+        the server came up. The idiom and that rationale were written out
+        twice, a thousand lines apart.
+        """
+        return pool[zlib.crc32(key.encode("utf-8")) % len(pool)]
 
     @staticmethod
     def _tokenize(text: str) -> Set[str]:
@@ -1228,9 +1410,9 @@ class ConversationalNPCMixin:
         """Repair the holes left by removing a span from a sentence.
 
         Collapses whitespace, closes gaps before punctuation, deduplicates
-        commas, and strips orphan leading/trailing punctuation — so removing
-        "cool" from "that's cool, okay" yields "that's" rather than
-        "that's  , ".
+        commas and terminators, and strips orphan leading/trailing punctuation
+        — so removing "cool" from "that's cool, okay" yields "that's" rather
+        than "that's  , ".
         """
         text = _WS_RUN_PATTERN.sub(" ", text)
         text = _SPACE_BEFORE_PUNCT_PATTERN.sub(r"\1", text)
@@ -1238,6 +1420,11 @@ class ConversationalNPCMixin:
         # A removed sentence-final span leaves its comma glued to the
         # terminator ("It's fine, cool." -> "It's fine,."): drop it.
         text = _SEPARATOR_BEFORE_TERMINATOR_PATTERN.sub("", text)
+        # A removed clause-sized span leaves the previous sentence's terminator
+        # touching its own ("at dawn.. Mind the current."). Runs before the
+        # leading-ellipsis check below, so ".." at the head of a line is
+        # correctly stripped as an orphan while "..." is kept as hesitation.
+        text = _TERMINATOR_RUN_PATTERN.sub(_collapse_terminator_run, text)
         # Strip leading separators — but a leading ellipsis is intentional
         # hesitation ("...fine."), not an orphan, so keep it.
         text = _LEADING_SEPARATOR_PATTERN.sub("", text)
@@ -1366,23 +1553,19 @@ class ConversationalNPCMixin:
         # Memoised: the scan calls this for every NPC line and every flavor
         # beat, and it rebuilt the same set from the same class-level world
         # facts each time. The cache holds a strong reference to the facts
-        # object it was built from, so the identity check below is meaningful.
-        cached = getattr(self, "_allowed_noun_cache", None)
-        if cached is not None:
-            cached_facts, cached_name, cached_given, tokens = cached
-            if cached_facts is facts and cached_name == name and cached_given == given:
-                return tokens
+        # object it was built from, so comparing on it is meaningful.
+        def build() -> Set[str]:
+            tokens: Set[str] = set()
+            sources: List[str] = list((facts or {}).get("allowed_proper_nouns", []))
+            sources.extend(["Jean", "Gorran", name])
+            if given:
+                sources.append(given)
+            for noun in sources:
+                for part in str(noun).replace("-", " ").split():
+                    tokens.add(part.lower())
+            return tokens
 
-        tokens: Set[str] = set()
-        sources: List[str] = list((facts or {}).get("allowed_proper_nouns", []))
-        sources.extend(["Jean", "Gorran", name])
-        if given:
-            sources.append(given)
-        for noun in sources:
-            for part in str(noun).replace("-", " ").split():
-                tokens.add(part.lower())
-        self._allowed_noun_cache = (facts, name, given, tokens)
-        return tokens
+        return self._memoised("_allowed_noun_cache", (facts, name, given), build)
 
     @staticmethod
     def _is_allowed_noun(low: str, allowed: Set[str]) -> bool:
@@ -1471,12 +1654,15 @@ class ConversationalNPCMixin:
     #
     # Each stage takes the working text and reports back what it did: the text,
     # a rejection reason (None when it is happy) and whether it rewrote
-    # anything. The driver below composes them in order. The numbered step
-    # comments this pipeline used to carry are now these functions' docstrings.
+    # anything. The ORDER lives in one place — _qc_npc_text's body and
+    # _apply_content_filters' `stages` tuple — and deliberately not in these
+    # docstrings: they used to be hand-numbered "Stage 1..8", which inserting a
+    # filter renumbered up to four of, and which _apply_content_filters (owner
+    # of three of the numbers) never carried at all.
     # ------------------------------------------------------------------
 
     def _qc_strip_and_check(self, text: str) -> QcResult:
-        """Stage 1: pull out stage directions, then reject empty/noise text."""
+        """Pull out stage directions, then reject empty/noise text."""
         text, aside = self._extract_action_asides(text.strip())
         text = text.strip()
         if not _has_real_npc_text(text):
@@ -1488,7 +1674,7 @@ class ConversationalNPCMixin:
 
     @staticmethod
     def _truncate_at_sentence_boundary(text: str, limit: int) -> str:
-        """Stage 2: cut ``text`` to ``limit`` characters, preferring a boundary.
+        """Cut ``text`` to ``limit`` characters, preferring a boundary.
 
         The boundary must fall in the second half of the window. The old
         backwards scan took the last terminator at or below the cap wherever it
@@ -1515,7 +1701,7 @@ class ConversationalNPCMixin:
 
     @staticmethod
     def _qc_check_jean_dialogue(text: str) -> Optional[str]:
-        """Stage 3: reject a line that speaks for Jean.
+        """Reject a line that speaks for Jean.
 
         Always a rejection, in both modes — the NPC must never write Jean's
         dialogue and there is no safe rewrite.
@@ -1526,7 +1712,7 @@ class ConversationalNPCMixin:
         return None
 
     def _qc_invented_nouns(self, text: str, allow_rewrite: bool) -> FilterResult:
-        """Stage 4: names that are not in the world allow-list.
+        """Substitute or reject names that are not in the world allow-list.
 
         Rejects in strict mode so the retry can name the offending tokens back
         to the model; substitutes in place on the final attempt so one invented
@@ -1556,7 +1742,7 @@ class ConversationalNPCMixin:
         return FilterResult(self._replace_tokens(text, replacements), None, True)
 
     def _qc_slang(self, text: str, allow_rewrite: bool) -> FilterResult:
-        """Stage 5: modern slang and anachronisms."""
+        """Substitute or reject modern slang and anachronisms."""
         if not _SLANG_PATTERN.search(text):
             return FilterResult(text, None, False)
         if not allow_rewrite:
@@ -1573,7 +1759,7 @@ class ConversationalNPCMixin:
         return FilterResult(text, None, True)
 
     def _qc_prohibited(self, text: str, allow_rewrite: bool) -> FilterResult:
-        """Stage 6: phrases this character must never say.
+        """Remove phrases this character must never say.
 
         Removed cleanly — the old "[...]" placeholder was a visible artifact in
         player-facing dialogue. The emptiness check below is guarded by whether
@@ -1627,7 +1813,7 @@ class ConversationalNPCMixin:
     def _qc_check_repetition(
         self, text: str, history: List[Dict[str, Any]]
     ) -> Optional[str]:
-        """Stage 7: reject a line already said earlier in this conversation.
+        """Reject a line already said earlier in this conversation.
 
         The caller's retry loop handles the second attempt. ``text`` is
         tokenized once for the whole scan, and the similarity score is computed
@@ -1669,10 +1855,12 @@ class ConversationalNPCMixin:
         repair) comes from _chat_guard.
         """
         sentences = _split_sentences(text)
-        # The sentence regex cannot capture a leading ellipsis (it needs a
-        # non-terminator first), so re-attach intentional hesitation.
-        if sentences and text.lstrip().startswith("..."):
-            sentences[0] = "..." + sentences[0]
+        # Re-attach intentional hesitation, *with* the whitespace that followed
+        # it: the splitter strips the front of each fragment, so re-prefixing a
+        # bare "..." turned "... Fine." into "...Fine.".
+        lead = _LEADING_ELLIPSIS_PATTERN.match(text.lstrip())
+        if sentences and lead:
+            sentences[0] = lead.group(0) + sentences[0]
         if len(sentences) > 1:
             tail = sentences[-1].rstrip(_CLOSING_QUOTES)
             if (not tail or tail[-1] not in _TERMINATORS) and len(
@@ -1682,23 +1870,28 @@ class ConversationalNPCMixin:
         return sentences
 
     def _qc_normalise_sentences(self, text: str) -> str:
-        """Stage 8: cap the reply at three sentences and close it properly.
+        r"""Cap the reply at MAX_NPC_SENTENCES sentences and close it properly.
 
         Drops a cut-off trailing fragment first (see
         :meth:`_split_dropping_dangling_fragment`), then applies the quote-aware
         terminal punctuation from _chat_guard.
 
-        The final whitespace collapse is a containment step, not cosmetics: the
-        accepted line is written back into prompts that are structured by
-        newlines (``revise_turn``'s options block, ``_format_history``'s
-        speaker-labelled rows), so a newline surviving QC would let model output
-        forge a row there. The production adapter happens to collapse whitespace
-        upstream; the legacy adapter path this module still supports does not,
-        so the guarantee belongs here, at the last point every line passes.
+        The closing ``neutralise_model_text`` is a containment step, not
+        cosmetics: the accepted line is written back into prompts that are
+        structured by newlines and tags (``revise_turn``'s options block,
+        ``_format_history``'s speaker-labelled rows), so a newline or a
+        ``</player_input>`` surviving QC would let model output forge a row or
+        close the fence. This used to be a bare ``\s+`` collapse — the exact
+        spelling ``ai/llm_client.py``'s ``sanitize_text`` documents as
+        INSUFFICIENT, since it leaves ``\x1b``, ``\x00-\x08``, ``\x7f`` and the
+        tag itself exactly where they were. The production adapter happens to
+        neutralise upstream; the legacy adapter path this module still supports
+        does not, so the guarantee belongs here, at the last point every line
+        passes. ``neutralise_model_text`` subsumes the whitespace collapse.
         """
         sentences = self._split_dropping_dangling_fragment(text)
         joined = " ".join(sentences[:MAX_NPC_SENTENCES])
-        return _ensure_terminal_punctuation(_WS_RUN_PATTERN.sub(" ", joined).strip())
+        return _ensure_terminal_punctuation(neutralise_model_text(joined))
 
     def _qc_npc_text(
         self, text: str, history: List[Dict[str, Any]], allow_rewrite: bool = True
@@ -1807,9 +2000,9 @@ class ConversationalNPCMixin:
         The whole list is validated *before* it is cut to three. Slicing first
         meant a malformed option at index 0 made a perfectly good option at
         index 3 unreachable — the salvage this exists to provide, defeated by
-        the first line of its own loop. Tone defaults are keyed on the KEPT
-        position rather than the source position, so a dropped option cannot
-        leave the player with no "direct" reply on offer.
+        the first line of its own loop. Tones are re-keyed over the KEPT list
+        (see below), so a dropped option cannot leave the player two replies
+        labelled the same and none "guarded".
         """
         if not isinstance(options, list) or not options:
             return []
@@ -1819,7 +2012,13 @@ class ConversationalNPCMixin:
             if not isinstance(opt, dict) or "text" not in opt:
                 continue
 
-            text = str(opt.get("text", "")).strip()
+            # Neutralised, not merely stripped. This text is spliced into
+            # ``revise_turn``'s newline-delimited options block, so the same
+            # containment ``_qc_normalise_sentences`` applies to the spoken
+            # line is owed to an option — the comment below already calls it
+            # "unbounded untrusted text" and the code then trusted it.
+            # ``neutralise_model_text`` subsumes the strip and the collapse.
+            text = neutralise_model_text(opt.get("text", ""))
             # Over-length options are DROPPED, not clipped. ai/llm_client.py
             # trims to the same `MAX_OPTION_CHARS` at a word boundary before
             # this ever runs, so anything still over-length came from an
@@ -1848,13 +2047,32 @@ class ConversationalNPCMixin:
             if len(kept) >= _JEAN_OPTION_COUNT:
                 break
 
-        # Tone defaults are assigned last, over the final kept list, so neither
-        # a malformed option nor a near-duplicate can leave a hole in the
+        # Tones are assigned last, over the final kept list, so neither a
+        # malformed option nor a near-duplicate can leave a hole in the
         # direct/guarded/open cycle the UI colours its three buttons from.
-        return [
-            {"tone": tone or JEAN_TONES[index % len(JEAN_TONES)], "text": text}
-            for index, (tone, text) in enumerate(kept)
-        ]
+        #
+        # A model tone survives only while it is still free. `tone or <default>`
+        # — what this was — is inert on the production path, because
+        # ai/llm_client.py already assigns every option a valid tone, so nothing
+        # here was ever None; a mid-list drop therefore shipped whatever
+        # positional default llm_client had given the option that moved up, and
+        # that is how two "direct" replies and no "guarded" one reached the
+        # player. Reassignment draws from the tones nothing claimed, which
+        # cannot run out: `kept` is capped at _JEAN_OPTION_COUNT == len(
+        # JEAN_TONES), so duplicates and holes always balance.
+        free = [t for t in JEAN_TONES if t not in {tone for tone, _text in kept}]
+        assigned: List[Dict[str, str]] = []
+        seen: Set[str] = set()
+        for tone, text in kept:
+            if tone is None or tone in seen:
+                tone = (
+                    free.pop(0)
+                    if free
+                    else JEAN_TONES[len(assigned) % len(JEAN_TONES)]
+                )
+            seen.add(tone)
+            assigned.append({"tone": tone, "text": text})
+        return assigned
 
     def _top_up_jean_options(
         self, options: List[Dict[str, str]]
@@ -1927,22 +2145,18 @@ class ConversationalNPCMixin:
                 if getattr(move, "name", "")
             )
 
-        cached = getattr(self, "_guard_topic_cache", None)
-        if cached is not None:
-            cached_config, cached_names, cached_topics = cached
-            if cached_config is config and cached_names == move_names:
-                return cached_topics
+        def build() -> Set[str]:
+            topics = {"gorran"}
+            if getattr(self, "growth_profile", None):
+                topics |= set(_ALLY_CRAFT_TOPICS)
+                topics |= set(move_names)
+            for entry in (config or {}).get("knowledge_scope") or []:
+                for word in _TOPIC_WORD_PATTERN.findall(str(entry).lower()):
+                    if word not in _TOPIC_STOPWORDS:
+                        topics.add(word)
+            return topics
 
-        topics = {"gorran"}
-        if getattr(self, "growth_profile", None):
-            topics |= set(_ALLY_CRAFT_TOPICS)
-            topics |= set(move_names)
-        for entry in (config or {}).get("knowledge_scope") or []:
-            for word in _TOPIC_WORD_PATTERN.findall(str(entry).lower()):
-                if word not in _TOPIC_STOPWORDS:
-                    topics.add(word)
-        self._guard_topic_cache = (config, move_names, topics)
-        return topics
+        return self._memoised("_guard_topic_cache", (config, move_names), build)
 
     def _request_guard_revision(
         self, adapter, system: str, npc_text: str, options: List[Dict[str, str]], flags
@@ -2494,6 +2708,35 @@ class ConversationalNPCMixin:
             )
         return response, conversation_ended
 
+    def _retract_guarded_loquacity_gain(self, loquacity_delta: int) -> None:
+        """Take back a loquacity *gain* granted by a turn the guard had to fix.
+
+        ``loquacity_delta`` is the second structured field of a chat response
+        that reaches the engine (see ``_chat_guard``'s module docstring): it
+        persists in the save file, and a positive value RESTORES the NPC's
+        willingness to talk. A turn the model had to be talked out of therefore
+        does not also get to buy itself more conversation — and more provider
+        spend — which is the same reasoning that zeroes ``reputation_delta``.
+
+        Only a gain is retracted. Cancelling a drain would let a conversation
+        that trips the guard on every turn run forever, which is the opposite
+        of what this protects. ``conversation_ended`` is deliberately NOT
+        re-derived: it has already decided whether Jean gets options this
+        round, and a retraction can only lower loquacity, so the worst case is
+        that the conversation ends one turn later than the strict number says —
+        the same slack any drain landing on the threshold has.
+        """
+        if loquacity_delta <= 0:
+            return
+        self.loquacity_current = max(0, self.loquacity_current - loquacity_delta)
+        logger.info(
+            "chat_respond retracting loquacity_delta=+%s: the state guard "
+            "tripped on this turn. npc=%s current=%s",
+            loquacity_delta,
+            self.name,
+            self.loquacity_current,
+        )
+
     def _apply_reputation(self, player, reputation_delta: int) -> int:
         """Apply the NPC's in-character reaction to Jean's reputation."""
         if not hasattr(player, "reputation"):
@@ -2511,6 +2754,7 @@ class ConversationalNPCMixin:
         assembled: Turn,
         guardable: bool,
         deadline: Optional[float],
+        on_tripped=None,
     ) -> GuardedTurn:
         """Run the state guard over an assembled turn, then persist it.
 
@@ -2520,6 +2764,13 @@ class ConversationalNPCMixin:
         the model next round, so persisting the raw line would feed the
         implication back in and breed more of them. Only guarded text is ever
         written.
+
+        ``on_tripped`` is the same argument for state the tripped verdict
+        invalidates. It runs between the guard and the persist because the
+        persist writes ``self.loquacity_current`` into the save file, so a
+        caller correcting that number afterwards would leave the file holding
+        the value the guard had just disallowed. ``chat_open`` passes none —
+        an opening line never moves loquacity.
 
         ``guardable`` is False when the line is authored rather than generated
         (an LLM turn that failed, so the fallback pools supplied both the line
@@ -2532,6 +2783,8 @@ class ConversationalNPCMixin:
         guarded = GuardedTurn(assembled, False)
         if guardable:
             guarded = self._guard_turn(adapter, system, assembled, deadline)
+        if guarded.tripped and on_tripped is not None:
+            on_tripped()
         self._save_exchange_to_persistence(
             player,
             guarded.turn.npc_text,
@@ -2546,6 +2799,7 @@ class ConversationalNPCMixin:
         npc_key: str,
         player,
         turn: Turn,
+        *,
         llm_available: bool,
         conversation_ended: bool,
     ) -> Dict[str, Any]:
@@ -2555,6 +2809,12 @@ class ConversationalNPCMixin:
         ``chat_respond`` had been given a builder — which is how the brush-off
         payload came to be spelled out a third time, one edit away from
         disagreeing with its sibling about what a response looks like.
+
+        Everything past ``turn`` is keyword-only on all three payload builders.
+        The two adjacent bools here were passed POSITIONALLY by both wrappers,
+        which is the exact transposition hazard ``_respond_payload``'s docstring
+        claims was fixed — it had only moved one frame down. A convention the
+        signature enforces beats a convention a docstring asks for.
         """
         return {
             "success": True,
@@ -2573,6 +2833,7 @@ class ConversationalNPCMixin:
         npc_key: str,
         player,
         turn: Turn,
+        *,
         llm_available: bool,
         conversation_ended: bool,
     ) -> Dict[str, Any]:
@@ -2583,7 +2844,11 @@ class ConversationalNPCMixin:
         ``conversation_ended=True``.
         """
         payload = self._base_payload(
-            npc_key, player, turn, llm_available, conversation_ended
+            npc_key,
+            player,
+            turn,
+            llm_available=llm_available,
+            conversation_ended=conversation_ended,
         )
         payload.update(
             {
@@ -2599,33 +2864,35 @@ class ConversationalNPCMixin:
         npc_key: str,
         player,
         turn: Turn,
+        *,
         conversation_quality: str,
         conversation_ended: bool,
         llm_available: bool,
-        reputation: int,
         reputation_delta: int,
     ) -> Dict[str, Any]:
         """Assemble the /respond response body.
 
         Call after the round has been persisted and the reputation applied: the
         exchange count reads ``self._chat_history``, which aliases the persisted
-        list, and ``reputation`` is the post-application total.
+        list, and the ``reputation`` total ``_base_payload`` reads off the
+        player is the post-application one. It used to be passed in as well and
+        then written over the identical value — one parameter for a number the
+        base builder already had, and one more chance for the two to disagree.
 
-        Pass everything past ``npc_key`` by keyword. The sole call site used to
-        pass all seven positionally, with two adjacent bools followed by two
-        adjacent ints, so transposing either pair compiled cleanly and shipped a
-        wrong payload — a conversation reported as ended because it was reported
-        as LLM-backed, or a reputation reported as its own delta.
+        Everything past ``turn`` is keyword-only (see :meth:`_base_payload`).
         """
         payload = self._base_payload(
-            npc_key, player, turn, llm_available, conversation_ended
+            npc_key,
+            player,
+            turn,
+            llm_available=llm_available,
+            conversation_ended=conversation_ended,
         )
         payload.update(
             {
                 "npc_response": turn.npc_text,
                 "conversation_quality": conversation_quality,
                 "turn": len(self._chat_history),
-                "reputation": reputation,
                 "reputation_delta": reputation_delta,
             }
         )
@@ -2649,7 +2916,6 @@ class ConversationalNPCMixin:
     def chat_open(self, player) -> Dict[str, Any]:
         """Start conversation. Returns opening line + 3 Jean options."""
         try:
-            deadline = time.monotonic() + _CHAT_DEADLINE_SECONDS
             npc_key = self._load_turn_state(player)
 
             # Loquacity cutoff
@@ -2669,6 +2935,10 @@ class ConversationalNPCMixin:
                 )
 
             system, adapter, llm_available = self._prepare_turn_context(player)
+            # Set once the adapter is known: the budget is sized against that
+            # adapter's per-call timeout (see :func:`_turn_deadline`), and the
+            # brush-off path above never opens a provider stage at all.
+            deadline = _turn_deadline(adapter)
             logger.info(
                 "chat_open start npc=%s llm_available=%s has_adapter=%s history_len=%s",
                 self.name,
@@ -2757,21 +3027,27 @@ class ConversationalNPCMixin:
         a contract change.
         """
         try:
-            deadline = time.monotonic() + _CHAT_DEADLINE_SECONDS
-
-            # Sanitize before anything else. This text is not merely sent to the
+            # Bound first, then sanitize. This text is not merely sent to the
             # provider once: it is written into the persisted history that every
             # later prompt in the conversation replays, and that history reaches
             # the save file — so a crafted line keeps working for the rest of the
-            # conversation and beyond. Then bound the engine-side copy: the route
-            # caps the field at 4000 chars, but replayed rows multiply token
-            # spend for the rest of the conversation, and 500 is generous next to
-            # the 300-char NPC lines and 160-char options.
-            jean_text = _sanitize_player_text(jean_text)[:MAX_JEAN_TEXT_CHARS]
+            # conversation and beyond.
+            #
+            # The cap goes FIRST because src/text_safety.py's convergence bound
+            # (64 passes, then fail closed) was reasoned about a 500-character
+            # payload, and the route only caps the field at _MAX_FIELD_LEN =
+            # 4000. Capping afterwards — as this did — handed the neutraliser
+            # eight times the input its bound was sized for, on the one path
+            # where an attacker chooses the length. Bounding first also bounds
+            # the replayed rows, which multiply token spend for the rest of the
+            # conversation; 500 is generous next to the 300-char NPC lines and
+            # 160-char options.
+            jean_text = neutralise_player_text(jean_text[:MAX_JEAN_TEXT_CHARS])
 
             npc_key = self._load_turn_state(player)
             self._record_jean_line(player, jean_text)
             system, adapter, llm_available = self._prepare_turn_context(player)
+            deadline = _turn_deadline(adapter)
             logger.info(
                 "chat_respond start npc=%s llm_available=%s history_len=%s jean_text_chars=%s",
                 self.name,
@@ -2789,18 +3065,22 @@ class ConversationalNPCMixin:
                 jean_text=jean_text,
                 deadline=deadline,
             )
-            conversation_quality = "neutral"
-            reputation_delta = 0
-            loquacity_delta = None
-            npc_response = None
-            npc_flavor = ""
+            # The defaults come off TurnOutcome rather than being re-spelled
+            # here, thousands of lines below where it declares them.
+            # conversation_quality keys _LOQUACITY_DRAIN, so a divergence
+            # between the two copies would silently change how fast every
+            # fallback conversation winds down.
+            outcome = model_turn if model_turn is not None else TurnOutcome(npc_text="")
+            npc_flavor = outcome.npc_flavor
+            conversation_quality = outcome.conversation_quality
+            reputation_delta = outcome.reputation_delta
+            loquacity_delta = outcome.loquacity_delta
+            # The one field that is not a TurnOutcome default: None is the
+            # sentinel selecting the deterministic fallback line below, where
+            # TurnOutcome's own default for npc_text is "".
+            npc_response = model_turn.npc_text if model_turn is not None else None
 
             if model_turn is not None:
-                npc_response = model_turn.npc_text
-                npc_flavor = model_turn.npc_flavor
-                conversation_quality = model_turn.conversation_quality
-                reputation_delta = model_turn.reputation_delta
-                loquacity_delta = model_turn.loquacity_delta
                 logger.info(
                     "chat_respond LLM turn succeeded. npc=%s npc_text_chars=%s quality=%s",
                     self.name,
@@ -2850,6 +3130,9 @@ class ConversationalNPCMixin:
                 Turn(npc_response, npc_flavor, jean_options),
                 guardable=model_turn is not None,
                 deadline=deadline,
+                on_tripped=lambda: self._retract_guarded_loquacity_gain(
+                    loquacity_delta
+                ),
             )
             self._bump_conversation_count(player)
 
@@ -2867,7 +3150,9 @@ class ConversationalNPCMixin:
                     self.name,
                 )
                 reputation_delta = 0
-            new_reputation = self._apply_reputation(player, reputation_delta)
+            # Called for the write, not the return value: _base_payload reads
+            # the same post-application total straight off the player.
+            self._apply_reputation(player, reputation_delta)
 
             return self._respond_payload(
                 npc_key,
@@ -2876,7 +3161,6 @@ class ConversationalNPCMixin:
                 conversation_quality=conversation_quality,
                 conversation_ended=conversation_ended,
                 llm_available=llm_available,
-                reputation=new_reputation,
                 reputation_delta=reputation_delta,
             )
         except Exception as e:
@@ -2911,33 +3195,32 @@ class ConversationalNPCMixin:
             lines = self._chat_char_config.get("closing_lines_when_exhausted", [])
             if lines:
                 return lines[0]
-        # Generic fallback. crc32 (not the built-in hash()) because hash() is
-        # salted per process — the "deterministic" pick would otherwise
-        # change every restart.
-        fallbacks = [
-            "They're not in the mood to talk.",
-            "A brief shake of the head.",
-            "Not now.",
-        ]
-        idx = zlib.crc32(self.name.encode("utf-8")) % len(fallbacks)
-        return fallbacks[idx]
+        return self._stable_pick(self.name, _BRUSH_OFF_LINES)
 
-    def _next_from_pool(self, pool: List[str]) -> Optional[str]:
-        """Return the next line from ``pool``, rotating via the NPC-line index.
+    def _next_from_pool(
+        self, pool: Sequence[_T], counter_attr: str = "_chat_npc_fallback_idx"
+    ) -> Optional[_T]:
+        """Return the next entry from ``pool``, rotating via ``counter_attr``.
+
+        Two rotations exist and must not lock-step: the NPC's fallback lines
+        and Jean's fallback option sets keep separate counters, which is the
+        only thing the two callers ever differed by. The second one carried a
+        docstring saying "same rationale as ``_next_from_pool``", which is a
+        good sign the two should have been one function.
 
         Always advances the counter (even for a single-entry pool) so repeated
         fallback calls stay predictable and never silently reset. Uses
-        ``getattr``/instance-``setattr`` rather than assuming
-        ``_chat_npc_fallback_idx`` was set by ``_init_chat_attrs`` — minimal
-        NPC test doubles and any future caller that skips full init still
-        rotate correctly instead of raising ``AttributeError``.
+        ``getattr``/instance-``setattr`` rather than assuming the counter was
+        set by ``_init_chat_attrs`` — minimal NPC test doubles and any future
+        caller that skips full init still rotate correctly instead of raising
+        ``AttributeError``.
         """
         if not pool:
             return None
-        idx = getattr(self, "_chat_npc_fallback_idx", 0)
-        line = pool[idx % len(pool)]
-        self._chat_npc_fallback_idx = idx + 1
-        return line
+        idx = getattr(self, counter_attr, 0)
+        entry = pool[idx % len(pool)]
+        setattr(self, counter_attr, idx + 1)
+        return entry
 
     def _get_fallback_npc_line(
         self, is_opening: bool, player, exhausted: bool = False
@@ -3003,13 +3286,12 @@ class ConversationalNPCMixin:
         return "Nothing to say right now."
 
     def _get_fallback_jean_options(self) -> List[Dict[str, str]]:
-        """Return fallback Jean options, cycling through pool.
+        """Return fallback Jean options, cycling through the pool.
 
         Returns copies (not the shared module-level dicts) so callers can
-        never mutate the pool, and tolerates minimal test doubles that skip
-        _init_chat_attrs (same rationale as _next_from_pool).
+        never mutate the pool.
         """
-        idx = getattr(self, "_chat_fallback_idx", 0)
-        pool = _JEAN_FALLBACK_POOL[idx % len(_JEAN_FALLBACK_POOL)]
-        self._chat_fallback_idx = idx + 1
-        return [dict(o) for o in pool]
+        pool = self._next_from_pool(
+            _JEAN_FALLBACK_POOL, counter_attr="_chat_fallback_idx"
+        )
+        return [dict(o) for o in (pool or ())]

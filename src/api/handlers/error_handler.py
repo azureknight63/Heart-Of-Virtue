@@ -10,7 +10,35 @@ handler, since it invites drift between two response shapes for the same
 status code.
 """
 
+import logging
+
 from flask import jsonify
+
+# The 500 and unhandled-exception handlers below are the app's highest-volume
+# traceback source. They used to call ``traceback.print_exc()``, which writes
+# straight to stderr and never touches the logging pipeline — so
+# ``src/api/app.py``'s ``_RedactSecretsFilter``, installed on every handler
+# this app owns precisely to keep credentials out of emitted tracebacks, never
+# saw a single one of them. ``logger.exception`` routes the same detail
+# through that filter, and into LOG_FILE with it.
+logger = logging.getLogger(__name__)
+
+
+def _request_label():
+    """``METHOD /path`` for the current request, or ``"<no request>"``.
+
+    ``traceback.print_exc()`` gave the traceback and nothing else, so a 500 in
+    the log could not be tied to the call that produced it. Method and path
+    only, deliberately: a query string or a request body can carry a token,
+    and there is no reason to hand one to the redactor to catch when it need
+    never be logged in the first place.
+    """
+    try:
+        from flask import request
+
+        return "%s %s" % (request.method, request.path)
+    except Exception:  # pragma: no cover - outside a request context
+        return "<no request>"
 
 
 def register_error_handlers(app):
@@ -52,9 +80,7 @@ def register_error_handlers(app):
     def internal_error(error):
         """Handle 500 Internal Server Error."""
         # Log the detail server-side; never leak str(error) to clients.
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Unhandled 500 error serving %s", _request_label())
         return (
             jsonify(
                 {
@@ -70,9 +96,7 @@ def register_error_handlers(app):
     @app.errorhandler(Exception)
     def generic_error(error):
         """Handle any unhandled exceptions."""
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Unhandled exception serving %s", _request_label())
 
         return (
             jsonify(

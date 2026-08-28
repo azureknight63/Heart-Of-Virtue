@@ -40,10 +40,22 @@ for _key_env in PROVIDER_KEY_ENVS:
 os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
 # Same reason, different cost: .env ships LOG_LEVEL=DEBUG, so once db.py's
 # load_dotenv() has run the whole suite pays formatting and stderr writes for
-# every logger.debug in the engine. create_app() also pins WARNING for TESTING
-# configs; this covers the code that never builds an app. Assigned, not
-# .pop()ed, for the reason above.
-os.environ["LOG_LEVEL"] = "WARNING"
+# every logger.debug in the engine.
+#
+# Blanked rather than set to "WARNING". Both silence the suite -- Python's root
+# default is already WARNING and src/api/app.py never raises it -- but a pinned
+# value puts every pytest run down create_app()'s *explicit level* path, so
+# `_configure_logging`'s `level is None` -> NOTSET branch never executed under
+# pytest at all. That branch is what lets a bare `caplog.set_level(INFO)` reach
+# app records, and app.py documents it as such; pinning made the documented
+# behaviour true only in tests that first deleted this variable.
+#
+# Blanked, not .pop()ed, for the reason above: `load_project_env()` runs again
+# at src/api/rate_limiter.py import time with dotenv's `override=False`, which
+# refills a *deleted* key straight from .env (measured: LOG_LEVEL comes back as
+# DEBUG) and leaves an assigned empty one alone. `_log_level_setting()` in
+# app.py reads blank as unset for exactly this reason.
+os.environ["LOG_LEVEL"] = ""
 
 # Hermes itself exposes a top-level utils.py; the project map editor uses the
 # repository's utils/ package. Remove the already-loaded helper module so the

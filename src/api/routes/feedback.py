@@ -9,7 +9,11 @@ import logging
 import requests
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player
-from src.api.rate_limiter import client_ip, limiter_from_env
+from src.api.rate_limiter import (
+    client_ip,
+    limiter_from_env,
+    rate_limited_response,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -42,11 +46,44 @@ _MARKDOWN_UNSAFE = re.compile(r"[*_`\[\]()#\\]")
 _ZWSP = "​"
 
 # The constructs that make GitHub *act* on player-supplied text rather than
-# merely display it: "@name" notifies a real account, "#123" cross-links (and
-# back-links) a real issue, and "](" is the half of a markdown link that lets
-# the visible label disagree with the destination. Everything else about the
-# player's prose is left alone deliberately — see _neutralise_github_markup.
-_GITHUB_ACTIVATORS = re.compile(r"(?<![0-9A-Za-z_])[@#](?=[0-9A-Za-z])|\]\(")
+# merely display it: "@name" notifies a real account, an issue reference
+# cross-links (and back-links) a real issue, and a link whose visible label can
+# disagree with its destination is a phishing primitive. Everything else about
+# the player's prose is left alone deliberately — see
+# _neutralise_github_markup.
+#
+# The issue-reference spellings below are the ones GitHub's "Autolinked
+# references and URLs" doc lists as producing the *same* autolink: "#26",
+# "GH-26", "jlord/sheetsee.js#26", and the full
+# "https://github.com/jlord/sheetsee.js/issues/26" URL. A word-boundary rule
+# on "#" alone caught only the first of the four — "owner/repo#26" has an
+# alphanumeric immediately before the "#" and sailed through the lookbehind.
+# The raw-HTML rule covers the subset GitHub renders rather than escapes:
+# "<a href>" is the same label-vs-destination hazard as "](", and "<details>"
+# is documented under "Organizing information with collapsed sections".
+#
+# Deliberately NOT defused, so the next reader knows it was weighed rather
+# than missed: bare 40-character commit SHAs and the "user@sha" /
+# "owner/repo@sha" forms. Those autolink too, but a 40-hex run is exactly what
+# a pasted stack trace or save hash looks like, and a commit link does not
+# write into the issue tracker the way an issue cross-reference does.
+#
+# Every alternative is written so the character to defuse is the LAST one
+# consumed, because the substitution appends the zero-width space to the whole
+# match; context that must survive intact is expressed as a lookaround.
+_GITHUB_ACTIVATORS = re.compile(
+    r"""
+      (?<![0-9A-Za-z_])[@#](?=[0-9A-Za-z])            # @mention, #123
+    | (?<![0-9A-Za-z_])(?i:gh)(?=-[0-9])              # GH-123
+    | (?<![0-9A-Za-z_./-])
+      [0-9A-Za-z_.-]+/[0-9A-Za-z_.-]+\#(?=[0-9])      # owner/repo#123
+    | (?<![0-9A-Za-z_])(?i:github)                    # .../issues/123 URLs
+      (?=\.com/[0-9A-Za-z_.-]+/[0-9A-Za-z_.-]+/(?:issues|pull|commit)/)
+    | \](?=[(\[:])                                    # ](url)  [a][b]  [b]: url
+    | <(?=[A-Za-z/!])                                 # <a href=...>, <details>
+    """,
+    re.VERBOSE,
+)
 
 # Control characters that have no business in an issue body. Newline, tab and
 # carriage return are kept; ESC (which would otherwise reach any terminal that
@@ -62,17 +99,24 @@ def _neutralise_github_markup(text: str) -> str:
     person and ``#123`` posted a back-reference onto a real issue — a write
     into the project's tracker from an authenticated game client.
 
-    The username and title are scrubbed with :data:`_MARKDOWN_UNSAFE` instead,
-    because both are short labels and losing their punctuation costs nothing.
-    Doing the same to a bug report's *body* would be a bad trade: it strips
-    parentheses, underscores and backticks out of the reproduction steps the
-    report exists to convey. So the bodies get this narrower rule, which
-    removes the activation and keeps the text.
+    The title is scrubbed with :data:`_MARKDOWN_UNSAFE` and
+    :data:`_CONTROL_CHARS` instead, because it is a short label and losing its
+    punctuation costs nothing — and because GitHub renders a title as plain
+    text, so it has no activation to defuse. Doing the same to a bug report's
+    *body* would be a bad trade: it strips parentheses,
+    underscores and backticks out of the reproduction steps the report exists
+    to convey. So the bodies get this narrower rule, which removes the
+    activation and keeps the text.
+
+    The username gets *both*: :data:`_MARKDOWN_UNSAFE` first, then this. That
+    regex contains no ``@``, and ``AuthService.create_user`` validates a
+    username on length alone, so ``@azureknight63`` is a registrable account
+    name and every non-anonymous submission from it mentioned a real person.
     """
     text = _CONTROL_CHARS.sub("", text)
-    return _GITHUB_ACTIVATORS.sub(
-        lambda m: m.group(0)[0] + _ZWSP + m.group(0)[1:], text
-    )
+    # The zero-width space goes *after* the whole match: every alternative in
+    # _GITHUB_ACTIVATORS ends on the character being defused.
+    return _GITHUB_ACTIVATORS.sub(lambda m: m.group(0) + _ZWSP, text)
 
 
 # Simple in-memory rate limiter: 10 submissions per client per hour.
@@ -290,22 +334,23 @@ def submit_feedback():
     """
     session_manager, session, player, error = get_session_and_player()
     if error:
-        return error[0], error[1]
+        return error
 
     if _is_rate_limited(session):
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Too many feedback submissions. Please wait before trying again.",
-                }
-            ),
-            429,
+        return rate_limited_response(
+            "Too many feedback submissions. Please wait before trying again."
         )
 
     try:
-        username = _MARKDOWN_UNSAFE.sub(
-            "", getattr(session, "username", "Unknown Player")
+        # Both scrubs, in this order. `_MARKDOWN_UNSAFE` is the blunt one a
+        # short label can afford; `_neutralise_github_markup` then handles the
+        # activators that regex has no character for — chiefly `@`, which
+        # matters because `AuthService.create_user` validates a username on
+        # length alone, so `@azureknight63` is registrable and reached the
+        # attribution line of every non-anonymous issue as a live mention.
+        # It strips control characters from the label as well.
+        username = _neutralise_github_markup(
+            _MARKDOWN_UNSAFE.sub("", getattr(session, "username", "Unknown Player"))
         )
 
         data = request.get_json(silent=True) or {}
@@ -314,11 +359,20 @@ def submit_feedback():
         raw_type = data.get("type", "")
         feedback_type = raw_type.lower() if isinstance(raw_type, str) else ""
         raw_title = data.get("title") or ""
-        # Same scrub as the username: a title is a short label, so stripping
-        # its markdown punctuation costs nothing and keeps it from carrying a
-        # mention or a cross-reference into the tracker.
+        # GitHub renders an issue *title* as plain text — no markdown, no
+        # autolinks — so the `_MARKDOWN_UNSAFE` scrub here is tidiness and
+        # defence in depth, NOT the thing standing between a title and a live
+        # mention. (The comment that used to sit here claimed otherwise. A
+        # title cannot carry a mention or a cross-reference in the first
+        # place, which is why no `_neutralise_github_markup` pass is added.)
+        #
+        # `_CONTROL_CHARS` is a different matter, and its absence here was a
+        # real asymmetry: field *bodies* have had ESC and friends stripped
+        # since `_neutralise_github_markup` existed, while a title carried
+        # them straight into the tracker — and into every terminal that
+        # later cats the issue.
         title = (
-            _MARKDOWN_UNSAFE.sub("", raw_title).strip()
+            _CONTROL_CHARS.sub("", _MARKDOWN_UNSAFE.sub("", raw_title)).strip()
             if isinstance(raw_title, str)
             else ""
         )

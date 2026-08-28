@@ -386,7 +386,15 @@ class TestLoginPerIpThrottle:
                     environ_base=self._ATTACKER,
                 )
         assert rv.status_code == 429
-        assert rv.get_json()["error"] == "rate_limited"
+        body = rv.get_json()
+        assert body["error"] == "rate_limited"
+        # `message`, not `error`, carries the prose. LoginPage.jsx renders
+        # `data.message` for any non-401 / non-5xx auth failure, so a body
+        # without it degrades silently to the generic "Authentication
+        # failed" copy and the player is never told they are throttled.
+        assert body["message"] == (
+            "Too many failed login attempts. Please try again later."
+        )
 
     def test_successful_login_does_not_clear_ip_counter(self, app):
         """A valid login clears only the per-account key; the IP evidence of an
@@ -713,7 +721,11 @@ class TestRegisterThrottle:
                     assert self._register(c, "198.51.100.20").status_code == 201, i
                 rv = self._register(c, "198.51.100.20")
         assert rv.status_code == 429
-        assert rv.get_json()["error"] == "rate_limited"
+        body = rv.get_json()
+        assert body["error"] == "rate_limited"
+        assert body["message"] == (
+            "Too many registration attempts. Please try again later."
+        )
 
     def test_it_is_keyed_per_source(self, app):
         from src.api.routes import auth as auth_module

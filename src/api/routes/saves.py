@@ -16,7 +16,7 @@ async def list_saves():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         if not hasattr(session, "db_user_id") or not session.db_user_id:
             return jsonify({"success": True, "saves": []}), 200
@@ -49,7 +49,7 @@ async def create_save():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         if not hasattr(session, "db_user_id") or not session.db_user_id:
             return (
@@ -138,7 +138,7 @@ async def load_save(save_id):
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         if not hasattr(session, "db_user_id") or not session.db_user_id:
             return (
@@ -201,7 +201,7 @@ async def delete_save(save_id):
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         if not hasattr(session, "db_user_id") or not session.db_user_id:
             return (
@@ -265,7 +265,7 @@ def new_game():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         success = session_manager.start_new_game(session.session_id)
 

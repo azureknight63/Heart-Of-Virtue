@@ -760,6 +760,26 @@ class _JSONTools:
         return neutralise_model_text(t)[:500]
 
 
+def _quote_for_prompt(text: Any) -> str:
+    """Escape text that is about to be interpolated inside a quoted span.
+
+    ``neutralise_model_text`` removes the fence tag and every line break, so
+    what is left that can forge structure is the delimiter the *caller* chose.
+    A prompt line reading ``Bob just said: "<value>"`` ends at the first double
+    quote inside ``<value>``, and everything after it reads as prose the prompt
+    itself wrote — which is instruction position by another name.
+
+    Backslash first, then the quote, in that order: escaping the quote first
+    would leave the backslash it introduced open to being escaped again. The
+    result is what every model already reads as an escaped quote.
+
+    Not folded into ``neutralise_model_text``: that function is about what the
+    *text* may contain, this is about the syntax of one call site. A caller
+    that fences instead of quoting needs neither.
+    """
+    return str(text).replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _bench_now() -> datetime:
     """The clock the model-bench windows are measured on: aware UTC.
 
@@ -3423,24 +3443,41 @@ class NpcChatLLMAdapter(GenericLLMClient):
         it, so a wrong type here is not one bad reply — it is a saved NPC that
         raises on every prompt build for the rest of the game.
 
-        Strings are neutralised and length-capped (they are spliced straight
-        into the system prompt), ``knowledge`` is forced to a list of non-empty
-        strings, ``attitude_to_strangers`` must be one of the four the prompt
-        offers, and ``loquacity_base`` must be an integer inside the range the
-        prompt asks for. Anything that cannot be coerced fails the whole seed
-        rather than being defaulted: the caller has a hand-written pool to fall
-        back on, which is better than a silently half-invented character.
+        The three string fields must actually be ``str`` before anything else
+        happens to them, and are then neutralised and length-capped (they are
+        spliced straight into the system prompt); ``knowledge`` is forced to a
+        list of non-empty strings, ``attitude_to_strangers`` must be one of the
+        four the prompt offers, and ``loquacity_base`` must be an integer
+        inside the range the prompt asks for. Anything that cannot be coerced
+        fails the whole seed rather than being defaulted: the caller has a
+        hand-written pool to fall back on, which is better than a silently
+        half-invented character.
         """
         result: Dict[str, Any] = {}
         for key in ("given_name", "voice", "speech_sample"):
+            raw = parsed.get(key)
+            # The type gate has to come first, and it is not implied by the
+            # emptiness check below: ``neutralise_model_text`` calls ``str()``
+            # on whatever it is handed, so ``"voice": ["terse", "gruff"]``
+            # survives as the *repr* "['terse', 'gruff']" — truthy, spliced
+            # into the system prompt, and written into the save, where it is
+            # reloaded every session. Same guard ``knowledge`` has below, for
+            # the same reason: this value outlives the turn that made it.
+            if not isinstance(raw, str):
+                logger.warning(
+                    "generate_personality: %s is %s, not text.",
+                    key,
+                    type(raw).__name__,
+                )
+                return None
             # The model rule, not the player one: a seed is authored character
             # prose, and ``speech_sample`` is exactly the field most likely to
             # quote someone by name ("Jean: mind the step") — which the player
             # rule's space-anchored strip would silently rewrite before the
             # seed was persisted into the save.
-            value = neutralise_model_text(parsed.get(key))
+            value = neutralise_model_text(raw)
             if not value:
-                logger.warning("generate_personality: %s is empty or not text.", key)
+                logger.warning("generate_personality: %s is empty.", key)
                 return None
             result[key] = value[:_MAX_PERSONALITY_FIELD_CHARS]
 
@@ -3751,11 +3788,18 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # only because _JSONTools.sanitize_text happens to collapse whitespace
         # upstream -- an implicit dependency on a caller nothing here can see.
         # Stating it locally costs one call.
-        last_line = neutralise_model_text(last_npc_line)
+        # Then escape it for the quoted span it lands in. Neutralisation
+        # removes the fence tag and the newlines; the double quote this line
+        # delimits with is the caller's own syntax and nothing upstream knows
+        # about it. ``npc_name`` gets the same treatment because it is model
+        # output too now — it is the ``given_name`` off the generated
+        # personality seed, not a hand-authored NPC name.
+        last_line = _quote_for_prompt(neutralise_model_text(last_npc_line))
+        quoted_name = _quote_for_prompt(npc_name)
 
         user = (
-            f"NPC: {npc_name} — {npc_voice_summary}\n"
-            f'{npc_name} just said: "{last_line}"\n\n'
+            f"NPC: {quoted_name} — {npc_voice_summary}\n"
+            f'{quoted_name} just said: "{last_line}"\n\n'
             f"Jean's recent lines (avoid repeating these): {history_hint}\n\n"
             "Generate exactly 3 Jean response options. Return this JSON object:\n"
             f'{{"options": {_JEAN_OPTIONS_SKELETON}}}\n\n'

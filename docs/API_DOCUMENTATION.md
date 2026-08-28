@@ -952,10 +952,17 @@ Environment variables (in `.env` or `config_dev.ini`):
 
 ```bash
 FLASK_ENV=development
-FLASK_HOST=127.0.0.1
-FLASK_PORT=5000
-FLASK_DEBUG=1
+HOST=127.0.0.1
+PORT=5000
 ```
+
+`HOST` and `PORT` are what `tools/run_api.py` actually reads; `HOST` defaults
+to `127.0.0.1` (loopback only — set `0.0.0.0` for LAN or container access, and
+see `.env.example` for what that exposes with debug on). There is no
+`FLASK_DEBUG`, `FLASK_HOST` or `FLASK_PORT`: nothing in this project reads
+them. `FLASK_ENV` selects the config class, and that class pins `DEBUG`.
+
+See `.env.example` for the full, annotated list of supported variables.
 
 ### Production Deployment
 

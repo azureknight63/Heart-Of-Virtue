@@ -4,7 +4,12 @@ import logging
 
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import resolve_session
-from src.api.rate_limiter import client_ip, limiter_from_env
+from src.api.rate_limiter import (
+    RateLimiter,
+    client_ip,
+    limiter_from_env,
+    rate_limited_response,
+)
 from src.api.services.auth_service import auth_service
 from functools import wraps
 import asyncio
@@ -15,10 +20,11 @@ logger = logging.getLogger(__name__)
 
 # Simple in-memory login throttle: 10 failed attempts per username+IP per 15
 # minutes. Per-worker (not shared across Gunicorn workers) — see GitHub issue
-# #284 and `src.api.rate_limiter` for the bounded-store rationale, shared with
-# feedback.py's submission throttle and npc_chat.py's chat throttles. Only
-# failed (invalid-credential) attempts count, so retries after a typo or a
-# flaky DB call don't lock out a legitimate player.
+# #284 and `src.api.rate_limiter` for the bounded-store rationale, the
+# `None`-tolerant `RateLimiter.check` and the shared 429 body, all of which
+# feedback.py's submission throttle and npc_chat.py's chat throttles use
+# too. Only failed (invalid-credential) attempts count, so retries after a
+# typo or a flaky DB call don't lock out a legitimate player.
 # The threshold is tunable via LOGIN_RATE_LIMIT_PER_15_MIN, but this throttle
 # cannot be switched off: `allow_disable=False` makes a configured 0 warn and
 # fall back to the default, exactly like a garbled value (see
@@ -74,12 +80,11 @@ _register_limiter = limiter_from_env(
 def _is_register_rate_limited() -> bool:
     """True if this source has spent its account-creation budget.
 
-    Counts the call unless already limited. ``None`` (the documented
-    ``REGISTER_RATE_LIMIT_PER_HOUR=0`` disable) never limits.
+    Counts the call unless already limited. ``RateLimiter.check`` carries
+    the ``None`` case — the documented ``REGISTER_RATE_LIMIT_PER_HOUR=0``
+    disable — so it is not re-derived here.
     """
-    if _register_limiter is None:
-        return False
-    return _register_limiter.check_and_record(client_ip())
+    return RateLimiter.check(_register_limiter, client_ip())
 
 
 def _login_rate_limit_key(username: str) -> str:
@@ -233,15 +238,8 @@ async def register():
         # payload costs nothing and should not spend anyone's budget, while a
         # well-formed one is about to hash a password and write a row.
         if _is_register_rate_limited():
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "rate_limited",
-                        "message": "Too many registration attempts. Please try again later.",
-                    }
-                ),
-                429,
+            return rate_limited_response(
+                "Too many registration attempts. Please try again later."
             )
 
         # Registration logic using auth_service
@@ -376,15 +374,8 @@ async def login():
 
         rate_key = _login_rate_limit_key(username)
         if _is_login_rate_limited(rate_key):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "rate_limited",
-                        "message": "Too many failed login attempts. Please try again later.",
-                    }
-                ),
-                429,
+            return rate_limited_response(
+                "Too many failed login attempts. Please try again later."
             )
 
         # Authenticate using auth_service

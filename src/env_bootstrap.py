@@ -1,6 +1,6 @@
 """Project-root-relative bootstrap shared by everything that needs ``.env``.
 
-Four modules call :func:`load_project_env`, and a fifth reads
+Five modules call :func:`load_project_env`, and a sixth reads
 :data:`PROJECT_ROOT`:
 
 * ``tools/run_api.py`` (dev entry point) and ``wsgi.py`` (gunicorn entry
@@ -8,6 +8,8 @@ Four modules call :func:`load_project_env`, and a fifth reads
 * ``src/api/db.py`` and ``ai/llm_client.py`` — at their own import time,
   because they read their settings during import and are reachable from
   processes (pytest, the bug-hunt harness) that never run an entry point.
+* ``src/api/rate_limiter.py`` — at import, because every limiter is built in
+  a blueprint module body before ``create_app()`` runs.
 * ``src/api/app.py`` imports ``PROJECT_ROOT`` rather than recomputing it.
 
 The entry points used to carry their own copy of the load, and the copies had

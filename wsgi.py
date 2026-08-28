@@ -29,9 +29,34 @@ from src.env_bootstrap import load_project_env  # noqa: E402
 load_project_env()
 
 from src.api.app import create_app  # noqa: E402
-from src.api.config import config_for_env  # noqa: E402
+from src.api.config import config_for_env, normalized_env  # noqa: E402
 
 # One shared FLASK_ENV -> config-class rule, so this entry point and
 # tools/run_api.py cannot drift apart again (they already had: only run_api.py
 # knew about FLASK_ENV=testing).
-app, socketio = create_app(config_for_env())
+_env = normalized_env()
+_config = config_for_env(_env)
+
+# The mirror image of run_api.py's "not with FLASK_ENV=production" refusal,
+# and it exists because sharing the mapping resolved that old disagreement in
+# the *permissive* direction. Before the mapping was unified this file sent
+# every non-production value to DevelopmentConfig, so FLASK_ENV=testing never
+# reached a TESTING config here — not a decision, an accident of the
+# duplication, and the accident was the safe half. It reaches one now, and a
+# TESTING config makes create_app() register `/api/test/session`, which mints
+# a valid session for any username with no credentials at all, together with
+# the entire `/api/debug/*` Adjutant blueprint (set HP, set level, grant
+# skills, spawn arena combatants). Under gunicorn that is an unauthenticated
+# login endpoint and an unauthenticated state editor on the public listener,
+# so refuse to boot instead.
+if getattr(_config, "TESTING", False):
+    raise SystemExit(
+        f"wsgi.py refuses to serve {_config.__name__} (FLASK_ENV={_env!r}). "
+        "A TESTING config registers /api/test/session, which mints a valid "
+        "session for any username without credentials, plus the /api/debug/* "
+        "blueprint — neither may be exposed by the production entry point. "
+        "Use FLASK_ENV=production here, or run the testing config through "
+        "tools/run_api.py, which serves it on 127.0.0.1 by default."
+    )
+
+app, socketio = create_app(_config)

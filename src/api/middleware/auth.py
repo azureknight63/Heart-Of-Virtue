@@ -1,9 +1,18 @@
 """Shared session/auth resolution for API routes."""
 
-from flask import current_app, jsonify, request
+from typing import Any, Optional, Tuple
+
+from flask import Response, current_app, jsonify, request
+
+#: The error half of the ``(value, error)`` contract these helpers return: the
+#: exact ``(response, status)`` pair Flask accepts from a view, so a caller
+#: forwards it with a bare ``return error``. Named because it appears in every
+#: signature below and, unannotated, the contract that 30-odd call sites depend
+#: on existed only in prose.
+RouteError = Tuple[Response, int]
 
 
-def _bearer_token():
+def _bearer_token() -> Optional[str]:
     """Return the Bearer token from the request's Authorization header.
 
     Returns the raw token string, or None if the header is missing or not a
@@ -15,7 +24,7 @@ def _bearer_token():
     return auth_header[7:]
 
 
-def resolve_session():
+def resolve_session() -> Tuple[Optional[Any], Optional[Any], Optional[RouteError]]:
     """Resolve the session manager and session for the current request.
 
     Session-only counterpart to :func:`get_session_and_player`: does NOT
@@ -55,7 +64,9 @@ def resolve_session():
     return session_manager, session, None
 
 
-def get_session_and_player():
+def get_session_and_player() -> Tuple[
+    Optional[Any], Optional[Any], Optional[Any], Optional[RouteError]
+]:
     """Resolve the session manager, session, and player for the current request.
 
     Reads the Bearer token from the request's Authorization header.
@@ -97,7 +108,7 @@ def get_session_and_player():
     return session_manager, session, player, None
 
 
-def require_game_service():
+def require_game_service() -> Tuple[Optional[Any], Optional[RouteError]]:
     """Resolve ``current_app.game_service`` for the current request.
 
     Companion to :func:`get_session_and_player`, and returns the same

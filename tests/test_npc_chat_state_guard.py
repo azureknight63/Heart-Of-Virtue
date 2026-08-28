@@ -1087,7 +1087,9 @@ class TestScanScopeIsDerivedNotHandSpelled:
 
     def test_a_mistyped_subcategory_is_rejected(self, monkeypatch):
         monkeypatch.setattr(
-            guard, "_EXCUSABLE_SUBCATEGORIES", frozenset({"teachng"})
+            guard,
+            "_EXCUSABLE_SUBCATEGORIES",
+            frozenset({(guard.CATEGORY_TRANSACTION, "teachng")}),
         )
         with pytest.raises(RuntimeError, match="no pattern emits"):
             guard._check_tables()

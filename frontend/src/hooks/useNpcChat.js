@@ -68,9 +68,16 @@ const AUTO_CLOSE_DELAY_MS = 2000
 const OPEN_FAILED_MESSAGE = 'Failed to open conversation'
 const RESPOND_FAILED_MESSAGE = 'NPC did not respond'
 
-/** The most specific detail available for a failed request, for the log only. */
+/** The most specific detail available for a failed request, for the log only.
+ *
+ * `message` outranks `error` because a 429 from `rate_limited_response()` puts
+ * the machine token "rate_limited" in `error` and the prose in `message`;
+ * reading `error` first would log the token and drop the only useful half.
+ * Every other failure here puts prose in `error` and sends no `message`.
+ */
 function serverDetail(err) {
-  return err?.response?.data?.error || err?.message || err
+  const body = err?.response?.data
+  return body?.message || body?.error || err?.message || err
 }
 
 // Portrait art is ~270 KB per emotion and the emotion changes on essentially
