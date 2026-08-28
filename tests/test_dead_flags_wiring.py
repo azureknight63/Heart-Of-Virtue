@@ -114,6 +114,28 @@ def _make_target(hp=100, finesse=0, protection=0, known_moves=None, **overrides)
 # ---------------------------------------------------------------------------
 
 
+
+def _discriminating_roll(user, target):
+    """A roll that the clean hit chance beats and the haunted one does not.
+
+    These tests used to pin ``roll = 100``, which worked when the raw chance
+    could exceed 100. HIT_CHANCE_CEILING caps it at 95, so a roll of 100 now
+    misses on BOTH branches and the assertion stopped distinguishing the
+    passive it names — a test that passes for the wrong reason.
+
+    Deriving the roll keeps it discriminating through any future retune:
+    the clean chance is >= it (hit), the haunted chance is < it (miss).
+    """
+    from src.moves._base import clamp_hit_chance, to_hit_chance
+
+    clean = clamp_hit_chance(to_hit_chance(user, target, floor=5))
+    haunted = clamp_hit_chance(int(clean * 0.85))
+    assert haunted < clean, (
+        f"fixture cannot discriminate: clean={clean} haunted={haunted}"
+    )
+    return clean, haunted
+
+
 class TestBladeMastery:
     def test_reduces_sword_attack_fatigue_cost(self):
         baseline_user = _make_user("Sword")
@@ -223,7 +245,8 @@ class TestHauntingPresence:
         move.power = 30
         move.base_damage_type = "crushing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        clean, haunted = _discriminating_roll(user, tgt)
+        monkeypatch.setattr(random, "randint", lambda a, b: clean)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
 
         with patch("src.moves._utility.functions.check_parry", return_value=False), \
@@ -233,8 +256,8 @@ class TestHauntingPresence:
              patch("src.moves._utility.narrate"):
             move.execute(user)
 
-        # hit_chance without the aura is ~108, beating a roll of 100; with the
-        # 15% penalty it drops to ~91, below the roll.
+        # The roll is pinned AT the clean chance, so a clean attack lands
+        # (chance >= roll) and the aura's 15% cut drops it below.
         mock_miss.assert_called_once()
         mock_hit.assert_not_called()
 

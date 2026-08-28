@@ -235,10 +235,12 @@ def _apply_facing_accuracy(attacker, defender, hit_chance):
     Python's int() truncates toward zero, so int(-1 * 0.95) is 0, not -1,
     which would turn a guaranteed miss into a chance to hit.
 
-    The result is bounded by ``clamp_hit_chance``. The ceiling matters here in
-    particular: the rear multiplier is 1.30, which used to be clamped at 100
-    against a ``random.randint(0, 100)`` roll — i.e. any halfway competent rear
-    attack was an automatic hit, and positioning stopped being a gamble.
+    The result is deliberately NOT bounded here — see the comment on the return
+    below. ``_apply_to_hit_modifiers`` owns the single authoritative clamp, run
+    once after every modifier. The ceiling matters for this multiplier in
+    particular: the rear bonus is 1.30, which used to be clamped at 100 against
+    a ``random.randint(0, 100)`` roll — i.e. any halfway competent rear attack
+    was an automatic hit, and positioning stopped being a gamble.
     """
     if hit_chance <= 0:
         return hit_chance
