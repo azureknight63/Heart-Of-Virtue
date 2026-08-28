@@ -4,7 +4,13 @@ from src.narration import colored, cprint, narrate
 import random
 import src.states as states
 import src.functions as functions
-from ._base import Move, _ensure_weapon_exp, _apply_to_hit_modifiers, to_hit_chance
+from ._base import (
+    Move,
+    _ensure_weapon_exp,
+    _apply_to_hit_modifiers,
+    apply_facing_damage,
+    to_hit_chance,
+)
 
 
 def _all_stats(p):
@@ -65,6 +71,10 @@ class Pulverize(Move):
         hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         roll = random.randint(0, 100)
         power = int(player.eq_weapon.damage * 1.8 + player.strength * 3.0)
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(player, target, power)
         # Ignores ALL protection — no protection subtraction
         damage = int(
             power * target.resistance.get("crushing", 1.0) * player.heat * random.uniform(0.8, 1.2)
@@ -134,6 +144,13 @@ class KillingPrecision(Move):
         narrate(self.stage_announce[1])
         target = self.target
         power = int(player.eq_weapon.damage * 1.5 + player.finesse * 2.5)
+        # Facing/angle damage (issue #394). The guaranteed hit is an
+        # *accuracy* guarantee — there is no roll for the accuracy half of
+        # the pair to modify — but the damage half still applies. Exempting
+        # it would make Killing Precision the only move that dodges the 0.85
+        # frontal penalty, i.e. the best head-on option in the game and an
+        # active incentive not to position.
+        power = apply_facing_damage(player, target, power)
         # Only 20% of protection applies
         damage = int(
             (power * target.resistance.get("piercing", 1.0) - target.protection * 0.2)
@@ -206,6 +223,10 @@ class LightningAssault(Move):
         for _ in range(3):
             roll = random.randint(0, 100)
             power = int(player.eq_weapon.damage * 0.55 + player.speed * 0.75)
+            # Facing/angle damage (issue #394). Inside the loop rather than
+            # hoisted: power is recomputed per strike, and a future strike
+            # that repositions mid-flurry should be scored where it lands.
+            power = apply_facing_damage(player, target, power)
             damage = int(
                 (power * target.resistance.get("slashing", 1.0) - target.protection)
                 * player.heat * random.uniform(0.8, 1.2)

@@ -14,6 +14,7 @@ from ._base import (
     _ensure_weapon_exp,
     _apply_carry_fatigue,
     _apply_to_hit_modifiers,
+    apply_facing_damage,
     to_hit_chance,
 )  # noqa: F401
 
@@ -385,9 +386,15 @@ class ShootBow(
         roll = random.randint(0, 100)
         arrow_recovery = self.arrow.sturdiness
         self.power += self.user.finesse * self.user.eq_weapon.fin_mod
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -634,9 +641,15 @@ class ShootCrossbow(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -783,9 +796,15 @@ class BroadheadBolt(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -934,9 +953,15 @@ class AimedShot(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -1081,9 +1106,15 @@ class PinningBolt(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat

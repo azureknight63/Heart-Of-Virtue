@@ -568,8 +568,15 @@ class TestCheckCoordinateMode:
         player = _make_player()
         del player._combat_adapter
         player.combat_position = self._combat_position()
+        # Jean at (0, 0) is south-west of an enemy at (3, 3) that is looking
+        # due north -- i.e. behind it. The bearing from the enemy back toward
+        # Jean is 225 deg against a facing of 0 deg, so the angle on its guard
+        # is 135 deg: rear. The inverted read this test used to encode
+        # (bearing from Jean toward the enemy, 45 deg) called the same
+        # geometry a flank, and the old fixture faced the enemy south so that
+        # the inverted answer happened to read "rear".
         enemy = _make_target()
-        enemy.combat_position = self._combat_position(x=3, y=3, facing=positions.Direction.S)
+        enemy.combat_position = self._combat_position(x=3, y=3, facing=positions.Direction.N)
         player.combat_proximity = {enemy: 5}
         player.combat_list_allies = []
         move = Check(player)
@@ -578,7 +585,7 @@ class TestCheckCoordinateMode:
             move.prep(player)
         # Coordinates present -> the coordinate report, not the legacy one.
         assert [m["text"] for m in messages] == [
-            "Enemy at (3, 3) facing S is 5 ft away (rear, S-facing)"
+            "Enemy at (3, 3) facing N is 5 ft away (rear, N-facing)"
         ]
 
     def test_display_coordinate_info_enemy_without_position_falls_back(self):
@@ -603,7 +610,11 @@ class TestCheckCoordinateMode:
         player = _make_player()
         player.combat_position = self._combat_position()
         enemy = _make_target()
-        enemy.combat_position = self._combat_position(x=5, y=5, facing=positions.Direction.S)
+        # Both Jean (0, 0) and Gorran (2, 2) sit south-west of a north-facing
+        # enemy at (5, 5) -- 135 deg off its guard, i.e. behind it. Facing the
+        # enemy south (as this fixture used to) made the inverted read return
+        # "rear" for a position that was really a 45 deg flank.
+        enemy.combat_position = self._combat_position(x=5, y=5, facing=positions.Direction.N)
         player.combat_proximity = {enemy: 7}
 
         ally = _make_target()
@@ -617,7 +628,7 @@ class TestCheckCoordinateMode:
             move._display_coordinate_info(player)
         # Two lines: the enemy report, then the ally's angle on that enemy.
         assert [(m["text"], m["color"]) for m in messages] == [
-            ("Enemy at (5, 5) facing S is 7 ft away (rear, S-facing)", "green"),
+            ("Enemy at (5, 5) facing N is 7 ft away (rear, N-facing)", "green"),
             ("  \u2192 Gorran at (2, 2) is 4 ft away (rear-facing)", "cyan"),
         ]
 
@@ -989,13 +1000,18 @@ class TestCheckCoordinateAngleBrackets:
     """Covers front/flank/rear branches in _display_coordinate_info (both
     the primary enemy-facing calc and the ally-relative-to-enemy calc)."""
 
+    # The player sits at (0, 0) and the enemy at (5, 0), so the player is due
+    # WEST of the enemy and the bearing from the enemy back toward the player
+    # is 270 deg. The bracket is that bearing measured against the enemy's own
+    # facing -- see positions.attack_angle_diff. The old rows named the
+    # opposite facings (E->front, W->rear), which is the 180-deg-inverted
+    # read: they asserted the bug rather than the behaviour.
     @pytest.mark.parametrize(
         "enemy_facing, expected_bracket, expected_color",
         [
-            # Attacking from due east of the enemy:
-            ("E", "front", "red"),      # enemy faces East -> diff 0
-            ("NE", "flank", "yellow"),  # diff 45
-            ("W", "rear", "green"),     # diff 180
+            ("W", "front", "red"),       # enemy looks straight at the player
+            ("NW", "flank", "yellow"),   # diff 45
+            ("E", "rear", "green"),      # enemy looks away -> diff 180
         ],
     )
     def test_display_coordinate_info_angle_brackets(
@@ -1025,9 +1041,12 @@ class TestCheckCoordinateAngleBrackets:
             )
         ]
 
+    # Same geometry, same correction as the enemy-line parametrization above:
+    # the ally also stands due west of the enemy, so the bearing on its guard
+    # is 270 deg.
     @pytest.mark.parametrize(
         "enemy_facing, expected_bracket",
-        [("E", "front"), ("NE", "flank"), ("W", "rear")],
+        [("W", "front"), ("NW", "flank"), ("E", "rear")],
     )
     def test_display_coordinate_info_ally_angle_brackets(
         self, enemy_facing, expected_bracket

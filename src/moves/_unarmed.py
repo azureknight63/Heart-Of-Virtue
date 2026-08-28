@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _apply_carry_fatigue,
+    apply_facing_damage,
 )  # noqa: F401
 
 
@@ -172,7 +173,11 @@ class PowerStrike(Move):
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
-        damage = self.power - self.target.protection
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = power - self.target.protection
         if damage <= 0:
             damage = 0
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
@@ -345,7 +350,11 @@ class Jab(Move):
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
-        damage = self.power - self.target.protection
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = power - self.target.protection
         if damage <= 0:
             damage = 0
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow

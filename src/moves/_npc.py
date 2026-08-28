@@ -8,7 +8,12 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, _apply_to_hit_modifiers, to_hit_chance  # noqa: F401
+from ._base import (  # noqa: F401
+    Move,
+    _apply_to_hit_modifiers,
+    apply_facing_damage,
+    to_hit_chance,
+)
 
 
 #: Base term of the to-hit expression for the shared hostile-NPC attack family
@@ -232,7 +237,11 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = self.power - self.target.protection
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = power - self.target.protection
         if damage <= 0:
             damage = 0
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
@@ -588,7 +597,11 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = self.power - self.target.protection
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = power - self.target.protection
         if damage <= 0:
             damage = 0
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
@@ -734,7 +747,11 @@ class VenomClaw(Move):  # Poisonous attack
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = self.power - self.target.protection
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = power - self.target.protection
         if damage <= 0:
             damage = 0
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
@@ -882,7 +899,11 @@ class SpiderBite(Move):  # Poisonous attack
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = self.power - self.target.protection
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = power - self.target.protection
         if damage <= 0:
             damage = 0
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
@@ -1030,7 +1051,11 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = self.power - self.target.protection
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = power - self.target.protection
         if damage <= 0:
             damage = 0
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
@@ -1098,7 +1123,11 @@ class MineralSpit(NpcAttack):
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = max(0, int(self.power * 0.4) - self.target.protection)
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = max(0, int(power * 0.4) - self.target.protection)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage = damage // 2
             glance = True
@@ -1162,7 +1191,11 @@ class SoulDrain(NpcAttack):
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = max(0, int(self.power * 0.6) - self.target.protection)
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = max(0, int(power * 0.6) - self.target.protection)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage = damage // 2
             glance = True
@@ -1296,7 +1329,11 @@ class WailStrike(TelegraphedSurge):
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = max(0, int(self.power * 0.7))  # ignores protection (sonic)
+        # Facing/angle damage (issue #394). This hand-rolled execute() never
+        # reaches standard_execute_attack, so without this line the whole
+        # positional damage curve silently skips the move.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = max(0, int(power * 0.7))  # ignores protection (sonic)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage = damage // 2
             glance = True
@@ -1499,7 +1536,11 @@ class SeismicSlam(Move):
                 if distance > self._RADIUS:
                     continue
                 resist = functions.combat_resistance(enemy, "crushing")
-                damage = max(0, int(self.power * resist) - enemy.protection)
+                # Facing/angle damage (issue #394), scored per enemy — the
+                # accuracy half below is already applied per enemy, so the
+                # pair would otherwise disagree about the same angle.
+                power = apply_facing_damage(self.user, enemy, self.power)
+                damage = max(0, int(power * resist) - enemy.protection)
                 # Deliberately NOT to_hit_chance(): this is a brute-force slam
                 # with no intelligence term at all, so the shared helper does
                 # not fit at any base/floor. Migrating it "for consistency"
@@ -1760,6 +1801,9 @@ class TwinFangs(Move):
             isinstance(s, states.Quarried) for s in getattr(target, "states", [])
         )
         power = self.power * (self._QUARRY_BONUS if quarried else 1.0)
+        # Facing/angle damage (issue #394), applied after the Quarried bonus
+        # so a marked target struck from behind pays for both.
+        power = apply_facing_damage(self.user, target, power)
         resist = functions.combat_resistance(target, "piercing")
         damage = max(0, int(power * resist) - target.protection)
         # Deliberately NOT to_hit_chance(): no intelligence term, and finesse

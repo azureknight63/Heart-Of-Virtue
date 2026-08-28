@@ -17,6 +17,7 @@ from ._base import (
     _apply_carry_fatigue,
     _apply_blade_mastery_discount,
     _apply_to_hit_modifiers,
+    apply_facing_damage,
     to_hit_chance,
     display_name_of,
 )  # noqa: F401
@@ -212,13 +213,15 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                 pos_str = f"({enemy.combat_position.x}, {enemy.combat_position.y})"
                 facing_str = enemy.combat_position.facing.name
 
-                # Calculate attack angle from user to enemy
-                attack_angle = positions.angle_to_target(
+                # Score the user's angle against the enemy's guard. This asks
+                # "where does Jean stand relative to where the enemy is
+                # looking?", so it is the defender-first question that
+                # positions.attack_angle_diff owns -- not the attacker's own
+                # frontal arc. The hand-rolled angle_to_target(user, enemy)
+                # form used here was the exact 180-degree opposite, so this
+                # label called a genuine rear position "front".
+                angle_diff = positions.attack_angle_diff(
                     user.combat_position, enemy.combat_position
-                )
-                # Get relative angle difference from enemy's perspective
-                angle_diff = positions.attack_angle_difference(
-                    attack_angle, enemy.combat_position.facing
                 )
 
                 # Determine relative direction (front/flank/rear)
@@ -262,13 +265,12 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                             hasattr(enemy, "combat_position")
                             and enemy.combat_position is not None
                         ):
-                            # Calculate ally's attack angle to enemy
-                            ally_attack_angle = positions.angle_to_target(
+                            # Same defender-first question as the enemy line
+                            # above, asked for the ally instead of Jean:
+                            # where does the ally stand relative to where the
+                            # enemy is looking?
+                            ally_angle_diff = positions.attack_angle_diff(
                                 ally.combat_position, enemy.combat_position
-                            )
-                            ally_angle_diff = positions.attack_angle_difference(
-                                ally_attack_angle,
-                                enemy.combat_position.facing,
                             )
 
                             if ally_angle_diff < 45:
@@ -536,9 +538,14 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (issue #394) — the same shared curve
+        # standard_execute_attack applies, added here because the basic Attack
+        # hand-rolls its damage line and so silently skipped it. Applied to
+        # power pre-protection, so armour keeps its full bite from every angle.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -776,10 +783,14 @@ class Disrupt(Move):
         roll = random.randint(0, 100)
 
         glance = False
+        # Facing/angle damage (issue #394) — same shared curve as
+        # standard_execute_attack, which Disrupt's hand-rolled damage line
+        # bypasses. Applied to power pre-protection.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
                 (
-                    self.power
+                    power
                     * functions.combat_resistance(self.target, self.base_damage_type)
                 )
                 - self.target.protection

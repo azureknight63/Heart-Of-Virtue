@@ -769,12 +769,16 @@ class FlankingManeuver(Move):
             and hasattr(user, "combat_position")
             and user.combat_position
         ):
-            # Calculate angle difference to show flanking bonus
-            angle = positions.angle_to_target(
+            # Did the maneuver actually land on the target's blind side? That
+            # is scored from the *target's* guard -- the bearing from the
+            # target toward the user, against the target's facing -- which is
+            # what positions.attack_angle_diff computes. The old
+            # angle_to_target(user, target) form was the 180-degree opposite,
+            # so at the band edges (45 deg and 135 deg) this claimed a flanking
+            # bonus for a head-on approach and stayed silent on a genuine deep
+            # flank.
+            angle_diff = positions.attack_angle_diff(
                 user.combat_position, self.target.combat_position
-            )
-            angle_diff = positions.attack_angle_difference(
-                angle, self.target.combat_position.facing
             )
 
             if 45 < angle_diff <= 135:
