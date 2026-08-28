@@ -52,12 +52,28 @@ class PowerStrike(Move):
         )
         self.evaluate()
 
+    def current_weapon(self):
+        """The weapon Power Strike actually swings, read live from the user.
+
+        ``__init__`` seeds ``self.weapon`` once, but the user equips and
+        unequips freely afterwards.  Reading the cache instead of the user made
+        viability permanently wrong in both directions: a Power Strike acquired
+        while bare-handed (the skill-tree path every player takes) stayed
+        un-castable even holding a mace, and one built while holding a mace
+        stayed castable bare-handed.
+        """
+        weapon = getattr(self.user, "eq_weapon", None)
+        if weapon is None:
+            weapon = items.Rock()
+        if not hasattr(weapon, "name"):
+            weapon.name = "a rock"
+        return weapon
+
     def viable(self):
         viability = False
-        if hasattr(self.weapon, "subtype"):
-            if not self.weapon.subtype == "Bludgeon":
-                return False
-        else:
+        weapon = self.current_weapon()
+        self.weapon = weapon
+        if getattr(weapon, "subtype", None) != "Bludgeon":
             return False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
@@ -75,13 +91,16 @@ class PowerStrike(Move):
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
+        # Refresh the weapon reference unconditionally — the announcement text
+        # in refresh_announcements() reads it, and a stale name is how "swings
+        # his fists mightily" ended up narrating a mace blow.
+        weapon = self.current_weapon()
+        self.weapon = weapon
         power_base = 25  # this is the default for determining the attack's power
         if hasattr(self.user, "damage"):
             power_base = self.user.damage
-        elif getattr(self.user, "eq_weapon", None) is not None:
-            self.weapon = self.user.eq_weapon
-            if hasattr(self.user.eq_weapon, "damage"):
-                power_base = self.user.eq_weapon.damage
+        elif getattr(weapon, "damage", None) is not None:
+            power_base = weapon.damage
         power = power_base * random.uniform(1.5, 2.5)
         prep = int(50 / self.user.speed)
         if prep < 1:
@@ -197,12 +216,10 @@ class Jab(Move):
         self.power = 0
         self.target = user
         mvrange = (0, 5)
-        if not hasattr(user, "eq_weapon") or user.eq_weapon is None:
-            self.weapon = items.Fists()
-        else:
-            self.weapon = user.eq_weapon
-        if not hasattr(self.weapon, "name"):
-            self.weapon.name = "fists"
+        # Seeded only so the attribute exists before evaluate() runs; evaluate()
+        # replaces it with the live value on every beat.  Jab is fists-only, so
+        # the seed is always a pair of fists.
+        self.weapon = items.Fists()
         super().__init__(
             name="Jab",
             description=description,
@@ -220,14 +237,54 @@ class Jab(Move):
         )
         self.evaluate()
 
+    @staticmethod
+    def _is_unarmed(user):
+        """True when ``user`` is genuinely fighting bare-handed.
+
+        The engine models "unarmed" two ways: ``eq_weapon`` may be absent or
+        ``None`` (most NPCs), or it may be an ``items.Fists()`` instance —
+        ``Player.__init__`` equips ``self.fists`` by default and
+        ``unequip_item`` restores it when a weapon comes off.  Both count.
+        """
+        weapon = getattr(user, "eq_weapon", None)
+        if weapon is None:
+            return True
+        return getattr(weapon, "subtype", None) == "Unarmed"
+
+    def current_weapon(self):
+        """The weapon Jab actually swings with, read live rather than cached.
+
+        Jab is fists-only, so this is always ``items.Fists()``-equivalent: the
+        equipped weapon when it really is a pair of fists, and a fresh
+        ``items.Fists()`` otherwise so that ``evaluate()`` never reports
+        sword-scaled numbers for a move that cannot be cast with a sword.
+        """
+        weapon = getattr(self.user, "eq_weapon", None)
+        if weapon is None or not self._is_unarmed(self.user):
+            weapon = items.Fists()
+        if not hasattr(weapon, "name"):
+            weapon.name = "fists"
+        return weapon
+
     def viable(self):
+        # Jab is fists-only.  ``standard_viability_attack`` short-circuits its
+        # weapon check whenever "Unarmed" is in the allowed subtypes, so it
+        # cannot express "requires bare hands" on its own — gate first, then
+        # defer to it for the proximity/range half of the check.
+        if not self._is_unarmed(self.user):
+            return False
         return self.standard_viability_attack(("Unarmed",))
 
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        # Use self.weapon which is already set to Fists() if unarmed
-        weapon = self.weapon if self.weapon else items.Fists()
+        # Read the CURRENT weapon every time.  A reference cached in
+        # __init__ went stale the moment the user equipped or dropped
+        # anything, which made the same named move report different power
+        # depending on whether it came from the skill tree (built while Jean
+        # was unarmed) or was constructed later.
+        weapon = self.current_weapon()
+        self.weapon = weapon
         power = (
             weapon.damage
             + (self.user.strength * weapon.str_mod)

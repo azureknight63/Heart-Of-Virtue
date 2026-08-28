@@ -76,12 +76,18 @@ class PommelStrike(Move):
             self.power = 0
             self.fatigue_cost = 10
             return
+        # base_power MUST be a literal, never ``self.power``.  ``advance()``
+        # calls ``evaluate()`` on every beat for every known move, and
+        # ``standard_evaluate_attack`` computes
+        # ``weapon.damage + base_power + str*str_mod + fin*fin_mod``.  Feeding
+        # the previous result back in as ``base_power`` made the move's power
+        # compound without bound (51 -> 102 -> 153 -> ... on a Longsword).
         evaluation = self.standard_evaluate_attack(
-            self.power,
-            self.base_damage_type,
+            base_power=-10,
+            base_damage_type=self.base_damage_type,
             mod_prep=(-1 * (self.user.eq_weapon.weight * 3)),
-            mod_fatigue=-5,
-            floor_fatigue=12,
+            mod_fatigue=-35,
+            floor_fatigue=10,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
