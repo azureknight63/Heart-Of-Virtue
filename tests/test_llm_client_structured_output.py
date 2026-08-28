@@ -148,7 +148,7 @@ class TestChatPayloadRequestsJson:
     def test_response_format_is_sent(self, monkeypatch):
         seen = {}
 
-        def fake_post(url, payload, headers, timeout):
+        def fake_post(url, payload, headers, timeout, on_discarded=None):
             seen.update(payload)
             return Resp()
 
@@ -250,6 +250,92 @@ class TestPostChatCompletionRetry:
         llm._post_chat_completion("u", self._payload(), {}, 5)
 
         assert len(calls) == 1
+
+    def test_the_discarded_400_is_handed_back_only_when_a_retry_happens(
+        self, monkeypatch
+    ):
+        """The hook fires on the retry path and nowhere else.
+
+        A 400 nobody retries is returned to the caller, which meters it in the
+        normal way; calling the hook there too would count it twice.
+        """
+        seen = []
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            return Resp(400, text="reason: invalid model")
+
+        monkeypatch.setattr(llm.requests, "post", fake_post)
+        llm._post_chat_completion(
+            "u", self._payload(), {}, 5, on_discarded=seen.append
+        )
+
+        assert seen == []
+
+
+class TestTheDiscarded400IsMetered:
+    """A 400-then-retry is two real requests. Both have to be on the books.
+
+    ``_post_chat_completion`` issues a second POST when a provider rejects
+    ``response_format`` or the reasoning block, and only the second one's
+    response is returned -- so the metered callers folded one outcome into
+    ``_record_provider_usage`` for two requests spent. OpenRouter sends no
+    rate-limit headers on chat completions, which makes that local counter the
+    only accounting there is for a 50-per-day account-wide bucket, and
+    ``_openrouter_attempt``'s docstring promises "no call site can spend the
+    account-wide free-tier quota invisibly".
+
+    The hole predates the shared ``_chat_payload``, but that unification put
+    ``response_format`` on paths that had never sent it -- and a stale
+    ``supported_parameters`` entry is exactly what turns into this 400. The
+    DRY fix made an existing metering gap fire more often.
+    """
+
+    def _four_hundred_then_ok(self, monkeypatch, text="response_format is not supported"):
+        calls = []
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            calls.append(json)
+            return Resp(400, text=text) if len(calls) == 1 else Resp()
+
+        monkeypatch.setattr(llm.requests, "post", fake_post)
+        return calls
+
+    def test_openrouter_counts_both_requests(self, monkeypatch):
+        calls = self._four_hundred_then_ok(monkeypatch)
+        monkeypatch.setattr(GenericLLMClient, "_free_models_cache", [])
+
+        out = _adapter()._call_openrouter("sys", "user", 500, 0.7)
+
+        assert out == '{"npc_text": "Fine."}'
+        assert len(calls) == 2, "the retry did not happen; the test proves nothing"
+        stats = GenericLLMClient._provider_usage["openrouter"]
+        assert stats["requests"] == 2
+        assert stats["errors"] == 1
+        assert stats["successes"] == 1
+
+    def test_an_openai_compatible_provider_counts_both_requests(self, monkeypatch):
+        calls = self._four_hundred_then_ok(monkeypatch)
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+
+        out = _adapter()._call_openai_compatible("groq", "sys", "user", 500, 0.7)
+
+        assert out == '{"npc_text": "Fine."}'
+        assert len(calls) == 2, "the retry did not happen; the test proves nothing"
+        stats = GenericLLMClient._provider_usage["groq"]
+        assert stats["requests"] == 2
+        assert stats["errors"] == 1
+        assert stats["successes"] == 1
+
+    def test_a_single_request_is_still_counted_once(self, monkeypatch):
+        """The guard against over-counting: no 400, no discarded attempt."""
+        monkeypatch.setattr(llm.requests, "post", lambda *a, **k: Resp())
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+
+        _adapter()._call_openai_compatible("groq", "sys", "user", 500, 0.7)
+
+        stats = GenericLLMClient._provider_usage["groq"]
+        assert stats["requests"] == 1
+        assert stats["errors"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -615,10 +701,22 @@ class TestProviderChainNeedsAnExplicitProvider:
         assert chain[0] == "groq"
         assert set(chain) == {"ollama", "openrouter", "groq", "cerebras"}
 
-    def test_the_mynx_provider_still_counts_as_explicit_for_chat(self, monkeypatch):
-        """NPC chat falls back to MYNX_LLM_PROVIDER by design (a one-model
-        deployment configures one place), and a value read through that
-        fallback was still typed by the operator."""
+    def test_the_mynx_provider_routes_but_does_not_arm_the_chain(self, monkeypatch):
+        """MYNX_LLM_PROVIDER picks the host. It is not consent for chat.
+
+        NPC chat falls back to MYNX_LLM_PROVIDER by design -- a one-model
+        deployment configures one place -- and that is a *routing*
+        convenience. This test used to assert the opposite ("a value read
+        through that fallback was still typed by the operator"), which meant
+        MYNX_LLM_PROVIDER=groq alone armed [groq, openrouter, cerebras,
+        ollama] for player conversation: a variable set for the pet fanned
+        player dialogue out across every credential in `.env`. The gate next
+        door already refuses to inherit MYNX_LLM_ENABLED on exactly this
+        reasoning; only the first entry in _PROVIDER_ENV_VARS is the feature's
+        own.
+
+        The inherited host is still dialled. Only the fan-out is withheld.
+        """
         self._all_credentials(monkeypatch)
         monkeypatch.delenv("NPC_CHAT_LLM_PROVIDER", raising=False)
         monkeypatch.setenv("MYNX_LLM_PROVIDER", "groq")
@@ -626,8 +724,32 @@ class TestProviderChainNeedsAnExplicitProvider:
         adapter = NpcChatLLMAdapter()
 
         assert adapter.provider == "groq"
-        assert adapter._provider_explicit is True
-        assert len(adapter._provider_chain()) > 1
+        assert adapter._provider_explicit is False
+        assert adapter._provider_chain() == ["groq"]
+
+    def test_an_explicit_zero_pins_a_remote_provider_too(self, monkeypatch):
+        """NPC_CHAT_LLM_FALLBACK=0 was read only inside the ollama branch.
+
+        So an operator who named groq and wrote 0 got the full fan-out anyway:
+        the setting meant its opposite for every provider but one. It is now
+        honoured everywhere -- "the host I named and no other" is a sentence a
+        provider-pinned operator has to be able to say.
+        """
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("NPC_CHAT_LLM_FALLBACK", "0")
+
+        assert NpcChatLLMAdapter()._provider_chain() == ["groq"]
+
+    def test_an_unset_fallback_still_arms_a_named_remote_provider(self, monkeypatch):
+        """The tri-state's middle value. Unset is not a refusal: naming a
+        remote host already agreed the text leaves the machine, and the chain
+        is the point of naming one."""
+        self._all_credentials(monkeypatch)
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.delenv("NPC_CHAT_LLM_FALLBACK", raising=False)
+
+        assert len(NpcChatLLMAdapter()._provider_chain()) > 1
 
     def test_the_disabled_sentinel_still_yields_nothing(self, monkeypatch):
         self._all_credentials(monkeypatch)
@@ -740,7 +862,7 @@ class TestOpenAiCompatibleCall:
     def test_payload_carries_json_mode_and_provider_reasoning(self, monkeypatch):
         seen = {}
 
-        def fake_post(url, payload, headers, timeout):
+        def fake_post(url, payload, headers, timeout, on_discarded=None):
             seen["url"] = url
             seen["payload"] = payload
             seen["headers"] = headers
@@ -1377,7 +1499,7 @@ class TestOpenrouterFallbackUsesItsOwnDialect:
         a = make_chat_adapter(provider="groq", model="some/model:free")
         payloads = []
 
-        def _capture(url, payload, headers, timeout):
+        def _capture(url, payload, headers, timeout, on_discarded=None):
             payloads.append(payload)
 
             class _R:
@@ -1568,7 +1690,7 @@ class TestOpenrouterAttempt:
         )
         dialled = []
 
-        def counting_post(url, payload, headers, timeout):
+        def counting_post(url, payload, headers, timeout, on_discarded=None):
             dialled.append(payload["model"])
             return Resp(429, text="slow down")
 
@@ -1583,7 +1705,7 @@ class TestOpenrouterAttempt:
         monkeypatch.setattr(GenericLLMClient, "_free_models_cache", ["second/model"])
         dialled = []
 
-        def post(url, payload, headers, timeout):
+        def post(url, payload, headers, timeout, on_discarded=None):
             dialled.append(payload["model"])
             if payload["model"] == "second/model":
                 return Resp()

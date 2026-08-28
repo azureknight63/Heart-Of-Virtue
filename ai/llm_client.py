@@ -11,7 +11,7 @@ try:
 except ImportError:
     requests = None
 from src.env_bootstrap import load_project_env
-from src.text_safety import neutralise_player_text
+from src.text_safety import neutralise_model_text, neutralise_player_text
 
 # Ensure .env is loaded. Not a bare ``load_dotenv()``: that resolves the file
 # through ``find_dotenv()``, which walks up from the *working directory*, so a
@@ -195,11 +195,24 @@ _PLAIN_MAX_TOKENS = 256
 _RAW_LOG_HEAD_CHARS = 80
 _LOG_RAW_BODIES_ENV = "LLM_LOG_RAW_BODIES"
 
-# Provider error bodies (a 400's explanation, a non-200's text). Provider-
-# authored diagnostics rather than model output, so they are not gated behind
-# _LOG_RAW_BODIES_ENV -- only bounded, because some providers echo a slab of
-# the request back inside the error.
-_ERROR_BODY_LOG_CHARS = 300
+# Provider error bodies. Two different bounds, because the body is read for two
+# different reasons and only one of them ends up on disk.
+#
+# _ERROR_BODY_MATCH_CHARS is how much of a 400 _post_chat_completion inspects
+# for the name of the parameter it should drop. That is a machine decision, the
+# text never leaves the process, and shrinking it would make the retry miss a
+# keyword sitting past the cut.
+#
+# _ERROR_BODY_LOG_CHARS is how much reaches the log. The old comment called
+# these "provider-authored diagnostics rather than model output" and exempted
+# them from _LOG_RAW_BODIES_ENV on that basis -- then conceded in its own next
+# clause that providers "echo a slab of the request back inside the error". The
+# request is the prompt, and the prompt is the player's conversation, so 300
+# characters of it were being written to LOG_FILE at WARNING (not even DEBUG)
+# on every 400 and every non-200. Same rule as _raw_log_fields now: a head by
+# default, the whole body only when someone asks for it by name.
+_ERROR_BODY_MATCH_CHARS = 300
+_ERROR_BODY_LOG_CHARS = 80
 
 
 def _raw_log_fields(raw: str) -> str:
@@ -216,9 +229,30 @@ def _raw_log_fields(raw: str) -> str:
     the logging call: a bounded slice and its repr cost nothing beside the
     network round trip that produced ``raw``.
     """
-    if os.getenv(_LOG_RAW_BODIES_ENV, "").strip() in _ENABLED_TRUE_VALUES:
+    if _raw_bodies_logged():
         return "chars=%d raw=%r" % (len(raw), raw)
     return "chars=%d raw_head=%r" % (len(raw), raw[:_RAW_LOG_HEAD_CHARS])
+
+
+def _raw_bodies_logged() -> bool:
+    """Whether the operator has asked for whole bodies in the log.
+
+    Read per call rather than at import so the switch can be flipped in a
+    running process.
+    """
+    return os.getenv(_LOG_RAW_BODIES_ENV, "").strip() in _ENABLED_TRUE_VALUES
+
+
+def _error_body_for_log(text: Any) -> str:
+    """The part of a provider error body that may be written to the log.
+
+    The whole body when :data:`_LOG_RAW_BODIES_ENV` is set, otherwise the first
+    :data:`_ERROR_BODY_LOG_CHARS` characters — enough to read "model not found"
+    or "reasoning is mandatory", short of the point where a provider that
+    quotes the request back has quoted the player's dialogue back.
+    """
+    body = str(text or "")
+    return body if _raw_bodies_logged() else body[:_ERROR_BODY_LOG_CHARS]
 
 
 # OpenRouter's auto-router: it picks a live free model per request. This is the
@@ -293,11 +327,32 @@ _NPC_TEXT_RULE = (
     % (MAX_NPC_SENTENCES, MAX_NPC_TEXT_CHARS)
 )
 
+#: The ``conversation_quality`` enum: value -> what it means.
+#:
+#: One mapping, four derivations. The gloss below was hoisted into a constant
+#: and the values it glosses were not, so the enum went on being spelled in the
+#: validator's set, in two prompts' pipe-delimited literal, and a third time as
+#: prose inside the gloss. Adding a fifth quality meant finding four places, and
+#: the one that gets forgotten is the validator -- which silently rewrites the
+#: new value to "neutral" while both prompts go on advertising it.
+_CONVERSATION_QUALITIES = {
+    "positive": "enjoyed/interested",
+    "neutral": "tolerated",
+    "negative": "annoyed/offended",
+    "offensive": "deeply offended",
+}
+
+#: What ``_normalise_turn_fields`` falls back to. Must be a key above.
+_QUALITY_DEFAULT = "neutral"
+
+#: The enum as the prompts advertise it: ``positive|neutral|negative|offensive``.
+_QUALITY_VALUES = "|".join(_CONVERSATION_QUALITIES)
+
 #: What each ``conversation_quality`` value means.
 _QUALITY_GLOSS = (
     "conversation_quality: how the NPC felt about this exchange — "
-    "positive=enjoyed/interested, neutral=tolerated, negative=annoyed/offended, "
-    "offensive=deeply offended."
+    + ", ".join("%s=%s" % item for item in _CONVERSATION_QUALITIES.items())
+    + "."
 )
 
 # The personality seed generate_personality asks for and then validates. Both
@@ -348,6 +403,7 @@ def _post_chat_completion(
     payload: Dict[str, Any],
     headers: Dict[str, str],
     timeout: float,
+    on_discarded: Optional[Callable[[Any], None]] = None,
 ) -> Any:
     """POST a chat completion, retrying once without the params a 400 blames.
 
@@ -362,6 +418,16 @@ def _post_chat_completion(
     Dropping whichever the error body implicates and retrying costs one extra
     round trip and keeps the model usable, rather than failing it over to the
     next candidate for a parameter the caller does not actually need.
+
+    ``on_discarded`` is called with the rejected 400 response when — and only
+    when — a retry is actually issued. It exists because that retry is a
+    *second real request*, and the caller only ever sees the second one's
+    response: ``_openrouter_attempt``'s own docstring promises "no call site
+    can spend the account-wide free-tier quota invisibly", and OpenRouter sends
+    no rate-limit headers on chat completions, so the local counter is the only
+    accounting there is for a 50-per-day bucket. Every metered caller passes
+    this and records the discarded attempt; the unmetered ones (discovery,
+    catalogue probes) omit it because they do not count either request.
     """
     if requests is None:
         raise RuntimeError("requests is not installed; cannot reach the provider")
@@ -369,7 +435,10 @@ def _post_chat_completion(
     if resp.status_code != 400:
         return resp
 
-    body = (resp.text or "")[:_ERROR_BODY_LOG_CHARS]
+    # Matched against a generous slice, logged from a small one: the keyword
+    # this looks for can sit past the log bound, and the log bound is small
+    # because providers echo the request — i.e. the prompt — back in the body.
+    body = (resp.text or "")[:_ERROR_BODY_MATCH_CHARS]
     low = body.lower()
     drop = set()
     # Match "reasoning", not "reason": the latter appears in unrelated
@@ -385,8 +454,12 @@ def _post_chat_completion(
     retry = {k: v for k, v in payload.items() if k not in drop}
     logger.info(
         "Endpoint rejected %s for %s; retrying without: %s",
-        sorted(drop), payload.get("model"), body,
+        sorted(drop), payload.get("model"), _error_body_for_log(body),
     )
+    if on_discarded is not None:
+        # Before the retry, not after: if the retry raises, the request we
+        # already spent still has to be on the books.
+        on_discarded(resp)
     return requests.post(url, json=retry, headers=headers, timeout=timeout)
 
 
@@ -664,13 +737,27 @@ class _JSONTools:
 
     @staticmethod
     def sanitize_text(text: str) -> str:
-        # Remove surrounding quotes if present and collapse whitespace
+        """Tidy one model-authored string for storage, prompts, and display.
+
+        Un-quotes, neutralises, bounds. The neutralisation is not decorative:
+        every caller's output ends up either narrated to a player-visible
+        renderer or interpolated back into a prompt, and this used to collapse
+        whitespace with ``" ".join(split())`` — which leaves ``\\x1b``,
+        ``\\x00-\\x08`` and ``\\x7f`` exactly where they were. ``npc_text``
+        carrying a live ANSI escape is a colour change the game did not ask
+        for; ``npc_flavor`` carrying a ``</player_input>`` is a prompt fence
+        the model can close for free.
+
+        ``neutralise_model_text`` also subsumes the whitespace collapse, so
+        the two spellings of "collapse whitespace" that used to sit either
+        side of this boundary are now one.
+        """
+        # Remove surrounding quotes if present
         t = text.strip()
         if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
             t = t[1:-1].strip()
         # Keep it short-ish
-        t = " ".join(t.split())
-        return t[:500]
+        return neutralise_model_text(t)[:500]
 
 
 def _bench_now() -> datetime:
@@ -886,10 +973,24 @@ class GenericLLMClient:
         ``_provider`` is written directly rather than through the property
         because falling back to ``DEFAULT_PROVIDER`` is precisely the case that
         must not count as a choice.
+
+        Only the *first* entry in ``_PROVIDER_ENV_VARS`` counts as a choice.
+        The rest are inherited defaults — ``MYNX_LLM_PROVIDER``, for both
+        feature adapters — and inheriting a value is not consenting to it: the
+        gate deliberately does not fall back to ``MYNX_LLM_ENABLED``, on the
+        grounds that switching on a pet must not switch on player-facing
+        conversation, and the same argument applies verbatim one line down.
+        ``MYNX_LLM_PROVIDER=openrouter`` alone used to read as an explicitly
+        chosen chat provider and armed the whole fallback chain
+        ``[openrouter, groq, cerebras]`` for player dialogue.
+
+        The inherited value still sets the provider — a single-model deployment
+        really does want to configure one place — it just does not arm the
+        fan-out. ``_provider_chain`` dials exactly what it was given.
         """
         chosen = self._first_env(self._PROVIDER_ENV_VARS).lower()
         self._provider = chosen or DEFAULT_PROVIDER
-        self._provider_explicit = bool(chosen)
+        self._provider_explicit = bool(self._first_env(self._PROVIDER_ENV_VARS[:1]))
 
         chosen_model = self._first_env(self._MODEL_ENV_VARS)
         self.model = chosen_model or DEFAULT_MODEL
@@ -1732,6 +1833,7 @@ class GenericLLMClient:
 
     @staticmethod
     def _chat_payload(
+        *,
         model: str,
         system: str,
         user: str,
@@ -1747,6 +1849,15 @@ class GenericLLMClient:
         strategist's only path, demanded JSON in prose and never once asked the
         API to enforce it, while ``_rank_models`` was busy filtering the model
         pool on ``_supports_structured_output`` for exactly that field.
+
+        Keyword-only, all seven. Three of them are adjacent strings —
+        ``model``, ``system``, ``user`` — and every call site passed six
+        positionally, so transposing the two prompts would have sent each model
+        its instructions as the user turn and the player's question as the
+        system prompt: no exception, no type error, just a conversation that
+        reads subtly wrong and a bug nobody can find by reading the call. A
+        leading ``*`` costs four call sites one keyword each and makes the
+        transposition unrepresentable.
 
         ``provider`` selects the reasoning-control dialect (see
         ``_REASONING_PARAMS``) and is not always ``self.provider``: the
@@ -1952,9 +2063,13 @@ class GenericLLMClient:
             # Always the OpenRouter dialect: this method talks to openrouter.ai
             # whatever self.provider happens to be.
             payload = self._chat_payload(
-                model_id, system_prompt, user_prompt,
-                _STRUCTURED_MAX_TOKENS if structured else _PLAIN_MAX_TOKENS,
-                _DEFAULT_TEMPERATURE, "openrouter", json_mode=structured,
+                model=model_id,
+                system=system_prompt,
+                user=user_prompt,
+                max_tokens=_STRUCTURED_MAX_TOKENS if structured else _PLAIN_MAX_TOKENS,
+                temperature=_DEFAULT_TEMPERATURE,
+                provider="openrouter",
+                json_mode=structured,
             )
             # The SDK takes typed keyword arguments and rejects unknown ones,
             # so the reasoning block travels in extra_body rather than at the
@@ -2042,9 +2157,13 @@ class GenericLLMClient:
         }
         # Always the OpenRouter dialect, for the same reason as the SDK branch.
         payload = self._chat_payload(
-            model_id, system_prompt, user_prompt,
-            _STRUCTURED_MAX_TOKENS if structured else _PLAIN_MAX_TOKENS,
-            _DEFAULT_TEMPERATURE, "openrouter", json_mode=structured,
+            model=model_id,
+            system=system_prompt,
+            user=user_prompt,
+            max_tokens=_STRUCTURED_MAX_TOKENS if structured else _PLAIN_MAX_TOKENS,
+            temperature=_DEFAULT_TEMPERATURE,
+            provider="openrouter",
+            json_mode=structured,
         )
         if skip_reasoning:
             # The SDK attempt already named the reasoning block as the culprit
@@ -2079,7 +2198,17 @@ class GenericLLMClient:
         response = None
         try:
             response = _post_chat_completion(
-                _OPENROUTER_CHAT_URL, payload, headers, timeout
+                _OPENROUTER_CHAT_URL, payload, headers, timeout,
+                # The 400 that triggers the retry is a request this account
+                # paid for out of the same 50-per-day bucket. Without this it
+                # was never counted: only the retry's response reaches the
+                # metering below, so a model that reliably 400s on
+                # response_format burned two requests per turn and reported
+                # one -- and _chat_payload now sends response_format on more
+                # paths than it used to, which is exactly what provokes it.
+                on_discarded=lambda r: GenericLLMClient._record_provider_usage(
+                    "openrouter", r, "error"
+                ),
             )
             status = getattr(response, "status_code", None)
             if status == 429:
@@ -2099,7 +2228,7 @@ class GenericLLMClient:
                 logger.warning(
                     "OpenRouter model %s failed: HTTP %s %s",
                     model_id, status,
-                    str(getattr(response, "text", ""))[:_ERROR_BODY_LOG_CHARS],
+                    _error_body_for_log(getattr(response, "text", "")),
                 )
             else:
                 content = self._content_from_ok_response(response, model_id)
@@ -3175,10 +3304,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
 
         * The text was stored as a bare slice. An embedded newline forges a
           line in ``revise_turn``'s newline-delimited options block, and an ESC
-          reaches the player-visible renderer untouched — ``sanitize_text``
-          collapses whitespace but does not strip control characters. Model
-          output shaped by player text gets the same neutralisation player text
-          does.
+          reaches the player-visible renderer untouched. Model output shaped by
+          player text gets neutralised too — but by the *model* rule, not the
+          player one: an option is authored prose, and the player rule's
+          space-anchored speaker strip would eat "Ask Jean: where next?" down
+          to "Ask where next?".
         * Truncating at exactly ``MAX_OPTION_CHARS`` — the mixin's *inclusive*
           upper bound — turned a 400-character option into a 160-character
           mid-word fragment that then passed the mixin's length check and
@@ -3188,7 +3318,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
           gives the reader a clean end; a single unbroken 160+ character token
           has no boundary to find and falls back to the hard cut.
         """
-        text = neutralise_player_text(raw)
+        text = neutralise_model_text(raw)
         if len(text) <= MAX_OPTION_CHARS:
             return text
         head = text[:MAX_OPTION_CHARS]
@@ -3212,10 +3342,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
             else ""
         )
 
-        valid_qualities = {"positive", "neutral", "negative", "offensive"}
-        quality = str(parsed.get("conversation_quality", "neutral")).lower()
+        quality = str(parsed.get("conversation_quality", _QUALITY_DEFAULT)).lower()
         parsed["conversation_quality"] = (
-            quality if quality in valid_qualities else "neutral"
+            quality if quality in _CONVERSATION_QUALITIES else _QUALITY_DEFAULT
         )
 
         parsed["npc_text"] = _JSONTools.sanitize_text(parsed["npc_text"])
@@ -3277,10 +3406,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"Do NOT invent locations, factions, or creatures not in: {allowed}."
         )
         temp = float(os.getenv("NPC_CHAT_TEMP_PERSONALITY", "0.7"))
-        raw = self._call_llm(system, user, max_tokens=400, temperature=temp)
-        if not raw:
-            return None
-        parsed = self._parse_or_penalize(raw, "generate_personality")
+        parsed = self._generate_parsed(
+            "generate_personality", system, user, max_tokens=400, temperature=temp
+        )
         if parsed is None:
             return None
         if not _PERSONALITY_FIELDS.issubset(parsed.keys()):
@@ -3305,7 +3433,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
         """
         result: Dict[str, Any] = {}
         for key in ("given_name", "voice", "speech_sample"):
-            value = neutralise_player_text(parsed.get(key))
+            # The model rule, not the player one: a seed is authored character
+            # prose, and ``speech_sample`` is exactly the field most likely to
+            # quote someone by name ("Jean: mind the step") — which the player
+            # rule's space-anchored strip would silently rewrite before the
+            # seed was persisted into the save.
+            value = neutralise_model_text(parsed.get(key))
             if not value:
                 logger.warning("generate_personality: %s is empty or not text.", key)
                 return None
@@ -3319,7 +3452,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             )
             return None
         topics = [
-            neutralise_player_text(item)[:_MAX_PERSONALITY_FIELD_CHARS]
+            neutralise_model_text(item)[:_MAX_PERSONALITY_FIELD_CHARS]
             for item in knowledge
             if isinstance(item, str) and item.strip()
         ]
@@ -3381,8 +3514,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{history_block}\n\n"
             f"[TASK]\n{task}\n\n"
             "Return ONLY this JSON (no code fences, no extra keys):\n"
-            '{"npc_text": "...", "conversation_quality": "positive|neutral|negative|offensive", '
-            '"conversation_end": false, "reputation_delta": 0}\n'
+            '{"npc_text": "...", "conversation_quality": "%s", ' % _QUALITY_VALUES
+            + '"conversation_end": false, "reputation_delta": 0}\n'
             f"{_QUALITY_GLOSS}\n"
             "Set conversation_end to true ONLY if the NPC is done talking entirely (loquacity exhausted or deeply offended).\n"
             f"{_NPC_TEXT_RULE}\n"
@@ -3394,15 +3527,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_NPC", "0.65"))
-        raw = self._call_llm(system_prompt, user, max_tokens=500, temperature=temp)
-        if not raw:
-            logger.warning("generate_npc_turn LLM returned no raw response. is_opening=%s", is_opening)
-            return None
-        logger.debug(
-            "generate_npc_turn raw response is_opening=%s %s",
-            is_opening, _raw_log_fields(raw),
+        parsed = self._generate_parsed(
+            "generate_npc_turn", system_prompt, user,
+            max_tokens=500, temperature=temp,
+            context=" is_opening=%s" % is_opening,
         )
-        parsed = self._parse_or_penalize(raw, "generate_npc_turn")
         if parsed is None:
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
@@ -3454,7 +3583,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"[TASK]\n{task}\n\n"
             "Return ONLY this JSON (no code fences, no extra keys):\n"
             '{"npc_text": "...", "npc_flavor": "...", '
-            '"conversation_quality": "positive|neutral|negative|offensive", '
+            f'"conversation_quality": "{_QUALITY_VALUES}", '
             f'"reputation_delta": 0, "loquacity_delta": {LOQUACITY_DELTA_DEFAULT}, '
             f'"jean_options": {_JEAN_OPTIONS_SKELETON}}}\n\n'
             # Field-per-line rather than prose: this block is static and re-sent
@@ -3491,15 +3620,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # mid-string on wordier models, losing the whole turn. Latency at this
         # size is dominated by network, not decode length, and truncated tails
         # are additionally salvaged by _JSONTools._repair_truncated_json.
-        raw = self._call_llm(system_prompt, user, max_tokens=800, temperature=temp)
-        if not raw:
-            logger.warning("generate_turn LLM returned no raw response. is_opening=%s", is_opening)
-            return None
-        logger.debug(
-            "generate_turn raw response is_opening=%s %s",
-            is_opening, _raw_log_fields(raw),
+        parsed = self._generate_parsed(
+            "generate_turn", system_prompt, user,
+            max_tokens=800, temperature=temp,
+            context=" is_opening=%s" % is_opening,
         )
-        parsed = self._parse_or_penalize(raw, "generate_turn")
         if parsed is None:
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
@@ -3559,11 +3684,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # Lower temperature than generation: this is a corrective pass, and a
         # creative one tends to re-offer the same thing in fresh words.
         temp = float(os.getenv("NPC_CHAT_TEMP_GUARD", "0.5"))
-        raw = self._call_llm(system_prompt, user, max_tokens=600, temperature=temp)
-        if not raw:
-            logger.warning("revise_turn LLM returned no raw response.")
-            return None
-        parsed = self._parse_or_penalize(raw, "revise_turn")
+        parsed = self._generate_parsed(
+            "revise_turn", system_prompt, user, max_tokens=600, temperature=temp
+        )
         if parsed is None:
             return None
 
@@ -3610,9 +3733,15 @@ class NpcChatLLMAdapter(GenericLLMClient):
         )
 
         # Jean's lines are player-submitted text replayed into the prompt, so
-        # they get the same neutralisation the live turn's jean_text does.
+        # they get the same neutralisation *and the same fence* the live turn's
+        # jean_text does. Neutralised-but-bare was the state _format_history
+        # was just fixed out of: the sanitiser alone has to be perfect, whereas
+        # sanitiser-plus-fence has to fail twice. Same text, same replay, same
+        # treatment -- an exemption here would only mean this prompt is the one
+        # an attacker probes.
         recent_jean_lines = [
-            neutralise_player_text(ex.get("jean", ""))
+            "<player_input>%s</player_input>"
+            % neutralise_player_text(ex.get("jean", ""))
             for ex in history[-4:]
             if ex.get("jean")
         ]
@@ -3622,7 +3751,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # only because _JSONTools.sanitize_text happens to collapse whitespace
         # upstream -- an implicit dependency on a caller nothing here can see.
         # Stating it locally costs one call.
-        last_line = neutralise_player_text(last_npc_line)
+        last_line = neutralise_model_text(last_npc_line)
 
         user = (
             f"NPC: {npc_name} — {npc_voice_summary}\n"
@@ -3767,16 +3896,34 @@ class NpcChatLLMAdapter(GenericLLMClient):
         return None
 
     @staticmethod
-    def _remote_fallback_opted_in() -> bool:
-        """Whether a locally-pinned chat adapter may still reach a remote host.
+    def _remote_fallback_setting() -> Optional[bool]:
+        """``NPC_CHAT_LLM_FALLBACK`` as three states, not two.
 
-        Only consulted when the operator has explicitly named ``ollama``: that
-        is the one configuration where "which host" and "may player text leave
-        this machine" give different answers, and reading the provider name as
-        the answer to both is what let a local pin arm a remote chain. Fails
-        closed, like every other gate on real network spend in this file.
+        ``True`` an explicit opt-in, ``False`` an explicit refusal, ``None``
+        unset. The three are genuinely different answers and collapsing them
+        to a bool lost the middle one:
+
+        * unset — the default. A named ``ollama`` stays local (naming the local
+          host is the strongest "this stays on the box" statement an operator
+          can make); any other named provider fans out to whatever other
+          credentials are present, which is what the chain exists for.
+        * ``1`` — fan out even from ollama.
+        * ``0`` — **never** fan out, whatever the provider. This is the state
+          that did nothing at all before: the flag was read only inside the
+          ``ollama`` branch, so ``NPC_CHAT_LLM_FALLBACK=0`` with
+          ``NPC_CHAT_LLM_PROVIDER=groq`` still shipped player dialogue to
+          openrouter and cerebras the first time groq hiccuped. Honouring it
+          for every provider was chosen over renaming the variable
+          ollama-only, because a provider-pinned operator otherwise has no way
+          to say "this one host and no other" at all.
+
+        Anything set but unrecognised reads as a refusal. Fails closed, like
+        every other gate on real network spend in this file.
         """
-        return os.getenv("NPC_CHAT_LLM_FALLBACK", "").strip() in _ENABLED_TRUE_VALUES
+        raw = os.getenv("NPC_CHAT_LLM_FALLBACK", "").strip()
+        if not raw:
+            return None
+        return raw in _ENABLED_TRUE_VALUES
 
     def _provider_chain(self) -> List[str]:
         """Providers to try, in order, for one logical call.
@@ -3791,10 +3938,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
         429s at once. With a flat single-provider dispatch that meant canned
         dialogue until UTC midnight, even with other free tiers sitting unused.
 
-        Three configurations get no fallbacks: ``"none"`` returns an empty
-        chain, a provider nobody named returns just the local default, and a
-        deliberately named ``ollama`` returns just ollama unless
-        ``NPC_CHAT_LLM_FALLBACK=1`` says otherwise. All three are deliberate --
+        Four configurations get no fallbacks: ``"none"`` returns an empty
+        chain; a provider nobody named *for chat* returns just that provider
+        (inherited from ``MYNX_LLM_PROVIDER``, or the local default);
+        ``NPC_CHAT_LLM_FALLBACK=0`` returns just the named provider whatever it
+        is; and a deliberately named ``ollama`` returns just ollama unless
+        ``NPC_CHAT_LLM_FALLBACK=1`` says otherwise. All four are deliberate --
         see the comments below.
         """
         if not self.provider or self.provider == PROVIDER_DISABLED:
@@ -3820,7 +3969,15 @@ class NpcChatLLMAdapter(GenericLLMClient):
             # needs no credential and never leaves the machine. An operator who
             # wants the fallback chain sets a provider.
             return [self.provider]
-        if self.provider == "ollama" and not self._remote_fallback_opted_in():
+        fallback = self._remote_fallback_setting()
+        if fallback is False:
+            # An explicit NPC_CHAT_LLM_FALLBACK=0: the named provider and
+            # nothing else, whatever it is. Previously this was consulted only
+            # in the ollama branch below, so an operator who pinned groq and
+            # wrote 0 got the full fan-out anyway -- the setting silently meant
+            # the opposite of what it says for every provider but one.
+            return [self.provider]
+        if self.provider == "ollama" and not fallback:
             # Naming the local host is the strongest "this stays on the box"
             # statement an operator can make, and the old rule -- which read
             # only NAMED-vs-DEFAULTED -- threw it away: NPC_CHAT_LLM_PROVIDER=
@@ -3932,8 +4089,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
 
         # Every caller of this method parses the reply as JSON.
         payload = self._chat_payload(
-            model, system_prompt, user_prompt, max_tokens, temperature,
-            provider, json_mode=True,
+            model=model,
+            system=system_prompt,
+            user=user_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            provider=provider,
+            json_mode=True,
         )
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -3942,7 +4104,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
         logger.info("_call_openai_compatible provider=%s model=%s", provider, model)
         try:
             response = _post_chat_completion(
-                cfg["url"], payload, headers, self._round_timeout()
+                cfg["url"], payload, headers, self._round_timeout(),
+                # Same reason as the OpenRouter transport: the discarded 400 is
+                # a real request against this provider's quota, and only the
+                # retry's response reaches the metering below.
+                on_discarded=lambda r: GenericLLMClient._record_provider_usage(
+                    provider, r, "error"
+                ),
             )
         except Exception as e:
             # Outside a try, a socket error or DNS failure escaped this method
@@ -3978,7 +4146,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
                     provider,
                     served_id,
                     response.status_code,
-                    getattr(response, "text", "")[:120],
+                    _error_body_for_log(getattr(response, "text", "")),
                 )
             else:
                 logger.warning(
@@ -4107,8 +4275,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
             # fallback while self.provider is groq/cerebras/ollama, whose
             # reasoning keys are wrong (or absent) for this host.
             payload = self._chat_payload(
-                model_id, system, user, max_tokens, temperature,
-                "openrouter", json_mode=True,
+                model=model_id,
+                system=system,
+                user=user,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                provider="openrouter",
+                json_mode=True,
             )
             logger.info(
                 "NpcChatLLMAdapter._call_openrouter attempting model_id=%s attempt=%s/%s",
@@ -4133,6 +4306,45 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if GenericLLMClient._free_models_cache:
             return GenericLLMClient._free_models_cache[0]
         return _OPENROUTER_AUTO_ROUTER
+
+    def _generate_parsed(
+        self,
+        label: str,
+        system: str,
+        user: str,
+        *,
+        max_tokens: int,
+        temperature: float,
+        context: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """Dial the chain for one JSON reply: call, log, parse, penalise.
+
+        The four generation methods below (``generate_personality``,
+        ``generate_npc_turn``, ``generate_turn``, ``revise_turn``) each opened
+        with the same five to eight lines, and the copies had already drifted
+        into three different shapes: two logged the raw reply at DEBUG and two
+        did not, three warned on an empty completion and ``generate_personality``
+        returned None in silence — so the one path that produces a value
+        *persisted into the save* was the one path with no diagnostic at all.
+        Folding them together settles that at the better of the behaviours
+        rather than the more common one.
+
+        ``label`` names the caller in every log line and is the same string
+        ``_parse_or_penalize`` benches under. ``context`` is appended to both
+        messages for the two callers that need ``is_opening`` in them.
+
+        ``generate_jean_options`` deliberately stays out: it parses with
+        ``extract_json_list``, not ``_parse_or_penalize``, and a helper bent to
+        cover both would be a flag argument selecting the whole tail.
+        """
+        raw = self._call_llm(
+            system, user, max_tokens=max_tokens, temperature=temperature
+        )
+        if not raw:
+            logger.warning("%s LLM returned no raw response.%s", label, context)
+            return None
+        logger.debug("%s raw response%s %s", label, context, _raw_log_fields(raw))
+        return self._parse_or_penalize(raw, label)
 
     def _parse_or_penalize(self, raw: Optional[str], label: str) -> Optional[Dict[str, Any]]:
         """Parse a JSON reply, benching the model that served it if it will not.
@@ -4179,11 +4391,14 @@ class NpcChatLLMAdapter(GenericLLMClient):
     def _format_history(history: List[Dict[str, str]]) -> str:
         """Render the recent exchanges as the newline-delimited history block.
 
-        Both sides go through ``neutralise_player_text``: Jean's line is
-        literally player-submitted, and the NPC's is model output generated
-        from it. Either could otherwise carry a newline and forge a turn that
-        never happened, since this block's only structure is one line per
-        speaker.
+        Both sides are neutralised — Jean's line is literally player-submitted,
+        and the NPC's is model output generated from it, so either could
+        otherwise carry a newline and forge a turn that never happened, this
+        block's only structure being one line per speaker. They get *different*
+        rules, though: ``neutralise_model_text`` leaves the NPC's mid-sentence
+        vocatives alone ("Careful, Jean: the bridge is out."), which the player
+        rule deletes. Both still lose a line-leading label and a fence tag,
+        which is what the forgery actually needs.
 
         Jean's side is additionally fenced in ``<player_input>``, the same
         delimiter the live turn gets. Only the current turn used to be fenced,
@@ -4198,7 +4413,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             return "[CONVERSATION HISTORY]\nNone yet."
         lines = ["[CONVERSATION HISTORY]"]
         for ex in history[-8:]:
-            npc_line = neutralise_player_text(ex.get("npc", ""))
+            npc_line = neutralise_model_text(ex.get("npc", ""))
             jean_line = neutralise_player_text(ex.get("jean", ""))
             if npc_line:
                 lines.append(f"NPC: {npc_line}")

@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Set
 from src.narration import narrate
+from src.text_safety import neutralise_model_text
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +226,11 @@ class MynxLLMMixin:
         """Post-process LLM output to reduce self-referential confusion.
 
         Rules applied in order:
-        - Normalise whitespace.
+        - Neutralise: control characters and prompt-fence tags out, whitespace
+          normalised. This is the same rule ``ai.llm_client`` applies to its
+          own model output, for the same reason — a bare ``re.sub(r"\\s+", " ")``
+          leaves ``\\x1b`` untouched, and this text is narrated, so an ANSI
+          escape in a Mynx line is a colour change nobody authored.
         - Replace all but the first occurrence of the mynx's own name with its pronoun.
         - Remove self-targeting action phrases (e.g. "batting at <name>").
         - Replace disallowed capitalised tokens with the appropriate pronoun.
@@ -245,7 +250,7 @@ class MynxLLMMixin:
             )
             name = self.name
 
-            text = re.sub(r"\s+", " ", text).strip()
+            text = neutralise_model_text(text)
 
             count = 0
 

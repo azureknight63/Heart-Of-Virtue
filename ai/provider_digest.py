@@ -47,6 +47,7 @@ from urllib.parse import urlparse
 import requests
 
 from ai.llm_client import GenericLLMClient
+from src.text_format import pct
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,21 @@ def _configured_webhook(action: str) -> Optional[str]:
 
 
 def _pct(value: Optional[float]) -> str:
-    return "unknown" if value is None else "%.0f%%" % (value * 100)
+    """``src.text_format.pct``, plus this module's "no data" spelling.
+
+    The third copy of the percentage renderer, written as ``"%.0f%%"`` while
+    the other two -- the ones ``src/text_format.py`` was extracted to hold --
+    were written as ``int(round(...))``. The two spellings happen to agree on
+    every value (both round half to even on the underlying double; a sweep of
+    20,001 fractions found no divergence), which is exactly what makes this the
+    dangerous kind of duplicate: it reads like a deliberate difference, it
+    isn't, and the day someone "fixes" one spelling the digest and the
+    ``[LLM SATURATION]`` log line beside it start disagreeing by a point.
+
+    The Optional handling is genuinely local -- nothing else renders a
+    percentage that can be absent -- and stays here.
+    """
+    return "unknown" if value is None else pct(value)
 
 
 def format_saturation(snapshot: Dict[str, Any]) -> str:

@@ -7,10 +7,13 @@ provider stack and ``ai/combat_strategist.py`` must be importable without
 dragging in the game engine, so a rule the two share can only live somewhere
 that depends on neither.
 
-``pct`` used to be spelled twice, byte-identically, as a private ``_pct`` in
-each of those modules — and the whole point of both copies is that a threshold
-and the prose quoting it cannot disagree. Two copies of the renderer is one
-rounding-mode change away from the drift they exist to prevent.
+``pct`` used to be spelled three times as a private ``_pct``: byte-identically
+in each of those two modules, and a third time in ``ai/provider_digest.py`` as
+``"%.0f%%"`` — a different spelling of the same arithmetic, which is worse than
+a duplicate because it looks like a decision. The whole point of every copy is
+that a threshold and the prose quoting it cannot disagree, and copies of the
+renderer are one rounding-mode change away from the drift they exist to
+prevent. All three now call this.
 """
 
 

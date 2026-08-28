@@ -33,7 +33,7 @@ class TestSharedChatPayload:
     def _payload_from_http(self, monkeypatch, structured):
         seen = {}
 
-        def post(url, payload, headers, timeout):
+        def post(url, payload, headers, timeout, on_discarded=None):
             seen.update(payload)
             return Resp()
 
@@ -98,7 +98,7 @@ class TestSharedChatPayload:
         must not take response_format with it."""
         seen = {}
 
-        def post(url, payload, headers, timeout):
+        def post(url, payload, headers, timeout, on_discarded=None):
             seen.update(payload)
             return Resp()
 
@@ -114,7 +114,7 @@ class TestSharedChatPayload:
     ):
         seen = {}
 
-        def post(url, payload, headers, timeout):
+        def post(url, payload, headers, timeout, on_discarded=None):
             seen.update(payload)
             return Resp()
 
