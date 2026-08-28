@@ -33,6 +33,7 @@ _PINNED_HIT_CHANCE = 90
 #: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
 _GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
 from src.moves._spear import (
+    KEEP_AWAY_POWER_FACTOR,
     KeepAway,
     Lunge,
     Impale,
@@ -186,14 +187,15 @@ class TestKeepAway:
     def test_evaluate_sets_power_with_weapon(self):
         user = _make_user("Spear")
         move = KeepAway(user)
-        # Keep Away applies a 45% damage reduction to the evaluated power
-        # (issue #397): power = int(20 * 0.55) = 11.
+        # Keep Away is a control move: its damage is deliberately a fraction
+        # of the evaluated full swing (issue #397).
         with patch.object(
             move, "standard_evaluate_attack", return_value=(20, "piercing")
         ):
             move.evaluate()
-            assert move.power == 11
+            assert move.power == int(20 * KEEP_AWAY_POWER_FACTOR)
             assert move.base_damage_type == "piercing"
+        assert KEEP_AWAY_POWER_FACTOR < 1.0
 
     def test_evaluate_real_weapon_deals_nonzero_damage(self):
         """Regression for #397: the old percent-string mod_power ("-45%")
@@ -201,13 +203,14 @@ class TestKeepAway:
         weapon the move must retain positive power after the 45% reduction.
 
         ``power > 0`` alone would be satisfied by a power of 1; the exact value
-        pins that the 0.55 factor is applied to the real evaluation (spear
-        damage 30, wielder strength 15 -> 29 before the reduction, 16 after).
+        pins that the reduction factor is applied to the real evaluation (spear
+        damage 30, strength 15 * 0.5, finesse 10 * 0.3 -> 40.5 full swing).
         """
         user = _make_user("Spear")
         move = KeepAway(user)
         move.evaluate()
-        assert move.power == 16
+        assert move.power == int(int(40.5) * KEEP_AWAY_POWER_FACTOR)
+        assert move.power > 0
         assert move.base_damage_type == "piercing"
 
     def test_execute_hit_reduces_target_hp(self, monkeypatch):
@@ -558,7 +561,7 @@ class TestLunge:
         move = Lunge(user)
         assert move.power == 0
         assert move.fatigue_cost == 10
-        assert move.stage_beat == [1, 2, 2, 4]
+        assert move.stage_beat == [2, 1, 2, 3]
 
     def test_execute_coordinate_step_toward_target(self, monkeypatch):
         user = _make_user("Spear")
@@ -721,7 +724,10 @@ class TestImpale:
         user = _make_user("Spear", equip=False)
         move = Impale(user)
         assert move.power == 0
-        assert move.fatigue_cost == 10
+        # The weaponless fallback mirrors the move's real archetype: a heavy's
+        # placeholder must not be cheaper than a chip's.
+        assert move.stage_beat == [9, 2, 4, 5]
+        assert move.fatigue_cost == 25
 
     def test_execute_ignores_60pct_protection(self, monkeypatch):
         """Impale should apply only 40% of target protection."""
@@ -923,7 +929,7 @@ class TestArmorPierce:
         user = _make_user("Pick", equip=False)
         move = ArmorPierce(user)
         assert move.power == 0
-        assert move.stage_beat == [1, 1, 2, 3]
+        assert move.stage_beat == [3, 1, 1, 3]
         assert move.fatigue_cost == 10
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
@@ -1100,7 +1106,11 @@ class TestReap:
         user.strength = 20
         move = Reap(user)
         move.evaluate()
-        expected = max(1, int(40 * 0.65) + int(20 * 0.2))
+        # Full swing = 40 + 20*0.5 + 10*0.3 = 53, at the area factor. The old
+        # formula ignored str_mod/fin_mod entirely, which on a Scythe -- whose
+        # flat damage is 5 and whose scaling mods are 2/2 -- scored the move at
+        # 5 power against Death's Harvest's 60 on the very same weapon.
+        expected = max(1, int(53 * Reap.AREA_POWER_FACTOR))
         assert move.power == expected
 
     def test_evaluate_no_damage_attribute_uses_strength(self):
@@ -1110,7 +1120,7 @@ class TestReap:
         user.strength = 20
         move = Reap(user)
         move.evaluate()
-        expected = max(1, int(20 * 0.5))
+        expected = max(1, int(20 * Reap.AREA_POWER_FACTOR))
         assert move.power == expected
 
     def test_evaluate_no_weapon_uses_strength(self):
@@ -1118,8 +1128,24 @@ class TestReap:
         user.strength = 20
         move = Reap(user)
         move.evaluate()
-        expected = max(1, int(20 * 0.5))
+        expected = max(1, int(20 * Reap.AREA_POWER_FACTOR))
         assert move.power == expected
+
+    def test_evaluate_scales_off_a_stat_scaling_weapon(self):
+        """Regression: Reap is Scythe-only, and the real Scythe carries 5 flat
+        damage with str_mod/fin_mod of 2 -- so a power formula that reads only
+        ``weapon.damage`` renders the move useless on the one weapon that can
+        cast it."""
+        user = _make_user("Scythe")
+        user.eq_weapon.damage = 5
+        user.eq_weapon.str_mod = 2
+        user.eq_weapon.fin_mod = 2
+        user.strength = 10
+        user.finesse = 10
+        move = Reap(user)
+        move.evaluate()
+        assert move.power == int(45 * Reap.AREA_POWER_FACTOR)
+        assert move.power > 5
 
     def test_execute_hits_alive_enemies_in_range(self, monkeypatch):
         user = _make_user("Scythe")
@@ -1173,12 +1199,19 @@ class TestReap:
         move = Reap(user)
         assert move.viable() is False
 
-    def test_evaluate_exception_sets_power_to_one(self):
+    def test_evaluate_survives_a_garbage_stat(self):
+        """A non-numeric stat must not crash evaluate() or zero the move.
+
+        The coercion is applied per term, so a broken ``strength`` drops only
+        the strength term instead of collapsing the move to a placeholder 1.
+        """
         user = _make_user("Scythe")
         move = Reap(user)
-        user.strength = "abc"  # triggers TypeError in the arithmetic
+        user.strength = "abc"
         move.evaluate()
-        assert move.power == 1
+        # damage 30 + (unreadable strength -> 0) + 10*0.3 = 33, at 45%.
+        assert move.power == int(33 * Reap.AREA_POWER_FACTOR)
+        assert move.power >= 1
 
     def test_prep_announces_the_wind_up_by_name(self):
         user = _make_user("Scythe", name="Gorran")
@@ -1526,8 +1559,8 @@ class TestDeathsHarvest:
         user = _make_user("Scythe", equip=False)
         move = DeathsHarvest(user)
         assert move.power == 0
-        assert move.stage_beat == [2, 1, 3, 5]
-        assert move.fatigue_cost == 10
+        assert move.stage_beat == [10, 2, 6, 6]
+        assert move.fatigue_cost == 25
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
         user = _make_user("Scythe")
@@ -1943,7 +1976,7 @@ class TestExploitWeakness:
         user = _make_user("Pick", equip=False)
         move = ExploitWeakness(user)
         assert move.power == 0
-        assert move.stage_beat == [1, 1, 2, 3]
+        assert move.stage_beat == [3, 1, 2, 3]
         assert move.fatigue_cost == 10
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
@@ -2176,7 +2209,7 @@ class TestStupefy:
         user = _make_user("Pick", equip=False)
         move = Stupefy(user)
         assert move.power == 0
-        assert move.stage_beat == [2, 1, 4, 6]
+        assert move.stage_beat == [8, 2, 5, 6]
         assert move.fatigue_cost == 25
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):

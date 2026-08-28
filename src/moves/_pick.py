@@ -23,10 +23,32 @@ class ChipAway(Move):
 
     Lower per-hit damage but three independent hit rolls; any or all may land.
     Favoured against targets with high evasion where one decisive blow would miss.
+
+    The pick tree's chip attack, and the roster's cheapest sustained damage.
+    It used to be its most expensive move *and* its highest total damage
+    (three strikes at 40% each is 120% of a full swing, for 110 fatigue) —
+    the exact opposite of what "chip away" describes. It now deals about 60%
+    of a full swing spread over three rolls, on a seven-beat cycle at a third
+    of Attack's fatigue. The three-beat execute stage is one beat per strike,
+    so the beat timeline shows the flurry.
+
+    Its weakness is structural rather than numeric: protection is subtracted
+    from each of the three strikes separately, so an armoured target blunts it
+    far harder than it blunts one big hit. That is what keeps it and
+    ``ArmorPierce`` — same seven beats, more raw power, no armour at all —
+    genuinely complementary instead of one shadowing the other.
     """
     display_name = 'Chip Away'
 
     web_animation = "quick_attack"
+
+    #: Number of independent strikes the flurry resolves, and each strike's
+    #: share of ``self.power``. Together they set the move's real output:
+    #: 3 x 0.40 = 1.2x ``power``, i.e. ~60% of a full swing once ``power``
+    #: itself is 50%. Keep the two in step — changing one without the other
+    #: silently retunes the move.
+    STRIKES = 3
+    STRIKE_POWER_FRACTION = 0.40
 
     def __init__(self, user):
         description = (
@@ -36,7 +58,7 @@ class ChipAway(Move):
         prep = 1
         execute = 3
         recoil = 1
-        cooldown = 4
+        cooldown = 2
         super().__init__(
             name="Chip Away",
             description=description,
@@ -71,14 +93,22 @@ class ChipAway(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 3, 1, 4]
+            self.stage_beat = [1, 3, 1, 2]
             self.fatigue_cost = 15
             return
         evaluation = self.standard_evaluate_attack(
             base_power=0,
             base_damage_type="piercing",
-            mod_fatigue=20,
+            mod_power="50%",
+            mod_prep=-3,
+            mod_recoil=-1,
+            mod_cd=-3,
+            mod_fatigue=-60,
+            floor_fatigue=15,
         )
+        # Three visible strikes, one per execute beat (see the class docstring).
+        # A literal, so repeated evaluate() calls stay idempotent.
+        self.stage_beat[1] = 3
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
 
@@ -109,10 +139,10 @@ class ChipAway(Move):
         )
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
-        sub_power = max(1, int(self.power * 0.4))
+        sub_power = max(1, int(self.power * self.STRIKE_POWER_FRACTION))
         total_hits = 0
 
-        for i in range(3):
+        for i in range(self.STRIKES):
             roll = random.randint(0, 100)
             damage = (
                 (
@@ -151,7 +181,15 @@ class ChipAway(Move):
 
 
 class ExploitWeakness(Move):
-    """Targeted strike aimed at an exposed spot — applies Disoriented on hit."""
+    """Targeted strike aimed at an exposed spot — applies Disoriented on hit.
+
+    Utility-first. It was previously an exact numeric clone of the basic
+    Attack that *also* applied a status and stripped protection — strictly
+    better, for free. It now pays for both effects in damage: 65% of a full
+    swing, with a damage-per-beat clearly below Attack's. What you get for
+    that is one big hit (unlike Chip Away, protection is subtracted once),
+    Disoriented, and a Work the Gap armour strip.
+    """
     display_name = 'Exploit Weakness'
 
     web_animation = "pierce"
@@ -161,7 +199,7 @@ class ExploitWeakness(Move):
             "Find a weak point in the enemy's guard and strike it deliberately. "
             "Deals piercing damage and leaves the target disoriented."
         )
-        prep = 1
+        prep = 3
         execute = 1
         recoil = 2
         cooldown = 3
@@ -199,12 +237,17 @@ class ExploitWeakness(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 1, 2, 3]
+            self.stage_beat = [3, 1, 2, 3]
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
             base_power=0,
             base_damage_type="piercing",
+            mod_power="65%",
+            mod_prep=-1,
+            mod_cd=-2,
+            mod_fatigue=-35,
+            floor_fatigue=15,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -286,6 +329,18 @@ class Stupefy(Move):
     """Heavy pommel blow that always applies Disoriented on a successful hit.
 
     High recoil and cooldown — this is the closer, not an opener.
+
+    The pick tree's heavy: 2x the basic Attack's damage across ~1.9x its
+    beats, with an eight-beat wind-up and a five-beat recovery, and a
+    Disoriented that lands regardless of the target's status resistance. Its
+    damage-per-beat is only a shade above Attack's — the guaranteed stun is
+    the rest of what you are buying, and the roughly one-per-fatigue-bar cost
+    is what stops it being the only button worth pressing.
+
+    ``__init__`` declared ``[2, 1, 4, 6]``, i.e. exactly the "high recoil and
+    cooldown" the docstring promises — but ``evaluate()`` overwrote it with the
+    plain weapon-derived timing, so the closer ran on the same twelve beats as
+    every other attack. The mods below put the commitment back.
     """
     display_name = 'Stupefy'
 
@@ -296,9 +351,9 @@ class Stupefy(Move):
             "A heavy blow with the back of the pick that stuns the target. "
             "On a hit, always applies Disoriented regardless of the target's resistance."
         )
-        prep = 2
-        execute = 1
-        recoil = 4
+        prep = 8
+        execute = 2
+        recoil = 5
         cooldown = 6
         super().__init__(
             name="Stupefy",
@@ -334,14 +389,23 @@ class Stupefy(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [2, 1, 4, 6]
+            self.stage_beat = [8, 2, 5, 6]
             self.fatigue_cost = 25
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=20,
+            base_power=0,
             base_damage_type="crushing",
-            mod_fatigue=30,
+            mod_power="200%",
+            mod_prep=4,
+            mod_recoil=3,
+            mod_cd=1,
+            mod_fatigue=35,
+            floor_fatigue=25,
         )
+        # A two-beat execute stage, as for the other heavies:
+        # ``standard_evaluate_attack`` hard-codes execute to 1. A literal, so
+        # repeated evaluate() calls stay idempotent.
+        self.stage_beat[1] = 2
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name

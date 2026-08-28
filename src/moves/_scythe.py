@@ -15,6 +15,7 @@ from ._base import (
     _apply_to_hit_modifiers,
     to_hit_chance,
 )  # noqa: F401
+from ._sword import weapon_scaled_power
 
 
 class Reap(Move):
@@ -23,10 +24,24 @@ class Reap(Move):
     Lower per-target damage than a single strike but covers all threats in
     the frontal hemisphere. Falls back to full-circle hit if coordinates
     are unavailable (mirrors WhirlAttack fallback).
+
+    The scythe's cheap area option: ~45% of a full swing per enemy on a
+    seven-beat cycle. Its single-target damage-per-beat is deliberately far
+    below a real strike's — it only pays from the second enemy onward.
+
+    Its power used to be ``weapon.damage * 0.65 + strength * 0.2``, which
+    drops the weapon's ``str_mod``/``fin_mod`` entirely. That is fatal on the
+    one weapon Reap can be used with: a Scythe deals 5 flat damage and earns
+    the rest through ``str_mod=2``/``fin_mod=2``, so Reap scored **5** power
+    while Death's Harvest — same weapon, same stats — scored 60. It now goes
+    through ``weapon_scaled_power``, which mirrors the standard power line.
     """
     display_name = 'Reap'
 
     web_animation = "sweep"
+
+    #: Fraction of a full weapon swing each enemy in the arc takes.
+    AREA_POWER_FACTOR = 0.45
 
     def __init__(self, user):
         description = (
@@ -34,7 +49,7 @@ class Reap(Move):
             "striking all enemies in its path."
         )
         prep = 1
-        execute = 3
+        execute = 2
         recoil = 2
         cooldown = 2
         super().__init__(
@@ -46,7 +61,7 @@ class Reap(Move):
             targeted=False,
             mvrange=(1, 20),
             stage_announce=["", "", "", ""],
-            fatigue_cost=55,
+            fatigue_cost=45,
             beats_left=prep,
             target=user,
             user=user,
@@ -66,16 +81,7 @@ class Reap(Move):
         return any(e.is_alive() for e in self.user.combat_proximity)
 
     def evaluate(self):
-        try:
-            wpn = getattr(self.user, "eq_weapon", None)
-            if wpn and hasattr(wpn, "damage"):
-                self.power = max(
-                    1, int(wpn.damage * 0.65) + int(self.user.strength * 0.2)
-                )
-            else:
-                self.power = max(1, int(self.user.strength * 0.5))
-        except (TypeError, AttributeError):
-            self.power = 1
+        self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)
 
     def prep(self, user):
         cprint(f"{user.name} raises the scythe for a wide sweep...", "magenta")
@@ -224,6 +230,17 @@ class DeathsHarvest(Move):
 
     Slower and heavier than Reap; designed for the final exchange in a drawn-out
     fight where the user needs to recover while still pressing the assault.
+
+    The scythe tree's heavy: ~1.75x the basic Attack's damage over ~1.7x its
+    beats, with a ten-beat wind-up and a six-beat recovery, and 30% of the
+    damage returned as HP. Committing to it is a real bet — the scythe is the
+    slowest weapon in the game, so a whiffed Harvest is the longest window any
+    enemy will ever get — and landing it is the only way a scythe fighter
+    heals in combat.
+
+    ``__init__`` declared ``[2, 1, 3, 5]``; ``evaluate()`` used to overwrite it
+    with plain weapon timing, so "slower and heavier than Reap" ran on the same
+    twelve beats as everything else. The mods below restore the commitment.
     """
     display_name = "Death's Harvest"
 
@@ -234,10 +251,10 @@ class DeathsHarvest(Move):
             "A deliberate, draining strike that channels your enemy's life force "
             "back into you. Heals for 30% of damage dealt on a successful hit."
         )
-        prep = 2
-        execute = 1
-        recoil = 3
-        cooldown = 5
+        prep = 10
+        execute = 2
+        recoil = 6
+        cooldown = 6
         super().__init__(
             name="Death's Harvest",
             description=description,
@@ -272,13 +289,27 @@ class DeathsHarvest(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [2, 1, 3, 5]
-            self.fatigue_cost = 10
+            self.stage_beat = [10, 2, 6, 6]
+            self.fatigue_cost = 25
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=15,
+            base_power=0,
             base_damage_type="slashing",
+            mod_power="180%",
+            mod_prep=4,
+            mod_recoil=2,
+            # The scythe's weight already gives it the roster's longest natural
+            # cooldown (9 beats at base stats); trimming it keeps the added
+            # commitment in the *visible* prep/recoil stages, where an opponent
+            # can actually read and punish it, rather than in dead air.
+            mod_cd=-3,
+            mod_fatigue=5,
+            floor_fatigue=25,
         )
+        # A two-beat execute stage, as for the other heavies:
+        # ``standard_evaluate_attack`` hard-codes execute to 1. A literal, so
+        # repeated evaluate() calls stay idempotent.
+        self.stage_beat[1] = 2
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name

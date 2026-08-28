@@ -17,11 +17,25 @@ from ._base import (
 )  # noqa: F401
 
 
+#: Keep Away's damage as a fraction of a full swing. Half a swing is the most
+#: a pure control move gets: the reason to press it is the shove that restores
+#: the spear's fighting distance, not the hit that carries it.
+KEEP_AWAY_POWER_FACTOR = 0.50
+
+
 class KeepAway(Move):
     """Minor damage + push target back to maintain optimal spear range.
 
     The spear is weakest when enemies close in. Keep Away deals a glancing
     hit and shoves the target back, restoring the engagement distance.
+
+    Utility-first, and priced accordingly. It used to deal half a swing's
+    damage *at a full swing's price* — twelve beats and the roster's worst
+    damage-per-fatigue — which made the control effect something you paid a
+    penalty for rather than a tool. The damage is still deliberately minor
+    (50% of a full swing); the cycle and the fatigue are now minor to match,
+    so shoving an attacker back out to spear range is a cheap reflex instead
+    of a wasted turn.
     """
     display_name = 'Keep Away'
 
@@ -32,10 +46,10 @@ class KeepAway(Move):
             "Strike the approaching enemy aside and force them back, "
             "restoring your spear's optimal fighting distance."
         )
-        prep = 1
-        execute = 2
+        prep = 2
+        execute = 1
         recoil = 1
-        cooldown = 4
+        cooldown = 3
         super().__init__(
             name="Keep Away",
             description=description,
@@ -66,18 +80,23 @@ class KeepAway(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 2, 1, 4]
+            self.stage_beat = [2, 1, 1, 3]
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=-10,
+            base_power=0,
             base_damage_type="piercing",
+            mod_prep=-2,
+            mod_recoil=-1,
+            mod_cd=-2,
+            mod_fatigue=-40,
+            floor_fatigue=12,
         )
         # Keep Away is a control move that deals reduced damage (issue #397).
-        # Apply the 45% reduction as a numeric factor here rather than via a
+        # Apply the reduction as a numeric factor here rather than via a
         # percent-string mod_power, whose branch multiplied power by a *negative*
         # factor (-45/100) and clamped the resulting damage to 0.
-        self.power = max(1, int(evaluation[0] * 0.55))
+        self.power = max(1, int(evaluation[0] * KEEP_AWAY_POWER_FACTOR))
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name
         self.stage_announce[1] = colored(
@@ -187,7 +206,12 @@ class Lunge(Move):
     """Step forward and deliver a thrusting strike, closing distance mid-attack.
 
     Bridges the gap when the target retreats just outside spear reach.
-    Moves the user 3 units toward the target then delivers a standard thrust.
+    Moves the user 3 units toward the target then delivers a thrust.
+
+    Mobility-first: 70% of a full swing on an eight-beat cycle, so its
+    damage-per-beat sits just under the basic Attack's. You press it to *get
+    somewhere* — closing three units and attacking in one action, instead of
+    spending a separate move on the approach — not because it hits harder.
     """
     display_name = 'Lunge'
 
@@ -198,10 +222,10 @@ class Lunge(Move):
             "Step sharply toward your target and drive your spear forward. "
             "Closes the gap and delivers a piercing strike in one motion."
         )
-        prep = 1
-        execute = 2
+        prep = 2
+        execute = 1
         recoil = 2
-        cooldown = 4
+        cooldown = 3
         super().__init__(
             name="Lunge",
             description=description,
@@ -238,12 +262,17 @@ class Lunge(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 2, 2, 4]
+            self.stage_beat = [2, 1, 2, 3]
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
             base_power=0,
             base_damage_type="piercing",
+            mod_power="70%",
+            mod_prep=-2,
+            mod_cd=-2,
+            mod_fatigue=-30,
+            floor_fatigue=15,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -340,9 +369,18 @@ class Lunge(Move):
 class Impale(Move):
     """Penetrating thrust that ignores most of the target's protection.
 
-    The spear tip finds the gap between armour plates. Deals full weapon
-    damage against only 40% of normal protection — devastating against
-    heavily armoured foes.
+    The spear tree's heavy: roughly twice the basic Attack's damage for
+    roughly twice its beat cost, against only 40% of the target's protection.
+    Nearly all of that cost is visible on the beat timeline as a nine-beat
+    wind-up and a four-beat recovery, which is what makes a whiff genuinely
+    expensive — an enemy that reads the telegraph gets a very long window.
+
+    ``__init__`` has always declared a slow ``[2, 1, 3, 5]``, but ``evaluate()``
+    used to overwrite it with the plain weapon-derived timing, so the move the
+    docstring calls "slow and committing" actually ran on exactly the same
+    twelve beats as everything else in the roster. The ``mod_prep`` /
+    ``mod_recoil`` arguments below put the commitment back, and route it
+    through ``standard_evaluate_attack`` so it scales with weapon weight.
     """
     display_name = 'Impale'
 
@@ -391,13 +429,23 @@ class Impale(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [2, 1, 3, 5]
-            self.fatigue_cost = 10
+            self.stage_beat = [9, 2, 4, 5]
+            self.fatigue_cost = 25
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=10,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="190%",
+            mod_prep=5,
+            mod_recoil=2,
+            mod_fatigue=40,
+            floor_fatigue=25,
         )
+        # A two-beat execute stage. ``standard_evaluate_attack`` hard-codes
+        # execute to 1 for every move it evaluates, so the heavies re-assert it
+        # here; assigning a literal into the freshly-built list it just
+        # returned keeps evaluate() idempotent.
+        self.stage_beat[1] = 2
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name
@@ -483,6 +531,13 @@ class ArmorPierce(Move):
 
     The pick's pointed tip finds the hairline gap. Protection is set to
     zero in the damage calculation — raw weapon power and resistance apply.
+
+    Situational by construction: at 70% of a full swing on an eight-beat cycle
+    its raw damage-per-beat is *below* the basic Attack's, so against an
+    unarmoured target it is simply the worse button. It overtakes Attack the
+    moment the target's protection reaches roughly four, and never stops
+    scaling after that. That is the whole design — a move that is the clear
+    answer to one problem rather than a marginal improvement on everything.
     """
     display_name = 'Armor Pierce'
 
@@ -493,9 +548,9 @@ class ArmorPierce(Move):
             "Drive the pick's point into an armour gap, bypassing all protection. "
             "Lower raw damage than a full swing but ignores every point of armour."
         )
-        prep = 1
+        prep = 3
         execute = 1
-        recoil = 2
+        recoil = 1
         cooldown = 3
         super().__init__(
             name="Armor Pierce",
@@ -531,12 +586,18 @@ class ArmorPierce(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 1, 2, 3]
+            self.stage_beat = [3, 1, 1, 3]
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=-5,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="70%",
+            mod_prep=-1,
+            mod_recoil=-1,
+            mod_cd=-2,
+            mod_fatigue=-40,
+            floor_fatigue=15,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]

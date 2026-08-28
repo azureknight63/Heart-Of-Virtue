@@ -17,6 +17,56 @@ from ._base import (
 )  # noqa: F401
 
 
+def weapon_scaled_power(user, factor):
+    """Weapon-scaled power for the sweep/spin/pivot moves that deliberately do
+    *not* route through ``standard_evaluate_attack``.
+
+    Those moves keep hand-rolled ``evaluate()`` bodies because their timing is
+    fixed rather than weapon-derived — but every one of them used to score
+    power as ``weapon.damage * k + strength * k2``, which drops the weapon's
+    ``str_mod``/``fin_mod`` entirely.  On a stat-scaling weapon that is not a
+    small discrepancy: a Scythe deals only 5 flat damage and earns the rest
+    through ``str_mod=2``/``fin_mod=2``, so Reap — a Scythe-only move — scored
+    **5** power against Death's Harvest's 60 on the very same weapon.
+
+    This mirrors ``standard_evaluate_attack``'s power line
+    (``damage + strength*str_mod + finesse*fin_mod``) and then applies the
+    caller's archetype ``factor``, so an area/utility move stays a fixed
+    fraction of a full swing on *every* weapon rather than only on the
+    flat-damage ones.  It lives in ``_sword.py`` because this module hosts the
+    package's two weapon-agnostic moves (WhirlAttack, VertigoSpin); the
+    scythe/polearm/dagger modules import it from here.  It is deliberately
+    pure — it reads ``user`` and returns a number, never writing move state —
+    so repeated ``evaluate()`` calls stay idempotent.
+    """
+    def _num(value, default=0.0):
+        """Coerce to float, or ``default`` for anything non-numeric.
+
+        Applied per *term* rather than around the whole expression on purpose:
+        a weapon that carries a real ``damage`` but a missing or unusable
+        ``str_mod`` should still score off its damage, not collapse to the
+        no-weapon fallback. Wrapping the whole sum instead is what made the
+        earlier hand-rolled versions silently bottom out at 1.
+        """
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    wpn = getattr(user, "eq_weapon", None)
+    damage = _num(getattr(wpn, "damage", None), default=None) if wpn else None
+    strength = _num(getattr(user, "strength", 0))
+    if damage is None:
+        base = strength
+    else:
+        base = (
+            damage
+            + strength * _num(getattr(wpn, "str_mod", 0))
+            + _num(getattr(user, "finesse", 0)) * _num(getattr(wpn, "fin_mod", 0))
+        )
+    return max(1, int(base * _num(factor)))
+
+
 class PommelStrike(Move):
     """
     Quick strike using the pommel of the weapon. This kind of attack serves to fill in gap time for weapons that
@@ -109,11 +159,14 @@ class WhirlAttack(Move):
 
     def __init__(self, user):
         description = "Spin to attack all nearby enemies."
+        # Area chip: a short 7-beat cycle with a 2-beat spin, deliberately the
+        # cheapest sustained option in the roster. Single-target throughput is
+        # poor by design (~0.40x a full swing); it only pays against 2+ enemies.
         prep = 1
-        execute = 3
+        execute = 2
         recoil = 1
         cooldown = 3
-        fatigue_cost = 60
+        fatigue_cost = 45
         target = user  # Self-targeted, affects multiple enemies
         super().__init__(
             name="Whirl Attack",
@@ -155,24 +208,17 @@ class WhirlAttack(Move):
                         return True
         return False
 
+    #: Fraction of a full weapon swing each enemy in the spin takes. The
+    #: lowest area factor in the roster — Whirl Attack hits a full 360 degrees
+    #: with no arc restriction, so it trades per-target damage for coverage.
+    AREA_POWER_FACTOR = 0.40
+
     def evaluate(self):
         """Adjusts move power based on weapon and stats."""
-        try:
-            if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
-                wpn = self.user.eq_weapon
-                if hasattr(wpn, "base_damage_type"):
-                    self.base_damage_type = wpn.base_damage_type
-                if hasattr(wpn, "damage"):
-                    # Whirl Attack does reduced damage compared to single-target attacks
-                    self.power = max(
-                        1, (int(wpn.damage) * 0.6) + (self.user.strength * 0.3)
-                    )
-                else:
-                    self.power = self.user.strength * 0.5
-            else:
-                self.power = self.user.strength * 0.5
-        except (TypeError, AttributeError):
-            self.power = self.user.strength * 0.5
+        wpn = getattr(self.user, "eq_weapon", None)
+        if wpn is not None and hasattr(wpn, "base_damage_type"):
+            self.base_damage_type = wpn.base_damage_type
+        self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)
 
     def prep(self, user):
         """Prep stage - announce the spin."""
@@ -261,11 +307,15 @@ class VertigoSpin(Move):
 
     def __init__(self, user):
         description = "Spin attack that disorients the target."
+        # Utility-first. The damage is deliberately about half a full swing:
+        # the reason to press this is Disoriented plus the random re-facing it
+        # forces on the target, which hands every subsequent attack in the
+        # fight a flank or rear angle on the shared facing curve.
         prep = 1
-        execute = 3
-        recoil = 1
-        cooldown = 4
-        fatigue_cost = 80
+        execute = 2
+        recoil = 2
+        cooldown = 3
+        fatigue_cost = 50
         target = user  # Will be set when move is selected
         super().__init__(
             name="Vertigo Spin",
@@ -306,21 +356,17 @@ class VertigoSpin(Move):
 
         return False
 
+    #: Fraction of a full weapon swing this deals. Above the pure area moves
+    #: (it is single-target) but well below a real attack — the status is the
+    #: payload, not the damage.
+    POWER_FACTOR = 0.55
+
     def evaluate(self):
         """Adjusts move power based on weapon and stats."""
-        try:
-            if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
-                wpn = self.user.eq_weapon
-                if hasattr(wpn, "base_damage_type"):
-                    self.base_damage_type = wpn.base_damage_type
-                if hasattr(wpn, "damage"):
-                    self.power = (int(wpn.damage) * 0.9) + (self.user.strength * 0.25)
-                else:
-                    self.power = self.user.strength * 0.6
-            else:
-                self.power = self.user.strength * 0.6
-        except (TypeError, AttributeError):
-            self.power = self.user.strength * 0.6
+        wpn = getattr(self.user, "eq_weapon", None)
+        if wpn is not None and hasattr(wpn, "base_damage_type"):
+            self.base_damage_type = wpn.base_damage_type
+        self.power = weapon_scaled_power(self.user, self.POWER_FACTOR)
 
     def prep(self, user):
         """Prep stage - announce the spin."""
@@ -411,7 +457,14 @@ class VertigoSpin(Move):
 
 
 class Thrust(Move):
-    """Fast piercing attack. Slightly lower power than Slash but quicker.
+    """The roster's chip attack: ~40% of a full swing on a five-beat cycle.
+
+    Deliberately the *worst* damage-per-beat of any sword or spear strike and
+    by far the best damage-per-fatigue. It exists to fill a gap the basic
+    Attack cannot: a complete attack cycle short enough to land inside a
+    narrow opening, at a quarter of the fatigue, so an exhausted fighter still
+    has an offensive option. Pressing it repeatedly is slower than pressing
+    Attack — that is the trade, and it is what keeps Attack relevant.
 
     Viable for Sword and Spear. Each weapon's natural stats (weight, damage,
     range) differentiate their feel: a lighter sword thrusts quicker; a spear
@@ -424,7 +477,8 @@ class Thrust(Move):
     def __init__(self, user):
         description = (
             "Drive the point of your weapon forward in a fast, direct thrust. "
-            "Less power than a full slash but quicker to execute."
+            "A fraction of a full swing's power, but it costs almost nothing "
+            "and is over in a heartbeat."
         )
         prep = 1
         execute = 1
@@ -463,12 +517,19 @@ class Thrust(Move):
             self.stage_beat = [1, 1, 1, 0]
             self.fatigue_cost = 10
             return
+        # Chip archetype. Power is a *percentage* of the full swing so the
+        # 40% ratio holds on every weapon rather than only on flat-damage
+        # ones; the timing mods drive prep/recoil/cooldown to their floors so
+        # the whole cycle is ~5 beats regardless of weapon weight.
         evaluation = self.standard_evaluate_attack(
-            base_power=-5,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="40%",
             mod_prep=-10,
-            mod_fatigue=-30,
-            floor_fatigue=8,
+            mod_recoil=-1,
+            mod_cd=-3,
+            mod_fatigue=-70,
+            floor_fatigue=12,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -489,8 +550,10 @@ class Thrust(Move):
 class DisarmingSlash(Move):
     """Calculated slash that rattles the target, applying Disoriented on hit.
 
-    Trades raw damage for a persistent status debuff that reduces the
-    target's defensive bonuses.
+    Utility-first: 60% of a full swing on a compressed eight-beat cycle. Its
+    damage-per-beat is deliberately well under the basic Attack's — the
+    Disoriented state is what you are buying, and the short cycle is what lets
+    you buy it early in an exchange instead of committing to a full swing.
     """
     display_name = 'Disarming Slash'
 
@@ -504,7 +567,7 @@ class DisarmingSlash(Move):
         prep = 1
         execute = 1
         recoil = 2
-        cooldown = 4
+        cooldown = 3
         super().__init__(
             name="Disarming Slash",
             description=description,
@@ -535,13 +598,18 @@ class DisarmingSlash(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 1, 2, 4]
+            self.stage_beat = [1, 1, 2, 3]
             self.fatigue_cost = 10
             return
+        # Debuff opener: short prep and cooldown so it can be thrown early,
+        # paid for with 60% power — the Disoriented state is the payload.
         evaluation = self.standard_evaluate_attack(
-            base_power=-8,
+            base_power=0,
             base_damage_type="slashing",
-            mod_fatigue=5,
+            mod_power="60%",
+            mod_prep=-2,
+            mod_cd=-2,
+            mod_fatigue=-45,
             floor_fatigue=15,
         )
         self.power = evaluation[0]
@@ -622,8 +690,19 @@ class DisarmingSlash(Move):
 class Riposte(Move):
     """Counterattack delivered while still in guard — usable only while Parrying.
 
-    The heat boost from still being in guard amplifies the strike's damage.
-    Near-instant prep (guard is already up); short recoil.
+    The roster's high-risk, high-tempo option. Prep is genuinely **zero** —
+    the guard is already up — which makes it the only attack in the game that
+    resolves without a telegraph, and gives it by far the best
+    damage-per-beat. The risk is entirely up front: reaching it costs a beat
+    spent on Parry that does no damage at all, and it evaporates the moment
+    the Parrying state does, so it only pays on a correct read of the
+    opponent's timing.
+
+    ``__init__`` has always declared ``prep = 0``, but ``evaluate()`` used to
+    overwrite the whole ``stage_beat`` from ``standard_evaluate_attack`` —
+    whose prep is weapon-weight derived — so the documented near-instant
+    counter actually wound up on a 4-beat wind-up, slower than a Thrust. The
+    prep is now re-forced to 0 after the standard evaluation.
     """
     display_name = 'Riposte'
 
@@ -685,11 +764,18 @@ class Riposte(Move):
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=10,
+            base_power=0,
             base_damage_type="slashing",
-            mod_fatigue=-10,
+            mod_power="85%",
+            mod_cd=-2,
+            mod_fatigue=-25,
             floor_fatigue=12,
         )
+        # Zero prep is the whole identity of the move (see the class
+        # docstring). ``standard_evaluate_attack`` cannot express it — its prep
+        # is floored at 1 — so re-force it here. Assigning a literal, never a
+        # value derived from the move's own state, keeps evaluate() idempotent.
+        self.stage_beat[0] = 0
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name

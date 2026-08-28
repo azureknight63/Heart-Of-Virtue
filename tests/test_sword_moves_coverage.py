@@ -205,29 +205,46 @@ class TestWhirlAttack:
         assert move.viable() is False
 
     def test_evaluate_weapon_no_damage_attr(self):
-        """Weapon present but lacks 'damage' -> strength fallback (line 157)."""
+        """Weapon present but lacks 'damage' -> strength-only fallback."""
         user = _make_user()
         user.eq_weapon = MagicMock(spec=["subtype", "name", "wpnrange"])
         user.strength = 20
         move = WhirlAttack(user)
         move.evaluate()
-        assert move.power == user.strength * 0.5
+        assert move.power == int(user.strength * WhirlAttack.AREA_POWER_FACTOR)
 
     def test_evaluate_no_weapon(self):
         user = _make_user(equip=False)
         user.strength = 20
         move = WhirlAttack(user)
         move.evaluate()
-        assert move.power == user.strength * 0.5
+        assert move.power == int(user.strength * WhirlAttack.AREA_POWER_FACTOR)
 
     def test_evaluate_exception_fallback(self):
-        """TypeError during power calc falls back to strength * 0.5."""
+        """A non-numeric weapon damage falls back to strength alone."""
         user = _make_user()
-        # int(None) raises TypeError, caught by the except clause
         user.eq_weapon.damage = None
         move = WhirlAttack(user)
         move.evaluate()
-        assert move.power == user.strength * 0.5
+        assert move.power == int(user.strength * WhirlAttack.AREA_POWER_FACTOR)
+
+    def test_evaluate_scales_with_the_weapon_str_and_fin_mods(self):
+        """Area power tracks the full swing, not just flat weapon damage.
+
+        The old formula was ``damage * 0.6 + strength * 0.3``, which ignores
+        the weapon's str_mod/fin_mod entirely -- fatal on a stat-scaling
+        weapon, where nearly all of a swing's damage comes from those terms.
+        """
+        user = _make_user()
+        user.strength = 10
+        user.finesse = 10
+        user.eq_weapon.damage = 5
+        user.eq_weapon.str_mod = 2
+        user.eq_weapon.fin_mod = 2
+        move = WhirlAttack(user)
+        move.evaluate()
+        # (5 + 10*2 + 10*2) * 0.40 == 18, not int(5 * 0.40) == 2.
+        assert move.power == int(45 * WhirlAttack.AREA_POWER_FACTOR)
 
     def test_prep_announces_the_spin_by_name(self):
         user = _make_user(name="Jean")
@@ -379,22 +396,37 @@ class TestVertigoSpin:
         user.strength = 20
         move = VertigoSpin(user)
         move.evaluate()
-        assert move.power == user.strength * 0.6
+        assert move.power == int(user.strength * VertigoSpin.POWER_FACTOR)
 
     def test_evaluate_no_weapon(self):
         user = _make_user(equip=False)
         user.strength = 20
         move = VertigoSpin(user)
         move.evaluate()
-        assert move.power == user.strength * 0.6
+        assert move.power == int(user.strength * VertigoSpin.POWER_FACTOR)
 
     def test_evaluate_exception_fallback(self):
-        """int(None) raises TypeError, caught by the except clause."""
+        """A non-numeric weapon damage falls back to strength alone."""
         user = _make_user()
         user.eq_weapon.damage = None
         move = VertigoSpin(user)
         move.evaluate()
-        assert move.power == user.strength * 0.6
+        assert move.power == int(user.strength * VertigoSpin.POWER_FACTOR)
+
+    def test_damage_stays_below_a_real_attack(self):
+        """Vertigo Spin is utility-first: Disoriented plus a forced re-facing
+        is the payload, so its damage must stay a clear fraction of a full
+        swing rather than competing with one."""
+        assert VertigoSpin.POWER_FACTOR < 1.0
+        user = _make_user()
+        user.strength = 10
+        user.finesse = 10
+        user.eq_weapon.damage = 30
+        user.eq_weapon.str_mod = 1
+        user.eq_weapon.fin_mod = 1
+        move = VertigoSpin(user)
+        move.evaluate()
+        assert move.power == int(50 * VertigoSpin.POWER_FACTOR)
 
     def test_prep_names_both_combatants_in_its_warning(self):
         user = _make_user(name="Jean")
@@ -572,7 +604,7 @@ class TestDisarmingSlash:
         user = _make_user(equip=False)
         move = DisarmingSlash(user)
         assert move.power == 0
-        assert move.stage_beat == [1, 1, 2, 4]
+        assert move.stage_beat == [1, 1, 2, 3]
         assert move.fatigue_cost == 10
 
     def test_execute_hit_applies_disoriented(self, monkeypatch):
@@ -634,7 +666,8 @@ class TestDisarmingSlash:
         move.target = tgt
         move.power = 40
         move.base_damage_type = "slashing"
-        user.fatigue = 100
+        # Deliberately below the move's cost, so the zero-floor is exercised.
+        user.fatigue = 5
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
@@ -647,9 +680,9 @@ class TestDisarmingSlash:
         assert tgt.hp == 60, "the slash must land even though the status failed"
         assert tgt.states == [], "no state may be left half-applied"
         # Fatigue is still charged (and floored at 0 here, since the move's
-        # cost exceeds the 100 the user had) rather than skipped by the
+        # cost exceeds the 5 the user had) rather than skipped by the
         # swallowed exception.
-        assert move.fatigue_cost > 100
+        assert move.fatigue_cost > 5
         assert user.fatigue == 0
 
     def test_execute_parry_deals_no_damage_and_staggers_the_user(

@@ -353,14 +353,14 @@ class TestFeintAndPivot:
         user.strength = 20
         move = FeintAndPivot(user)
         move.evaluate()
-        assert move.power == user.strength * 0.4
+        assert move.power == int(user.strength * FeintAndPivot.POWER_FACTOR)
 
     def test_evaluate_no_weapon(self):
         user = _make_user(equip=False)
         user.strength = 20
         move = FeintAndPivot(user)
         move.evaluate()
-        assert move.power == user.strength * 0.4
+        assert move.power == int(user.strength * FeintAndPivot.POWER_FACTOR)
 
     def test_evaluate_exception_fallback(self):
         user = _make_user()
@@ -368,7 +368,30 @@ class TestFeintAndPivot:
         user.strength = 20
         move = FeintAndPivot(user)
         move.evaluate()
-        assert move.power == user.strength * 0.4
+        assert move.power == int(user.strength * FeintAndPivot.POWER_FACTOR)
+
+    def test_evaluate_scales_with_the_weapon_str_and_fin_mods(self):
+        """The feint's power tracks a full swing, not just flat weapon damage.
+
+        The old formula was ``damage * 0.8 + strength * 0.2``, which dropped
+        the weapon's str_mod/fin_mod -- so a dagger, whose damage is almost
+        entirely finesse scaling, scored nearly nothing.
+        """
+        user = _make_user()
+        user.strength = 10
+        user.finesse = 10
+        user.eq_weapon.damage = 12
+        user.eq_weapon.str_mod = 0.25
+        user.eq_weapon.fin_mod = 3
+        move = FeintAndPivot(user)
+        move.evaluate()
+        # (12 + 10*0.25 + 10*3) == 44.5 of full swing, times the factor.
+        assert move.power == int(44.5 * FeintAndPivot.POWER_FACTOR)
+
+    def test_damage_stays_well_below_a_real_attack(self):
+        """Utility-first: the pivot is the payload, so the strike itself must
+        stay a clear fraction of a full swing."""
+        assert FeintAndPivot.POWER_FACTOR < 0.5
 
     def test_prep_names_both_combatants_in_its_warning(self):
         user = _make_user(name="Jean")

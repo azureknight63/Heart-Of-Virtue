@@ -161,16 +161,18 @@ class TestWhirlAttackMove:
         """Test WhirlAttack move is created with correct attributes"""
         assert whirl_move.name == "Whirl Attack"
         assert whirl_move.user == player
-        assert whirl_move.fatigue_cost == 60
+        assert whirl_move.fatigue_cost == 45
         assert whirl_move.xp_gain == 15
 
     def test_whirl_stage_beat_values(self, whirl_move):
         """Test WhirlAttack has correct stage beat durations"""
-        # [prep=1, execute=3, recoil=1, cooldown=3]
+        # [prep=1, execute=2, recoil=1, cooldown=3] -- a 7-beat cycle, the
+        # cheap end of the area spectrum (Halberd Spin is the heavy end at 13).
         assert whirl_move.stage_beat[0] == 1  # prep
-        assert whirl_move.stage_beat[1] == 3  # execute
+        assert whirl_move.stage_beat[1] == 2  # execute
         assert whirl_move.stage_beat[2] == 1  # recoil
         assert whirl_move.stage_beat[3] == 3  # cooldown
+        assert sum(whirl_move.stage_beat) == 7
 
     def test_whirl_not_viable_without_combat_position(self, player):
         """Test WhirlAttack not viable without combat_position"""
@@ -204,7 +206,7 @@ class TestWhirlAttackMove:
 
         whirl_move.execute(player)
 
-        assert player.fatigue == initial_fatigue - 60
+        assert player.fatigue == initial_fatigue - 45
 
     def test_whirl_changes_facing_randomly(self, player, whirl_move):
         """Test WhirlAttack.execute() changes facing to random direction"""
@@ -223,10 +225,12 @@ class TestWhirlAttackMove:
         """Test WhirlAttack power calculation from weapon"""
         whirl_move.evaluate()
 
-        # Power = (weapon.power * 0.6) + (player.strength * 0.3)
-        # = (20 * 0.6) + (10 * 0.3) = 12 + 3 = 15
-        expected_power = (20 * 0.6) + (10 * 0.3)
-        assert whirl_move.power == expected_power
+        # Power is AREA_POWER_FACTOR of a full swing
+        # (damage + strength*str_mod + finesse*fin_mod). This Mock weapon has
+        # a real damage of 20 but no numeric str_mod/fin_mod, so those terms
+        # drop out: int(20 * 0.40) = 8.
+        assert WhirlAttack.AREA_POWER_FACTOR == 0.40
+        assert whirl_move.power == int(20 * WhirlAttack.AREA_POWER_FACTOR)
 
     def test_whirl_power_without_weapon(self, player):
         """Test WhirlAttack power calculation without weapon"""
@@ -234,8 +238,9 @@ class TestWhirlAttackMove:
         whirl = WhirlAttack(player)
         whirl.evaluate()
 
-        # Power = player.strength * 0.5 = 10 * 0.5 = 5
-        assert whirl.power == 5
+        # No weapon: fall back to strength alone, still scaled by the
+        # move's area factor. int(10 * 0.40) = 4.
+        assert whirl.power == int(10 * WhirlAttack.AREA_POWER_FACTOR)
 
 
 class TestFeintAndPivotMove:
@@ -281,7 +286,7 @@ class TestFeintAndPivotMove:
         """Test FeintAndPivot move is created correctly"""
         assert feint_move.name == "Feint & Pivot"
         assert feint_move.user == player
-        assert feint_move.fatigue_cost == 70
+        assert feint_move.fatigue_cost == 45
         assert feint_move.xp_gain == 20
         assert feint_move.targeted == True
 
@@ -289,9 +294,10 @@ class TestFeintAndPivotMove:
         """Test FeintAndPivot has correct stage beat durations"""
         # [prep=1, execute=4, recoil=1, cooldown=4]
         assert feint_move.stage_beat[0] == 1  # prep
-        assert feint_move.stage_beat[1] == 4  # execute
+        assert feint_move.stage_beat[1] == 3  # execute
         assert feint_move.stage_beat[2] == 1  # recoil
-        assert feint_move.stage_beat[3] == 4  # cooldown
+        assert feint_move.stage_beat[3] == 3  # cooldown
+        assert sum(feint_move.stage_beat) == 8
 
     def test_feint_not_viable_without_combat_position(self, player, target_enemy):
         """Test FeintAndPivot not viable without combat_position"""
@@ -332,7 +338,7 @@ class TestFeintAndPivotMove:
 
         feint_move.execute(player)
 
-        assert player.fatigue == initial_fatigue - 70
+        assert player.fatigue == initial_fatigue - 45
 
     def test_feint_execute_repositions_player(self, player, target_enemy, feint_move):
         """A front-on feint pivots the player onto the target's flank.
@@ -363,10 +369,10 @@ class TestFeintAndPivotMove:
         """Test FeintAndPivot power calculation"""
         feint_move.evaluate()
 
-        # Power = (weapon.power * 0.8) + (player.strength * 0.2)
-        # = (25 * 0.8) + (12 * 0.2) = 20 + 2.4 = 22.4
-        expected_power = (25 * 0.8) + (12 * 0.2)
-        assert feint_move.power == expected_power
+        # Utility-first: POWER_FACTOR of a full swing. This Mock weapon has a
+        # real damage of 25 and no numeric str_mod/fin_mod, so int(25 * 0.45).
+        assert FeintAndPivot.POWER_FACTOR == 0.45
+        assert feint_move.power == int(25 * FeintAndPivot.POWER_FACTOR)
 
 
 class TestVertigoSpinMove:
@@ -412,7 +418,7 @@ class TestVertigoSpinMove:
         """Test VertigoSpin move is created correctly"""
         assert spin_move.name == "Vertigo Spin"
         assert spin_move.user == player
-        assert spin_move.fatigue_cost == 80
+        assert spin_move.fatigue_cost == 50
         assert spin_move.xp_gain == 25
         assert spin_move.targeted == True
 
@@ -420,9 +426,10 @@ class TestVertigoSpinMove:
         """Test VertigoSpin has correct stage beat durations"""
         # [prep=1, execute=3, recoil=1, cooldown=4]
         assert spin_move.stage_beat[0] == 1  # prep
-        assert spin_move.stage_beat[1] == 3  # execute
-        assert spin_move.stage_beat[2] == 1  # recoil
-        assert spin_move.stage_beat[3] == 4  # cooldown
+        assert spin_move.stage_beat[1] == 2  # execute
+        assert spin_move.stage_beat[2] == 2  # recoil
+        assert spin_move.stage_beat[3] == 3  # cooldown
+        assert sum(spin_move.stage_beat) == 8
 
     def test_spin_not_viable_without_combat_position(self, player, target_enemy):
         """Test VertigoSpin not viable without combat_position"""
@@ -450,7 +457,7 @@ class TestVertigoSpinMove:
 
         spin_move.execute(player)
 
-        assert player.fatigue == initial_fatigue - 80
+        assert player.fatigue == initial_fatigue - 50
 
     def test_spin_execute_rotates_target_facing(self, player, target_enemy, spin_move):
         """Test VertigoSpin.execute() rotates target facing"""
@@ -482,10 +489,10 @@ class TestVertigoSpinMove:
         """Test VertigoSpin power calculation"""
         spin_move.evaluate()
 
-        # Power = (weapon.power * 0.9) + (player.strength * 0.25)
-        # = (28 * 0.9) + (14 * 0.25) = 25.2 + 3.5 = 28.7
-        expected_power = (28 * 0.9) + (14 * 0.25)
-        assert spin_move.power == expected_power
+        # Utility-first: POWER_FACTOR of a full swing. This Mock weapon has a
+        # real damage of 28 and no numeric str_mod/fin_mod, so int(28 * 0.55).
+        assert VertigoSpin.POWER_FACTOR == 0.55
+        assert spin_move.power == int(28 * VertigoSpin.POWER_FACTOR)
 
 
 class TestPhase3MovesIntegration:
@@ -545,7 +552,7 @@ class TestPhase3MovesIntegration:
         initial_fatigue = player.fatigue
         whirl.execute(player)
 
-        assert player.fatigue == initial_fatigue - 60
+        assert player.fatigue == initial_fatigue - 45
 
     def test_sequence_turn_feint_spin(self, combat_scenario):
         """Test sequence: Turn → Feint & Pivot → Vertigo Spin"""
@@ -608,9 +615,11 @@ class TestPhase3MovesIntegration:
         feint.evaluate()
         spin.evaluate()
 
-        assert whirl.power == 5.0   # strength * 0.5
-        assert feint.power == 4.0   # strength * 0.4
-        assert spin.power == 6.0    # strength * 0.6
+        assert whirl.power == int(10 * WhirlAttack.AREA_POWER_FACTOR)
+        assert feint.power == int(10 * FeintAndPivot.POWER_FACTOR)
+        assert spin.power == int(10 * VertigoSpin.POWER_FACTOR)
+        # ...and the poisoned sentinel is genuinely gone in every case.
+        assert all(m.power > 0 for m in (whirl, feint, spin))
 
         # Turn is a pure repositioning move: it carries no power at all.
         turn = Turn(player)
@@ -627,9 +636,14 @@ class TestPhase3MovesIntegration:
         spin = VertigoSpin(player)
 
         assert turn.fatigue_cost == 0
-        assert whirl.fatigue_cost == 60
-        assert feint.fatigue_cost == 70
-        assert spin.fatigue_cost == 80
+        assert whirl.fatigue_cost == 45
+        assert feint.fatigue_cost == 45
+        assert spin.fatigue_cost == 50
+        # Every one of these must stay castable from a full bar (Player's base
+        # maxfatigue is 150) -- a cost above it makes the move permanently
+        # unreachable, since combat gates selection on fatigue >= cost.
+        for move in (whirl, feint, spin):
+            assert 0 < move.fatigue_cost <= 150
 
     def test_no_negative_fatigue(self, combat_scenario):
         """Test players can't execute moves when fatigued"""

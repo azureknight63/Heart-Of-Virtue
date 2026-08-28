@@ -152,7 +152,9 @@ class TestOverheadSmash:
 
         move.evaluate()
 
-        assert move.power == 70
+        # Full swing is damage + str*str_mod + fin*fin_mod
+        # = 40 + 15*0.5 + 10*0.3 = 50.5; the heavy takes 205% of it.
+        assert move.power == int(50.5 * 2.05)
         assert move.base_damage_type == "crushing"
         # The announcement is rebuilt from the live weapon name.
         assert "Halberd" in move.stage_announce[1]
@@ -256,12 +258,20 @@ class TestSweep:
         user.combat_list = [enemy]
         assert move.viable() is True
 
-    def test_evaluate_exception_sets_power_to_one(self):
+    def test_evaluate_survives_a_garbage_stat(self):
+        """A non-numeric stat must not crash evaluate() or zero the move.
+
+        The terms that *are* readable still count -- the coercion is applied
+        per term, so a broken ``strength`` drops only the strength term rather
+        than collapsing the whole move to a placeholder 1.
+        """
         user = _make_user()
         move = Sweep(user)
-        user.strength = "abc"  # triggers TypeError in the arithmetic
+        user.strength = "abc"
         move.evaluate()
-        assert move.power == 1
+        # damage 40 + (unreadable strength -> 0) + 10*0.3 = 43, at 45%.
+        assert move.power == int(43 * Sweep.AREA_POWER_FACTOR)
+        assert move.power >= 1
 
     def test_prep_prints_message(self):
         user = _make_user()
@@ -275,7 +285,8 @@ class TestSweep:
         user.eq_weapon.damage = 40
         user.strength = 20
         move = Sweep(user)
-        expected = max(1, int(40 * 0.65) + int(20 * 0.25))
+        # Full swing = 40 + 20*0.5 + 10*0.3 = 53, at the area factor.
+        expected = max(1, int(53 * Sweep.AREA_POWER_FACTOR))
         assert move.power == expected
 
     def test_evaluate_no_damage_attribute_fallback(self):
@@ -287,7 +298,7 @@ class TestSweep:
         user.strength = 20
         move = Sweep(user)
         move.evaluate()
-        expected = max(1, int(20 * 0.5))
+        expected = max(1, int(20 * Sweep.AREA_POWER_FACTOR))
         assert move.power == expected
 
     def test_execute_hits_enemy_in_range(self, monkeypatch):
@@ -613,8 +624,11 @@ class TestHalberdSpin:
         user.eq_weapon.wpnrange = (0, 6)
         user.strength = 20
         move = HalberdSpin(user)
-        expected_power = max(1, int(40 * 0.75) + int(20 * 0.3))
+        # Full swing = 40 + 20*0.5 + 10*0.3 = 53, at the area factor.
+        expected_power = max(1, int(53 * HalberdSpin.AREA_POWER_FACTOR))
         assert move.power == expected_power
+        # The heavy area swing must out-damage the cheap one per enemy.
+        assert HalberdSpin.AREA_POWER_FACTOR > Sweep.AREA_POWER_FACTOR
 
     def test_evaluate_fallback_no_damage_attr(self):
         user = _make_user()
@@ -623,15 +637,17 @@ class TestHalberdSpin:
         user.strength = 20
         move = HalberdSpin(user)
         move.evaluate()
-        expected = max(1, int(20 * 0.6))
+        expected = max(1, int(20 * HalberdSpin.AREA_POWER_FACTOR))
         assert move.power == expected
 
-    def test_evaluate_exception_sets_power_to_one(self):
+    def test_evaluate_survives_a_garbage_stat(self):
+        """As for Sweep: a non-numeric stat degrades one term, not the move."""
         user = _make_user()
         move = HalberdSpin(user)
-        user.strength = "abc"  # triggers TypeError in the arithmetic
+        user.strength = "abc"
         move.evaluate()
-        assert move.power == 1
+        assert move.power == int(43 * HalberdSpin.AREA_POWER_FACTOR)
+        assert move.power >= 1
 
     def test_prep_prints_message(self):
         user = _make_user()

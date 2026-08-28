@@ -18,6 +18,7 @@ from ._base import (
     facing_damage_multiplier,
     to_hit_chance,
 )  # noqa: F401
+from ._sword import weapon_scaled_power
 
 
 #: How much steeper Backstab's positional damage curve is than the baseline
@@ -35,6 +36,22 @@ from ._base import (
 BACKSTAB_POSITIONAL_STEEPNESS = 2.0
 
 
+#: Slash's power as a multiple of a full-swing baseline
+#: (``damage + strength*str_mod + finesse*fin_mod``), and the beats it adds to
+#: the basic Attack's cycle.
+#:
+#: Slash used to be the basic Attack plus five power and fifteen fatigue — one
+#: extra beat for a 10% damage bump, i.e. the dead centre of the roster and
+#: very nearly dominated by the move it was supposed to improve on. It is now
+#: the *committed swing*: power scales faster than the cycle does (1.45x
+#: damage for ~1.27x beats), so it buys real damage-per-beat, while the
+#: fatigue base below scales faster still — it is decisively the more tiring of
+#: the two. Better damage-per-beat, worse damage-per-fatigue: that is the whole
+#: trade, and it is the same one every "commit harder" move in the roster makes.
+SLASH_POWER_MULTIPLIER = 1.45
+SLASH_FATIGUE_BASE = 112
+
+
 class Slash(
     Move
 ):  # Slashing-type attack using the equipped weapon; available to Daggers, Swords, Stars, Axes, and Halberds.
@@ -42,7 +59,11 @@ class Slash(
     web_animation = "attack"
 
     def __init__(self, player):
-        description = "Slash at your enemy with your equipped weapon. Slightly stronger than a standard attack."
+        description = (
+            "Commit to a full swing with your equipped weapon. Considerably "
+            "more damaging than a standard attack, and considerably more "
+            "tiring — with a longer wind-up and recovery to match."
+        )
         prep = 1
         execute = 1
         recoil = 1  # modified later, based on player weapon
@@ -108,15 +129,17 @@ class Slash(
             self.fatigue_cost = 10
             return
 
-        power = (
-            (self.user.eq_weapon.damage + 5)
+        power = SLASH_POWER_MULTIPLIER * (
+            self.user.eq_weapon.damage
             + (self.user.strength * self.user.eq_weapon.str_mod)
             + (self.user.finesse * self.user.eq_weapon.fin_mod)
         )
 
+        # +1 prep and +1 recoil over the basic Attack: the extra commitment is
+        # visible on the beat timeline, which is where the player reads risk.
         prep = int(
             (40 + (self.user.eq_weapon.weight * 3)) / self.user.speed
-        )  # starting prep of 5
+        ) + 1
         if prep < 1:
             prep = 1
 
@@ -126,12 +149,14 @@ class Slash(
         if cooldown < 0:
             cooldown = 0
 
-        recoil = int(1 + (self.user.eq_weapon.weight / 2))
+        recoil = int(1 + (self.user.eq_weapon.weight / 2)) + 1
 
         wt_mult = max(4, 10 - 0.2 * self.user.strength)
         fatigue_cost = int(
             math.ceil(
-                85 + (self.user.eq_weapon.weight * wt_mult) - (2 * self.user.endurance)
+                SLASH_FATIGUE_BASE
+                + (self.user.eq_weapon.weight * wt_mult)
+                - (2 * self.user.endurance)
             )
         )
         fatigue_cost = max(10, fatigue_cost)
@@ -220,11 +245,15 @@ class FeintAndPivot(Move):
 
     def __init__(self, user):
         description = "Attack then reposition strategically."
+        # Utility-first setup move. The strike is deliberately under half a
+        # full swing; what you are paying for is the pivot, which walks you
+        # front -> flank -> rear and hands Backstab (and every other attack,
+        # via the shared facing curve) a much better angle on the next beat.
         prep = 1
-        execute = 4
+        execute = 3
         recoil = 1
-        cooldown = 4
-        fatigue_cost = 70
+        cooldown = 3
+        fatigue_cost = 45
         target = user  # Will be set when move is selected
         super().__init__(
             name="Feint & Pivot",
@@ -264,21 +293,16 @@ class FeintAndPivot(Move):
 
         return False
 
+    #: Fraction of a full weapon swing the feint itself deals. The lowest
+    #: single-target factor in the roster — the repositioning is the payload.
+    POWER_FACTOR = 0.45
+
     def evaluate(self):
         """Adjusts move power based on weapon and stats."""
-        try:
-            if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
-                wpn = self.user.eq_weapon
-                if hasattr(wpn, "base_damage_type"):
-                    self.base_damage_type = wpn.base_damage_type
-                if hasattr(wpn, "damage"):
-                    self.power = (int(wpn.damage) * 0.8) + (self.user.strength * 0.2)
-                else:
-                    self.power = self.user.strength * 0.4
-            else:
-                self.power = self.user.strength * 0.4
-        except (TypeError, AttributeError):
-            self.power = self.user.strength * 0.4
+        wpn = getattr(self.user, "eq_weapon", None)
+        if wpn is not None and hasattr(wpn, "base_damage_type"):
+            self.base_damage_type = wpn.base_damage_type
+        self.power = weapon_scaled_power(self.user, self.POWER_FACTOR)
 
     def prep(self, user):
         """Prep stage - announce the maneuver."""
@@ -513,6 +537,12 @@ class Backstab(Move):
     Scales power by the shared facing/angle curve at double steepness (see
     ``BACKSTAB_POSITIONAL_STEEPNESS``): a head-on Backstab is worse than an
     ordinary strike at 0.70x, while a true rear strike deals 1.80x.
+
+    The roster's positional gamble. Base power is only 70% of a full swing on
+    a short six-beat cycle, so thrown head-on it is *worse* than the basic
+    Attack on every axis — and from the rear it is roughly twice as good.
+    That is the entire point: it is the one attack whose value the player sets
+    with their feet rather than with the button.
     """
     display_name = 'Backstab'
 
@@ -560,9 +590,19 @@ class Backstab(Move):
             self.stage_beat = [1, 1, 2, 3]
             self.fatigue_cost = 10
             return
+        # Short, cheap, and under-powered on purpose: the positional
+        # multiplier below (0.70x head-on to 1.80x from the rear) is where the
+        # damage comes from, so the flat number has to stay low or the gamble
+        # stops being a gamble.
         evaluation = self.standard_evaluate_attack(
-            base_power=5,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="70%",
+            mod_prep=-2,
+            mod_recoil=-1,
+            mod_cd=-1,
+            mod_fatigue=-25,
+            floor_fatigue=12,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
