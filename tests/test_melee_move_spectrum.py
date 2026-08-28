@@ -99,7 +99,23 @@ HEAVIES = {
 
 #: The chip attacks: a fraction of a swing's damage on a short cycle at a
 #: fraction of the fatigue.
-CHIPS = {"Thrust": "Sword", "ChipAway": "Pick"}
+#:
+#: ChipAway is deliberately NOT here, despite the name. The chip contract
+#: measures throughput as power-over-beats, which assumes one strike resolved
+#: against protection once. ChipAway lands three strikes that EACH subtract the
+#: target's full protection -- that per-strike subtraction is the whole point,
+#: it is what keeps ChipAway and ArmorPierce complementary. Judged by pool it
+#: looks like it out-throughputs the basic Attack; judged by what actually
+#: reaches an armoured enemy it is the weakest attack in the tree. Holding it
+#: to the single-strike chip bar forced its pool so low that every strike
+#: landed under the armour line and it dealt literally zero damage to every
+#: armoured enemy in the game. It is graded as a multi-strike move below.
+CHIPS = {"Thrust": "Sword"}
+
+#: Multi-strike moves: several small blows in one cast, each resolved against
+#: the target's protection independently. Graded on per-strike power and on
+#: what survives armour, not on raw pool.
+MULTI_STRIKE = {"ChipAway": "Pick"}
 
 #: Moves whose reason to exist is a status effect, a reposition, or an armour
 #: bypass rather than damage. Their power is held deliberately below a full
@@ -234,6 +250,21 @@ def test_heavies_buy_damage_with_visible_beats(trees, move_name, tree):
     )
 
 
+def _per_strike_power(move_name, pool):
+    """The power a single blow of ``move_name`` carries.
+
+    Most moves strike once, so this is the pool. A move declaring ``STRIKES``
+    divides its pool by ``STRIKE_POWER_FRACTION`` per blow, and it is that
+    per-blow number that competes with a single-strike move's power -- each
+    strike is resolved against the target's protection independently.
+    """
+    cls = getattr(moves, move_name, None)
+    strikes = getattr(cls, "STRIKES", 1)
+    if strikes and strikes > 1:
+        return pool * getattr(cls, "STRIKE_POWER_FRACTION", 1.0 / strikes)
+    return pool
+
+
 @pytest.mark.parametrize("move_name,tree", sorted(CHIPS.items()))
 def test_chips_are_cheap_fast_and_deliberately_low_throughput(trees, move_name, tree):
     """A chip trades throughput for tempo and sustain.
@@ -247,7 +278,17 @@ def test_chips_are_cheap_fast_and_deliberately_low_throughput(trees, move_name, 
     power, _, total, fatigue = trees[tree][move_name]
     ref_power, _, ref_total, ref_fatigue = trees[tree]["Attack"]
 
-    assert power <= 0.6 * ref_power, f"{move_name} is not a chip: {power} power"
+    # Compare PER STRIKE, not per cast. A multi-strike chip splits its pool
+    # across several blows that each pay the target's full protection, so its
+    # pool is not comparable to a single-strike move's power -- reading the
+    # pool directly is what made this assertion demand a pool so small that
+    # every strike landed under the armour line and Chip Away dealt literally
+    # zero damage to every armoured enemy in the game.
+    per_strike = _per_strike_power(move_name, power)
+    assert per_strike <= 0.6 * ref_power, (
+        f"{move_name} is not a chip: {per_strike} power per strike "
+        f"against Attack's {ref_power}"
+    )
     assert total <= 0.7 * ref_total, f"{move_name} cycle is not short: {total} beats"
     assert fatigue <= 0.5 * ref_fatigue, f"{move_name} is not cheap: {fatigue} fatigue"
     assert fatigue / power < ref_fatigue / ref_power, (
@@ -311,4 +352,37 @@ def test_the_roster_as_a_whole_spans_a_wide_throughput_band(trees):
     assert highest >= 2.5 * lowest, (
         f"roster power-per-beat spans only {lowest:.2f}-{highest:.2f} "
         f"({highest / lowest:.2f}x) -- the moves are converging again"
+    )
+
+
+@pytest.mark.parametrize("move_name,tree", sorted(MULTI_STRIKE.items()))
+def test_multi_strike_moves_clear_the_armour_line(trees, move_name, tree):
+    """Each strike must do something to a typical armoured enemy.
+
+    A multi-strike move subtracts full protection per blow, so its per-strike
+    power has to sit ABOVE the protection of the enemies it will meet or the
+    whole cast is a no-op. This is not hypothetical: at a pool of 50% of a
+    swing, ChipAway's strikes were 10 power against protections of 12, 15, 18
+    and 28 -- exactly zero damage to every armoured enemy in the game, for a
+    seven-beat cast and 28 fatigue, and it did not recover with levels.
+    """
+    power, _, _, _ = trees[tree][move_name]
+    per_strike = _per_strike_power(move_name, power)
+    # Elder Slime, the lightest armoured enemy that Chip Away's tree meets.
+    lightest_armour = 12
+    assert per_strike > lightest_armour, (
+        f"{move_name} lands {per_strike} per strike against {lightest_armour} "
+        "protection -- every strike is absorbed and the cast does nothing"
+    )
+
+
+@pytest.mark.parametrize("move_name,tree", sorted(MULTI_STRIKE.items()))
+def test_multi_strike_moves_stay_cheap_and_fast(trees, move_name, tree):
+    """The trade for armour-vulnerability is tempo, and it must be real."""
+    _, _, total, fatigue = trees[tree][move_name]
+    _, _, ref_total, ref_fatigue = trees[tree]["Attack"]
+    assert total < ref_total, f"{move_name} runs {total} beats vs Attack's {ref_total}"
+    assert fatigue < ref_fatigue, (
+        f"{move_name} costs {fatigue} vs Attack's {ref_fatigue} -- an "
+        "armour-vulnerable move must at least be cheap"
     )

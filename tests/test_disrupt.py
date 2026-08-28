@@ -687,3 +687,66 @@ def test_spamming_disrupt_is_worse_damage_than_just_attacking(always_hits):
                 cycle.advance(owner)
 
     assert (enemy_a.maxhp - enemy_a.hp) < (enemy_b.maxhp - enemy_b.hp)
+
+
+# ---------------------------------------------------------------------------
+# The braced read must actually reach the target's next cast.
+#
+# These exist because a code scrub found the original braced branch was a
+# SILENT NO-OP and the suite could not see it. Staggered's penalty is consumed
+# only at Move.cast(), but the braced branch deliberately lets the current
+# wind-up resolve -- execute, recoil and cooldown all come first -- and the
+# state's default lifetime of three beats expired long before then. Nothing
+# here ticked cycle_states, so the state never had a chance to expire in a
+# test, and FakeEnemy's stun resistance of 0.0 meant inflict() never failed
+# either. Both blind spots are closed below.
+# ---------------------------------------------------------------------------
+
+
+def _tick_states(entity, beats):
+    """Advance `entity`'s states by `beats`, the way the combat loop does."""
+    entity.in_combat = True
+    for _ in range(beats):
+        for state in list(entity.states):
+            state.process(entity)
+
+
+def test_braced_stagger_outlives_the_windup_it_let_through(always_hits):
+    """The braced read is strictly weaker than a cancel -- not worthless."""
+    player, enemy, move = _engaged()
+    enemy.in_combat = True
+    setattr(enemy, moves.Disrupt.BRACE_ATTR, True)  # braced -> stagger branch
+
+    winding = _winding(enemy, beats_left=4, stage_beat=(6, 1, 2, 4))
+    _cast(move, player)
+    move.execute(player)
+
+    staggered = [s for s in enemy.states if s.name == "Staggered"]
+    assert staggered, "the braced read applied no state at all"
+
+    # Beats the target must still burn before its next cast(): the rest of
+    # prep, then execute + recoil + cooldown.
+    remaining = winding.beats_left + sum(winding.stage_beat[1:])
+    _tick_states(enemy, remaining)
+
+    assert [s for s in enemy.states if s.name == "Staggered"], (
+        "Staggered expired before the target could reach its next cast, so the "
+        "braced read did nothing -- the exact silent no-op this guards"
+    )
+
+
+def test_braced_stagger_is_not_narrated_when_resistance_blocks_it(always_hits):
+    """A stun-immune target must not be told it was knocked off balance."""
+    player, enemy, move = _engaged()
+    enemy.in_combat = True
+    enemy.status_resistance["stun"] = 1.0  # fully immune
+    setattr(enemy, moves.Disrupt.BRACE_ATTR, True)
+
+    _winding(enemy, beats_left=4)
+    _cast(move, player)
+    move.execute(player)
+
+    assert not [s for s in enemy.states if s.name == "Staggered"]
+    # The brace is still spent -- the anti-lock alternation must not depend on
+    # whether the stagger happened to land.
+    assert getattr(enemy, moves.Disrupt.BRACE_ATTR) is False

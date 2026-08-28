@@ -457,7 +457,9 @@ class TestCombatantSerializer:
 
         combatant = _combatant()
         move = moves.PowerStrike(combatant)
-        assert move.stage_beat == [5, 4, 8, 9]
+        # [5, 4, 6, 6] since Power Strike's cycle was re-cut from 26 beats to
+        # 21; the recoil and cooldown +3 bases were trimmed.
+        assert move.stage_beat == [5, 4, 6, 6]
         move.current_stage = 1
         move.beats_left = 2
         combatant.current_move = move

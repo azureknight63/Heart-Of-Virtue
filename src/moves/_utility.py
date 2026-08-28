@@ -731,6 +731,27 @@ class Disrupt(Move):
             return None
         return move
 
+    @staticmethod
+    def _beats_until_target_can_act(winding_move):
+        """Beats before ``winding_move``'s owner can cast again.
+
+        The target still owes the rest of its current stage plus every stage
+        after it before the next ``cast()`` reads a Staggered penalty. Summing
+        the remaining stages is deliberately generous -- overshooting costs
+        nothing (the state expires unused), while undershooting is exactly the
+        silent no-op this exists to prevent.
+        """
+        stage_beat = getattr(winding_move, "stage_beat", None) or []
+        current = getattr(winding_move, "current_stage", 0) or 0
+        left = getattr(winding_move, "beats_left", 0) or 0
+        try:
+            remaining = sum(
+                int(b) for b in stage_beat[current + 1:] if isinstance(b, (int, float))
+            )
+            return max(states.STAGGERED_DEFAULT_BEATS, int(left) + remaining + 1)
+        except (TypeError, ValueError):
+            return states.STAGGERED_DEFAULT_BEATS
+
     def _reward_read(self, winding_move):
         """Pay out the correct read on a strike that landed inside the window.
 
@@ -746,12 +767,32 @@ class Disrupt(Move):
             # Staggered adds prep beats to the target's NEXT cast, so the move
             # being wound right now still resolves. That is the point: the
             # braced case has to be strictly weaker than a cancel.
-            functions.inflict(states.Staggered(target), target)
-            cprint(
-                f"{target.name} absorbs the disruption and pushes through "
-                f"{move_name}, but is knocked off balance.",
-                "yellow",
+            #
+            # The duration has to outlive that wind-up. Staggered's default of
+            # three beats expires while the target is still burning the move it
+            # pushed through -- execute, recoil and cooldown all come first --
+            # so the penalty was collected by nothing and every braced read was
+            # a silent no-op. Derive it from the target's own remaining stage
+            # beats instead, plus a beat of margin.
+            beats = self._beats_until_target_can_act(winding_move)
+            applied = functions.inflict(
+                states.Staggered(target, beats_max=beats), target
             )
+            if applied:
+                cprint(
+                    f"{target.name} absorbs the disruption and pushes through "
+                    f"{move_name}, but is knocked off balance.",
+                    "yellow",
+                )
+            else:
+                # Stun-resistant target: the brace was still spent, so the
+                # anti-lock alternation holds, but do not narrate an effect
+                # that did not land.
+                cprint(
+                    f"{target.name} absorbs the disruption and pushes through "
+                    f"{move_name} unshaken.",
+                    "yellow",
+                )
         else:
             # The same ``interrupted`` flag War Cry sets: ``Move.advance``
             # picks it up on the target's next beat, abandons whatever prep

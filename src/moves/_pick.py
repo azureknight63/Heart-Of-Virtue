@@ -100,7 +100,15 @@ class ChipAway(Move):
         evaluation = self.standard_evaluate_attack(
             base_power=0,
             base_damage_type="piercing",
-            mod_power="50%",
+            # 100%, not 50%. Each of the three strikes subtracts the target's
+            # FULL protection (deliberate -- it is what keeps Chip Away and
+            # Armor Pierce complementary), so halving the pool put every strike
+            # under the armour line: sub_power was 10 against protections of
+            # 12/15/18/28, i.e. exactly zero damage to every armoured enemy in
+            # the game, and it did not recover with levels. Restored to the
+            # pre-retune pool; the move's cheapness is expressed through its
+            # short cycle and low fatigue instead.
+            mod_power="100%",
             mod_prep=-3,
             mod_recoil=-1,
             mod_cd=-3,

@@ -201,19 +201,24 @@ class TestPowerStrike:
         user = _make_user(speed=1000)
         move = PowerStrike(user)
         assert move.stage_beat[0] == 1
-        assert move.stage_beat[2] >= 3
+        # Recoil floors at 1 (was 3): the +3 base was trimmed when Power
+        # Strike's cycle was re-cut from 26 beats.
+        assert move.stage_beat[2] >= 1
 
     def test_evaluate_recoil_floor_at_zero_with_negative_speed(self):
         """Negative speed (pathological/edge state) drives the raw recoil
         term below zero; floored to 0 before the +3 base is added (line 89)."""
         user = _make_user(speed=-10)
         move = PowerStrike(user)
-        assert move.stage_beat[2] == 3
+        # Negative speed floors the derived term at 0, then +1.
+        assert move.stage_beat[2] == 1
 
     def test_evaluate_cooldown_floor(self):
         user = _make_user(endurance=100)
         move = PowerStrike(user)
-        assert move.stage_beat[3] == 3
+        # Cooldown now floors at 0 (was 3 via a +3 base) -- high endurance
+        # buys the whole recovery back.
+        assert move.stage_beat[3] == 0
 
     def test_evaluate_iron_fist_boosts_power(self, monkeypatch):
         monkeypatch.setattr(random, "uniform", lambda a, b: 2.0)

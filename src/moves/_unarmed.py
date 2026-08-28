@@ -8,6 +8,7 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
+from ._sword import weapon_scaled_power
 from ._base import (
     Move,
     PassiveMove,
@@ -95,6 +96,11 @@ class PowerStrike(Move):
                 break
         return viability
 
+    #: Power as a multiple of a full weapon swing. Sits with the heavy
+    #: archetype (Impale 190%, OverheadSmash 205%) -- Power Strike is the
+    #: bludgeon tree's committed swing and carries the longest cycle in it.
+    POWER_FACTOR = 1.9
+
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
@@ -103,24 +109,34 @@ class PowerStrike(Move):
         # his fists mightily" ended up narrating a mace blow.
         weapon = self.current_weapon()
         self.weapon = weapon
-        power_base = 25  # this is the default for determining the attack's power
-        if hasattr(self.user, "damage"):
-            power_base = self.user.damage
-        elif getattr(weapon, "damage", None) is not None:
-            power_base = weapon.damage
-        power = power_base * random.uniform(1.5, 2.5)
+        # Scale off the full weapon-and-stats expression like every other
+        # attack. This used to be `weapon.damage * uniform(1.5, 2.5)` -- no
+        # strength, no finesse, and neither of the weapon's stat multipliers --
+        # which is the exact defect weapon_scaled_power was extracted to fix,
+        # and PowerStrike was the one move left out of that sweep. The result
+        # was the worst move in the roster (1.92 damage per beat against a
+        # 2.75-7.0 band) that got RELATIVELY worse as Jean levelled, because
+        # the basic Attack scales with strength and this did not.
+        #
+        # The variance moved to execute() with the rest of the damage roll:
+        # evaluate() runs every beat, so rolling here re-rolled the move's
+        # power continuously and broke the idempotence contract the whole
+        # package relies on.
+        power = weapon_scaled_power(self.user, self.POWER_FACTOR)
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
         execute = 4
+        # Recoil and cooldown were both roughly double any peer's, on top of a
+        # 26-beat cycle. Trimmed so the move reads as a heavy commitment rather
+        # than a punishment: it is still the longest cycle in the unarmed tree.
         recoil = int(50 / self.user.speed)
         if recoil < 0:
             recoil = 0
-        recoil += 3
+        recoil += 1
         cooldown = 7 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
-        cooldown += 3
         fatigue_cost = max(25, 100 - (2 * self.user.endurance))
         fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
@@ -183,6 +199,12 @@ class PowerStrike(Move):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
+        # The swing's variance lives here, not in evaluate(). evaluate() runs
+        # once per beat for every known move, so rolling there re-rolled the
+        # move's power continuously -- the displayed power flickered and the
+        # value that landed was whichever beat happened to be last. This is the
+        # same +/-20% band standard_execute_attack applies.
+        power = power * random.uniform(0.8, 1.2)
         damage = power - self.target.protection
         if damage <= 0:
             damage = 0

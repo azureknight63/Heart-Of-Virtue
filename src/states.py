@@ -747,14 +747,30 @@ class WarCryStunned(State):
         self._stunned = True
 
 
-class Staggered(State):
-    """Applied by Heavy Handed passive. Target's next moves have +5 prep beats."""
+#: Default lifetime of a Staggered state, in beats. Long enough for the Heavy
+#: Handed passive, whose victim is expected to cast again shortly.
+STAGGERED_DEFAULT_BEATS = 3
 
-    def __init__(self, target):
+
+class Staggered(State):
+    """Target's next move has +5 prep beats.
+
+    Applied by the Heavy Handed passive and by Disrupt's braced read.
+
+    ``beats_max`` is a parameter because the penalty is only consumed at the
+    target's next ``Move.cast()``, so a fixed lifetime silently no-ops whenever
+    the target has more than that many beats of committed animation left to
+    burn. Disrupt hits exactly that case -- its braced branch deliberately lets
+    the current wind-up resolve, which always takes more than the default three
+    beats -- so it passes a duration derived from the target's own remaining
+    stage beats. Heavy Handed keeps the default.
+    """
+
+    def __init__(self, target, beats_max=STAGGERED_DEFAULT_BEATS):
         super().__init__(
             name="Staggered",
             target=target,
-            beats_max=3,
+            beats_max=beats_max,
             compounding=False,
             combat=True,
             world=False,
