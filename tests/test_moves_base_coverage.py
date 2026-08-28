@@ -1174,8 +1174,12 @@ class TestApplyFacingAccuracy:
         defender = _make_combatant(name="Goblin")
         defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
 
-        # 100 * 1.30 = 130, clamped to the ceiling -- strictly below certainty.
-        assert _apply_facing_accuracy(attacker, defender, 100) == HIT_CHANCE_CEILING
+        # 100 * 1.30 = 130, bounded to the ceiling -- strictly below certainty.
+        # Asserted through _apply_to_hit_modifiers, not _apply_facing_accuracy:
+        # the funnel owns the one authoritative clamp, applied after every
+        # modifier has run. Clamping inside the inner helper made
+        # HauntingPresence compound off an already-truncated 95.
+        assert _apply_to_hit_modifiers(attacker, defender, 100) == HIT_CHANCE_CEILING
         assert HIT_CHANCE_CEILING < 100
 
     def test_a_frontal_penalty_cannot_erase_a_slim_chance(self):
@@ -1189,7 +1193,7 @@ class TestApplyFacingAccuracy:
         defender = _make_combatant(name="Goblin")
         defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
 
-        assert _apply_facing_accuracy(attacker, defender, 1) == HIT_CHANCE_FLOOR
+        assert _apply_to_hit_modifiers(attacker, defender, 1) == HIT_CHANCE_FLOOR
         assert HIT_CHANCE_FLOOR >= 1
 
     def test_no_op_without_attacker_combat_position(self):

@@ -72,8 +72,11 @@ class PowerStrike(Move):
 
     def viable(self):
         viability = False
+        # Deliberately NOT assigning self.weapon here: viable() is a predicate,
+        # and Move._viable_for calls it during hit-chance PREVIEW with a
+        # temporarily swapped target. evaluate() refreshes self.weapon every
+        # beat, so the write was redundant as well as surprising.
         weapon = self.current_weapon()
-        self.weapon = weapon
         if getattr(weapon, "subtype", None) != "Bludgeon":
             return False
         range_min = self.mvrange[0]
@@ -83,8 +86,11 @@ class PowerStrike(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
 
+        # Inclusive bounds, matching standard_viability_attack. The strict
+        # `<` form here made PowerStrike the one move in the game uncastable
+        # at exactly its minimum and maximum reach.
         for enemy, distance in self.user.combat_proximity.items():
-            if range_min < distance < range_max:
+            if range_min <= distance <= range_max:
                 viability = True
                 break
         return viability

@@ -37,6 +37,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import src.items as items  # noqa: E402
+import src.moves as _moves_pkg  # noqa: E402
 from src.moves._base import Move, PassiveMove  # noqa: E402
 from src.npc import NPC  # noqa: E402
 from src.player import Player  # noqa: E402
@@ -44,12 +45,28 @@ from src.positions import CombatPosition, Direction  # noqa: E402
 
 #: The four modules this module owns. Every castable attack defined in them
 #: must reach the shared facing curve.
-OWNED_MODULES = (
-    "src.moves._npc",
-    "src.moves._ranged",
-    "src.moves._mastery",
-    "src.moves._unarmed",
-)
+def _all_move_modules():
+    """Every submodule of ``src.moves``, derived by globbing the package.
+
+    Deliberately NOT a hand-maintained list. This guard originally enumerated
+    four modules -- the ones the change that introduced it happened to touch --
+    and a scrub found thirteen hand-rolled ``execute()`` bodies skipping the
+    facing curve in the eight modules it did not name. An opt-in guard
+    certifies exactly the gap it was written to close and nothing else, which
+    is worse than no guard, because it reads as coverage.
+
+    Globbing means a NEW module under ``src/moves/`` is covered the day it
+    lands, with no one having to remember this file exists.
+    """
+    package_dir = pathlib.Path(_moves_pkg.__file__).parent
+    return tuple(
+        f"src.moves.{path.stem}"
+        for path in sorted(package_dir.glob("_*.py"))
+        if path.stem != "__init__"
+    )
+
+
+OWNED_MODULES = _all_move_modules()
 
 #: Defender sits at (10, 10); the attacker never moves off (10, 5). Only the
 #: defender's facing changes between the two runs, which rules out distance as

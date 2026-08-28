@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_facing_damage,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
@@ -127,9 +128,11 @@ class KeepAway(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -335,9 +338,11 @@ class Lunge(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -480,9 +485,11 @@ class Impale(Move):
 
         # Ignore 60% of protection
         effective_prot = self.target.protection * 0.4
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - effective_prot
             )
             * player.heat
@@ -631,8 +638,10 @@ class ArmorPierce(Move):
         roll = random.randint(0, 100)
 
         # Ignore protection entirely
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
-            (self.power * functions.combat_resistance(self.target, self.base_damage_type)) * player.heat
+            (power * functions.combat_resistance(self.target, self.base_damage_type)) * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
         if hit_chance >= roll and hit_chance - roll < 10:

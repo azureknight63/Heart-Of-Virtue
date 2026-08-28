@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_facing_damage,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
@@ -254,9 +255,14 @@ class WhirlAttack(Move):
                         # resistances, heat scaling, and self.hit()/parry() bookkeeping.
                         self.target = enemy
                         self.prep_colors()
+                        # Facing/angle damage (#394) - see apply_facing_damage.
+                        # Scored per enemy: a spin hits each one from a
+                        # different angle, so a single hoisted multiplier would
+                        # be wrong for every target but one.
+                        power = apply_facing_damage(self.user, enemy, self.power)
                         damage = (
                             (
-                                (self.power * functions.combat_resistance(enemy, base_damage_type))
+                                (power * functions.combat_resistance(enemy, base_damage_type))
                                 - enemy.protection
                             )
                             * self.user.heat
@@ -402,9 +408,11 @@ class VertigoSpin(Move):
         # heat scaling, and self.hit()/miss()/parry() bookkeeping (which also
         # awards combat exp for the wielder).
         base_damage_type = getattr(self, "base_damage_type", "slashing")
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, base_damage_type))
+                (power * functions.combat_resistance(self.target, base_damage_type))
                 - self.target.protection
             )
             * self.user.heat
@@ -645,9 +653,11 @@ class DisarmingSlash(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -813,9 +823,11 @@ class Riposte(Move):
         old_heat = player.heat
         player.heat = min(10.0, player.heat * 1.3)
         try:
+            # Facing/angle damage (#394) - see apply_facing_damage.
+            power = apply_facing_damage(self.user, self.target, self.power)
             damage = (
                 (
-                    (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                    (power * functions.combat_resistance(self.target, self.base_damage_type))
                     - self.target.protection
                 )
                 * player.heat

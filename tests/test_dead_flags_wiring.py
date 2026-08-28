@@ -338,21 +338,31 @@ class TestFacingAccuracy:
         positioning a strictly-dominant, riskless play. The bonus is real and
         must stay real; a guaranteed hit is not.
         """
-        from src.moves._base import _apply_facing_accuracy, to_hit_chance
+        from src.moves._base import (
+            HIT_CHANCE_CEILING,
+            _apply_to_hit_modifiers,
+            to_hit_chance,
+        )
         from src.positions import CombatPosition
 
         user = _make_user("Sword")
         user.combat_position = CombatPosition(x=10, y=10)
         front, rear = self._facing_pair(user)
 
+        # Asserted through _apply_to_hit_modifiers rather than the inner
+        # _apply_facing_accuracy: the funnel owns the one authoritative bound,
+        # applied once after every modifier. The inner helper deliberately
+        # returns an unbounded product now, because clamping there made
+        # HauntingPresence compound off an already-truncated ceiling.
         raw = to_hit_chance(user, rear, floor=5)
-        front_chance = _apply_facing_accuracy(user, front, raw)
-        rear_chance = _apply_facing_accuracy(user, rear, raw)
+        front_chance = _apply_to_hit_modifiers(user, front, raw)
+        rear_chance = _apply_to_hit_modifiers(user, rear, raw)
 
         assert rear_chance > front_chance
         # A roll of `randint(0, 100)` has 101 outcomes; anything at or above
         # 100 lands on every one of them.
         assert rear_chance < 100
+        assert rear_chance <= HIT_CHANCE_CEILING
 
     def test_rear_attack_lands_a_roll_the_frontal_attack_misses(self, monkeypatch):
         """The behavioural half: the bonus reaches PommelStrike's real roll.

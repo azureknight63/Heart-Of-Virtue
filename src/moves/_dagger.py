@@ -10,9 +10,9 @@ import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     Move,
+    STANDARD_FATIGUE_BASE,
     PassiveMove,
     _ensure_weapon_exp,
-    _apply_carry_fatigue,
     _apply_to_hit_modifiers,
     apply_facing_damage,
     facing_damage_multiplier,
@@ -119,64 +119,34 @@ class Slash(
             viability = True
         return viability
 
-    def evaluate(
-        self,
-    ):  # adjusts the move's attributes to match the current game state
-        # Guard against no weapon equipped
+    def evaluate(self):
+        """Delegate to the shared attack-evaluation helper.
+
+        This was a line-for-line reimplementation of
+        ``standard_evaluate_attack`` -- same prep/recoil/cooldown/fatigue
+        formulas, same announcement string -- and it had already silently
+        diverged: the local copy never called
+        ``_apply_blade_mastery_discount``, so the Blade Mastery passive was
+        inert on Slash for anyone wielding a sword. The retune made the two
+        copies MORE identical (the three "+1"s are exactly mod_prep/mod_recoil/
+        mod_cd, and 1.45x is exactly mod_power="145%"), which is the moment to
+        collapse it rather than edit both.
+        """
         if not self.user.eq_weapon:
             self.power = 0
             self.stage_beat = [1, 1, 1, 0]
             self.fatigue_cost = 10
             return
 
-        power = SLASH_POWER_MULTIPLIER * (
-            self.user.eq_weapon.damage
-            + (self.user.strength * self.user.eq_weapon.str_mod)
-            + (self.user.finesse * self.user.eq_weapon.fin_mod)
+        self.power, self.base_damage_type = self.standard_evaluate_attack(
+            base_power=0,
+            base_damage_type="slashing",
+            mod_power=f"{int(SLASH_POWER_MULTIPLIER * 100)}%",
+            mod_prep=1,
+            mod_recoil=1,
+            mod_cd=1,
+            mod_fatigue=SLASH_FATIGUE_BASE - STANDARD_FATIGUE_BASE,
         )
-
-        # +1 prep, +1 recoil and +1 cooldown over the basic Attack: the extra
-        # commitment is visible on the beat timeline, which is where the player
-        # reads risk.
-        prep = int(
-            (40 + (self.user.eq_weapon.weight * 3)) / self.user.speed
-        ) + 1
-        if prep < 1:
-            prep = 1
-
-        execute = 1
-
-        # +1 on every timing stage. Without the cooldown bump, the weight-derived
-        # cooldown formula makes Slash *recover faster* than the basic Attack on
-        # any light weapon -- a dagger Slash came out one beat longer in total
-        # while hitting 45% harder, which is not a trade, it is an upgrade.
-        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.endurance / 10) + 1
-        if cooldown < 0:
-            cooldown = 0
-
-        recoil = int(1 + (self.user.eq_weapon.weight / 2)) + 1
-
-        wt_mult = max(4, 10 - 0.2 * self.user.strength)
-        fatigue_cost = int(
-            math.ceil(
-                SLASH_FATIGUE_BASE
-                + (self.user.eq_weapon.weight * wt_mult)
-                - (2 * self.user.endurance)
-            )
-        )
-        fatigue_cost = max(10, fatigue_cost)
-        fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
-
-        mvrange = self.user.eq_weapon.wpnrange
-
-        weapon_name = self.user.eq_weapon.name
-        self.stage_announce[1] = colored(
-            f"{self.user.name} strikes with his " + weapon_name + "!", "green"
-        )
-        self.power = power
-        self.stage_beat = [prep, execute, recoil, cooldown]
-        self.fatigue_cost = fatigue_cost
-        self.mvrange = mvrange
 
     def execute(self, player):
         glance = False  # switch for determining a glancing blow
@@ -231,6 +201,13 @@ class Slash(
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Every sibling attack clamps here. The adapter checks affordability at
+        # CAST time, but the deduction happens several beats later at execute,
+        # and evaluate() re-runs _apply_carry_fatigue on every intervening beat
+        # -- so picking up loot mid-move can raise the cost after the check
+        # passed and drive fatigue negative.
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class FeintAndPivot(Move):
@@ -361,7 +338,6 @@ class FeintAndPivot(Move):
         - Flank: move to behind (180° from facing)
         - Behind: maintain/perfect behind positioning
         """
-        import math
 
         # Ensure facing is a Direction enum value
         user_facing = user_pos.facing
@@ -636,8 +612,14 @@ class Backstab(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
+        # Facing/angle damage (#394) at Backstab's own steeper curve. Routed
+        # through the shared helper rather than multiplying here: the local
+        # `max(1, int(...))` dropped apply_facing_damage's `power <= 0`
+        # short-circuit, so a fully-nullified stab was floored back up to 1.
         mod = self._positional_modifier()
-        power = max(1, int(self.power * mod))
+        power = apply_facing_damage(
+            self.user, self.target, self.power, BACKSTAB_POSITIONAL_STEEPNESS
+        )
 
         if mod > 1.0:
             cprint(

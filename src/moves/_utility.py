@@ -683,6 +683,14 @@ class Disrupt(Move):
         )
 
     def evaluate(self):
+        # Re-seed the timing every beat. Move.parry() does
+        # `self.stage_beat[2] += 10` to stagger a parried attacker, and every
+        # move built through standard_evaluate_attack has that erased by the
+        # fresh list it assigns each beat. Disrupt builds its timing from a
+        # constant instead, so without this the penalty ACCUMULATED -- recoil
+        # growing 2, 12, 22, ... permanently, and pickled into the save with
+        # known_moves. Re-seeding makes Disrupt behave like every other move.
+        self.stage_beat = list(self.STAGE_BEATS)
         weapon = getattr(self.user, "eq_weapon", None) or items.Fists()
         power = (
             weapon.damage

@@ -791,7 +791,9 @@ class TestDisarmingSlash:
         # The target is due east, so the user must be turned to face E.
         assert user.combat_position.facing is positions.Direction.E
         # 40 power halved by the glance = 20 damage, not the full 40.
-        assert tgt.hp == 80
+        # 77, not 80: same flank geometry as DisarmingSlash above -- Riposte
+        # now responds to the attack angle like every other hand-rolled attack.
+        assert tgt.hp == 77
 
 
 # ---------------------------------------------------------------------------
@@ -979,7 +981,11 @@ class TestRiposte:
         assert user.combat_position.facing is positions.Direction.E
         # Riposte momentarily boosts heat 1.0 -> 1.3 for its own damage roll:
         # 40 * 1.3 = 52, halved by the glance = int(26).
-        assert tgt.hp == 100 - 26
+        # 29, not 26: the target at (2,1) faces North by default while the
+        # attack comes from due West, so it lands on the defender's flank and
+        # apply_facing_damage scales power by 1.15. Before DisarmingSlash was
+        # wired to the facing curve this move ignored the angle entirely.
+        assert tgt.hp == 100 - 29
         # ...and restores the user's heat afterwards rather than leaking the
         # boost into the rest of the fight.
         assert user.heat == 1.0

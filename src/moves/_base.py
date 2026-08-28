@@ -188,7 +188,13 @@ def facing_damage_multiplier(attacker, defender, steepness=1.0):
             # so that arithmetic yields 1.1499999999999999 and int() then
             # truncates a 115-damage flank to 114.
             return baseline
-        return 1.0 + (baseline - 1.0) * float(steepness)
+        # Same truncation hazard one step further out, and the short-circuit
+        # above does NOT cover it: at Backstab's steepness of 2.0,
+        # 1.0 + (1.15 - 1.0) * 2.0 is 1.2999999999999998, so int() shaved a
+        # point off every flank and rear hit by the one move whose entire
+        # identity is positional. Round to a precision far finer than any
+        # curve this table will ever carry.
+        return round(1.0 + (baseline - 1.0) * float(steepness), 9)
     except Exception:
         return 1.0
 
@@ -241,7 +247,15 @@ def _apply_facing_accuracy(attacker, defender, hit_chance):
         if angle_diff is None:
             return hit_chance
         modifier = positions.get_accuracy_modifier(angle_diff)
-        return clamp_hit_chance(int(hit_chance * modifier))
+        # Deliberately NOT clamped here. _apply_to_hit_modifiers owns the one
+        # authoritative bound, applied after every modifier has run; clamping
+        # mid-chain meant HauntingPresence's x0.85 compounded off a truncated
+        # 95 instead of the true product (a rear attack against a haunting
+        # defender came out at 80 rather than 95), which contradicts the
+        # "final clamp runs after every modifier" contract that funnel
+        # documents. The sentinel guard above still runs first, so a
+        # non-positive chance never reaches this line.
+        return int(hit_chance * modifier)
     except Exception:
         return hit_chance
 
@@ -299,6 +313,13 @@ def _apply_to_hit_modifiers(attacker, defender, hit_chance):
 #: paths that consume them, so a balance change is a one-file edit — an earlier
 #: copy in the API layer drifted to ``98 + finesse`` and the character sheet
 #: disagreed with the dice until someone noticed.
+#: Flat fatigue term every standard attack starts from, before weapon weight,
+#: endurance and each move's own ``mod_fatigue`` adjust it. Named so a move
+#: expressing its cost as an offset from the baseline (rather than
+#: reimplementing the whole formula, as Slash once did) does the arithmetic
+#: against the real value instead of a copied literal.
+STANDARD_FATIGUE_BASE = 85
+
 HIT_CHANCE_BASE = 85
 HIT_CHANCE_FINESSE_WEIGHT = 0.7
 HIT_CHANCE_INTELLIGENCE_WEIGHT = 0.3
@@ -1000,7 +1021,16 @@ class Move:  # master class for all moves
         execute = 1
 
         # Cooldown calculation
-        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.endurance / 10)
+        # int() on the weight term is load-bearing, not cosmetic. Weapon weight
+        # is a float and several real weapons are fractional (Baselard 1.2,
+        # Shortbow 1.5), which produced a fractional cooldown -- and advance()
+        # drains beats_left by exactly 1 per beat and advances the stage only on
+        # `while self.beats_left == 0`. A cooldown of 4.2 drains 3.2, 2.2, 1.2,
+        # 0.2, -0.8 and never equals 0, so the move is stranded in cooldown for
+        # the rest of the fight. Measured: a Baselard Slash fired once in 80
+        # beats and never came back. prep and recoil already int() their weight
+        # terms; this one did not.
+        cooldown = int((3 + self.user.eq_weapon.weight)) - int(self.user.endurance / 10)
         cooldown += int(mod_cd)
         cooldown = max(0, cooldown)
 
@@ -1014,7 +1044,9 @@ class Move:  # master class for all moves
         # carry weight adds proportional burden on top.
         wt_mult = max(4, 10 - 0.2 * self.user.strength)
         fatigue_cost = (
-            85 + int(self.user.eq_weapon.weight * wt_mult) - (2 * self.user.endurance)
+            STANDARD_FATIGUE_BASE
+            + int(self.user.eq_weapon.weight * wt_mult)
+            - (2 * self.user.endurance)
         )
         fatigue_cost += int(mod_fatigue)
         fatigue_cost = max(floor_fatigue, int(fatigue_cost))

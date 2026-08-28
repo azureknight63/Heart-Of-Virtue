@@ -707,8 +707,14 @@ class TestMoveBaseClass:
         assert move.viable() is False
         player.combat_proximity = {enemy: 3}
         assert move.viable() is True
+        # Inclusive at both ends, matching standard_viability_attack. This
+        # previously asserted an exclusive range_max -- PowerStrike hand-rolled
+        # its proximity scan with `range_min < distance < range_max` and was
+        # the only move in the game uncastable at exactly its own stated reach.
         player.combat_proximity = {enemy: 5}
-        assert move.viable() is False, "range_max is exclusive"
+        assert move.viable() is True, "range_max is inclusive, as in the shared helper"
+        player.combat_proximity = {enemy: 6}
+        assert move.viable() is False, "beyond range_max is still out of reach"
 
         sword_user = make_player(weapon="Sword")
         sword_user.combat_proximity = {enemy: 3}

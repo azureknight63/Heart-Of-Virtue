@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_facing_damage,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
@@ -284,9 +285,11 @@ class ExploitWeakness(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -441,9 +444,11 @@ class Stupefy(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat

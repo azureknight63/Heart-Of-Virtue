@@ -54,6 +54,23 @@ class Pulverize(Move):
             mvrange=(0, 5),
         )
 
+    #: Canonical timing, re-seeded every beat by evaluate() so a
+    #: parry stagger cannot accumulate across uses.
+    STAGE_BEATS = tuple([2, 1, 4, 35])
+
+    def evaluate(self):
+        """Re-seed the timing each beat.
+
+        ``Move.parry()`` does ``self.stage_beat[2] += 10`` to stagger a
+        parried attacker. Moves built through ``standard_evaluate_attack``
+        have that erased by the fresh list it assigns every beat; this
+        move carries a literal timing, so without re-seeding the penalty
+        accumulated permanently and was pickled into the save with
+        ``known_moves``. Only the three mastery moves that actually call
+        ``parry()`` need this.
+        """
+        self.stage_beat = list(self.STAGE_BEATS)
+
     def learnable_when(self, player):
         return player.strength > 30 and _is_highest(player, player.strength)
 
@@ -124,6 +141,23 @@ class KillingPrecision(Move):
             category="Mastery",
             mvrange=(0, 5),
         )
+
+    #: Canonical timing, re-seeded every beat by evaluate() so a
+    #: parry stagger cannot accumulate across uses.
+    STAGE_BEATS = tuple([1, 1, 2, 30])
+
+    def evaluate(self):
+        """Re-seed the timing each beat.
+
+        ``Move.parry()`` does ``self.stage_beat[2] += 10`` to stagger a
+        parried attacker. Moves built through ``standard_evaluate_attack``
+        have that erased by the fresh list it assigns every beat; this
+        move carries a literal timing, so without re-seeding the penalty
+        accumulated permanently and was pickled into the save with
+        ``known_moves``. Only the three mastery moves that actually call
+        ``parry()`` need this.
+        """
+        self.stage_beat = list(self.STAGE_BEATS)
 
     def learnable_when(self, player):
         return player.finesse > 30 and _is_highest(player, player.finesse)
@@ -199,6 +233,23 @@ class LightningAssault(Move):
             category="Mastery",
             mvrange=(0, 5),
         )
+
+    #: Canonical timing, re-seeded every beat by evaluate() so a
+    #: parry stagger cannot accumulate across uses.
+    STAGE_BEATS = tuple([1, 1, 1, 30])
+
+    def evaluate(self):
+        """Re-seed the timing each beat.
+
+        ``Move.parry()`` does ``self.stage_beat[2] += 10`` to stagger a
+        parried attacker. Moves built through ``standard_evaluate_attack``
+        have that erased by the fresh list it assigns every beat; this
+        move carries a literal timing, so without re-seeding the penalty
+        accumulated permanently and was pickled into the save with
+        ``known_moves``. Only the three mastery moves that actually call
+        ``parry()`` need this.
+        """
+        self.stage_beat = list(self.STAGE_BEATS)
 
     def learnable_when(self, player):
         return player.speed > 30 and _is_highest(player, player.speed)

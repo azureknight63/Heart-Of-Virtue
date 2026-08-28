@@ -277,14 +277,14 @@ class TestNoAttackIsEverACertainty:
         defender = _defender()
         attacker = _Combatant(*BEHIND)
         for raw in (50, 80, 98, 100, 250):
-            assert _apply_facing_accuracy(attacker, defender, raw) <= HIT_CHANCE_CEILING
+            assert _apply_to_hit_modifiers(attacker, defender, raw) <= HIT_CHANCE_CEILING
 
     def test_frontal_penalty_cannot_produce_a_guaranteed_miss(self):
         """``int(1 * 0.95)`` is 0 -- a real chance truncated into a miss."""
         defender = _defender()
         attacker = _Combatant(*IN_FRONT)
         for raw in (1, 2, 3, 5):
-            assert _apply_facing_accuracy(attacker, defender, raw) >= HIT_CHANCE_FLOOR
+            assert _apply_to_hit_modifiers(attacker, defender, raw) >= HIT_CHANCE_FLOOR
 
     @pytest.mark.parametrize("coords", [IN_FRONT, RIGHT_FLANK, LEFT_FLANK, BEHIND])
     @pytest.mark.parametrize("raw", [1, 5, 40, 85, 99, 100, 300])
@@ -335,7 +335,7 @@ class TestNoAttackIsEverACertainty:
         defender = _defender()
         for coords in (IN_FRONT, BEHIND):
             attacker = _Combatant(*coords)
-            assert _apply_facing_accuracy(attacker, defender, sentinel) == sentinel
+            assert _apply_to_hit_modifiers(attacker, defender, sentinel) == sentinel
             assert _apply_to_hit_modifiers(attacker, defender, sentinel) == sentinel
 
     def test_clamp_hit_chance_bounds_from_both_sides(self):
