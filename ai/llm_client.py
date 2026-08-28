@@ -178,9 +178,48 @@ _SDK_DETERMINISTIC_REFUSALS = _PERMANENT_MODEL_FAILURES | {403}
 # Completion budgets for one attempt. Structured replies carry a JSON envelope
 # and (on a reasoning model) a chain of thought billed as completion tokens, so
 # they need several times the room a one-paragraph plain reply does.
-# NOTE: tools/measure_llm_tokens.py restates both numbers; update it alongside.
 _STRUCTURED_MAX_TOKENS = 1024
 _PLAIN_MAX_TOKENS = 256
+
+# Debug logging of raw model completions. A DEBUG line here exists to tell an
+# engineer what *shape* came back -- fenced or bare, JSON or prose, object or
+# array, prose wrapped around either -- and the opening characters carry all of
+# that. Everything past them is the completion itself, which on the NPC-chat
+# path is the conversation the player is having. LOG_FILE persists it:
+# src/api/app.py scopes LOG_LEVEL to the ("src", "ai") namespaces, and
+# ``ai.llm_client`` is inside ``ai``; its secret scrub targets credentials, not
+# dialogue, so this text passes through untouched. Hence a bounded head by
+# default, with the full body behind its own switch rather than riding on
+# LOG_LEVEL=DEBUG -- turning debug logging on to chase an unrelated bug must not
+# start transcribing dialogue to disk as a side effect.
+_RAW_LOG_HEAD_CHARS = 80
+_LOG_RAW_BODIES_ENV = "LLM_LOG_RAW_BODIES"
+
+# Provider error bodies (a 400's explanation, a non-200's text). Provider-
+# authored diagnostics rather than model output, so they are not gated behind
+# _LOG_RAW_BODIES_ENV -- only bounded, because some providers echo a slab of
+# the request back inside the error.
+_ERROR_BODY_LOG_CHARS = 300
+
+
+def _raw_log_fields(raw: str) -> str:
+    """Log fields describing one raw model completion.
+
+    Returns ``chars=N raw_head='...'`` -- the true length plus the first
+    :data:`_RAW_LOG_HEAD_CHARS` characters -- or, when
+    :data:`_LOG_RAW_BODIES_ENV` is set truthy, ``chars=N raw='...'`` carrying
+    the whole body. The field name says which one you are reading, so a log
+    excerpt is never mistaken for a complete response.
+
+    The env var is read per call rather than at import, so the switch can be
+    flipped in a running process. Formatting is eager rather than deferred to
+    the logging call: a bounded slice and its repr cost nothing beside the
+    network round trip that produced ``raw``.
+    """
+    if os.getenv(_LOG_RAW_BODIES_ENV, "").strip() in _ENABLED_TRUE_VALUES:
+        return "chars=%d raw=%r" % (len(raw), raw)
+    return "chars=%d raw_head=%r" % (len(raw), raw[:_RAW_LOG_HEAD_CHARS])
+
 
 # OpenRouter's auto-router: it picks a live free model per request. This is the
 # correct last resort when discovery has not run, because every entry in
@@ -330,7 +369,7 @@ def _post_chat_completion(
     if resp.status_code != 400:
         return resp
 
-    body = (resp.text or "")[:300]
+    body = (resp.text or "")[:_ERROR_BODY_LOG_CHARS]
     low = body.lower()
     drop = set()
     # Match "reasoning", not "reason": the latter appears in unrelated
@@ -2059,7 +2098,8 @@ class GenericLLMClient:
             if isinstance(status, int) and status != 200:
                 logger.warning(
                     "OpenRouter model %s failed: HTTP %s %s",
-                    model_id, status, str(getattr(response, "text", ""))[:300],
+                    model_id, status,
+                    str(getattr(response, "text", ""))[:_ERROR_BODY_LOG_CHARS],
                 )
             else:
                 content = self._content_from_ok_response(response, model_id)
@@ -3358,7 +3398,10 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if not raw:
             logger.warning("generate_npc_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
-        logger.debug("generate_npc_turn raw response is_opening=%s chars=%s raw=%r", is_opening, len(raw), raw[:500])
+        logger.debug(
+            "generate_npc_turn raw response is_opening=%s %s",
+            is_opening, _raw_log_fields(raw),
+        )
         parsed = self._parse_or_penalize(raw, "generate_npc_turn")
         if parsed is None:
             return None
@@ -3452,7 +3495,10 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if not raw:
             logger.warning("generate_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
-        logger.debug("generate_turn raw response is_opening=%s chars=%s raw=%r", is_opening, len(raw), raw[:500])
+        logger.debug(
+            "generate_turn raw response is_opening=%s %s",
+            is_opening, _raw_log_fields(raw),
+        )
         parsed = self._parse_or_penalize(raw, "generate_turn")
         if parsed is None:
             return None
@@ -3599,7 +3645,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if not raw:
             logger.warning("generate_jean_options LLM returned no raw response.")
             return None
-        logger.debug("generate_jean_options raw response chars=%s raw=%r", len(raw), raw[:500])
+        logger.debug(
+            "generate_jean_options raw response %s", _raw_log_fields(raw)
+        )
         # The chat payload asks for JSON mode, which forbids a top-level array,
         # so a model that honours it wraps the options in an object and one that
         # ignores it answers with the bare array this prompt used to ask for.

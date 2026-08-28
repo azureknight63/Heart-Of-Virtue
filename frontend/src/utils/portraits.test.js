@@ -141,12 +141,17 @@ describe('portrait manifest (every expression that actually exists on disk)', ()
         expect(characters).toEqual(expect.arrayContaining(['jean', 'liss', 'mara', 'devet', 'gorran']))
     })
 
-    it('jean, liss, mara, and devet ship the full 8-expression set', () => {
+    it('jean, liss, mara, and devet ship art for the full EMOTIONS vocabulary', () => {
+        // DERIVED from EMOTIONS, never hand-listed. The eight names copied here
+        // previously could not fail on a vocabulary change — which is the whole
+        // point of this test: add an emotion and this goes red until the art for
+        // the four full-set characters is actually cut (portraitUrl would
+        // otherwise 404 and silently fall back to neutral).
+        // `utils/combatSfx`'s ALL_COMBAT_CUES is the same pattern.
+        expect(EMOTIONS.length).toBeGreaterThan(0)
         for (const character of ['jean', 'liss', 'mara', 'devet']) {
-            expect(manifest[character]).toEqual(
-                expect.arrayContaining([
-                    'angry', 'concerned', 'curious', 'happy', 'neutral', 'sad', 'skeptical', 'surprised',
-                ])
+            expect(manifest[character], `${character} is missing portrait art`).toEqual(
+                expect.arrayContaining([...EMOTIONS])
             )
         }
     })

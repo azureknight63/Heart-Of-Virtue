@@ -3,7 +3,7 @@
 import logging
 
 from flask import Blueprint, request, jsonify
-from src.api.middleware.auth import get_session_and_player
+from src.api.middleware.auth import get_session_and_player, require_game_service
 
 saves_bp = Blueprint("saves", __name__)
 
@@ -21,9 +21,9 @@ async def list_saves():
         if not hasattr(session, "db_user_id") or not session.db_user_id:
             return jsonify({"success": True, "saves": []}), 200
 
-        from flask import current_app
-
-        game_service = current_app.game_service
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
         timezone = session.data.get("timezone", "America/New_York")
 
         saves = await game_service.list_saves(session.db_user_id, timezone=timezone)
@@ -74,9 +74,9 @@ async def create_save():
         save_name = data.get("name", "Manual Save")
         is_autosave = data.get("is_autosave", False)
 
-        from flask import current_app
-
-        game_service = current_app.game_service
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         try:
             save_id = await game_service.save_game(
@@ -151,9 +151,9 @@ async def load_save(save_id):
                 403,
             )
 
-        from flask import current_app
-
-        game_service = current_app.game_service
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         loaded_player = await game_service.load_game(save_id, session.db_user_id)
 
@@ -214,9 +214,9 @@ async def delete_save(save_id):
                 403,
             )
 
-        from flask import current_app
-
-        game_service = current_app.game_service
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         success = await game_service.delete_save(save_id, session.db_user_id)
 

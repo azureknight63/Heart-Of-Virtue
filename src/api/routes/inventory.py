@@ -9,7 +9,7 @@ Provides endpoints for:
 
 import logging
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
 from src.api.services.validators import (
     validate_item_index,
@@ -22,7 +22,7 @@ from src.api.serializers.inventory import (
     InventorySerializer,
     ItemDetailSerializer,
 )
-from src.api.middleware.auth import get_session_and_player
+from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.utils.inventory import get_inventory_list
 
 # Create blueprint
@@ -182,7 +182,11 @@ def drop_item():
             )
 
         # Delegate the drop (and any unequip-before-drop) to the engine layer.
-        result = current_app.game_service.drop_item(player, item_to_drop)
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.drop_item(player, item_to_drop)
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
 
@@ -269,7 +273,11 @@ def equip_item():
             )
 
         # Delegate the equip/unequip toggle to the engine layer.
-        result = current_app.game_service.equip_item(player, item)
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.equip_item(player, item)
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
 
@@ -352,7 +360,11 @@ def use_item():
 
         # Delegate the effect (gating, range check, narration capture, and
         # combat-log mirroring) to the engine layer.
-        result = current_app.game_service.use_item(player, item, target=item_target)
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.use_item(player, item, target=item_target)
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
 
@@ -430,7 +442,11 @@ def unequip_item():
             )
 
         # Delegate the unequip to the engine layer.
-        result = current_app.game_service.unequip_item(player, item)
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.unequip_item(player, item)
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
 
@@ -529,7 +545,11 @@ def get_stats():
         return error
 
     try:
-        stats = current_app.game_service.get_player_stats(player)
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        stats = game_service.get_player_stats(player)
         return jsonify({"success": True, "stats": stats}), 200
     except Exception:
         logger.exception("Unhandled error in inventory route")

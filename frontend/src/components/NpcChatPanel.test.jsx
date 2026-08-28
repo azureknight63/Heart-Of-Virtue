@@ -13,6 +13,35 @@ vi.mock('../api/npcChat', () => ({
   },
 }))
 
+// TIMERS / the typewriter. ConversationStage runs in `mode="live"` here, which
+// is deliberately NON-interactive: there is no click-to-finish gesture, so
+// "wait for the line to land on the stage" could only ever mean "wait out
+// length x 20 ms of wall clock". That is not a wait for a state change, it is
+// a wait for one React re-render per character, and its cost scales with CPU
+// load while waitFor's budget does not — which is exactly how the sibling
+// panels' 1000 ms waits lost the race under a loaded parallel run. The 5000 ms
+// budgets that used to sit here were the same bet at longer odds.
+//
+// So the hook hands back the finished line instead. The panel's behaviour has
+// nothing to do with the animation: the reveal itself is covered character by
+// character, on fake timers, in hooks/useTypewriter.test.js and
+// components/ConversationStage.test.jsx. `typewriter.mode = 'partial'` freezes
+// the stage mid-line for the one test that needs to tell the typed text apart
+// from the announced text.
+const typewriter = vi.hoisted(() => ({ mode: 'complete', PREFIX_CHARS: 8 }))
+vi.mock('../hooks/useTypewriter', () => ({
+  default: (text = '') => {
+    const full = String(text ?? '')
+    const partial = typewriter.mode === 'partial'
+    return {
+      displayedText: partial ? full.slice(0, typewriter.PREFIX_CHARS) : full,
+      isComplete: !partial,
+      finishImmediately: () => {},
+      reset: () => {},
+    }
+  },
+}))
+
 // SCOPE. Everything the API state machine owns — phase transitions, payload
 // defaults, supersession, unmount guards, the emotion tables, retry replay,
 // the auto-close timer — is tested one level down, against the hook itself, in
@@ -37,7 +66,9 @@ vi.mock('../api/npcChat', () => ({
 //     an option would pass.
 // ConversationStage / ConversationTranscript / PortraitImage are deliberately
 // NOT mocked: the panel composes them, and mocking them out would leave the
-// recap strip and the staged conversation unobservable. The tone -> emotion
+// recap strip and the staged conversation unobservable. (Only the leaf
+// `useTypewriter` inside the stage is stubbed — see the timers note above.
+// The stage itself, portraits and all, is the real component.) The tone -> emotion
 // and quality -> emotion mappings themselves are asserted directly against the
 // tables in the hook suite, not inferred from an alt attribute here.
 vi.mock('./BaseDialog', () => ({
@@ -111,20 +142,21 @@ describe('NpcChatPanel', () => {
       .filter((b) => !['View History', 'End Conversation', 'Retry'].includes(b.textContent))
 
   /**
-   * Wait for a line to finish typing onto the stage.
+   * Wait for a line to land on the stage.
    *
-   * ConversationStage runs a real-timer typewriter at 20ms/char, so a 30-odd
-   * character line needs ~600ms of wall clock — close enough to waitFor's 1000ms
-   * default that these assertions flake under a loaded parallel run. The wait is
-   * still bounded; it is the budget that is generous, not the assertion.
+   * The only wait left is for the mocked API promise to put the stage in the
+   * DOM — one state transition, not `text.length` of them. With the typewriter
+   * stubbed (see the top of the file) the prose is there the moment the stage
+   * is, so the text assertion is synchronous and cannot lose a race.
    */
   const findStageText = async (text) => {
     const stage = await screen.findByTestId('conversation-stage')
-    await waitFor(() => expect(stage).toHaveTextContent(text), { timeout: 5000 })
+    expect(stage).toHaveTextContent(text)
     return stage
   }
 
   beforeEach(() => {
+    typewriter.mode = 'complete'
     vi.clearAllMocks()
     // The hook logs the raw server detail on every failure path (it is never
     // rendered — see S5). Silenced here so an expected-failure test does not
@@ -683,14 +715,18 @@ describe('NpcChatPanel', () => {
           jean_options: [makeJeanOption({ text: 'Hi there', tone: 'open' })],
         }),
       })
+      // Freeze the stage mid-line. The old version of this test only waited
+      // for the animation to catch up, so nothing in it ever asserted that the
+      // stage and the announcement disagreed — the claim in its name.
+      typewriter.mode = 'partial'
       renderPanel()
 
       const stage = await screen.findByTestId('conversation-stage')
       // Mid-type: the stage is still partway through the line...
-      await waitFor(() => expect(announcer()).toHaveTextContent('delivered slowly.'))
+      expect(stage).toHaveTextContent('A rather')
+      expect(stage).not.toHaveTextContent('delivered slowly.')
       // ...but the announcement is already the whole of it.
       expect(announcer().textContent).toBe('A rather long opening line, delivered slowly.')
-      await waitFor(() => expect(stage).toHaveTextContent('delivered slowly.'), { timeout: 5000 })
     })
 
     it('carries the flavor line into the announcement', async () => {

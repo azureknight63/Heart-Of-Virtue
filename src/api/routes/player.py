@@ -4,7 +4,7 @@ import logging
 
 from flask import Blueprint, request, jsonify
 from src.api.serializers.inventory import InventorySerializer
-from src.api.middleware.auth import get_session_and_player
+from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.services.validators import ensure_dict
 
 player_bp = Blueprint("player", __name__)
@@ -36,20 +36,9 @@ def get_status():
         if error:
             return error[0], error[1]
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         status = game_service.get_player_status(player)
 
@@ -89,15 +78,9 @@ def get_full_state():
         if error:
             return error[0], error[1]
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify({"success": False, "error": "Game service not initialized"}),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         # Collect all data in one pass
         status = game_service.get_player_status(player)
@@ -152,20 +135,9 @@ def get_stats():
         if error:
             return error[0], error[1]
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         stats = game_service.get_player_stats(player)
 
@@ -206,20 +178,9 @@ def get_skills():
         if error:
             return error[0], error[1]
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         skills = game_service.get_player_skills(player)
 
@@ -264,20 +225,9 @@ def learn_skill():
         if error:
             return error[0], error[1]
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "skill_name" not in data or "category" not in data:
@@ -340,11 +290,11 @@ def allocate_level_up_points():
         attribute = data.get("attribute")
         amount = data.get("amount")
 
-        from flask import current_app
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
-        result = current_app.game_service.allocate_level_up_points(
-            player, attribute, amount
-        )
+        result = game_service.allocate_level_up_points(player, attribute, amount)
 
         if not result.get("success"):
             return jsonify(result), 400

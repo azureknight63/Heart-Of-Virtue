@@ -18,7 +18,7 @@ import logging
 from flask import Blueprint, current_app, jsonify, request
 
 from src.api.services.validators import validate_required_fields
-from src.api.middleware.auth import get_session_and_player
+from src.api.middleware.auth import get_session_and_player, require_game_service
 
 shop_bp = Blueprint("shop", __name__)
 
@@ -55,7 +55,11 @@ def get_shop_state():
         return jsonify({"success": False, "error": "Missing npc_id query parameter"}), 400
 
     try:
-        result = current_app.game_service.get_shop_state(player, npc_id)
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.get_shop_state(player, npc_id)
         return jsonify(result), 200 if result.get("success") else 404
     except Exception:
         logger.exception("Unhandled error in get_shop_state")
@@ -96,7 +100,11 @@ def buy_item():
         if quantity < 1:
             return jsonify({"success": False, "error": "Quantity must be at least 1"}), 400
 
-        result = current_app.game_service.shop_buy(
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.shop_buy(
             player, data["npc_id"], data["item_id"], quantity
         )
 
@@ -145,7 +153,11 @@ def sell_item():
         if quantity < 1:
             return jsonify({"success": False, "error": "Quantity must be at least 1"}), 400
 
-        result = current_app.game_service.shop_sell(
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.shop_sell(
             player, data["npc_id"], data["item_id"], quantity
         )
 
@@ -192,7 +204,11 @@ def buyback_item():
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
-        result = current_app.game_service.shop_buyback(
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.shop_buyback(
             player, data["npc_id"], data["item_id"]
         )
 

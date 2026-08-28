@@ -106,7 +106,24 @@ def emit(text="", color=None, **meta):
 # ``segments`` array and a ``conversation`` roster for the frontend. None of this
 # affects plain ``narrate``/``cprint`` output, so untagged events render as before.
 
-#: The fixed portrait emotion vocabulary. Unknown values normalize to "neutral".
+#: The fixed portrait emotion vocabulary, and the single OWNER of that
+#: vocabulary. Unknown values normalize to "neutral" (see
+#: :func:`_norm_emotion`), so an emotion missing from this tuple fails
+#: *silently* — the face just renders neutral — rather than loudly.
+#:
+#: Two other files must spell the same set, because neither can import a
+#: Python tuple at runtime:
+#:   * ``frontend/src/utils/portraits.js`` (``EMOTIONS``) — the browser copy
+#:     every React surface normalizes against.
+#:   * ``tools/portrait_splitter.html`` (``emotionState``) — a dependency-free
+#:     browser tool that decides which expressions can be cut out of a
+#:     portrait sheet in the first place.
+#:
+#: Both copies are drift-guarded from ``tests/test_narration_emotions.py``,
+#: which parses the array literal out of each source file. Every other
+#: emotion list in the repo either DERIVES from one of these three (the
+#: tests do) or is checked against them (``useNpcChat.js``'s tone/quality
+#: tables). Do not add a fourth hand-written copy.
 EMOTIONS = ("neutral", "happy", "sad", "angry", "surprised", "skeptical", "concerned", "curious")
 
 
@@ -285,9 +302,8 @@ def react(speaker=None, emotion=None, *, reactions=None):
     Pass either ``speaker`` + ``emotion`` for one character, or
     ``reactions={char_id: emotion, ...}`` to shift several at once.
 
-    :param emotion: one of :data:`EMOTIONS` — ``"neutral"``, ``"happy"``,
-        ``"sad"``, ``"angry"``, ``"surprised"``, ``"skeptical"``,
-        ``"concerned"``, ``"curious"``. Unknown values normalize to
+    :param emotion: one of :data:`EMOTIONS` (do not restate the vocabulary
+        here — it is one more copy to drift). Unknown values normalize to
         ``"neutral"`` via :func:`_norm_emotion`.
     """
     if reactions is None:

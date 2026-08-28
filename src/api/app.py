@@ -50,11 +50,18 @@ _LOG_LEVELS = {
 #
 # What this scoping does NOT do — stated plainly, because an earlier version of
 # this comment read as though it did: ``ai`` is *inside* the selected set, and
-# ``ai.llm_client`` logs raw model output at DEBUG (``raw=%r``, several hundred
-# characters). So ``LOG_LEVEL=DEBUG`` plus ``LOG_FILE`` still writes player
-# conversation text to disk. That is a deliberate developer opt-in (it is the
-# only way to debug a dialogue turn), not something this tuple prevents;
-# bounding the payload belongs in the LLM client, next to the log call.
+# ``ai.llm_client`` logs raw model output at DEBUG. So ``LOG_LEVEL=DEBUG`` plus
+# ``LOG_FILE`` does write player conversation text to disk, and no choice of
+# namespaces here would stop it.
+#
+# What bounds that payload lives in the LLM client, next to the log call, which
+# is the only place that knows what the string is: ``_RAW_LOG_HEAD_CHARS`` in
+# ``ai/llm_client.py`` caps the logged excerpt at an 80-character head by
+# default, and the full body is behind ``LLM_LOG_RAW_BODIES`` — a separate
+# switch on purpose, so that raising the log level to chase an unrelated bug
+# cannot start transcribing dialogue as a side effect. (Provider *error* bodies
+# are bounded but ungated, at ``_ERROR_BODY_LOG_CHARS``: they are the
+# provider's own diagnostics, not model output.)
 _APP_LOG_NAMESPACES = ("src", "ai")
 
 # Blunt scrub for credential-shaped substrings on their way into any handler
@@ -631,6 +638,180 @@ def _register_preflight(app):
             return response, 200
 
 
+# --------------------------------------------------------------------------
+# Security response headers
+# --------------------------------------------------------------------------
+#
+# The reasoning is written out here rather than filed in a doc, because every
+# value below is a judgement about *this* app's shape, and the shape is unusual
+# enough that the obvious policy is the wrong one.
+#
+# This Flask app serves no HTML. There is no ``templates/`` directory, no
+# ``static/`` directory, no ``render_template`` / ``send_file`` /
+# ``send_from_directory`` call anywhere under ``src/``, and no catch-all SPA
+# route; every registered endpoint returns ``jsonify()``. The React frontend is
+# a separate artefact on a separate origin -- Vite serves it from :3000 in
+# development (proxying ``/api`` here, which is why ``CORS_ORIGINS`` exists at
+# all), and ``deploy.ps1`` unpacks ``frontend/dist`` into a *different*
+# container's document root in production while this app runs as its own
+# systemd service. Two consequences follow, and they pull in opposite
+# directions:
+#
+#   * These headers can never reach the SPA document, so the CSP that backstops
+#     React's escaping of model-authored NPC dialogue is not something this file
+#     can ship. It has to be issued by whatever serves ``index.html``.
+#     :data:`_HTML_CSP` records the policy that document actually needs, so the
+#     requirement is written down in the repo and is applied automatically the
+#     day anything here does serve HTML.
+#   * Because nothing here renders, the API's own CSP can be the strictest one
+#     the grammar allows, with none of the blank-page risk that gets a CSP
+#     deleted. :data:`_API_CSP` takes that option.
+#
+# Nothing below touches the ``Access-Control-*`` headers that flask_cors and
+# :func:`_register_preflight` negotiate, and nothing below contradicts that
+# allow-list: CSP constrains what a *document* may load, CORS constrains who may
+# read a *response*, and the two never describe the same thing. In particular
+# ``default-src 'none'`` does not affect the SPA's cross-origin ``fetch``,
+# because a CSP binds the document it was served with and a fetched JSON body
+# never becomes a document.
+
+# The policy for every response this app actually produces today.
+#
+# ``default-src 'none'`` is safe precisely because it only ever binds the case
+# it is meant to stop: a browser induced to *navigate* to an API URL and render
+# the body (the classic route from a reflected value in an error payload to
+# script execution). XHR / fetch / EventSource / WebSocket responses are not
+# documents and ignore this header entirely, so the SPA is unaffected.
+# ``sandbox`` with no tokens drops such a document into an opaque origin with no
+# scripts, no forms and no top-level navigation -- belt to the braces.
+_API_CSP = (
+    "default-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "form-action 'none'; "
+    "sandbox"
+)
+
+# The policy for HTML -- currently unreachable from this app (see above), and
+# deliberately kept anyway: it is the specification the SPA's host must mirror,
+# and it is what a future ``send_from_directory`` of ``frontend/dist`` would
+# need on day one. Derived from what the frontend measurably does, not from a
+# hardening checklist:
+#
+#   script-src 'self'  No inline <script>, no eval, no ``new Function``, no
+#       Worker and no blob: URL exists in ``frontend/src`` or ``index.html``
+#       (grepped: zero hits) -- index.html loads one module by src. So the
+#       directive that actually stops XSS stays strict, with no escape hatch.
+#
+#   style-src 'unsafe-inline'  Not aspirational laziness -- required. Six
+#       components render a literal <style> element (GameOverScreen, HeroPanel,
+#       ItemDetailDialog, ToastContext, TypewriterOutput, NpcChatPanel) and
+#       InteractPanel builds another via ``document.createElement('style')``,
+#       all of them for ``@keyframes``, whose names are document-global and so
+#       cannot move into a scoped CSS module. There is no nonce to offer them: a
+#       statically hosted, cached index.html has no per-response value to mint.
+#       The ~1000 ``style={{}}`` props are the weaker argument (React applies
+#       those through the CSSOM, which CSP does not police) but they are why a
+#       strict style policy would be one refactor away from a blank screen
+#       anyway. The concession is bounded: inline *style* cannot execute script,
+#       and the one place untrusted model text reaches the DOM as markup
+#       (CombatLog's ``dangerouslySetInnerHTML``) is already sanitised by
+#       DOMPurify -- CSP is the second line there, not the first.
+#
+#   fonts.googleapis.com / fonts.gstatic.com  index.html links a Google Fonts
+#       stylesheet, which in turn pulls its faces from the gstatic host. Both
+#       are needed or the game loses its typography.
+#
+#   img-src / media-src data:  Vite inlines assets under its 4 KB threshold as
+#       data: URIs at build time.
+#
+#   connect-src 'self'  Correct for the case this constant governs: HTML served
+#       *from here* is same-origin with this API, and CSP3's 'self' already
+#       covers the ws:/wss: upgrade Socket.IO performs against the same host. A
+#       host serving the SPA on a *different* origin from the API (today's
+#       production split, and any build setting VITE_API_URL) must append that
+#       API origin here.
+_HTML_CSP = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'; "
+    "object-src 'none'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data:; "
+    "media-src 'self' data:; "
+    "connect-src 'self'"
+)
+
+# Headers with no policy trade-off to weigh, and so no knob to offer.
+#
+#   X-Content-Type-Options  The precondition for most "navigate straight at an
+#       API endpoint" attacks is a browser deciding a JSON body is really HTML.
+#       nosniff removes it, and this app has no legitimate sniffing to lose.
+#
+#   X-Frame-Options  Nothing here is meant to be framed. This duplicates the
+#       CSPs' ``frame-ancestors 'none'`` on purpose: frame-ancestors supersedes
+#       it in modern browsers, and X-Frame-Options is what the ones that ignore
+#       CSP still honour. DENY rather than SAMEORIGIN because the SPA is a
+#       different origin and frames nothing.
+#
+#   Referrer-Policy  A deliberate pick, not a default. ``no-referrer`` was the
+#       alternative and would also have been defensible -- the API never
+#       initiates a navigation, so it has nothing to lose by sending nothing.
+#       ``strict-origin-when-cross-origin`` wins on two counts: it is the value
+#       the SPA's host will also set, so the two halves of the product state one
+#       policy rather than two, and it keeps the full URL on same-origin
+#       requests, which is what any debugging or log correlation on the API host
+#       wants. The residual cross-origin leak is the bare origin, and this API
+#       keeps no credential in a URL -- the session id travels in the
+#       Authorization header, by the convention in ``src/api/middleware/auth.py``.
+_STATIC_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+}
+
+
+def _renders_as_html(response):
+    """True when a browser would render this response as a document.
+
+    The content-length half is not pedantry: :func:`_register_preflight` answers
+    every OPTIONS with a bare ``make_response()``, whose Flask default content
+    type is ``text/html``. An empty body renders nothing whatever it calls
+    itself, so it belongs under the strict policy with the rest of the API
+    rather than being handed the permissive one on a technicality.
+
+    A streamed response reports no content length and so lands on
+    :data:`_API_CSP` too. That is the safe direction to be wrong in: the failure
+    mode is a visibly blank page in development, not a policy that silently
+    stops applying.
+    """
+    return response.mimetype == "text/html" and bool(response.content_length)
+
+
+def _register_security_headers(app):
+    """Install the single ``after_request`` hook that sets security headers.
+
+    Every header is written with ``setdefault``, so a reverse proxy or a route
+    that has already made a deliberate choice keeps it, and repeated
+    registration cannot stack or fight.
+    """
+
+    @app.after_request
+    def set_security_headers(response):
+        for header, value in _STATIC_SECURITY_HEADERS.items():
+            response.headers.setdefault(header, value)
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            _HTML_CSP if _renders_as_html(response) else _API_CSP,
+        )
+        return response
+
+    return set_security_headers
+
+
 def _register_meta_routes(app):
     """Health and API info — the two unauthenticated public endpoints."""
 
@@ -818,6 +999,7 @@ def create_app(config_class=None):
     register_socket_handlers(socketio)
 
     _register_preflight(app)
+    _register_security_headers(app)
     _register_meta_routes(app)
     if app.config.get("TESTING"):
         _register_test_routes(app)

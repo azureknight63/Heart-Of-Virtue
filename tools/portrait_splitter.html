@@ -585,7 +585,23 @@
     let currentFileName = null;
     const SETTINGS_STORAGE_PREFIX = 'portraitSplitter:settings:';
 
-    // Master emotion list. Order reflects grid slot order; `selected` controls inclusion.
+    // Master emotion list for THIS TOOL. Order reflects grid slot order (drag to
+    // reorder); `selected` controls inclusion.
+    //
+    // NOT the owner of the emotion vocabulary: the `EMOTIONS` tuple in
+    // `src/narration.py` is (no line number on purpose — it moves). This file
+    // is a standalone, dependency-free browser tool with no
+    // build step, so it can import neither that Python tuple nor
+    // `frontend/src/utils/portraits.js` — the names below are unavoidably a third
+    // copy. Because this list decides which expressions can be cut out of a
+    // portrait sheet at all, a silent divergence here means art that can never be
+    // produced (or gets produced under a name nothing will render).
+    //
+    // Guarded: `tests/test_narration_emotions.py` parses the array literal below
+    // straight out of this HTML and asserts it matches narration.EMOTIONS as a
+    // set. Keep it a flat, single-bracket list of quoted names so that parse
+    // keeps working; the ORDER is deliberately exempt (it is sheet layout, not
+    // vocabulary). Add an emotion here and in the two files above, together.
     let emotionState = [
         "neutral", "happy", "sad", "angry",
         "concerned", "skeptical", "surprised", "curious"

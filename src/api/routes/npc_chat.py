@@ -8,8 +8,8 @@ Provides REST API endpoints for:
 - Retrieving conversation history
 """
 
-from flask import Blueprint, request, jsonify, current_app
-from src.api.middleware.auth import get_session_and_player
+from flask import Blueprint, request, jsonify
+from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.rate_limiter import client_ip, limiter_from_env
 
 npc_chat_bp = Blueprint("npc_chat", __name__)
@@ -182,7 +182,11 @@ def npc_chat_open():
         return jsonify({"success": False, "error": "npc_id is required"}), 400
 
     # Call game service
-    result = current_app.game_service.npc_chat_open(player, npc_id)
+    game_service, gs_error = require_game_service()
+    if gs_error:
+        return gs_error
+
+    result = game_service.npc_chat_open(player, npc_id)
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -230,9 +234,11 @@ def npc_chat_respond():
         return jsonify({"success": False, "error": "jean_text is required"}), 400
 
     # Call game service
-    result = current_app.game_service.npc_chat_respond(
-        player, npc_key, jean_text, jean_tone
-    )
+    game_service, gs_error = require_game_service()
+    if gs_error:
+        return gs_error
+
+    result = game_service.npc_chat_respond(player, npc_key, jean_text, jean_tone)
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -269,7 +275,11 @@ def npc_chat_end():
         return jsonify({"success": False, "error": "npc_key is required"}), 400
 
     # Call game service
-    result = current_app.game_service.npc_chat_end(player, npc_key)
+    game_service, gs_error = require_game_service()
+    if gs_error:
+        return gs_error
+
+    result = game_service.npc_chat_end(player, npc_key)
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -300,7 +310,11 @@ def npc_chat_history(npc_key):
         return jsonify({"success": False, "error": "npc_key is required"}), 400
 
     # Call game service
-    result = current_app.game_service.npc_chat_history(player, npc_key)
+    game_service, gs_error = require_game_service()
+    if gs_error:
+        return gs_error
+
+    result = game_service.npc_chat_history(player, npc_key)
 
     status_code = 200 if result.get("success") else 400
     return jsonify(result), status_code

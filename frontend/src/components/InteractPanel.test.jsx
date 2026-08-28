@@ -65,9 +65,24 @@ describe('InteractPanel', () => {
   /**
    * Wait for the interaction output to mount, then finish its typewriter with
    * the click the component exposes for exactly that purpose, and return the
-   * settled node. Waiting out the per-character interval instead (the old
-   * `waitFor(textContent contains ...)`) cost ~0.5-1.5s per test and asserted
-   * nothing the click does not.
+   * settled node.
+   *
+   * Use this for anything the panel routes through `interactionOutput` — the
+   * ONLY text here that TypewriterOutput animates. `waitFor(getByText(...))`
+   * on that text is not a wait for a state change, it is a wait for
+   * `message.length` React re-renders, so its wall-clock cost scales with CPU
+   * load while waitFor's budget does not: 'Action completed.' (17 chars at
+   * 30 ms) nominally needs 510 ms of the default 1000 ms, and a loaded
+   * parallel run measured ~4x slower than nominal, leaving 'Action ' on
+   * screen when the budget ran out. The click settles it in zero wall clock,
+   * asserts nothing the animation does, and cannot lose a race.
+   *
+   * The panel's OTHER two text paths — `error` (the ⚠️ box) and `searchOutput`
+   * — are plain GameText set in one state transition, never animated, so they
+   * keep a plain `waitFor`. Route one through here only when the SAME
+   * interaction also produced an `interactionOutput` (the partial take-all
+   * summary does); otherwise there is no container to click and the wait
+   * cannot resolve.
    */
   const settledOutput = async () => {
     const out = await screen.findByTestId('event-text-container');
@@ -360,9 +375,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Take/i));
     fireEvent.click(screen.getByText(/CONFIRM/i));
 
-    await waitFor(() => {
-      expect(container.textContent).toContain('Item taken');
-    });
+    await settledOutput();
+    expect(container.textContent).toContain('Item taken');
 
     // Switch to fake timers only for the delay itself: the interaction above
     // needs real promise scheduling, but burning 3s of wall clock here was the
@@ -501,9 +515,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/CONFIRM/i));
 
     // Wait for interaction
-    await waitFor(() => {
-      expect(screen.getByText(/Item taken/i)).toBeDefined();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Item taken/i)).toBeDefined();
 
     // 3. Simulate room update where item is gone
     const updatedLocation = {
@@ -565,9 +578,8 @@ describe('InteractPanel', () => {
       render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} />);
       fireEvent.click(screen.getByText(/Take All Items/i));
 
-      await waitFor(() => {
-        expect(screen.getByText(/Too heavy to carry/i).textContent).toBe('⚠️ Too heavy to carry.');
-      });
+      await settledOutput();
+      expect(screen.getByText(/Too heavy to carry/i).textContent).toBe('⚠️ Too heavy to carry.');
       // Take-all stops at the first failure: the second item is never requested.
       expect(apiEndpoints.world.interact).toHaveBeenCalledTimes(2);
       expect(apiEndpoints.world.interact).toHaveBeenLastCalledWith('item2', 'take', 1);
@@ -861,9 +873,8 @@ describe('InteractPanel', () => {
     fireEvent.change(qtyInput, { target: { value: '3' } });
     fireEvent.click(screen.getByText(/CONFIRM/i));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Took some\./i)).toBeInTheDocument();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Took some\./i)).toBeInTheDocument();
     fireEvent.click(screen.getByText(/← Back/i));
     fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
     expect(screen.getByText(/Take/i).closest('button')).not.toBeDisabled();
@@ -937,9 +948,8 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getAllByText(/Chest/i)[0]);
       fireEvent.click(screen.getByText('TAKE'));
 
-      await waitFor(() => {
-        expect(screen.getByText(/Took Gold\./i)).toBeInTheDocument();
-      });
+      await settledOutput();
+      expect(screen.getByText(/Took Gold\./i)).toBeInTheDocument();
       // takeOne targets the CONTENTS row's id, not the container's.
       expect(apiEndpoints.world.interact).toHaveBeenCalledWith('gold1', 'take');
       expect(mockOnRefetch).toHaveBeenCalledTimes(1);
@@ -973,9 +983,8 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getAllByText(/Chest/i)[0]);
       fireEvent.click(screen.getByText('TAKE'));
 
-      await waitFor(() => {
-        expect(screen.getByText(/Took Gold/i)).toBeInTheDocument();
-      });
+      await settledOutput();
+      expect(screen.getByText(/Took Gold/i)).toBeInTheDocument();
     });
 
     it('defaults to "Failed to take item" when the single-item take fails without an error field', async () => {
@@ -1061,9 +1070,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);
     fireEvent.click(screen.getByText(/^Talk$/i));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Action completed\./i)).toBeInTheDocument();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Action completed\./i)).toBeInTheDocument();
     expect(mockOnTypingChange).toHaveBeenCalledWith(true);
     expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
   });
@@ -1107,9 +1115,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Door/i)[0]);
     fireEvent.click(screen.getByText(/^Unlock$/i));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Click\./i)).toBeInTheDocument();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Click\./i)).toBeInTheDocument();
     fireEvent.click(screen.getByText(/← Back/i));
     fireEvent.click(screen.getAllByText(/Door/i)[0]);
     expect(screen.getByText(/^Unlock$/i)).toBeInTheDocument();

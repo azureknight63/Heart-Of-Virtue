@@ -203,11 +203,12 @@ def _capture_call_llm(self, system_prompt, user_prompt, max_tokens=512, **_ignor
     return None
 
 
-# GenericLLMClient hardcodes these in its OpenRouter/Ollama payload builders
-# (`1024 if structured else 256`) rather than taking them as an argument, so
-# _dispatch_chat cannot report them and they are restated here. If those
-# literals move, these must move with them.
-_GENERIC_MAX_TOKENS = {True: 1024, False: 256}
+# GenericLLMClient applies these in its OpenRouter/Ollama payload builders
+# rather than taking them as an argument, so _dispatch_chat cannot report them
+# and the stand-in has to supply them. Imported from the client, not restated:
+# a hand-copy of the pair sat here and drifting from it would have silently
+# mis-sized every Mynx row.
+_GENERIC_MAX_TOKENS = {True: llm._STRUCTURED_MAX_TOKENS, False: llm._PLAIN_MAX_TOKENS}
 
 
 def _capture_dispatch(self, system_prompt, user_prompt, structured=False, **_ignored):
@@ -606,10 +607,13 @@ def _measure_combat_ta(rows):
         # understates the real wire size by ~25 tokens. Imported from the
         # strategist, not restated: this file used to keep a hand-copy of that
         # f-string with a comment admitting it "mirrors that wrapper exactly".
+        # The advisor calls generate_structured, so its ceiling is the client's
+        # structured budget -- imported, not the bare 1024 that used to sit here
+        # as a fourth spelling of the same number.
         record(rows, "Combat TA", label, strat.system_prompt,
                wrap_suggestions_prompt(strat._build_user_prompt(ctx),
                                        _MAX_SUGGESTIONS),
-               1024, "get_suggestions", note)
+               llm._STRUCTURED_MAX_TOKENS, "get_suggestions", note)
 
 
 def _run_measurements():
