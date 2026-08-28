@@ -103,7 +103,12 @@ def test_execute_miss_no_damage_but_fatigue_reduced(monkeypatch):
     monkeypatch.setattr('src.functions.check_parry', lambda target: False)
 
     bat = CaveBat()
-    target = DummyTarget(hp=30, protection=0, finesse=10)
+    # The max roll alone no longer guarantees a miss: BatBite's to-hit is
+    # int(95 - target.finesse + bat.finesse * 0.7 + bat.intelligence * 0.3),
+    # and the bat's own finesse is high enough that against an average-evasion
+    # target the chance exceeds the 0-100 roll range. Give the dummy enough
+    # evasion that the miss branch is reached regardless of bestiary tuning.
+    target = DummyTarget(hp=30, protection=0, finesse=200)
     bat.target = target
     bat.combat_proximity = {target: 3}
     bite = moves.BatBite(bat)
