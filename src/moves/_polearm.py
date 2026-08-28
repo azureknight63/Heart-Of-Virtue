@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_facing_damage,
     Move,
     PassiveMove,
     _apply_to_hit_modifiers,
@@ -253,7 +254,12 @@ class Sweep(Move):
                 if dist > arc_range:
                     continue
 
-            base_dmg = max(1, int(self.power - enemy.protection))
+            # Facing/angle damage (#394) - see apply_facing_damage.
+            # Scored per enemy: an arc swing reaches each one from a
+            # different angle, so one hoisted multiplier would be wrong
+            # for every target but one.
+            swing_power = apply_facing_damage(self.user, enemy, self.power)
+            base_dmg = max(1, int(swing_power - enemy.protection))
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
@@ -442,7 +448,12 @@ class HalberdSpin(Move):
                 if dist > arc_range:
                     continue
 
-            base_dmg = max(1, int(self.power - enemy.protection))
+            # Facing/angle damage (#394) - see apply_facing_damage.
+            # Scored per enemy: an arc swing reaches each one from a
+            # different angle, so one hoisted multiplier would be wrong
+            # for every target but one.
+            swing_power = apply_facing_damage(self.user, enemy, self.power)
+            base_dmg = max(1, int(swing_power - enemy.protection))
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)

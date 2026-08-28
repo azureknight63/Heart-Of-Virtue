@@ -131,10 +131,25 @@ UTILITY_FIRST = {
     "Backstab": "Dagger",        # 0.70x-1.80x on the facing curve
 }
 
-#: Player base ``maxfatigue``. A move costing more than a full bar can never be
-#: selected -- combat gates selection on ``fatigue >= move.fatigue_cost`` -- so
-#: this is a hard ceiling, not a balance preference.
-BASE_MAX_FATIGUE = 150
+#: Jean's real fatigue bar at base stats, derived from the engine rather than
+#: copied. The literal `maxfatigue` in `Player.__init__` is 150, but that is a
+#: BASE: `functions.refresh_stat_bonuses` adds an endurance term and a +25%
+#: bonus for carrying under half capacity, giving 190 in practice. Hardcoding
+#: 150 made this guard fire on moves that are perfectly castable.
+#:
+#: Note the bonus is a cliff, not a ramp -- cross half of carry capacity and
+#: the bar drops to 152 -- so a move close to this ceiling is castable only
+#: while lightly loaded. `_worst_case_bar()` below is the honest bound.
+def _base_fatigue_bar():
+    from src.player import Player
+    import src.functions as functions
+
+    player = Player()
+    functions.refresh_stat_bonuses(player)
+    return player.maxfatigue
+
+
+BASE_MAX_FATIGUE = _base_fatigue_bar()
 
 
 def _profile(weapon_cls, move_names):
@@ -254,9 +269,11 @@ def _per_strike_power(move_name, pool):
     """The power a single blow of ``move_name`` carries.
 
     Most moves strike once, so this is the pool. A move declaring ``STRIKES``
-    divides its pool by ``STRIKE_POWER_FRACTION`` per blow, and it is that
-    per-blow number that competes with a single-strike move's power -- each
-    strike is resolved against the target's protection independently.
+    gives each blow ``STRIKE_POWER_FRACTION`` OF the pool -- note the strikes
+    may sum to more than the pool (Chip Away is 3 x 0.40 = 1.2x) -- and it is
+    that per-blow number which competes with a single-strike move's power,
+    because each strike is resolved against the target's protection
+    independently.
     """
     cls = getattr(moves, move_name, None)
     strikes = getattr(cls, "STRIKES", 1)

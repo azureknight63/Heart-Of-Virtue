@@ -8,6 +8,7 @@ This module provides serialization for:
 """
 
 import logging
+import math
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
 from src.api.constants import ITEM_USE_RANGE
@@ -25,14 +26,25 @@ logger = logging.getLogger(__name__)
 
 
 def _num(obj, attr, default=0.0) -> float:
-    """Read a numeric attribute defensively, coercing None/garbage to `default`."""
+    """Read a numeric attribute defensively, coercing None/garbage to `default`.
+
+    Non-finite values are coerced too, and that part is load-bearing rather
+    than tidiness: ``float('nan')`` raises neither TypeError nor ValueError, so
+    it used to pass straight through. Flask's JSON provider serialises it as a
+    bare ``NaN`` token, which is not valid JSON -- so `JSON.parse` rejects the
+    response and the ENTIRE combat poll fails, not just the field. A single
+    poisoned stat would take the fight down rather than degrade one number.
+    """
     try:
         value = getattr(obj, attr, default)
         if value is None:
             return float(default)
-        return float(value)
+        value = float(value)
     except (TypeError, ValueError):
         return float(default)
+    if not math.isfinite(value):
+        return float(default)
+    return value
 
 
 def _as_dict(value) -> Dict:

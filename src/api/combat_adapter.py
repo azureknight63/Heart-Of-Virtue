@@ -2593,7 +2593,12 @@ class ApiCombatAdapter:
         # mid-fight* whenever a combatant moved past the previous extent.
         battle_state["map_size"] = self.combat_grid_size[0]
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
-        battle_state["heat"] = int(self.player.heat * 100)
+        # round(), not int(). Binary floats mean 68 of the 951 two-decimal
+        # heat values in [0.50, 10.00] land just under their exact product --
+        # int(1.15 * 100) is 114, not 115 -- so truncating made this field
+        # disagree with the float multiplier the client actually reads for
+        # about 7% of heats.
+        battle_state["heat"] = round(self.player.heat * 100)
         abortable = self._abortable_move()
         battle_state["abortable_move"] = (
             {

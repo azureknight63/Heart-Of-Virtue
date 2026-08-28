@@ -124,7 +124,12 @@ class Reap(Move):
                 if dist > arc_range:
                     continue
 
-            base_dmg = max(1, int(self.power - enemy.protection))
+            # Facing/angle damage (#394) - see apply_facing_damage.
+            # Scored per enemy: an arc swing reaches each one from a
+            # different angle, so one hoisted multiplier would be wrong
+            # for every target but one.
+            swing_power = apply_facing_damage(self.user, enemy, self.power)
+            base_dmg = max(1, int(swing_power - enemy.protection))
             # GrimPersistence passive: +25% damage vs targets below 35% HP
             if (
                 any(

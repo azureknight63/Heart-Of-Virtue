@@ -148,7 +148,11 @@ class ChipAway(Move):
         )
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
-        sub_power = max(1, int(self.power * self.STRIKE_POWER_FRACTION))
+        # Facing/angle damage (#394) - see apply_facing_damage. Scored once,
+        # not per strike: all three blows land on the same target from the
+        # same angle within one cast.
+        struck_power = apply_facing_damage(self.user, self.target, self.power)
+        sub_power = max(1, int(struck_power * self.STRIKE_POWER_FRACTION))
         total_hits = 0
 
         for i in range(self.STRIKES):

@@ -154,7 +154,11 @@ function MomentumMeter({ heat, beat, combatId }) {
       <div
         role="meter"
         aria-label="Combat momentum"
-        aria-valuenow={heat}
+        // Clamped to the meter's own domain: heat runs to the engine's ceiling of
+      // 10 while the bar is scaled to 3.5, and role="meter" requires valuenow
+      // to sit within [valuemin, valuemax]. aria-valuetext still carries the
+      // true multiplier, so nothing is hidden from assistive tech.
+      aria-valuenow={Math.min(Math.max(heat, METER_MIN), METER_MAX)}
         aria-valuemin={METER_MIN}
         aria-valuemax={METER_MAX}
         aria-valuetext={`${formatMultiplier(heat)} ${band.label}`}

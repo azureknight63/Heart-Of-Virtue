@@ -342,3 +342,65 @@ class TestNoAttackIsEverACertainty:
         assert clamp_hit_chance(1000) == HIT_CHANCE_CEILING
         assert clamp_hit_chance(0) == HIT_CHANCE_FLOOR
         assert clamp_hit_chance(50) == 50
+
+
+# ---------------------------------------------------------------------------
+# Two production changes a scrub found were unpinned: nothing failed when they
+# were reverted, so the fixes were protected by nothing.
+# ---------------------------------------------------------------------------
+
+
+def test_backstabs_steeper_curve_survives_float_truncation():
+    """Assert the truncated INTEGER power, not the float multiplier.
+
+    `facing_damage_multiplier` rounds at non-default steepness because
+    `1.0 + (1.15 - 1.0) * 2.0` is 1.2999999999999998, and `int(100 * that)` is
+    129 rather than 130 -- Backstab, the only off-default caller, quietly lost
+    a point on every flank hit. `pytest.approx` on the multiplier cannot see
+    this: 1.2999999999999998 is well inside its tolerance. Only the integer
+    power the engine actually deals shows the difference.
+    """
+    from src.moves._base import apply_facing_damage
+    from src.moves._dagger import BACKSTAB_POSITIONAL_STEEPNESS
+
+    defender = _defender()
+    cases = {RIGHT_FLANK: 130, BEHIND: 180, IN_FRONT: 70}
+    for position, expected in cases.items():
+        attacker = _Combatant(*position)
+        dealt = apply_facing_damage(
+            attacker, defender, 100, BACKSTAB_POSITIONAL_STEEPNESS
+        )
+        assert dealt == expected, (
+            f"power 100 from {position} dealt {dealt}, expected {expected} -- "
+            "float drift in the steepness branch shaves a point off"
+        )
+
+
+@pytest.mark.parametrize(
+    "move_name", ["Pulverize", "KillingPrecision", "LightningAssault", "Disrupt"]
+)
+def test_parry_stagger_cannot_accumulate_across_uses(move_name):
+    """`Move.parry()` adds ten beats of recoil; it must not persist.
+
+    Moves built through `standard_evaluate_attack` get a fresh `stage_beat`
+    list every beat, which erases it. These four carry literal timings, so
+    without an `evaluate()` that re-seeds them the penalty compounded -- recoil
+    growing 2, 12, 22 -- and was pickled into the save with `known_moves`.
+
+    The idempotence sweep cannot catch this: it never calls `parry()`, so
+    deleting these four `evaluate()` overrides leaves it green.
+    """
+    import src.moves as moves
+    from src.player import Player
+
+    move = getattr(moves, move_name)(Player())
+    baseline = list(move.stage_beat)
+    for _ in range(4):
+        move.stage_beat[2] += 10  # what Move.parry() does to a parried attacker
+        move.evaluate()
+        assert move.stage_beat == baseline, (
+            f"{move_name} recoil drifted to {move.stage_beat} from {baseline}"
+        )
+    assert move.stage_beat is not getattr(move, "STAGE_BEATS", None), (
+        "stage_beat must be a copy, not the class constant itself"
+    )

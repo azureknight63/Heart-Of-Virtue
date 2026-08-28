@@ -19,6 +19,7 @@ import pytest
 
 import src.moves as moves
 from src.combatant import (
+    Combatant,
     MOVE_STAGE_COOLDOWN,
     MOVE_STAGE_EXECUTE,
     MOVE_STAGE_PREP,
@@ -101,7 +102,23 @@ class FakeEnemy:
         self.combat_list = []
         self.current_move = None
         self.resistance = {"slashing": 1.0, "crushing": 1.0, "pure": 1.0}
-        self.status_resistance = {"generic": 0.0, "stun": 0.0}
+        # 0.3 stun resistance is what every real hostile carries
+        # (_STATUS_RESISTANCE_BASELINE_COMMON in src/npc/_base.py); 0.15 for
+        # bosses. It defaulted to 0.0 here, so every stagger assertion ran
+        # against a value no shipped NPC has and functions.inflict could never
+        # fail. The immunity test overrides this to 1.0.
+        self.status_resistance = {"generic": 0.3, "stun": 0.3}
+        # State.process gates on this; the engine sets it on combat entry.
+        self.in_combat = True
+        # Needed by the state-EXPIRY path: State.process calls
+        # functions.refresh_stat_bonuses on removal, which reads these. Without
+        # them a test that lets a state expire dies with an AttributeError
+        # instead of failing on its own assertion -- so its failure message was
+        # unreachable and it could never report the bug it guards.
+        self.resistance_base = dict(self.resistance)
+        self.status_resistance_base = dict(self.status_resistance)
+        self.inventory = []
+        self.states_to_remove = []
 
     def is_alive(self):
         return self.hp > 0
@@ -166,6 +183,10 @@ def always_hits(monkeypatch):
     """Force every to-hit roll to succeed (roll 0 <= any positive chance)."""
     monkeypatch.setattr(random, "randint", lambda a, b: a)
     monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+    # functions.inflict rolls random.random() against partial status
+    # resistance; unpinned, the now-realistic 0.3 stun resistance would make
+    # every braced-stagger assertion ~70% flaky.
+    monkeypatch.setattr(random, "random", lambda: 0.0)
 
 
 @pytest.fixture
@@ -188,7 +209,6 @@ def always_misses(monkeypatch):
 
 def test_disrupt_is_exported_and_declares_its_ui_contracts():
     assert "Disrupt" in moves.__all__
-    assert moves.Disrupt is getattr(moves, "Disrupt")
     assert moves.Disrupt.display_name
     # Routed by CATEGORY_GROUPS' Offensive button; animation exists frontend-side.
     # (The exhaustive checks live in the two contract test modules.)
@@ -704,17 +724,20 @@ def test_spamming_disrupt_is_worse_damage_than_just_attacking(always_hits):
 
 
 def _tick_states(entity, beats):
-    """Advance `entity`'s states by `beats`, the way the combat loop does."""
-    entity.in_combat = True
+    """Advance `entity`'s states by `beats` through the ENGINE's own pump.
+
+    Calls `Combatant.cycle_states` rather than re-implementing its loop, so a
+    change to how states are cycled is felt here instead of being masked by a
+    private copy — the file's stated preference elsewhere ("end to end through
+    the engine's own stage machine, not just the flag").
+    """
     for _ in range(beats):
-        for state in list(entity.states):
-            state.process(entity)
+        Combatant.cycle_states(entity)
 
 
 def test_braced_stagger_outlives_the_windup_it_let_through(always_hits):
     """The braced read is strictly weaker than a cancel -- not worthless."""
     player, enemy, move = _engaged()
-    enemy.in_combat = True
     setattr(enemy, moves.Disrupt.BRACE_ATTR, True)  # braced -> stagger branch
 
     winding = _winding(enemy, beats_left=4, stage_beat=(6, 1, 2, 4))
@@ -731,21 +754,39 @@ def test_braced_stagger_outlives_the_windup_it_let_through(always_hits):
 
     assert [s for s in enemy.states if s.name == "Staggered"], (
         "Staggered expired before the target could reach its next cast, so the "
-        "braced read did nothing -- the exact silent no-op this guards"
+        "braced read did nothing — the exact silent no-op this guards"
+    )
+
+    # Existing-but-expired is only a proxy. The behaviour that matters is that
+    # the penalty is COLLECTED: Move.cast() reads Staggered and adds
+    # prep_penalty beats. Prove it lands on the target's next move.
+    follow_up = CountingMove(enemy, stage_beat=(6, 1, 2, 4))
+    with capture_narration():
+        follow_up.cast()
+    assert follow_up.beats_left > follow_up.stage_beat[0], (
+        f"the follow-up move cast at {follow_up.beats_left} prep beats against a "
+        f"base of {follow_up.stage_beat[0]} — the stagger was never collected"
     )
 
 
 def test_braced_stagger_is_not_narrated_when_resistance_blocks_it(always_hits):
     """A stun-immune target must not be told it was knocked off balance."""
     player, enemy, move = _engaged()
-    enemy.in_combat = True
     enemy.status_resistance["stun"] = 1.0  # fully immune
     setattr(enemy, moves.Disrupt.BRACE_ATTR, True)
 
-    _winding(enemy, beats_left=4)
+    _winding(enemy, stage=MOVE_STAGE_PREP, beats_left=4)
     _cast(move, player)
-    move.execute(player)
+    with capture_narration() as narration:
+        move.execute(player)
 
+    spoken = " ".join(entry.get("text", "") for entry in narration)
+    assert "knocked off balance" not in spoken, (
+        f"narrated a stagger that resistance blocked: {spoken!r}"
+    )
+    assert "unshaken" in spoken, (
+        f"expected the resisted-stagger line; got {spoken!r}"
+    )
     assert not [s for s in enemy.states if s.name == "Staggered"]
     # The brace is still spent -- the anti-lock alternation must not depend on
     # whether the stagger happened to land.

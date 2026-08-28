@@ -4,8 +4,10 @@ Issue #394 wired ``apply_facing_damage`` into ``Move.standard_execute_attack``
 -- and that helper has three callers in the whole engine. Every other attack
 class writes its own ``execute()`` and therefore skipped the curve entirely, so
 positioning moved damage for a small minority of moves while the feature
-*looked* shipped. This module covers the 22 hand-rolled attacks in
-``_npc.py`` / ``_ranged.py`` / ``_mastery.py`` / ``_unarmed.py``.
+*looked* shipped. This module covers every hand-rolled attack in
+``src/moves/`` -- the module list is globbed, not hand-maintained, because an
+earlier version of this guard named four modules and a scrub then found twelve
+unwired moves in the eight it did not name.
 
 Two layers, deliberately:
 
@@ -15,7 +17,7 @@ Two layers, deliberately:
   ``random.uniform(0.8, 1.2)`` roll, so the RNG is pinned rather than the
   numbers.
 * ``TestEveryHandRolledAttackIsWired`` is the guard that matters more than any
-  individual fix: it enumerates the castable classes in those four modules,
+  individual fix: it enumerates the castable classes in every `src.moves` submodule,
   finds the ``execute()`` each one actually inherits or defines, and fails if a
   damage-dealing one reaches neither ``apply_facing_damage`` nor
   ``standard_execute_attack``. "A hand-rolled execute() silently skips the
@@ -28,7 +30,7 @@ import inspect
 import pathlib
 import random as _random_module
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -43,8 +45,7 @@ from src.npc import NPC  # noqa: E402
 from src.player import Player  # noqa: E402
 from src.positions import CombatPosition, Direction  # noqa: E402
 
-#: The four modules this module owns. Every castable attack defined in them
-#: must reach the shared facing curve.
+
 def _all_move_modules():
     """Every submodule of ``src.moves``, derived by globbing the package.
 
@@ -61,12 +62,12 @@ def _all_move_modules():
     package_dir = pathlib.Path(_moves_pkg.__file__).parent
     return tuple(
         f"src.moves.{path.stem}"
-        for path in sorted(package_dir.glob("_*.py"))
+        for path in sorted(package_dir.glob("*.py"))
         if path.stem != "__init__"
     )
 
 
-OWNED_MODULES = _all_move_modules()
+ALL_MOVE_MODULES = _all_move_modules()
 
 #: Defender sits at (10, 10); the attacker never moves off (10, 5). Only the
 #: defender's facing changes between the two runs, which rules out distance as
@@ -142,7 +143,12 @@ def _rear_vs_front(build_move, make_attacker, make_defender, distance=5):
 
 
 class TestHandRolledAttacksRespondToFacing:
-    """One representative move per owned module, executed for real."""
+    """One representative move per structural shape, executed for real.
+
+    Plain hand-rolled execute(), an inherited one, a per-enemy loop and a
+    per-strike loop. These prove the curve genuinely bites end to end; the
+    structural guard below is what covers the rest of the package.
+    """
 
     def test_npc_attack_hits_harder_from_behind(self):
         """``_npc.py`` -- and with it every TelegraphedSurge subclass, which
@@ -299,7 +305,15 @@ class TestHandRolledAttacksRespondToFacing:
 #: damage path and owes the player a facing curve. ``self.hit(`` is the shared
 #: damage-delivery call; the raw ``hp -=`` form catches the moves that bypass
 #: it.
-_DAMAGE_SIGNALS = ("self.hit(", "hp -=")
+#: How a hand-rolled execute() is recognised as dealing damage. Kept as a
+#: tuple of spellings rather than one pattern because the package genuinely
+#: uses several. `hp = max(0,` is the third and was MISSING from the first
+#: version of this guard -- four area moves (Reap, Sweep, HalberdSpin,
+#: ChipAway) write HP that way, so they read as "not a damage path" and the
+#: guard certified them while they were genuinely unwired. A signal list that
+#: is too narrow fails silently in the safe-looking direction; add to it
+#: whenever a new spelling appears.
+_DAMAGE_SIGNALS = ("self.hit(", "hp -=", "hp = max(", ".hp = max(")
 
 #: Reaching either of these means the curve is applied.
 _WIRED_SIGNALS = ("apply_facing_damage(", "standard_execute_attack(")
@@ -331,10 +345,10 @@ def _defining_execute(cls):
     return None, ""
 
 
-def _owned_move_classes():
-    """Every ``Move`` subclass defined in the four owned modules."""
+def _all_move_classes():
+    """Every ``Move`` subclass defined in every `src.moves` submodule."""
     found = []
-    for module_name in OWNED_MODULES:
+    for module_name in ALL_MOVE_MODULES:
         module = importlib.import_module(module_name)
         for name, obj in vars(module).items():
             if not inspect.isclass(obj) or not issubclass(obj, Move):
@@ -350,7 +364,7 @@ def _owned_move_classes():
 def _damage_paths():
     """Owned classes whose ``execute`` reduces HP, with that execute's source."""
     paths = []
-    for module_name, name, cls in _owned_move_classes():
+    for module_name, name, cls in _all_move_classes():
         defining, source = _defining_execute(cls)
         if defining is None or defining is Move:
             continue  # inert base execute -- narration only
@@ -364,7 +378,7 @@ class TestEveryHandRolledAttackIsWired:
     def test_the_enumeration_actually_finds_the_attacks(self):
         """A guard that silently matches nothing is worse than no guard.
 
-        These six are hand-picked across all four modules and every structural
+        These six are hand-picked to cover each structural shape and every structural
         shape in them: the shared NPC roll, an inherited execute, a per-enemy
         AoE loop, a projectile, a mastery, and an unarmed strike.
         """

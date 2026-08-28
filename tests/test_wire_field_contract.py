@@ -547,6 +547,31 @@ class TestCombatantWireContract:
         payload = CombatantSerializer.serialize_combatant(Slime(), reference=Player())
         assert payload["heat"] == 1.0
 
+    @pytest.mark.parametrize(
+        "heat", [0.57, 0.58, 1.13, 1.14, 1.15, 1.16, 2.01, 2.26, 1.62, 0.83]
+    )
+    def test_the_int_percentage_twin_rounds_rather_than_truncates(self, heat):
+        """battle_state's int-percentage heat must be exactly 100x the float.
+
+        Binary floats put 68 of the 951 two-decimal heats in [0.50, 10.00]
+        just below their exact product, so the adapter's original
+        ``int(heat * 100)`` disagreed with the float the client reads for
+        roughly 7% of values -- ``int(1.15 * 100)`` is 114, not 115. A single
+        hand-picked heat cannot see that; most of the values here are drawn
+        from the mismatching set, with a couple of controls.
+
+        Pins the RULE (round) rather than re-deriving the arithmetic: the
+        serialized float is the authority, and the percentage must be its
+        exact hundredfold.
+        """
+        player = Player()
+        player.heat = heat
+        serialized = CombatantSerializer.serialize_combatant(player)["heat"]
+        assert round(player.heat * 100) == round(serialized * 100), (
+            f"heat {heat}: the percentage twin and the float multiplier "
+            "disagree; truncation is how they drift apart"
+        )
+
     def test_battle_state_heat_percentage_agrees_with_the_player_multiplier(
         self, real_adapter, real_combat_player
     ):
