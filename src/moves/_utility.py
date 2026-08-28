@@ -1,4 +1,5 @@
-"""Universal utility moves: Check, Wait, Rest, UseItem, Attack, StrategicInsight, MasterTactician."""
+"""Universal utility moves: Check, Wait, Rest, UseItem, Attack, Disrupt,
+StrategicInsight, MasterTactician."""
 
 from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
@@ -8,7 +9,7 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from src.combatant import move_in_progress
+from src.combatant import MOVE_STAGE_PREP, move_in_progress
 from ._base import (
     Move,
     PassiveMove,
@@ -560,6 +561,252 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         # Prevent negative fatigue
         if self.user.fatigue < 0:
             self.user.fatigue = 0
+
+
+class Disrupt(Move):
+    """Break an enemy's wind-up before it lands (the "read the telegraph" verb).
+
+    Combat is a beat machine: every move walks prep -> execute -> recoil ->
+    cooldown, and ``Move.beats_until_resolve()`` already tells the client how
+    far an enemy's move is from resolving. Disrupt is the answer to that
+    readout — a short, cheap strike whose payoff is entirely conditional on
+    connecting while the target's move is still in the **prep** stage. Land it
+    in that window and the wind-up is cancelled outright; land it at any other
+    moment and it is just a weak poke.
+
+    Design notes (the balance levers, in one place so a future edit can see
+    what each one is holding up):
+
+    * ``POWER_SCALE`` keeps the damage well under a basic Attack. Disrupt is a
+      tempo tool: using it costs you the swing you would otherwise have taken,
+      so spamming it on cooldown is strictly worse damage than attacking.
+    * ``STAGE_BEATS`` prep is a flat 1 — deliberately *not* derived from weapon
+      weight or speed, because a Basic skill has to behave the same for every
+      build, and a reaction verb that arrives late is not a reaction verb.
+    * The 12-beat cooldown rations it. A full Disrupt cycle (prep + execute +
+      recoil + cooldown, plus the beat each stage transition costs) is ~20
+      beats, whereas an interrupted enemy is only held up for its own move's
+      cooldown before it starts winding a fresh one.
+    * The **brace** rule is the actual anti-perma-lock guarantee, and it is
+      structural rather than a matter of tuning. Cooldown alone is not enough:
+      an enemy whose telegraph is long enough (King Slime's Tidal Surge preps
+      for 13 beats, and the debug dummy's for 25) stays inside the window for
+      most of Jean's cycle, so a player who reads perfectly could otherwise
+      cancel that move *every single time* it was ever used. So a cancel
+      leaves the target braced, and the next Disrupt that lands in its window
+      only applies ``states.Staggered`` — which delays the target's **next**
+      move rather than stopping the one it is winding, so the wind-up still
+      resolves. Landing that stagger spends the brace, and the one after it
+      cancels again. Cancel uptime is therefore capped at every other
+      successful read no matter how long the telegraph or how the cooldown is
+      later retuned. See ``tests/test_disrupt.py``:
+      ``test_perfect_play_cannot_lock_even_a_very_slow_enemy``.
+    * Cancel and stagger are alternatives, never simultaneous. Stacking a
+      +5-prep debuff onto a full cancel would compound cycle-over-cycle into
+      exactly the lock the brace exists to prevent.
+
+    Its execute() rolls to hit through the plain default path — plain
+    ``to_hit_chance(..., floor=5)`` plus the shared modifier chain, with no
+    situational modifier interposed — so ``Move.preview_hit_chance`` is
+    already correct for it and needs no override. To keep that true by
+    construction rather than by comment, execute() *calls*
+    ``preview_hit_chance`` for the number it rolls against, so the preview and
+    the dice cannot drift apart.
+    """
+
+    display_name = 'Disrupt'
+    web_animation = "quick_attack"
+
+    #: prep, execute, recoil, cooldown.
+    STAGE_BEATS = (1, 1, 2, 12)
+    #: Fraction of a basic weapon swing's power. Low on purpose — see above.
+    POWER_SCALE = 0.35
+    #: Fatigue is ``BASE_FATIGUE - endurance``, floored at MIN_FATIGUE.
+    BASE_FATIGUE = 30
+    MIN_FATIGUE = 8
+    #: Attribute Disrupt sets on a target it has just cancelled, so the next
+    #: successful read staggers instead of cancelling. Stored on the combatant
+    #: rather than in a state because the effect is Disrupt's own alternation
+    #: bookkeeping, not something any other system reads, times out, or
+    #: displays. Private-by-convention, like ``_cleave_instinct_pending``.
+    BRACE_ATTR = "_disrupt_braced"
+
+    def __init__(self, player):
+        description = (
+            "A short, sharp strike thrown into an enemy's wind-up. It does "
+            "little damage, but if it connects while the target is still "
+            "preparing a move, that move is broken and never lands. A "
+            "target whose guard has just been broken braces against the "
+            "next one, which staggers it instead."
+        )
+        prep, execute, recoil, cooldown = self.STAGE_BEATS
+        super().__init__(
+            name="Disrupt",
+            description=description,
+            xp_gain=3,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            # Melee reach, fixed rather than taken from the weapon: a Basic
+            # skill every build can buy must not quietly become a ranged
+            # interrupt in an archer's hands.
+            mvrange=(0, 5),
+            stage_announce=["This", "will", "update", "dynamically"],
+            fatigue_cost=self.MIN_FATIGUE,
+            beats_left=prep,
+            target=None,
+            user=player,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "crushing"
+        self.evaluate()
+
+    def viable(self):
+        """In range of a hostile. Deliberately *not* gated on anything being
+        mid-prep: the read is the player's to make (and to get wrong), and
+        gating viability on it would leak the answer into the move list.
+        """
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        range_min, range_max = self.mvrange
+        return any(
+            range_min <= distance <= range_max
+            for _, distance in self._hostiles_in_proximity()
+        )
+
+    def evaluate(self):
+        weapon = getattr(self.user, "eq_weapon", None) or items.Fists()
+        power = (
+            weapon.damage
+            + (self.user.strength * weapon.str_mod)
+            + (self.user.finesse * weapon.fin_mod)
+        ) * self.POWER_SCALE
+        self.power = max(0, int(power))
+        self.base_damage_type = items.get_base_damage_type(weapon)
+        fatigue_cost = max(self.MIN_FATIGUE, self.BASE_FATIGUE - self.user.endurance)
+        self.fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
+        self.refresh_announcements(self.user)
+
+    def refresh_announcements(self, user):
+        target_name = getattr(self.target, "name", "his opponent")
+        self.stage_announce = [
+            colored(f"{user.name} coils, watching for the opening...", "yellow"),
+            colored(f"{user.name} darts in to break {target_name}'s rhythm!", "green"),
+            f"{user.name} settles back onto his heels.",
+            "",
+        ]
+
+    @staticmethod
+    def _winding_move(target):
+        """The target's move if it is still winding up, else ``None``.
+
+        ``move_in_progress`` returns the combatant's ``current_move`` when one
+        is selected and otherwise falls back to a move left in recoil or
+        cooldown — neither of which is stage 0 — so a stage-0 result here
+        always means a genuine, unresolved wind-up rather than an idle move
+        sitting at its reset stage.
+        """
+        if target is None or not target.is_alive():
+            return None
+        move = move_in_progress(target)
+        if move is None:
+            return None
+        if getattr(move, "current_stage", None) != MOVE_STAGE_PREP:
+            return None
+        return move
+
+    def _reward_read(self, winding_move):
+        """Pay out the correct read on a strike that landed inside the window.
+
+        Cancels the wind-up outright unless the target is already braced from
+        a previous cancel, in which case it staggers instead and spends the
+        brace. Either way the read earns Basic exp — the player made the call
+        correctly.
+        """
+        target = self.target
+        move_name = display_name_of(winding_move)
+        if getattr(target, self.BRACE_ATTR, False):
+            setattr(target, self.BRACE_ATTR, False)
+            # Staggered adds prep beats to the target's NEXT cast, so the move
+            # being wound right now still resolves. That is the point: the
+            # braced case has to be strictly weaker than a cancel.
+            functions.inflict(states.Staggered(target), target)
+            cprint(
+                f"{target.name} absorbs the disruption and pushes through "
+                f"{move_name}, but is knocked off balance.",
+                "yellow",
+            )
+        else:
+            # The same ``interrupted`` flag War Cry sets: ``Move.advance``
+            # picks it up on the target's next beat, abandons whatever prep
+            # progress was made, and drops the move straight into its normal
+            # cooldown.
+            winding_move.interrupted = True
+            setattr(target, self.BRACE_ATTR, True)
+            cprint(
+                f"{target.name}'s {move_name} is broken before it lands!",
+                "cyan",
+            )
+        self.user.combat_exp["Basic"] += 15
+
+    def execute(self, player):
+        self.refresh_announcements(player)
+        narrate(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        self.prep_colors()
+
+        # Snapshot the window before anything else resolves: whether the read
+        # was correct is a fact about the instant Jean connects, not about
+        # what the dice or the damage did afterwards.
+        winding_move = self._winding_move(self.target)
+
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
+        roll = random.randint(0, 100)
+
+        glance = False
+        damage = (
+            (
+                (
+                    self.power
+                    * functions.combat_resistance(self.target, self.base_damage_type)
+                )
+                - self.target.protection
+            )
+            * getattr(player, "heat", 1.0)
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        player.combat_exp["Basic"] += 5
+        if hit_chance >= roll:  # a hit!
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                # A parried or missed Disrupt breaks nothing: the payoff is
+                # the reward for a strike that actually connected inside the
+                # window, not for pressing the button at the right time.
+                if winding_move is not None and self.target.is_alive():
+                    self._reward_read(winding_move)
+        else:
+            self.miss()
+
+        self.user.fatigue = max(0, self.user.fatigue - self.fatigue_cost)
 
 
 class Rest(Move):  # standard rest to restore fatigue.

@@ -4,7 +4,7 @@ moves — combat move package for Heart of Virtue.
 This package replaces the monolithic src/moves.py with organised submodules:
 
     _base.py        Move, PassiveMove — base classes + shared combat helpers
-    _utility.py     universal moves (Check, Wait, Rest, UseItem, Attack, StrategicInsight, ...)
+    _utility.py     universal moves (Check, Wait, Rest, UseItem, Attack, Disrupt, StrategicInsight, ...)
     _movement.py    positioning moves (Dodge, Parry, Advance, Withdraw, ...)
     _unarmed.py     fist/unarmed moves
     _dagger.py      dagger weapon moves
@@ -41,6 +41,7 @@ from ._utility import (
     Rest,
     UseItem,
     Attack,
+    Disrupt,
     CrusaderOath,
 )
 from ._movement import (
@@ -134,6 +135,7 @@ __all__ = [
     "Rest",
     "UseItem",
     "Attack",
+    "Disrupt",
     "CrusaderOath",
     # Movement
     "Dodge",

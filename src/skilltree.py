@@ -13,6 +13,11 @@ class Skilltree:
             "Basic": {  # Basic class skills always gain exp along with the player and
                 # don't need to be called out in an ability
                 moves.Dodge(user): 100,
+                moves.Disrupt(user): 150,  # interrupt verb: break an enemy move
+                # still in its prep stage. Priced just above Dodge (100) — both are
+                # cheap reactions every build needs — and well under StrategicInsight
+                # (500), since Disrupt is the tool that makes the existing telegraph
+                # readout actionable rather than a new layer of information.
                 moves.TacticalPositioning(user): 1000,
                 moves.StrategicInsight(user): 500,
                 moves.MasterTactician(user): 1500,
