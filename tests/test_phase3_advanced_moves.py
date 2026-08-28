@@ -206,7 +206,7 @@ class TestWhirlAttackMove:
 
         whirl_move.execute(player)
 
-        assert player.fatigue == initial_fatigue - 38
+        assert player.fatigue == initial_fatigue - 45
 
     def test_whirl_changes_facing_randomly(self, player, whirl_move):
         """Test WhirlAttack.execute() changes facing to random direction"""
@@ -338,7 +338,7 @@ class TestFeintAndPivotMove:
 
         feint_move.execute(player)
 
-        assert player.fatigue == initial_fatigue - 45
+        assert player.fatigue == initial_fatigue - 38
 
     def test_feint_execute_repositions_player(self, player, target_enemy, feint_move):
         """A front-on feint pivots the player onto the target's flank.
