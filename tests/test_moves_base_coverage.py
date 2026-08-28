@@ -30,6 +30,8 @@ from src.positions import CombatPosition, Direction
 
 from src.moves._base import (
     HIT_CHANCE_BASE,
+    HIT_CHANCE_CEILING,
+    HIT_CHANCE_FLOOR,
     HIT_CHANCE_FINESSE_WEIGHT,
     HIT_CHANCE_INTELLIGENCE_WEIGHT,
     Move,
@@ -96,6 +98,22 @@ def _make_combatant(name="Jean", **overrides):
     for k, v in overrides.items():
         setattr(c, k, v)
     return c
+
+
+def _roll_between_haunting_and_clean(user, target):
+    """A roll that a clean attack lands and a HauntingPresence'd one misses.
+
+    Derived from the live to-hit arithmetic rather than written as a literal,
+    so retuning HIT_CHANCE_BASE moves the roll with it instead of silently
+    collapsing both branches of the test onto the miss path. Offsetting by 10
+    also puts the roll outside the glancing-blow window, keeping the damage
+    assertions on full damage. Asserts its own preconditions.
+    """
+    clean = to_hit_chance(user, target, floor=5)
+    haunted = int(clean * 0.85)
+    roll = clean - 10
+    assert haunted < roll < clean, (haunted, roll, clean)
+    return roll
 
 
 def _make_move(user, target=None):
@@ -562,6 +580,12 @@ class TestStandardEvaluateAttack:
 # Move.standard_execute_attack
 # ---------------------------------------------------------------------------
 
+#: Hit chance pinned at ``_apply_to_hit_modifiers`` for roll-boundary tests.
+#: Deliberately below HIT_CHANCE_CEILING and comfortably above the glancing
+#: window so the parametrized rolls below stay on the branch they name,
+#: whatever HIT_CHANCE_BASE is retuned to next.
+_PINNED_HIT_CHANCE = 90
+
 
 class TestStandardExecuteAttack:
     def _setup(self, user_finesse=10, target_finesse=200, protection=0):
@@ -579,7 +603,7 @@ class TestStandardExecuteAttack:
         ],
     )
     def test_hit_chance_floors_at_exactly_five(self, roll, expected_hp):
-        """A target with 500 finesse drives the raw chance to -393; the floor=5
+        """A target with 500 finesse drives the raw chance to -406; the floor=5
         clamp is the only thing keeping the attack landable at all.
 
         The pair of rolls straddles the floor, so this fails if the clamp moves
@@ -617,16 +641,24 @@ class TestStandardExecuteAttack:
     @pytest.mark.parametrize(
         "roll, expected_damage, glancing",
         [
-            (100, 20, True),   # 106 - 100 = 6  -> within 10, halved
-            (97, 20, True),    # 106 - 97  = 9  -> still the last glancing roll
-            (96, 40, False),   # 106 - 96  = 10 -> full damage, boundary is exclusive
-            (50, 40, False),   # comfortably clean hit
+            (_PINNED_HIT_CHANCE, 20, True),         # difference 0 -> halved
+            (_PINNED_HIT_CHANCE - 9, 20, True),     # difference 9 -> last glancing roll
+            (_PINNED_HIT_CHANCE - 10, 40, False),   # difference 10 -> boundary is exclusive
+            (_PINNED_HIT_CHANCE - 40, 40, False),   # comfortably clean hit
         ],
     )
     def test_glancing_blow_halves_damage_within_ten_of_the_hit_chance(
         self, roll, expected_damage, glancing
     ):
-        """hit_chance = int(98 - 0 + 10*0.7 + 5*0.3) = 106 (no clamp applies).
+        """The glancing window is ``0 <= hit_chance - roll < 10``.
+
+        The hit chance is pinned at ``_apply_to_hit_modifiers`` -- the last
+        point every attack passes through before rolling -- rather than
+        hand-computed from HIT_CHANCE_BASE and pinned against a literal
+        roll. The hand-computed style encoded a balance number in the test:
+        when the base moved 98 -> 85 these silently became miss-path tests
+        asserting the wrong branch. Pinning here exercises the glancing
+        rule and nothing else.
 
         The old version of this test asserted only `hp < 100`, which held for a
         glancing blow, a full-power blow, and any damage number in between --
@@ -634,6 +666,8 @@ class TestStandardExecuteAttack:
         """
         user, target, move = self._setup(user_finesse=10, target_finesse=0)
         with patch("src.moves._base.narrate"), \
+             patch("src.moves._base._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
              patch("src.moves._base.random.randint", return_value=roll), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
              patch("src.moves._base.functions.check_parry", return_value=False), \
@@ -926,10 +960,15 @@ class TestStandardExecuteAttackAdditional:
     ):
         """HauntingPresence shaves 15% off the attacker's chance at close range.
 
-        The roll of 95 sits between the unmodified chance (106) and the reduced
-        one (90), so the passive flips the outcome from hit to miss. The old
-        assertion (`isinstance(target.hp, int)`) held whether the passive did
-        anything at all.
+        The roll is *derived* to sit between the unmodified chance and the
+        reduced one, so the passive flips the outcome from hit to miss. It was
+        previously a literal 95 chosen against a base of 98; when the base
+        moved to 85 that roll fell below both chances and the test became a
+        miss-path test on both branches. Deriving it keeps the flip under test
+        across any future retuning, and the assertions below prove the derived
+        roll really does straddle the two chances. The old assertion
+        (`isinstance(target.hp, int)`) held whether the passive did anything
+        at all.
         """
         user = _make_combatant(name="Jean", finesse=10)
         known = []
@@ -941,8 +980,9 @@ class TestStandardExecuteAttackAdditional:
         target.combat_proximity = {user: 2}
         move = _make_move(user, target)
         move.fatigue_cost = 5
+        roll = _roll_between_haunting_and_clean(user, target)
         with patch("src.moves._base.narrate"), \
-             patch("src.moves._base.random.randint", return_value=95), \
+             patch("src.moves._base.random.randint", return_value=roll), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
              patch("src.moves._base.functions.check_parry", return_value=False):
             move.standard_execute_attack(user, power=40, base_damage_type="crushing")
@@ -957,8 +997,9 @@ class TestStandardExecuteAttackAdditional:
         target.combat_proximity = {user: 4}
         move = _make_move(user, target)
         move.fatigue_cost = 5
+        roll = _roll_between_haunting_and_clean(user, target)
         with patch("src.moves._base.narrate"), \
-             patch("src.moves._base.random.randint", return_value=95), \
+             patch("src.moves._base.random.randint", return_value=roll), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
              patch("src.moves._base.functions.check_parry", return_value=False):
             move.standard_execute_attack(user, power=40, base_damage_type="crushing")
@@ -1088,8 +1129,15 @@ class TestApplyHauntingPresence:
 # ---------------------------------------------------------------------------
 # _apply_facing_accuracy (issue #394)
 #
-# Mirrors positions.get_damage_modifier (already wired into Backstab's
-# damage) on the accuracy side, applied to every attack path.
+# Paired with apply_facing_damage on the damage side; both read the angle
+# through positions.attack_angle_diff, and both apply to every attack path.
+#
+# GEOMETRY, because this class previously encoded it backwards and passed:
+# +y is North. With the attacker at (10, 10) and the defender at (10, 50) the
+# defender stands NORTH of the attacker, so a defender facing SOUTH is looking
+# straight at the attacker (frontal, 0 deg, 0.95x) and a defender facing NORTH
+# is looking away from it (rear, 180 deg, 1.30x). The old tests had those two
+# facings swapped -- the same 180-degree inversion that lived in the engine.
 # ---------------------------------------------------------------------------
 
 
@@ -1098,9 +1146,9 @@ class TestApplyFacingAccuracy:
         attacker = _make_combatant(name="Jean")
         attacker.combat_position = CombatPosition(x=10, y=10)
         defender = _make_combatant(name="Goblin")
-        # to_pos south of from_pos -> attack_angle ~= 0 (see positions.py's own
-        # angle_to_target tests); facing N (0) -> diff=0 -> front quarter -> 0.95x
-        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+        # Defender is north of the attacker and faces S -- i.e. looking right
+        # at it. diff=0 -> front quarter -> 0.95x.
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
 
         assert _apply_facing_accuracy(attacker, defender, 100) == 95
 
@@ -1108,19 +1156,41 @@ class TestApplyFacingAccuracy:
         attacker = _make_combatant(name="Jean")
         attacker.combat_position = CombatPosition(x=10, y=10)
         defender = _make_combatant(name="Goblin")
-        # Same geometry, but facing S (180) -> diff=180 -> rear -> 1.30x
-        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        # Same geometry, but facing N -- away from the attacker, which is at
+        # its back. diff=180 -> rear -> 1.30x.
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
 
         assert _apply_facing_accuracy(attacker, defender, 50) == 65  # int(50 * 1.30)
 
-    def test_rear_attack_bonus_is_capped_at_100(self):
+    def test_rear_attack_bonus_cannot_reach_a_certainty(self):
+        """The rear bonus must never produce a guaranteed hit.
+
+        This used to clamp at 100 against a ``random.randint(0, 100)`` roll,
+        which made any competent rear attack an automatic hit and took the
+        dice out of positioning entirely. The ceiling is HIT_CHANCE_CEILING.
+        """
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        # 100 * 1.30 = 130, clamped to the ceiling -- strictly below certainty.
+        assert _apply_facing_accuracy(attacker, defender, 100) == HIT_CHANCE_CEILING
+        assert HIT_CHANCE_CEILING < 100
+
+    def test_a_frontal_penalty_cannot_erase_a_slim_chance(self):
+        """int(1 * 0.95) is 0 -- a real chance truncated into a miss.
+
+        The floor is the mirror of the ceiling: no attack that had a chance
+        may be silently clamped into a certain miss by the facing modifier.
+        """
         attacker = _make_combatant(name="Jean")
         attacker.combat_position = CombatPosition(x=10, y=10)
         defender = _make_combatant(name="Goblin")
         defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
 
-        # 100 * 1.30 = 130, must clamp to 100 (a hit_chance is a percentage)
-        assert _apply_facing_accuracy(attacker, defender, 100) == 100
+        assert _apply_facing_accuracy(attacker, defender, 1) == HIT_CHANCE_FLOOR
+        assert HIT_CHANCE_FLOOR >= 1
 
     def test_no_op_without_attacker_combat_position(self):
         attacker = _make_combatant(name="Jean")
@@ -1180,8 +1250,9 @@ class TestApplyToHitModifiers:
         haunting = MagicMock()
         haunting.name = "Haunting Presence"
         defender = _make_combatant(name="Goblin", known_moves=[haunting])
-        # Rear attack (facing S, diff=180 -> 1.30x) AND within HauntingPresence range.
-        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        # Rear attack (defender faces N, away from the attacker: diff=180 ->
+        # 1.30x) AND within HauntingPresence range.
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
         defender.combat_proximity = {attacker: 2}
 
         # int(50 * 1.30) = 65, then int(65 * 0.85) = 55
@@ -1230,19 +1301,19 @@ class TestToHitChance:
     def test_weights_are_the_published_constants(self):
         # The API layer once kept its own copy of this expression and drifted to
         # `98 + finesse`; these constants are the single source of truth now.
-        assert HIT_CHANCE_BASE == 98
+        assert HIT_CHANCE_BASE == 85
         assert HIT_CHANCE_FINESSE_WEIGHT == 0.7
         assert HIT_CHANCE_INTELLIGENCE_WEIGHT == 0.3
 
     @pytest.mark.parametrize(
         "user_fin, user_int, target_fin, expected",
         [
-            (0, 0, 0, 98),        # nothing but the base term
-            (1, 1, 0, 99),        # int(98 + 0.7 + 0.3)
-            (10, 5, 10, 96),      # int(98 - 10 + 7.0 + 1.5)
-            (20, 20, 10, 108),    # int(98 - 10 + 14.0 + 6.0) -- above 100, uncapped
-            (50, 50, 0, 148),     # to_hit_chance itself never caps
-            (10, 5, 200, -93),    # int() truncates toward zero: -93.5 -> -93, not -94
+            (0, 0, 0, 85),        # nothing but the base term
+            (1, 1, 0, 86),        # int(85 + 0.7 + 0.3)
+            (10, 5, 10, 83),      # int(85 - 10 + 7.0 + 1.5)
+            (20, 20, 10, 95),     # int(85 - 10 + 14.0 + 6.0)
+            (50, 50, 0, 135),     # above 100 -- to_hit_chance itself never caps
+            (10, 5, 200, -106),   # int() truncates toward zero: -106.5 -> -106, not -107
         ],
     )
     def test_exact_chance_with_default_base_and_no_floor(
@@ -1265,7 +1336,7 @@ class TestToHitChance:
 
     @pytest.mark.parametrize(
         "floor, expected",
-        [(None, -393), (1, 1), (5, 5)],
+        [(None, -406), (1, 1), (5, 5)],
     )
     def test_floor_clamps_only_from_below(self, floor, expected):
         # Same inputs each time; only the floor changes. Both live floors (1 and
@@ -1275,14 +1346,14 @@ class TestToHitChance:
         )
 
     def test_floor_never_lowers_a_healthy_chance(self):
-        assert to_hit_chance(_Stats(10, 5), _Stats(0), floor=5) == 106
+        assert to_hit_chance(_Stats(10, 5), _Stats(0), floor=5) == 93
 
     def test_intelligence_is_weighted_less_than_finesse(self):
         # 10 points of finesse must be worth more than 10 points of intelligence.
         finesse_heavy = to_hit_chance(_Stats(20, 0), _Stats(0))
         intelligence_heavy = to_hit_chance(_Stats(0, 20), _Stats(0))
-        assert finesse_heavy == 112
-        assert intelligence_heavy == 104
+        assert finesse_heavy == 99
+        assert intelligence_heavy == 91
 
     def test_term_order_is_load_bearing(self):
         """The exact regression CLAUDE.md forbids: folding the attacker terms
@@ -1297,8 +1368,8 @@ class TestToHitChance:
         real = to_hit_chance(user, target)
         folded = attacker_accuracy(user.finesse, user.intelligence) - target.finesse
 
-        assert real == 63
-        assert folded == 64
+        assert real == 50
+        assert folded == 51
         assert real != folded
 
 
@@ -1306,17 +1377,17 @@ class TestAttackerAccuracy:
     @pytest.mark.parametrize(
         "finesse, intelligence, expected",
         [
-            (0, 0, 98),
-            (10, 5, 106),
-            (20, 20, 118),
-            (30, 10, 122),
+            (0, 0, 85),
+            (10, 5, 93),
+            (20, 20, 105),
+            (30, 10, 109),
         ],
     )
     def test_exact_rating_with_default_base(self, finesse, intelligence, expected):
         assert attacker_accuracy(finesse, intelligence) == expected
 
     def test_honours_a_non_default_base(self):
-        assert attacker_accuracy(10, 5, base=85) == 93
+        assert attacker_accuracy(10, 5, base=98) == 106
 
     def test_carries_no_defender_term(self):
         # It is the attacker half only -- the defender's finesse must not leak in.

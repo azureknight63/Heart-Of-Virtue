@@ -13,6 +13,8 @@ import pathlib
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -24,6 +26,17 @@ from src.moves._dagger import (
     ShadowStep,
     Backstab,
 )
+from src.moves._base import facing_damage_multiplier
+
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: when
+# HIT_CHANCE_BASE moved 98 -> 85 and a sub-100 ceiling was introduced, every
+# such test silently became a miss-path test asserting the wrong branch.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
 
 
 RESISTANCE = {
@@ -197,10 +210,11 @@ class TestSlash:
         move.power = 40
         move.base_damage_type = "slashing"
 
-        # hit_chance ~ 98 - 0 + 7 + 3 = 108; roll close enough for glance
-        monkeypatch.setattr(random, "randint", lambda a, b: 99)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._dagger.functions.check_parry", return_value=False), \
+        with patch("src.moves._dagger._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._dagger.functions.check_parry", return_value=False), \
              patch("src.moves._dagger.cprint"), \
              patch("src.moves._dagger.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
@@ -575,35 +589,45 @@ class TestBackstab:
             assert move._positional_modifier() == 1.0
 
     def test_positional_modifier_rewards_a_rear_attack(self):
-        """A strike into the target's back is worth 1.4x, not merely "a float".
+        """A strike into the target's back is worth 1.8x, not merely "a float".
 
         ``assert isinstance(mod, float)`` was satisfied by the 1.0 no-op
         fallback, so a ``_positional_modifier`` that silently lost the whole
         flanking bonus would have passed.
+
+        GEOMETRY: this test previously had the two facings the wrong way
+        round, encoding the same 180-degree inversion the engine shipped. The
+        user is at (1, 1) and the target at (2, 1), so the target stands EAST
+        of the user; a target facing EAST is therefore looking AWAY from the
+        user, which is what makes this a rear attack.
         """
         user = _make_user()
         user.combat_position = positions.CombatPosition(x=1, y=1)
         tgt = _make_target()
-        # Target at (2, 1) facing W is looking straight back at the user, so
-        # the attack comes in at 180 degrees -- a full rear attack.
-        tgt.combat_position = positions.CombatPosition(x=2, y=1, facing=positions.Direction.W)
+        tgt.combat_position = positions.CombatPosition(x=2, y=1, facing=positions.Direction.E)
         move = Backstab(user)
         move.target = tgt
 
-        assert move._positional_modifier() == 1.4
+        assert move._positional_modifier() == pytest.approx(1.8)
+        # Backstab must stay materially better than the baseline curve every
+        # attack now gets, or it is just a dagger swing with a worse cooldown.
+        assert move._positional_modifier() > facing_damage_multiplier(user, tgt)
 
     def test_positional_modifier_penalises_a_head_on_attack(self):
         user = _make_user()
         user.combat_position = positions.CombatPosition(x=1, y=1)
         tgt = _make_target()
-        # Target at (2, 1) facing E has its back to the user, so the attack
-        # arrives in its front quarter (angle_diff 0) -- a *defended* angle
-        # worth 0.85x, not a neutral 1.0.
-        tgt.combat_position = positions.CombatPosition(x=2, y=1, facing=positions.Direction.E)
+        # Target at (2, 1) facing W is looking straight at the user, so the
+        # attack arrives in its front quarter (angle_diff 0) -- a *defended*
+        # angle, and at double steepness a worse-than-neutral 0.70x.
+        tgt.combat_position = positions.CombatPosition(x=2, y=1, facing=positions.Direction.W)
         move = Backstab(user)
         move.target = tgt
 
-        assert move._positional_modifier() == 0.85
+        assert move._positional_modifier() == pytest.approx(0.7)
+        # Steeper in both directions: a head-on Backstab is a worse gamble
+        # than an ordinary strike from the same angle.
+        assert move._positional_modifier() < facing_damage_multiplier(user, tgt)
 
     def test_positional_modifier_falls_back_to_neutral_without_coordinates(self):
         user = _make_user()
@@ -687,9 +711,11 @@ class TestBackstab:
         move.base_damage_type = "piercing"
         user.fatigue = 100
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 99)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._dagger.functions.check_parry", return_value=False), \
+        with patch("src.moves._dagger._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._dagger.functions.check_parry", return_value=False), \
              patch("src.moves._dagger.cprint"):
             move.execute(user)
         assert tgt.hp < 100

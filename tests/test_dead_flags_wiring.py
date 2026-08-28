@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.moves._sword import PommelStrike
+from src.moves._base import to_hit_chance
 from src.moves._movement import Parry, Advance
 from src.moves._scythe import Reap, ReapersMark, DeathsHarvest
 from src.moves._polearm import OverheadSmash
@@ -306,59 +307,125 @@ class TestHauntingPresence:
 
 
 class TestFacingAccuracy:
-    def test_rear_attack_raises_hit_chance_for_pommel_strike(self, monkeypatch):
-        """Issue #394: get_accuracy_modifier is wired into the shared
-        standard_execute_attack pipeline, universally like #421's fix."""
+    """The facing/angle modifier (issue #394), wired universally.
+
+    GEOMETRY, because both tests in this class previously had it backwards
+    and passed anyway: +y is North. With the user at (10, 10) and the target
+    at (10, 50) the target stands NORTH of the user, so a target facing NORTH
+    is looking AWAY from the user (rear attack) and a target facing SOUTH is
+    looking straight AT the user (frontal attack). The engine read that pair
+    exactly 180 degrees the wrong way round, and these tests encoded the same
+    inversion, so they agreed with the bug.
+    """
+
+    @staticmethod
+    def _facing_pair(user):
+        """A (frontal, rear) target pair for a user standing at (10, 10)."""
         from src.positions import CombatPosition, Direction
+
+        front = _make_target()
+        front.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        rear = _make_target()
+        rear.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+        return front, rear
+
+    def test_rear_attack_raises_hit_chance_but_never_to_a_certainty(self):
+        """The two halves of the property, asserted together.
+
+        This test used to assert the *opposite* of its second half: its own
+        comment read "the 1.30x rear bonus would be 140 but clamps to 100,
+        beating a roll of 100" -- i.e. it pinned the auto-hit that made
+        positioning a strictly-dominant, riskless play. The bonus is real and
+        must stay real; a guaranteed hit is not.
+        """
+        from src.moves._base import _apply_facing_accuracy, to_hit_chance
+        from src.positions import CombatPosition
 
         user = _make_user("Sword")
         user.combat_position = CombatPosition(x=10, y=10)
-        tgt = _make_target()
-        # Same geometry as positions.py's own angle_to_target tests: attack
-        # angle ~= 0; facing S (180) -> diff=180 -> rear -> 1.30x accuracy.
-        tgt.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        front, rear = self._facing_pair(user)
 
-        move = PommelStrike(user)
-        move.target = tgt
-        move.power = 30
-        move.base_damage_type = "crushing"
+        raw = to_hit_chance(user, rear, floor=5)
+        front_chance = _apply_facing_accuracy(user, front, raw)
+        rear_chance = _apply_facing_accuracy(user, rear, raw)
 
-        # hit_chance without the bonus is 108; the 1.30x rear bonus would be
-        # 140 but clamps to 100, beating a roll of 100.
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        assert rear_chance > front_chance
+        # A roll of `randint(0, 100)` has 101 outcomes; anything at or above
+        # 100 lands on every one of them.
+        assert rear_chance < 100
+
+    def test_rear_attack_lands_a_roll_the_frontal_attack_misses(self, monkeypatch):
+        """The behavioural half: the bonus reaches PommelStrike's real roll.
+
+        PommelStrike goes through ``standard_execute_attack``, so this pins
+        that the shared pipeline -- not just the helper in isolation -- applies
+        the modifier. The roll is derived from the two chances rather than
+        written as a literal, so retuning HIT_CHANCE_BASE cannot quietly
+        collapse both branches onto the same outcome.
+        """
+        from src.moves._base import _apply_facing_accuracy, to_hit_chance
+        from src.positions import CombatPosition
+
+        user = _make_user("Sword")
+        user.combat_position = CombatPosition(x=10, y=10)
+        front, rear = self._facing_pair(user)
+
+        raw = to_hit_chance(user, rear, floor=5)
+        front_chance = _apply_facing_accuracy(user, front, raw)
+        rear_chance = _apply_facing_accuracy(user, rear, raw)
+        roll = front_chance + 1
+        assert front_chance < roll <= rear_chance, (front_chance, roll, rear_chance)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: roll)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
 
-        with patch("src.moves._sword.functions.check_parry", return_value=False), \
-             patch.object(move, "hit") as mock_hit, \
-             patch.object(move, "miss") as mock_miss, \
-             patch.object(move, "viable", return_value=True), \
-             patch("src.moves._sword.cprint"), \
-             patch("src.moves._sword.narrate"):
-            move.execute(user)
+        outcomes = {}
+        for label, tgt in (("front", front), ("rear", rear)):
+            move = PommelStrike(user)
+            move.target = tgt
+            move.power = 30
+            move.base_damage_type = "crushing"
+            with patch("src.moves._sword.functions.check_parry", return_value=False), \
+                 patch.object(move, "hit") as mock_hit, \
+                 patch.object(move, "miss") as mock_miss, \
+                 patch.object(move, "viable", return_value=True), \
+                 patch("src.moves._sword.cprint"), \
+                 patch("src.moves._sword.narrate"):
+                move.execute(user)
+            outcomes[label] = (mock_hit.called, mock_miss.called)
 
-        mock_hit.assert_called_once()
-        mock_miss.assert_not_called()
+        assert outcomes["rear"] == (True, False)
+        assert outcomes["front"] == (False, True)
 
     def test_front_attack_lowers_hit_chance_for_feint_and_pivot(self, monkeypatch):
         """Issue #394 closure sweep: hand-rolled attacks (the same family
-        fixed for HauntingPresence in #421) get the modifier too."""
+        fixed for HauntingPresence in #421) get the modifier too.
+
+        The target faces S -- straight at the user -- so this really is the
+        frontal 0.95x penalty. It previously faced N, which is a *rear* attack
+        under the corrected convention; the test passed only because the rear
+        bonus overshot the clamp and landed short of the pinned roll anyway.
+        """
         from src.moves._dagger import FeintAndPivot
-        from src.positions import CombatPosition, Direction
+        from src.positions import CombatPosition
 
         user = _make_user("Dagger")
         user.combat_position = CombatPosition(x=10, y=10)
-        tgt = _make_target()
-        # Facing N (0) -> diff=0 -> front quarter -> 0.95x accuracy.
-        tgt.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+        front, _rear = self._facing_pair(user)
 
         move = FeintAndPivot(user)
-        move.target = tgt
+        move.target = front
         move.power = 30
         move.base_damage_type = "slashing"
 
-        # FeintAndPivot's base hit_chance here is 100 (90 - 0 + 7 + 3); the
-        # 0.95x front penalty drops it to 95, below a roll of 96.
-        monkeypatch.setattr(random, "randint", lambda a, b: 96)
+        # Derived, not pinned: a roll the unpenalised chance would land and the
+        # 0.95x frontal penalty must turn into a miss.
+        penalised = move.preview_hit_chance(front)
+        unpenalised = to_hit_chance(user, front, base=90, floor=1)
+        roll = penalised + 1
+        assert penalised < roll <= unpenalised, (penalised, roll, unpenalised)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: roll)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
 
         with patch("src.moves._dagger.functions.check_parry", return_value=False), \

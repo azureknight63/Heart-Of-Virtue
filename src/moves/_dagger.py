@@ -14,8 +14,25 @@ from ._base import (
     _ensure_weapon_exp,
     _apply_carry_fatigue,
     _apply_to_hit_modifiers,
+    apply_facing_damage,
+    facing_damage_multiplier,
     to_hit_chance,
 )  # noqa: F401
+
+
+#: How much steeper Backstab's positional damage curve is than the baseline
+#: every attack now gets from ``apply_facing_damage``.
+#:
+#: ``facing_damage_multiplier`` scales the *deviation* from 1.0, so 2.0 doubles
+#: both the bonus and the penalty of the shared table: 0.70x head-on (vs 0.85),
+#: 1.30x flank (vs 1.15), 1.50x deep flank (vs 1.25), 1.80x from the rear (vs
+#: 1.40). Backstab is the engine's signature positional move, and once *every*
+#: attack responds to facing it needs its own curve or it is simply a dagger
+#: attack with a worse cooldown. Doubling — rather than a flat bonus on top —
+#: keeps it anchored to the same shape and keeps it a genuine gamble: a
+#: Backstab thrown head-on is materially worse than an ordinary strike, which
+#: is the trade that makes the payoff worth positioning for.
+BACKSTAB_POSITIONAL_STEEPNESS = 2.0
 
 
 class Slash(
@@ -156,9 +173,13 @@ class Slash(
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
+        # Facing/angle damage (issue #394) — same shared curve as
+        # standard_execute_attack; Slash hand-rolls its damage line and so
+        # would otherwise be one of the paths the fix silently skips.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
+                (power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -284,16 +305,12 @@ class FeintAndPivot(Move):
 
         Returns: "front" (±45° from facing), "flank" (±90°), or "behind" (±45° opposite)
         """
-        # Calculate angle from target to user
-        angle = positions.angle_to_target(target_pos, user_pos)
-
-        # Target's facing angle
-        target_angle = target_facing.value
-
-        # Calculate angular difference
-        diff = abs(angle - target_angle)
-        if diff > 180:
-            diff = 360 - diff
+        # Shared helper so this can't drift out of step with the argument
+        # order the accuracy and damage curves use. ``target_facing`` is
+        # accepted for signature compatibility with _calculate_new_position's
+        # caller; the authoritative facing is ``target_pos.facing``, which is
+        # the same object in every live call.
+        diff = positions.attack_angle_diff(user_pos, target_pos)
 
         # Classify position based on angle difference
         if diff <= 45:
@@ -391,9 +408,14 @@ class FeintAndPivot(Move):
         # heat scaling, and self.hit()/miss()/parry() bookkeeping (which also
         # awards combat exp for the wielder).
         base_damage_type = getattr(self, "base_damage_type", "slashing")
+        # Facing/angle damage (issue #394). The strike is resolved from where
+        # the user stands *now*, before the pivot below moves them — a feint
+        # launched from the blind side should be rewarded for the blind side it
+        # was launched from, not the one it ends up on.
+        power = apply_facing_damage(self.user, self.target, self.power)
         damage = (
             (
-                (self.power * functions.combat_resistance(self.target, base_damage_type))
+                (power * functions.combat_resistance(self.target, base_damage_type))
                 - self.target.protection
             )
             * self.user.heat
@@ -488,9 +510,9 @@ class ShadowStep(PassiveMove):
 class Backstab(Move):
     """Strike from flank or behind for bonus damage.
 
-    Uses the positions angle system (angle_to_target / attack_angle_difference /
-    get_damage_modifier) to scale power based on attack angle. Frontal attacks
-    get a slight penalty; flanking and rear attacks deal up to +40% more.
+    Scales power by the shared facing/angle curve at double steepness (see
+    ``BACKSTAB_POSITIONAL_STEEPNESS``): a head-on Backstab is worse than an
+    ordinary strike at 0.70x, while a true rear strike deals 1.80x.
     """
     display_name = 'Backstab'
 
@@ -546,24 +568,23 @@ class Backstab(Move):
         self.base_damage_type = evaluation[1]
 
     def _positional_modifier(self):
-        """Return damage multiplier based on attack angle vs target's facing."""
-        try:
-            if (
-                hasattr(self.user, "combat_position")
-                and self.user.combat_position is not None
-                and hasattr(self.target, "combat_position")
-                and self.target.combat_position is not None
-            ):
-                attack_angle = positions.angle_to_target(
-                    self.user.combat_position, self.target.combat_position
-                )
-                angle_diff = positions.attack_angle_difference(
-                    attack_angle, self.target.combat_position.facing
-                )
-                return positions.get_damage_modifier(angle_diff)
-        except Exception:
-            pass
-        return 1.0
+        """Return Backstab's damage multiplier for the current attack angle.
+
+        The shared curve at ``BACKSTAB_POSITIONAL_STEEPNESS``: 0.70x head-on,
+        1.30x flank, 1.50x deep flank, 1.80x from the rear.
+
+        This used to compute the angle inline as
+        ``angle_to_target(user_pos, target_pos)`` — the bearing from the
+        *attacker*, i.e. exactly 180° wrong — so Backstab paid its rear bonus
+        for frontal attacks and penalised real backstabs. It now shares one
+        argument-order-safe helper with the accuracy side. Note Backstab
+        hand-rolls its own ``execute()`` and never calls
+        ``standard_execute_attack``, so this is applied once, not stacked on
+        top of the baseline curve.
+        """
+        return facing_damage_multiplier(
+            self.user, self.target, BACKSTAB_POSITIONAL_STEEPNESS
+        )
 
     def execute(self, player):
         glance = False

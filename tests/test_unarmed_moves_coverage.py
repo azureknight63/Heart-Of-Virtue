@@ -30,6 +30,16 @@ from src.moves._unarmed import (
     HeavyHanded,
 )
 
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: when
+# HIT_CHANCE_BASE moved 98 -> 85 and a sub-100 ceiling was introduced, every
+# such test silently became a miss-path test asserting the wrong branch.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
+
 
 RESISTANCE = {
     "piercing": 1.0,
@@ -487,8 +497,12 @@ class TestJab:
         move.power = 60
         user.fatigue = 200
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 97)
-        with patch("src.moves._unarmed.functions.check_parry", return_value=False):
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
+        # Jab reads its chance through Move._standard_preview_hit_chance, so
+        # the funnel is pinned where it actually lives -- in _base.
+        with patch("src.moves._base._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._unarmed.functions.check_parry", return_value=False):
             move.execute(user)
         assert tgt.hp < 100
 

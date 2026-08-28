@@ -32,6 +32,16 @@ from src.moves._utility import (
     Attack as UtilAttack,
 )
 
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: when
+# HIT_CHANCE_BASE moved 98 -> 85 and a sub-100 ceiling was introduced, every
+# such test silently became a miss-path test asserting the wrong branch.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -863,7 +873,9 @@ class TestUtilityAttack:
     def test_execute_glancing_blow(self):
         player, enemy, move = self._viable_setup(target_finesse=0)
         with patch("src.moves._utility.narrate"), \
-             patch("src.moves._utility.random.randint", return_value=100), \
+             patch("src.moves._utility._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._utility.random.randint", return_value=_GLANCING_ROLL), \
              patch("src.moves._utility.random.uniform", return_value=1.0), \
              patch("src.moves._utility.functions.check_parry", return_value=False), \
              patch("src.moves._utility.animate"):

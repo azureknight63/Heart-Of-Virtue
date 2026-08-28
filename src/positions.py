@@ -365,6 +365,48 @@ def attack_angle_difference(attack_angle: float, target_facing: Direction) -> in
     return int(round(diff))
 
 
+def attack_angle_diff(
+    attacker_pos: CombatPosition, defender_pos: CombatPosition
+) -> int:
+    """Angular difference (0-180°) scoring an attack against a defender's guard.
+
+    **This is the single correct way to score an attack by facing.** It is the
+    angle between where the defender is looking (``defender_pos.facing``) and
+    the bearing *from the defender toward the attacker* — so:
+
+    - 0°   = the defender is looking straight at the attacker (frontal, defended)
+    - 90°  = the attacker is on the defender's flank
+    - 180° = the attacker is directly behind the defender (rear, undefended)
+
+    The argument order this encapsulates is the whole point. ``angle_to_target``
+    is directional, and calling it as ``angle_to_target(attacker, defender)``
+    yields the bearing from the *attacker* toward the defender — which is the
+    exact 180° opposite of what the facing modifiers want. That inversion
+    shipped in ``moves/_base.py::_apply_facing_accuracy`` and
+    ``moves/_dagger.py::Backstab._positional_modifier``, where it paid the +40%
+    rear damage bonus for attacks landing head-on and penalised genuine
+    backstabs. Route every facing-scored attack through this helper so there is
+    exactly one place left to get the order wrong.
+
+    Note the *different* question ``moves/_scythe.py`` and ``moves/_polearm.py``
+    ask of the same primitives: "is the enemy inside the swinging *attacker's*
+    frontal arc?" That compares the bearing from the attacker against the
+    **attacker's own** facing and is correctly ``angle_to_target(attacker_pos,
+    enemy_pos)`` — it is not this function and must not be migrated to it.
+
+    Args:
+        attacker_pos: Position of the combatant making the attack
+        defender_pos: Position of the combatant being attacked; its ``facing``
+            defines the guard being scored against
+
+    Returns:
+        Angular difference in degrees (0-180)
+    """
+    return attack_angle_difference(
+        angle_to_target(defender_pos, attacker_pos), defender_pos.facing
+    )
+
+
 def get_damage_modifier(angle_diff: int) -> float:
     """Get damage multiplier based on attack angle relative to target's facing.
 
@@ -1106,6 +1148,7 @@ __all__ = [
     "distance_from_coords",
     "angle_to_target",
     "attack_angle_difference",
+    "attack_angle_diff",
     "get_damage_modifier",
     "get_accuracy_modifier",
     "random_position_in_zone",

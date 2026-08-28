@@ -744,8 +744,8 @@ class TestCombatantSerializer:
         stats = self.CombatantSerializer._serialize_combat_stats(combatant)
         assert stats["defense"] == 7  # protection, the real mitigation stat
         assert stats["evasion"] == 20  # finesse, subtracted from attacker accuracy
-        # 98 + finesse*0.7 + intelligence*0.3
-        assert stats["accuracy"] == 115
+        # HIT_CHANCE_BASE (85) + finesse*0.7 + intelligence*0.3
+        assert stats["accuracy"] == 102
         assert stats["damage"] == 20  # weapon base damage
         # weapon damage + strength*str_mod + finesse*fin_mod
         assert stats["attack_power"] == 31
@@ -763,7 +763,7 @@ class TestCombatantSerializer:
         stats = self.CombatantSerializer._serialize_combat_stats(combatant)
         assert stats["defense"] == 3
         assert stats["evasion"] == 12
-        assert stats["accuracy"] == 108
+        assert stats["accuracy"] == 95
         assert stats["attack_power"] != 99
         assert "armor" not in stats
 

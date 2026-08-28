@@ -31,6 +31,16 @@ from src.moves._sword import (
     CounterGuard,
 )
 
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: when
+# HIT_CHANCE_BASE moved 98 -> 85 and a sub-100 ceiling was introduced, every
+# such test silently became a miss-path test asserting the wrong branch.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
+
 
 RESISTANCE = {
     "piercing": 1.0,
@@ -732,12 +742,15 @@ class TestDisarmingSlash:
         move.base_damage_type = "slashing"
         user.fatigue = 100
 
-        # to_hit_chance is 98 - 0 + 7 + 3 = 108; the flank accuracy modifier
-        # (1.1) then caps it at 100. A roll of 99 lands (100 >= 99) but by only
-        # 1 point (< 10), which is exactly the glancing-blow condition.
-        monkeypatch.setattr(random, "randint", lambda a, b: 99)
+        # The hit chance is pinned at the shared funnel so the roll below is
+        # guaranteed to land by fewer than 10 points -- exactly the
+        # glancing-blow condition -- without the test re-deriving the to-hit
+        # arithmetic and going stale the next time it is retuned.
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._sword.functions.check_parry", return_value=False), \
+        with patch("src.moves._sword._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._sword.functions.check_parry", return_value=False), \
              patch("src.moves._sword.cprint"), \
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
@@ -921,9 +934,11 @@ class TestRiposte:
         user.fatigue = 100
         user.heat = 1.0
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 99)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._sword.functions.check_parry", return_value=False), \
+        with patch("src.moves._sword._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._sword.functions.check_parry", return_value=False), \
              patch("src.moves._sword.cprint"), \
              patch("src.moves._sword.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)

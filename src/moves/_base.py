@@ -106,33 +106,134 @@ def _apply_blade_mastery_discount(user, fatigue_cost, floor_fatigue=10):
     return fatigue_cost
 
 
+#: Hard bounds on any rolled hit chance, applied as the last step of
+#: ``_apply_to_hit_modifiers`` — the single funnel every attack path in the
+#: moves package passes its final number through.
+#:
+#: Why a ceiling at all: ``to_hit_chance`` is additive and unbounded above, so
+#: whatever base a move family picks, a high-finesse attacker against a
+#: low-finesse target eventually exceeds it. At HIT_CHANCE_BASE = 85 a
+#: finesse-25 Jean already computes 101 against a finesse-4 KingSlime, and the
+#: roll is ``random.randint(0, 100)`` — a guaranteed hit, with no dice left in
+#: the dice game. The same creep reaches the ally heavies in ``_npc.py``. No
+#: choice of base fixes that; only a ceiling does. 95 is deliberately high
+#: enough to leave the tuned band (85 player / 76 hostile / 88+83 ally, and the
+#: reshaped ``Dodging`` state) untouched and only trim the extremes.
+#:
+#: Why a floor: the facing multiplier is *sub*-unit head-on (0.95), and
+#: ``int(1 * 0.95)`` is 0 — a positive chance silently truncated into a
+#: certain miss. The floor keeps a slim chance slim rather than nil.
+#:
+#: Neither bound touches non-positive values: those are the auto-miss
+#: sentinel (-1, target out of range) and must stay non-positive. See
+#: ``_apply_facing_accuracy``.
+HIT_CHANCE_CEILING = 95
+HIT_CHANCE_FLOOR = 1
+
+
+def clamp_hit_chance(hit_chance):
+    """Bound a real hit chance to [HIT_CHANCE_FLOOR, HIT_CHANCE_CEILING].
+
+    Call this **only** with a value already established to be a genuine chance
+    rather than an auto-miss sentinel — every caller here does that with an
+    explicit ``if hit_chance <= 0: return hit_chance`` guard first. The floor
+    is applied unconditionally by design: the whole reason it exists is that a
+    sub-unit multiplier (the 0.95 frontal, HauntingPresence's 0.85) truncates a
+    slim-but-real chance to 0, and a floor that bailed out on non-positive
+    input would never fire in exactly the case it was written for.
+    """
+    return max(HIT_CHANCE_FLOOR, min(HIT_CHANCE_CEILING, int(hit_chance)))
+
+
+def facing_angle_diff(attacker, defender):
+    """Attack angle (0-180°) of ``attacker`` against ``defender``'s guard.
+
+    Returns None when either combatant lacks a resolved ``combat_position``
+    (the 2D coordinate combat system is not active for this fight), so callers
+    can no-op rather than invent an angle.
+
+    Delegates the argument order to ``positions.attack_angle_diff`` — read that
+    docstring before touching this. 0° means the defender is looking at the
+    attacker; 180° means the attacker is at the defender's back.
+    """
+    attacker_pos = getattr(attacker, "combat_position", None)
+    defender_pos = getattr(defender, "combat_position", None)
+    if attacker_pos is None or defender_pos is None:
+        return None
+    return positions.attack_angle_diff(attacker_pos, defender_pos)
+
+
+def facing_damage_multiplier(attacker, defender, steepness=1.0):
+    """Damage multiplier for ``attacker``'s attack angle against ``defender``.
+
+    ``steepness`` scales the baseline curve's *deviation* from 1.0 rather than
+    the multiplier itself, so a steeper move stays anchored to the same shape:
+    ``1.0 + (baseline - 1.0) * steepness``. At steepness 1.0 this is exactly
+    ``positions.get_damage_modifier`` (0.85 front / 1.15 flank / 1.25 deep
+    flank / 1.40 rear); at 2.0 every band's bonus and penalty doubles. One
+    table, one shape, one place to retune.
+
+    Returns 1.0 (no-op) when positions are unavailable or anything goes wrong.
+    """
+    try:
+        angle_diff = facing_angle_diff(attacker, defender)
+        if angle_diff is None:
+            return 1.0
+        baseline = positions.get_damage_modifier(angle_diff)
+        return 1.0 + (baseline - 1.0) * float(steepness)
+    except Exception:
+        return 1.0
+
+
+def apply_facing_damage(attacker, defender, power, steepness=1.0):
+    """Scale an attack's ``power`` by the facing/angle damage curve (issue #394).
+
+    Companion to ``_apply_facing_accuracy``: flanks and backs are both easier
+    to *hit* and harder to *absorb*. Applied to power (pre-protection), matching
+    what Backstab — for a long time the engine's only facing-aware damage
+    path — has always done, so armour keeps its full bite from every angle.
+
+    A non-positive power is returned untouched: a weaponless or fully-nullified
+    attack should stay at zero rather than be floored up to 1 by a flank bonus.
+    """
+    if power <= 0:
+        return power
+    multiplier = facing_damage_multiplier(attacker, defender, steepness)
+    if multiplier == 1.0:
+        return power
+    return max(1, int(power * multiplier))
+
+
 def _apply_facing_accuracy(attacker, defender, hit_chance):
     """Facing/angle system: attacks landing on a defender's flank or rear are
     harder to defend against than a head-on attack (issue #394).
 
-    Mirrors positions.get_damage_modifier (already wired into Backstab's
-    damage) on the accuracy side, applied universally so it isn't limited to
-    whichever moves happen to consult it directly — the same partial-
-    enforcement trap #421 fixed for HauntingPresence. No-op (returns
+    The accuracy half of the pair whose damage half is ``apply_facing_damage``;
+    both read the same angle via ``facing_angle_diff`` so they can never
+    disagree about which way the defender is looking. Applied universally so it
+    isn't limited to whichever moves happen to consult it directly — the same
+    partial-enforcement trap #421 fixed for HauntingPresence. No-op (returns
     hit_chance unchanged) unless both combatants have a resolved
     combat_position — i.e. the 2D coordinate combat system is active.
 
     Requires hit_chance > 0: a non-positive value is either an auto-miss
     sentinel (-1, out of range) or already zeroed, and must be left alone —
     Python's int() truncates toward zero, so int(-1 * 0.95) is 0, not -1,
-    which would turn a guaranteed miss into a chance to hit. The result is
-    capped at 100 since the multiplier can exceed 1.0 (rear attacks).
+    which would turn a guaranteed miss into a chance to hit.
+
+    The result is bounded by ``clamp_hit_chance``. The ceiling matters here in
+    particular: the rear multiplier is 1.30, which used to be clamped at 100
+    against a ``random.randint(0, 100)`` roll — i.e. any halfway competent rear
+    attack was an automatic hit, and positioning stopped being a gamble.
     """
     if hit_chance <= 0:
         return hit_chance
     try:
-        attacker_pos = getattr(attacker, "combat_position", None)
-        defender_pos = getattr(defender, "combat_position", None)
-        if attacker_pos is None or defender_pos is None:
+        angle_diff = facing_angle_diff(attacker, defender)
+        if angle_diff is None:
             return hit_chance
-        attack_angle = positions.angle_to_target(attacker_pos, defender_pos)
-        angle_diff = positions.attack_angle_difference(attack_angle, defender_pos.facing)
-        return min(100, int(hit_chance * positions.get_accuracy_modifier(angle_diff)))
+        modifier = positions.get_accuracy_modifier(angle_diff)
+        return clamp_hit_chance(int(hit_chance * modifier))
     except Exception:
         return hit_chance
 
@@ -167,10 +268,22 @@ def _apply_to_hit_modifiers(attacker, defender, hit_chance):
     duplication #464 was filed over. Adding a future universal to-hit
     modifier is a one-file change here instead of another sweep across every
     attack path.
+
+    This is also the engine's **authoritative** bound on a hit chance: the
+    final ``clamp_hit_chance`` runs after every modifier, so no situational
+    adjustment applied upstream (ranged decay, Hawkeye's x1.4, Aimed Shot's
+    flat +15, a hand-rolled inline expression, or a literal ``hit_chance =
+    100``) can route around the ceiling by landing after it. Bounding inside
+    ``to_hit_chance`` instead would not hold: several callers deliberately add
+    to its result before getting here.
     """
+    if hit_chance <= 0:
+        # Auto-miss sentinel (-1, target out of range) or an already-zeroed
+        # chance. No modifier and no clamp may touch it — see clamp_hit_chance.
+        return hit_chance
     hit_chance = _apply_facing_accuracy(attacker, defender, hit_chance)
     hit_chance = _apply_haunting_presence(attacker, defender, hit_chance)
-    return hit_chance
+    return clamp_hit_chance(hit_chance)
 
 
 #: Default base term of the engine's to-hit expression, plus the weights it
@@ -178,7 +291,7 @@ def _apply_to_hit_modifiers(attacker, defender, hit_chance):
 #: paths that consume them, so a balance change is a one-file edit — an earlier
 #: copy in the API layer drifted to ``98 + finesse`` and the character sheet
 #: disagreed with the dice until someone noticed.
-HIT_CHANCE_BASE = 98
+HIT_CHANCE_BASE = 85
 HIT_CHANCE_FINESSE_WEIGHT = 0.7
 HIT_CHANCE_INTELLIGENCE_WEIGHT = 0.3
 
@@ -935,6 +1048,15 @@ class Move:  # master class for all moves
             self.user.combat_position.facing = positions.turn_toward(
                 self.user.combat_position, self.target.combat_position
             )
+
+        # Facing/angle damage (issue #394). Before this, positioning moved
+        # damage for exactly one move in the entire engine (Backstab) and every
+        # other attack felt the battlefield only through accuracy — so flanking
+        # was a rounding error unless you happened to hold a dagger. Reading
+        # the angle *after* the turn_toward above is deliberate and harmless:
+        # turn_toward rotates the attacker, and the curve is scored against the
+        # defender's facing.
+        power = apply_facing_damage(self.user, self.target, power)
 
         if self.viable():
             hit_chance = to_hit_chance(self.user, self.target, floor=5)
