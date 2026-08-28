@@ -22,6 +22,7 @@ import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
+import MomentumMeter from './MomentumMeter'
 import ShopDialog from './ShopDialog'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
@@ -779,6 +780,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             />
           </div>
         </div>
+
+        {/* Momentum (heat) — the damage multiplier the engine has always applied
+            silently. `combat.player.heat` is the raw float from
+            CombatantSerializer; battle_state's own `heat` key is the same
+            quantity as int(heat*100) and is NOT emitted for beat states, so
+            there is one reader and one field here (see utils/momentum.js). */}
+        {mode === 'combat' && (
+          <MomentumMeter
+            heat={combat?.player?.heat}
+            beat={combat?.beat}
+            combatId={combat?.combat_id}
+          />
+        )}
 
         {/* Cooldown Tray — moves currently on cooldown */}
         {mode === 'combat' && cooldownMoves.length > 0 && (
