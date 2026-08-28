@@ -310,8 +310,14 @@ class TestMovementStates:
         # Dodging should add finesse
         assert hasattr(dodge, "add_fin")
         assert dodge.add_fin > 0
-        # Formula: 50 + finesse/3
-        expected = 50 + int(basic_combatant.finesse / 3)
+        # Formula: DODGE_EVASION_BASE - finesse/DODGE_EVASION_FINESSE_DIVISOR,
+        # floored at DODGE_EVASION_MIN. Read from the module rather than
+        # re-typed so a balance retune updates this test with the engine.
+        expected = max(
+            states.DODGE_EVASION_MIN,
+            states.DODGE_EVASION_BASE
+            - int(basic_combatant.finesse / states.DODGE_EVASION_FINESSE_DIVISOR),
+        )
         assert dodge.add_fin == expected
 
     def test_dodging_duration(self, basic_combatant):

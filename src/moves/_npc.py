@@ -11,6 +11,75 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import Move, _apply_to_hit_modifiers, to_hit_chance  # noqa: F401
 
 
+#: Base term of the to-hit expression for the shared hostile-NPC attack family
+#: (``NpcAttack`` and everything that copies its roll: VenomClaw, SpiderBite,
+#: BatBite, MineralSpit, SoulDrain).
+#:
+#: This is *not* ``_base.HIT_CHANCE_BASE`` and must not be replaced by it — the
+#: player's base is tuned against weapon moves that carry their own per-family
+#: bases and situational modifiers, whereas every hostile shares this one roll.
+#:
+#: Derivation (see ``_base.to_hit_chance``): against Jean at base stats
+#: (finesse 11, intelligence 10) an attacker of finesse ``F`` computes
+#: ``int(BASE - 8 + 0.7F)``, and P(hit) = (chance + 1) / 101 against
+#: ``randint(0, 100)``. The hostile bestiary spans finesse 4 (KingSlime) to 24
+#: (CaveBat), i.e. a fixed 14-point accuracy spread that no choice of base can
+#: compress. 76 places that spread at 70.3%–84.2%: the slowest enemy still
+#: misses about three attacks in ten, and the fastest is never a certainty.
+#: The previous value, 95, predated the bestiary's evasion spread (every enemy
+#: was finesse 10) and put four enemies at or above 101 — literally unable to
+#: miss a ``randint(0, 100)`` roll.
+NPC_HIT_CHANCE_BASE = 76
+
+#: Base term for the Wail Wraith's exclusive attack family (KeeningToll,
+#: WailStrike, DeathKnell — used by no other NPC).
+#:
+#: The wraith's finesse of 40 is a deliberate outlier, 1.67x the next-highest
+#: hostile, so on the shared base it would compute 95 (95.0% hit) and sit
+#: outside the band every other enemy occupies. Because its move family is
+#: exclusive, a family-specific base is the correct lever: 67 yields
+#: ``int(67 - 8 + 28) = 87`` → 87.1%, still the most accurate enemy in the
+#: game but not a coin-flip-free one.
+WAIL_HIT_CHANCE_BASE = 67
+
+#: Base term for ``GorranClub``, Gorran's signature heavy swing. Allies attack
+#: the bestiary rather than Jean, so this is calibrated against the *least*
+#: evasive hostile — KingSlime at finesse 4 — not against Jean.
+#:
+#: It sits deliberately above the player default (``_base.HIT_CHANCE_BASE``,
+#: heading to 85) because landing the hit is Gorran's identity: he is a slow,
+#: heavy bruiser whose whole contribution is that the swing connects. **It is
+#: meant to track the player default** — if that base moves again, move this
+#: with it rather than leaving it stranded, which is exactly how it ended up
+#: at 105 against a bestiary that no longer existed.
+#:
+#: Why 88 and not 92: preserving the historical +7 offset over the player base
+#: does *not* survive the bestiary's new low-finesse end. At 92 the club
+#: computes 98 against KingSlime with Gorran at his introduction stat line
+#: (level 1, finesse 10) — 98.0% — and 100 by level 7, i.e. the same
+#: cannot-miss bug this pass exists to remove. 88 yields ``int(88 - 4 + 7 + 3)
+#: = 94`` → 94.1% at that reference line, under the 95% ceiling while still
+#: reading as the most reliable heavy swing in the party.
+#:
+#: Level creep is real and structural: ``to_hit_chance`` has no ceiling, so any
+#: additive base eventually exceeds 100 as finesse grows (this move reaches it
+#: at Gorran level ~20, and Jean's own moves have the identical property). Only
+#: a clamp in ``_base`` fixes that class of drift; it is not a base problem.
+ALLY_HEAVY_HIT_CHANCE_BASE = 88
+
+#: Base term for ``TwinFangs``, Mara's precision finisher. Calibrated the same
+#: way — against KingSlime at finesse 4, with Mara at the level she learns the
+#: move (12, finesse 19).
+#:
+#: The move keeps its hand-rolled shape (no intelligence term, finesse weighted
+#: 0.8 rather than the canonical 0.7); only the base moves, which is a balance
+#: change and not the stealth nerf that migrating it to ``to_hit_chance`` would
+#: be. At the old 90 it computed 101 at the very level it is granted — an
+#: unmissable finisher. 83 yields ``int(83 - 4 + 15.2) = 94`` → 94.1% there,
+#: and 88.1% against a mid-tier finesse-10 hostile.
+ALLY_PRECISION_HIT_CHANCE_BASE = 83
+
+
 class NpcAttack(Move):  # basic attack function, NPCs only
     display_name = 'Attack'
     web_animation = "attack"
@@ -155,7 +224,9 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -509,7 +580,9 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=105, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=ALLY_HEAVY_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -653,7 +726,9 @@ class VenomClaw(Move):  # Poisonous attack
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -799,7 +874,9 @@ class SpiderBite(Move):  # Poisonous attack
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -945,7 +1022,9 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1011,7 +1090,9 @@ class MineralSpit(NpcAttack):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1073,7 +1154,9 @@ class SoulDrain(NpcAttack):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1136,7 +1219,9 @@ class KeeningToll(NpcAttack):
         narrate(self.stage_announce[1])
         self.prep_colors()
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=WAIL_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1203,7 +1288,9 @@ class WailStrike(TelegraphedSurge):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=WAIL_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1282,7 +1369,9 @@ class DeathKnell(NpcAttack):
         narrate(self.stage_announce[1])
         self.prep_colors()
         if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
+            hit_chance = to_hit_chance(
+                self.user, self.target, base=WAIL_HIT_CHANCE_BASE, floor=1
+            )
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1679,7 +1768,12 @@ class TwinFangs(Move):
         # Neither deviation is expressible through base/floor, so migrating
         # this would be a stealth nerf. Leave inlined; cf. SeismicSlam.
         hit_chance = max(
-            5, int(90 - target.finesse + (self.user.finesse * 0.8))
+            5,
+            int(
+                ALLY_PRECISION_HIT_CHANCE_BASE
+                - target.finesse
+                + (self.user.finesse * 0.8)
+            ),
         )
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, target, hit_chance)

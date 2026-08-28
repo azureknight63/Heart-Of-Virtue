@@ -135,10 +135,18 @@ def test_execute_glancing_blows_half_damage_and_smaller_heal(monkeypatch):
     bat.combat_proximity = {target: 3}
     bite = moves.BatBite(bat)
 
-    # compute hit_chance as execute will
-    hit_chance = (95 - target.finesse) + bat.finesse
+    # Pin the hit chance at _apply_to_hit_modifiers — the last point BatBite
+    # passes through before rolling — rather than re-deriving it here. The old
+    # hand-rolled expression ((95 - target.finesse) + bat.finesse) was already
+    # a stale copy of the engine's formula and stopped landing in the glancing
+    # window the moment the hostile to-hit base was retuned.
+    pinned_hit_chance = 50
+    monkeypatch.setattr(
+        'src.moves._npc._apply_to_hit_modifiers',
+        lambda attacker, defender, chance: pinned_hit_chance,
+    )
     # choose roll such that hit and glancing: hit_chance - roll < 10
-    roll_for_glance = max(0, hit_chance - 5)
+    roll_for_glance = pinned_hit_chance - 5
     monkeypatch.setattr('random.randint', lambda a, b: roll_for_glance)
     monkeypatch.setattr('src.functions.check_parry', lambda target: False)
 

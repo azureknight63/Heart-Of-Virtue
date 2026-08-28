@@ -5,6 +5,11 @@ import pytest
 from unittest.mock import Mock, patch
 from src.narration import capture_narration
 from src.states import State, Dodging, Parrying, Poisoned, Enflamed, Clean, Hawkeye, PhoenixRevive, Slimed
+from src.states import (
+    DODGE_EVASION_BASE,
+    DODGE_EVASION_FINESSE_DIVISOR,
+    DODGE_EVASION_MIN,
+)
 
 
 @pytest.fixture
@@ -172,8 +177,31 @@ def test_dodging_finesse_bonus(mock_target):
     mock_target.finesse = 30
     state = Dodging(mock_target)
 
-    expected_bonus = 50 + int(30 / 3)
+    expected_bonus = DODGE_EVASION_BASE - int(30 / DODGE_EVASION_FINESSE_DIVISOR)
     assert state.add_fin == expected_bonus
+
+
+def test_dodging_finesse_bonus_diminishes_with_finesse(mock_target):
+    """The dodge bonus shrinks as the dodger's own finesse rises.
+
+    Asserted as a property rather than against a literal so a balance retune
+    cannot quietly restore the compounding shape this replaced: a bonus that
+    *grew* with finesse let base evasion enter the to-hit expression twice and
+    made high-finesse dodgers effectively unhittable.
+    """
+    mock_target.finesse = 4
+    low = Dodging(mock_target).add_fin
+    mock_target.finesse = 40
+    high = Dodging(mock_target).add_fin
+
+    assert high < low
+    assert high >= DODGE_EVASION_MIN
+
+
+def test_dodging_finesse_bonus_never_below_floor(mock_target):
+    """An absurdly evasive combatant still gains the floor, never 0 or less."""
+    mock_target.finesse = 10000
+    assert Dodging(mock_target).add_fin == DODGE_EVASION_MIN
 
 
 def test_parrying_initialization(mock_target):

@@ -413,7 +413,9 @@ class TestStatusEffectSubclasses:
         assert state.name == "Dodging"
         assert state.beats_max == 7
         assert state.hidden is True
-        assert state.add_fin == 50 + int(30 / 3)
+        assert state.add_fin == states.DODGE_EVASION_BASE - int(
+            30 / states.DODGE_EVASION_FINESSE_DIVISOR
+        )
 
     def test_parrying_initialization(self, fake_player):
         """Parrying state initializes correctly."""

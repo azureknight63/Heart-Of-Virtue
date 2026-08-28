@@ -91,13 +91,42 @@ class State:  # master class for all states
                     self.on_removal(target)
 
 
+#: Evasion granted by :class:`Dodging` to a combatant with no finesse at all,
+#: and the rate at which that grant decays as the dodger's own finesse rises.
+#:
+#: The bonus is *diminishing* in finesse (``BASE - int(finesse / DIVISOR)``)
+#: rather than growing with it. The old shape, ``50 + int(finesse / 3)``, let
+#: base finesse enter the to-hit expression twice — once as the defender
+#: term and again, amplified, through the bonus — so the bestiary's evasion
+#: spread compounded instead of flattening: a dodging Cave Bat (finesse 24) was
+#: about 14% hittable and a dodging Wail Wraith (finesse 40) about 6%, i.e.
+#: effectively untouchable, while a dodging King Slime was still easy prey.
+#:
+#: Decay keeps every dodger inside a single band. Against Jean at base stats
+#: (finesse 11, intelligence 10, ``_base.HIT_CHANCE_BASE`` 85) the dodging
+#: bestiary now sits at 33.7%–51.5% hittable, and Jean dodging drops incoming
+#: hostile accuracy from roughly 70–87% to roughly 34–50%. Dodging is therefore
+#: worth a beat for anyone and decisive for no one.
+#:
+#: Decay also makes the state self-limiting under re-application: ``__init__``
+#: reads ``target.finesse``, which already includes any active bonus, so a
+#: growing term compounds on reapply while a shrinking one converges.
+DODGE_EVASION_BASE = 42
+DODGE_EVASION_FINESSE_DIVISOR = 2
+#: Floor so the state is never worthless (or negative). It binds once decay
+#: would drop the grant below it — finesse above 54 at the values above.
+DODGE_EVASION_MIN = 15
+
+
 class Dodging(State):
     def __init__(
         self, target
     ):  # increases the target's dodging ability for a short duration
         super().__init__(name="Dodging", target=target, beats_max=7, hidden=True)
-        f = 50 + int(target.finesse / 3)
-        self.add_fin = f
+        self.add_fin = max(
+            DODGE_EVASION_MIN,
+            DODGE_EVASION_BASE - int(target.finesse / DODGE_EVASION_FINESSE_DIVISOR),
+        )
 
 
 class Parrying(State):
