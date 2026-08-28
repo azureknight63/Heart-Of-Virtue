@@ -206,7 +206,7 @@ class TestWhirlAttackMove:
 
         whirl_move.execute(player)
 
-        assert player.fatigue == initial_fatigue - 45
+        assert player.fatigue == initial_fatigue - 38
 
     def test_whirl_changes_facing_randomly(self, player, whirl_move):
         """Test WhirlAttack.execute() changes facing to random direction"""
@@ -286,7 +286,7 @@ class TestFeintAndPivotMove:
         """Test FeintAndPivot move is created correctly"""
         assert feint_move.name == "Feint & Pivot"
         assert feint_move.user == player
-        assert feint_move.fatigue_cost == 45
+        assert feint_move.fatigue_cost == 38
         assert feint_move.xp_gain == 20
         assert feint_move.targeted == True
 
@@ -418,7 +418,7 @@ class TestVertigoSpinMove:
         """Test VertigoSpin move is created correctly"""
         assert spin_move.name == "Vertigo Spin"
         assert spin_move.user == player
-        assert spin_move.fatigue_cost == 50
+        assert spin_move.fatigue_cost == 42
         assert spin_move.xp_gain == 25
         assert spin_move.targeted == True
 
@@ -457,7 +457,7 @@ class TestVertigoSpinMove:
 
         spin_move.execute(player)
 
-        assert player.fatigue == initial_fatigue - 50
+        assert player.fatigue == initial_fatigue - 42
 
     def test_spin_execute_rotates_target_facing(self, player, target_enemy, spin_move):
         """Test VertigoSpin.execute() rotates target facing"""
@@ -637,8 +637,8 @@ class TestPhase3MovesIntegration:
 
         assert turn.fatigue_cost == 0
         assert whirl.fatigue_cost == 45
-        assert feint.fatigue_cost == 45
-        assert spin.fatigue_cost == 50
+        assert feint.fatigue_cost == 38
+        assert spin.fatigue_cost == 42
         # Every one of these must stay castable from a full bar (Player's base
         # maxfatigue is 150) -- a cost above it makes the move permanently
         # unreachable, since combat gates selection on fatigue >= cost.

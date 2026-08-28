@@ -315,7 +315,9 @@ class VertigoSpin(Move):
         execute = 2
         recoil = 2
         cooldown = 3
-        fatigue_cost = 50
+        # Cheaper than every same-length attack it competes with, so the low
+        # damage buys something concrete rather than just being a worse strike.
+        fatigue_cost = 42
         target = user  # Will be set when move is selected
         super().__init__(
             name="Vertigo Spin",

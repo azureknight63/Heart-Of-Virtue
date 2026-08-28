@@ -156,8 +156,11 @@ class Sweep(Move):
 
     web_animation = "sweep"
 
-    #: Fraction of a full weapon swing each enemy in the cone takes.
-    AREA_POWER_FACTOR = 0.45
+    #: Fraction of a full weapon swing each enemy in the cone takes. Above
+    #: Reap's and Whirl Attack's: the polearm is the crowd weapon, and a Sweep
+    #: that lands under Keep Away on every axis would have no reason to exist
+    #: on this tree.
+    AREA_POWER_FACTOR = 0.55
 
     def __init__(self, user):
         description = (

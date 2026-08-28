@@ -135,8 +135,9 @@ class Slash(
             + (self.user.finesse * self.user.eq_weapon.fin_mod)
         )
 
-        # +1 prep and +1 recoil over the basic Attack: the extra commitment is
-        # visible on the beat timeline, which is where the player reads risk.
+        # +1 prep, +1 recoil and +1 cooldown over the basic Attack: the extra
+        # commitment is visible on the beat timeline, which is where the player
+        # reads risk.
         prep = int(
             (40 + (self.user.eq_weapon.weight * 3)) / self.user.speed
         ) + 1
@@ -145,7 +146,11 @@ class Slash(
 
         execute = 1
 
-        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.endurance / 10)
+        # +1 on every timing stage. Without the cooldown bump, the weight-derived
+        # cooldown formula makes Slash *recover faster* than the basic Attack on
+        # any light weapon -- a dagger Slash came out one beat longer in total
+        # while hitting 45% harder, which is not a trade, it is an upgrade.
+        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.endurance / 10) + 1
         if cooldown < 0:
             cooldown = 0
 
@@ -253,7 +258,9 @@ class FeintAndPivot(Move):
         execute = 3
         recoil = 1
         cooldown = 3
-        fatigue_cost = 45
+        # Deliberately the cheapest attack-plus-effect in the roster: the strike
+        # is a feint, and the fatigue reflects that rather than a real swing.
+        fatigue_cost = 38
         target = user  # Will be set when move is selected
         super().__init__(
             name="Feint & Pivot",

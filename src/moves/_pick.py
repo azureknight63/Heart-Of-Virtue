@@ -185,10 +185,11 @@ class ExploitWeakness(Move):
 
     Utility-first. It was previously an exact numeric clone of the basic
     Attack that *also* applied a status and stripped protection — strictly
-    better, for free. It now pays for both effects in damage: 65% of a full
-    swing, with a damage-per-beat clearly below Attack's. What you get for
-    that is one big hit (unlike Chip Away, protection is subtracted once),
-    Disoriented, and a Work the Gap armour strip.
+    better, for free. It now pays for both effects in damage: 85% of a full
+    swing over the same beats, so its damage-per-beat sits clearly below
+    Attack's. What you get for that is one big hit (unlike Chip Away,
+    protection is subtracted once), Disoriented, and a Work the Gap armour
+    strip.
     """
     display_name = 'Exploit Weakness'
 
@@ -199,9 +200,9 @@ class ExploitWeakness(Move):
             "Find a weak point in the enemy's guard and strike it deliberately. "
             "Deals piercing damage and leaves the target disoriented."
         )
-        prep = 3
+        prep = 4
         execute = 1
-        recoil = 2
+        recoil = 3
         cooldown = 3
         super().__init__(
             name="Exploit Weakness",
@@ -237,16 +238,19 @@ class ExploitWeakness(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [3, 1, 2, 3]
+            self.stage_beat = [4, 1, 3, 3]
             self.fatigue_cost = 10
             return
+        # A deliberate, aimed strike rather than a quick one: the extra recoil
+        # beat keeps it distinct from Pommel Strike, which occupies the same
+        # nine-beat slot on a pick and would otherwise beat it on every axis.
         evaluation = self.standard_evaluate_attack(
             base_power=0,
             base_damage_type="piercing",
-            mod_power="65%",
-            mod_prep=-1,
+            mod_power="85%",
+            mod_recoil=1,
             mod_cd=-2,
-            mod_fatigue=-35,
+            mod_fatigue=-30,
             floor_fatigue=15,
         )
         self.power = evaluation[0]

@@ -1976,7 +1976,7 @@ class TestExploitWeakness:
         user = _make_user("Pick", equip=False)
         move = ExploitWeakness(user)
         assert move.power == 0
-        assert move.stage_beat == [3, 1, 2, 3]
+        assert move.stage_beat == [4, 1, 3, 3]
         assert move.fatigue_cost == 10
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):

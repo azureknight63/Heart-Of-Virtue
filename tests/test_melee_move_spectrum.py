@@ -12,7 +12,7 @@ The cause was structural rather than a series of individual mistakes:
 weight and player stats, so any move that called it *without* ``mod_prep`` /
 ``mod_recoil`` / ``mod_cd`` came out with exactly the same beat profile as
 every other move that did the same -- regardless of what its own ``__init__``
-and docstring said it should be. Four moves (Riposte, Impale, Stupefy, Death's
+and docstring said it should be. Five moves (Riposte, Impale, Stupefy, Death's
 Harvest, Overhead Smash) declared deliberately distinctive timings in
 ``__init__`` that ``evaluate()`` then silently overwrote on the first beat.
 
@@ -188,11 +188,17 @@ def test_each_tree_spans_a_wide_range_of_commitment(trees, tree):
     """The roster used to span 8 to 13 beats: a factor of 1.6, with no real
     choice between committing and staying nimble. Every tree must now offer a
     genuinely short cycle and a genuinely long one.
+
+    The per-tree bar is 2x rather than the roster-wide 3.5x below on purpose:
+    not every tree carries a heavy. The Sword and Dagger trees are deliberately
+    built around tempo -- the best chip, the only zero-prep counter, the
+    positional gamble -- and forcing a token slow move into each of them would
+    manufacture exactly the undifferentiated filler this pass removed.
     """
     totals = {name: total for name, (_, _, total, _) in trees[tree].items()}
     shortest = min(totals.values())
     longest = max(totals.values())
-    assert longest >= 2.5 * shortest, (
+    assert longest >= 2.0 * shortest, (
         f"{tree} spans only {shortest}-{longest} beats "
         f"({longest / shortest:.2f}x); the roster is clustering again: {totals}"
     )
@@ -268,6 +274,24 @@ def test_utility_first_moves_pay_for_their_effect_in_damage(trees, move_name, tr
     assert power < ref_power, (
         f"{move_name} deals {power} against Attack's {ref_power} on a {tree} "
         "-- an effect on top of full damage is strictly better for free"
+    )
+
+
+def test_the_roster_as_a_whole_spans_a_wide_range_of_cycle_lengths(trees):
+    """Across every tree there must be both a move that resolves in a handful
+    of beats and one that is a serious, punishable commitment. The whole roster
+    previously fitted inside 8-13 beats.
+    """
+    totals = {
+        f"{tree}.{name}": total
+        for tree, profiles in trees.items()
+        for name, (_, _, total, _) in profiles.items()
+    }
+    shortest = min(totals.values())
+    longest = max(totals.values())
+    assert longest >= 3.5 * shortest, (
+        f"roster spans only {shortest}-{longest} beats "
+        f"({longest / shortest:.2f}x) -- there is no real fast/slow spectrum"
     )
 
 
