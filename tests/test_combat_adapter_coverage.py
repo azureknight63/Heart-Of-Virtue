@@ -74,6 +74,13 @@ def _make_move(
     m.stage_beat = stage_beat or [1, 1, 1, 3]
     m.target = None
     m.user = None
+    # Target selection validates the client-supplied id against
+    # _get_available_targets(move), which reads mvrange and calls
+    # get_effective_range_max(); a bare MagicMock returns another MagicMock for
+    # the latter and the range comparison then raises. Model the real default
+    # (no dynamic override, melee band) so these doubles behave like a move.
+    m.mvrange = (0, 5)
+    m.get_effective_range_max.return_value = None
     m.cast.return_value = None
     m.advance.side_effect = lambda user: setattr(user, "current_move", None)
     return m
@@ -1059,6 +1066,8 @@ class TestHandleTargetSelection:
                 "advance",
                 "target",
                 "user",
+                "mvrange",
+                "get_effective_range_max",
             ]
         )
         move.name = "Slash"
@@ -1070,6 +1079,10 @@ class TestHandleTargetSelection:
         move.viable.return_value = True
         move.target = None
         move.user = None
+        # See _make_move: the target must be inside the move's published option
+        # set, so the double has to answer the range questions a move answers.
+        move.mvrange = (0, 5)
+        move.get_effective_range_max.return_value = None
         enemy = _make_enemy()
         player.known_moves = [move]
         player.combat_list = [enemy]

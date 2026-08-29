@@ -756,6 +756,113 @@ class ApiCombatAdapter:
                 return combatant
         return None
 
+    def _resolve_target_from_options(
+        self, move, target_id: str, options: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Validate a client-supplied ``target_id`` against ``move``'s option set.
+
+        ``_lookup_combatant`` answers "is this anybody in the fight?", which is
+        not the question the API needs to ask: a combat command arrives from the
+        client, so the only targets a move may legally act on are the ones the
+        adapter itself published for it -- i.e. exactly what
+        :meth:`_get_available_targets` returns (alive, inside the move's
+        effective ``mvrange``, and friendly only when the move sets
+        ``accepts_ally_target``). Without that check a crafted ``select_target``
+        turned every targeted move into an unlimited-range, friendly-fire-capable
+        one: ``Disrupt`` (``mvrange=(0, 5)``, load-bearing per its own docstring)
+        landed on an enemy 40 tiles away and on a friendly NPC.
+
+        This is the **single** place that check lives. Both entry points --
+        :meth:`_resolve_move_target` (``select_move`` / ``select_move_and_target``)
+        and :meth:`_handle_target_selection` (``select_target``) -- route through
+        it, because each previously carried its own copy of the raw lookup and
+        that duplication is why neither validated.
+
+        Returns:
+            ``{"target": <combatant>}`` — the id names a currently legal target
+            ``{"error": <str>}``        — the id names a real combatant this move
+                                          may not act on (out of range, dead, or
+                                          an ally on a move that does not accept
+                                          ally targets)
+            ``{}``                      — the id names nobody in this fight; the
+                                          caller falls back to its own
+                                          no-explicit-target handling
+        """
+        if not isinstance(target_id, str) or not target_id:
+            return {}
+
+        candidate = self._lookup_combatant(target_id)
+        if candidate is None:
+            return {}
+
+        if options is None:
+            options = self._get_available_targets(move)
+
+        allowed_ids = {
+            _strip_combatant_prefix(option["id"])
+            for option in options
+            if isinstance(option, dict) and isinstance(option.get("id"), str)
+        }
+
+        if str(id(candidate)) not in allowed_ids:
+            return {
+                "error": (
+                    f"{getattr(candidate, 'name', 'That target')} is not a valid "
+                    f"target for {display_name_of(move)}"
+                )
+            }
+
+        return {"target": candidate}
+
+    def _check_move_preconditions(self, move) -> Optional[Dict[str, Any]]:
+        """Return an error dict if the player may not start ``move`` right now.
+
+        Every precondition that must hold before a move is assigned to
+        ``player.current_move`` lives here, because the adapter has **two**
+        entry points into move selection -- ``select_move``
+        (:meth:`_handle_move_selection`) and ``select_move_and_target``
+        (:meth:`_handle_combined_selection`) -- and the client sends the second
+        one for essentially every combat action. Each used to carry its own
+        copy of the guards and they drifted: the combined path never checked
+        ``current_stage``, so a move still in recoil or cooldown could be
+        re-selected, and ``cast()`` unconditionally resets ``current_stage`` to
+        0 -- erasing the remaining cooldown and making any move free to spam
+        through the primary UI path. (The same duplication is why neither path
+        validated its target; see :meth:`_resolve_target_from_options`.)
+
+        Returns ``None`` when the move may proceed. Callers must run this
+        *before* mutating any combat state, so a rejection is a clean no-op.
+        """
+        if not move.viable():
+            return {"error": "Move is not currently available"}
+
+        # Only check fatigue for moves that actually cost some.
+        if move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
+            return {"error": "Not enough fatigue"}
+
+        # A move that is mid-cycle (execute/recoil/cooldown) is not selectable.
+        if move.current_stage != 0:
+            return {"error": "Move not ready yet"}
+
+        # A move already winding up must be paid for, not walked away from.
+        # A prep longer than the per-request beat cap hands control back while
+        # the move is still in stage 0, and selecting anything else used to
+        # simply reassign player.current_move -- orphaning 20 beats of Aimed
+        # Shot at no cost and leaving it instantly re-castable. That made the
+        # costed abort below pointless, since the free path sat right beside
+        # it. Switching now requires an explicit abort first.
+        in_flight = self._abortable_move()
+        if in_flight is not None and in_flight is not move:
+            return {
+                "error": (
+                    f"{display_name_of(in_flight)} is already winding up. "
+                    "Abort it first to act on something else."
+                ),
+                "requires_abort": True,
+            }
+
+        return None
+
     def _resolve_move_target(
         self, move, move_index: int, target_id: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -774,7 +881,15 @@ class ApiCombatAdapter:
         target = None
 
         if target_id:
-            target = self._lookup_combatant(target_id)
+            # An explicitly named target must be one the adapter published for
+            # this move; an id that names nobody falls through to the
+            # auto-resolution path below, exactly as before.
+            resolution = self._resolve_target_from_options(
+                move, target_id, viable_targets
+            )
+            if "error" in resolution:
+                return resolution
+            target = resolution.get("target")
 
         if target is None:
             if len(viable_targets) == 1:
@@ -830,14 +945,14 @@ class ApiCombatAdapter:
             return {"error": f"Move '{move_name}' not found"}
 
         selected_move = self.player.known_moves[move_index]
-        if not selected_move.viable():
-            return {"error": "Move is not currently available"}
 
-        if (
-            selected_move.fatigue_cost > 0
-            and self.player.fatigue < selected_move.fatigue_cost
-        ):
-            return {"error": "Not enough fatigue"}
+        # Same preconditions the select_move path enforces -- viability,
+        # fatigue, readiness (current_stage) and the winding-up abort guard.
+        # This path is the one the React client actually uses, so a guard that
+        # lives only in _handle_move_selection guards almost nothing.
+        precondition_error = self._check_move_preconditions(selected_move)
+        if precondition_error is not None:
+            return precondition_error
 
         # If move is targeted, resolve the target via the shared helper
         if selected_move.targeted:
@@ -881,36 +996,12 @@ class ApiCombatAdapter:
 
         selected_move = all_moves[move_index]
 
-        # Check if move is viable
-        if not selected_move.viable():
-            return {"error": "Move is not currently available"}
-
-        # Check if move is available (only check fatigue if move actually costs fatigue)
-        if (
-            selected_move.fatigue_cost > 0
-            and self.player.fatigue < selected_move.fatigue_cost
-        ):
-            return {"error": "Not enough fatigue"}
-
-        if selected_move.current_stage != 0:
-            return {"error": "Move not ready yet"}
-
-        # A move already winding up must be paid for, not walked away from.
-        # A prep longer than the per-request beat cap hands control back while
-        # the move is still in stage 0, and selecting anything else used to
-        # simply reassign player.current_move -- orphaning 20 beats of Aimed
-        # Shot at no cost and leaving it instantly re-castable. That made the
-        # costed abort below pointless, since the free path sat right beside
-        # it. Switching now requires an explicit abort first.
-        in_flight = self._abortable_move()
-        if in_flight is not None and in_flight is not selected_move:
-            return {
-                "error": (
-                    f"{display_name_of(in_flight)} is already winding up. "
-                    "Abort it first to act on something else."
-                ),
-                "requires_abort": True,
-            }
+        # Viability, fatigue, readiness and the winding-up abort guard all live
+        # in _check_move_preconditions so this path and select_move_and_target
+        # cannot drift apart again.
+        precondition_error = self._check_move_preconditions(selected_move)
+        if precondition_error is not None:
+            return precondition_error
 
         self.player.current_move = selected_move
         self.player.current_move.user = self.player
@@ -978,18 +1069,20 @@ class ApiCombatAdapter:
         pending_move = all_moves[self.pending_move_index]
         pending_move.user = self.player
 
-        # Find target in available options
-        target = None
-        # Look up target by ID from player's combat list (enemies) or allies
-        target_obj_id = _strip_combatant_prefix(target_id)
+        # Find target in the option set published for the pending move. The
+        # comment above this block used to be the only thing that said so --
+        # the lookup underneath it scanned every combatant in the fight, which
+        # let a crafted command act out of range or on an ally.
+        resolution = self._resolve_target_from_options(pending_move, target_id)
+        if "error" in resolution:
+            # Reject without touching combat state: input_type stays
+            # "target_selection", pending_move_index and available_options are
+            # untouched, and no stage of the move has run, so the client can
+            # simply re-send a legal target.
+            return resolution
 
-        all_combatants = self.player.combat_list + self.player.combat_list_allies
-        for combatant in all_combatants:
-            if str(id(combatant)) == target_obj_id:
-                target = combatant
-                break
-
-        if not target:
+        target = resolution.get("target")
+        if target is None:
             return {"error": "Invalid target"}
 
         pending_move.target = target
