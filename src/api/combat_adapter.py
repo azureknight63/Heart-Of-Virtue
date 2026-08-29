@@ -31,6 +31,12 @@ from src.story import gorran_flavor
 if TYPE_CHECKING:
     from src.player import Player
 
+#: Reach, in feet, above which a move earns a drawn range ring in the client.
+#: Every melee swing reaches about 5 ft, so a ring at that distance is drawn on
+#: essentially every move and tells the player nothing; only a move that
+#: genuinely outreaches a sword (spear, polearm, bow) gets one.
+MELEE_REACH_FT = 6
+
 # Compiled once at module level for performance
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
@@ -2420,6 +2426,23 @@ class ApiCombatAdapter:
         }
         return result
 
+    def _range_ring(self, move) -> Optional[int]:
+        """Reach in feet for the client's range ring, or None for a melee move.
+
+        ``Move.preview_reach`` owns what "reach" means for each move shape
+        (weapon-derived effective range, an area swing's arc, a plain
+        ``mvrange``); this only decides whether the number is worth drawing.
+        Below ``MELEE_REACH_FT`` it is not -- a ring at 5 ft appears on nearly
+        every move and carries no information.
+        """
+        preview_reach = getattr(move, "preview_reach", None)
+        reach = preview_reach() if callable(preview_reach) else None
+        if not isinstance(reach, (int, float)) or isinstance(reach, bool):
+            return None
+        if reach <= MELEE_REACH_FT:
+            return None
+        return int(reach)
+
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""
         moves = []
@@ -2472,6 +2495,16 @@ class ApiCombatAdapter:
                 "requires_target_selection": is_targeted and len(viable_targets) > 1,
                 "cooldown_remaining": 0,
                 "cooldown_max": 0,
+                # Every living candidate, in reach or not, each with its own
+                # damage/hit preview and shortfall_ft -- see
+                # _get_target_previews. viable_targets above stays the
+                # range-filtered allow-list; this one is display-only.
+                "target_previews": self._get_target_previews(move),
+                # Area swings only (see _get_affected_previews).
+                "affected_preview": self._get_affected_previews(move),
+                # Reach in feet, drawn as a ring by the client -- but only for
+                # a move that actually outreaches a sword; see MELEE_REACH_FT.
+                "range_ring": self._range_ring(move),
                 # Named fields, not the raw stage_beat list/index convention —
                 # the client must never have to know stage_beat[0] means prep.
                 "stage_beats": {
@@ -2533,89 +2566,221 @@ class ApiCombatAdapter:
 
         return moves
 
-    def _get_available_targets(self, move) -> List[Dict[str, Any]]:
-        """Get list of available targets for a move."""
-        targets = []
+    def _move_range(self, move):
+        """``(min, max)`` reach for ``move`` right now, in feet.
 
-        # Get range from move
-        if hasattr(move, "mvrange"):
-            range_min, range_max = move.mvrange
-        else:
-            # Default to adjacent if no range specified but targeted
-            range_min, range_max = 0, 5
+        Moves that compute their range dynamically (ranged weapons whose
+        effective range extends past their melee wpnrange via
+        range_base/range_decay) override ``get_effective_range_max()`` — see
+        ``Move.get_effective_range_max`` in src/moves/_base.py.
+        """
+        # Default to adjacent when the move declares no usable range. The
+        # try/except covers degraded stand-ins whose ``mvrange`` is not a pair
+        # at all: this runs for every known move on every poll now, so it meets
+        # doubles the old targeted-and-viable-only path never reached.
+        range_min, range_max = 0, 5
+        mvrange = getattr(move, "mvrange", None)
+        try:
+            if mvrange is not None and len(mvrange) == 2:
+                range_min, range_max = mvrange
+        except TypeError:
+            pass
 
-        # Moves that compute their range dynamically (e.g. ranged weapons
-        # whose effective range extends past their melee wpnrange via
-        # range_base/range_decay) override get_effective_range_max() —
-        # see Move.get_effective_range_max in src/moves/_base.py.
-        effective_max = move.get_effective_range_max(self.player)
-        if effective_max is not None:
-            range_max = effective_max
+        # Resolved through getattr rather than called outright: the preview
+        # builders below run this for *every* known move on every poll, not
+        # just the targeted-and-viable ones the old target list covered, so it
+        # now also meets degraded stand-ins (test doubles, half-built moves)
+        # that carry no engine API at all. A missing hook means "no dynamic
+        # range", which is exactly what the base Move returns.
+        effective_range = getattr(move, "get_effective_range_max", None)
+        if callable(effective_range):
+            effective_max = effective_range(self.player)
+            if effective_max is not None:
+                range_max = effective_max
+        return range_min, range_max
 
-        # Iterate over combat_list instead of combat_proximity to ensure we use the correct enemy instances
-        for enemy in self.player.combat_list:
-            # Explicitly skip the player if they somehow ended up in the combat_list
-            if enemy == self.player:
-                continue
+    def _build_target_entry(
+        self, move, combatant, range_min, range_max, is_ally=False
+    ) -> Dict[str, Any]:
+        """One target card: identity, reach, and what the move would do to it.
 
-            if not enemy.is_alive():
-                continue
+        The single builder behind both target lists this adapter publishes —
+        :meth:`_get_available_targets` (the in-range allow-list a
+        ``select_target`` command is validated against) and the wider
+        ``target_previews`` set on each move (which *includes* out-of-reach
+        enemies so the client can say "3 ft short" instead of greying a move
+        out with no explanation). One builder means the two can never disagree
+        about a combatant's hit chance, damage or distance.
 
-            # Get distance from combat_proximity
-            distance = self.player.combat_proximity.get(enemy, 0)
+        Field contract (the client reads these by name — see CLAUDE.md's
+        wire-field-drift note):
 
-            if range_min <= distance <= range_max:
-                target_data = {
-                    "id": f"enemy_{id(enemy)}",
-                    "name": enemy.name,
-                    "distance": distance,
-                    "is_ally": False,
-                    "health": {
-                        "current": getattr(enemy, "hp", getattr(enemy, "health", 0)),
-                        "max": getattr(
-                            enemy, "maxhp", getattr(enemy, "max_health", 100)
-                        ),
-                    },
-                }
+        * ``in_range``      — bool; whether ``move`` can resolve against it now
+        * ``shortfall_ft``  — int feet the target is beyond the move's reach,
+                              ``None`` when in range (and also when the target
+                              is *too close*, below ``range_min``: "3 ft short"
+                              is not the right thing to render for that)
+        * ``damage_preview``— ``{"min", "max", "lethal"}`` or ``None``; from
+                              ``Move.preview_damage``, recomputed on the spot
+        * ``hit_chance``    — integer percent, **omitted** (not null) when the
+                              move rolls none, matching the field's pre-existing
+                              behaviour on this card
+        """
+        distance = self.player.combat_proximity.get(combatant, 0)
+        in_range = range_min <= distance <= range_max
+        entry = {
+            "id": f"{'ally' if is_ally else 'enemy'}_{id(combatant)}",
+            "name": combatant.name,
+            "distance": distance,
+            "is_ally": is_ally,
+            "health": {
+                "current": getattr(combatant, "hp", getattr(combatant, "health", 0)),
+                "max": getattr(
+                    combatant, "maxhp", getattr(combatant, "max_health", 100)
+                ),
+            },
+            "in_range": in_range,
+            "shortfall_ft": (
+                int(distance - range_max) if distance > range_max else None
+            ),
+            # Move.preview_damage (src/moves/_base.py) is the single source of
+            # this number for every move, exactly as preview_hit_chance is for
+            # the one below it. It reads facing, heat, resistance, protection
+            # and hp live, so this is the value for *this* poll -- never a
+            # figure frozen when the move was first offered.
+            #
+            # Gated on in_range because this builder now also describes targets
+            # the move cannot reach: a swing that cannot land has no damage and
+            # no hit chance, only a shortfall. The engine guards this too (see
+            # Move._within_reach) -- both, because most attacks' viable() asks
+            # only whether *some* enemy is in range and so cannot answer the
+            # per-target question on its own.
+            "damage_preview": (
+                move.preview_damage(combatant)
+                if in_range and hasattr(move, "preview_damage")
+                else None
+            ),
+        }
 
-                # Add hit chance when the move can estimate one for this target.
-                # Move.preview_hit_chance (src/moves/_base.py) is the single
-                # source of this number for every targeted move -- it delegates
-                # to calculate_hit_chance() for moves that define one (ShootBow)
-                # and otherwise mirrors that move's own execute() to-hit path.
-                # Previously gated on verbose_targeting, which only ShootBow
-                # set, so every other targeted move showed no accuracy estimate
-                # at all in the target-selection dialog.
-                if hasattr(move, "preview_hit_chance"):
-                    hit_chance = move.preview_hit_chance(enemy)
-                    if hit_chance is not None:
-                        target_data["hit_chance"] = hit_chance
+        # Add hit chance when the move can estimate one for this target.
+        # Move.preview_hit_chance (src/moves/_base.py) is the single
+        # source of this number for every targeted move -- it delegates
+        # to calculate_hit_chance() for moves that define one (ShootBow)
+        # and otherwise mirrors that move's own execute() to-hit path.
+        # Previously gated on verbose_targeting, which only ShootBow
+        # set, so every other targeted move showed no accuracy estimate
+        # at all in the target-selection dialog.
+        if in_range and hasattr(move, "preview_hit_chance"):
+            hit_chance = move.preview_hit_chance(combatant)
+            if hit_chance is not None:
+                entry["hit_chance"] = hit_chance
+        return entry
 
-                targets.append(target_data)
+    def _candidate_targets(self, move):
+        """Every combatant ``move`` may legally be pointed at, range aside.
 
-        # Include allies when the move explicitly accepts them (e.g. Advance for healing setup)
+        Iterates ``combat_list`` rather than ``combat_proximity`` to be sure of
+        using the correct enemy instances, and includes allies only when the
+        move explicitly accepts them (e.g. Advance for healing setup).
+        """
+        candidates = [
+            enemy
+            for enemy in self.player.combat_list
+            if enemy is not self.player and enemy.is_alive()
+        ]
+        allies = []
         if getattr(move, "accepts_ally_target", False):
-            for ally in self.player.combat_list_allies:
-                if ally == self.player or not ally.is_alive():
-                    continue
-                distance = self.player.combat_proximity.get(ally, 0)
-                if range_min <= distance <= range_max:
-                    targets.append(
-                        {
-                            "id": f"ally_{id(ally)}",
-                            "name": ally.name,
-                            "distance": distance,
-                            "is_ally": True,
-                            "health": {
-                                "current": getattr(ally, "hp", 0),
-                                "max": getattr(ally, "maxhp", 100),
-                            },
-                        }
-                    )
+            allies = [
+                ally
+                for ally in self.player.combat_list_allies
+                if ally is not self.player and ally.is_alive()
+            ]
+        return candidates, allies
+
+    def _get_available_targets(self, move) -> List[Dict[str, Any]]:
+        """Targets ``move`` can act on right now — the adapter's allow-list.
+
+        Deliberately range-filtered: :meth:`_resolve_target_from_options`
+        validates every client-supplied ``target_id`` against exactly this
+        list, so an out-of-reach combatant must never appear here. The wider,
+        unfiltered set lives in ``target_previews`` (see
+        :meth:`_get_target_previews`), which is display-only.
+        """
+        range_min, range_max = self._move_range(move)
+        enemies, allies = self._candidate_targets(move)
+        targets = [
+            entry
+            for entry in (
+                self._build_target_entry(move, enemy, range_min, range_max)
+                for enemy in enemies
+            )
+            if entry["in_range"]
+        ]
+        targets += [
+            entry
+            for entry in (
+                self._build_target_entry(move, ally, range_min, range_max, is_ally=True)
+                for ally in allies
+            )
+            if entry["in_range"]
+        ]
 
         # Sort by distance
         targets.sort(key=lambda t: t["distance"])
         return targets
+
+    def _get_target_previews(self, move) -> List[Dict[str, Any]]:
+        """Every living candidate for ``move``, in reach or not.
+
+        Display-only, and the reason it exists: a move greyed out because the
+        one enemy is a few feet too far is indistinguishable, in
+        ``_get_available_targets``, from a move with no target at all — both
+        publish an empty list. This one carries the out-of-reach combatants
+        with their ``shortfall_ft``, so the client can render the distance the
+        player has to close.
+        """
+        if not getattr(move, "targeted", False):
+            return []
+        enemies, allies = self._candidate_targets(move)
+        if not enemies and not allies:
+            return []
+        range_min, range_max = self._move_range(move)
+        previews = [
+            self._build_target_entry(move, enemy, range_min, range_max)
+            for enemy in enemies
+        ]
+        previews += [
+            self._build_target_entry(move, ally, range_min, range_max, is_ally=True)
+            for ally in allies
+        ]
+        previews.sort(key=lambda t: t["distance"])
+        return previews
+
+    def _get_affected_previews(self, move) -> List[Dict[str, Any]]:
+        """The set an *area* move would resolve against, one card each.
+
+        Empty for a targeted move: its affected set is the single target the
+        player picks, already published in ``viable_targets``. Area swings have
+        no ``self.target`` to preview (it is the user), so without this the
+        client has nothing at all to show for a spin or a cone —
+        ``Move.preview_affected`` is what makes them previewable.
+        """
+        if getattr(move, "targeted", False):
+            return []
+        preview_affected = getattr(move, "preview_affected", None)
+        if not callable(preview_affected):
+            return []
+        affected = preview_affected()
+        # The hook's contract is a list of combatants; anything else (a
+        # degraded stand-in returning a bare sentinel) is treated as "nothing
+        # to preview" rather than iterated blindly.
+        if not isinstance(affected, (list, tuple)) or not affected:
+            return []
+        range_min, range_max = self._move_range(move)
+        return [
+            self._build_target_entry(move, combatant, range_min, range_max)
+            for combatant in affected
+        ]
 
     def _all_combatants(self) -> List[Any]:
         """Return a flat list of every entity currently in combat (player + allies + enemies)."""
@@ -2712,7 +2877,31 @@ class ApiCombatAdapter:
         )
         battle_state["awaiting_input"] = self.awaiting_input
         battle_state["input_type"] = self.input_type
+        # Recomputed here rather than served from the stored copy: the move
+        # cards carry live previews (damage bounds, lethality, hit chance,
+        # shortfall) and the stored list was minted when the player was last
+        # asked to choose. Between that moment and this poll the target can
+        # have been chipped down, Jean's heat can have moved and the
+        # battlefield can have turned -- a frozen preview would keep promising
+        # the old numbers. Only the move-selection list is rebuilt; the other
+        # input types hold direction/number options with nothing live in them.
         battle_state["available_options"] = self.available_options
+        if self.input_type == "move_selection" and isinstance(
+            self.available_options, list
+        ):
+            try:
+                battle_state["available_options"] = self._get_available_moves()
+            except Exception:
+                # Falling back to the stored copy rather than failing the poll:
+                # this is the read path the client hits continuously, and a
+                # slightly stale preview is a far better outcome than a combat
+                # state the client cannot render at all. The execute path
+                # guards the same call for the same reason.
+                logger.warning(
+                    "Failed to refresh move previews; serving the stored "
+                    "option list",
+                    exc_info=True,
+                )
 
         # Include check_data if available (from Check move)
         if (

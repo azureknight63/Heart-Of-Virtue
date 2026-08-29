@@ -1777,9 +1777,16 @@ class TestGetAvailableMovesRemainingBranches:
         # the move rather than invented by the adapter.
         assert "hit_chance" in target
         assert target["hit_chance"] is move.preview_hit_chance.return_value
+        # `damage_preview`, `in_range` and `shortfall_ft` joined the card with
+        # the pre-commitment damage preview: the client shows what a move would
+        # do, and how far short of reach a target is, before the player commits.
         assert set(target) == {
             "id", "name", "distance", "is_ally", "health", "hit_chance",
+            "damage_preview", "in_range", "shortfall_ft",
         }
+        assert target["in_range"] is True
+        assert target["shortfall_ft"] is None
+        assert target["damage_preview"] is move.preview_damage.return_value
         # A single viable target is auto-resolved, so no selection prompt.
         assert moves[0]["requires_target_selection"] is False
         assert moves[0]["available"] is True

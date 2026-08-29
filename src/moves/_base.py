@@ -272,6 +272,284 @@ def apply_facing_damage(attacker, defender, power, steepness=1.0):
     return max(1, int(power * multiplier))
 
 
+#: The engine's damage-variance band. ``standard_execute_attack`` and every
+#: hand-rolled attack that copies its damage line multiply the resolved damage
+#: by ``random.uniform(0.8, 1.2)``; these are the two ends of that roll, and
+#: they are what ``damage_bounds`` reports as min and max.
+DAMAGE_VARIANCE_MIN = 0.8
+DAMAGE_VARIANCE_MAX = 1.2
+
+
+def _resolve_heat(attacker, heat=None):
+    """Heat multiplier to score damage with: an explicit override, else the
+    attacker's live ``heat``, else 1.0 for anything missing or non-finite.
+
+    NPCs carry ``heat`` too, but a degraded/mock combatant may not; a preview
+    must degrade to "no heat scaling" rather than raise inside the poll path.
+    """
+    if heat is None:
+        heat = getattr(attacker, "heat", 1.0)
+    try:
+        heat = float(heat)
+    except (TypeError, ValueError):
+        return 1.0
+    if not math.isfinite(heat):
+        return 1.0
+    return heat
+
+
+def damage_bounds(attacker, target, power, damage_type, heat=None, steepness=1.0):
+    """Return ``(min, max)`` integer damage for a landed, non-glancing hit.
+
+    **This is the one place the engine's damage expression is stated for
+    prediction.** ``standard_execute_attack`` resolves a hit as::
+
+        power  = apply_facing_damage(user, target, power)
+        damage = ((power * combat_resistance(target, type)) - target.protection)
+                 * user.heat * random.uniform(0.8, 1.2)
+
+    with a clamp at zero and a final ``int()``. This evaluates that same line
+    with the ``uniform`` roll pinned to each end of its band, so the pair it
+    returns brackets every non-glancing outcome exactly -- ``tests/
+    test_preview_damage.py`` pins the RNG, runs the real ``execute()``, and
+    asserts the HP removed equals these numbers rather than merely falling
+    between them.
+
+    **Glancing blows are deliberately excluded from this band.** A glance
+    halves the damage, but only lands in the narrow window where the roll
+    falls within 10 of the hit chance -- folding it in would widen every
+    headline range to 0.4x-1.2x and misrepresent the common case as if it were
+    the whole story. The glancing case is a per-outcome detail for the combat
+    log, not a property of the move the player is choosing.
+
+    ``steepness`` is passed through to ``apply_facing_damage`` for the moves
+    that sharpen the facing curve (Backstab). ``heat`` overrides the
+    attacker's own multiplier; leave it None for the live value.
+
+    Non-positive results collapse to ``(0, 0)``: when protection fully absorbs
+    the swing the engine clamps to zero *before* the variance roll, so both
+    ends land on the same floor rather than reporting a negative spread.
+    """
+    power = apply_facing_damage(attacker, target, power, steepness)
+    resistance = functions.combat_resistance(target, damage_type)
+    protection = getattr(target, "protection", 0)
+    if not isinstance(protection, (int, float)) or isinstance(protection, bool):
+        protection = 0
+    core = ((power * resistance) - protection) * _resolve_heat(attacker, heat)
+
+    def _at(variance):
+        damage = core * variance
+        if damage <= 0 or not math.isfinite(damage):
+            return 0
+        return int(damage)
+
+    return _at(DAMAGE_VARIANCE_MIN), _at(DAMAGE_VARIANCE_MAX)
+
+
+def flat_arc_damage_bounds(attacker, target, power, bonuses=()):
+    """Damage bounds for the *flat* arc expression used by Reap, Sweep and
+    Halberd Spin::
+
+        base = max(1, int(apply_facing_damage(power) - target.protection))
+
+    No resistance, no heat, and no variance roll — which is why these moves
+    return an identical min and max: their execute() has no dice in it at all,
+    and reporting a +/-20% band for them would advertise a spread the engine
+    cannot produce.
+
+    ``bonuses`` are the per-target multipliers applied *in order*, each with
+    its own ``int()`` truncation, exactly as the owning loop applies them (see
+    ``_reap_damage_bonuses``). Truncating per multiplier rather than once at
+    the end is load-bearing: two chained 1.25x on a base of 7 is 10 the way
+    the engine does it and 10.9 -> 10 either way here, but the two diverge on
+    other bases, and the engine's order is the authority.
+    """
+    swing = apply_facing_damage(attacker, target, power)
+    protection = getattr(target, "protection", 0)
+    if not isinstance(protection, (int, float)) or isinstance(protection, bool):
+        protection = 0
+    damage = max(1, int(swing - protection))
+    for multiplier in bonuses:
+        damage = int(damage * multiplier)
+    return damage, damage
+
+
+def hostiles_in_arc(move, arc_range, frontal=False, require_position=False):
+    """The living hostiles an area swing would actually resolve against.
+
+    Mirrors the enemy-selection gate every area ``execute()`` loop runs before
+    it deals damage: hostiles only (via ``Move._hostiles_in_proximity`` — an
+    ally standing in the arc must never be listed, the friendly-fire bug those
+    loops were fixed for), alive, inside ``arc_range``, and — when ``frontal``
+    — inside the 90-degree cone ahead of the user. Coordinates are preferred
+    when both combatants have them; otherwise the loop falls back to
+    ``combat_proximity`` distance, except for moves that require coordinates
+    outright (``require_position``, i.e. Whirl Attack, whose loop skips any
+    enemy with no ``combat_position``).
+
+    Pure: it reads positions and proximity and returns a list, so a preview
+    can call it every poll without touching combat state.
+    """
+    affected = []
+    user = move.user
+    user_pos = getattr(user, "combat_position", None)
+    proximity = getattr(user, "combat_proximity", None) or {}
+    for enemy, _distance in list(move._hostiles_in_proximity()):
+        if not enemy.is_alive():
+            continue
+        enemy_pos = getattr(enemy, "combat_position", None)
+        if user_pos is not None and enemy_pos is not None:
+            if positions.distance_from_coords(user_pos, enemy_pos) > arc_range:
+                continue
+            if frontal:
+                try:
+                    atk_angle = positions.angle_to_target(user_pos, enemy_pos)
+                    angle_diff = positions.attack_angle_difference(
+                        atk_angle, user_pos.facing
+                    )
+                    if angle_diff > 90:
+                        continue
+                except Exception:
+                    # Same swallow the arc loops themselves use: an
+                    # unresolvable angle keeps the enemy in the swing rather
+                    # than silently dropping it.
+                    pass
+        else:
+            if require_position:
+                continue
+            if proximity.get(enemy, 9999) > arc_range:
+                continue
+        affected.append(enemy)
+    return affected
+
+
+def _mvrange_arc(move):
+    """Arc reach taken from the move's own ``mvrange`` maximum."""
+    mvrange = getattr(move, "mvrange", None)
+    if not mvrange or len(mvrange) != 2:
+        return 0
+    return mvrange[1]
+
+
+def _weapon_arc(move):
+    """Arc reach taken from the equipped weapon's ``wpnrange`` maximum.
+
+    Reap's loop scores its cone against the *weapon's* reach, not its own
+    ``mvrange`` (which stays at the placeholder (1, 20) because its evaluate()
+    never narrows it), so a preview that used mvrange would claim a 20 ft
+    sweep for a 5 ft scythe.
+    """
+    wpnrange = getattr(getattr(move.user, "eq_weapon", None), "wpnrange", (0, 5))
+    try:
+        return wpnrange[1]
+    except (TypeError, IndexError):
+        return 5
+
+
+def _reap_damage_bonuses(move, target):
+    """Reap's per-target damage multipliers, in the order its loop applies
+    them: Grim Persistence (+25% below 35% HP) then Reaper's Mark (+25%)."""
+    bonuses = []
+    if any(
+        getattr(m, "name", "") == "Grim Persistence"
+        for m in getattr(move.user, "known_moves", [])
+    ):
+        maxhp = getattr(target, "maxhp", 0) or 0
+        if getattr(target, "hp", 0) < (maxhp * 0.35):
+            bonuses.append(1.25)
+    if getattr(target, "_reapers_mark", False) is True:
+        bonuses.append(1.25)
+    return bonuses
+
+
+def _shoot_bow_preview_power(move):
+    """Shoot Bow's execute() adds ``finesse * weapon.fin_mod`` to ``self.power``
+    immediately before scoring damage; ``evaluate()`` resets power to the
+    arrow's contribution alone, so the value sitting on the move between beats
+    understates the shot by exactly that term."""
+    power = getattr(move, "power", 0) or 0
+    weapon = getattr(move.user, "eq_weapon", None)
+    try:
+        return power + float(getattr(move.user, "finesse", 0)) * float(
+            getattr(weapon, "fin_mod", 0)
+        )
+    except (TypeError, ValueError):
+        return power
+
+
+#: Per-move preview shims for the moves whose ``execute()`` diverges from the
+#: canonical damage expression ``Move.preview_damage`` implements.
+#:
+#: **These belong as ``preview_damage``/``preview_affected`` overrides in the
+#: weapon modules that own each move** — exactly as ``preview_hit_chance``
+#: overrides live beside the ``execute()`` they mirror. They are collected
+#: here because the wave that added the damage preview owns ``_base.py`` and
+#: not the weapon modules; moving each entry into its move is a mechanical
+#: follow-up and this table should shrink to empty.
+#:
+#: Every entry is pinned by ``tests/test_preview_damage.py``, which runs the
+#: real ``execute()`` with the RNG held at each end of the band and asserts the
+#: HP removed equals the advertised bound — so a divergence here fails loudly
+#: rather than silently mispricing a move.
+#:
+#: Keys are class names (not ``move.name``) to avoid importing the weapon
+#: modules, which all import this one.
+#:
+#: * ``steepness``   — facing-curve steepness the move passes to
+#:                     ``apply_facing_damage``.
+#: * ``power``       — callable(move) -> the power its execute() actually
+#:                     scores with, when that is not ``move.power``.
+#: * ``area``        — the move hits a set rather than one target:
+#:                     ``arc`` callable(move) -> reach, ``frontal`` cone gate,
+#:                     ``require_position`` (skip enemies with no coordinates),
+#:                     ``damage`` "standard" or "flat", and ``bonuses``
+#:                     callable(move, target) -> multipliers.
+_PREVIEW_SHIMS = {
+    # Backstab scores the facing curve at double steepness
+    # (``_dagger.BACKSTAB_POSITIONAL_STEEPNESS``).
+    "Backstab": {"steepness": 2.0},
+    "ShootBow": {"power": _shoot_bow_preview_power},
+    "WhirlAttack": {
+        "area": {
+            "arc": _mvrange_arc,
+            "frontal": False,
+            "require_position": True,
+            "damage": "standard",
+        }
+    },
+    "Reap": {
+        "area": {
+            "arc": _weapon_arc,
+            "frontal": True,
+            "require_position": False,
+            "damage": "flat",
+            "bonuses": _reap_damage_bonuses,
+        }
+    },
+    "Sweep": {
+        "area": {
+            "arc": _mvrange_arc,
+            "frontal": True,
+            "require_position": False,
+            "damage": "flat",
+        }
+    },
+    "HalberdSpin": {
+        "area": {
+            "arc": _mvrange_arc,
+            "frontal": False,
+            "require_position": False,
+            "damage": "flat",
+        }
+    },
+}
+
+
+def preview_shim(move, key):
+    """Look up a per-move preview shim entry, or None. See ``_PREVIEW_SHIMS``."""
+    return _PREVIEW_SHIMS.get(type(move).__name__, {}).get(key)
+
+
 def _apply_facing_accuracy(attacker, defender, hit_chance):
     """Facing/angle system: attacks landing on a defender's flank or rear are
     harder to defend against than a head-on attack (issue #394).
@@ -699,6 +977,162 @@ class Move:  # master class for all moves
             return None
         t = target if target is not None else self.target
         return self._standard_preview_hit_chance(t, floor=5)
+
+    def _within_reach(self, target):
+        """True when ``target``'s current distance falls inside this move's
+        range band. Unknown distance (no proximity entry) counts as in reach:
+        that is a combat that has not wired proximity up yet, not a target
+        established to be too far.
+        """
+        proximity = getattr(self.user, "combat_proximity", None)
+        if not isinstance(proximity, dict) or target not in proximity:
+            return True
+        distance = proximity[target]
+        reach = self.preview_reach()
+        if reach is not None and distance > reach:
+            return False
+        mvrange = getattr(self, "mvrange", None)
+        if mvrange and len(mvrange) == 2 and distance < mvrange[0]:
+            return False
+        return True
+
+    def preview_reach(self):
+        """Maximum distance, in feet, at which this move can resolve right now
+        — or ``None`` when it declares no reach at all.
+
+        Not simply ``mvrange[1]``. A ranged move whose reach is derived from
+        the weapon overrides ``get_effective_range_max`` (the static tuple
+        would understate it), and an area swing resolves against its own arc
+        gate rather than its ``mvrange``, which for three of the four is a
+        placeholder that never narrows (Reap advertises (1, 20) while a scythe
+        sweeps 5 ft). The API renders a range ring from this, so a wrong number
+        here draws a ring the move cannot actually reach.
+        """
+        area = preview_shim(self, "area")
+        if area is not None:
+            return area["arc"](self)
+        effective = self.get_effective_range_max(self.user)
+        if effective is not None:
+            return effective
+        mvrange = getattr(self, "mvrange", None)
+        if not mvrange or len(mvrange) != 2:
+            return None
+        return mvrange[1]
+
+    def preview_affected(self):
+        """The combatants this move would actually resolve against right now.
+
+        ``[self.target]`` for a targeted move with a resolved target, ``[]``
+        for anything untargeted — except the area swings, whose damage lands
+        on a *set* selected by their own arc/range gate rather than on a single
+        assigned target. Those route through ``hostiles_in_arc`` with the
+        per-move gate recorded in ``_PREVIEW_SHIMS`` (see that table: the
+        permanent home for each is an override on the move itself).
+
+        The client needs this to preview an area move at all: without it the
+        only thing a spin or a cone could show is its own ``self.target``,
+        which for every one of them is the *user*.
+
+        Pure — no combat state is written, so it is safe to call on every poll.
+        """
+        area = preview_shim(self, "area")
+        if area is not None:
+            return hostiles_in_arc(
+                self,
+                area["arc"](self),
+                frontal=area.get("frontal", False),
+                require_position=area.get("require_position", False),
+            )
+        if not getattr(self, "targeted", False) or self.passive:
+            return []
+        target = getattr(self, "target", None)
+        if target is None or target is self.user:
+            return []
+        return [target]
+
+    def preview_damage(self, target=None):
+        """Damage this move would deal to ``target`` on a landed, non-glancing
+        hit: ``{"min": int, "max": int, "lethal": bool}`` — or ``None`` when a
+        damage number isn't meaningful.
+
+        ``None`` covers: an untargeted move that deals no damage (buffs, Rest,
+        the pure positioning moves), a move with no scored ``power``, no
+        resolvable target, a dead target, a target this move cannot currently
+        reach, and any move that isn't viable right now. ``lethal`` is
+        ``max >= target.hp`` — i.e. "this could finish it", not "this will".
+
+        The arithmetic lives in ``damage_bounds``; this method only decides
+        *whether* a preview applies and *with what power*. Everything it reads
+        (facing, heat, resistance, protection, hp) is read live, so the numbers
+        reflect the battlefield at the moment of the call rather than a value
+        frozen at move selection.
+
+        **Glancing blows are deliberately excluded from the range** — see
+        ``damage_bounds``.
+
+        Like ``preview_hit_chance``, this base implementation is the *default*
+        path only: the canonical expression with ``self.power`` and
+        ``self.base_damage_type``. **A move whose ``execute()`` computes power
+        or damage differently MUST override this method** to report what its
+        own ``execute()`` really does — a preview that quietly diverges is
+        worse than none, because the player commits to the move on it. The
+        divergences known at the time of writing are shimmed in
+        ``_PREVIEW_SHIMS`` above and pinned by ``tests/test_preview_damage.py``;
+        grep the damage line of the ``execute()`` you are changing rather than
+        trusting any enumeration, including that one.
+        """
+        if self.passive:
+            return None
+        resolved = target if target is not None else getattr(self, "target", None)
+        if resolved is None or resolved is self.user:
+            return None
+        is_alive = getattr(resolved, "is_alive", None)
+        if callable(is_alive) and not is_alive():
+            return None
+
+        area = preview_shim(self, "area")
+        if area is not None:
+            # An area move's reach test is its arc gate, not self.viable():
+            # viable() only asks whether *some* hostile is in the swing.
+            if resolved not in self.preview_affected():
+                return None
+        else:
+            if not self._viable_for(resolved):
+                return None
+            # ...and viable() is not a per-target check either. Most attacks
+            # run standard_viability_attack, which asks only whether *some*
+            # enemy sits inside mvrange -- so it stays True for a second enemy
+            # standing well outside the move's reach, and the preview would
+            # price a swing that could not land. execute() resolves that case
+            # as an auto-miss (hit_chance = -1); a preview must resolve it as
+            # "no number", not as a full-damage promise.
+            if not self._within_reach(resolved):
+                return None
+
+        power_of = preview_shim(self, "power")
+        power = power_of(self) if power_of else getattr(self, "power", None)
+        if not isinstance(power, (int, float)) or isinstance(power, bool):
+            return None
+
+        if area is not None and area.get("damage") == "flat":
+            bonuses_of = area.get("bonuses")
+            low, high = flat_arc_damage_bounds(
+                self.user,
+                resolved,
+                power,
+                bonuses_of(self, resolved) if bonuses_of else (),
+            )
+        else:
+            low, high = damage_bounds(
+                self.user,
+                resolved,
+                power,
+                getattr(self, "base_damage_type", None),
+                steepness=preview_shim(self, "steepness") or 1.0,
+            )
+
+        hp = getattr(resolved, "hp", 0)
+        return {"min": low, "max": high, "lethal": bool(high >= hp)}
 
     def can_use_coordinates(self, user):
         """Check if 2D coordinate-based movement is available for this move."""
