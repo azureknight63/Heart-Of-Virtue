@@ -53,3 +53,53 @@ export function scheduleSfxChain(cues, durationOf, speed = 1) {
   }
   return schedule;
 }
+
+/**
+ * The floor on the gap between two animation layers of one swing (ms, at 1x).
+ *
+ * The gap normally comes from the SFX chain (below), but a cue with no known
+ * length contributes 0 there — which would start every layer on the same frame
+ * and turn a four-enemy arc into one indistinguishable flash. Roughly the
+ * interval the drain effect already uses to keep its motes separable.
+ */
+export const MIN_LAYER_STAGGER_MS = 90;
+
+/**
+ * Ceiling on the lead-in from the first layer to the last (ms, at 1x). A move
+ * that catches a dozen combatants must not spend two seconds dealing them out;
+ * past this the gaps compress proportionally (they stay ordered and distinct,
+ * just tighter).
+ */
+export const MAX_LAYER_LEAD_MS = 600;
+
+/**
+ * Start offsets for the N animation layers of a single multi-target swing.
+ *
+ * One move now resolves once per target and each resolution animates in full,
+ * concurrently — but starting all N on the same frame reads as a single event,
+ * and playing them end to end reads as N separate swings. So the layers are
+ * dealt out with the SAME partial-stack spacing `scheduleSfxChain` gives their
+ * impact cues: pass the per-layer impact cue names and layer i starts exactly
+ * where cue i would. Because every layer of one swing shares an animation
+ * config (same pre-impact length), each landing's flash and its cue stay locked
+ * together, and the cues arrive spaced by the 75% overlap rather than piled on
+ * one frame or serialized.
+ *
+ * Pure. Returns `[{ index, startMs }]` in the input order; `startMs` is already
+ * speed-adjusted, like `scheduleSfxChain`.
+ */
+export function scheduleAnimationLayers(cues, durationOf, speed = 1) {
+  const s = normalizeSpeed(speed);
+  const list = cues || [];
+  const starts = [];
+  let startMs = 0;
+  for (let i = 0; i < list.length; i++) {
+    starts.push(startMs);
+    const naturalMs = (durationOf && durationOf(list[i])) || 0;
+    startMs += Math.max(MIN_LAYER_STAGGER_MS, SFX_OVERLAP * naturalMs) / s;
+  }
+  const lead = starts.length ? starts[starts.length - 1] : 0;
+  const cap = MAX_LAYER_LEAD_MS / s;
+  const scale = lead > cap ? cap / lead : 1;
+  return starts.map((offset, index) => ({ index, startMs: offset * scale }));
+}

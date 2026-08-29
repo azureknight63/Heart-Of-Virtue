@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { beatSfxFor, swingCueFor, cueForEmission } from './combatSfx';
+import { beatSfxFor, swingCueFor, cueForEmission, animationImpactCue } from './combatSfx';
 
 function beat(overrides = {}) {
   return {
@@ -105,5 +105,43 @@ describe('beatSfxFor', () => {
   it('returns empty for a beat with no sfx', () => {
     expect(beatSfxFor(beat({ sfx: [] }))).toEqual([]);
     expect(beatSfxFor({})).toEqual([]);
+  });
+});
+
+describe('animationImpactCue', () => {
+  // The cue one queued animation LANDS with. It paces that animation's layer in
+  // a multi-target swing (see scheduleAnimationLayers), and in the log-spooler
+  // path it is also the cue the layer actually plays.
+  it('resolves the config impact cue through the outcome', () => {
+    expect(animationImpactCue({ type: 'attack', outcome: 'miss' })).toBe('attack_miss');
+    expect(animationImpactCue({ type: 'sweep', outcome: 'parry' })).toBe('attack_parry');
+    expect(animationImpactCue({ type: 'attack', outcome: 'hit' })).toBe('attack_hit');
+  });
+
+  it('returns a fixed impact cue verbatim when the config declares one', () => {
+    // debuff/drain declare `sfx: { impact: 'status_hit' }` — not 'outcome'.
+    expect(animationImpactCue({ type: 'debuff', outcome: 'hit' })).toBe('status_hit');
+  });
+
+  it('prefers the engine emission when the animation carries a streamed beat', () => {
+    // Under streaming the engine authored the outcome per emission; the config
+    // is only the fallback. Reading the config here instead would ignore a
+    // per-emission outcome the server went to the trouble of sending.
+    const anim = {
+      type: 'attack',
+      outcome: 'hit',
+      beat: {
+        web_animation: 'attack',
+        outcome: 'hit',
+        sfx: [{ index: 0, kind: 'swing' }, { index: 1, kind: 'impact', outcome: 'parry' }],
+      },
+    };
+    expect(animationImpactCue(anim)).toBe('attack_parry');
+  });
+
+  it('returns null when the animation never lands (no impact cue)', () => {
+    expect(animationImpactCue({ type: 'dash' })).toBeNull();
+    expect(animationImpactCue({ type: 'death' })).toBeNull();
+    expect(animationImpactCue(null)).toBeNull();
   });
 });

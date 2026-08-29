@@ -39,29 +39,20 @@ describe('ANIMATION_CONFIGS', () => {
   });
 });
 
-describe('impact — the follow-up resolution of a multi-target swing', () => {
-  // An area move resolves independently against every enemy in its arc, so it
-  // reports one outcome per target. The first resolution rides the move's own
-  // animation (the sweep, the spin); the rest need a flash that says "and it
-  // landed here too" without replaying the whole swing — four consecutive
-  // 960 ms sweeps for one arc would be both slow and a lie about how many
-  // times the weapon moved.
-  const cfg = ANIMATION_CONFIGS.impact;
-
-  it('exists as its own animation type', () => {
-    expect(cfg).toBeDefined();
+describe('the retired `impact` follow-up type', () => {
+  // An area move resolves once per target, and every resolution now plays the
+  // move's OWN animation, concurrently — see BattlefieldGrid.concurrent.test.
+  // `impact` existed only to serve the adapter's downgrade of every resolution
+  // after the first to a 200ms outcome flash, which is exactly the behaviour
+  // the owner asked to replace. Nothing emits it any more, so it is gone
+  // rather than left here as a config no code path can reach.
+  it('is not part of the taxonomy', () => {
+    expect(ANIMATION_CONFIGS.impact).toBeUndefined();
   });
 
-  it('is short enough to chain several per swing', () => {
-    // Four enemies => swing + 3 impacts must stay inside a readable beat.
-    expect(cfg.duration).toBeLessThanOrEqual(260);
-  });
-
-  it('flashes the target with the outcome and moves no one', () => {
-    expect(cfg.target).toBe('strike');
-    expect(cfg.phases.some((p) => p.name === 'impact')).toBe(true);
-    expect(cfg.sfx.impact).toBe('outcome');
-    expect(cfg.motion).toBeUndefined();
+  it('degrades to pulse rather than throwing if a stale server still sends it', () => {
+    expect(getAnimationConfig('impact')).toBe(ANIMATION_CONFIGS.pulse);
+    expect(getAnimationDuration('impact')).toBe(ANIMATION_CONFIGS.pulse.duration);
   });
 });
 

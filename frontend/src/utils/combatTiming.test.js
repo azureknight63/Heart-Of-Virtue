@@ -3,6 +3,9 @@ import {
   normalizeSpeed,
   effectiveDuration,
   scheduleSfxChain,
+  scheduleAnimationLayers,
+  MIN_LAYER_STAGGER_MS,
+  MAX_LAYER_LEAD_MS,
   SFX_OVERLAP,
   COMBAT_SPEED_STEPS,
   DEFAULT_COMBAT_SPEED,
@@ -73,5 +76,66 @@ describe('COMBAT_SPEED_STEPS', () => {
   it('is a stepped, ascending list including the 1x default', () => {
     expect(COMBAT_SPEED_STEPS).toEqual([0.5, 0.75, 1, 1.5, 2]);
     expect(COMBAT_SPEED_STEPS).toContain(DEFAULT_COMBAT_SPEED);
+  });
+});
+
+describe('scheduleAnimationLayers', () => {
+  // Real cue lengths, so the numbers below are the ones production plays.
+  const durationOf = (cue) => ({ attack_hit: 150, attack_miss: 250, attack_glance: 120 }[cue] || 0);
+
+  it('starts a single layer immediately', () => {
+    expect(scheduleAnimationLayers(['attack_hit'], durationOf)).toEqual([
+      { index: 0, startMs: 0 },
+    ]);
+  });
+
+  it('returns an empty schedule for no layers', () => {
+    expect(scheduleAnimationLayers([], durationOf)).toEqual([]);
+    expect(scheduleAnimationLayers(undefined, durationOf)).toEqual([]);
+  });
+
+  it('staggers layers by the SFX chain gap, so flash and cue stay locked', () => {
+    // The owner asked for the animations to be layered *along with* the SFX.
+    // Deriving the visual stagger from scheduleSfxChain's 75% partial stack is
+    // what makes that literally true: layer i starts where cue i would.
+    const layers = scheduleAnimationLayers(
+      ['attack_hit', 'attack_hit', 'attack_hit', 'attack_hit'], durationOf
+    );
+    const chain = scheduleSfxChain(
+      ['attack_hit', 'attack_hit', 'attack_hit', 'attack_hit'], durationOf
+    );
+    expect(layers.map((l) => l.startMs)).toEqual(chain.map((c) => c.startMs));
+    // 0.75 * 150 = 112.5 per layer
+    expect(layers.map((l) => l.startMs)).toEqual([0, 112.5, 225, 337.5]);
+  });
+
+  it('compresses the stagger at higher combat speed', () => {
+    const layers = scheduleAnimationLayers(['attack_hit', 'attack_hit'], durationOf, 2);
+    expect(layers[1].startMs).toBeCloseTo(56.25);
+  });
+
+  it('never fires two layers on the same frame, even with an unknown cue', () => {
+    // A cue with no known length yields a 0 gap in scheduleSfxChain, which
+    // would stack every layer on one frame — the exact "chaos" the concurrent
+    // path exists to avoid. The floor keeps them readable.
+    const layers = scheduleAnimationLayers(['mystery', 'mystery', 'mystery'], durationOf);
+    expect(layers[1].startMs).toBe(MIN_LAYER_STAGGER_MS);
+    expect(layers[2].startMs).toBe(MIN_LAYER_STAGGER_MS * 2);
+  });
+
+  it('caps the total lead-in so a big arc never crawls', () => {
+    const many = Array.from({ length: 12 }, () => 'attack_miss'); // 187.5ms gaps
+    const layers = scheduleAnimationLayers(many, durationOf);
+    expect(layers[layers.length - 1].startMs).toBeCloseTo(MAX_LAYER_LEAD_MS);
+    // Still strictly increasing — compression must not collapse layers together.
+    for (let i = 1; i < layers.length; i++) {
+      expect(layers[i].startMs).toBeGreaterThan(layers[i - 1].startMs);
+    }
+  });
+
+  it('scales the lead-in cap with combat speed', () => {
+    const many = Array.from({ length: 12 }, () => 'attack_miss');
+    const layers = scheduleAnimationLayers(many, durationOf, 2);
+    expect(layers[layers.length - 1].startMs).toBeCloseTo(MAX_LAYER_LEAD_MS / 2);
   });
 });

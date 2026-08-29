@@ -70,3 +70,30 @@ export function beatSfxFor(beat) {
   }
   return cues;
 }
+
+/**
+ * The concrete cue one queued animation LANDS with, or null when it never
+ * lands (a dash, a death burst, an unrecognized type).
+ *
+ * Two callers, one answer. It paces the animation layers of a multi-target
+ * swing (combatTiming.scheduleAnimationLayers spaces layer i by the length of
+ * cue i), and in the log-spooler path it is also the cue that layer plays on
+ * its impact phase. Deriving both from here is what keeps a landing's flash and
+ * its sound on the same schedule.
+ *
+ * A streamed beat wins over the config: under streaming the engine authors an
+ * outcome per emission, and an arc that parries one enemy while striking
+ * another sends exactly that. The config path (`sfx.impact`, with the special
+ * value 'outcome') is the log-spooler fallback, where no emissions exist.
+ */
+export function animationImpactCue(anim) {
+  if (!anim) return null;
+  const emissions = anim.beat?.sfx;
+  if (emissions) {
+    const impact = emissions.find((e) => e.kind === 'impact');
+    if (impact) return cueForEmission(impact, anim.beat);
+  }
+  const cue = getAnimationConfig(anim.type).sfx?.impact;
+  if (!cue) return null;
+  return cue === 'outcome' ? impactSfxFor(anim.outcome) : cue;
+}

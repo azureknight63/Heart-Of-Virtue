@@ -430,27 +430,6 @@ export const ANIMATION_CONFIGS = {
     ],
   },
 
-  // The follow-up resolution of a multi-target swing. An area move (Sweep,
-  // Halberd Spin, Reap) resolves independently against every enemy in its arc
-  // and reports one outcome per enemy, so a four-enemy sweep produces four
-  // impacts. The first carries the move's own animation; replaying that config
-  // for the rest would render one arc as four consecutive 960 ms spins, so
-  // every later landing gets this instead: no source motion, no windup, just
-  // the outcome flash and its cue on the enemy it happened to. Chip Away's
-  // three strikes use it the same way — one lunge, three resolutions.
-  //
-  // Not a `web_animation` any move declares; the combat adapter substitutes it
-  // (FOLLOW_UP_IMPACT_ANIMATION in src/api/combat_adapter.py).
-  impact: {
-    duration: 200,
-    phases: [
-      { name: 'impact', duration: 130 },
-      { name: 'return', duration: 70 },
-    ],
-    target: 'strike',
-    shake: true,
-    sfx: { impact: 'outcome' },
-  },
 };
 
 /** Resolve a config for the given type, falling back to `pulse` when unknown.
