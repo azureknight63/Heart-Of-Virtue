@@ -11,6 +11,7 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     weapon_scaled_power,
     apply_facing_damage,
+    hostiles_in_arc,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
@@ -84,8 +85,63 @@ class Reap(Move):
     def evaluate(self):
         self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)
 
+    def preview_reach(self):
+        """Reap's arc is scored against the *weapon's* reach — see the
+        ``wpn_range`` line at the top of ``execute`` — not its own ``mvrange``,
+        which ``evaluate`` never narrows from the ``(1, 20)`` placeholder. The
+        default would advertise a 20 ft sweep for a 5 ft scythe.
+        """
+        wpnrange = getattr(getattr(self.user, "eq_weapon", None), "wpnrange", (0, 5))
+        try:
+            return wpnrange[1]
+        except (TypeError, IndexError):
+            return 5
+
+    def preview_affected(self):
+        """Everything ``execute``'s loop below would swing at: the living
+        hostiles inside the 90-degree frontal hemisphere at weapon reach,
+        falling back to ``combat_proximity`` distance when either combatant
+        has no coordinates.
+        """
+        return hostiles_in_arc(self, self.preview_reach(), frontal=True)
+
+    def preview_damage(self, target=None):
+        """Reap does not run the canonical damage expression at all: its loop
+        deals ``max(1, int(swing_power - protection))``, with no resistance,
+        no heat scaling and no variance roll — so min and max are the same
+        number — then applies ``_damage_multipliers`` in order. See ``execute``.
+        """
+        return self._area_preview_damage(
+            target, flat=True, bonuses=self._damage_multipliers(target)
+        )
+
     def prep(self, user):
         cprint(f"{user.name} raises the scythe for a wide sweep...", "magenta")
+
+    def _damage_multipliers(self, enemy):
+        """The per-target damage multipliers this sweep applies to ``enemy``,
+        in the order ``execute``'s loop applies them.
+
+        The single derivation of the pair, read by both the loop and
+        ``preview_damage`` — the numbers and their order used to be stated
+        twice, once here and once in a preview lookup table in another file.
+        Order and per-multiplier truncation are load-bearing: the loop
+        ``int()``s after each one, not once at the end.
+
+        * Grim Persistence (passive): +25% against a target below 35% HP.
+        * Reaper's Mark: +25% against a marked target.
+        """
+        multipliers = []
+        if any(
+            getattr(m, "name", "") == "Grim Persistence"
+            for m in getattr(self.user, "known_moves", [])
+        ):
+            maxhp = getattr(enemy, "maxhp", 0) or 0
+            if getattr(enemy, "hp", 0) < (maxhp * 0.35):
+                multipliers.append(1.25)
+        if getattr(enemy, "_reapers_mark", False) is True:
+            multipliers.append(1.25)
+        return multipliers
 
     def execute(self, user):
         cprint(f"{user.name} sweeps the scythe in a devastating arc!", "magenta")
@@ -137,19 +193,11 @@ class Reap(Move):
             # for every target but one.
             swing_power = apply_facing_damage(self.user, enemy, self.power)
             base_dmg = max(1, int(swing_power - enemy.protection))
-            # GrimPersistence passive: +25% damage vs targets below 35% HP
-            if (
-                any(
-                    getattr(m, "name", "") == "Grim Persistence"
-                    for m in getattr(user, "known_moves", [])
-                )
-                and enemy.hp < (enemy.maxhp * 0.35)
-            ):
-                base_dmg = int(base_dmg * 1.25)
-            # ReapersMark: marked target takes +25% damage; consumed on a landed hit
+            # Truncated per multiplier, in order -- see _damage_multipliers.
+            for multiplier in self._damage_multipliers(enemy):
+                base_dmg = int(base_dmg * multiplier)
+            # ReapersMark is consumed on a landed hit; see below.
             marked = getattr(enemy, "_reapers_mark", False) is True
-            if marked:
-                base_dmg = int(base_dmg * 1.25)
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)

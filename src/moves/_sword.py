@@ -11,6 +11,7 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     weapon_scaled_power,
     apply_facing_damage,
+    hostiles_in_arc,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
@@ -171,6 +172,22 @@ class WhirlAttack(Move):
         if wpn is not None and hasattr(wpn, "base_damage_type"):
             self.base_damage_type = wpn.base_damage_type
         self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)
+
+    def preview_affected(self):
+        """Everything ``execute``'s loop below would swing at: a full circle
+        (no arc gate) out to ``mvrange[1]``, and — unlike the cone swings — it
+        skips any enemy without ``combat_position`` outright rather than
+        falling back to ``combat_proximity`` distance.
+        """
+        return hostiles_in_arc(self, self.preview_reach(), require_position=True)
+
+    def preview_damage(self, target=None):
+        """Each enemy in the spin takes the canonical damage expression on
+        ``self.power`` — ``execute`` scores the same line the standard pipeline
+        does, per enemy. Only *who* it lands on differs, and that is
+        ``preview_affected`` above.
+        """
+        return self._area_preview_damage(target)
 
     def prep(self, user):
         """Prep stage - announce the spin."""

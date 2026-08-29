@@ -11,6 +11,7 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     weapon_scaled_power,
     apply_facing_damage,
+    hostiles_in_arc,
     Move,
     PassiveMove,
     _apply_to_hit_modifiers,
@@ -215,6 +216,22 @@ class Sweep(Move):
             self.mvrange = (1, arc_range[1] + 2 + reach_bonus)
         except (TypeError, AttributeError):
             pass
+
+    def preview_affected(self):
+        """Everything ``execute``'s loop below would swing at: the living
+        hostiles inside the 90-degree frontal cone out to ``mvrange[1]``
+        (``evaluate`` sets that from the weapon's reach plus Reach Mastery),
+        falling back to ``combat_proximity`` distance when either combatant
+        has no coordinates.
+        """
+        return hostiles_in_arc(self, self.preview_reach(), frontal=True)
+
+    def preview_damage(self, target=None):
+        """Sweep's loop deals ``max(1, int(swing_power - protection))`` — no
+        resistance, no heat scaling and no variance roll, so min and max are
+        the same number rather than a band. See ``execute``.
+        """
+        return self._area_preview_damage(target, flat=True)
 
     def prep(self, user):
         cprint(f"{user.name} winds up for a wide sweep...", "cyan")
@@ -427,6 +444,22 @@ class HalberdSpin(Move):
                 self.mvrange = (1, arc_range[1] + 3 + reach_bonus)
         except (TypeError, AttributeError):
             pass
+
+    def preview_affected(self):
+        """Everything ``execute``'s loop below would swing at: a full circle
+        (no cone gate — that is the whole point of the spin) out to
+        ``mvrange[1]``, which ``evaluate`` sets from the weapon's reach plus
+        Reach Mastery, falling back to ``combat_proximity`` distance when
+        either combatant has no coordinates.
+        """
+        return hostiles_in_arc(self, self.preview_reach())
+
+    def preview_damage(self, target=None):
+        """Halberd Spin's loop deals ``max(1, int(swing_power - protection))``
+        — no resistance, no heat scaling and no variance roll, so min and max
+        are the same number rather than a band. See ``execute``.
+        """
+        return self._area_preview_damage(target, flat=True)
 
     def prep(self, user):
         cprint(f"{user.name} begins a wide spinning stance...", "cyan")

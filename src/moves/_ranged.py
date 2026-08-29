@@ -346,6 +346,25 @@ class ShootBow(
         if hasattr(self, "arrow") and self.arrow:
             self.base_damage_type = items.get_base_damage_type(self.arrow)
 
+    def preview_damage(self, target=None):
+        """Shoot Bow scores the canonical damage expression, but not on
+        ``self.power``: ``execute`` adds ``finesse * weapon.fin_mod`` to it
+        immediately before the damage line, while ``evaluate`` — which runs
+        every beat — resets it to the arrow's contribution alone. The value
+        sitting on the move between beats therefore understates the shot by
+        exactly that term, and a preview that read it would underprice every
+        shot the player is about to take.
+        """
+        weapon = getattr(self.user, "eq_weapon", None)
+        power = getattr(self, "power", 0) or 0
+        try:
+            power += float(getattr(self.user, "finesse", 0)) * float(
+                getattr(weapon, "fin_mod", 0)
+            )
+        except (TypeError, ValueError):
+            pass
+        return self._standard_preview_damage(target, power=power)
+
     def execute(self, player):
         glance = False  # switch for determining a glancing blow
         self.prep_colors()

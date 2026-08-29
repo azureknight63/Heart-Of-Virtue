@@ -609,6 +609,17 @@ class Backstab(Move):
             self.user, self.target, BACKSTAB_POSITIONAL_STEEPNESS
         )
 
+    def preview_damage(self, target=None):
+        """Backstab's damage line is the canonical expression scored at its own
+        steeper facing curve — see ``_positional_modifier`` for the curve and
+        ``execute`` for the ``apply_facing_damage`` call this mirrors. Nothing
+        else about the line diverges, so the steepness is the only argument
+        that changes.
+        """
+        return self._standard_preview_damage(
+            target, steepness=BACKSTAB_POSITIONAL_STEEPNESS
+        )
+
     def execute(self, player):
         glance = False
         self.prep_colors()

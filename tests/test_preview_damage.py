@@ -34,12 +34,18 @@ The four shapes, and why each needs its own case:
   ``standard_evaluate_attack``.
 """
 
+import ast
 import contextlib
 import copy
+import importlib
+import inspect
+import pathlib
+import textwrap
 from unittest.mock import patch
 
 import pytest
 
+import src.moves as _moves_pkg
 import src.moves._base as moves_base
 from src.items import (
     Crossbow,
@@ -518,29 +524,247 @@ class TestPreviewMatchesRealExecute:
         self._assert_bounds_hold(self._shoot_bow, variance, key)
 
 
-class TestShimDriftGuards:
-    """The shims in ``_PREVIEW_SHIMS`` restate constants that live in the
-    weapon modules; pin them to their source so a retune there cannot silently
-    leave the preview behind."""
+#: Every submodule of ``src.moves``, globbed rather than listed. Same rule as
+#: ``tests/test_facing_damage_hand_rolled_attacks.py`` and for the same reason:
+#: this guard replaces a hand-maintained table of the moves whose damage
+#: diverges, so it must not itself become one. A new weapon module is covered
+#: the day it lands, with nobody having to remember this file exists.
+MOVE_MODULES = tuple(
+    f"src.moves.{path.stem}"
+    for path in sorted(pathlib.Path(_moves_pkg.__file__).parent.glob("*.py"))
+    if path.stem != "__init__"
+)
 
-    def test_backstab_steepness_matches_the_engine_constant(self):
-        from src.moves._dagger import BACKSTAB_POSITIONAL_STEEPNESS
+#: NPC moves are excluded, structurally rather than by name. The preview is
+#: computed only for ``self.player.known_moves`` (see
+#: ``ApiCombatAdapter._get_available_targets`` and ``_build_target_entry``);
+#: nothing ever calls ``preview_damage`` on a move an NPC is running, so a
+#: divergence there cannot mislead a player mid-commitment. If NPC intent ever
+#: grows a damage preview, delete this line — that is the whole change.
+NPC_MOVE_MODULE = "src.moves._npc"
 
-        player = _make_player(Dagger())
-        assert (
-            moves_base.preview_shim(Backstab(player), "steepness")
-            == BACKSTAB_POSITIONAL_STEEPNESS
+#: How an ``execute()`` is recognised as reducing somebody's HP. Same spellings
+#: as the facing-curve guard, and for the same reason: the package genuinely
+#: uses several, and a signal list that is too narrow fails silently in the
+#: safe-looking direction.
+_DAMAGE_SIGNALS = ("self.hit(", "hp -=", "hp = max(", ".hp = max(")
+
+#: Damage paths that diverge but are knowingly left on the default preview,
+#: with the reason. Not a shim: nothing here changes what any move does. An
+#: entry is a debt to be paid by *fixing the move*, and the test below fails if
+#: one stops naming a real divergence.
+_KNOWN_GAPS = {
+    "Jab": (
+        "Known mispricing, not a decision. Jab's execute() deals "
+        "`power - protection` with no resistance, no heat scaling and no "
+        "variance roll, so the default preview overstates it exactly as the "
+        "shim table's absence always did. Left alone during the shim migration "
+        "because correcting it moves numbers the player sees, which is a "
+        "balance-visible change and not a refactor. Fix it with a "
+        "preview_damage override on Jab and delete this entry."
+    ),
+}
+
+
+def _defining_class(cls, method_name):
+    """The class in ``cls``'s MRO that actually supplies ``method_name``."""
+    for klass in cls.__mro__:
+        if method_name in vars(klass):
+            return klass
+    return None
+
+
+def _castable_move_classes():
+    """Every castable ``Move`` subclass defined in a non-NPC `src.moves` module."""
+    found = []
+    for module_name in MOVE_MODULES:
+        if module_name == NPC_MOVE_MODULE:
+            continue
+        module = importlib.import_module(module_name)
+        for name, obj in vars(module).items():
+            if not inspect.isclass(obj) or not issubclass(obj, moves_base.Move):
+                continue
+            if obj.__module__ != module_name:
+                continue  # re-export, not a definition
+            if issubclass(obj, moves_base.PassiveMove):
+                continue  # never castable, never rolls damage
+            found.append((module_name, name, obj))
+    return found
+
+
+def _divergences(source):
+    """Why this ``execute()`` departs from the canonical damage path, if it does.
+
+    The canonical path is the expression ``damage_bounds`` states: power scaled
+    by the facing curve at steepness 1.0, times resistance, less protection,
+    times heat, times ``random.uniform(0.8, 1.2)``, on ``self.power`` against
+    ``self.target``. Each signal below is one way an ``execute()`` stops
+    matching it -- and each is a way the preview silently mispriced a move
+    before that move grew an override.
+    """
+    reasons = []
+    if "_hostiles_in_proximity()" in source:
+        reasons.append("damages a set of enemies rather than self.target")
+    if "standard_execute_attack(" not in source and "random.uniform(" not in source:
+        reasons.append("scores damage outside the canonical variance expression")
+    for node in ast.walk(ast.parse(textwrap.dedent(source))):
+        if isinstance(node, ast.Call):
+            named = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if named == "apply_facing_damage" and (
+                len(node.args) > 3
+                or any(kw.arg == "steepness" for kw in node.keywords)
+            ):
+                reasons.append("scores the facing curve at a non-default steepness")
+        targets = []
+        if isinstance(node, ast.AugAssign):
+            targets = [node.target]
+        elif isinstance(node, ast.Assign):
+            targets = node.targets
+        for target in targets:
+            if isinstance(target, ast.Attribute) and target.attr == "power":
+                reasons.append("rewrites self.power before scoring damage")
+    return sorted(set(reasons))
+
+
+def _divergent_damage_paths():
+    """``(module, name, cls, reasons)`` for every castable move whose
+    ``execute()`` deals damage by something other than the canonical line."""
+    paths = []
+    for module_name, name, cls in _castable_move_classes():
+        defining = _defining_class(cls, "execute")
+        if defining is None or defining is moves_base.Move:
+            continue  # inert base execute -- narration only
+        source = inspect.getsource(vars(defining)["execute"])
+        if not any(signal in source for signal in _DAMAGE_SIGNALS):
+            continue
+        reasons = _divergences(source)
+        if reasons:
+            paths.append((module_name, name, cls, reasons))
+    return paths
+
+
+def _previewable(cls):
+    """Can the preview ever produce a number for this move?
+
+    Only if something resolves a target for it: it is targeted (the adapter
+    prices each candidate the player could point it at), or it overrides
+    ``preview_affected`` (an area swing, whose affected set the adapter prices
+    one by one). An untargeted move that does neither resolves ``self.target``
+    -- itself -- so the default returns ``None`` and there is no number to be
+    wrong. Blood of Martyrs is the one such move today; the test below pins
+    that premise so this is not a silent assumption.
+    """
+    init = _defining_class(cls, "__init__")
+    if init is not None and "targeted=True" in inspect.getsource(vars(init)["__init__"]):
+        return True
+    return _defining_class(cls, "preview_affected") is not moves_base.Move
+
+
+def _is_area_move(cls, reasons):
+    """An area swing: it damages a set, so ``self.target`` (the user, for every
+    one of them) cannot describe who it hits."""
+    return any("set of enemies" in reason for reason in reasons)
+
+
+class TestDivergentMovesOwnTheirPreview:
+    """The shim table is gone; this is what replaces it.
+
+    ``_PREVIEW_SHIMS`` was a second description of six moves' behaviour, kept
+    in a file none of their owners had reason to open, keyed by class name. It
+    is the structural pattern behind most of this codebase's recent bugs (see
+    CLAUDE.md's wire-field-drift and to-hit notes), and the guard that used to
+    sit here only checked that its keys named real classes -- which says
+    nothing at all once the table is empty.
+
+    So: assert the table is gone, and assert the property that made it
+    unnecessary -- a move whose ``execute()`` diverges from the canonical
+    damage line carries its own ``preview_damage``, beside the ``execute()``
+    it mirrors. The next divergent move then gets an override rather than a
+    new lookup table.
+    """
+
+    def test_the_shim_table_and_its_plumbing_are_gone(self):
+        assert not getattr(moves_base, "_PREVIEW_SHIMS", None), (
+            "_PREVIEW_SHIMS is back. A per-move divergence belongs on the move "
+            "as a preview_damage/preview_affected override, not in a class-name "
+            "lookup table in _base.py."
+        )
+        assert not hasattr(moves_base, "preview_shim")
+
+    def test_the_enumeration_actually_finds_the_divergences(self):
+        """A guard that silently matches nothing is worse than no guard.
+
+        These are the six the shim table described plus the one gap it never
+        covered; if the enumeration stops seeing them it has broken, not the
+        package.
+        """
+        found = {name for _, name, _, _ in _divergent_damage_paths()}
+        for expected in (
+            "Backstab",
+            "ShootBow",
+            "WhirlAttack",
+            "Reap",
+            "Sweep",
+            "HalberdSpin",
+            "Jab",
+        ):
+            assert expected in found, f"{expected} vanished from the enumeration"
+
+    def test_every_divergent_move_declares_its_own_preview_damage(self):
+        missing = []
+        for module_name, name, cls, reasons in _divergent_damage_paths():
+            if name in _KNOWN_GAPS or not _previewable(cls):
+                continue
+            if _defining_class(cls, "preview_damage") is moves_base.Move:
+                missing.append(f"{module_name}.{name}: {'; '.join(reasons)}")
+        assert not missing, (
+            "these moves' execute() diverges from the canonical damage line "
+            "while their preview still reports it -- give each one a "
+            "preview_damage override beside its execute():\n  "
+            + "\n  ".join(missing)
         )
 
-    def test_every_shimmed_class_name_names_a_real_move(self):
-        import src.moves as moves
+    def test_every_area_move_declares_its_own_preview_affected(self):
+        """An area swing that does not override ``preview_affected`` previews
+        *nobody*: it is untargeted with ``self.target`` set to the user, so the
+        default reports an empty list and the client has nothing to draw."""
+        missing = []
+        for module_name, name, cls, reasons in _divergent_damage_paths():
+            if not _is_area_move(cls, reasons):
+                continue
+            if _defining_class(cls, "preview_affected") is moves_base.Move:
+                missing.append(f"{module_name}.{name}")
+        assert not missing, (
+            "these area moves damage a set of enemies but preview nobody:\n  "
+            + "\n  ".join(missing)
+        )
 
-        known = {
-            cls.__name__
-            for cls in vars(moves).values()
-            if isinstance(cls, type) and issubclass(cls, moves_base.Move)
-        }
-        assert set(moves_base._PREVIEW_SHIMS) <= known
+    def test_an_untargeted_move_with_no_affected_set_needs_no_override(self):
+        """Why the guard above does not demand one from Blood of Martyrs.
+
+        It is untargeted and overrides neither ``preview_affected`` nor
+        ``preview_damage``, so the default resolves ``self.target`` -- the user
+        -- and returns ``None``. There is no number to be wrong. This pins that
+        premise rather than leaving it as a silent assumption.
+        """
+        from src.moves import BloodOfMartyrs
+
+        player = _make_player(Shortsword())
+        move = BloodOfMartyrs(player)
+        assert move.preview_affected() == []
+        assert move.preview_damage() is None
+
+    @pytest.mark.parametrize("name", sorted(_KNOWN_GAPS))
+    def test_each_known_gap_still_describes_a_real_divergence(self, name):
+        """Gaps rot into lies. If the move stops diverging (or grows the
+        override), the entry must go rather than sit there implying a debt that
+        no longer exists."""
+        paths = {n: cls for _, n, cls, _ in _divergent_damage_paths()}
+        assert name in paths, f"_KNOWN_GAPS['{name}'] no longer diverges -- delete it"
+        assert _defining_class(paths[name], "preview_damage") is moves_base.Move, (
+            f"{name} now overrides preview_damage -- delete its _KNOWN_GAPS entry"
+        )
+        assert len(_KNOWN_GAPS[name]) > 40, "a gap needs a reason, not a label"
 
 
 # ---------------------------------------------------------------------------
