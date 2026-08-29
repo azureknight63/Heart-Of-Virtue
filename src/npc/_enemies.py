@@ -12,6 +12,7 @@ import src.genericng as genericng  # type: ignore
 import src.moves as moves  # type: ignore
 
 from ._base import NPC
+from ._combat import move_is_cooling
 from ._loot import loot
 
 
@@ -392,6 +393,11 @@ class TalusHound(NPC):
                 weighted_moves.append(move)
 
         if not weighted_moves:
+            # Every move is mid-cooldown (refresh_moves filters those out):
+            # rest so the hound recovers fatigue instead of standing still.
+            # Mirrors the same fallback in NPCCombatMixin.select_move.
+            if any(move_is_cooling(m) for m in self.known_moves):
+                self.current_move = moves.NpcRest(self)
             return
 
         # Fatigue management: rest if can't attack
