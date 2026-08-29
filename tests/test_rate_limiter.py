@@ -16,6 +16,12 @@ Covers three things the route blueprints all depend on:
 * The two call-site helpers the parse guard is worthless without:
   ``RateLimiter.check`` (a ``None`` tier never limits) and
   ``rate_limited_response`` (one 429 body for the whole API).
+* The contract that body's ``error`` field carries: a machine token there is
+  only legible to a *person* if ``message`` comes with it, because
+  ``frontend/src/utils/apiError.js`` reads ``message || error || fallback``.
+  Guarded twice -- at runtime for a blank message reaching the helper, and by
+  an AST scan over ``src/api`` for a route that hand-builds the body and never
+  reaches the helper at all.
 """
 
 import ast
@@ -29,6 +35,7 @@ import pytest
 from flask import Flask
 
 from src.api.rate_limiter import (
+    MACHINE_TOKEN_ERROR,
     RATE_LIMITED_ERROR,
     RateLimiter,
     _SWEEP_INTERVAL,
@@ -1135,3 +1142,273 @@ class TestEvery429GoesThroughTheHelper:
         ]
         for snippet in quiet:
             assert _rate_limit_status_literals(snippet) == [], snippet
+
+
+def _all_api_modules():
+    """Every module under ``src/api``, the factory included.
+
+    Deliberately wider than ``_api_modules()``: that scan excludes
+    ``rate_limiter.py`` because the factory is the one place allowed to
+    construct a limiter. Here the factory is the opposite -- it holds the one
+    canonical token-plus-message body in the tree, so excluding it would drop
+    the very row that proves the scan below is looking at something.
+    """
+    return sorted(_api_dir().rglob("*.py"))
+
+
+def _module_string_constants(tree: ast.AST):
+    """Module-level ``NAME = "literal"`` bindings in ``tree``.
+
+    Without this the scan reads ``{"error": RATE_LIMITED_ERROR}`` as an unknown
+    value and says nothing -- which is precisely the spelling the canonical
+    body uses, so the scan would have been blind to the one shape it is
+    modelled on.
+    """
+    constants = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets = [t for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            targets = [node.target]
+        else:
+            continue
+        value = node.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            for target in targets:
+                constants[target.id] = value.value
+    return constants
+
+
+def _imported_error_tokens(tree: ast.AST):
+    """Token constants a module pulls in from ``rate_limiter`` by name.
+
+    One entry, because there is one: a route doing ``from src.api.rate_limiter
+    import RATE_LIMITED_ERROR`` and then building its own body around it is a
+    real way to ship a token with no ``message``, and resolving it needs the
+    value from the other module rather than this one. Taken from the live
+    import at the top of this file rather than re-typed, so a rename cannot
+    leave a stale copy here.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith(
+            "rate_limiter"
+        ):
+            for alias in node.names:
+                if alias.name == "RATE_LIMITED_ERROR":
+                    return {alias.asname or alias.name: RATE_LIMITED_ERROR}
+    return {}
+
+
+def token_error_bodies(source: str):
+    """Every failure body in ``source`` whose ``error`` is a machine token.
+
+    Returns ``(lineno, token, has_message)`` triples. Structural rather than
+    textual: a token named in a comment or a docstring is prose *about* the
+    contract, not an instance of it, and a scan that cried wolf on those would
+    be silenced with a ``# noqa`` and stop guarding -- the same reasoning as
+    the ``429`` scan above.
+    """
+    tree = ast.parse(source)
+    names = dict(_module_string_constants(tree))
+    names.update(_imported_error_tokens(tree))
+
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        keys = {}
+        for key, value in zip(node.keys, node.values):
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                keys[key.value] = value
+        if "error" not in keys:
+            continue
+
+        value = keys["error"]
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            token = value.value
+        elif isinstance(value, ast.Name):
+            token = names.get(value.id)
+        else:
+            token = None
+        if token is None or not MACHINE_TOKEN_ERROR.match(token):
+            continue
+
+        found.append((node.lineno, token, "message" in keys))
+    return sorted(found)
+
+
+def token_errors_without_message(source: str):
+    """Line numbers where ``source`` ships a token in ``error`` and no prose."""
+    return [
+        line for line, _token, has_message in token_error_bodies(source)
+        if not has_message
+    ]
+
+
+class TestATokenInErrorAlwaysCarriesAMessage:
+    """The guard that stops the ``rate_limited`` regression recurring.
+
+    ``TestEvery429GoesThroughTheHelper`` above stops a fifth route hand-rolling
+    a bare ``..., 429``. It does not stop the other half: a route emitting a
+    machine token in ``error`` with no ``message`` beside it, at any status.
+    ``frontend/src/utils/apiError.js`` reads ``message || error || fallback``,
+    so such a body reaches the player as the token itself -- which is what
+    ``FeedbackDialog`` did with the literal string ``rate_limited`` the day
+    ``feedback.py`` adopted the shared 429 body.
+
+    A scan rather than only a runtime check, because the failure is an
+    *authoring* event: a hand-built body calls nothing ``rate_limiter.py``
+    owns, and a rarely-taken error branch may never execute under test at all.
+    The runtime half covers the other direction -- reaching the sanctioned
+    helper with nothing to say.
+    """
+
+    def test_no_api_module_ships_a_token_without_prose(self):
+        api_dir = _api_dir()
+        offenders = {}
+        for path in _all_api_modules():
+            lines = token_errors_without_message(path.read_text(encoding="utf-8"))
+            if lines:
+                offenders[str(path.relative_to(api_dir)).replace("\\", "/")] = lines
+        assert offenders == {}, (
+            "a machine token in `error` is only legible to a person if "
+            "`message` comes with it -- apiError.js reads `message || error` "
+            f"and will show the player the token: {offenders}"
+        )
+
+    def test_the_scan_actually_sees_the_tokens_that_are_there(self):
+        """Guard-the-guard, the half that matters most: the scan above passes
+        trivially if the pattern matches nothing at all. The tree does contain
+        token-shaped errors -- ``rate_limited`` and auth.py's
+        ``validation_error``/``auth_error``/``server_error`` family -- so a
+        typo'd pattern, broken constant resolution or a narrowed glob has to
+        surface as this test failing rather than as a clean sweep.
+        """
+        api_dir = _api_dir()
+        seen = {}
+        for path in _all_api_modules():
+            bodies = token_error_bodies(path.read_text(encoding="utf-8"))
+            if bodies:
+                name = str(path.relative_to(api_dir)).replace("\\", "/")
+                seen[name] = {token for _line, token, _msg in bodies}
+
+        assert "rate_limiter.py" in seen, (
+            "the canonical body is built from a module-level constant; losing "
+            "it means constant resolution broke, and every hand-built body "
+            "spelled that way is now invisible to the scan"
+        )
+        assert RATE_LIMITED_ERROR in seen["rate_limiter.py"]
+        assert {"validation_error", "auth_error", "server_error"} <= seen.get(
+            "routes/auth.py", set()
+        ), seen
+
+    def test_the_scan_reaches_past_routes(self):
+        """Scope half. A completeness guard aimed at the package with the
+        fewest items reads as coverage without being any: ``middleware/``,
+        ``handlers/`` and ``sockets.py`` build response bodies too."""
+        api_dir = _api_dir()
+        scanned = {
+            str(p.relative_to(api_dir)).replace("\\", "/") for p in _all_api_modules()
+        }
+        for expected in (
+            "rate_limiter.py",
+            "middleware/auth.py",
+            "handlers/error_handler.py",
+            "sockets.py",
+            "app.py",
+            "routes/feedback.py",
+        ):
+            assert expected in scanned, f"{expected} escapes the token-error scan"
+
+    @pytest.mark.parametrize(
+        "snippet",
+        [
+            # the shape the regression actually took
+            'return jsonify({"success": False, "error": "rate_limited"}), 429',
+            # any status, not just 429 -- which is why the 429 scan above is
+            # not already this guard
+            'return jsonify({"success": False, "error": "quota_exceeded"}), 403',
+            # a bare dict, no jsonify: combat_adapter returns these
+            'x = {"error": "not_ready"}',
+            # via a module constant -- the spelling the canonical body uses
+            '_TOKEN = "rate_limited"\nx = {"success": False, "error": _TOKEN}',
+            # via the constant imported from the module that owns it
+            "from src.api.rate_limiter import RATE_LIMITED_ERROR\n"
+            'x = {"error": RATE_LIMITED_ERROR}',
+            # one lowercase word: ambiguous between token and prose, and
+            # ambiguous is not good enough to put in front of a player
+            'x = {"error": "unauthorized"}',
+        ],
+    )
+    def test_it_fires_on_a_token_with_no_message(self, snippet):
+        assert token_errors_without_message(snippet), snippet
+
+    @pytest.mark.parametrize(
+        "snippet",
+        [
+            # the sanctioned shape
+            'x = {"success": False, "error": "rate_limited", "message": "Slow."}',
+            # prose in `error` and no `message` -- what nearly every route emits
+            'x = {"success": False, "error": "Not enough gold"}',
+            'x = {"success": False, "error": "Invalid or expired session"}',
+            # a token mentioned in prose, not emitted
+            '"""Returns {"error": "rate_limited"} when throttled."""',
+            'x = 1  # {"error": "rate_limited"}',
+            # an f-string error is interpolated prose, not a stable token
+            'x = {"error": f"{name}_error"}',
+            # no error key at all
+            'x = {"success": True, "message": "done"}',
+            # the same key holding something that is not a token
+            'x = {"error": handler}',
+        ],
+    )
+    def test_it_stays_quiet_on_prose_and_on_the_sanctioned_shape(self, snippet):
+        assert token_errors_without_message(snippet) == [], snippet
+
+    def test_a_blank_message_is_the_runtime_half_s_job_not_the_scan_s(self):
+        """The scan can only see that the key is *present*. A body built with
+        ``message=""`` satisfies it and still shows the player the token,
+        because apiError.js falls through an empty string. That case belongs to
+        the runtime guard below -- named here so the seam between the two is
+        not mistaken for a hole in either.
+        """
+        assert token_errors_without_message('x = {"error": "t", "message": ""}') == []
+
+
+class TestTheSharedBodyRefusesToShipABlankMessage:
+    """The runtime half. ``apiErrorMessage`` is ``message || error ||
+    fallback``, so an empty ``message`` does not degrade to the caller's
+    generic copy -- it falls through to the token. The one helper allowed to
+    put a token in ``error`` therefore has to insist on prose to pair with it.
+    """
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\n\t", None])
+    def test_it_raises_rather_than_shipping_the_token_alone(self, blank):
+        app = Flask(__name__)
+        with app.test_request_context("/"):
+            with pytest.raises(ValueError) as excinfo:
+                rate_limited_response(blank)
+        assert RATE_LIMITED_ERROR in str(excinfo.value)
+
+    def test_the_real_call_sites_all_pass_prose(self):
+        """The precondition is only safe to add because no caller relies on the
+        blank case. Read from the source rather than by exercising the routes,
+        so this needs no session, no limiter driven to its ceiling, and nothing
+        that could reach the network."""
+        calls = []
+        for path in _all_api_modules():
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and _called_name(node) == "rate_limited_response"
+                    and node.args
+                ):
+                    calls.append((path.name, node.args[0]))
+
+        # A floor, not an exact count: a sixth throttled route is a good thing
+        # and must not fail this test. The floor is what stops the loop below
+        # passing vacuously if the scan stops finding call sites at all.
+        assert len(calls) >= 4, calls
+        for name, arg in calls:
+            assert isinstance(arg, ast.Constant) and arg.value.strip(), name

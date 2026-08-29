@@ -379,24 +379,28 @@ class CombatantSerializer:
         ``Move`` (src/moves/_base.py) declares ``_DAMAGE_MULTIPLIER = 1.0``,
         so every move answers this and the default below is only a coercion
         guard. ANY move that hits for more or less than its user's raw damage
-        must override it — that is not a ``TelegraphedSurge`` privilege, and
-        most of the declarations in src/moves/_npc.py are on plain ``Move``
+        must override it — that is not a ``TelegraphedSurge`` privilege. Most
+        of the declarations in src/moves/_npc.py are on plain ``Move``
         subclasses (GorranClub, VenomClaw, SpiderBite, BatBite, SeismicSlam,
-        TwinFangs). This docstring used to say the opposite, which would tell
-        an agent auditing "which moves need this?" that a new heavy plain
-        ``Move`` needs nothing — re-creating the 1.0-understatement the
-        attribute was added to fix.
+        TwinFangs), so an audit that only looks at the surge family will miss
+        them and leave a new heavy move understating itself at 1.0.
 
         Two ways to declare it, both in src/moves/_npc.py:
-          * a move with a fixed factor states it outright (SeismicSlam);
+          * a move with a fixed factor states it outright (SlimeVolley,
+            TidalSurge, WailStrike, SeismicSlam, TwinFangs);
           * a move that rolls a range declares ``_POWER_ROLL_MIN``/``_MAX``
             and derives this as their midpoint, so retuning the roll moves
-            the wire value with it (GorranClub and its four twins).
-        Midpoint, not ceiling: ``_estimate_incoming_damage`` already renders
-        it as a ±20% band and flags lethality off the band's midpoint.
+            the wire value with it (GorranClub, VenomClaw, SpiderBite,
+            BatBite).
+        Either way the number is a MIDPOINT on the user's raw damage, never a
+        ceiling: the surge family's factor is applied on top of a power
+        ``NpcAttack.evaluate`` has already rolled through ``uniform(0.8,
+        1.2)``, and ``_estimate_incoming_damage`` renders the wire value as a
+        ±20% band and flags lethality off that band's midpoint.
 
         ``tests/test_npc_moves_coverage.py::TestDeclaredDamageMultiplier``
-        pins every declaration against what ``evaluate()`` really rolls.
+        discovers the declaring classes by reflection and pins each against
+        what ``evaluate()`` really rolls, so it cannot go stale by omission.
         """
         try:
             return float(getattr(move, "_DAMAGE_MULTIPLIER", 1.0))
@@ -719,6 +723,12 @@ class CombatantSerializer:
 # "generic" is the State default and is used by both buffs (Dodging,
 # SecretPlansState, StoneBulwarkState) and debuffs (Quarried), so it is
 # resolved from the state's own modifiers instead — see `_GENERIC_STATUSTYPE`.
+#
+# EVERY other statustype src/states.py can construct must appear below. The
+# `.get(..., "debuff")` fallback in `_get_effect_type` is a coercion guard for
+# a mocked or third-party state, NOT a licence to leave a real one unmapped —
+# it is what let "death" serialize as a moderate debuff. Both directions are
+# pinned by tests/test_npc_moves_coverage.py::TestStatustypeCategoryTable.
 _STATUSTYPE_CATEGORY = {
     "poison": "ailment",
     "enflamed": "ailment",
@@ -730,6 +740,11 @@ _STATUSTYPE_CATEGORY = {
     "clean": "buff",
     "enraged": "buff",
     "revive": "buff",
+    # Not a stat penalty and not a tick — DeathKnell's execute, which zeroes HP
+    # on application. Categorised with the ailments so it reads as gold/severe
+    # rather than as a moderate debuff, which is what the `.get(...)` default
+    # below silently gave it.
+    "death": "ailment",
 }
 
 # The catch-all statustype whose polarity must be inferred per state.

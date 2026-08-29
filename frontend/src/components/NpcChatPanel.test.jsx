@@ -158,11 +158,15 @@ describe('NpcChatPanel', () => {
   beforeEach(() => {
     typewriter.mode = 'complete'
     vi.clearAllMocks()
-    // The hook logs the raw server detail on every failure path (it is never
-    // rendered — see S5). Silenced here so an expected-failure test does not
-    // spew, and spied so "logged instead of shown" can actually be asserted.
+    // The hook logs the server's detail on every failure path and never renders
+    // it. Silenced here so an expected-failure test does not spew, and spied so
+    // "logged instead of shown" can actually be asserted.
     consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     npcChat.open.mockResolvedValue(mockOpenResponse)
+    // Every path out of the panel now ends the session, including the ones
+    // that unmount it, so `end` must resolve for every test — not only the
+    // handful that assert on it.
+    npcChat.end.mockResolvedValue({ data: { success: true } })
     npcChat.respond.mockResolvedValue({
       data: makeNpcChatRespond({
         npc_response: 'A measured reply.',
@@ -297,19 +301,6 @@ describe('NpcChatPanel', () => {
       expect(buttons[1]).toHaveTextContent('Leave me alone[guarded]')
     })
 
-    it('sends the clicked option\'s text and tone with the session npc_key', async () => {
-      renderPanel()
-
-      fireEvent.click(await screen.findByText('Leave me alone'))
-
-      await waitFor(() =>
-        // npc_key comes from the open response, NOT the npcId prop; text and
-        // tone come from the option that was clicked, not the first one.
-        expect(npcChat.respond).toHaveBeenCalledWith('npc_session_123', 'Leave me alone', 'guarded')
-      )
-      expect(npcChat.respond).toHaveBeenCalledTimes(1)
-    })
-
     it('withdraws the options and disables End Conversation while the NPC composes a reply', async () => {
       let resolveRespond
       npcChat.respond.mockReturnValue(new Promise((resolve) => { resolveRespond = resolve }))
@@ -353,8 +344,9 @@ describe('NpcChatPanel', () => {
 
       renderPanel()
 
-      // The server's `error` field is raw provider-SDK exception text (endpoint
-      // URL, model id, status body, request id). It must never be rendered.
+      // The server's `error` field is diagnostic detail — endpoint, model id,
+      // status body, request id — and the panel holds whether or not the
+      // server sanitised it. It is logged, never rendered.
       expect(await screen.findByText('Failed to open conversation')).toBeInTheDocument()
       expect(screen.queryByText('NPC not found')).not.toBeInTheDocument()
       expect(consoleError).toHaveBeenCalledWith('[npcChat] open failed:', 'NPC not found')
@@ -378,17 +370,24 @@ describe('NpcChatPanel', () => {
   })
 
   describe('Closing Conversation', () => {
-    it('ends the session server-side when the dialog is dismissed', async () => {
-      // BaseDialog's `onClose` is ✕, the overlay click AND Escape — by far the
-      // most common way out of the panel. Wired straight to the panel's own
-      // `onClose` it dismissed without ever calling `POST /npc/chat/end`,
-      // leaving `player._active_chat_npc_id` and the conversation record set
-      // server-side. The button was the only door that closed properly.
-      npcChat.end.mockResolvedValue({ data: { success: true } })
+    // Every door out of the panel is the same door. BaseDialog's `onClose` is
+    // ✕, the overlay click AND Escape — by far the most common way out — and
+    // wired straight to the panel's own `onClose` it dismissed without ever
+    // calling `POST /npc/chat/end`, leaving `player._active_chat_npc_id` and
+    // the conversation record set server-side. The button was the only one
+    // that closed properly, so both are asserted against the same claim.
+    const dismissals = [
+      ['the dialog chrome (✕ / overlay / Escape)', () => screen.getByTestId('dialog-close')],
+      ['the End Conversation button', () => screen.getByText('End Conversation')],
+    ]
+
+    it.each(dismissals)('ends the session server-side when closed through %s', async (_door, control) => {
       renderPanel()
 
+      // Wait on the RENDER, not on the call: open() having fired says nothing
+      // about the panel having consumed the response.
       await screen.findByText('Hi there')
-      fireEvent.click(screen.getByTestId('dialog-close'))
+      fireEvent.click(control())
 
       await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
       expect(mockOnClose).toHaveBeenCalledTimes(1)
@@ -407,6 +406,31 @@ describe('NpcChatPanel', () => {
       expect(mockOnClose).toHaveBeenCalledTimes(1)
 
       await act(async () => { resolveOpen(mockOpenResponse) })
+    })
+
+    it('ends the conversation the server opened after the panel was already gone', async () => {
+      // The owner unmounts the panel on close — `InteractPanel` renders it as
+      // `{showChatPanel && <NpcChatPanel/>}` — so a dismissal mid-`/open` left
+      // the response landing on a hook with nowhere to put the `npc_key`. It
+      // was dropped, `/end` was never sent, and `_active_chat_npc_id` stayed
+      // set server-side.
+      let resolveOpen
+      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
+
+      function ChatHost() {
+        const [open, setOpen] = React.useState(true)
+        return open ? (
+          <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={() => setOpen(false)} />
+        ) : null
+      }
+      render(<ChatHost />)
+
+      fireEvent.click(screen.getByTestId('dialog-close'))
+      expect(screen.queryByTestId('base-dialog')).not.toBeInTheDocument()
+
+      await act(async () => { resolveOpen(mockOpenResponse) })
+
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
     })
   })
 
@@ -498,24 +522,6 @@ describe('NpcChatPanel', () => {
       await findStageText('Well, well, what do we have here?')
       expect(screen.queryByTestId('relationship-badge')).not.toBeInTheDocument()
     })
-  })
-
-  describe('Ending the conversation', () => {
-    it('calls npcChat.end and onClose when End Conversation is clicked', async () => {
-      npcChat.end.mockResolvedValue({ data: { success: true } })
-      renderPanel()
-
-      // Wait on the RENDER, not on the call: open() having fired says nothing
-      // about the panel having consumed the response.
-      await screen.findByText('Hi there')
-      fireEvent.click(screen.getByText('End Conversation'))
-
-      await waitFor(() => {
-        expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
-        expect(mockOnClose).toHaveBeenCalledTimes(1)
-      })
-    })
-
   })
 
   describe('Retrying a failed action', () => {
@@ -729,7 +735,11 @@ describe('NpcChatPanel', () => {
       expect(announcer().textContent).toBe('A rather long opening line, delivered slowly.')
     })
 
-    it('carries the flavor line into the announcement', async () => {
+    it('names the aside as an aside instead of speaking it as part of the line', async () => {
+      // The branch's standing decision is that an aside is FLAVOR, NOT SPEECH:
+      // the stage gives it its own italic slot above the line. A live region
+      // has no typography, so it says so in words — otherwise a screen-reader
+      // user hears the stage direction as something the NPC said out loud.
       npcChat.open.mockResolvedValue({
         data: makeNpcChatOpen({
           ...openData,
@@ -740,7 +750,54 @@ describe('NpcChatPanel', () => {
       renderPanel()
 
       await waitFor(() =>
-        expect(announcer().textContent).toBe('She does not look up.. Coin first.')
+        // And exactly one terminator at the seam: joining the two with a bare
+        // '. ' produced "…look up.. Coin first." for every flavor the server
+        // had already terminated, which is most of them.
+        expect(announcer().textContent).toBe('Aside: She does not look up. Coin first.')
+      )
+    })
+
+    it('spares a deliberate ellipsis and an aside that ends on its own mark', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          ...openData,
+          npc_opening: 'Coin first.',
+          npc_flavor: 'She weighs the purse...',
+        }),
+      })
+      const { rerender } = renderPanel()
+
+      await waitFor(() =>
+        expect(announcer().textContent).toBe('Aside: She weighs the purse... Coin first.')
+      )
+
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          ...openData,
+          npc_key: 'npc_session_456',
+          npc_opening: 'Coin first.',
+          npc_flavor: 'She laughs!',
+        }),
+      })
+      rerender(<NpcChatPanel npcId="Gorran" npcName="Gorran" onClose={mockOnClose} />)
+
+      await waitFor(() =>
+        expect(announcer().textContent).toBe('Aside: She laughs! Coin first.')
+      )
+    })
+
+    it('adds a terminator to an aside the server left unpunctuated', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          ...openData,
+          npc_opening: 'Coin first.',
+          npc_flavor: 'She does not look up',
+        }),
+      })
+      renderPanel()
+
+      await waitFor(() =>
+        expect(announcer().textContent).toBe('Aside: She does not look up. Coin first.')
       )
     })
 

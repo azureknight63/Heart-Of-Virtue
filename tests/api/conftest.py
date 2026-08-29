@@ -70,16 +70,30 @@ def api_client():
 # Patch terminal output functions for tests to avoid encoding issues on Windows
 @pytest.fixture(autouse=True)
 def patch_terminal_output(monkeypatch):
-    """Patch terminal output functions to prevent UnicodeEncodeError on Windows.
+    """Silence the engine's terminal writers so a Windows console cannot choke.
 
-    Story events call cprint(), print_slow(), input_with_timeout() etc. which can fail
-    with UnicodeEncodeError when trying to print Unicode characters to a Windows console.
-    This fixture replaces those functions with no-ops for testing purposes.
+    Story events call cprint(), print_slow(), input_with_timeout() etc. Those
+    emit the engine's box-drawing characters, which a cp1252 console cannot
+    encode -- and input_with_timeout blocks on a terminal nobody is watching.
+    Replacing those four is the whole of what this needs to do.
+
+    ``builtins.print`` is deliberately NOT patched, and must not be. It looks
+    like a cheaper way to get the same silence, and it is a trap:
+
+    * ``logging.Formatter.formatException`` renders a traceback through
+      ``traceback.print_exception``, which writes with ``print``. Null ``print``
+      and every formatted traceback in the process becomes the empty string --
+      so an assertion that a credential is absent from a traceback holds
+      vacuously, in the one direction where a false green is a security claim.
+      See ``tests/test_error_handler_logging.py``, which had to be moved out of
+      this directory to escape exactly that.
+    * It is the wrong tool for asserting on engine output anyway. Engine text
+      goes through the narration sink (``src/narration.py``), which carries
+      ``color`` and ``type`` alongside the text; ``print`` sees the text only.
+      ``tests/conftest.py`` says this at length and supplies the ``narrated``
+      and ``narration_pairs`` helpers. Those apply here too -- this conftest is
+      a child of that one.
     """
-    import io
-
-    # Create a dummy StringIO to capture output (or discard it)
-    dummy_output = io.StringIO()
 
     def mock_cprint(*args, **kwargs):
         """Mock cprint that discards output."""
@@ -96,9 +110,6 @@ def patch_terminal_output(monkeypatch):
     def mock_input_prompt(*args, **kwargs):
         """Mock input_prompt that returns a default value."""
         return 'continue'
-
-    # Patch functions in the game engine modules
-    monkeypatch.setattr('builtins.print', lambda *args, **kwargs: None)
 
     try:
         import src.interface as interface
@@ -117,20 +128,21 @@ def patch_terminal_output(monkeypatch):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module-level mocking for slow I/O operations
+# What used to be here, and why it is gone
 # ─────────────────────────────────────────────────────────────────────────────
-# These module-level patches apply to all tests in tests/api/ to reduce overhead.
-# This is safe because tests explicitly mock required behaviors, and these are
-# fallback safeguards for operations that should not occur during testing.
-
-from unittest.mock import patch, MagicMock
-
-# Mock time.sleep() globally for tests (should never be called; guards against
-# inadvertent delays from untested code paths)
-_sleep_patch = patch('time.sleep', return_value=None)
-_sleep_patch.start()
-
-# Mock any slow crypto/hashing operations if they occur unexpectedly
-# (legitimate password hashing should be in tested methods, not untested code)
-_hashlib_patch = patch('hashlib.pbkdf2_hmac', return_value=b'mocked_hash')
-_hashlib_patch.start()
+# Two ``unittest.mock.patch(...).start()`` calls sat at module scope with no
+# matching ``.stop()`` and no fixture to bound them. A conftest is imported, not
+# run, so both took effect at collection time and stayed in force for the rest
+# of the process -- including any test outside this directory collected in the
+# same session.
+#
+#   patch('time.sleep')       Redundant. ``tests/conftest.py`` is this file's
+#       parent conftest and its ``_no_real_sleep`` autouse fixture already
+#       no-ops ``time.sleep`` for every test here, scoped per test and with a
+#       ``@pytest.mark.real_sleep`` opt-out for the tests that need real timing.
+#       The module-level version offered no opt-out and could not be undone.
+#
+#   patch('hashlib.pbkdf2_hmac')  Guarded nothing. Nothing under ``src/`` calls
+#       it: ``AuthService`` hashes with argon2 (``self.ph.hash`` /
+#       ``self.ph.verify``, see ``src/api/services/auth_service.py``). All it
+#       could do was make an unrelated caller's digest silently constant.

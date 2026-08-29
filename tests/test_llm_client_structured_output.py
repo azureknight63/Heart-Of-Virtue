@@ -429,7 +429,7 @@ class TestUnparseablePenalty:
     """
 
     def _minutes_left(self, model_id):
-        """Bench expiries are aware UTC (Sec-A#4), so this must be too --
+        """Bench expiries are timezone-aware UTC, so this must be too --
         subtracting a naive ``datetime.now()`` from one raises TypeError."""
         expiry = GenericLLMClient._failed_models.get(model_id)
         assert expiry is not None, "model was not penalized at all"
@@ -447,7 +447,7 @@ class TestUnparseablePenalty:
         assert self._minutes_left("chatty") > first
 
     def test_the_repeat_penalty_is_hours_not_the_rest_of_the_day(self):
-        """S3: this bench is process-wide state shared by every player, and the
+        """This bench is process-wide state shared by every player, and the
         output that trips it is shaped by whatever the player typed. At 720
         minutes two crafted turns took the primary free model out for everyone
         until the next morning, repeatably down the ranked list."""
@@ -456,7 +456,7 @@ class TestUnparseablePenalty:
         assert self._minutes_left("chatty") <= 4 * 60
 
     def test_strikes_decay_so_two_stumbles_hours_apart_are_not_a_repeat(self):
-        """S3: the strike count used to be cleared only by a later parse
+        """The strike count used to be cleared only by a later parse
         success ON THAT MODEL. A model nothing happened to call again carried
         its strike for the life of the process and took the escalated penalty
         on its next stumble, however long afterwards."""
@@ -650,7 +650,7 @@ class TestProviderChainNeedsAnExplicitProvider:
         assert set(chain) == {"openrouter", "groq", "cerebras", "ollama"}
 
     def test_naming_ollama_keeps_player_text_on_the_box(self, monkeypatch):
-        """S1: naming the local host is a consent statement, not just routing.
+        """Naming the local host is a consent statement, not just routing.
 
         The rule used to distinguish NAMED from DEFAULTED only, so
         ``NPC_CHAT_LLM_PROVIDER=ollama`` -- the strongest "keep this on the
@@ -902,7 +902,7 @@ class TestOpenAiCompatibleCall:
     # mechanism that let two dead providers pass as 46/47 green for days.
     @pytest.mark.parametrize("status", [401, 402, 404])
     def test_permanent_client_error_benches_the_model(self, status, monkeypatch):
-        """C4: an HTTP failure now yields None like every other chain method.
+        """An HTTP failure now yields None like every other chain method.
 
         This used to assert ``pytest.raises(RuntimeError)`` -- the one method in
         the chain that re-raised, which is why ``_call_llm`` needed a broad
@@ -1194,16 +1194,8 @@ class TestOllamaAttributesItsOwnOutput:
     """Ollama answering must not leave another provider holding the penalty."""
 
     def test_served_model_is_namespaced_to_ollama(self, monkeypatch):
-        class _R:
-            status_code = 200
-
-            def raise_for_status(self):
-                pass
-
-            def json(self):
-                return {"message": {"content": '{"npc_text": "Aye."}'}}
-
-        monkeypatch.setattr(llm.requests, "post", lambda *a, **k: _R())
+        payload = {"message": {"content": '{"npc_text": "Aye."}'}}
+        monkeypatch.setattr(llm.requests, "post", lambda *a, **k: Resp(payload=payload))
         a = make_chat_adapter(
             provider="ollama",
             model="local-llama",
@@ -1502,21 +1494,7 @@ class TestOpenrouterFallbackUsesItsOwnDialect:
         def _capture(url, payload, headers, timeout, on_discarded=None):
             payloads.append(payload)
 
-            class _R:
-                status_code = 200
-                text = ""
-
-                @staticmethod
-                def raise_for_status():
-                    return None
-
-                @staticmethod
-                def json():
-                    return {"choices": [{"message": {"content": "{}"}}]}
-
-                headers = {}
-
-            return _R()
+            return Resp(payload={"choices": [{"message": {"content": "{}"}}]})
 
         monkeypatch.setattr(llm, "_post_chat_completion", _capture)
         a._call_openrouter("sys", "user", 100, 0.5)
@@ -1539,19 +1517,11 @@ class TestOllamaTrafficIsMetered:
         )
 
     def test_success_records_ollama_usage(self, monkeypatch):
-        class _R:
-            status_code = 200
-            headers = {}
-
-            @staticmethod
-            def raise_for_status():
-                return None
-
-            @staticmethod
-            def json():
-                return {"message": {"content": "{}"}}
-
-        monkeypatch.setattr(llm.requests, "post", lambda *a, **kw: _R())
+        monkeypatch.setattr(
+            llm.requests,
+            "post",
+            lambda *a, **kw: Resp(payload={"message": {"content": "{}"}}),
+        )
         self._adapter()._call_ollama("sys", "user", 100, 0.5)
         snap = GenericLLMClient.usage_snapshot()
         ollama = snap["providers"].get("ollama")
@@ -1681,7 +1651,7 @@ class TestOpenrouterAttempt:
         assert a._is_model_failed("primary/model") is True
 
     def test_a_429_stops_the_candidate_loop(self, monkeypatch):
-        """C3: the free tier is metered per ACCOUNT, so once one model has been
+        """The free tier is metered per ACCOUNT, so once one model has been
         refused every remaining candidate is a guaranteed 429 too. Walking the
         rest only spends the player's latency budget proving what the first
         refusal already said."""

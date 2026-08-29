@@ -94,14 +94,26 @@ input, select, textarea {
  * readable dialogue in the center. At phone widths the same stage becomes a
  * two-column portrait row above a full-width dialogue card.
  *
- * THE RULE: CSS owns the whole of the wide layout's geometry — display, grid
- * tracks and areas, gap, min-heights, padding and portrait sizing. Nothing in
- * ConversationStage.jsx sets any of them inline for `layout="wide"`; the only
- * inline styles left on that stage are per-member dynamic values (opacity,
- * transform, speaker border) and the `grid-area` each column is assigned.
- * Because the desktop rules and the mobile overrides now share a selector and
- * differ only by breakpoint, the media query wins on source order alone — it
- * previously needed eight `!important` declarations to beat inline styles.
+ * THE RULE — scoped deliberately narrowly, to exactly what is true and what a
+ * test can check. CSS owns every property the phone breakpoint below retunes:
+ * the stage element's own `display`, grid tracks and areas, `gap` and
+ * `min-height`; the dialogue card's `padding` and `min-height`; the portrait
+ * image's `width`; the portrait column's `min-width`/`width`. For
+ * `layout="wide"` ConversationStage.jsx sets NONE of those inline, so the
+ * media query wins on source order alone rather than needing a stack of
+ * `!important` declarations to outrank an inline style. (This is the one
+ * historical claim here with no number attached on purpose: the `!important`s
+ * are gone, so any count is unverifiable prose.)
+ *
+ * What the component DOES still set inline on the wide stage, legitimately,
+ * because no breakpoint ever changes it: the flex `display`/`gap` that lay a
+ * portrait column and the dialogue card out internally, `min-width: 0`, the
+ * `grid-area` each column is assigned, and per-member dynamic values (opacity,
+ * transform, speaker border). Widening the rule past that would make it a
+ * claim nothing could verify — jsdom does not load this stylesheet, so a test
+ * can only assert that a property is ABSENT from the inline style, never that
+ * a rule here supplied it. ConversationStage.test.jsx asserts exactly those
+ * absences; keep the two in step.
  */
 .conversation-stage--wide {
   display: grid;
@@ -260,6 +272,28 @@ input, select, textarea {
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
+}
+
+/*
+ * The other fade-in: opacity plus a scale-up, for things that pop into being
+ * rather than sliding into place (a confirmation modal, a transient action
+ * message). Named apart from `fade-in` above because they are different
+ * motions, and lives here rather than in a component `<style>` tag for the
+ * usual reason — it was declared inside ItemDetailDialog's confirm modal and
+ * used from ActionsPanel, so the action message only animated while an item
+ * dialog happened to be mounted. Keyframe names are document-global; where
+ * they are declared is not.
+ */
+@keyframes fade-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /*

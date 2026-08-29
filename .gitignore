@@ -50,7 +50,10 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-!.env.production
+# Anchored: unanchored `!.env.production` un-ignored such a file at ANY depth,
+# including the repo root, where it would hold Turso and ENCRYPTION_KEY material.
+# Only the frontend's build-time (non-secret) file is meant to be tracked.
+!/frontend/.env.production
 *.ini
 
 # --- Game Specific (Saves) ---

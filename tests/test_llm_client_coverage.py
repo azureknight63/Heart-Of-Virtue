@@ -667,7 +667,7 @@ class TestNightlyRefresh:
         assert GenericLLMClient._free_models_cache == ["preexisting/model"]
         assert call_count["n"] == 2  # slept, skipped, looped, slept again
 
-    def test_refresh_loop_fetch_failure_logged(self, monkeypatch):
+    def test_refresh_loop_survives_a_fetch_failure(self, monkeypatch):
         captured = {}
 
         class ImmediateThread:
@@ -757,7 +757,7 @@ class TestValidateAndFallbackOpenrouter:
         assert client.model == "dynamic/fallback"
 
     def test_retired_stable_fallbacks_are_never_probed(self, monkeypatch):
-        """Align-A#2: validation was the last path still dialling the retired
+        """Validation was the last path still dialling the retired
         slugs. Each costs a real round trip out of a budget of five candidates,
         to rediscover a 404 the file documents in two other places.
 
@@ -1124,7 +1124,7 @@ class TestGenerateStructured:
         client._available = True
         assert client.generate_structured("sys", "user") is None
 
-    def test_none_result_logs_warning(self, monkeypatch, caplog):
+    def test_no_response_from_the_transport_returns_none(self, monkeypatch):
         monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
         monkeypatch.setenv("MYNX_LLM_PROVIDER", "ollama")
         monkeypatch.setenv("MYNX_LLM_MODEL", "m")
@@ -1134,7 +1134,7 @@ class TestGenerateStructured:
             result = client.generate_structured("sys", "user")
         assert result is None
 
-    def test_non_dict_result_logs_warning(self, monkeypatch, caplog):
+    def test_a_non_dict_result_is_rejected_and_reported(self, monkeypatch, caplog):
         """A non-dict provider response is rejected, not passed through.
 
         This previously asserted the list came back verbatim, which contradicted
@@ -1685,7 +1685,7 @@ class TestModelFailureTracking:
         assert "expired/model" not in GenericLLMClient._failed_models
 
     def test_bench_expiries_are_timezone_aware(self, monkeypatch):
-        """Sec-A#4: the bench used naive local time while every other clock in
+        """The bench used naive local time while every other clock in
         the module was aware UTC, so a window open across a DST fall-back
         silently ran an hour long."""
         client = self._client(monkeypatch)
@@ -2324,7 +2324,7 @@ class TestGenerateJeanOptions:
         assert result[0]["tone"] == "direct"
 
     def test_text_truncated_to_the_shared_option_cap(self, monkeypatch):
-        """S7: this used to assert 200, which was the bug written down.
+        """This used to assert 200, which was the bug written down.
 
         The client truncated at 200 while ``_chat_llm``'s mixin *dropped* any
         option over 160, so every option 161-200 characters long was produced,
@@ -2604,7 +2604,7 @@ class TestFormatHistory:
         assert "Jean: <player_input>Hello.</player_input>" in result
 
     def test_replayed_jean_lines_keep_the_player_input_fence(self):
-        """S: only the CURRENT turn used to be fenced. Once a line was in the
+        """Only the CURRENT turn used to be fenced. Once a line was in the
         history it was replayed bare on every later prompt, so the structural
         "this is data, not instructions" marking fell away at exactly the point
         the ingress sanitiser was left carrying the defence alone. The NPC side
@@ -2635,12 +2635,12 @@ class TestFormatHistory:
 
 
 # ---------------------------------------------------------------------------
-# Round-three scrub: normalisation, availability, and the headroom render.
+# Option cleaning, personality validation, availability, and headroom render.
 # ---------------------------------------------------------------------------
 
 
 class TestCleanJeanOptionsKeepsTheWholeList:
-    """R1: this used to do ``for item in raw[:3]``, cutting to three BEFORE
+    """This used to do ``for item in raw[:3]``, cutting to three BEFORE
     ``_qc_jean_options`` in ``src/npc/_chat_llm.py`` ever saw the list -- so the
     mixin's "validate everything, slice after dedup" salvage could not fire, and
     a malformed option at index 0 still cost the good one at index 3. The mixin
@@ -2706,7 +2706,7 @@ class TestCleanJeanOptionsKeepsTheWholeList:
 
 
 class TestOptionTextIsDefangedAndTrimmed:
-    """S4/R4: option text was stored as a bare slice. A newline forged a line in
+    """Option text was stored as a bare slice. A newline forged a line in
     ``revise_turn``'s newline-delimited options block, an ESC reached the
     player-visible renderer, and truncating at exactly MAX_OPTION_CHARS -- the
     mixin's INCLUSIVE bound -- shipped a mid-word fragment to the player where
@@ -2743,11 +2743,37 @@ class TestOptionTextIsDefangedAndTrimmed:
         assert self._text(exact) == exact.strip()
 
 
+def _personality_seed(**overrides):
+    """One well-formed personality seed, with ``overrides`` applied.
+
+    The six keys are exactly the fields ``_validate_personality`` inspects, so a
+    test states only the one it is breaking. Shared by the two classes below:
+    one drives the whole ``generate_personality`` call, the other the static
+    validator, and they must start from the same accepted baseline or "this
+    field is rejected" stops meaning anything.
+    """
+    seed = {
+        "given_name": "Ren",
+        "voice": "sparse, declarative",
+        "knowledge": ["river crossings", "camp craft"],
+        "attitude_to_strangers": "wary",
+        "speech_sample": "River's cold this time of year.",
+        "loquacity_base": 55,
+    }
+    seed.update(overrides)
+    return seed
+
+
 class TestGeneratePersonalityValidatesEveryField:
-    """S: the seed is persisted into the save and spliced into the system prompt
-    on every later turn, so a wrong type is not one bad reply -- a non-list
+    """The seed is persisted into the save and spliced into the system prompt on
+    every later turn, so a wrong value is not one bad reply -- a non-list
     ``knowledge`` made ``", ".join(...)`` raise on every prompt build from then
-    on, reloaded from the save each session."""
+    on, reloaded from the save each session.
+
+    "Every field" is the six ``_validate_personality`` reads: the three string
+    fields, ``knowledge``, ``attitude_to_strangers`` and ``loquacity_base``.
+    Wrong *type* on the string fields is the sibling class below.
+    """
 
     def _adapter(self, raw):
         return make_chat_adapter(
@@ -2757,16 +2783,7 @@ class TestGeneratePersonalityValidatesEveryField:
         )
 
     def _seed(self, **overrides):
-        seed = {
-            "given_name": "Ren",
-            "voice": "sparse, declarative",
-            "knowledge": ["river crossings", "camp craft"],
-            "attitude_to_strangers": "wary",
-            "speech_sample": "River's cold this time of year.",
-            "loquacity_base": 55,
-        }
-        seed.update(overrides)
-        return seed
+        return _personality_seed(**overrides)
 
     def test_a_well_formed_seed_is_returned(self):
         result = self._adapter(self._seed()).generate_personality("nomad")
@@ -2784,6 +2801,7 @@ class TestGeneratePersonalityValidatesEveryField:
             ("loquacity_base", "chatty"),
             ("given_name", ""),
             ("voice", None),
+            ("speech_sample", ""),
         ],
     )
     def test_an_unusable_field_fails_the_whole_seed(self, field, value):
@@ -2815,8 +2833,64 @@ class TestGeneratePersonalityValidatesEveryField:
         assert "%d-%d" % (low, high) in captured["user"]
 
 
+class TestPersonalityStringsMustBeStrings:
+    """``str()`` is not a type check, and the log line said it was.
+
+    ``_validate_personality``'s docstring says "Type-check" and the rejection it
+    logs said "not text", but the only gate was emptiness -- and nothing a model
+    can put in a JSON value is empty once ``neutralise_model_text`` has called
+    ``str()`` on it. A seed is written into the save and spliced into the system
+    prompt on every later turn, so an accepted wrong type is not one bad reply;
+    it is that NPC, for the rest of the game.
+
+    The sibling class above pins the same three fields for unusable *values*;
+    only ``isinstance`` catches a wrong type, so it is checked here against the
+    static validator rather than through a JSON round trip that would coerce.
+    """
+
+    STRING_FIELDS = ("given_name", "voice", "speech_sample")
+
+    @pytest.mark.parametrize("key", STRING_FIELDS)
+    @pytest.mark.parametrize(
+        "value",
+        [
+            ["terse", "gruff"],          # the repr case: "['terse', 'gruff']"
+            {"tone": "gruff"},
+            42,
+            True,
+            None,
+        ],
+    )
+    def test_a_non_string_field_fails_the_whole_seed(self, key, value):
+        assert NpcChatLLMAdapter._validate_personality(
+            _personality_seed(**{key: value})
+        ) is None
+
+    def test_the_repr_never_reaches_the_result(self):
+        """The specific shape a model actually produces. Without the gate this
+        returned ``"['terse', 'gruff']"`` and nothing downstream objected."""
+        assert NpcChatLLMAdapter._validate_personality(
+            _personality_seed(voice=["terse", "gruff"])
+        ) is None
+
+    def test_the_rejection_names_the_type_it_saw(self, caplog):
+        """"voice is empty or not text" was two failures wearing one message,
+        and the one it named was the one that could not happen."""
+        with caplog.at_level("WARNING", logger="ai.llm_client"):
+            NpcChatLLMAdapter._validate_personality(_personality_seed(voice=["terse"]))
+        assert any(
+            "voice is list, not text" in rec.getMessage() for rec in caplog.records
+        )
+
+    def test_a_well_formed_seed_is_still_accepted(self):
+        """The gate is a gate, not a wall."""
+        result = NpcChatLLMAdapter._validate_personality(_personality_seed())
+        assert result["given_name"] == "Ren"
+        assert result["voice"] == "sparse, declarative"
+
+
 class TestChatAdapterAvailabilityAsksAboutTheChain:
-    """C: the ollama branch contradicted the method's own docstring -- an
+    """The ollama branch contradicted the method's own docstring -- an
     ollama-pinned adapter with a dead local host but a live remote credential
     reported unavailable, shutting chat off while the chain it is supposed to be
     describing was one hop away."""
@@ -2891,7 +2965,7 @@ class TestDisabledReasonNamesTheRightVariable:
 
 
 class TestHeadroomRendersAnAbsoluteReset:
-    """C: the raw ``reset`` header is a RELATIVE duration for Groq and Cerebras,
+    """The raw ``reset`` header is a RELATIVE duration for Groq and Cerebras,
     captured at read time, so a weekly digest announced "resets in 2m59s" for a
     bucket that had reopened days earlier. The absolute instant is already
     computed by ``_parse_reset_at``."""

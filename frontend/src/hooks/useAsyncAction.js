@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { apiErrorMessage } from '../utils/apiError'
 
 /**
  * useAsyncAction - Custom hook for managing state of asynchronous actions
@@ -19,7 +20,10 @@ export default function useAsyncAction(actionFn, { onSuccess, onError } = {}) {
             if (onSuccess) onSuccess(result)
             return result
         } catch (err) {
-            const errorMessage = err.response?.data?.error || err.message || 'An unexpected error occurred'
+            // `err.message` stays in the fallback, not ahead of the server's
+            // copy: it is axios's transport wording, which is all there is to
+            // say when the request never reached a route.
+            const errorMessage = apiErrorMessage(err, err.message || 'An unexpected error occurred')
             setError(errorMessage)
             if (onError) onError(errorMessage)
         } finally {

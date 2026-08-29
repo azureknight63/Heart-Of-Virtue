@@ -19,13 +19,15 @@ Design decisions under test (user-approved, 2026-08-21):
 """
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
 
 from src.npc import _chat_guard as guard
+from src.npc import _chat_llm
 from src.npc._chat_llm import Turn
-from tests._npc_fixtures import chat_npc, wired_chat_npc
+from tests._npc_fixtures import chat_npc, chat_player, make_turn, wired_chat_npc
 from tests.llm_doubles import make_chat_adapter
 
 
@@ -45,7 +47,8 @@ def _assert_statement_lines(source):
 def _npc(char_config=None, personality=None, growth=None, moves=None, world=None):
     """A bare guard host: the attributes the tripwire and prompt build read.
 
-    Deliberately *not* wired for a chat round — see :func:`_wired_npc` for that.
+    Deliberately *not* wired for a chat round — see
+    :func:`tests._npc_fixtures.wired_chat_npc` for that.
     """
     return chat_npc(
         init=False,
@@ -567,29 +570,15 @@ class _WiredAdapter:
         self.npc_flavor = npc_flavor
 
     def generate_turn(self, system, history, is_opening=False, jean_text=None):
-        return {
-            "npc_text": self.npc_text,
-            "npc_flavor": self.npc_flavor,
-            "conversation_quality": "neutral",
-            "reputation_delta": self.reputation_delta,
-            "loquacity_delta": -5,
-            "jean_options": self.options,
-        }
+        return make_turn(
+            self.npc_text,
+            npc_flavor=self.npc_flavor,
+            reputation_delta=self.reputation_delta,
+            jean_options=self.options,
+        )
 
     def revise_turn(self, system, npc_text, jean_options, guidance):
         return self.revision
-
-
-def _wired_npc(adapter):
-    """An NPC with persistence and loquacity stubbed out, but the real chat path."""
-    return wired_chat_npc(adapter)
-
-
-class _Player:
-    universe = None
-
-    def __init__(self):
-        self.reputation = {}
 
 
 class TestChatPathWiring:
@@ -598,7 +587,7 @@ class TestChatPathWiring:
             "You look half-dead. Here, take this blade.",
             _opts("Will you come with me?", "Why stay?", "Tell me about the river."),
         )
-        result = _wired_npc(adapter).chat_open(_Player())
+        result = wired_chat_npc(adapter).chat_open(chat_player())
         assert result["success"] is True
         assert "take this blade" not in result["npc_opening"]
         assert guard.scan_npc_text(result["npc_opening"]) == []
@@ -610,7 +599,7 @@ class TestChatPathWiring:
             "River's high. It usually is, this time of year.",
             _opts("How long have you worked it?", "Why stay?", "Tell me about the water."),
         )
-        result = _wired_npc(adapter).chat_open(_Player())
+        result = wired_chat_npc(adapter).chat_open(chat_player())
         assert result["npc_opening"] == "River's high. It usually is, this time of year."
 
     def test_chat_respond_hedges_a_state_implying_reply(self):
@@ -618,7 +607,9 @@ class TestChatPathWiring:
             "I'll come with you across the water.",
             _opts("Why stay?", "Go on.", "Tell me about the river."),
         )
-        result = _wired_npc(adapter).chat_respond(_Player(), "What's across the river?", "direct")
+        result = wired_chat_npc(adapter).chat_respond(
+            chat_player(), "What's across the river?", "direct"
+        )
         assert result["success"] is True
         assert guard.scan_npc_text(result["npc_response"]) == []
 
@@ -628,7 +619,9 @@ class TestChatPathWiring:
             _opts("Why stay?", "Go on.", "Tell me about the river."),
             revision={"npc_text": "The rack by the door holds my father's work."},
         )
-        result = _wired_npc(adapter).chat_respond(_Player(), "Nice blade.", "direct")
+        result = wired_chat_npc(adapter).chat_respond(
+            chat_player(), "Nice blade.", "direct"
+        )
         assert result["npc_response"] == "The rack by the door holds my father's work."
 
 # ---------------------------------------------------------------------------
@@ -648,26 +641,14 @@ class _HistoryCapturingAdapter(_WiredAdapter):
         return super().generate_turn(system, history, is_opening, jean_text)
 
 
-def _persisting_npc(adapter):
-    """Like _wired_npc but with the real persistence read/write path."""
-    return wired_chat_npc(adapter, persist=True)
-
-
-class _PersistPlayer:
-    def __init__(self):
-        self.npc_chat_histories = {}
-        self.reputation = {}
-        self.universe = None
-
-
 class TestGuardedTextIsWhatPersists:
     def test_persisted_row_holds_the_guarded_line_not_the_raw_one(self):
         adapter = _WiredAdapter(
             "Here, take this blade.",
             _opts("Why stay?", "Go on.", "Tell me about the river."),
         )
-        npc = _persisting_npc(adapter)
-        player = _PersistPlayer()
+        npc = wired_chat_npc(adapter, persist=True)
+        player = chat_player(persist=True)
 
         result = npc.chat_open(player)
 
@@ -681,8 +662,8 @@ class TestGuardedTextIsWhatPersists:
             "Here, take this blade.",
             _opts("Why stay?", "Go on.", "Tell me about the river."),
         )
-        npc = _persisting_npc(adapter)
-        player = _PersistPlayer()
+        npc = wired_chat_npc(adapter, persist=True)
+        player = chat_player(persist=True)
 
         npc.chat_open(player)
         npc.chat_respond(player, "Where does the road go?", "direct")
@@ -701,8 +682,8 @@ class TestGuardedTextIsWhatPersists:
             "I'll come with you as far as the water.",
             _opts("Why stay?", "Go on.", "Tell me about the river."),
         )
-        npc = _persisting_npc(adapter)
-        player = _PersistPlayer()
+        npc = wired_chat_npc(adapter, persist=True)
+        player = chat_player(persist=True)
 
         npc.chat_open(player)
         result = npc.chat_respond(player, "What is across the water?", "direct")
@@ -805,7 +786,7 @@ class TestAuthoredFallbackLinesAreNotGuarded:
     """
 
     def _authored_npc(self, adapter):
-        npc = _wired_npc(adapter)
+        npc = wired_chat_npc(adapter)
         npc._chat_char_config = {
             "conversation_starters_by_chapter": {
                 "01": ["Come back when you need something sharpened."]
@@ -829,7 +810,7 @@ class TestAuthoredFallbackLinesAreNotGuarded:
                 return None
 
         adapter = DeadAdapter()
-        result = self._authored_npc(adapter).chat_open(_Player())
+        result = self._authored_npc(adapter).chat_open(chat_player())
 
         assert result["npc_opening"] == "Come back when you need something sharpened."
         assert adapter.revise_calls == 0
@@ -1134,6 +1115,106 @@ class TestScanScopeIsDerivedNotHandSpelled:
 
 
 # ---------------------------------------------------------------------------
+# The subcategory tables are keyed by category, and every table is registered
+# ---------------------------------------------------------------------------
+
+
+class TestGuardTablesAreQualifiedByCategory:
+    def test_the_subcategory_tables_are_keyed_on_pairs(self):
+        for table in (
+            guard._EXCUSABLE_SUBCATEGORIES,
+            guard._OPTION_SKIP_SUBCATEGORIES,
+        ):
+            assert table
+            assert all(isinstance(key, tuple) and len(key) == 2 for key in table)
+
+    def test_a_same_named_subcategory_elsewhere_is_not_skipped(self, monkeypatch):
+        """The bug: _OPTION_SKIP_SUBCATEGORIES held the bare name "coin", which
+        the scan matched across every category — so a `coin` subcategory added
+        to `solicit` would have switched the option scan off for it."""
+        patched = dict(guard._PATTERNS)
+        patched[guard.CATEGORY_SOLICIT] = tuple(
+            patched[guard.CATEGORY_SOLICIT]
+        ) + (("coin", re.compile(r"\bcoin for the crossing\b", re.IGNORECASE)),)
+        monkeypatch.setattr(guard, "_PATTERNS", patched)
+        flags = guard.scan_option_text("Take coin for the crossing.")
+        assert [f.subcategory for f in flags] == ["coin"]
+
+    def test_the_state_claim_skips_still_apply_to_their_own_category(self):
+        assert guard.scan_option_text("Where did you get your sword?") == []
+
+    def test_a_scan_no_category_claims_fails_at_import(self, monkeypatch):
+        """The other direction of the _SCAN_SCOPE table: a scan that walks no
+        categories reports every line clean."""
+        monkeypatch.setattr(
+            guard,
+            "_SCAN_SCOPE",
+            {c: frozenset({guard.SCAN_NPC}) for c in guard._SCAN_SCOPE},
+        )
+        with pytest.raises(RuntimeError, match="no category is scanned by"):
+            guard._check_tables()
+
+    def test_a_wrong_category_on_a_known_subcategory_is_rejected(self, monkeypatch):
+        monkeypatch.setattr(
+            guard,
+            "_EXCUSABLE_SUBCATEGORIES",
+            frozenset({(guard.CATEGORY_SOLICIT, "teaching")}),
+        )
+        with pytest.raises(RuntimeError, match="no pattern emits"):
+            guard._check_tables()
+
+    def test_every_table_is_registered_with_the_integrity_check(self):
+        """The rule the registry exists to enforce: a table nothing checks is
+        the shape that produced this bug three times."""
+        registered = set(guard._CATEGORY_TABLES) | set(guard._SUBCATEGORY_TABLES)
+        keyed_tables = {
+            "_HEDGES",
+            "_GUIDANCE",
+            "PROMPT_RULES",
+            "_SCAN_SCOPE",
+            "_EXCUSABLE_SUBCATEGORIES",
+            "_OPTION_SKIP_SUBCATEGORIES",
+        }
+        assert keyed_tables <= registered
+
+
+# ---------------------------------------------------------------------------
+# One game-terms vocabulary: detected by the scan, prevented in every prompt
+# ---------------------------------------------------------------------------
+
+
+class TestGameTermsAreOneRule:
+    def test_the_prompt_clause_names_every_detected_term(self):
+        line = guard.prompt_rules_line()
+        for term in guard._GAME_TERMS:
+            assert term in line, term
+
+    def test_every_named_term_is_actually_caught(self):
+        for term in guard._GAME_TERMS:
+            assert guard.scan_npc_text("You have no " + term + " left."), term
+
+    def test_ordinary_speech_using_level_is_not_flagged(self):
+        assert guard.scan_npc_text("The ground is level past the ridge.") == []
+
+    def test_a_non_ally_prompt_carries_the_rule(self):
+        """The prompt half used to live in the COMBAT SELF-KNOWLEDGE block,
+        which is emitted only for NPCs with a growth_profile — so for every
+        other NPC the rule was detected but never prevented."""
+        adapter = _WiredAdapter("River's high.", _opts("a?", "b?", "c?"))
+        prompt = wired_chat_npc(adapter)._build_system_prompt(chat_player())
+        assert "COMBAT SELF-KNOWLEDGE" not in prompt
+        assert "experience points" in prompt
+
+    def test_the_combat_block_no_longer_spells_its_own_copy(self):
+        source = Path(_chat_llm.__file__).read_text(encoding="utf-8")
+        start = source.index("def _build_combat_knowledge_block")
+        end = source.index("def _ensure_personality", start)
+        block = source[start:end]
+        assert "'experience points'" not in block
+        assert "'stats'" not in block
+
+
+# ---------------------------------------------------------------------------
 # The two structured fields that DO reach the engine
 # ---------------------------------------------------------------------------
 
@@ -1151,8 +1232,8 @@ class TestReputationIsNotAwardedForAGuardedTurn:
             _opts("Why stay?", "Go on.", "Tell me about the river."),
             reputation_delta=5,
         )
-        player = _Player()
-        result = _wired_npc(adapter).chat_respond(player, "Nice blade.", "direct")
+        player = chat_player()
+        result = wired_chat_npc(adapter).chat_respond(player, "Nice blade.", "direct")
         assert result["reputation_delta"] == 0
         assert result["reputation"] == 0
         assert player.reputation["Mara"] == 0
@@ -1165,8 +1246,8 @@ class TestReputationIsNotAwardedForAGuardedTurn:
             revision={"npc_text": "The rack by the door holds my father's work."},
             reputation_delta=5,
         )
-        player = _Player()
-        result = _wired_npc(adapter).chat_respond(player, "Nice blade.", "direct")
+        player = chat_player()
+        result = wired_chat_npc(adapter).chat_respond(player, "Nice blade.", "direct")
         assert result["npc_response"] == "The rack by the door holds my father's work."
         assert result["reputation_delta"] == 0
         assert player.reputation["Mara"] == 0
@@ -1177,8 +1258,8 @@ class TestReputationIsNotAwardedForAGuardedTurn:
             _opts("How long have you worked it?", "Why stay?", "Tell me about it."),
             reputation_delta=3,
         )
-        player = _Player()
-        result = _wired_npc(adapter).chat_respond(player, "Rough water.", "direct")
+        player = chat_player()
+        result = wired_chat_npc(adapter).chat_respond(player, "Rough water.", "direct")
         assert result["reputation_delta"] == 3
         assert player.reputation["Mara"] == 3
 
@@ -1191,8 +1272,8 @@ class TestReputationIsNotAwardedForAGuardedTurn:
             reputation_delta=4,
             npc_flavor="She presses a coin into your palm.",
         )
-        player = _Player()
-        result = _wired_npc(adapter).chat_respond(player, "Rough water.", "direct")
+        player = chat_player()
+        result = wired_chat_npc(adapter).chat_respond(player, "Rough water.", "direct")
         assert result["npc_flavor"] == ""
         assert result["reputation_delta"] == 0
         assert player.reputation["Mara"] == 0

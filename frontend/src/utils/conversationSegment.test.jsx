@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { conversationSegment, DEFAULT_EMOTION } from './conversationSegment'
+import { conversationSegment, DEFAULT_EMOTION, MAX_SEGMENT_CHARS } from './conversationSegment'
 import { EMOTIONS } from './portraits'
 import { TranscriptEntry } from '../components/ConversationTranscript'
 import { computeStage } from '../components/ConversationStage'
 
 describe('conversationSegment', () => {
-    it('fills in every field both renderers read', () => {
+    it('fills in every field its renderers read', () => {
         // The defaults ARE the contract: neither consumer defends against a
         // half-built beat, so the factory must never emit one.
         expect(conversationSegment({ text: 'Coin first.', speaker: 'Mynx' })).toEqual({
@@ -25,6 +25,39 @@ describe('conversationSegment', () => {
         const segment = conversationSegment({ text: undefined, speaker: 'Mynx', flavor: null })
         expect(segment.text).toBe('')
         expect(segment.flavor).toBe('')
+    })
+
+    describe('the MAX_SEGMENT_CHARS cap on model-authored text', () => {
+        // An unbounded line is an unbounded number of typewriter ticks and
+        // full ConversationStage re-renders, so the model's two free-text
+        // fields are capped at the factory rather than at whichever renderer
+        // notices first.
+        const overLong = (n) => 'a'.repeat(MAX_SEGMENT_CHARS + n)
+
+        it('leaves a line at exactly the cap alone', () => {
+            const text = 'a'.repeat(MAX_SEGMENT_CHARS)
+            expect(conversationSegment({ text, speaker: 'Mynx' }).text).toBe(text)
+        })
+
+        it('truncates an over-long line to the cap', () => {
+            const { text } = conversationSegment({ text: overLong(200), speaker: 'Mynx' })
+            expect(text).toHaveLength(MAX_SEGMENT_CHARS)
+        })
+
+        it('marks the cut with an ellipsis, so a clipped line does not read as a finished one', () => {
+            const { text } = conversationSegment({ text: overLong(1), speaker: 'Mynx' })
+            expect(text.endsWith('…')).toBe(true)
+        })
+
+        it('caps the aside as well as the line — both are model-authored', () => {
+            const { flavor } = conversationSegment({
+                text: 'Coin first.',
+                speaker: 'Mynx',
+                flavor: overLong(50),
+            })
+            expect(flavor).toHaveLength(MAX_SEGMENT_CHARS)
+            expect(flavor.endsWith('…')).toBe(true)
+        })
     })
 
     it('defaults to an emotion the portrait vocabulary registers', () => {
@@ -49,7 +82,14 @@ describe('conversationSegment', () => {
     })
 })
 
-describe('the segment contract, as its two consumers read it', () => {
+// The shape has three consumers: the stage, the transcript, and the
+// `ReplyAnnouncer` screen-reader channel in components/NpcChatPanel.jsx. Only
+// the first two are exercised from here — the announcer is not exported from
+// its module, and driving it means mounting the whole panel, which
+// NpcChatPanel.test.jsx already does ('announces the completed reply', and the
+// aside cases beside it). Naming all three here so the gap is a decision and
+// not a miscount: the block below covers two of them.
+describe('the segment contract, as its stage and transcript consumers read it', () => {
     const CAST = [
         { id: 'Jean', name: 'Jean', side: 'left' },
         { id: 'Mynx', name: 'Mynx the Swift', side: 'right' },

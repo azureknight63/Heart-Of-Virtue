@@ -18,13 +18,31 @@ _log = logging.getLogger(__name__)
 # One-shot latch for the process-wide background services kicked off by the
 # first real world load. See _ensure_background_services_started.
 #
-# This is process-wide startup state living in a route module, which is not
-# where it belongs: ``src/api/app.py`` owns startup wiring, and the latch would
-# be better as app-scoped state set up there (the trigger would stay here,
-# since GET /world is the event, but the "has this process started them yet"
-# bit would not). Moving it is a cross-module change and this module cannot
-# make it alone; ``_reset_background_services`` below is the interim so at
-# least tests do not have to reach in and assign the global by hand.
+# It stays here rather than moving to ``src/api/app.py``, and that is a
+# decision rather than a deferral. Three reasons, heaviest first:
+#
+# 1. The scope of a latch has to match the scope of what it guards, and what it
+#    guards is process-global, not app-global. Both callees are process
+#    singletons — ``NpcChatLLMAdapter``'s prewarm is class-level state, and
+#    ``start_digest_scheduler()`` owns a module-level thread. So the natural
+#    way for app.py to own this (a flag on the ``app``, or ``app.extensions``)
+#    would be the *wrong* scope: the second app built in a process — which the
+#    test suite does constantly — would re-enter both. What is left is a module
+#    global in app.py: the same process-wide mutable it already is, one module
+#    further from its only reader.
+# 2. This is not startup wiring, which is the premise the move rests on.
+#    ``create_app()`` runs in every test and every bug-hunt run, and hanging
+#    real network prewarm off it is exactly what the TESTING gate below exists
+#    to prevent. The work is deliberately lazy and keyed to the first *real*
+#    request; GET /world is that event, so the trigger stays here regardless,
+#    and a latch parked away from its only trigger is harder to follow, not
+#    easier.
+# 3. Reading it from app.py means an import edge from the hottest route in the
+#    game to the heaviest module in the package, to fetch a boolean.
+#
+# The variant worth revisiting is a dedicated ``src/api/background_services.py``
+# owning the latch and both starts together — but only once a second trigger
+# exists. With one trigger it is a module for three lines of state.
 _background_services_lock = threading.Lock()
 _background_services_started = False
 

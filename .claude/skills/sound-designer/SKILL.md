@@ -39,7 +39,7 @@ Expert indie game sound designer with 10+ years of industry experience. Audits t
 ## Engine capabilities (as of 2026-03)
 
 - `generate_tone`: ADSR envelope (attack/decay/sustain_level/release) + vibrato LFO (rate/depth)
-- `generate_tone_sweep`: phase-accumulator sweep from `start_freq` → `end_freq` with full waveform support
+- `generate_tone_sweep(freq_start, freq_end, duration, ...)`: phase-accumulator sweep with full waveform support (the parameters are `freq_start`/`freq_end` — not `start_freq`/`end_freq`)
 - `generate_chord`: multi-frequency chord with ADSR envelope; ZeroDivision guards for very short envelopes
 - `mix_layers`, `generate_percussion_pattern`
 - Waveforms: sine, square, sawtooth, triangle, noise

@@ -50,7 +50,7 @@ python tools/inquisitor.py --headless --output tools/browser_findings.json   # r
 
 - Always `python -m pytest`, never bare `pytest` — the venv may not expose the binary and bare runs fail silently on imports.
 - **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/`, which is excluded from the default run: a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests. Other route tests use a *mocked* `session_manager`.
-- Coverage gates: backend ≥85% (CI), frontend ≥95% (`vite.config.js` thresholds). Measured 2026-08-23: backend 96% (7,671 tests), frontend 99.4% stmts / 95.1% branch (2,296 tests) — re-measure before quoting. Dashboard: `docs/coverage/coverage-dashboard.md`.
+- Coverage gates: backend ≥85% (CI, `--cov-fail-under=85`), frontend ≥95% (`vite.config.js` thresholds). The measured numbers live in `docs/coverage/coverage-dashboard.md` and nowhere else — a second copy here goes stale within the week. Re-measure before quoting either.
 - Tests touching randomness must seed or patch `random` — the engine makes ~220 unseeded `random.*` calls (only `positions.py` seeds). Never assert on an unseeded roll.
 - Mocks that stub an engine module imported as `import src.x as m` must patch both `sys.modules["src.x"]` *and* the `src` package attribute (see `_fake_engine_modules` in `tests/test_session_manager_coverage.py`); to pass an engine `isinstance`, set `mock.__class__` to the real class or build with `RealClass.__new__(RealClass)`.
 
@@ -93,19 +93,19 @@ mislabelled story flags, an unrestored class attribute, and one infinite loop.
 - **Any new top-level `src/` module must be added to `LEGACY_BARE_MODULES` in `src/secure_pickle.py`** (also enforced by `test_no_bare_local_imports.py`).
 - `narrate(*parts, color=None)` joins like `print`; color is keyword-only. `cprint(text, color)` keeps the positional signature.
 
-**JavaScript/React** — camelCase/PascalCase; functional components only; stateful logic in custom hooks (no inline API calls in components); Tailwind utilities plus tokens from `styles/theme.js` (lime `#00ff88`, cyan `#00ccff`, orange `#ffaa00`, danger `#ff4444` on `#0a0a0a`).
+**JavaScript/React** — camelCase/PascalCase; functional components only; stateful logic in custom hooks (no inline API calls in components); Tailwind utilities plus the design tokens in `styles/theme.js`, never a hard-coded hex — the palette is enumerated once, in `.claude/rules/frontend.md`.
 
 ## Architecture rules (gating in code review)
 
 - Game logic lives in the engine (`src/`); `src/api/` adapts, never reimplements. About to re-derive a stat or roll in a route/serializer? Add a `GameService` method or call the engine helper instead.
-- `CombatAdapter` (`src/api/combat_adapter.py`) is the sole engine→JSON bridge for combat; serialization changes go there.
+- `ApiCombatAdapter` (`src/api/combat_adapter.py`) is the sole engine→JSON bridge for combat; serialization changes go there.
 - `Combatant` owns shared resistance/status-effect logic for `Player` and `NPC` — never duplicate it in a subclass.
-- New passive moves inherit `PassiveMove` (`src/moves/_base.py`), not `Move`; subclasses supply only `name` and `description`.
-- Every castable move declares `web_animation = "<key of ANIMATION_CONFIGS>"` (`frontend/src/utils/animationConfigs.js`); contract-tested by `tests/test_move_web_animations.py`.
+- New passive moves inherit `PassiveMove` (`src/moves/_base.py`), not `Move` — the subclass contract is in `.claude/rules/combat-engine.md`.
+- Every castable move declares a `web_animation` key from `ANIMATION_CONFIGS` — valid keys, fallbacks and the contract test are in `.claude/rules/combat-engine.md`.
 - To-hit arithmetic lives only in `src/moves/_base.py` (`to_hit_chance` is the roll, `attacker_accuracy` the display rating). Term order is load-bearing and per-move bases/floors are not uniform — read `.claude/rules/combat-engine.md` before touching it.
-- `combat_id` identifies a fight, not a call: minted once in `ApiCombatAdapter.initialize_combat`'s non-reinit branch so it survives wave/reinforcement reinits.
-- **GameService patterns:** `GameService.__init__` is `pass` — there is no `self.universe`; use `self._story(player)` / `self._game_tick(player)`. Routes never reach into player internals (`getattr(player, …)`) — call `game_service.method(player)`. Attribute traps: `player.attack` is a method; `player.health`/`stamina`/`defense`/`accuracy`/`evasion` don't exist (HP is `player.hp`); `player.reputation` is absent until written — `getattr(player, 'reputation', {})` to read, `player.reputation = {}` before writing. **Cooldown timing trap:** cooldowns drain only during active combat beats — a drain on rest, world movement, or save/load silently corrupts move availability, so guard every drain call with an active-combat check.
-- `/api/debug/*` (`routes/debug.py`) registers only under `app.config["TESTING"]`; never add a debug route outside that gate. Any new deserialization path goes through `src/secure_pickle.py`'s `SafeUnpickler`.
+- `combat_id` identifies a fight, not a call — minting and lifetime rules in `.claude/rules/api-layer.md`.
+- **GameService patterns:** `GameService.__init__` is `pass` — there is no `self.universe`; use `self._story(player)` / `self._game_tick(player)`. Routes never reach into player internals (`getattr(player, …)`) — call `game_service.method(player)`. Attribute traps: `player.attack`, `player.health`, `player.stamina`, `player.defense`, `player.accuracy` and `player.evasion` **do not exist at all** — HP is `player.hp`, and `attack` went out with the terminal teardown along with `Player.take`/`print_inventory`. `player.reputation` is absent until written — `getattr(player, 'reputation', {})` to read, `player.reputation = {}` before writing. Cooldowns drain only during active combat beats — the cooldown timing trap is in `.claude/rules/api-layer.md`.
+- `/api/debug/*` (`routes/debug.py`) registers only under `app.config["TESTING"]`; never add a debug route outside that gate. Any new deserialization path goes through `src/secure_pickle.py`'s `SafeUnpickler` — whose allow-list only *enforces* under `HOV_STRICT_UNPICKLE`, which nothing sets (`.claude/rules/saves-persistence.md`).
 
 ## Game-design rules (content and systems work)
 
@@ -136,8 +136,6 @@ mislabelled story flags, an unrestored class attribute, and one infinite loop.
 |---|---|---|
 | ≤ 1000 changed lines | `code-review` | Inline, single pass, current conversation |
 | > 1000 changed lines | `code-scrubber` | Chunked, 5 dimension subagents per chunk, dispatched as a background Agent |
-
-> The `Code Scrubber` **agent** (`.claude/agents/`) declares VSCode-namespaced tools (`vscode/`, `execute/`, `edit/editFiles`) and refuses to spawn outside the IDE — "zero tools". In a CLI session, review a large diff by scoping `code-review` to file subsets instead.
 
 Both grade DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness, plus the Heart of Virtue-specific **Architecture** (the rules above — gating) and **Correctness** (graded, reported). Dimension tables, the ≥80 confidence filter, and grading rules live in the two `SKILL.md` files — don't duplicate them here. Non-trivial changes iterate until every gating dimension is A; don't suggest `/commit` before that. If a dimension can't reach A without a user decision, stop and ask. Trivial changes (config, comments): confirm N/A or A and move on.
 

@@ -760,18 +760,19 @@ _API_CSP = (
 #       (grepped: zero hits) -- index.html loads one module by src. So the
 #       directive that actually stops XSS stays strict, with no escape hatch.
 #
-#   style-src 'unsafe-inline'  A measured cost, not a necessity. Four
+#   style-src 'unsafe-inline'  A measured cost, not a necessity. Three
 #       components render a literal <style> element (GameOverScreen:61,
-#       HeroPanel:241, ItemDetailDialog:778, ToastContext:172) plus
-#       InteractPanel:703, which builds one via
+#       HeroPanel:241, ToastContext:172) plus
+#       InteractPanel:761, which builds one via
 #       ``document.createElement('style')`` -- all of them for ``@keyframes``.
-#       Those five are the whole of what forces the concession today, and the
-#       count is falling: TypewriterOutput's ``blink`` and NpcChatPanel's
-#       spinner keyframes have already been lifted into
+#       Those four are the whole of what forces the concession today, and the
+#       count is falling: TypewriterOutput's ``blink``, NpcChatPanel's
+#       spinner keyframes and ItemDetailDialog's ``fadeIn`` have already been
+#       lifted into
 #       ``frontend/src/styles/index.css``, because keyframe names are
 #       document-global and a component-local block silently competes with
 #       every other definition of the same name. The same move would work for
-#       the remaining five, and if it is made this token should go with them.
+#       the remaining four, and if it is made this token should go with them.
 #       There is no nonce to offer them meanwhile: a statically hosted, cached
 #       index.html has no per-response value to mint. The ~1000 ``style={{}}``
 #       props are the weaker argument (React applies those through the CSSOM,

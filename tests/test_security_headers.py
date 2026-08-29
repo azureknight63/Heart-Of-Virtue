@@ -16,6 +16,28 @@ accident:
    negotiate ``Access-Control-*`` on the same responses, and an ``after_request``
    that reassigned rather than defaulted would have been an intermittent
    cross-origin failure rather than an obvious one.
+
+READ THIS BEFORE TRUSTING ``_HTML_CSP`` TO PROTECT ANYTHING
+-----------------------------------------------------------
+``_HTML_CSP`` **does not ship**. It is never sent by this app, and the tests
+below do not make it so. ``serves_html_document`` -- the only way a response
+can be given that policy -- has no production caller: the sole references in
+the repository are its own definition, the comment beside it in
+``src/api/app.py``, and this file, whose ``/__html_probe`` route calls it to
+exercise the branch. Nothing under ``src/`` calls ``render_template``,
+``send_file``, ``send_from_directory`` or registers a static folder; the React
+document is unpacked into a different container's document root by
+``deploy.ps1`` and served by a webserver this app never sees.
+
+So ``_HTML_CSP`` is a *specification for the SPA's host to mirror*, written
+down in the repo so the requirement is not folklore, and wired up so it applies
+automatically the day something here does serve HTML. The tests that check it
+against ``frontend/index.html`` and against the components that inject inline
+style are checking that the specification stays true to the frontend -- not
+that any header protects a user today. A finding of "the HTML CSP is too
+permissive" is a finding about a document written for someone else's config
+file. Do not delete these tests on that basis, and do not report the policy as
+an enforced control.
 """
 
 import pathlib
@@ -32,6 +54,222 @@ from src.api.app import (
     _STATIC_SECURITY_HEADERS,
     serves_html_document,
 )
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_FRONTEND = _REPO_ROOT / "frontend"
+
+
+# ---------------------------------------------------------------------------
+# Policy parsing
+#
+# Defined above every caller on purpose: these read a CSP string, and a reader
+# scanning top-down has to know they parse rather than substring-match before
+# any assertion using them means anything.
+# ---------------------------------------------------------------------------
+
+
+def _directive(policy: str, name: str):
+    """The source list of one directive, as a list of tokens.
+
+    Parsing rather than substring-matching, so a test cannot pass because the
+    token it wanted happened to appear under some *other* directive -- which is
+    exactly how a ``script-src`` assertion would quietly start reading
+    ``style-src``'s ``'unsafe-inline'``.
+    """
+    for chunk in policy.split(";"):
+        parts = chunk.split()
+        if parts and parts[0] == name:
+            return parts[1:]
+    return []
+
+
+def _permits(policy: str, directive: str, host: str) -> bool:
+    """True if ``policy`` allows ``host`` to be loaded under ``directive``.
+
+    Applies CSP's own fallback: a fetch directive that is absent inherits
+    ``default-src``. Checking membership in the parsed token list, not
+    ``host in policy``, is the point -- a host listed only under ``font-src``
+    but pulled in as a stylesheet satisfies the substring test and still gets
+    blocked by a real browser.
+    """
+    tokens = _directive(policy, directive) or _directive(policy, "default-src")
+    return host in tokens
+
+
+def _fetch_hosts(policy: str) -> set:
+    """Every host token the policy names under any fetch directive."""
+    hosts = set()
+    for chunk in policy.split(";"):
+        parts = chunk.split()
+        if parts and parts[0].endswith("-src"):
+            hosts.update(t for t in parts[1:] if "//" in t)
+    return hosts
+
+
+# ---------------------------------------------------------------------------
+# Reading frontend/index.html
+# ---------------------------------------------------------------------------
+
+_TAG_RE = re.compile(
+    r"<(?P<tag>script|link|img|iframe|source)\b(?P<attrs>[^>]*)>", re.I
+)
+_ATTR_RE = re.compile(
+    r"""(?P<name>[A-Za-z-]+)\s*=\s*(?P<q>["'])(?P<value>[^"']*)(?P=q)"""
+)
+_HOST_RE = re.compile(r"https?://[A-Za-z0-9.-]+")
+
+#: ``rel`` value -> the CSP directive that governs the resulting fetch.
+_REL_DIRECTIVE = {
+    "stylesheet": "style-src",
+    "icon": "img-src",
+    "shortcut icon": "img-src",
+    "apple-touch-icon": "img-src",
+    "modulepreload": "script-src",
+    "manifest": "connect-src",
+}
+
+#: ``<link rel="preload" as="...">`` -- the ``as`` names the directive.
+_AS_DIRECTIVE = {
+    "style": "style-src",
+    "font": "font-src",
+    "script": "script-src",
+    "image": "img-src",
+    "fetch": "connect-src",
+    "track": "media-src",
+    "audio": "media-src",
+    "video": "media-src",
+}
+
+#: ``rel`` values that only warm a connection. The browser fetches no resource,
+#: so no fetch directive governs the hint itself -- but a host worth warming is
+#: a host something is about to load, so it still has to appear somewhere.
+_HINT_RELS = {"preconnect", "dns-prefetch", "prefetch"}
+
+#: Tag -> the attribute that carries the URL it fetches.
+_URL_ATTR = {
+    "script": "src",
+    "img": "src",
+    "iframe": "src",
+    "source": "src",
+    "link": "href",
+}
+
+_TAG_DIRECTIVE = {
+    "script": "script-src",
+    "img": "img-src",
+    "iframe": "frame-src",
+    "source": "media-src",
+}
+
+
+def _external_references(html: str):
+    """Classify every externally-hosted resource ``html`` pulls in.
+
+    Returns ``(fetches, hints, unclassified)``:
+
+    * ``fetches`` -- ``{(host, directive)}`` for resources the browser loads.
+    * ``hints`` -- hosts named only by ``preconnect``/``dns-prefetch``.
+    * ``unclassified`` -- ``{(tag, rel, host)}`` this mapping cannot place.
+
+    ``unclassified`` is returned rather than ignored so that a new kind of tag
+    fails the caller loudly instead of silently escaping the check. Attributes
+    that never cause a fetch (``xmlns``, ``content``) are not read at all.
+    """
+    fetches, hints, unclassified = set(), set(), set()
+    for tag_match in _TAG_RE.finditer(html):
+        tag = tag_match.group("tag").lower()
+        attrs = {
+            m.group("name").lower(): m.group("value")
+            for m in _ATTR_RE.finditer(tag_match.group("attrs"))
+        }
+        url = attrs.get(_URL_ATTR[tag], "")
+        host_match = _HOST_RE.match(url.strip())
+        if not host_match:  # relative URL -- same origin, nothing to permit
+            continue
+        host = host_match.group(0)
+
+        rel = (attrs.get("rel") or "").strip().lower()
+        if tag == "link":
+            if rel in _HINT_RELS:
+                hints.add(host)
+                continue
+            if rel == "preload":
+                directive = _AS_DIRECTIVE.get((attrs.get("as") or "").lower())
+            else:
+                directive = _REL_DIRECTIVE.get(rel)
+        else:
+            directive = _TAG_DIRECTIVE.get(tag)
+
+        if directive is None:
+            unclassified.add((tag, rel, host))
+        else:
+            fetches.add((host, directive))
+    return fetches, hints, unclassified
+
+
+# ---------------------------------------------------------------------------
+# Reading frontend/src for inline-style injection
+# ---------------------------------------------------------------------------
+
+#: Comments and string literals, so comments can be dropped without a ``//``
+#: inside a URL string eating the rest of the line. Strings are matched only to
+#: be *kept*: ``insertAdjacentHTML('beforeend', '<style>…')`` puts a real
+#: injection inside one.
+_JS_COMMENT_OR_STRING = re.compile(
+    r"""(?P<comment> // [^\n]* | /\* .*? \*/ )
+      | (?P<string> " (?:\\.|[^"\\])* "
+                  | ' (?:\\.|[^'\\])* '
+                  | ` (?:\\.|[^`\\])* ` )""",
+    re.VERBOSE | re.DOTALL,
+)
+
+#: Every textual route to an inline stylesheet, matched as a regex rather than
+#: by literal substring. The literal-substring version this replaces read
+#: ``"<style>" in body or "createElement('style')" in body``, which
+#: ``createElement("style")``, ``<style type="text/css">``, ``insertRule`` and
+#: ``insertAdjacentHTML`` all walked straight past.
+_INJECTS_STYLE = re.compile(
+    r"""< style [\s/>]
+      | createElement \s* \( \s* ['"`] style ['"`]
+      | \. insertRule \s* \(
+      | insertAdjacentHTML \s* \(""",
+    re.VERBOSE,
+)
+
+
+def _strip_js_comments(source: str) -> str:
+    """``source`` with comments removed and string literals left intact.
+
+    Without this the scan punishes explaining itself: a comment that mentions
+    the tag by name counted the file as an injector, which is how a component
+    that merely *documents* where its keyframes moved to got flagged.
+    """
+    return _JS_COMMENT_OR_STRING.sub(
+        lambda m: "" if m.group("comment") else m.group(0), source
+    )
+
+
+def _style_injectors(root: pathlib.Path) -> set:
+    """Filenames under ``root`` that put a stylesheet into the document.
+
+    Both ``*.js`` and ``*.jsx``: the previous version globbed ``*.jsx`` alone,
+    so a plain module was free to inject and stay invisible to this check.
+
+    Test scaffolding is excluded -- ``*.test.js``/``*.test.jsx`` and everything
+    under ``src/test/`` -- because none of it is in the shipped bundle, and the
+    question here is what the *document* does. ``src/test/keyframeAudit.js`` is
+    the live example: it is a static auditor that quotes the tag it looks for.
+    """
+    injectors = set()
+    for path in sorted(root.rglob("*.js")) + sorted(root.rglob("*.jsx")):
+        if path.name.endswith((".test.js", ".test.jsx")):
+            continue
+        if "test" in path.relative_to(root).parts[:-1]:
+            continue
+        body = path.read_text(encoding="utf-8", errors="replace")
+        if _INJECTS_STYLE.search(_strip_js_comments(body)):
+            injectors.add(path.name)
+    return injectors
 
 
 class _FastTestConfig:
@@ -293,33 +531,50 @@ class TestTheHookDoesNotFightAnyoneElse:
 
 
 class TestTheHtmlPolicyMatchesTheRealFrontend:
-    """``_HTML_CSP`` is a specification for whoever serves ``index.html``, so it
-    is worth only as much as its agreement with that file. This check turns
-    "somebody eyeballed the frontend once" into something that fails the day a
-    new CDN is added to the document.
+    """``_HTML_CSP`` is a specification for whoever serves ``index.html`` (it
+    is never sent by this app -- see the module docstring), so it is worth only
+    as much as its agreement with that file. These checks turn "somebody
+    eyeballed the frontend once" into something that fails the day a new CDN is
+    added to the document.
     """
 
-    #: Schemes that are not hosts and so are not the subject of this check.
-    _NON_HOSTS = ("http://www.w3.org",)
-
-    def test_every_external_host_in_index_html_is_permitted(self):
-        index = (
-            pathlib.Path(__file__).resolve().parent.parent / "frontend" / "index.html"
-        )
+    def _index_html(self):
+        index = _FRONTEND / "index.html"
         if not index.exists():  # pragma: no cover - frontend not checked out
             pytest.skip("frontend/index.html not present")
-        hosts = {
-            match.group(0)
-            for match in re.finditer(
-                r"https?://[A-Za-z0-9.-]+", index.read_text(encoding="utf-8")
-            )
-        }
-        hosts = {h for h in hosts if not h.startswith(self._NON_HOSTS)}
-        assert hosts, "expected index.html to reference at least the font hosts"
-        unlisted = sorted(h for h in hosts if h not in _HTML_CSP)
+        return index.read_text(encoding="utf-8")
+
+    def test_every_external_host_in_index_html_is_permitted(self):
+        """Per directive, not per policy. The version this replaces asked
+        ``host not in _HTML_CSP`` -- a substring test against the whole policy
+        string, which is the very technique ``_directive``'s docstring warns
+        about. A host listed only under ``font-src`` and loaded as a stylesheet
+        satisfied it while the SPA broke.
+        """
+        fetches, hints, unclassified = _external_references(self._index_html())
+        assert fetches or hints, (
+            "expected index.html to reference at least the font hosts"
+        )
+        assert unclassified == set(), (
+            "index.html loads an external resource this check cannot place "
+            f"under a CSP directive, so it is going unchecked: {unclassified}"
+        )
+
+        unlisted = sorted(
+            (host, directive)
+            for host, directive in fetches
+            if not _permits(_HTML_CSP, directive, host)
+        )
         assert unlisted == [], (
-            "frontend/index.html loads from hosts the HTML CSP does not allow, "
-            f"so the SPA would break under it: {unlisted}"
+            "frontend/index.html loads from hosts the HTML CSP does not allow "
+            f"under the governing directive, so the SPA would break: {unlisted}"
+        )
+
+        permitted_anywhere = _fetch_hosts(_HTML_CSP)
+        stray_hints = sorted(h for h in hints if h not in permitted_anywhere)
+        assert stray_hints == [], (
+            "index.html preconnects to hosts no fetch directive permits -- "
+            f"either the policy is missing them or the hint is dead: {stray_hints}"
         )
 
     def test_the_font_hosts_are_on_the_directives_that_need_them(self):
@@ -334,34 +589,27 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
     #: rationale beside that directive.
     #:
     #: Pinned as a set, not counted, because the prose version of this list
-    #: went stale without anything noticing: it named six components, two of
-    #: which (TypewriterOutput, NpcChatPanel) had already had their keyframes
-    #: lifted into ``frontend/src/styles/index.css`` -- and one of those was
-    #: disproved by an assertion in the frontend's own test suite. A rationale
-    #: nothing checks decays into a rationale nobody can trust, and this is the
-    #: directive where that costs the most.
+    #: went stale without anything noticing: it named six components, three of
+    #: which (TypewriterOutput's ``blink``, NpcChatPanel's spinner,
+    #: ItemDetailDialog's ``fadeIn``) have since had their keyframes lifted
+    #: into ``frontend/src/styles/index.css``. ``fadeIn`` was not a tidy-up:
+    #: ``ActionsPanel`` was animating with it while the only declaration lived
+    #: inside ``ItemDetailDialog``, so it animated only while an item dialog
+    #: happened to be mounted. A rationale nothing checks decays into a
+    #: rationale nobody can trust, and this is the directive where that costs
+    #: the most.
     _STYLE_INJECTORS = {
         "GameOverScreen.jsx",
         "HeroPanel.jsx",
-        "ItemDetailDialog.jsx",
         "ToastContext.jsx",
         "InteractPanel.jsx",  # document.createElement('style')
     }
 
     def _injectors(self):
-        frontend_src = (
-            pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src"
-        )
-        if not frontend_src.exists():  # pragma: no cover - frontend not checked out
+        frontend_src = _FRONTEND / "src"
+        if not frontend_src.exists():  # pragma: no cover - not checked out
             pytest.skip("frontend/src not present")
-        injectors = set()
-        for path in frontend_src.rglob("*.jsx"):
-            if path.name.endswith(".test.jsx"):
-                continue
-            body = path.read_text(encoding="utf-8", errors="replace")
-            if "<style>" in body or "createElement('style')" in body:
-                injectors.add(path.name)
-        return injectors
+        return _style_injectors(frontend_src)
 
     def test_style_src_admits_inline_because_the_frontend_injects_style_tags(self):
         """Not a rubber stamp on the value -- a check that the justification
@@ -383,21 +631,6 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
             "the set of components injecting a <style> element has changed, so "
             "app.py's style-src rationale (and this list) need updating"
         )
-
-
-def _directive(policy: str, name: str):
-    """The source list of one directive, as a list of tokens.
-
-    Parsing rather than substring-matching, so a test cannot pass because the
-    token it wanted happened to appear under some *other* directive -- which is
-    exactly how a ``script-src`` assertion would quietly start reading
-    ``style-src``'s ``'unsafe-inline'``.
-    """
-    for chunk in policy.split(";"):
-        parts = chunk.split()
-        if parts and parts[0] == name:
-            return parts[1:]
-    return []
 
 
 class TestTheDirectiveParserItself:
@@ -424,3 +657,151 @@ class TestTheDirectiveParserItself:
     def test_it_does_not_match_a_directive_name_appearing_as_a_value(self):
         policy = "default-src 'self' script-src"
         assert _directive(policy, "script-src") == []
+
+
+class TestTheHostCheckItself:
+    """Guard-the-guard for the index.html check. The property that matters is
+    that it can *fail* on a policy the old substring version accepted."""
+
+    _INDEX = (
+        '<link rel="preconnect" href="https://fonts.googleapis.com">'
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        '<link href="https://fonts.googleapis.com/css2?family=X" rel="stylesheet">'
+        '<link rel="icon" type="image/png" href="/hero-heart.png">'
+        '<script type="module" src="/src/main.jsx"></script>'
+    )
+
+    def test_it_classifies_each_reference_by_the_directive_that_governs_it(self):
+        fetches, hints, unclassified = _external_references(self._INDEX)
+        assert fetches == {("https://fonts.googleapis.com", "style-src")}
+        assert hints == {
+            "https://fonts.googleapis.com",
+            "https://fonts.gstatic.com",
+        }
+        assert unclassified == set()
+
+    def test_it_ignores_same_origin_urls(self):
+        """The icon and the module entry point are relative. A check that
+        counted them would fail on a policy that is entirely correct."""
+        fetches, hints, _ = _external_references(self._INDEX)
+        assert all(h.startswith("http") for h, _ in fetches)
+        assert not any("hero-heart" in h for h in hints)
+
+    def test_it_reports_a_tag_it_cannot_place(self):
+        """A new kind of external reference must fail loudly rather than slip
+        past unexamined."""
+        _, _, unclassified = _external_references(
+            '<link rel="somethingnew" href="https://cdn.example/x.css">'
+        )
+        assert unclassified == {("link", "somethingnew", "https://cdn.example")}
+
+    def test_a_host_on_the_wrong_directive_is_rejected(self):
+        """The exact hole the substring version left open: googleapis present
+        in the policy, but only under ``font-src``, while index.html loads it
+        as a stylesheet. ``"https://fonts.googleapis.com" in policy`` is True
+        here and the browser blocks the request anyway."""
+        wrong = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com"
+        )
+        assert "https://fonts.googleapis.com" in wrong  # the old test's check
+        assert not _permits(wrong, "style-src", "https://fonts.googleapis.com")
+
+        fetches, _, _ = _external_references(self._INDEX)
+        unlisted = [
+            (h, d) for h, d in fetches if not _permits(wrong, d, h)
+        ]
+        assert unlisted == [("https://fonts.googleapis.com", "style-src")]
+
+    def test_an_absent_directive_falls_back_to_default_src(self):
+        """CSP's own rule. A policy with no ``img-src`` is not a policy that
+        blocks images, and reporting one would be a false alarm."""
+        policy = "default-src 'self' https://cdn.example; script-src 'self'"
+        assert _permits(policy, "img-src", "https://cdn.example")
+        assert not _permits(policy, "script-src", "https://cdn.example")
+
+    def test_fetch_hosts_reads_only_fetch_directives(self):
+        policy = (
+            "default-src 'none'; img-src https://a.example; "
+            "frame-ancestors https://b.example; report-uri https://c.example"
+        )
+        assert _fetch_hosts(policy) == {"https://a.example"}
+
+
+class TestTheInjectorScanItself:
+    """Guard-the-guard for ``_style_injectors``. Its previous form matched two
+    literal substrings in ``*.jsx`` files, and each case below walked past it.
+    """
+
+    def _write(self, tmp_path, name, body):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    @pytest.mark.parametrize(
+        "name, body",
+        [
+            # The two the old literal check did catch.
+            ("A.jsx", "export const A = () => <style>{`@keyframes x {}`}</style>"),
+            ("B.jsx", "const el = document.createElement('style')"),
+            # Everything it did not.
+            ("C.js", "const el = document.createElement('style')"),
+            ("D.jsx", 'const el = document.createElement("style")'),
+            ("E.jsx", "const el = document.createElement(`style`)"),
+            ("F.jsx", '<style type="text/css">{css}</style>'),
+            ("G.jsx", "<style>{css}</style>"),
+            ("H.js", "sheet.insertRule('@keyframes x {}')"),
+            ("I.jsx", "node.insertAdjacentHTML('beforeend', '<sty' + 'le>')"),
+        ],
+    )
+    def test_it_catches_every_route_to_an_inline_stylesheet(
+        self, tmp_path, name, body
+    ):
+        self._write(tmp_path, name, body)
+        assert _style_injectors(tmp_path) == {name}
+
+    def test_a_file_that_only_mentions_the_tag_in_a_comment_is_not_an_injector(
+        self, tmp_path
+    ):
+        """This one bit for real: a component documented where its keyframes
+        had moved to, named the tag in the comment, and was counted as an
+        injector -- so the scan punished explaining the thing it measures."""
+        self._write(
+            tmp_path,
+            "Documented.jsx",
+            "// keyframes moved to index.css; there is no <style> here now\n"
+            "/* nor in this <style> block comment */\n"
+            "export const X = () => <div />\n",
+        )
+        assert _style_injectors(tmp_path) == set()
+
+    def test_a_url_in_a_string_does_not_eat_the_line_after_it(self, tmp_path):
+        """``//`` inside a string is not a comment. A stripper that thought it
+        was would blank the rest of the line -- and a real injection sitting
+        there would vanish with it."""
+        self._write(
+            tmp_path,
+            "Mixed.jsx",
+            "const u = 'https://fonts.googleapis.com'; "
+            "const el = document.createElement('style')\n",
+        )
+        assert _style_injectors(tmp_path) == {"Mixed.jsx"}
+
+    def test_it_skips_test_files_and_test_helpers(self, tmp_path):
+        """Neither ships in the bundle, and ``src/test/keyframeAudit.js`` is a
+        static auditor that quotes the tag it hunts for."""
+        self._write(tmp_path, "Thing.test.jsx", "<style>{css}</style>")
+        self._write(tmp_path, "Thing.test.js", "<style>{css}</style>")
+        self._write(tmp_path, "test/helper.js", "<style>{css}</style>")
+        assert _style_injectors(tmp_path) == set()
+
+    def test_a_plain_component_is_not_an_injector(self, tmp_path):
+        """Non-vacuity for the cases above: the scan must not simply say yes."""
+        self._write(
+            tmp_path,
+            "Plain.jsx",
+            "export const P = () => <div style={{ color: 'red' }}>hi</div>",
+        )
+        assert _style_injectors(tmp_path) == set()

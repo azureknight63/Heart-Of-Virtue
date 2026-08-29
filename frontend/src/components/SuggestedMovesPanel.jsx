@@ -203,13 +203,24 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                         alignItems: 'center',
                         gap: '12px'
                     }}>
+                        {/*
+                          * The rotation comes from Tailwind's `animate-spin`
+                          * utility and nothing else. This element also carried
+                          * an inline `animation: 'spin 1s linear infinite'`,
+                          * restating that utility's exact value — but no
+                          * `@keyframes spin` is written anywhere in this repo:
+                          * Tailwind emits it, and only because the class name
+                          * appears in a scanned file. So the inline copy looked
+                          * self-sufficient while actually depending on the class
+                          * beside it, and deleting the "redundant" class would
+                          * have stopped the spinner dead. One mechanism now.
+                          */}
                         <div className="animate-spin" style={{
                             width: '20px',
                             height: '20px',
                             border: `2px solid ${colors.primary}22`,
                             borderTop: `2px solid ${colors.primary}`,
                             borderRadius: '50%',
-                            animation: 'spin 1s linear infinite'
                         }} />
                         <span>ANALYZING COMBAT SITUATION...</span>
                     </div>

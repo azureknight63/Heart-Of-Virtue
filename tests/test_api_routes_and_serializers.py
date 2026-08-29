@@ -205,11 +205,12 @@ class TestErrorHandler:
     def test_register_error_handlers_installs_handlers_on_the_app(self):
         """The function's job is the side effect, not the return value.
 
-        Asserting ``result is None`` passed for a body of ``pass``. What
-        callers depend on is that a bare Flask app comes back answering 404
-        and 500 with the JSON envelope the frontend parses, instead of
-        Werkzeug's HTML error page (which would make every client-side
-        ``response.json()`` throw).
+        Asserting ``result is None`` passed for a body of ``pass``, so the
+        side effect itself is what gets asserted here. The envelope each
+        handler returns is already covered by the three tests above; the only
+        thing repeated here is the leak check, because this app runs with
+        ``TESTING = False`` -- the production posture, and the one where
+        Werkzeug would otherwise render the exception into the page.
         """
         from src.api.handlers.error_handler import register_error_handlers
 
@@ -224,17 +225,8 @@ class TestErrorHandler:
         register_error_handlers(a)
         assert a.error_handler_spec.get(None)
 
-        client = a.test_client()
-        missing = client.get("/no-such-route")
-        assert missing.status_code == 404
-        assert missing.get_json()["success"] is False
-
-        crashed = client.get("/boom")
+        crashed = a.test_client().get("/boom")
         assert crashed.status_code == 500
-        body = crashed.get_json()
-        assert body["success"] is False
-        assert "Internal server error" in body["error"]
-        # The raised text must not reach the client.
         assert "kaboom" not in crashed.data.decode()
 
 
@@ -418,7 +410,6 @@ class TestFeedbackHelpers:
             _build_general_body,
             _build_rating_row,
             _create_github_issue,
-            _feedback_limiter,
         )
 
         self._is_rate_limited = _is_rate_limited
@@ -427,7 +418,6 @@ class TestFeedbackHelpers:
         self._build_general_body = _build_general_body
         self._build_rating_row = _build_rating_row
         self._create_github_issue = _create_github_issue
-        self._feedback_limiter = _feedback_limiter
 
     def test_build_bug_body_basic(self):
         fields = {
@@ -528,31 +518,56 @@ class TestFeedbackHelpers:
         with app.test_request_context("/", environ_base={"REMOTE_ADDR": ip}):
             yield
 
-    def test_rate_limit_not_triggered_initially(self):
-        self._feedback_limiter.clear_all()
+    @pytest.fixture
+    def limiter(self):
+        """The live throttle, cleared, with the one precondition stated.
+
+        ``feedback.py`` builds this with ``limiter_from_env`` and hands back
+        ``None`` when ``FEEDBACK_RATE_LIMIT_PER_HOUR`` is 0 -- a documented,
+        supported setting. The tests below then read ``None.clear_all()`` and
+        report an ``AttributeError`` rather than the missing precondition, so
+        an operator whose ``.env`` disables feedback throttling gets a
+        confusing failure in a suite that has nothing to do with their change.
+        Stating it here is also the only spelling of this precondition in the
+        class, instead of six unguarded attribute reads.
+        """
+        from src.api.routes.feedback import _feedback_limiter
+
+        assert _feedback_limiter is not None, (
+            "FEEDBACK_RATE_LIMIT_PER_HOUR must be at its nonzero default for "
+            "these tests -- feedback.py disables the limiter entirely at 0."
+        )
+        _feedback_limiter.clear_all()
+        return _feedback_limiter
+
+    def test_rate_limit_not_triggered_initially(self, limiter):
         with self._from_ip("198.51.100.1"):
             assert self._is_rate_limited(self._session()) is False
 
-    def test_rate_limit_triggered_after_10(self):
-        self._feedback_limiter.clear_all()
+    def test_the_last_permitted_submission_is_the_configured_limit(self, limiter):
+        """The cap is read off the limiter, not written into the test name.
+
+        The name used to carry the number and the loop hardcoded it, so raising
+        ``FEEDBACK_RATE_LIMIT_PER_HOUR`` (or ``_RATE_LIMIT``) left a test called
+        ``..._after_10`` failing at a value that was now correct.
+        """
         with self._from_ip("198.51.100.2"):
-            for i in range(10):
+            for i in range(limiter.limit):
                 # Assert the transition, not just the end state: an off-by-one
-                # that blocked at the 9th submission would still satisfy a lone
-                # "the 11th is limited" assertion.
+                # that blocked one submission early would still satisfy a lone
+                # "the next one is limited" assertion.
                 assert (
                     self._is_rate_limited(self._session()) is False
-                ), f"blocked early at call {i}"
+                ), f"blocked early at call {i} of {limiter.limit}"
             assert self._is_rate_limited(self._session()) is True
 
-    def test_a_fresh_session_id_does_not_buy_a_fresh_budget(self):
+    def test_a_fresh_session_id_does_not_buy_a_fresh_budget(self, limiter):
         """The throttle used to key on ``session.session_id``, which the client
         mints at will -- every ``/auth/login`` returns a new one, so the cap on
         *real GitHub issue creation* was walked past by re-authenticating.
         """
-        self._feedback_limiter.clear_all()
         with self._from_ip("198.51.100.3"):
-            for _ in range(10):
+            for _ in range(limiter.limit):
                 self._is_rate_limited(
                     SimpleNamespace(session_id=uuid.uuid4().hex, db_user_id=None)
                 )
@@ -564,22 +579,20 @@ class TestFeedbackHelpers:
                 is True
             )
 
-    def test_rate_limit_is_scoped_to_one_client(self):
+    def test_rate_limit_is_scoped_to_one_client(self, limiter):
         """One player's quota must not throttle another's."""
-        self._feedback_limiter.clear_all()
         with self._from_ip("198.51.100.4"):
-            for _ in range(11):
+            for _ in range(limiter.limit + 1):
                 self._is_rate_limited(self._session())
             assert self._is_rate_limited(self._session()) is True
         with self._from_ip("198.51.100.5"):
             assert self._is_rate_limited(self._session()) is False
 
-    def test_a_logged_in_account_is_throttled_across_ip_changes(self):
+    def test_a_logged_in_account_is_throttled_across_ip_changes(self, limiter):
         """The account tier exists so moving to a new address does not reset
         the budget; the IP tier alone would."""
-        self._feedback_limiter.clear_all()
         with self._from_ip("198.51.100.6"):
-            for _ in range(10):
+            for _ in range(limiter.limit):
                 self._is_rate_limited(self._session(db_user_id=4242))
         with self._from_ip("203.0.113.99"):
             assert self._is_rate_limited(self._session(db_user_id=4242)) is True
@@ -814,8 +827,12 @@ class TestFeedbackRoute:
     def client(self, minimal_app):
         from src.api.routes.feedback import feedback_bp, _feedback_limiter
 
-        # Clear rate limit store to avoid cross-test contamination
-        _feedback_limiter.clear_all()
+        # Clear rate limit store to avoid cross-test contamination. Hygiene
+        # only, so a disabled limiter (FEEDBACK_RATE_LIMIT_PER_HOUR=0 makes it
+        # None) is nothing to clear rather than an error -- unlike the
+        # ``limiter`` fixture above, whose tests have no subject without it.
+        if _feedback_limiter is not None:
+            _feedback_limiter.clear_all()
 
         app = minimal_app([(feedback_bp, "/api/feedback")])
         with app.test_client() as c:

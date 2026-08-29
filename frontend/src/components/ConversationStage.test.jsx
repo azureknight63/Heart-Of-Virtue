@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import ConversationStage, { computeStage } from './ConversationStage'
 import { portraitUrl } from '../utils/portraits'
 import { portraitManifestPairs } from '../test/portraitManifest'
+import { expectNoNaNStyles } from '../test/styleAssertions'
 
 const CAST = [
     { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
@@ -495,26 +496,82 @@ describe('ConversationStage rendering', () => {
         )
 
         const stage = screen.getByTestId('conversation-stage')
-        // The wide grid geometry (display/tracks/areas/gap/min-height) lives in
-        // `.conversation-stage--wide` in styles/index.css, so the phone media
-        // query can override it by ordinary cascade rather than 7 `!important`
-        // declarations. The component's job is to apply the class and to place
-        // each column into a named grid area; jsdom does not load the
-        // stylesheet, so the tracks themselves are not assertable here.
+        // THE RULE, as stated in styles/index.css: every property the phone
+        // breakpoint retunes is owned by `.conversation-stage--wide` there, so
+        // the media query wins by ordinary cascade instead of out-shouting an
+        // inline style with a stack of `!important` declarations. index.css is
+        // where that rule is written down and where its scope is defined; this
+        // asserts it, and neither place restates the historical count of
+        // `!important`s, which is unverifiable now that they are gone.
+        //
+        // jsdom loads no stylesheet, so a test can only ever check the ABSENCE
+        // of an inline value, never that a rule supplied one. Absence is
+        // nonetheless the whole of the contract: an inline value is exactly
+        // what would beat the breakpoint.
         expect(stage).toHaveClass('conversation-stage--wide')
-        expect(stage).not.toHaveStyle({ display: 'flex' })
+        for (const prop of ['display', 'gap', 'minHeight', 'gridTemplateColumns', 'gridTemplateAreas']) {
+            expect(stage.style[prop], `${prop} must not be set inline on the wide stage`).toBe('')
+        }
 
         const leftColumn = screen.getByAltText(/Jean/).parentElement.parentElement
         const rightColumn = screen.getByAltText(/Amelia/).parentElement.parentElement
         expect(leftColumn).toHaveClass('conversation-stage__portrait-column')
         expect(leftColumn).toHaveStyle({ gridArea: 'left' })
         expect(rightColumn).toHaveStyle({ gridArea: 'right' })
+        // The column's own width is retuned at the breakpoint, so CSS owns it.
+        expect(leftColumn.style.minWidth).toBe('')
+        expect(leftColumn.querySelector('img').style.width).toBe('')
         // The dialogue card takes the middle area and drops its inline padding /
         // min-height so the breakpoint can retune both.
         const dialogue = stage.querySelector('.conversation-stage__dialogue')
         expect(dialogue).toHaveStyle({ gridArea: 'dialogue' })
         expect(dialogue.style.padding).toBe('')
         expect(dialogue.style.minHeight).toBe('')
+    })
+
+    it('keeps the internal flex layout of the columns and card inline in both layouts', () => {
+        // The counterpart to the absences above, and the reason THE RULE is
+        // scoped to the stage element rather than to everything on it. These
+        // properties lay a column and the dialogue card out INTERNALLY, no
+        // breakpoint retunes them, and moving them into CSS would create a
+        // claim jsdom could never check. Pinning them here means widening the
+        // rule later is a deliberate edit rather than prose drift.
+        render(
+            <ConversationStage
+                segments={[{ text: 'A wide line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                layout="wide"
+            />
+        )
+
+        const stage = screen.getByTestId('conversation-stage')
+        const column = screen.getByAltText(/Jean/).parentElement.parentElement
+        expect(column).toHaveStyle({ display: 'flex', flexDirection: 'column' })
+        expect(column.style.gap).not.toBe('')
+
+        const dialogue = stage.querySelector('.conversation-stage__dialogue')
+        expect(dialogue).toHaveStyle({ display: 'flex' })
+        // `minWidth: 0` lets the middle grid track actually shrink; without it
+        // a long unbroken line blows the track out past its `minmax(0, 2fr)`.
+        // Matched loosely: jsdom serializes a zero length as "0", other DOMs as
+        // "0px", and which one is not the point being asserted.
+        expect(dialogue.style.minWidth).toMatch(/^0(px)?$/)
+        expect(dialogue.style.gap).not.toBe('')
+    })
+
+    it('renders no NaN in any inline style', () => {
+        // `spacing` is CSS length STRINGS (see the JSDoc in styles/theme.js);
+        // this component interpolates them into padding and gap. Arithmetic on
+        // one yields NaN, which React drops silently in production.
+        const { container } = render(
+            <ConversationStage
+                segments={[{ text: 'A line.', speaker: 'Jean', flavor: 'quietly', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                layout="wide"
+            />
+        )
+
+        expectNoNaNStyles(container)
     })
 
     it('keeps the default layout styling itself inline', () => {

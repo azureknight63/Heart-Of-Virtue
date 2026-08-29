@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import PortraitImage from './PortraitImage'
-import { colors, spacing, fonts } from '../styles/theme'
+import { castMember } from './ConversationTranscript'
+import { DEFAULT_EMOTION } from '../utils/conversationSegment'
+import { colors, spacing, fonts, commonStyles } from '../styles/theme'
 
 // Referentially stable stand-in for "no initial roster". `computeStage` is
 // memoized on its arguments, and a fresh `[]` per render would miss that cache
@@ -47,7 +49,7 @@ export function computeStage(segments, idx, initialCast) {
             id: c.id,
             name: c.name || c.id,
             side: c.side || 'right',
-            emotion: c.emotion || 'neutral',
+            emotion: c.emotion || DEFAULT_EMOTION,
             // The opening roster is already on stage when beat 0 renders, so it
             // must never register as "entering" (enteredAt can't be any beat).
             enteredAt: -1,
@@ -62,7 +64,7 @@ export function computeStage(segments, idx, initialCast) {
                 id: op.id,
                 name: op.name || op.id,
                 side: op.side || 'right',
-                emotion: op.emotion || 'neutral',
+                emotion: op.emotion || DEFAULT_EMOTION,
                 enteredAt: k,
                 enterTransition: isInstant(op) ? 'instant' : 'fade',
             })
@@ -186,6 +188,140 @@ function Portrait({ member, isSpeaker, wide = false }) {
             >
                 {member.name}
             </span>
+        </div>
+    )
+}
+
+/**
+ * PortraitColumn — one flank of the stage: the cast standing on `area`'s side.
+ *
+ * The flex `display`/`gap` that stack the portraits inside the column are set
+ * here in both layouts, deliberately: no breakpoint retunes them. What the
+ * wide layout does hand to CSS is the column's `min-width`/`width`, which the
+ * phone media query does retune — see THE RULE in styles/index.css.
+ */
+function PortraitColumn({ members, area, activeSpeaker, isWide, staged }) {
+    return (
+        <div
+            className="conversation-stage__portrait-column"
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: spacing.md,
+                // In wide layout the grid track governs the column's width;
+                // `.conversation-stage--wide .conversation-stage__portrait-column`
+                // in index.css owns min-width/width there instead.
+                minWidth: isWide ? undefined : (staged ? '150px' : '0'),
+                gridArea: isWide ? area : undefined,
+                transition: 'min-width 0.35s ease',
+            }}
+        >
+            {members.map((m) => (
+                <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} wide={isWide} />
+            ))}
+        </div>
+    )
+}
+
+/**
+ * StageDialogueCard — the centre panel: speaker label, flavor, prose, hint.
+ *
+ * Everything here is a pure function of the current beat, which is why it
+ * splits cleanly off the stage: the stage owns beat progression and cast
+ * state, this owns how one beat reads.
+ *
+ * `padding` and `min-height` are the two values the phone breakpoint retunes,
+ * so in the wide layout CSS owns them and they are absent from this inline
+ * style — the absence is the contract, and the test asserts it.
+ */
+function StageDialogueCard({
+    speaker,
+    speakerName,
+    flavor,
+    text,
+    isThought,
+    isWide,
+    showHint,
+    hintText,
+    hintVisible,
+}) {
+    const isDialogue = Boolean(speaker)
+    return (
+        <div
+            className="conversation-stage__dialogue"
+            style={{
+                flex: isWide ? undefined : 1,
+                minWidth: 0,
+                gridArea: isWide ? 'dialogue' : undefined,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                gap: spacing.sm,
+                border: `2px solid ${colors.secondary}`,
+                borderRadius: '8px',
+                backgroundColor: colors.bg.panelDeep,
+                transition: 'min-height 0.3s ease',
+                ...(isWide ? {} : { padding: spacing.lg, minHeight: '220px' }),
+            }}
+        >
+            {isDialogue && (
+                <span
+                    style={{
+                        ...commonStyles.eyebrowLabel,
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        color: colors.secondary,
+                    }}
+                >
+                    {speakerName}
+                </span>
+            )}
+            {flavor && (
+                <div
+                    data-testid="conversation-flavor"
+                    style={{
+                        color: colors.text.muted,
+                        fontSize: '13px',
+                        lineHeight: 1.45,
+                        fontStyle: 'italic',
+                        textAlign: isDialogue ? 'left' : 'center',
+                        padding: `${spacing.xs} ${spacing.sm}`,
+                        borderLeft: `2px solid ${colors.border.light}`,
+                    }}
+                >
+                    {flavor}
+                </div>
+            )}
+            <div
+                style={{
+                    color: isDialogue ? colors.text.main : colors.success,
+                    fontSize: '16px',
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                    textAlign: isDialogue ? 'left' : 'center',
+                    fontStyle: isDialogue && !isThought ? 'normal' : 'italic',
+                }}
+            >
+                {text}
+            </div>
+            {showHint && (
+                <span
+                    data-testid="conversation-advance-hint"
+                    style={{
+                        marginTop: spacing.sm,
+                        fontSize: '12px',
+                        color: colors.text.muted,
+                        fontStyle: 'italic',
+                        textAlign: 'center',
+                        opacity: hintVisible ? 1 : 0,
+                        transition: 'opacity 0.3s ease',
+                    }}
+                >
+                    {hintText}
+                </span>
+            )}
         </div>
     )
 }
@@ -315,33 +451,10 @@ function ConversationStage({
         return () => node.removeEventListener('keydown', onKey)
     }, [advance, isLive])
 
-    const isDialogue = Boolean(current.speaker)
     const isThought = Boolean(current.thought)
     const isWide = layout === 'wide'
 
-    /** One flank of the stage: the cast members standing on `area`'s side. */
-    const renderColumn = (columnMembers, area) => (
-        <div
-            className="conversation-stage__portrait-column"
-            style={{
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: spacing.md,
-                // In wide layout the grid track governs the column's width;
-                // `.conversation-stage--wide .conversation-stage__portrait-column`
-                // in index.css owns min-width/width there instead.
-                minWidth: isWide ? undefined : (staged ? '150px' : '0'),
-                gridArea: isWide ? area : undefined,
-                transition: 'min-width 0.35s ease',
-            }}
-        >
-            {columnMembers.map((m) => (
-                <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} wide={isWide} />
-            ))}
-        </div>
-    )
+    const columnProps = { activeSpeaker, isWide, staged }
 
     return (
         <div
@@ -356,11 +469,14 @@ function ConversationStage({
             style={{
                 cursor: isLive ? 'default' : 'pointer',
                 outline: 'none',
-                // Wide-layout geometry (display, grid tracks, gap, min-height)
-                // lives entirely in index.css's `.conversation-stage--wide`
-                // rules so the phone media query can override it by ordinary
-                // cascade instead of eight `!important` declarations. Only the
-                // default layout still styles itself inline.
+                // This element's own geometry (display, grid tracks, gap,
+                // min-height) is exactly what the phone breakpoint retunes, so
+                // in the wide layout index.css's `.conversation-stage--wide`
+                // rules own it and none of it appears here — the media query
+                // then wins by ordinary cascade rather than by out-shouting an
+                // inline style. The default layout styles itself inline: no
+                // breakpoint touches it. THE RULE in index.css is the full
+                // statement of which properties this covers.
                 ...(isWide ? {} : {
                     display: 'flex',
                     alignItems: 'stretch',
@@ -369,88 +485,21 @@ function ConversationStage({
                 }),
             }}
         >
-            {staged && renderColumn(leftMembers, 'left')}
+            {staged && <PortraitColumn members={leftMembers} area="left" {...columnProps} />}
 
-            <div
-                className="conversation-stage__dialogue"
-                style={{
-                    flex: isWide ? undefined : 1,
-                    minWidth: 0,
-                    gridArea: isWide ? 'dialogue' : undefined,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    gap: spacing.sm,
-                    border: `2px solid ${colors.secondary}`,
-                    borderRadius: '8px',
-                    backgroundColor: colors.bg.panelDeep,
-                    transition: 'min-height 0.3s ease',
-                    // As above: the wide card's padding and min-height are the
-                    // two values the phone breakpoint retunes, so CSS owns them.
-                    ...(isWide ? {} : { padding: spacing.lg, minHeight: '220px' }),
-                }}
-            >
-                {isDialogue && (
-                    <span
-                        style={{
-                            fontFamily: fonts.main,
-                            fontSize: '13px',
-                            fontWeight: 'bold',
-                            color: colors.secondary,
-                            textTransform: 'uppercase',
-                            letterSpacing: '1px',
-                        }}
-                    >
-                        {(members.find((m) => m.id === activeSpeaker) || {}).name || current.speaker}
-                    </span>
-                )}
-                {current.flavor && (
-                    <div
-                        data-testid="conversation-flavor"
-                        style={{
-                            color: colors.text.muted,
-                            fontSize: '13px',
-                            lineHeight: 1.45,
-                            fontStyle: 'italic',
-                            textAlign: isDialogue ? 'left' : 'center',
-                            padding: `${spacing.xs} ${spacing.sm}`,
-                            borderLeft: `2px solid ${colors.border.light}`,
-                        }}
-                    >
-                        {current.flavor}
-                    </div>
-                )}
-                <div
-                    style={{
-                        color: isDialogue ? colors.text.main : colors.success,
-                        fontSize: '16px',
-                        lineHeight: 1.6,
-                        whiteSpace: 'pre-wrap',
-                        textAlign: isDialogue ? 'left' : 'center',
-                        fontStyle: isDialogue && !isThought ? 'normal' : 'italic',
-                    }}
-                >
-                    {displayedText}
-                </div>
-                {!isLive && (
-                    <span
-                        data-testid="conversation-advance-hint"
-                        style={{
-                            marginTop: spacing.sm,
-                            fontSize: '12px',
-                            color: colors.text.muted,
-                            fontStyle: 'italic',
-                            textAlign: 'center',
-                            opacity: isComplete ? 1 : 0,
-                            transition: 'opacity 0.3s ease',
-                        }}
-                    >
-                        {beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
-                    </span>
-                )}
-            </div>
+            <StageDialogueCard
+                speaker={current.speaker}
+                speakerName={castMember(members, current.speaker).name}
+                flavor={current.flavor}
+                text={displayedText}
+                isThought={isThought}
+                isWide={isWide}
+                showHint={!isLive}
+                hintVisible={isComplete}
+                hintText={beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
+            />
 
-            {staged && renderColumn(rightMembers, 'right')}
+            {staged && <PortraitColumn members={rightMembers} area="right" {...columnProps} />}
         </div>
     )
 }

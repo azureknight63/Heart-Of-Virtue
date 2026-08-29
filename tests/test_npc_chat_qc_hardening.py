@@ -22,16 +22,13 @@ Policy changes under test (user-approved design decisions):
   back to three from the fallback pool.
 """
 
-import ast
 import json
 import re
 import time
-from pathlib import Path
 
-from src.npc import _chat_llm
 from src.npc._chat_llm import MAX_OPTION_CHARS, ConversationalNPCMixin
 from ai.llm_client import NpcChatLLMAdapter, _JSONTools
-from tests._npc_fixtures import qc_npc, wired_chat_npc
+from tests._npc_fixtures import chat_player, make_turn, qc_npc, wired_chat_npc
 
 
 def _npc(allowed_nouns=None, personality=None, prohibited=None):
@@ -277,14 +274,7 @@ class TestActionAsides:
     def test_run_npc_turn_relocates_aside_into_empty_flavor(self):
         class FakeAdapter:
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                return {
-                    "npc_text": "*studies the horizon* Storm's coming.",
-                    "npc_flavor": "",
-                    "conversation_quality": "neutral",
-                    "reputation_delta": 0,
-                    "loquacity_delta": -5,
-                    "jean_options": [],
-                }
+                return make_turn("*studies the horizon* Storm's coming.")
 
         npc = _npc()
         npc._chat_history = []
@@ -299,14 +289,10 @@ class TestActionAsides:
     def test_model_supplied_flavor_takes_priority_over_aside(self):
         class FakeAdapter:
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                return {
-                    "npc_text": "*sighs* So be it.",
-                    "npc_flavor": "She turns away toward the fire.",
-                    "conversation_quality": "neutral",
-                    "reputation_delta": 0,
-                    "loquacity_delta": -5,
-                    "jean_options": [],
-                }
+                return make_turn(
+                    "*sighs* So be it.",
+                    npc_flavor="She turns away toward the fire.",
+                )
 
         npc = _npc()
         npc._chat_history = []
@@ -332,14 +318,7 @@ class TestRetryGuidance:
                     text = "I saw Xanthor by the river."
                 else:
                     text = "The river runs cold this season."
-                return {
-                    "npc_text": text,
-                    "npc_flavor": "",
-                    "conversation_quality": "neutral",
-                    "reputation_delta": 0,
-                    "loquacity_delta": -5,
-                    "jean_options": [],
-                }
+                return make_turn(text)
 
         npc = _npc()
         npc._chat_history = []
@@ -357,14 +336,7 @@ class TestRetryGuidance:
         class FakeAdapter:
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
                 # Both attempts return the same invented-noun line.
-                return {
-                    "npc_text": "I saw Xanthor by the river.",
-                    "npc_flavor": "",
-                    "conversation_quality": "neutral",
-                    "reputation_delta": 0,
-                    "loquacity_delta": -5,
-                    "jean_options": [],
-                }
+                return make_turn("I saw Xanthor by the river.")
 
         npc = _npc()
         npc._chat_history = []
@@ -582,7 +554,7 @@ class TestFlavorQCDirect:
 
 
 # ---------------------------------------------------------------------------
-# Unclosed asterisk asides anywhere in the line (round-3 scrub)
+# Unclosed asterisk asides anywhere in the line
 # ---------------------------------------------------------------------------
 
 
@@ -657,14 +629,9 @@ class TestFlavorObeysTheJeanDialogueRule:
             enabled = True
 
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                return {
-                    "npc_text": '*Jean said, "Leave it."* The ferry runs at dawn.',
-                    "npc_flavor": "",
-                    "conversation_quality": "neutral",
-                    "reputation_delta": 0,
-                    "loquacity_delta": -5,
-                    "jean_options": [],
-                }
+                return make_turn(
+                    '*Jean said, "Leave it."* The ferry runs at dawn.'
+                )
 
         npc = _npc()
         npc._chat_history = []
@@ -715,14 +682,7 @@ class _CountingAdapter:
 
     def generate_turn(self, system, history, is_opening=False, jean_text=None):
         self.calls += 1
-        return {
-            "npc_text": self.npc_text,
-            "npc_flavor": "",
-            "conversation_quality": "neutral",
-            "reputation_delta": 0,
-            "loquacity_delta": -5,
-            "jean_options": [],
-        }
+        return make_turn(self.npc_text)
 
 
 class TestExpiredBudgetStillRewrites:
@@ -865,28 +825,9 @@ class _ScriptedRealAdapter(NpcChatLLMAdapter):
         return None
 
 
-def _end_to_end_npc(adapter):
-    """A host wired for the real chat_open path, adapter supplied."""
-    return wired_chat_npc(adapter)
-
-
-class _EndToEndPlayer:
-    universe = None
-
-    def __init__(self):
-        self.reputation = {}
-
-
 class TestOptionSalvageEndToEnd:
     def _payload(self, options):
-        return {
-            "npc_text": "The ferry runs at dawn.",
-            "npc_flavor": "",
-            "conversation_quality": "neutral",
-            "reputation_delta": 0,
-            "loquacity_delta": -5,
-            "jean_options": options,
-        }
+        return make_turn("The ferry runs at dawn.", jean_options=options)
 
     def test_a_good_option_at_index_three_reaches_the_player(self):
         """Three malformed options ahead of it used to make it unreachable."""
@@ -901,7 +842,7 @@ class TestOptionSalvageEndToEnd:
                 ]
             )
         )
-        result = _end_to_end_npc(adapter).chat_open(_EndToEndPlayer())
+        result = wired_chat_npc(adapter).chat_open(chat_player())
         texts = [o["text"] for o in result["jean_options"]]
         assert "Who keeps the ferry these days?" in texts
         assert "What is the crossing like in winter?" in texts
@@ -920,7 +861,7 @@ class TestOptionSalvageEndToEnd:
                 ]
             )
         )
-        result = _end_to_end_npc(adapter).chat_open(_EndToEndPlayer())
+        result = wired_chat_npc(adapter).chat_open(chat_player())
         assert len(result["jean_options"]) == 3
         assert {o["tone"] for o in result["jean_options"]} == {
             "direct",
@@ -948,7 +889,7 @@ class TestOptionSalvageEndToEnd:
                 ]
             )
         )
-        result = _end_to_end_npc(adapter).chat_open(_EndToEndPlayer())
+        result = wired_chat_npc(adapter).chat_open(chat_player())
         kept = [o["text"] for o in result["jean_options"]]
         trimmed = [t for t in kept if t.startswith("The ferryman keeps")]
         assert trimmed, "the trimmed option must survive the mixin's length bound"
@@ -957,49 +898,3 @@ class TestOptionSalvageEndToEnd:
         # Word boundary: the next character in the source is a space, so no
         # word was cut in half.
         assert long_option[len(trimmed[0])] == " "
-
-
-# ---------------------------------------------------------------------------
-# The no-AI-stack fallback constants
-# ---------------------------------------------------------------------------
-
-
-def test_the_no_ai_stack_fallback_matches_llm_client():
-    """``_chat_llm`` re-spells every conversation constant as a literal in its
-    ``except ImportError`` block, which softens llm_client's claim that the
-    prompt text and the clamp "cannot drift apart again". The guard is
-    deliberate — the engine must import on a box with no AI stack — so this
-    pins the two copies together instead of removing it.
-    """
-    import ai.llm_client as llm
-
-    tree = ast.parse(Path(_chat_llm.__file__).read_text(encoding="utf-8"))
-    imported = set()
-    fallbacks = {}
-    # Module level only: the guarded import is a top-level try/except, and
-    # walking the whole tree also picks up ordinary error handling inside
-    # methods (``raw = None`` in _resolve_jean_options, for one).
-    for node in tree.body:
-        if not isinstance(node, ast.Try):
-            continue
-        for stmt in node.body:
-            if isinstance(stmt, ast.ImportFrom) and stmt.module == "ai.llm_client":
-                imported.update(alias.name for alias in stmt.names)
-        for handler in node.handlers:
-            for stmt in handler.body:
-                if (
-                    isinstance(stmt, ast.Assign)
-                    and len(stmt.targets) == 1
-                    and isinstance(stmt.targets[0], ast.Name)
-                ):
-                    fallbacks[stmt.targets[0].id] = ast.literal_eval(stmt.value)
-
-    assert imported, "the guarded ai.llm_client import moved or was removed"
-    assert set(fallbacks) == imported, (
-        "every guarded import needs a fallback and vice versa; "
-        "missing={} extra={}".format(
-            sorted(imported - set(fallbacks)), sorted(set(fallbacks) - imported)
-        )
-    )
-    for name, literal in sorted(fallbacks.items()):
-        assert literal == getattr(llm, name), name

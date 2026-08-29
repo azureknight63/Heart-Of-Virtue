@@ -8,6 +8,7 @@ paths:
   - "frontend/public/assets/sounds/**"
   - "frontend/src/utils/combatSfx.js"
   - "frontend/src/utils/sfxDurations.js"
+  - "frontend/scripts/**"
   - "frontend/src/context/**"
 ---
 

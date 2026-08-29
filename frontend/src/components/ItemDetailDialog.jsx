@@ -4,6 +4,7 @@ import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 import { ItemStatGrid, ItemSection } from './ItemStatGrid'
 import { formatWeight } from '../utils/itemUtils'
+import { apiErrorMessage } from '../utils/apiError'
 
 // Display labels for the scalar stat-bonus keys the backend emits (see
 // inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
@@ -117,14 +118,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         if (onItemRemoved) onItemRemoved(item.id)
         if (onRefetch) await onRefetch()
       } else {
-        setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot use this item'))
       }
     } catch (err) {
-      if (err.response?.data?.error) {
-        setActionMessage(err.response.data.error)
-      } else {
-        setActionMessage('✗ Error: ' + err.message)
-      }
+      // The server's own prose goes up bare; the ✗ prefix marks the cases
+      // where all we have is the transport's complaint.
+      const serverText = apiErrorMessage(err, '')
+      setActionMessage(serverText || '✗ Error: ' + err.message)
     } finally {
       setIsLoading(false)
     }
@@ -167,15 +167,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         // We no longer auto-close/timeout here because the dialog handles it
         // when the user clicks Ok
       } else {
-        setActionMessage('✗ ' + (data.error || 'Failed to equip'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Failed to equip'))
       }
     } catch (err) {
-      // For server responses with error messages (400s), show without ✗ prefix
-      if (err.response?.data?.error) {
-        setActionMessage(err.response.data.error)
-      } else {
-        setActionMessage('✗ Error: ' + err.message)
-      }
+      // The server's own prose goes up bare; the ✗ prefix marks the cases
+      // where all we have is the transport's complaint.
+      const serverText = apiErrorMessage(err, '')
+      setActionMessage(serverText || '✗ Error: ' + err.message)
     } finally {
       setIsLoading(false)
     }
@@ -198,14 +196,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           if (shouldRemoveItem && onItemRemoved) onItemRemoved(item.id)
           if (onRefetch) await onRefetch()
         } else {
-          setActionMessage('✗ ' + (data.error || errorMsg))
+          setActionMessage('✗ ' + apiErrorMessage(data, errorMsg))
         }
       } catch (err) {
-        if (err.response?.data?.error) {
-          setActionMessage(err.response.data.error)
-        } else {
-          setActionMessage('✗ Error: ' + err.message)
-        }
+        // The server's own prose goes up bare; the ✗ prefix marks the cases
+        // where all we have is the transport's complaint.
+        const serverText = apiErrorMessage(err, '')
+        setActionMessage(serverText || '✗ Error: ' + err.message)
       } finally {
         setIsLoading(false)
       }
@@ -225,10 +222,10 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       if (data.success) {
         setBookReaderData({ title: item.name, text: stripBookWrapper(data.message) })
       } else {
-        setActionMessage('✗ ' + (data.error || 'Cannot read this item'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot read this item'))
       }
     } catch (err) {
-      setActionMessage('✗ ' + (err.response?.data?.error || err.message || 'Unknown error'))
+      setActionMessage('✗ ' + apiErrorMessage(err, err.message || 'Unknown error'))
     } finally {
       setIsLoading(false)
     }
@@ -257,15 +254,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         // Refresh room contents to show dropped item
         if (onRefetch) onRefetch()
       } else {
-        setActionMessage('✗ ' + (data.error || 'Failed to drop'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Failed to drop'))
       }
     } catch (err) {
-      // For server responses with error messages (400s), show without ✗ prefix
-      if (err.response?.data?.error) {
-        setActionMessage(err.response.data.error)
-      } else {
-        setActionMessage('✗ Error: ' + err.message)
-      }
+      // The server's own prose goes up bare; the ✗ prefix marks the cases
+      // where all we have is the transport's complaint.
+      const serverText = apiErrorMessage(err, '')
+      setActionMessage(serverText || '✗ Error: ' + err.message)
     } finally {
       setIsLoading(false)
       setShowDropConfirm(false)
@@ -719,8 +714,14 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
-            // animate fadeIn
-            animation: 'fadeIn 0.2s ease-out',
+            // `fade-in-scale` is index.css's. It used to be declared as
+            // `fadeIn` by a style element at the bottom of this component,
+            // which meant ActionsPanel's action message — the other user of
+            // that name — only animated while this dialog was mounted. That
+            // element is gone, so this component no longer injects styles at
+            // all; see tests/test_security_headers.py, which greps for the
+            // literal tag name (hence its absence from this comment).
+            animation: 'fade-in-scale 0.2s ease-out',
             boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
           }}>
             {/* Message */}
@@ -775,12 +776,6 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               </button>
             </div>
           </div>
-          <style>{`
-            @keyframes fadeIn {
-              from { opacity: 0; transform: scale(0.9); }
-              to { opacity: 1; transform: scale(1); }
-            }
-          `}</style>
         </div>
       )}
       {showDropConfirm && (

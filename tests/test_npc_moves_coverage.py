@@ -12,6 +12,8 @@ Targets uncovered lines (69% -> target 85%+):
   937-966, 981, 996-1023, 1034-1036, 1039-1040, 1054-1079 — other moves
 """
 
+import ast
+import inspect
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2377,6 +2379,29 @@ class TestWailStrikeEdgeCases:
 # ---------------------------------------------------------------------------
 
 
+def _classes_overriding_damage_multiplier():
+    """Every exported ``Move`` subclass that declares its own ``_DAMAGE_MULTIPLIER``.
+
+    ``__dict__`` rather than ``getattr``: an inherited value is the BASE
+    class's declaration, and counting those would sweep in every move in the
+    game. ``Move`` itself is excluded for the same reason — its 1.0 is the
+    default the overrides are measured against.
+    """
+    import src.moves as moves
+    from src.moves import Move
+
+    found = {}
+    for name in moves.__all__:
+        obj = getattr(moves, name, None)
+        if not (inspect.isclass(obj) and issubclass(obj, Move)):
+            continue
+        if obj is Move:
+            continue
+        if "_DAMAGE_MULTIPLIER" in obj.__dict__:
+            found[obj.__name__] = obj
+    return found
+
+
 class TestDeclaredDamageMultiplier:
     """A move's declared multiplier must be the one ``evaluate()`` really applies.
 
@@ -2387,31 +2412,65 @@ class TestDeclaredDamageMultiplier:
     GorranClub was exactly that case: it applied ``uniform(1.5, 3)`` and
     declared nothing, so it serialized 1.0.
 
-    Each case patches ``random.uniform`` to return the midpoint of whatever
-    bounds it is handed, which is the same centre ``_DAMAGE_MULTIPLIER`` names.
+    The declaring classes are discovered by reflection, not listed, and
+    ``test_every_declaration_is_pinned`` asserts the discovered set and the
+    pinned set are equal in BOTH directions. There is no exception list:
+    adding ``_DAMAGE_MULTIPLIER`` to a new move without pinning it here fails,
+    and so does pinning a move that no longer declares one.
+
+    Every declaration means the same thing — the factor the hit CENTRES on,
+    relative to the user's raw damage. The plain ``Move`` subclasses roll
+    ``uniform(_POWER_ROLL_MIN, _POWER_ROLL_MAX)`` and declare the midpoint;
+    the ``TelegraphedSurge`` family multiplies by its factor a power
+    ``NpcAttack.evaluate`` has ALREADY rolled through ``uniform(0.8, 1.2)``,
+    which centres on the same place. So each case here patches
+    ``random.uniform`` to return the midpoint of whatever bounds it is handed
+    and expects exactly ``user.damage x declared``.
     """
 
-    # (class name, declared multiplier)
-    CASES = [
-        ("GorranClub", 2.25),
-        ("VenomClaw", 0.8),
+    # Class name -> the multiplier it declares. Hand-written on purpose: this
+    # half is the gameplay pin, so retuning a move is a deliberate edit here
+    # too. The KEYS are checked against reflection, so this is a pin list, not
+    # an exception list.
+    DECLARED = {
+        # TelegraphedSurge family — the attribute is functionally live here,
+        # applied by TelegraphedSurge.evaluate().
+        "SlimeVolley": 2.2,
+        "TidalSurge": 2.5,
+        "WailStrike": 1.8,
+        # Plain Move subclasses — declared for the wire, derived from the
+        # bounds their own evaluate() rolls between.
+        "GorranClub": 2.25,
+        "VenomClaw": 0.8,
         # 1.0 is also the serializer's default for a move that declares
-        # nothing, so SpiderBite was the one case where a stale wire value
-        # would have looked correct. It is here precisely because it is the
-        # easiest one to get wrong without noticing.
-        ("SpiderBite", 1.0),
-        ("BatBite", 0.9),
-        ("SeismicSlam", 0.7),
-        ("TwinFangs", 1.2),
-    ]
+        # nothing, so SpiderBite is the one case where a stale wire value
+        # would still look correct.
+        "SpiderBite": 1.0,
+        "BatBite": 0.9,
+        "SeismicSlam": 0.7,
+        "TwinFangs": 1.2,
+    }
 
-    @pytest.mark.parametrize("cls_name,expected", CASES)
+    def test_every_declaration_is_pinned(self):
+        discovered = set(_classes_overriding_damage_multiplier())
+        pinned = set(self.DECLARED)
+        assert discovered == pinned, (
+            f"unpinned declarations: {sorted(discovered - pinned)}; "
+            f"pinned but no longer declaring: {sorted(pinned - discovered)}"
+        )
+
+    def test_reflection_actually_finds_the_declarations(self):
+        """Floor: if discovery silently returns nothing, the test above passes
+        against an empty pin list and guards nothing."""
+        assert len(_classes_overriding_damage_multiplier()) >= 9
+
+    @pytest.mark.parametrize("cls_name,expected", sorted(DECLARED.items()))
     def test_declared_value(self, cls_name, expected):
         import src.moves as moves
 
         assert getattr(moves, cls_name)._DAMAGE_MULTIPLIER == pytest.approx(expected)
 
-    @pytest.mark.parametrize("cls_name,expected", CASES)
+    @pytest.mark.parametrize("cls_name,expected", sorted(DECLARED.items()))
     def test_evaluate_centres_power_on_the_declared_multiplier(self, cls_name, expected):
         import src.moves as moves
 
@@ -2431,21 +2490,99 @@ class TestDeclaredDamageMultiplier:
             f"centres power at {move.power / 100}x the user's damage"
         )
 
-    def test_telegraphed_surges_still_apply_theirs_functionally(self):
-        """The TelegraphedSurge family uses the attribute at runtime; the moves
-        above only declare it. Both readings must stay in agreement."""
-        import src.moves as moves
+
+# ---------------------------------------------------------------------------
+# statustype -> wire category
+#
+# DeathKnell (this module) is the only move that applies states.Death, and the
+# serializer's statustype table had no entry for it, so the wire described an
+# execute as a moderate debuff.
+# ---------------------------------------------------------------------------
+
+
+def _statustypes_declared_in_states_module():
+    """Every ``statustype=`` string literal src/states.py can construct.
+
+    Static parse rather than instantiation: State subclasses need a live target
+    and several touch the player's stat pipeline in ``__init__``.
+    """
+    path = Path(__file__).resolve().parent.parent / "src" / "states.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.keyword)
+            and node.arg == "statustype"
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            found.add(node.value.value)
+        # `State.__init__`'s own signature default, which no keyword node covers.
+        if isinstance(node, ast.FunctionDef):
+            args = node.args
+            named = args.args[len(args.args) - len(args.defaults):]
+            for arg, default in zip(named, args.defaults):
+                if (
+                    arg.arg == "statustype"
+                    and isinstance(default, ast.Constant)
+                    and isinstance(default.value, str)
+                ):
+                    found.add(default.value)
+    return found
+
+
+class TestStatustypeCategoryTable:
+    """The serializer's statustype table must cover the engine's vocabulary exactly.
+
+    ``StateEffectSerializer._get_effect_type`` falls back to ``"debuff"`` for
+    an unmapped statustype. That fallback is a coercion guard for a mocked or
+    third-party state; when a REAL state slips through it, the frontend paints
+    the effect red/moderate and nothing complains. "death" did exactly that.
+
+    Both directions, no exception list: a new statustype in src/states.py with
+    no table entry fails, and so does a table entry for a statustype the engine
+    no longer constructs.
+    """
+
+    def test_table_covers_the_engine_vocabulary_exactly(self):
+        from src.api.serializers.combat import (
+            _GENERIC_STATUSTYPE,
+            _STATUSTYPE_CATEGORY,
+        )
+
+        declared = _statustypes_declared_in_states_module()
+        assert _GENERIC_STATUSTYPE in declared, "static parse of src/states.py broke"
+
+        # `generic` is deliberately absent from the table — it is shared by
+        # states of opposite polarity and is resolved from their own modifiers.
+        unmapped = declared - {_GENERIC_STATUSTYPE} - set(_STATUSTYPE_CATEGORY)
+        stale = set(_STATUSTYPE_CATEGORY) - declared
+        assert not unmapped and not stale, (
+            f"unmapped statustypes: {sorted(unmapped)}; "
+            f"mapped but never constructed: {sorted(stale)}"
+        )
+
+    def test_every_mapped_category_is_frontend_vocabulary(self):
+        from src.api.serializers.combat import (
+            _STATUSTYPE_CATEGORY,
+            _VALID_EFFECT_TYPES,
+        )
+
+        unknown = set(_STATUSTYPE_CATEGORY.values()) - _VALID_EFFECT_TYPES
+        assert not unknown, f"categories the frontend cannot render: {sorted(unknown)}"
+
+    def test_death_serializes_as_a_severe_ailment(self):
+        """The regression the missing entry caused: DeathKnell's execute
+        arrived on the wire looking like an ordinary stat penalty."""
+        from src import states
+        from src.api.serializers.combat import StateEffectSerializer
 
         p = _make_player_target()
-        npc = _make_npc(damage=100, speed=5, endurance=10)
-        npc.target = p
-        npc.combat_proximity[p] = 2
+        p.maxhp = 100
+        p.hp = 100
+        with patch("builtins.print"):
+            death = states.Death(p)
 
-        with patch("builtins.print"), patch(
-            "random.uniform", side_effect=lambda a, b: (a + b) / 2
-        ):
-            volley = moves.SlimeVolley(npc)
-            volley.evaluate()
-
-        assert moves.SlimeVolley._DAMAGE_MULTIPLIER == 2.2
-        assert volley.power == pytest.approx(100 * 2.2)
+        wire = StateEffectSerializer.serialize_state(death)
+        assert wire["type"] == "ailment"
+        assert wire["severity"] == "severe"

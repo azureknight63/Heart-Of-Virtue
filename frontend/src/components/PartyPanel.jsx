@@ -2,6 +2,7 @@ import { useState } from 'react'
 import BaseDialog from './BaseDialog'
 import { colors } from '../styles/theme'
 import apiClient from '../api/client'
+import { apiErrorMessage } from '../utils/apiError'
 
 /**
  * PartyPanel - View current party members and their vital stats.
@@ -55,11 +56,11 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
         setUseItemTarget(null)
         if (onRefetch) await onRefetch()
       } else {
-        setActionResult({ error: data.error || 'Failed to use item' })
+        setActionResult({ error: apiErrorMessage(data, 'Failed to use item') })
         setUseItemTarget(null)
       }
     } catch (err) {
-      setActionResult({ error: err.response?.data?.error || err.message })
+      setActionResult({ error: apiErrorMessage(err, err.message) })
       setUseItemTarget(null)
     } finally {
       setIsLoading(false)

@@ -10,8 +10,10 @@ re-derive it: the store itself (:class:`RateLimiter`), the rule for turning a
 request into a client identity (:func:`client_ip`), the rule for reading a
 limit out of the environment without taking the process down
 (:func:`limiter_from_env`), the ``None``-tolerant way to spend a tier's budget
-(:meth:`RateLimiter.check`), and the 429 body every throttled route returns
-(:func:`rate_limited_response`).
+(:meth:`RateLimiter.check`), the 429 body every throttled route returns
+(:func:`rate_limited_response`), and the rule that makes that body's ``error``
+field legible to a person rather than only to a client
+(:data:`MACHINE_TOKEN_ERROR`).
 
 **Known limitation (tracked in GitHub issue #284):** this store is
 per-process. Under multiple Gunicorn workers, the *effective* limit for a
@@ -36,6 +38,7 @@ Bounding strategy:
 import ipaddress
 import logging
 import os
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -317,6 +320,34 @@ class RateLimiter:
 #: may be reworded.
 RATE_LIMITED_ERROR = "rate_limited"
 
+#: What makes an ``error`` value a machine token rather than prose: lowercase
+#: words joined by underscores, and nothing else. ``rate_limited``,
+#: ``validation_error`` and ``auth_error`` match; "Not enough gold" and
+#: "Invalid or expired session" do not.
+#:
+#: Public because it is this API's half of a two-sided contract, and the two
+#: sides must not drift apart. A token in ``error`` is only legible to a
+#: *person* if the body also carries ``message``:
+#: ``frontend/src/utils/apiError.js`` reads ``body.message || body.error ||
+#: fallback``, so a token shipped without one — or with a blank one — is
+#: displayed to the player verbatim. That is not hypothetical. It is what
+#: ``FeedbackDialog`` did the day ``feedback.py`` adopted
+#: :func:`rate_limited_response`: it toasted the literal string
+#: ``rate_limited`` at players.
+#:
+#: The rule is therefore: **an ``error`` matching this pattern must be
+#: accompanied by a non-blank ``message``.** It is enforced in two places
+#: because there are two distinct ways to break it:
+#:
+#: * here, at runtime, when a caller reaches the sanctioned helper with no
+#:   prose to put in ``message`` (see :func:`rate_limited_response`);
+#: * in ``tests/test_rate_limiter.py``, as an AST scan over every module in
+#:   ``src/api``, when a route hand-builds the body and never calls the helper
+#:   at all. Only the scan can catch that one — by definition it runs no code
+#:   this module owns — which is why the scan, not this constant, is the guard
+#:   that actually holds.
+MACHINE_TOKEN_ERROR = re.compile(r"^[a-z_]+$")
+
 
 def rate_limited_response(message: str) -> Tuple[Response, int]:
     """The 429 a throttled route returns, in the API's one 429 shape.
@@ -342,7 +373,24 @@ def rate_limited_response(message: str) -> Tuple[Response, int]:
 
     Returns:
         The ``(response, 429)`` tuple, ready to ``return`` from a view.
+
+    Raises:
+        ValueError: if ``message`` is blank. ``RATE_LIMITED_ERROR`` is a
+            machine token (see :data:`MACHINE_TOKEN_ERROR`) and the frontend
+            reader falls *through* an empty ``message`` to ``error``, so a
+            blank one here does not degrade to generic copy — it shows the
+            player the word "rate_limited", which is the exact regression the
+            shared body exists to end. Raising turns that into a loud failure
+            in the new route's own tests instead of a quiet one in front of a
+            player; the four existing callers all pass a literal.
     """
+    if not (message or "").strip():
+        raise ValueError(
+            "rate_limited_response() needs player-facing prose: %r is a "
+            "machine token, and a blank message is rendered to the player as "
+            "that token rather than falling back to generic copy."
+            % (RATE_LIMITED_ERROR,)
+        )
     return (
         jsonify({"success": False, "error": RATE_LIMITED_ERROR, "message": message}),
         429,

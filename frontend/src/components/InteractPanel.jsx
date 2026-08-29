@@ -16,6 +16,58 @@ import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
  */
 const SHOP_KEYWORDS = new Set(['buy', 'sell', 'trade'])
 
+// Keywords that all open the SAME conversation. `handleActionClick` routes
+// every one of them to the LLM chat panel, so an NPC carrying more than one
+// rendered two buttons that did the identical thing — which is how the
+// nomad-camp NPCs shipped a duplicate "chat" beside their "talk". The backend
+// data fix landed, but content drifts and the frontend should not depend on it.
+const CHAT_KEYWORDS = new Set(['talk', 'chat'])
+
+/**
+ * The action buttons a target actually earns, de-duplicated.
+ *
+ * Three separate reductions, in one place because they all answer "should this
+ * keyword get a button":
+ *
+ *   - A container's own Loot / Take_all duplicate the contents list it already
+ *     renders.
+ *   - Aliases the engine marks as aliases (`action_aliases`) are folded into
+ *     their primary. NOTE: this is live for objects and items, whose
+ *     serializers forward the field, and INERT for NPCs —
+ *     `src/api/serializers/npc_serializer.py` forwards `keywords` and never
+ *     emits `action_aliases`, so the check reads `undefined` and passes
+ *     everything through. That is why the chat collapse below cannot be
+ *     delegated to it.
+ *   - Case-folded duplicates, and the chat aliases, keep their first spelling
+ *     only. A plain `new Set(keywords)` would NOT have caught the reported
+ *     duplicate: "talk" and "chat" are distinct strings that happen to share a
+ *     handler, and the alias-collapse is the half that matters.
+ *
+ * Exported because it is a pure function over one serialized row and is worth
+ * asserting on directly — a rendered-button count cannot say WHICH rule
+ * dropped a keyword.
+ *
+ * @param {Object} target - The selected room target as the serializers sent it.
+ * @returns {string[]} Keywords to render, in served order and original casing.
+ */
+export function actionKeywords(target) {
+    const seen = new Set()
+    let chatShown = false
+    return (target?.keywords || []).filter((keyword) => {
+        const action = String(keyword).toLowerCase()
+        if (target.is_container && (action === 'loot' || action === 'take_all')) return false
+        if (target.action_aliases?.includes(keyword)) return false
+        if (target.llm_chat_enabled && CHAT_KEYWORDS.has(action)) {
+            if (chatShown) return false
+            chatShown = true
+            return true
+        }
+        if (seen.has(action)) return false
+        seen.add(action)
+        return true
+    })
+}
+
 function InteractPanel({
     location,
     onInteractionComplete,
@@ -126,7 +178,13 @@ function InteractPanel({
                         }, 0)
                     }
                 } else {
-                    // Target is gone! Clear it so we don't try to interact with it again
+                    // Target is gone! Clear it so we don't try to interact with it again.
+                    // This also takes NpcChatPanel off screen without routing
+                    // through its End Conversation handler — which used to leave
+                    // the server-side conversation open. useNpcChat's unmount
+                    // cleanup now ends it, so the clear stays unconditional
+                    // rather than being gated on `showChatPanel` (a value this
+                    // effect does not depend on and must not start reading stale).
                     setSelectedTarget(null)
                 }
             }
@@ -204,7 +262,7 @@ function InteractPanel({
 
         // Open LLM chat panel for talk or chat action on LLM-capable NPCs
         if (
-            (action.toLowerCase() === 'talk' || action.toLowerCase() === 'chat') &&
+            CHAT_KEYWORDS.has(action.toLowerCase()) &&
             selectedTarget?.llm_chat_enabled &&
             selectedTarget?.loquacity_available !== false
         ) {
@@ -526,15 +584,15 @@ function InteractPanel({
                         {/* Action Buttons */}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.md }}>
                             {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
-                                selectedTarget.keywords
-                                    .filter(keyword => {
-                                        const action = keyword.toLowerCase();
-                                        if (selectedTarget.is_container && (action === 'loot' || action === 'take_all')) return false;
-                                        return !selectedTarget.action_aliases?.includes(keyword);
-                                    })
-                                    .map((keyword, idx) => (
+                                actionKeywords(selectedTarget)
+                                    .map((keyword) => (
                                         <GameButton
-                                            key={idx}
+                                            // Keyed on the keyword, which
+                                            // `actionKeywords` has already made
+                                            // unique, rather than on the index —
+                                            // the list is rebuilt whenever the
+                                            // room resyncs.
+                                            key={keyword}
                                             onClick={() => handleActionClick(keyword)}
                                             disabled={loading || isLocked}
                                             variant="primary"

@@ -1,9 +1,11 @@
 """Token-budget baseline for every LLM call path in the game.
 
-Free-tier providers meter on tokens, not requests: Cerebras caps the free tier
-at ~1M tokens/day and an 8k context window, Groq at ~6k tokens/minute. Both
-count prompt + completion together. This script measures what a round trip
-actually costs so those ceilings can be reasoned about instead of guessed at.
+Free-tier providers meter on tokens, not requests, counting prompt and
+completion together. This script measures what a round trip actually costs so
+those ceilings can be reasoned about instead of guessed at. The ceilings
+themselves -- and which providers are actually reachable, which is not the same
+question -- live in ``.claude/rules/llm-prompts.md``; a second copy here would
+go stale the next time a vendor moves a limit, and did.
 
 Prompts are measured exactly -- it drives the real builders
 (``ConversationalNPCMixin._build_system_prompt``, ``NpcChatLLMAdapter``'s
@@ -115,6 +117,28 @@ def record(rows, path, call, system, user, max_tokens, key, note=""):
 # the exact mutually-unaware-copies bug issue #380 fixed in the engine.
 # ---------------------------------------------------------------------------
 import ai.llm_client as llm  # noqa: E402
+
+# ``ai.llm_client`` calls ``load_project_env()`` in its module body, so the
+# real ``.env`` -- provider API keys included -- is now in ``os.environ``. This
+# script then builds adapters with ``enabled = True`` and
+# ``provider = "openrouter"`` and drives their real generate_* methods; only the
+# ``_patched`` transport stubs stand between that and a live, billed call. One
+# missed stub in a future measurement path would spend real quota silently, so
+# blank the credentials too: ``_provider_chain`` treats a *present* key as
+# dialable, and every read is an ``os.getenv`` at call time.
+#
+# Derived from the provider registry rather than transcribed -- a hand-written
+# list stops covering the chain the moment a fourth provider is registered,
+# which is the failure this exists to prevent (same reasoning as
+# ``tests/llm_doubles.PROVIDER_KEY_ENVS``, which tools/ cannot import).
+#
+# ASSIGNED "", never ``del``/``.pop()``: ``load_project_env`` runs
+# ``load_dotenv(override=False)``, which skips keys already *present* regardless
+# of value but refills ones that are *absent* -- so a deleted key comes straight
+# back from .env at the next import that loads it. (The GITHUB_TOKEN lesson;
+# see tools/bug_hunt.py.)
+for _cfg in llm._OPENAI_COMPATIBLE_PROVIDERS.values():
+    os.environ[_cfg["key_env"]] = ""
 
 from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
 import src.npc._chat_guard as chat_guard  # noqa: E402
@@ -381,10 +405,11 @@ def ctx_for(n_enemies, n_allies, n_history, moves, player_se):
     }
 
 
-# base_suggested_move_count defaults to 1 (src/player/__init__.py) and is read
-# verbatim as get_suggestions's max_suggestions argument
-# (src/api/combat_adapter.py, ~line 1884) with no call site overriding it, so 1
-# is the realistic value here, not just a placeholder.
+# base_suggested_move_count defaults to 1 (src/player/__init__.py) and
+# src/api/combat_adapter.py reads it verbatim as get_suggestions's
+# max_suggestions argument -- grep the attribute name, no line number on purpose
+# because it moves. No call site overrides it, so 1 is the realistic value here,
+# not just a placeholder.
 _MAX_SUGGESTIONS = 1
 
 

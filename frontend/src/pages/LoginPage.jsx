@@ -113,6 +113,13 @@ export default function LoginPage() {
       } else if (!err.response || err.response.status >= 500) {
         setError('The game server is unreachable. Please try again later.')
       } else {
+        // `message` ONLY, deliberately — not utils/apiError's `message` -> `error`
+        // precedence. Every failure in src/api/routes/auth.py pairs a machine
+        // token in `error` (validation_error, auth_error, conflict_error,
+        // service_unavailable, server_error, rate_limited) with the prose in
+        // `message`, so `error` here is never player copy — falling back to it
+        // would newly show the token on any auth failure that ships without a
+        // `message`. This module's own wording is the right last resort.
         setError(err.response?.data?.message || 'Authentication failed. Please try again.')
       }
     } finally {

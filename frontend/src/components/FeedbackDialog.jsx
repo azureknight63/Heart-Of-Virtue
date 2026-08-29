@@ -4,6 +4,7 @@ import GameButton from './GameButton'
 import { colors, spacing, fonts } from '../styles/theme'
 import { feedback as feedbackApi } from '../api/endpoints'
 import { useToast } from '../context/ToastContext'
+import { apiErrorMessage } from '../utils/apiError'
 
 const TYPES = [
   { id: 'bug', label: 'Bug Report' },
@@ -303,16 +304,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       toastSuccess('Feedback submitted! Thank you.')
       onClose()
     } catch (err) {
-      // `message` first: a 429 from rate_limited_response() puts the machine
-      // token "rate_limited" in `error` and the human prose in `message`, so
-      // reading `error` alone toasts the token at the player. Every other
-      // failure here puts prose in `error` and sends no `message`.
-      const body = err?.response?.data
-      const msg =
-        body?.message ||
-        body?.error ||
-        'Could not submit feedback — please try again later.'
-      toastError(msg)
+      toastError(apiErrorMessage(err, 'Could not submit feedback — please try again later.'))
     } finally {
       submittingRef.current = false
       setSubmitting(false)

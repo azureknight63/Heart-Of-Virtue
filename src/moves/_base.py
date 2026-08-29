@@ -296,6 +296,25 @@ class Move:  # master class for all moves
     # it. See TelegraphedSurge and GorranClub in src/moves/_npc.py.
     _DAMAGE_MULTIPLIER: float = 1.0
 
+    # Heat multipliers the shared outcome handlers below (parry/hit/miss)
+    # apply to Jean's combat heat. `Player.change_heat(mult)` multiplies the
+    # running heat and clamps it to [0.5, 10], so a value above 1 rewards the
+    # outcome and one below 1 punishes it.
+    #
+    # Named rather than inlined because they are read from OUTSIDE the engine:
+    # ai/combat_strategist.py quotes the cost of a miss in the combat LLM
+    # prompt and used to carry its own hand-copied 0.85 with nothing holding
+    # the pair in step. Values that repeat are separate constants on purpose —
+    # they are independently tunable outcomes that happen to agree today.
+    _HEAT_PARRY_REWARD = 1.4  # Jean parries an incoming attack
+    _HEAT_PARRIED_PENALTY = 0.75  # Jean's own attack is parried
+    _HEAT_HIT_REWARD = 1.25  # Jean lands damage
+    _HEAT_ABSORBED_PENALTY = 0.75  # Jean's hit is fully absorbed by the target
+    _HEAT_ABSORB_REWARD = 1.25  # Jean's armour absorbs an incoming hit
+    _HEAT_DODGE_REWARD = 1.25  # Jean is missed while Dodging (stacks with the next)
+    _HEAT_EVADED_REWARD = 1.1  # Jean is missed at all
+    _HEAT_MISS_PENALTY = 0.85  # Jean's own attack misses
+
     def __init__(
         self,
         name,
@@ -702,7 +721,7 @@ class Move:  # master class for all moves
         )
         self.stage_beat[2] += 10  # add stagger time to the user
         if self.target.name == "Jean":
-            self.target.change_heat(1.4)
+            self.target.change_heat(self._HEAT_PARRY_REWARD)
             # Credit parry experience based on target's weapon if available, otherwise "Basic"
             if hasattr(self.target, "eq_weapon") and self.target.eq_weapon:
                 _ensure_weapon_exp(self.target)
@@ -710,7 +729,7 @@ class Move:  # master class for all moves
             else:
                 self.target.combat_exp["Basic"] += 15
         if self.user.name == "Jean":
-            self.user.change_heat(0.75)
+            self.user.change_heat(self._HEAT_PARRIED_PENALTY)
 
     def hit(self, damage, glance):
         # Defense-in-depth (issue #296): damage reaches HP here from many move
@@ -753,7 +772,7 @@ class Move:  # master class for all moves
             if hasattr(self.target, "clamp_hp"):
                 self.target.clamp_hp()
             if self.user.name == "Jean":
-                self.user.change_heat(1.25)
+                self.user.change_heat(self._HEAT_HIT_REWARD)
                 _ensure_weapon_exp(self.user)
                 self.user.combat_exp[self.user.eq_weapon.subtype] += damage / 4
             if self.target.name == "Jean":
@@ -779,9 +798,9 @@ class Move:  # master class for all moves
                 "yellow",
             )
             if self.user.name == "Jean":
-                self.user.change_heat(0.75)
+                self.user.change_heat(self._HEAT_ABSORBED_PENALTY)
             if self.target.name == "Jean":
-                self.target.change_heat(1.25)
+                self.target.change_heat(self._HEAT_ABSORB_REWARD)
                 self.target.combat_exp["Basic"] += 15
 
     def miss(self):
@@ -789,13 +808,13 @@ class Move:  # master class for all moves
         if self.target.name == "Jean":
             for state in self.target.states:
                 if state.name == "Dodging":
-                    self.target.change_heat(1.25)
+                    self.target.change_heat(self._HEAT_DODGE_REWARD)
                     self.target.combat_exp["Basic"] += 10
                     break
-            self.target.change_heat(1.1)
+            self.target.change_heat(self._HEAT_EVADED_REWARD)
             self.target.combat_exp["Basic"] += 5
         if self.user.name == "Jean":
-            self.user.change_heat(0.85)
+            self.user.change_heat(self._HEAT_MISS_PENALTY)
 
     def standard_viability_attack(self, subtypes=()):
         """

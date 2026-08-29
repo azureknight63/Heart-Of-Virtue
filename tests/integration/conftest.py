@@ -32,6 +32,17 @@ from tests.llm_doubles import PROVIDER_KEY_ENVS
 # provider registered but missing from this tuple would be left blanked by
 # tests/conftest.py for the whole live run, so the chain would quietly serve
 # every call from a different provider than the one under test.
+#
+# The rule for the named half: a variable belongs here if some adapter under
+# test *reads* it. Each adapter declares its own gate, provider and model
+# (GenericLLMClient._{ENABLED,PROVIDER,MODEL}_ENV_VARS), and every one of those
+# names has to be restored or the adapter runs the live suite on a different
+# configuration than the deployment does. The COMBAT_ trio was the one that
+# proved it: test_tactical_advisor_live.py builds a real CombatLLMAdapter,
+# whose gate is ("COMBAT_LLM_ENABLED", "MYNX_LLM_ENABLED") -- first non-empty
+# wins -- so a .env carrying COMBAT_LLM_ENABLED=0 made available() False,
+# _make_client() return None, and all 21 tests skip. Restoring MYNX_LLM_ENABLED
+# alone could not reach that gate.
 _LIVE_KEYS = (
     "MYNX_LLM_ENABLED",
     "MYNX_LLM_PROVIDER",
@@ -40,6 +51,9 @@ _LIVE_KEYS = (
     "NPC_CHAT_LLM_PROVIDER",
     "NPC_CHAT_LLM_MODEL",
     "NPC_CHAT_LLM_TIMEOUT",
+    "COMBAT_LLM_ENABLED",
+    "COMBAT_LLM_PROVIDER",
+    "COMBAT_LLM_MODEL",
     "OPENROUTER_SITE",
     "OPENROUTER_SITE_TITLE",
     "OLLAMA_BASE_URL",
@@ -91,18 +105,34 @@ def _apply_single_provider_isolation():
     # local Ollama would quietly serve the calls this run exists to expose.
     os.environ["OLLAMA_BASE_URL"] = ""
 
-    # Only the NPC chat adapter dispatches the fallback chain; GenericLLMClient
-    # routes ollama/openrouter alone and would call a chain name "Unknown
-    # provider". Setting MYNX_LLM_PROVIDER here would therefore make
-    # test_tactical_advisor_live.py skip its whole module -- the permanently
-    # inert live module this conftest's docstring exists to prevent.
+    # Each feature is pinned through its own first-choice variable, because
+    # that is the only entry the base class counts as an explicit choice.
+    # MYNX_LLM_PROVIDER is deliberately left alone: it is the inherited
+    # fallback for both feature adapters, so writing it here would move both of
+    # them at once and would also re-point the mynx pet, which no live module
+    # under this directory drives.
     os.environ["NPC_CHAT_LLM_PROVIDER"] = only
-    warnings.warn(
-        "HOV_LIVE_ONLY=%s: only the NPC chat chain is isolated. Other live "
-        "modules read MYNX_LLM_PROVIDER and will skip if their provider's "
-        "credential was blanked." % only,
-        stacklevel=2,
-    )
+    os.environ["COMBAT_LLM_PROVIDER"] = only
+
+    # The honest caveat, and it is a real one rather than boilerplate:
+    # NpcChatLLMAdapter overrides available() and _dispatch_chat to reach the
+    # whole chain by name, so chat genuinely runs against `only`. Combat uses a
+    # plain GenericLLMClient, which routes ollama and openrouter and nothing
+    # else -- pinned to groq or cerebras it reports "Unknown provider" and
+    # test_tactical_advisor_live.py skips all 21 tests. Pinning it anyway is
+    # still the better of the two: with HOV_LIVE_ONLY=openrouter it makes
+    # combat run on openrouter even when .env has pointed it somewhere cheap,
+    # and for the two chain-only providers the module skipped either way (on a
+    # blanked OPENROUTER_API_KEY instead). What was wrong was saying nothing.
+    if only != "openrouter":
+        warnings.warn(
+            "HOV_LIVE_ONLY=%s isolates the NPC chat chain only. Combat goes "
+            "through GenericLLMClient, which can route ollama and openrouter "
+            "alone, so test_tactical_advisor_live.py will skip this run. Use "
+            "HOV_LIVE_ONLY=openrouter, or no isolation at all, to exercise it."
+            % only,
+            stacklevel=2,
+        )
 
 
 @pytest.fixture(scope="module", autouse=True)

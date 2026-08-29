@@ -133,6 +133,17 @@ export const shadows = {
     inset: 'inset 0 2px 10px rgba(0, 0, 0, 0.5)',
 }
 
+/**
+ * The spacing scale. Every value is a CSS length STRING, not a number:
+ * interpolate them (`` `${spacing.xs} ${spacing.sm}` ``, `padding: spacing.lg`),
+ * never do arithmetic on them. `-spacing.sm` is `NaN`, not `'-8px'`, and
+ * `spacing.sm * 2` is `NaN` too — React drops a NaN style silently in
+ * production and only warns in dev, so a broken layout is the first symptom.
+ * (This is not hypothetical: `marginRight: -spacing.sm` shipped once.) For a
+ * negative offset write the string: `` `-${spacing.sm}` ``. The
+ * `--space-*` custom properties in styles/index.css mirror these keys, so a
+ * value needed by both a stylesheet rule and an inline style has one source.
+ */
 export const spacing = {
     xs: '4px',
     sm: '8px',
@@ -181,8 +192,9 @@ export const commonStyles = {
      * The small uppercase caption that labels a block without competing with
      * it — "Previously", a speaker's name over their line, "3 turns on record".
      * Spread it and override only what genuinely differs (size, colour,
-     * weight); it was copied out by hand at four call sites across the
-     * conversation UI before it lived here.
+     * weight); it was copied out by hand across the conversation UI before it
+     * lived here. No count is given: the last one drifted from the adopters
+     * within a round, and `grep -rn eyebrowLabel src/` answers it exactly.
      */
     eyebrowLabel: {
         fontFamily: fonts.main,

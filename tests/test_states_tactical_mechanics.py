@@ -31,6 +31,14 @@ its own sake. ``tactical_mechanics`` was originally a plain string rendered in
 ``add_*`` in ``compound()`` — so a state that had been re-applied went on
 quoting its FIRST application's numbers to the combat prompt for the rest of the
 fight. Building only fresh instances is exactly why nothing caught it.
+
+The compound pass runs the REAL ``functions.refresh_stat_bonuses``. That is not
+a detail of the fixture: it is the call that writes a state's ``add_*`` onto
+``target.finesse`` and friends, and so it is the reason the SECOND
+``compound()`` scales its extra step by an already-reduced stat. This module
+used to mock it out, which left every compound check measuring arithmetic no
+live combat performs — they passed green against a renderer that was quoting
+the combat prompt numbers the engine had never applied.
 """
 import contextlib
 import inspect
@@ -39,6 +47,7 @@ from unittest import mock
 
 import pytest
 
+import src.functions as functions
 import src.states as states
 from ai.combat_strategist import _STATUS_TACTICAL_NOTES
 
@@ -93,6 +102,7 @@ def _applied_add_attrs(state):
     """
     return sorted(a for a in vars(state) if a.startswith("add_"))
 
+
 # The unicode MINUS SIGN the prompt text uses, plus the ASCII hyphen, so a
 # summary written either way is parsed the same.
 _SIGN = r"[+−-]"
@@ -102,20 +112,45 @@ _FLAT_TOKEN = re.compile(rf"({_SIGN})(\d+)\s+([a-z]+)")
 _TICK_TOKEN = re.compile(r"every (\d+) beats?")
 
 
+# Every primary stat carries the same round base, so a percentage of any of
+# them lands on an exact integer and one denominator serves every check below.
+# They used to split 100/20, which quietly meant a summary quoting a percentage
+# of endurance, faith or charisma would have been checked against the wrong
+# base; none does today, and now none can.
+_STAT_FIELDS = (
+    "strength",
+    "finesse",
+    "speed",
+    "endurance",
+    "charisma",
+    "intelligence",
+    "faith",
+)
+
+
 class _Target:
-    """Minimal combatant with round stats, enough for any State's ``__init__``."""
+    """Minimal combatant with round stats, enough for any State's ``__init__``.
+
+    Carries the ``*_base`` fields and resistance tables ``functions.reset_stats``
+    reads, because the compound pass below runs the real
+    ``functions.refresh_stat_bonuses`` rather than a stub of it.
+    """
 
     name = "Test Target"
     in_combat = True
-    hp = maxhp = 1000
-    fatigue = maxfatigue = 1000
-    finesse = protection = speed = strength = _BASE
-    endurance = faith = charisma = intelligence = 20
 
     def __init__(self):
         self.states = []
-        self.status_resistance = {}
+        self.hp = self.maxhp = self.maxhp_base = 1000
+        self.fatigue = self.maxfatigue = self.maxfatigue_base = 1000
+        for field in _STAT_FIELDS:
+            setattr(self, field, _BASE)
+            setattr(self, f"{field}_base", _BASE)
+        self.protection = self.protection_base = _BASE
         self.resistance = {}
+        self.resistance_base = {}
+        self.status_resistance = {}
+        self.status_resistance_base = {}
 
 
 def _state_classes():
@@ -289,15 +324,16 @@ _COMPOUND_APPLICATIONS = 2
 
 
 @contextlib.contextmanager
-def _quiet_engine():
-    """``compound()`` narrates and refreshes stat bonuses; neither is under test.
+def _quiet_narration():
+    """Silence a state's own ``cprint``. Nothing else is stubbed.
 
-    ``refresh_stat_bonuses`` in particular wants a full combatant (base stat
-    and resistance tables), which ``_Target`` deliberately is not.
+    ``functions.refresh_stat_bonuses`` runs for real, and ``_Target`` is built
+    to satisfy it. It used to be mocked out alongside ``cprint`` on the grounds
+    that it was not under test — but it is the single call that decides what a
+    second ``compound()`` multiplies by, so stubbing it removed exactly the
+    divergence these compound checks exist to catch.
     """
-    with mock.patch.object(states, "cprint"), mock.patch.object(
-        states.functions, "refresh_stat_bonuses"
-    ):
+    with mock.patch.object(states, "cprint"):
         yield
 
 
@@ -321,12 +357,26 @@ _COMPOUNDABLE_IDS = [name for name, _ in _COMPOUNDABLE]
 
 
 def _compounded(cls, times=_COMPOUND_APPLICATIONS):
+    """One application then ``times`` re-applications, the way the engine does it.
+
+    Mirrors ``functions.add_state``: the state joins ``target.states`` and
+    ``refresh_stat_bonuses`` writes its ``add_*`` onto the target BEFORE any
+    re-application, because ``compound()`` scales its extra step by the target's
+    current stat rather than by its base.
+    """
     target = _Target()
     state = cls(target)
-    with _quiet_engine():
+    with _quiet_narration():
+        target.states.append(state)
+        functions.refresh_stat_bonuses(target)
         for _ in range(times):
             state.compound(target)
     return state
+
+
+def _add_snapshot(state):
+    """Every ``add_*`` the state carries right now, as a comparable mapping."""
+    return {attr: getattr(state, attr) for attr in _applied_add_attrs(state)}
 
 
 def test_the_compoundable_set_is_not_empty():
@@ -340,7 +390,15 @@ def test_a_compounded_state_still_reports_what_it_applies(name, cls):
 
     ``compound()`` is the one place a state's modifiers change after
     construction, so it is the one place a summary rendered at construction
-    goes stale.
+    goes stale — and, because ``compound()`` scales its extra step by the
+    holder's CURRENT stat rather than the base, the one place a summary
+    ACCUMULATED from the class fractions goes wrong even while it moves. A
+    twice-compounded ``Petrified`` summed to −40% finesse and −55% speed
+    against the −35 and −46 the engine applied, and to +45% protection
+    against +50: penalties reading worse than they were, bonuses weaker, all
+    of it quoted to the combat prompt as fact. That divergence only exists
+    while ``refresh_stat_bonuses`` runs, which is why ``_quiet_narration``
+    no longer stubs it.
     """
     state = _compounded(cls)
     _check_quoted_percentages(name, state)
@@ -349,23 +407,42 @@ def test_a_compounded_state_still_reports_what_it_applies(name, cls):
     _check_tick_interval(name, state)
 
 
-@pytest.mark.parametrize(
-    "cls_name",
-    ["Slimed", "Petrified", "Fervent"],
-)
-def test_deepening_a_modifier_actually_moves_the_summary(cls_name):
+def _states_whose_compound_moves_a_modifier():
+    """Compoundable states where re-application really does change an ``add_*``.
+
+    Derived rather than named. ``Enflamed`` and ``Poisoned`` compound too, but
+    by adding a stack or refreshing a clock, and their summaries are right to
+    stay put. Writing down the three that move a modifier today would leave the
+    fourth unguarded on the day someone adds it.
+    """
+    found = []
+    for name, cls in _COMPOUNDABLE:
+        if _add_snapshot(cls(_Target())) != _add_snapshot(_compounded(cls)):
+            found.append((name, cls))
+    return found
+
+
+_DEEPENING = _states_whose_compound_moves_a_modifier()
+_DEEPENING_IDS = [name for name, _ in _DEEPENING]
+
+
+def test_the_deepening_set_is_not_empty():
+    """A renderer frozen at construction would empty this set, not fail on it."""
+    assert len(_DEEPENING) >= 3
+
+
+@pytest.mark.parametrize("name,cls", _DEEPENING, ids=_DEEPENING_IDS)
+def test_deepening_a_modifier_actually_moves_the_summary(name, cls):
     """Guards against the checks above passing vacuously.
 
-    These three are the states whose ``compound()`` really does change an
-    ``add_*``. If one of them reports the same text before and after, the
-    summary is frozen again and the test above would happily confirm a stale
-    number matches a stale number.
+    A state whose ``compound()`` really does change an ``add_*`` but reports the
+    same text before and after has a summary frozen at construction, and the
+    checks above would happily confirm a stale number matches a stale number.
     """
-    cls = getattr(states, cls_name)
     fresh = cls(_Target()).tactical_mechanics
     deepened = _compounded(cls).tactical_mechanics
     assert deepened != fresh, (
-        f"{cls_name}.compound() deepens a modifier but tactical_mechanics still "
+        f"{name}.compound() deepens a modifier but tactical_mechanics still "
         f"reads {fresh!r} — the combat prompt is being handed the first "
         "application's numbers."
     )
@@ -388,6 +465,37 @@ def test_every_state_the_strategist_annotates_carries_its_own_mechanics():
         if n not in annotated and n not in by_state_name
     ]
     assert not missing, f"no tactical_mechanics on src/states.py for: {missing}"
+
+
+def test_a_combat_state_that_applies_modifiers_declares_its_mechanics():
+    """The reverse of the test above, and the direction a new effect breaks in.
+
+    Every other check in this module runs over ``_ANNOTATED`` — the states that
+    already declare a summary. A new status effect that declares none is caught
+    by none of them: it is silently excluded from the whole module and reaches
+    the combat prompt as a bare name with no mechanics attached.
+
+    The exemptions are derived, not listed. A state that never enters combat
+    (``combat=False``) never reaches the prompt, and a state that assigns no
+    non-zero ``add_*`` has no modifier to state — ``Death``, ``PhoenixRevive``
+    and ``WarCryStunned`` are all of that kind.
+    """
+    silent = []
+    for name, cls in _state_classes():
+        state = cls(_Target())
+        if state.tactical_mechanics or not state.combat:
+            continue
+        applied = {
+            attr: getattr(state, attr)
+            for attr in _applied_add_attrs(state)
+            if getattr(state, attr)
+        }
+        if applied:
+            silent.append(f"{name} applies {applied}")
+    assert not silent, (
+        "combat states that move a stat but tell the combat prompt nothing: "
+        f"{silent}. Give each one a tactical_mechanics summary."
+    )
 
 
 def test_the_strategist_table_holds_only_perspective_notes():

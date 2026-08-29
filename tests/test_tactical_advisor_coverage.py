@@ -719,7 +719,11 @@ class TestFallbackEnemySignals:
             "player": {"hp": 20, "max_hp": 100, "fatigue": 80, "max_fatigue": 100, "heat": 1.0,
                        "status_effects": [{"name": "Disoriented"}],
                        "stats": {"evasion": 5, "defense": 2}},
-            "enemies": [_enemy("e1", damage=100, mip=_mip(beats_until_resolve=1))],
+            # 4 beats out is the first beat a Dodge cast now can still land on:
+            # a defence resolves 4 beats after casting, so anything nearer is
+            # unreachable and scores as "too late" regardless of impairment.
+            # This case is about the impaired-scoring branch, not the timing one.
+            "enemies": [_enemy("e1", damage=100, mip=_mip(beats_until_resolve=4))],
             "available_moves": [{"name": "Dodge", "available": True, "category": "Defensive"}],
         }
         suggestions = strategist._get_fallback_suggestions(ctx, 1)
@@ -731,7 +735,8 @@ class TestFallbackEnemySignals:
             "player": {"hp": 100, "max_hp": 100, "fatigue": 80, "max_fatigue": 100, "heat": 1.0,
                        "status_effects": [{"name": "Disoriented"}],
                        "stats": {"evasion": 5, "defense": 2}},
-            "enemies": [_enemy("e1", damage=5, mip=_mip(beats_until_resolve=1))],
+            # See the sibling above: 4 beats out is the earliest reachable hit.
+            "enemies": [_enemy("e1", damage=5, mip=_mip(beats_until_resolve=4))],
             "available_moves": [{"name": "Dodge", "available": True, "category": "Defensive"}],
         }
         suggestions = strategist._get_fallback_suggestions(ctx, 1)

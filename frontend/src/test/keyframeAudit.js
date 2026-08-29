@@ -1,0 +1,318 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+/**
+ * Static audit of CSS animation names against the `@keyframes` that declare
+ * them.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * `@keyframes` names are document-global no matter which element declares
+ * them. A component that injects its own `<style>` block therefore does two
+ * things at once: it competes with every other declaration of that name in the
+ * app, and it makes the name available to every other component whether or not
+ * that was intended. Both halves have bitten this codebase:
+ *
+ *   `blink`   TypewriterOutput declared it locally; it shadowed index.css's
+ *             copy app-wide for as long as any typewriter was mid-line.
+ *   `pulse`   NpcChatPanel declared it locally; it replaced the animation
+ *             BattlefieldGrid's targeting reticle and HeroPanel were using.
+ *   `fadeIn`  Declared only inside ItemDetailDialog and USED by ActionsPanel,
+ *             whose message therefore animated only while an item dialog
+ *             happened to be open.
+ *
+ * Each was found by eye and fixed one at a time. This closes the class: every
+ * animation name a source file uses must resolve to a `@keyframes` that either
+ * sits in a global stylesheet or is declared in that same file.
+ *
+ * jsdom does not load stylesheets, so no rendering test can check this. The
+ * audit is deliberately static — it reads the files.
+ */
+
+const GLOBAL_STYLESHEET_DIR = 'styles'
+
+/**
+ * Shorthand keywords that can appear in an `animation` value. Anything left
+ * over after these, times, numbers and functions are removed is taken to be
+ * the animation NAME. Erring toward "this is a name" is intentional: a keyword
+ * missing from this list surfaces as a loud unresolved-name failure that takes
+ * one line to fix, whereas erring the other way would silently reopen the hole
+ * this audit exists to close.
+ */
+const ANIMATION_KEYWORDS = new Set([
+    'normal', 'reverse', 'alternate', 'alternate-reverse',
+    'none', 'forwards', 'backwards', 'both',
+    'running', 'paused', 'infinite',
+    'linear', 'ease', 'ease-in', 'ease-out', 'ease-in-out',
+    'step-start', 'step-end',
+    'initial', 'inherit', 'unset', 'revert', 'revert-layer',
+])
+
+/**
+ * Characters after which a `/` begins a regex literal rather than a division.
+ *
+ * `)` and `]` are absent because after those a `/` divides. `<` and `>` are
+ * absent for a JSX-specific reason: every closing tag in the file is a `<`
+ * immediately followed by a `/`, and reading those as regex openers put the
+ * lexer inside a "regex" for the rest of the line — long enough to swallow the
+ * `{/*` that starts the next comment. No real code writes `a < /re/`.
+ */
+const REGEX_CAN_FOLLOW = new Set([...'(,=:[!&|?{};+-*%~^'])
+
+/** Keywords after which a `/` also begins a regex (`return /x/.test(s)`). */
+const REGEX_CAN_FOLLOW_KEYWORD =
+    /\b(?:return|typeof|instanceof|in|of|case|do|else|yield|await|new|delete|void|throw)\s*$/
+
+/**
+ * Remove comments, so prose ABOUT a keyframe is never mistaken for one.
+ *
+ * Necessary rather than fastidious: several of the comments in this codebase
+ * discuss `@keyframes blink` and `@keyframes pulse` by name, precisely because
+ * those were the bugs. A naive scan reads them as declarations and concludes
+ * those names are defined everywhere they are discussed.
+ *
+ * Walks the source tracking string, template, comment AND regex-literal state.
+ * Regex literals are not an optional refinement: this module's own
+ * `/\banimation(?:Name)?\s*:\s*(?:`([^`]*)`|'([^']*)'|"([^"]*)")/g` contains
+ * an odd number of backticks, and a stripper that ignored regexes read the
+ * first one as opening a template literal and treated the entire rest of the
+ * file as string content — silently disabling comment removal from that point
+ * on. The mistake failed loudly here only by luck.
+ *
+ * A `/` is read as starting a regex when the previous significant character is
+ * one that cannot end an expression (the standard heuristic; `)` and `]` can,
+ * so `(a + b) / 2` stays division).
+ */
+export function stripComments(source) {
+    let out = ''
+    let i = 0
+    let state = 'code'
+    let quote = ''
+    let inCharClass = false
+    let lastSignificant = ''
+    while (i < source.length) {
+        const c = source[i]
+        const next = source[i + 1]
+        if (state === 'code') {
+            if (c === '/' && next === '/') { state = 'line'; i += 2; continue }
+            if (c === '/' && next === '*') { state = 'block'; i += 2; continue }
+            if (c === '/' && (
+                lastSignificant === ''
+                || REGEX_CAN_FOLLOW.has(lastSignificant)
+                || REGEX_CAN_FOLLOW_KEYWORD.test(out)
+            )) {
+                state = 'regex'
+                inCharClass = false
+                out += c
+                i += 1
+                continue
+            }
+            if (c === '"' || c === "'" || c === '`') { state = 'string'; quote = c }
+            if (c.trim()) lastSignificant = c
+            out += c
+            i += 1
+        } else if (state === 'string') {
+            if (c === '\\') { out += c + (next ?? ''); i += 2; continue }
+            // A ' or " string cannot contain a raw newline — that is the JS
+            // grammar, not a shortcut. Enforcing it bounds the damage when an
+            // apostrophe in JSX TEXT (`<p>Jean's sword</p>`) is misread as a
+            // string opener: without this the mis-lex runs to end of file and
+            // silently disables comment stripping from that point on, which is
+            // how a comment quoting `@keyframes spin` came to register as a
+            // declaration of it.
+            if (c === '\n' && quote !== '`') { state = 'code'; lastSignificant = '' }
+            else if (c === quote) { state = 'code'; lastSignificant = c }
+            out += c
+            i += 1
+        } else if (state === 'regex') {
+            if (c === '\\') { out += c + (next ?? ''); i += 2; continue }
+            // Same safety valve as for quoted strings: a regex literal cannot
+            // span a newline either, so a misidentified one can never run past
+            // the end of its line and disable comment stripping wholesale.
+            if (c === '\n') { state = 'code'; lastSignificant = '' }
+            else if (c === '[') inCharClass = true
+            else if (c === ']') inCharClass = false
+            else if (c === '/' && !inCharClass) { state = 'code'; lastSignificant = c }
+            out += c
+            i += 1
+        } else if (state === 'line') {
+            if (c === '\n') { state = 'code'; out += c }
+            i += 1
+        } else { // block
+            if (c === '*' && next === '/') { state = 'code'; i += 2; continue }
+            // Preserve newlines so reported line numbers stay accurate.
+            if (c === '\n') out += c
+            i += 1
+        }
+    }
+    return out
+}
+
+/** Split on commas/whitespace that are not inside parentheses. */
+function splitTopLevel(value, separators) {
+    const parts = []
+    let depth = 0
+    let current = ''
+    for (const c of value) {
+        if (c === '(') depth += 1
+        if (c === ')') depth -= 1
+        if (depth === 0 && separators.includes(c)) {
+            if (current.trim()) parts.push(current.trim())
+            current = ''
+        } else {
+            current += c
+        }
+    }
+    if (current.trim()) parts.push(current.trim())
+    return parts
+}
+
+/**
+ * Pull the animation NAMES out of one `animation` / `animation-name` value.
+ *
+ * Handles the comma-separated multi-animation form, functions containing their
+ * own commas (`cubic-bezier(.36,.07,.19,.97)`), and `${...}` interpolation in
+ * any position except the name itself — an interpolated NAME is unresolvable
+ * by static reading and is reported separately rather than guessed at.
+ */
+export function animationNamesIn(value) {
+    const names = []
+    let interpolated = false
+    for (const part of splitTopLevel(value, ',')) {
+        for (const token of splitTopLevel(part, ' \t\n')) {
+            if (token.includes('${')) { interpolated = true; continue }
+            if (token.includes('(')) continue // cubic-bezier(...), steps(...)
+            if (/^-?[\d.]+m?s$/i.test(token)) continue // duration or delay
+            if (/^-?[\d.]+$/.test(token)) continue // iteration count
+            if (ANIMATION_KEYWORDS.has(token.toLowerCase())) continue
+            names.push(token)
+        }
+    }
+    return { names, interpolated }
+}
+
+// The trailing `{` is load-bearing, not decoration: it is what separates a
+// real declaration from prose NAMING one. Comment stripping is best-effort on
+// JSX (whose text content is not JavaScript), and a false DECLARATION is the
+// dangerous direction — it makes the audit permissive and silent, where a
+// false usage merely fails loudly. Requiring the block closes that direction.
+const DECLARATION_RE = /@keyframes\s+([A-Za-z_-][\w-]*)\s*\{/g
+const CSS_USAGE_RE = /\banimation(?:-name)?\s*:\s*([^;}]+)/g
+// CSS-in-JS: the value must be quoted, which is also what keeps a prose
+// mention of `animation:` in a comment from registering as a usage.
+const JS_USAGE_RE = /\banimation(?:Name)?\s*:\s*(?:`([^`]*)`|'([^']*)'|"([^"]*)")/g
+
+function lineOf(source, index) {
+    return source.slice(0, index).split('\n').length
+}
+
+/**
+ * Every shipped `.css`, `.js` and `.jsx` file under `src`.
+ *
+ * Tests and test support are skipped because neither ships a stylesheet, and
+ * both carry `animation` values that are not CSS at all: a combat beat's
+ * `animation` field names a move TYPE (`'attack'`), and the fixtures in
+ * `src/test/` are full of them.
+ */
+export function readSourceFiles(root = SRC_DIR) {
+    const files = []
+    const walk = (dir) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const full = join(dir, entry.name)
+            if (entry.isDirectory()) {
+                if (entry.name !== 'test') walk(full)
+                continue
+            }
+            if (!/\.(css|jsx?)$/.test(entry.name)) continue
+            if (/\.test\.jsx?$/.test(entry.name)) continue
+            files.push({
+                path: relative(root, full).split(sep).join('/'),
+                content: readFileSync(full, 'utf8'),
+            })
+        }
+    }
+    walk(root)
+    return files
+}
+
+/**
+ * Audit a set of `{path, content}` files.
+ *
+ * Taking the files as an argument rather than reading the disk itself is what
+ * makes this falsifiable: the suite runs it over the real `src` AND over
+ * hand-built inputs with a known-missing keyframe, so "the scan passes" is
+ * evidence rather than an assumption.
+ *
+ * A name resolves if it is declared in a global stylesheet (anything under
+ * `src/styles/*.css`, all of which are imported into the bundle and so are
+ * document-global) or in the same file that uses it.
+ *
+ * @returns {{unresolved: Array, interpolated: Array, declaredIn: Map<string, string[]>}}
+ */
+export function auditKeyframes(files) {
+    const declaredIn = new Map()
+    const globalNames = new Set()
+
+    for (const { path, content } of files) {
+        const clean = stripComments(content)
+        const isGlobal = path.startsWith(`${GLOBAL_STYLESHEET_DIR}/`) && path.endsWith('.css')
+        DECLARATION_RE.lastIndex = 0
+        let m
+        while ((m = DECLARATION_RE.exec(clean))) {
+            const name = m[1]
+            if (!declaredIn.has(name)) declaredIn.set(name, [])
+            declaredIn.get(name).push(path)
+            if (isGlobal) globalNames.add(name)
+        }
+    }
+
+    const unresolved = []
+    const interpolated = []
+
+    for (const { path, content } of files) {
+        const clean = stripComments(content)
+        const isCss = path.endsWith('.css')
+        const re = isCss ? CSS_USAGE_RE : JS_USAGE_RE
+        re.lastIndex = 0
+        let m
+        while ((m = re.exec(clean))) {
+            const value = isCss ? m[1] : (m[1] ?? m[2] ?? m[3])
+            const line = lineOf(clean, m.index)
+            const { names, interpolated: hasInterp } = animationNamesIn(value)
+            if (hasInterp && names.length === 0) {
+                interpolated.push({ path, line, value: value.trim() })
+                continue
+            }
+            for (const name of names) {
+                const sites = declaredIn.get(name) || []
+                if (globalNames.has(name) || sites.includes(path)) continue
+                unresolved.push({
+                    path,
+                    line,
+                    name,
+                    value: value.trim(),
+                    declaredElsewhereIn: sites,
+                })
+            }
+        }
+    }
+
+    return { unresolved, interpolated, declaredIn }
+}
+
+/** One human-readable line per unresolved usage, for a failure message. */
+export function describeUnresolved(unresolved) {
+    return unresolved
+        .map((u) => {
+            const where = u.declaredElsewhereIn.length
+                ? `declared ONLY in ${u.declaredElsewhereIn.join(', ')} — a component-local `
+                  + '<style> block is not visible unless that component is mounted'
+                : 'no @keyframes of that name exists in src (Tailwind supplies a few, '
+                  + 'but only via its animate-* utility classes — use the class, not the name)'
+            return `${u.path}:${u.line} uses "${u.name}" (${u.value}): ${where}`
+        })
+        .join('\n')
+}

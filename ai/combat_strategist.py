@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict
+from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict
 
 from ai.llm_client import GenericLLMClient
 from src.text_format import pct as _pct
@@ -29,7 +29,7 @@ _PERSPECTIVE_NOTE_KEYS: Dict[Perspective, str] = {
 # system prompt's prose, the heuristic fallback's scoring, and the runtime
 # prompt builder's labels and alerts — with nothing linking them: the heat
 # bands appeared at five sites, the 25%/50% HP and fatigue bands at nine, and
-# "defensively vulnerable" existed in three mutually incompatible encodings.
+# "defensively vulnerable" existed as three separate copies of one rule.
 # _SYSTEM_PROMPT below is an f-string over these constants, so the rule the
 # model is told and the rule the code applies cannot drift apart.
 _HP_CRITICAL_PCT = 0.25
@@ -43,36 +43,55 @@ _FINISHABLE_HP_PCT = 0.30
 _HEAT_BLAZING = 2.0
 _HEAT_HOT = 1.2
 _HEAT_COLD = 0.8
-# ENGINE-OWNED. src/moves/_base.py Move.miss() calls change_heat(0.85) on Jean.
-# Restated here only so the prompt can quote the cost of a miss; if that call
-# changes, change this with it.
+# ENGINE-OWNED: this is `Move._HEAT_MISS_PENALTY` (src/moves/_base.py), which
+# `Move.miss()` passes to `change_heat` when one of Jean's attacks misses.
+# Restated rather than imported because this module must stay importable
+# without the game engine (see src/text_format.py's docstring), so the pair is
+# guarded instead: tests/test_combat_strategist_coverage.py reads the engine's
+# value straight out of src/moves/_base.py and fails if the two drift.
 _HEAT_MISS_PENALTY = 0.85
 
-# ENGINE-OWNED, and it must stay on the ENGINE'S SCALE.
+# ENGINE-OWNED, and both must stay on the ENGINE'S SCALE — the same
+# `Move.beats_until_resolve()` scale `_incoming_beats` reads a threat off.
 #
-# Dodge and Parry cost this many beats to land: cast one now and the Dodging /
-# Parrying stance goes up exactly this many beats from now. So an incoming hit
-# whose `beats_until_resolve` is at or below this is the last moment worth
-# spending a beat on defense, and anything under it will resolve late.
+# _DEFENSIVE_WINDOW_BEATS is the beat the window OPENS on, not its length:
+# Dodge and Parry cost exactly this many beats to land, so a hit arriving any
+# sooner than this cannot be defended against at all.
 #
 # The number is `Move.beats_until_resolve()` for a freshly built Dodge, NOT the
 # raw stage cost: `stage_beat=[1, 1, 5, 2]` reads as "1 prep + 1 execute", but
 # the engine's countdown adds a beat at each stage boundary (draining a stage
 # to zero does not advance it — the NEXT beat does), so a Dodge cast now
-# resolves on beat 4, which is what
-# tests/test_move_beats_until_resolve.py drives against the real `advance`
-# loop. This constant was 2 — Dodge's cost on the DELETED `_beats_until_impact`
-# scale, carried over unchanged when `_incoming_beats` switched to the engine's
-# `beats_until_resolve`, which runs ~2 beats larger. The alert therefore fired
-# two beats after the last one Jean could have acted on: advice that was wrong
-# at the exact moment it mattered most.
+# resolves on beat 4, which is what tests/test_move_beats_until_resolve.py
+# drives against the real `advance` loop.
 #
-# tests/test_combat_strategist_coverage.py pins this against a real Dodge, so
-# retuning `Dodge.evaluate`'s stage_beat fails there rather than silently
-# mis-timing every defensive alert in the game.
+# _DEFENSIVE_STANCE_BEATS is how long the resulting stance then HOLDS
+# (`Dodging._DURATION_BEATS`), which is what makes the window a range rather
+# than a single beat: a Dodge cast now is up from beat 4 through beat 10.
+#
+# tests/test_combat_strategist_coverage.py pins both against the real engine —
+# the cost against a real Dodge/Parry, the duration against `Dodging` — so
+# retuning either fails there rather than silently mis-timing every defensive
+# alert in the game. It has gone wrong silently before: the cost was once 2,
+# Dodge's value on the DELETED `_beats_until_impact` scale, carried over
+# unchanged when `_incoming_beats` switched to the engine's field.
 _DEFENSIVE_WINDOW_BEATS = 4
+_DEFENSIVE_STANCE_BEATS = 7
+
+# The last beat a defence cast NOW is still standing for. Measured, not
+# reasoned: driving the real engine at the combat loop's own per-beat order
+# (every player move advances, THEN the NPCs' do, then states cycle) puts the
+# `Dodging` state on Jean for the enemy's half of beats 4 through 10 inclusive.
+# See tests/test_combat_strategist_coverage.py::TestDefensiveWindowMatchesTheEngine.
+_LAST_DEFENSIBLE_BEAT = _DEFENSIVE_WINDOW_BEATS + _DEFENSIVE_STANCE_BEATS - 1
 
 # Below both of these Jean's defenses will not meaningfully absorb a hit.
+#
+# `defense` here is the serializer's name for the engine's `protection`, which
+# already includes worn armour (Player.refresh_protection_rating). A starting
+# Jean measures evasion 11 / defense 4, so he opens the game vulnerable on both
+# counts; _LOW_DEFENSE is a high-end gate that only clears once he is in real
+# armour (body pieces run 1–14 protection).
 _LOW_EVASION = 15
 _LOW_DEFENSE = 10
 
@@ -86,22 +105,119 @@ _LETHAL_HP_FRACTION = 0.5
 # missing Hollowed, so an enemy bleeding out from it read as no clock at all,
 # while _STATUS_TACTICAL_NOTES' own Hollowed enemy_note says the opposite
 # ("Weakening over time — Jean can afford a measured approach").
-_DOT_STATUSES = frozenset({"Poisoned", "Enflamed", "Resonant", "Hollowed"})
+#
+# ENGINE-DERIVED, spelled out here only because this module must stay
+# importable without the game engine (see src/text_format.py's docstring).
+# The membership rule is mechanical: a State whose `effect()` runs
+# ``target.hp -= …``. tests/test_combat_strategist_coverage.py derives the set
+# straight from src/states.py by that rule and fails on any difference, so a
+# new damage-over-time state cannot be forgotten here the way Slimed was —
+# its own note at _STATUS_TACTICAL_NOTES says "Acid is eating HP on a timer"
+# while `dot_active` read False for it. Fervent qualifies too: it is a buff,
+# but it bills the holder HP every 5 beats, and both of its notes below
+# already give the advice a clock implies.
+_DOT_STATUSES = frozenset(
+    {"Poisoned", "Enflamed", "Slimed", "Resonant", "Hollowed", "Fervent"}
+)
 
 # Status effects that make Dodge unreliable, so a defensive beat buys less than
-# the scorer would otherwise assume.
-_DODGE_IMPAIRING_STATUSES = frozenset({"Disoriented", "Slimed", "Petrified"})
+# the scorer would otherwise assume. Same arrangement as _DOT_STATUSES: the
+# rule is "a State whose ``__init__`` assigns a NEGATED ``add_fin``", evasion
+# being ``int(round(finesse))``, and the same test derives it from
+# src/states.py. Resonant was missing despite cutting finesse by 25% — a
+# deeper cut than either Slimed's or Petrified's, both of which were listed.
+_DODGE_IMPAIRING_STATUSES = frozenset(
+    {"Disoriented", "Slimed", "Petrified", "Resonant"}
+)
 
 # Opening bid per move category, before every situational adjustment in
 # `_score_move`. Hoisted rather than rebuilt per move per request.
+#
+# The keys are the ENGINE's category vocabulary, which is what
+# ApiCombatAdapter forwards verbatim (`"category": getattr(move, "category", …)`)
+# — NOT the frontend's button names. The two are not the same list: the
+# `Special` BUTTON collects the engine's `Mastery` moves (see
+# CATEGORY_GROUPS in frontend/src/utils/categories.js), and this table used to
+# be keyed on the button, so it held a "Special" no move ever carries while
+# the seven 2500-XP `Mastery` moves fell through to the default and scored
+# below Defensive. `Tactical` and `Utility` were missing for the same reason.
+# tests/test_combat_strategist_coverage.py checks this table against the same
+# AST-derived vocabulary tests/test_move_categories_ui_contract.py holds the
+# frontend to, in both directions.
 _CATEGORY_BASE_SCORES: Dict[str, int] = {
     "Offensive": 85,
+    # Capstone moves: strong, but expensive enough that a plain attack still
+    # edges them at neutral heat.
+    "Mastery": 80,
     "Maneuver": 75,
-    "Special": 70,
+    # Marks and set-up (MarkedQuarry, ReapersMark): they buy a later hit.
+    "Tactical": 70,
     "Defensive": 65,
+    # Check/Wait/CrusaderOath — Check and Wait carry explicit overrides in
+    # `_score_move`, so this only ever prices the buffs.
+    "Utility": 40,
     "Miscellaneous": 40,
 }
-_DEFAULT_CATEGORY_SCORE = 40
+# The bid for a category this table has never heard of. Deliberately the
+# Miscellaneous price rather than a second copy of the number: an unrecognised
+# category IS miscellaneous as far as the scorer is concerned.
+_DEFAULT_CATEGORY_SCORE = _CATEGORY_BASE_SCORES["Miscellaneous"]
+
+# Jean's damage/XP multiplier, banded. One classification, read by all four
+# places that used to re-derive it independently: the fallback's offensive
+# adjustment, the prompt's heat label, the fallback's offensive reasoning, and
+# the alert block. The round before this one unified the numbers but left four
+# copies of the if/elif ladder over them.
+HeatBand = Literal["BLAZING", "HOT", "WARM", "COLD"]
+
+_HEAT_OFFENSIVE_BONUS: Dict[HeatBand, int] = {
+    "BLAZING": 10,  # attack now
+    "HOT": 5,  # lean offensive
+    "WARM": 0,
+    "COLD": -10,  # rebuild before spending resources
+}
+
+# `{swing}` is the band's distance from baseline in whole percent, always
+# positive — the sign is already in the prose.
+_HEAT_LABEL_BODY: Dict[HeatBand, str] = {
+    "BLAZING": "BLAZING — attacks deal +{swing}% damage; protect this streak",
+    "HOT": "HOT — attacks deal +{swing}% bonus damage",
+    "WARM": "WARM — baseline damage",
+    "COLD": "COLD — attacks deal −{swing}% damage; land hits to rebuild",
+}
+
+_HEAT_OFFENSIVE_NOTE: Dict[HeatBand, str] = {
+    "BLAZING": (
+        "Heat is BLAZING ({heat:.1f}×); {name} for amplified damage — don't miss."
+    ),
+    "HOT": "Heat is elevated ({heat:.1f}×); {name} while the combo holds.",
+    "WARM": "Tactical analysis unavailable; {name} is a viable fallback.",
+    "COLD": "Heat is low ({heat:.1f}×); {name} to rebuild combo before committing.",
+}
+
+# Only the two extremes are worth a line in SITUATIONAL ALERTS; HOT and WARM
+# are already covered by the heat label on the player line.
+_HEAT_ALERTS: Dict[HeatBand, str] = {
+    "BLAZING": (
+        "⚠ BLAZING HEAT ({heat:.2f}×): Maximize offense now — missing or "
+        "being hit collapses the combo."
+    ),
+    "COLD": (
+        "⚠ COLD HEAT ({heat:.2f}×): Land hits to rebuild combo before using "
+        "expensive moves."
+    ),
+}
+
+
+def _heat_band(heat: float) -> HeatBand:
+    """Classify a heat multiplier into the band every heat lookup is keyed on."""
+    if heat >= _HEAT_BLAZING:
+        return "BLAZING"
+    if heat >= _HEAT_HOT:
+        return "HOT"
+    if heat < _HEAT_COLD:
+        return "COLD"
+    return "WARM"
 
 
 class TacticalState(TypedDict):
@@ -117,8 +233,7 @@ class TacticalState(TypedDict):
     """
 
     heat: float
-    # Score adjustment applied to offensive moves for the current heat band.
-    heat_offensive_bonus: int
+    heat_band: HeatBand
     hp_critical: bool
     fatigue_critical: bool
     fatigue_low: bool
@@ -135,48 +250,171 @@ class TacticalState(TypedDict):
     incoming_lethal: bool
 
 
-def _is_defensively_vulnerable(evasion: Any, combined_defense: Any) -> bool:
+class IncomingThreat(TypedDict):
+    """What one telegraphed enemy move is worth, per `_estimate_incoming_damage`.
+
+    Declared rather than left a bare ``Dict[str, Any]`` for the same reason
+    `TacticalState` above is: these dicts are read by string subscript at nine
+    sites across four methods, and a mistyped key raises only on the branch
+    that reads it.
+    """
+
+    # Pre-rendered "low–high" band, not a number: it is prompt/reasoning text.
+    estimated_damage: str
+    midpoint: int
+    potentially_lethal: bool
+
+
+class WorstThreat(TypedDict):
+    """The single most pressing charge, per `_worst_incoming_threat`.
+
+    Deliberately NOT ``IncomingThreat`` plus a key: it drops ``midpoint``,
+    which no caller of `_worst_incoming_threat` reads, and adds the beat count,
+    which `_estimate_incoming_damage` never produces. The two shapes were
+    previously both ``Dict[str, Any]`` and differed by exactly those two keys
+    with nothing saying so.
+    """
+
+    # None when nothing is incoming — never a sentinel. See `_incoming_beats`.
+    beats_until_resolve: Optional[int]
+    estimated_damage: str
+    potentially_lethal: bool
+
+
+class PlayerVitals(NamedTuple):
+    """Jean's HP/fatigue/heat, guarded once.
+
+    Carries the raw numerator and denominator alongside each percentage
+    because `_player_block` prints all three. It used to be handed only the
+    percentages and so re-inlined the very ``or 0`` / ``or 1`` guards this
+    helper was extracted to own, on the same fields, four lines apart.
+    """
+
+    hp: int
+    max_hp: int
+    hp_pct: float
+    fatigue: int
+    max_fatigue: int
+    fatigue_pct: float
+    heat: float
+
+
+class PlayerDefenses(NamedTuple):
+    """Jean's two defensive stats. Named so the pair cannot be swapped silently."""
+
+    evasion: int
+    defense: int
+
+
+def _is_defensively_vulnerable(evasion: Any, defense: Any) -> bool:
     """True when Jean's defenses will not meaningfully absorb an incoming hit.
 
     One encoding of the rule, used by both the heuristic fallback's scoring and
     the runtime prompt's vulnerability note. The system prompt states the
-    complement of it ("reduce urgency if evasion >= X or combined defense >= Y")
-    off the same two constants.
+    complement of it ("reduce urgency if evasion >= X or defense >= Y") off the
+    same two constants.
     """
-    return (evasion or 0) < _LOW_EVASION and (combined_defense or 0) < _LOW_DEFENSE
+    return (evasion or 0) < _LOW_EVASION and (defense or 0) < _LOW_DEFENSE
 
 
-def _player_defenses(player: Dict[str, Any]) -> Tuple[int, int, int]:
-    """Return ``(evasion, combined_defense, armor_defense)`` for a serialized player.
+def _player_defenses(player: Dict[str, Any]) -> PlayerDefenses:
+    """Return Jean's ``(evasion, defense)`` from a serialized player.
 
-    ``combined_defense`` is ``defense + armor_defense`` — the number
-    `_is_defensively_vulnerable` compares against. The armor half comes back
-    too because `_player_block` prints it as its own line; it used to call
-    this helper, throw that half away, and then re-inline the identical
-    two-level ``equipment.armor.defense`` walk immediately afterwards.
+    ``defense`` is the serializer's name for the engine's ``protection``, which
+    ALREADY includes worn armour — Player.refresh_protection_rating folds gear
+    in before CombatantSerializer reads it. This helper used to add
+    ``equipment.armor.defense`` on top, a key the serializer has never emitted
+    (its armour block carries ``name`` and ``protection`` only, and its own
+    docstring says summing both would double-count), so the sum was a no-op
+    that also made `_player_block` print "Armor Defense: 0" for a fully
+    armoured Jean.
     """
     stats = player.get("stats") or {}
-    evasion = stats.get("evasion", 0)
-    defense = stats.get("defense", 0)
-    armor_defense = ((player.get("equipment") or {}).get("armor") or {}).get(
-        "defense", 0
-    )
-    return evasion, defense + armor_defense, armor_defense
+    return PlayerDefenses(stats.get("evasion", 0), stats.get("defense", 0))
 
 
-def _player_vitals(player: Dict[str, Any]) -> Tuple[int, float, float, float]:
-    """Return ``(hp, hp_pct, fatigue_pct, heat)`` for a serialized player.
+def _player_vitals(player: Dict[str, Any]) -> PlayerVitals:
+    """Read Jean's vitals off the wire, applying every guard exactly once.
 
     One place owns the "or 1" denominators and the "or 0"/"or 1.0" defaults.
     The heuristic path (`_derive_tactical_state`) and the prompt path
-    (`_build_user_prompt`) both need exactly these four and each used to
-    re-derive them with its own copy of the guards.
+    (`_build_user_prompt`) both need these and each used to re-derive them with
+    its own copy of the guards.
     """
     hp = player.get("hp") or 0
-    hp_pct = hp / (player.get("max_hp") or 1)
-    fatigue_pct = (player.get("fatigue") or 0) / (player.get("max_fatigue") or 1)
-    heat = float(player.get("heat") or 1.0)
-    return hp, hp_pct, fatigue_pct, heat
+    max_hp = player.get("max_hp") or 1
+    fatigue = player.get("fatigue") or 0
+    max_fatigue = player.get("max_fatigue") or 1
+    return PlayerVitals(
+        hp=hp,
+        max_hp=max_hp,
+        hp_pct=hp / max_hp,
+        fatigue=fatigue,
+        max_fatigue=max_fatigue,
+        fatigue_pct=fatigue / max_fatigue,
+        heat=float(player.get("heat") or 1.0),
+    )
+
+
+def _defense_lands_in_time(beats_until_resolve: Optional[int]) -> bool:
+    """True when a Dodge or Parry cast THIS beat is standing when the hit lands.
+
+    The one encoding of the timing rule, read by the fallback scorer and the
+    prompt's INCOMING alert. Both bounds are the engine's, and both were
+    measured against the real combat loop rather than reasoned about:
+
+      * Below `_DEFENSIVE_WINDOW_BEATS` the defence resolves after the hit.
+      * AT it the two land on the same beat, and the defence still wins: the
+        combat loop advances every player move before it runs the NPCs' turns
+        (ApiCombatAdapter's beat loop), so the `Dodging` state is on Jean by the
+        time the enemy's execute fires. The bound is therefore ``>=``, not ``>``.
+      * Above `_LAST_DEFENSIBLE_BEAT` the stance has expired again before the
+        hit arrives, so the beat is better spent elsewhere and re-cast later.
+
+    The comparison used to run the other way — ``incoming_beats <=
+    _DEFENSIVE_WINDOW_BEATS`` — which scored Dodge 80-97 for exactly the hits
+    it could no longer reach and stayed silent for every hit it could. The
+    module already said as much in prose — `_enemy_block`'s "too late for a
+    clean Dodge/Parry" — while scoring those same beats as urgent defence.
+    """
+    return (
+        beats_until_resolve is not None
+        and _DEFENSIVE_WINDOW_BEATS <= beats_until_resolve <= _LAST_DEFENSIBLE_BEAT
+    )
+
+
+def _charge_is_worth_flagging(beats_until_resolve: Optional[int]) -> bool:
+    """True when a telegraphed hit is close enough to change Jean's next beat.
+
+    Wider than `_defense_lands_in_time` on purpose, and used for the two
+    questions that are about the THREAT rather than about the defence:
+    which enemy to rank first, and whether to raise an INCOMING alert. A hit
+    landing in one beat cannot be dodged, but it is the most urgent fact on the
+    battlefield and both of those callers must still see it.
+    """
+    return (
+        beats_until_resolve is not None
+        and beats_until_resolve <= _LAST_DEFENSIBLE_BEAT
+    )
+
+
+def _offerable_moves(available_moves: List[Any]) -> List[Dict[str, Any]]:
+    """The moves Jean may actually be told to cast this beat.
+
+    One owner for "which moves are offerable", because the answer is a promise
+    the two consumers make to each other: `_moves_block` renders this list for
+    the model and `_get_fallback_suggestions` scores it when the model is
+    unavailable, so anything one shows the other must be able to pick. They had
+    already diverged — the fallback additionally skipped a move literally named
+    ``"Cancel"``, a string that appears nowhere in ``src/`` or
+    ``frontend/src/`` outside two unrelated dialog tests, so it filtered
+    something no serializer emits while the prompt happily offered it.
+    """
+    return [
+        m
+        for m in available_moves
+        if isinstance(m, dict) and m.get("available", True)
+    ]
 
 
 def _enemy_max_fatigue(enemy: Dict[str, Any]) -> int:
@@ -240,8 +478,6 @@ _STATUS_TACTICAL_NOTES: Dict[str, Dict[str, str]] = {
         ),
     },
     "Slimed": {
-        # Advice, not mechanics: this used to read "fatigue is burning faster
-        # than normal", which Slimed has never done — it is an HP acid tick.
         "player_note": (
             "Acid is eating HP on a timer; end the fight rather than trade beats"
         ),
@@ -338,11 +574,13 @@ _SYSTEM_PROMPT = (
     "PRIORITIES, in order:\n"
     f"1. Fatigue < {_pct(_FATIGUE_CRITICAL_PCT)}: prefer Rest; avoid high-cost offense.\n"
     f"2. Telegraphed attack: Dodge/Parry land {_DEFENSIVE_WINDOW_BEATS} beats after "
-    "casting, so cast NOW. "
-    f"Beats until impact ≤ {_DEFENSIVE_WINDOW_BEATS} → strongly prefer them (90+); "
-    f"under {_DEFENSIVE_WINDOW_BEATS} the defense resolves late. "
+    f"casting and then hold for {_DEFENSIVE_STANCE_BEATS} beats. "
+    f"Beats until impact {_DEFENSIVE_WINDOW_BEATS}–{_LAST_DEFENSIBLE_BEAT} → strongly "
+    f"prefer them (90+). Under {_DEFENSIVE_WINDOW_BEATS}, the defense resolves after "
+    f"the hit; over {_LAST_DEFENSIBLE_BEAT}, the stance expires before it. "
+    "In both cases spend the beat on something else. "
     f"Weigh estimated incoming damage against Jean's HP; reduce urgency if evasion ≥ "
-    f"{_LOW_EVASION} or combined defense ≥ {_LOW_DEFENSE}. "
+    f"{_LOW_EVASION} or defense ≥ {_LOW_DEFENSE}. "
     "Cooldown ETAs are shown for unavailable defensive moves.\n"
     "3. Status effects: each carries a tactical note — honor it. Enemy effects are "
     "already written from Jean's perspective.\n"
@@ -492,7 +730,7 @@ class CombatStrategist:
     # Heuristic fallback
     # ------------------------------------------------------------------
 
-    def _derive_tactical_state(self, ctx: Dict[str, Any]) -> "TacticalState":
+    def _derive_tactical_state(self, ctx: Dict[str, Any]) -> TacticalState:
         """Reduce a combat context to the flags the fallback scorer needs.
 
         Every threshold comparison in the heuristic path happens here, once,
@@ -500,9 +738,8 @@ class CombatStrategist:
         named booleans rather than a second copy of the same arithmetic.
         """
         player = ctx.get("player", {})
-        hp, hp_pct, fatigue_pct, heat = _player_vitals(player)
-
-        evasion, combined_defense, _ = _player_defenses(player)
+        vitals = _player_vitals(player)
+        defenses = _player_defenses(player)
 
         player_status_names = {
             s.get("name", "") for s in player.get("status_effects", [])
@@ -510,28 +747,16 @@ class CombatStrategist:
         enemies = ctx.get("enemies", [])
 
         # Beats-until-impact and estimated damage for the most threatening charge
-        worst_threat = self._worst_incoming_threat(enemies, hp)
+        worst_threat = self._worst_incoming_threat(enemies, vitals.hp)
         incoming_beats = worst_threat["beats_until_resolve"]
 
-        # Heat modifiers for offensive scoring
-        if heat >= _HEAT_BLAZING:
-            heat_offensive_bonus = 10  # BLAZING: attack now
-        elif heat >= _HEAT_HOT:
-            heat_offensive_bonus = 5  # HOT: lean offensive
-        elif heat < _HEAT_COLD:
-            heat_offensive_bonus = -10  # COLD: rebuild before spending resources
-        else:
-            heat_offensive_bonus = 0
-
         return {
-            "heat": heat,
-            "heat_offensive_bonus": heat_offensive_bonus,
-            "hp_critical": hp_pct < _HP_CRITICAL_PCT,
-            "fatigue_critical": fatigue_pct < _FATIGUE_CRITICAL_PCT,
-            "fatigue_low": fatigue_pct < _FATIGUE_LOW_PCT,
-            "defensively_vulnerable": _is_defensively_vulnerable(
-                evasion, combined_defense
-            ),
+            "heat": vitals.heat,
+            "heat_band": _heat_band(vitals.heat),
+            "hp_critical": vitals.hp_pct < _HP_CRITICAL_PCT,
+            "fatigue_critical": vitals.fatigue_pct < _FATIGUE_CRITICAL_PCT,
+            "fatigue_low": vitals.fatigue_pct < _FATIGUE_LOW_PCT,
+            "defensively_vulnerable": _is_defensively_vulnerable(*defenses),
             # Active DoT on player accelerates urgency to end combat
             "dot_active": bool(player_status_names & _DOT_STATUSES),
             # Dodge reliability is impaired by certain status effects
@@ -550,9 +775,7 @@ class CombatStrategist:
                 for e in enemies
             ),
             "incoming_beats": incoming_beats,
-            "in_defensive_window": (
-                incoming_beats is not None and incoming_beats <= _DEFENSIVE_WINDOW_BEATS
-            ),
+            "in_defensive_window": _defense_lands_in_time(incoming_beats),
             "estimated_damage": worst_threat["estimated_damage"],
             "incoming_lethal": worst_threat["potentially_lethal"],
         }
@@ -602,14 +825,21 @@ class CombatStrategist:
     def _score_move(move: Dict[str, Any], state: TacticalState) -> Tuple[int, str]:
         """Score one available move against the derived tactical state.
 
-        Returns ``(score, reasoning)``. Branches are ordered by the same
-        priority list the system prompt gives the model.
+        Returns ``(score, reasoning)``. Branches are ordered by CONSEQUENCE,
+        first match wins — deliberately NOT by the system prompt's priority
+        numbering, which runs 2, 1, 4, 3 through the first four branches here.
+        The prompt's list ranks considerations for a model weighing all of them
+        at once; this ladder short-circuits, so a lethal hit landing inside the
+        defensive window (prompt priority 2) has to be tested before critical
+        fatigue (priority 1). Reordering these to match the prompt's numbers
+        would put Rest ahead of surviving the next beat.
         """
         name = move.get("name", "Unknown")
         category = move.get("category", "Miscellaneous")
         base_score = _CATEGORY_BASE_SCORES.get(category, _DEFAULT_CATEGORY_SCORE)
 
         heat = state["heat"]
+        heat_band = state["heat_band"]
 
         if state["in_defensive_window"] and name in ("Dodge", "Parry"):
             return CombatStrategist._score_defensive_move(name, state)
@@ -636,9 +866,12 @@ class CombatStrategist:
             )
 
         if state["enemy_dot_active"] and category == "Offensive":
-            # Enemy has DoT — time favours Jean, slightly less frantic
+            # Enemy has DoT — time favours Jean, slightly less frantic. Named
+            # generically: _DOT_STATUSES covers acid, resonance and spiritual
+            # drain as well as poison and fire.
             return base_score, (
-                f"Enemy is poisoned/burning — {name} while time works in Jean's favour."
+                f"Enemy is losing HP on a timer — {name} while time works in "
+                "Jean's favour."
             )
 
         if state["fatigue_low"] and name in ("Wait", "Rest"):
@@ -654,22 +887,8 @@ class CombatStrategist:
             return 20, f"{name} cedes initiative; use only if no better option exists."
 
         if category == "Offensive":
-            score = min(99, base_score + state["heat_offensive_bonus"])
-            if heat >= _HEAT_BLAZING:
-                return score, (
-                    f"Heat is BLAZING ({heat:.1f}×); {name} for amplified damage — "
-                    "don't miss."
-                )
-            if heat >= _HEAT_HOT:
-                return (
-                    score,
-                    f"Heat is elevated ({heat:.1f}×); {name} while the combo holds.",
-                )
-            if heat < _HEAT_COLD:
-                return score, (
-                    f"Heat is low ({heat:.1f}×); {name} to rebuild combo before committing."
-                )
-            return score, f"Tactical analysis unavailable; {name} is a viable fallback."
+            score = min(99, base_score + _HEAT_OFFENSIVE_BONUS[heat_band])
+            return score, _HEAT_OFFENSIVE_NOTE[heat_band].format(heat=heat, name=name)
 
         return (
             base_score,
@@ -680,11 +899,7 @@ class CombatStrategist:
         self, combat_context: Dict[str, Any], max_suggestions: int
     ) -> List[Dict[str, Any]]:
         """Provide context-aware suggestions based on combat state when the LLM is unavailable."""
-        available = [
-            m
-            for m in combat_context.get("available_moves", [])
-            if m.get("available", True)
-        ]
+        available = _offerable_moves(combat_context.get("available_moves", []))
         if not available:
             return [
                 {
@@ -699,8 +914,6 @@ class CombatStrategist:
 
         scored_moves = []
         for m in available:
-            if m.get("name", "Unknown") == "Cancel":
-                continue
             score, reasoning = self._score_move(m, state)
             scored_moves.append(
                 {
@@ -713,16 +926,6 @@ class CombatStrategist:
 
         scored_moves.sort(key=lambda x: x["score"], reverse=True)
 
-        if not scored_moves:
-            scored_moves.append(
-                {
-                    "move_name": available[0].get("name", "Wait"),
-                    "target_id": None,
-                    "score": 10,
-                    "reasoning": "Standard tactical fallback; maintaining position.",
-                }
-            )
-
         results = scored_moves[: max(1, min(3, max_suggestions))]
         self._ensure_target_ids(results, combat_context)
         return results
@@ -734,28 +937,34 @@ class CombatStrategist:
     def _build_user_prompt(self, ctx: Dict[str, Any]) -> str:
         """Construct the context string for the LLM.
 
-        Pure assembly: every section is built by its own ``_*_block`` helper,
-        in the order the system prompt's priorities expect to read them.
+        Pure assembly: every section is built by its own ``_*_block`` helper.
+        Section order is READING order — the battlefield described once, top to
+        bottom, then the alerts drawn from it, then the menu of moves. It is
+        not the system prompt's priority order and does not try to be: allies
+        (priority 5) are described beside the enemies they are fighting rather
+        than between the two halves of priority 2, and the alert block is
+        placed last of the situational sections so it reads as a summary of
+        everything above it.
         """
         player = ctx.get("player", {})
         enemies = ctx.get("enemies", [])
 
-        hp, hp_pct, fatigue_pct, heat = _player_vitals(player)
+        vitals = _player_vitals(player)
 
-        enemies_block, imminent_alerts = self._enemy_block(enemies, player, hp)
+        enemies_block, imminent_alerts = self._enemy_block(enemies, player, vitals.hp)
         # Multi-enemy target priority
         priority_block = (
-            self._build_target_priority(enemies, hp) if len(enemies) > 1 else ""
+            self._build_target_priority(enemies, vitals.hp) if len(enemies) > 1 else ""
         )
         history_str = "\n".join(ctx.get("history", [])[-5:])
 
         return (
-            f"{self._player_block(player, hp_pct, fatigue_pct, heat)}\n\n"
+            f"{self._player_block(player, vitals)}\n\n"
             f"{enemies_block}\n"
             f"{self._ally_block(ctx.get('allies', []))}"
             f"{self._cooldown_block(ctx.get('defensive_cooldowns', {}))}"
             f"{priority_block}"
-            f"{self._alert_block(imminent_alerts, hp_pct, fatigue_pct, heat)}\n"
+            f"{self._alert_block(imminent_alerts, vitals)}\n"
             f"Recent History:\n{history_str}\n"
             f"Previous Move: {ctx.get('last_move', 'None')}\n\n"
             f"Available Moves:\n{self._moves_block(ctx.get('available_moves', []))}"
@@ -764,38 +973,22 @@ class CombatStrategist:
     @staticmethod
     def _heat_label(heat: float) -> str:
         """Render the heat band the system prompt's HEAT paragraph refers to."""
-        if heat >= _HEAT_BLAZING:
-            return (
-                f"{heat:.2f}× [BLAZING — attacks deal +{int((heat - 1) * 100)}% damage; "
-                "protect this streak]"
-            )
-        if heat >= _HEAT_HOT:
-            return f"{heat:.2f}× [HOT — attacks deal +{int((heat - 1) * 100)}% bonus damage]"
-        if heat < _HEAT_COLD:
-            return (
-                f"{heat:.2f}× [COLD — attacks deal −{int((1 - heat) * 100)}% damage; "
-                "land hits to rebuild]"
-            )
-        return f"{heat:.2f}× [WARM — baseline damage]"
+        band = _heat_band(heat)
+        swing = int(abs(heat - 1) * 100)
+        return f"{heat:.2f}× [{_HEAT_LABEL_BODY[band].format(swing=swing)}]"
 
-    def _player_block(
-        self,
-        player: Dict[str, Any],
-        hp_pct: float,
-        fatigue_pct: float,
-        heat: float,
-    ) -> str:
+    def _player_block(self, player: Dict[str, Any], vitals: PlayerVitals) -> str:
         """Jean's vitals, attributes, stats, passives, statuses and consumables."""
         pos = player.get("position") or {}
         hp_flag = (
             " ⚠ HP CRITICAL"
-            if hp_pct < _HP_CRITICAL_PCT
-            else (" LOW" if hp_pct < _HP_LOW_PCT else "")
+            if vitals.hp_pct < _HP_CRITICAL_PCT
+            else (" LOW" if vitals.hp_pct < _HP_LOW_PCT else "")
         )
         fatigue_flag = (
             " ⚠ FATIGUE CRITICAL"
-            if fatigue_pct < _FATIGUE_CRITICAL_PCT
-            else (" LOW" if fatigue_pct < _FATIGUE_LOW_PCT else "")
+            if vitals.fatigue_pct < _FATIGUE_CRITICAL_PCT
+            else (" LOW" if vitals.fatigue_pct < _FATIGUE_LOW_PCT else "")
         )
 
         p_attrs = ", ".join(
@@ -804,8 +997,21 @@ class CombatStrategist:
         passives = self._extract_names(player.get("passives", []))
 
         p_stats = player.get("stats", {})
-        p_evasion, _, p_armor_def = _player_defenses(player)
+        p_evasion, p_defense = _player_defenses(player)
 
+        # KNOWN GAP, and it is upstream of here: nothing populates
+        # `consumables`. The strategist's context builds its player from
+        # CombatantSerializer.serialize_combatant, which has no such key, so
+        # this line renders "[None]" for every fight while system-prompt
+        # priority 4 tells the model to prefer UseItem. The list DOES exist on
+        # the wire — CombatStateSerializer emits `player_consumables` at the
+        # top level of the combat state — and the one-line fix is in
+        # ApiCombatAdapter, which owns that context dict:
+        #     ctx["player"]["consumables"] = (
+        #         CombatStateSerializer._get_consumables(self.player)
+        #     )
+        # Read under one spelling on purpose; a second tolerated key here would
+        # be a guess at what that patch will look like.
         p_consumables = ", ".join(
             [
                 f"{c.get('name', 'Item')} (Qty: {c.get('qty', 1)})"
@@ -818,14 +1024,15 @@ class CombatStrategist:
 
         return (
             f"Player: {player.get('name', 'Jean')} (Male Human) "
-            f"[HP: {player.get('hp') or 0}/{player.get('max_hp') or 1}{hp_flag}, "
-            f"Fatigue: {player.get('fatigue') or 0}/{player.get('max_fatigue') or 1}"
-            f"{fatigue_flag}, "
-            f"Heat: {self._heat_label(heat)}, "
+            f"[HP: {vitals.hp}/{vitals.max_hp}{hp_flag}, "
+            f"Fatigue: {vitals.fatigue}/{vitals.max_fatigue}{fatigue_flag}, "
+            f"Heat: {self._heat_label(vitals.heat)}, "
             f"Pos: {pos.get('x')},{pos.get('y')}, Facing: {pos.get('facing')}]\n"
             f"Attributes: [{p_attrs}]\n"
-            f"Combat Stats: [Evasion: {p_evasion}, Defense: {p_stats.get('defense', 0)}, "
-            f"Armor Defense: {p_armor_def}, Accuracy: {p_stats.get('accuracy', 80)}, "
+            # No separate armour line: `defense` is the engine's `protection`,
+            # which already has worn armour folded into it.
+            f"Combat Stats: [Evasion: {p_evasion}, Defense: {p_defense}, "
+            f"Accuracy: {p_stats.get('accuracy', 80)}, "
             f"Speed: {p_stats.get('speed', 0)}]\n"
             f"Passives: {', '.join(passives) or 'None'}\n"
             f"Status Effects:\n{status_lines}\n"
@@ -844,13 +1051,16 @@ class CombatStrategist:
         the SITUATIONAL ALERTS section (system prompt priority 2) rather than
         inline here, so they are handed back rather than emitted.
         """
-        p_evasion, p_combined_defense, _ = _player_defenses(player)
+        p_evasion, p_defense = _player_defenses(player)
         enemy_list = []
         imminent_alerts: List[str] = []
 
         for e in enemies:
             e_pos = e.get("position") or {}
-            e_fatigue = e.get("fatigue", 0)
+            # `or 0`, not a get() default: the wire can carry an explicit null,
+            # which a default never replaces and which the division below would
+            # raise a TypeError on.
+            e_fatigue = e.get("fatigue") or 0
             e_max_fatigue = _enemy_max_fatigue(e)
             e_fat_pct = e_fatigue / e_max_fatigue
             fat_tag = (
@@ -877,20 +1087,32 @@ class CombatStrategist:
                     f"~{est_dmg} estimated dmg{lethal_tag})"
                 )
 
-                # _DEFENSIVE_WINDOW_BEATS is Dodge's own resolve cost on this
-                # same scale, so the boundary is exact: at it, a Dodge cast this
-                # beat goes up as the blow lands; under it, it cannot.
-                if bui <= _DEFENSIVE_WINDOW_BEATS:
-                    qualifier = (
-                        "Dodge/Parry NOW — the last beat one can still land in time"
-                        if bui >= _DEFENSIVE_WINDOW_BEATS
-                        else "too late for a clean Dodge/Parry; one cast now "
-                        "resolves after the hit"
-                    )
+                # Three cases, off the same bounds `_defense_lands_in_time`
+                # uses. The hit still gets an alert when it is too soon to
+                # defend against — that a beat spent on Dodge is wasted is
+                # exactly what the model needs told — but no alert at all once
+                # the charge is far enough out that a stance cast now expires
+                # before it arrives.
+                if _charge_is_worth_flagging(bui):
+                    if bui < _DEFENSIVE_WINDOW_BEATS:
+                        qualifier = (
+                            "too late for a clean Dodge/Parry; one cast now "
+                            "resolves after the hit"
+                        )
+                    elif bui == _DEFENSIVE_WINDOW_BEATS:
+                        qualifier = (
+                            "Dodge/Parry NOW — cast this beat and it goes up on "
+                            "the beat the blow lands, the last moment it can"
+                        )
+                    else:
+                        qualifier = (
+                            f"Dodge/Parry lands in time with "
+                            f"{bui - _DEFENSIVE_WINDOW_BEATS} beat(s) to spare"
+                        )
                     vuln_note = (
                         f" Jean's evasion ({p_evasion}) and defense "
-                        f"({p_combined_defense}) are low — this will hurt."
-                        if _is_defensively_vulnerable(p_evasion, p_combined_defense)
+                        f"({p_defense}) are low — this will hurt."
+                        if _is_defensively_vulnerable(p_evasion, p_defense)
                         else " Jean's defenses may reduce impact."
                     )
                     imminent_alerts.append(
@@ -948,31 +1170,24 @@ class CombatStrategist:
         return "Defensive moves on cooldown: " + ", ".join(cd_parts) + "\n"
 
     @staticmethod
-    def _alert_block(
-        imminent_alerts: List[str],
-        hp_pct: float,
-        fatigue_pct: float,
-        heat: float,
-    ) -> str:
-        """Situational alerts, ordered by system prompt priority (most urgent first).
+    def _alert_block(imminent_alerts: List[str], vitals: PlayerVitals) -> str:
+        """Situational alerts, most immediately fatal first.
 
-        INCOMING attacks (priority 2) lead; HP/fatigue/heat follow.
+        A telegraphed hit leads because it is the only entry with a clock on
+        it. HP CRITICAL then precedes FATIGUE CRITICAL — the reverse of the
+        system prompt's numbering, where fatigue is priority 1 and HP is
+        priority 4 — because dying ends the fight and running out of fatigue
+        only narrows it. Heat is last: it changes what is worth doing, never
+        whether Jean survives the beat.
         """
-        alerts = list(imminent_alerts)  # priority 2: telegraphed attacks
-        if hp_pct < _HP_CRITICAL_PCT:
+        alerts = list(imminent_alerts)
+        if vitals.hp_pct < _HP_CRITICAL_PCT:
             alerts.append("⚠ HP CRITICAL: Prioritize healing or defensive moves.")
-        if fatigue_pct < _FATIGUE_CRITICAL_PCT:
+        if vitals.fatigue_pct < _FATIGUE_CRITICAL_PCT:
             alerts.append("⚠ FATIGUE CRITICAL: Prefer Rest or zero-cost moves.")
-        if heat >= _HEAT_BLAZING:
-            alerts.append(
-                f"⚠ BLAZING HEAT ({heat:.2f}×): Maximize offense now — missing or "
-                "being hit collapses the combo."
-            )
-        elif heat < _HEAT_COLD:
-            alerts.append(
-                f"⚠ COLD HEAT ({heat:.2f}×): Land hits to rebuild combo before using "
-                "expensive moves."
-            )
+        heat_alert = _HEAT_ALERTS.get(_heat_band(vitals.heat))
+        if heat_alert:
+            alerts.append(heat_alert.format(heat=vitals.heat))
         if not alerts:
             return ""
         return "\nSITUATIONAL ALERTS:\n" + "\n".join(alerts) + "\n"
@@ -981,9 +1196,7 @@ class CombatStrategist:
     def _moves_block(available_moves: List[Dict[str, Any]]) -> str:
         """Available moves with fatigue cost, description and viable targets."""
         move_descriptions = []
-        for m in available_moves:
-            if not m.get("available", True):
-                continue
+        for m in _offerable_moves(available_moves):
             name = m.get("name")
             cost = m.get("fatigue_cost", 0)
             desc = m.get("description", "")
@@ -1064,7 +1277,7 @@ class CombatStrategist:
         mip: Dict[str, Any],
         enemy: Dict[str, Any],
         player_hp: int,
-    ) -> Dict[str, Any]:
+    ) -> IncomingThreat:
         """
         Estimate damage range for a telegraphed enemy move.
 
@@ -1100,7 +1313,7 @@ class CombatStrategist:
 
     def _worst_incoming_threat(
         self, enemies: List[Dict[str, Any]], player_hp: int
-    ) -> Dict[str, Any]:
+    ) -> WorstThreat:
         """Return the combined threat metrics for the most dangerous incoming charge.
 
         ``beats_until_resolve`` is None when nothing is actually incoming —
@@ -1108,10 +1321,9 @@ class CombatStrategist:
         out its recoil/cooldown. Callers must test for None rather than compare
         against a sentinel.
         """
-        best: Dict[str, Any] = {
+        best: WorstThreat = {
             "beats_until_resolve": None,
             "estimated_damage": "0–0",
-            "midpoint": 0,
             "potentially_lethal": False,
         }
         for e in enemies:
@@ -1126,7 +1338,13 @@ class CombatStrategist:
                 or bui < current
                 or (bui == current and threat["potentially_lethal"])
             ):
-                best = {**threat, "beats_until_resolve": bui}
+                # Field by field, not `{**threat, ...}`: the two shapes differ
+                # by `midpoint`, which nothing downstream of here reads.
+                best = {
+                    "beats_until_resolve": bui,
+                    "estimated_damage": threat["estimated_damage"],
+                    "potentially_lethal": threat["potentially_lethal"],
+                }
         return best
 
     @staticmethod
@@ -1159,7 +1377,12 @@ class CombatStrategist:
                 else False
             )
             hp_pct = (e.get("hp") or 0) / (e.get("max_hp") or 1)
-            imminent = bui is not None and bui <= _DEFENSIVE_WINDOW_BEATS
+            # `_charge_is_worth_flagging`, NOT `_defense_lands_in_time`. This
+            # ranks WHO TO HIT, not whether a Dodge would arrive: an enemy
+            # whose blow lands next beat is unavoidable AND the most urgent
+            # thing on the field, and the narrow defensive window would have
+            # ranked it below an idle enemy at full HP.
+            imminent = _charge_is_worth_flagging(bui)
 
             priority = (
                 0
@@ -1211,7 +1434,7 @@ class CombatStrategist:
         Ensure targeted moves resolve to a valid, in-range target_id.
 
         Each move's own `viable_targets` (already range-filtered by
-        CombatAdapter._get_available_targets, using that move's mvrange /
+        ApiCombatAdapter._get_available_targets, using that move's mvrange /
         get_effective_range_max) is the sole source of truth for who it can hit.
         A missing target_id — or one that isn't among that move's viable
         targets (e.g. an LLM hallucination) — is replaced with the

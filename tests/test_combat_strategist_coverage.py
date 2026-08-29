@@ -5,15 +5,26 @@ prompt builder (_build_user_prompt), and all standalone helper methods
 (threat estimation, target priority, status-effect formatting). The LLM client
 is always a lightweight fake/mock here — no network access is possible.
 """
-from unittest.mock import MagicMock, patch
+import ast
+import pathlib
 
 import pytest
 
 from ai.combat_strategist import (
     CombatStrategist,
+    _CATEGORY_BASE_SCORES,
+    _DEFENSIVE_STANCE_BEATS,
     _DEFENSIVE_WINDOW_BEATS,
+    _DODGE_IMPAIRING_STATUSES,
+    _DOT_STATUSES,
+    _HEAT_MISS_PENALTY,
+    _LAST_DEFENSIBLE_BEAT,
     _incoming_beats,
 )
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_STATES_PY = _REPO_ROOT / "src" / "states.py"
+_MOVES_BASE_PY = _REPO_ROOT / "src" / "moves" / "_base.py"
 
 
 class FakeLLMClient:
@@ -61,7 +72,7 @@ class TestGetSuggestionsLLMPath:
         assert result[0]["move_name"] == "Slash"
 
     def test_a_bare_list_response_is_not_a_valid_payload(self):
-        """E-diff3: ``generate_structured`` is ``Optional[Dict[str, Any]]`` and
+        """``generate_structured`` is ``Optional[Dict[str, Any]]`` and
         ``llm_client`` returns None for anything that is not a dict, so the old
         ``elif isinstance(raw_response, list)`` branch was unreachable
         adaptation debris. It told the next reader bare lists were a live
@@ -103,7 +114,7 @@ def _base_ctx(**overrides):
             "fatigue": 100, "max_fatigue": 100,
             "heat": 1.0,
             "stats": {"evasion": 20, "defense": 15},
-            "equipment": {"armor": {"defense": 0}},
+            "equipment": {"armor": {"name": "Tattered Cloth", "protection": 1}},
             "status_effects": [],
         },
         "enemies": [],
@@ -122,15 +133,32 @@ class TestFallbackSuggestions:
         result = strategist._get_fallback_suggestions(ctx, 1)
         assert result[0]["move_name"] == "Check"
 
-    def test_cancel_move_excluded_from_scoring(self, strategist):
-        # Cancel is present (so the "no available moves" branch isn't hit) but is
-        # skipped by the scoring loop, leaving scored_moves empty -> falls back to
-        # the first raw available move via the "Standard tactical fallback" path.
-        ctx = _base_ctx(available_moves=[{"name": "Cancel", "category": "Miscellaneous", "available": True}])
-        result = strategist._get_fallback_suggestions(ctx, 1)
-        assert result[0]["move_name"] == "Cancel"
-        assert result[0]["score"] == 10
-        assert "Standard tactical fallback" in result[0]["reasoning"]
+    def test_the_fallback_scores_every_move_the_prompt_offers(self, strategist):
+        """One rule decides what is offerable, so the two paths cannot disagree.
+
+        `_moves_block` renders the menu for the model and
+        `_get_fallback_suggestions` scores it when the model is unavailable.
+        The two used to encode "offerable" separately, and had diverged: the
+        fallback additionally skipped a move literally named ``"Cancel"``, a
+        string no serializer emits (it appears nowhere in ``src/`` or
+        ``frontend/src/`` outside two unrelated dialog tests), so the prompt
+        offered a move the fallback then dropped on the floor.
+        """
+        moves = [
+            {"name": "Cancel", "category": "Miscellaneous", "available": True},
+            {"name": "Slash", "category": "Offensive", "available": True},
+            {"name": "Locked", "category": "Offensive", "available": False},
+        ]
+        ctx = _base_ctx(available_moves=moves)
+
+        offered = strategist._moves_block(moves)
+        scored = {
+            r["move_name"] for r in strategist._get_fallback_suggestions(ctx, 3)
+        }
+
+        assert scored == {"Cancel", "Slash"}
+        assert "Cancel" in offered and "Slash" in offered
+        assert "Locked" not in offered and "Locked" not in scored
 
     def test_fatigue_critical_prefers_rest(self, strategist):
         ctx = _base_ctx(available_moves=[
@@ -156,7 +184,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 200}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+            "move_in_process": {"name": "BatBite",
+                                "beats_until_resolve": _DEFENSIVE_WINDOW_BEATS,
                                 "damage_multiplier": 1.0},
             "status_effects": [],
         }
@@ -172,7 +201,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 1}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+            "move_in_process": {"name": "BatBite",
+                                "beats_until_resolve": _DEFENSIVE_WINDOW_BEATS,
                                 "damage_multiplier": 1.0},
             "status_effects": [],
         }
@@ -188,7 +218,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 200}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+            "move_in_process": {"name": "BatBite",
+                                "beats_until_resolve": _DEFENSIVE_WINDOW_BEATS,
                                 "damage_multiplier": 1.0},
             "status_effects": [],
         }
@@ -203,7 +234,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 20}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+            "move_in_process": {"name": "BatBite",
+                                "beats_until_resolve": _DEFENSIVE_WINDOW_BEATS,
                                 "damage_multiplier": 1.0},
             "status_effects": [],
         }
@@ -218,7 +250,8 @@ class TestFallbackSuggestions:
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
             "stats": {"damage": 5}, "fatigue": 50, "max_fatigue": 50,
-            "move_in_process": {"name": "BatBite", "beats_until_resolve": 1,
+            "move_in_process": {"name": "BatBite",
+                                "beats_until_resolve": _DEFENSIVE_WINDOW_BEATS,
                                 "damage_multiplier": 1.0},
             "status_effects": [],
         }
@@ -248,7 +281,7 @@ class TestFallbackSuggestions:
         ctx = _base_ctx(enemies=[enemy])
         result = strategist._get_fallback_suggestions(ctx, 2)
         offensive = next(r for r in result if r["move_name"] == "Slash")
-        assert "poisoned/burning" in offensive["reasoning"]
+        assert "losing HP on a timer" in offensive["reasoning"]
 
     def test_fatigue_low_prefers_wait_or_rest(self, strategist):
         ctx = _base_ctx(available_moves=[
@@ -399,7 +432,8 @@ class TestBuildUserPromptComprehensive:
             "player": {
                 "name": "Jean", "hp": 100, "max_hp": 100, "fatigue": 100, "max_fatigue": 100, "heat": 1.0,
                 "position": {}, "attributes": {"strength": 10}, "passives": [{"name": "Iron Fist"}, None],
-                "stats": {"evasion": 5, "defense": 5}, "equipment": {"armor": {"defense": 3}},
+                "stats": {"evasion": 5, "defense": 5},
+                "equipment": {"armor": {"name": "Tattered Cloth", "protection": 1}},
                 "consumables": [{"name": "Potion", "qty": 2}], "status_effects": [],
             },
             "enemies": [], "available_moves": [], "history": [],
@@ -407,7 +441,32 @@ class TestBuildUserPromptComprehensive:
         prompt = strategist._build_user_prompt(ctx)
         assert "Iron Fist" in prompt
         assert "Potion (Qty: 2)" in prompt
-        assert "Armor Defense: 3" in prompt
+        assert "Defense: 5" in prompt
+
+    def test_the_prompt_reports_defense_once_not_as_two_numbers(self, strategist):
+        """``stats.defense`` is the engine's ``protection``, armour included.
+
+        The player block used to print a second "Armor Defense" line read from
+        ``equipment.armor.defense`` — a key CombatantSerializer has never
+        emitted (its armour block carries ``name`` and ``protection`` only), so
+        it rendered 0 for a fully armoured Jean and invited the model to add
+        two numbers that are really one. The armour shape below is the one the
+        serializer actually produces.
+        """
+        ctx = {
+            "player": {
+                "name": "Jean", "hp": 100, "max_hp": 100, "fatigue": 100,
+                "max_fatigue": 100, "heat": 1.0, "position": {}, "attributes": {},
+                "passives": [], "stats": {"evasion": 11, "defense": 17},
+                "equipment": {"armor": {"name": "Steel Plate", "protection": 14}},
+                "consumables": [], "status_effects": [],
+            },
+            "enemies": [], "available_moves": [], "history": [],
+        }
+        prompt = strategist._build_user_prompt(ctx)
+        assert "Defense: 17" in prompt
+        assert "Armor Defense" not in prompt
+        assert "Armor Defense: 0" not in prompt
 
     def test_status_effects_with_known_and_unknown_notes(self, strategist):
         ctx = {
@@ -432,7 +491,8 @@ class TestBuildUserPromptComprehensive:
             "player": {
                 "name": "Jean", "hp": 100, "max_hp": 100, "fatigue": 100, "max_fatigue": 100, "heat": 1.0,
                 "position": {}, "attributes": {}, "passives": [], "stats": {"evasion": 5, "defense": 5},
-                "equipment": {"armor": {"defense": 0}}, "consumables": [], "status_effects": [],
+                "equipment": {"armor": {"name": "Tattered Cloth", "protection": 1}},
+                "consumables": [], "status_effects": [],
             },
             "enemies": [{
                 "name": "Slime", "id": "enemy_1", "hp": 20, "max_hp": 20,
@@ -610,28 +670,33 @@ class TestIncomingBeats:
         assert _incoming_beats({"beats_until_resolve": None}) is None
 
 
-class TestDefensiveWindowMatchesDodgesRealCost:
-    """``_DEFENSIVE_WINDOW_BEATS`` must be Dodge's own ``beats_until_resolve``.
+class TestDefensiveWindowMatchesTheEngine:
+    """The defensive window's two bounds must be the engine's own numbers.
 
-    The constant answers one question: how late can Jean still spend a beat on
-    defense and have it matter? That is exactly how long a Dodge takes to
-    resolve, on the same scale `_incoming_beats` reads the threat off — the
-    engine's ``Move.beats_until_resolve``.
+    The window answers one question: cast a Dodge or Parry THIS beat, and is it
+    standing when the blow lands? Both edges belong to the engine and both are
+    read on the same scale `_incoming_beats` reads the threat off — the engine's
+    ``Move.beats_until_resolve``.
 
-    It has been wrong before, and silently. The strategist used to compute
-    incoming beats itself with a `_beats_until_impact` helper that ran about
-    two beats short of the engine; when that helper was deleted in favour of
-    the wire field, the threshold calibrated against it was carried over
-    unchanged. The alert then fired two beats *after* the last beat Jean could
-    have acted on — the advice was wrong at precisely the moment it mattered.
-    Nothing failed, because no test compared the number to the move.
+      * The lower edge is the defence's own resolve cost.
+      * The upper edge is that plus how long the resulting stance holds, less
+        one: the beat it goes up on counts.
 
-    So this test does not assert a literal. It builds the real Dodge and asks
-    the engine.
+    This has been wrong before, and silently, twice. First the lower edge was 2
+    — Dodge's value on a deleted, differently-scaled helper — so the alert fired
+    two beats after the last beat Jean could act on. Then the constant was
+    corrected to 4 but the comparison against it was left inverted
+    (``incoming_beats <= 4``), which is the same failure wearing the fix: the
+    scorer offered Dodge at 80-97 for hits arriving in 1-3 beats, which it can
+    no longer reach, and said nothing at all about hits in 5-10, which it can.
+    Both survived because nothing compared the number to the move.
+
+    So none of this asserts a literal. It builds the real moves and drives the
+    real beat loop.
     """
 
     @staticmethod
-    def _real_defensive_move(cls):
+    def _combat_pair():
         from src.npc._enemies import Slime
         from src.player import Player
 
@@ -641,33 +706,130 @@ class TestDefensiveWindowMatchesDodgesRealCost:
         player.combat_list = [enemy]
         player.combat_list_allies = [player]
         player.combat_proximity = {enemy: 1}
+        player.in_combat = True
+        return player, enemy
+
+    def _real_defensive_move(self, cls):
+        player, _ = self._combat_pair()
         return cls(player)
 
     @pytest.mark.parametrize("move_name", ["Dodge", "Parry"])
-    def test_the_window_is_the_engines_own_resolve_cost(self, move_name):
+    def test_the_window_opens_at_the_engines_own_resolve_cost(self, move_name):
         import src.moves as moves
 
         move = self._real_defensive_move(getattr(moves, move_name))
         assert move.beats_until_resolve() == _DEFENSIVE_WINDOW_BEATS, (
             f"a freshly cast {move_name} resolves in "
-            f"{move.beats_until_resolve()} beats but the strategist alerts at "
-            f"{_DEFENSIVE_WINDOW_BEATS}. Whichever moved, the 'Dodge/Parry NOW' "
-            "alert no longer fires on a beat Jean can act on. Re-derive "
-            "_DEFENSIVE_WINDOW_BEATS (ai/combat_strategist.py) from the move, "
-            "and let the _SYSTEM_PROMPT f-string follow."
+            f"{move.beats_until_resolve()} beats but the strategist opens its "
+            f"defensive window at {_DEFENSIVE_WINDOW_BEATS}. Whichever moved, "
+            "the 'Dodge/Parry NOW' alert no longer fires on a beat Jean can act "
+            "on. Re-derive _DEFENSIVE_WINDOW_BEATS (ai/combat_strategist.py) "
+            "from the move, and let the _SYSTEM_PROMPT f-string follow."
         )
 
-    def test_the_prompt_quotes_the_same_number_it_alerts_on(self):
-        """The static prompt is an f-string over the constant — keep it that way."""
+    def test_the_window_closes_when_the_real_stance_expires(self):
+        from src.states import Dodging
+
+        assert _DEFENSIVE_STANCE_BEATS == Dodging._DURATION_BEATS, (
+            f"the Dodging stance now holds {Dodging._DURATION_BEATS} beats but "
+            f"the strategist assumes {_DEFENSIVE_STANCE_BEATS}. Re-derive "
+            "_DEFENSIVE_STANCE_BEATS (ai/combat_strategist.py) from src/states.py."
+        )
+
+    def test_the_real_beat_loop_agrees_with_both_bounds(self):
+        """Drive the engine and record when a Dodge cast now is actually up.
+
+        Mirrors CombatAdapter's per-beat order exactly — every player move
+        advances, THEN the NPCs take their turns, THEN states cycle — because
+        that ordering is the whole answer to the boundary case. A hit arriving
+        on the very beat the Dodge resolves is still dodged, since the player's
+        half of the beat runs first, which is why the lower bound is ``>=`` and
+        not ``>``.
+        """
+        import src.moves as moves
+        from src.states import Dodging
+
+        player, _ = self._combat_pair()
+        dodge = moves.Dodge(player)
+        # Silence the stage announcements; this test is about timing, and
+        # nothing here is capturing combat output.
+        dodge.stage_announce = ["", "", "", ""]
+        player.known_moves = [dodge]
+        player.current_move = dodge
+        dodge.cast()
+
+        standing_on = []
+        for beat in range(1, 3 * _LAST_DEFENSIBLE_BEAT):
+            for move in player.known_moves:
+                move.advance(player)
+            # <- CombatAdapter runs the NPCs' turns here, so this is the
+            #    instant an incoming hit resolves against Jean.
+            if any(isinstance(state, Dodging) for state in player.states):
+                standing_on.append(beat)
+            player.cycle_states()
+
+        assert standing_on, "the Dodge never applied its stance at all"
+        assert standing_on == list(
+            range(_DEFENSIVE_WINDOW_BEATS, _LAST_DEFENSIBLE_BEAT + 1)
+        ), (
+            f"a Dodge cast now is standing on beats {standing_on}, but the "
+            f"strategist scores defence for beats {_DEFENSIVE_WINDOW_BEATS}"
+            f"-{_LAST_DEFENSIBLE_BEAT}."
+        )
+
+    def test_the_prompt_quotes_the_same_numbers_it_alerts_on(self):
+        """The static prompt is an f-string over the constants — keep it that way."""
         from ai.combat_strategist import _SYSTEM_PROMPT
 
         assert f"land {_DEFENSIVE_WINDOW_BEATS} beats after casting" in _SYSTEM_PROMPT
-        assert f"impact ≤ {_DEFENSIVE_WINDOW_BEATS}" in _SYSTEM_PROMPT
+        assert f"hold for {_DEFENSIVE_STANCE_BEATS} beats" in _SYSTEM_PROMPT
+        assert (
+            f"impact {_DEFENSIVE_WINDOW_BEATS}–{_LAST_DEFENSIBLE_BEAT}"
+            in _SYSTEM_PROMPT
+        )
 
-    def test_a_hit_at_the_window_boundary_is_still_called_actionable(self):
-        """The boundary beat gets "NOW", the one under it gets the late warning."""
-        strategist = CombatStrategist(client=FakeLLMClient())
+    def test_a_hit_too_soon_to_defend_is_not_scored_as_defensible(self, strategist):
+        """The inversion, stated as the scores it produced.
 
+        A hit landing in fewer beats than a Dodge takes to resolve cannot be
+        defended against. The scorer used to return 80-97 for exactly those
+        beats — the module's own alert text called them "too late" on the same
+        input — so the fallback spent Jean's last beat on a stance that would
+        go up after he was hit.
+        """
+        def dodge_score(bui):
+            ctx = _base_ctx(
+                enemies=[{
+                    "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
+                    "stats": {"damage": 200}, "fatigue": 50, "max_fatigue": 50,
+                    "status_effects": [],
+                    "move_in_process": {"name": "BatBite",
+                                        "beats_until_resolve": bui,
+                                        "damage_multiplier": 1.0},
+                }],
+                available_moves=[
+                    {"name": "Dodge", "category": "Defensive", "available": True},
+                ],
+            )
+            return strategist._get_fallback_suggestions(ctx, 1)[0]["score"]
+
+        for too_soon in range(0, _DEFENSIVE_WINDOW_BEATS):
+            assert dodge_score(too_soon) < 80, (
+                f"a hit {too_soon} beat(s) out lands before a Dodge cast now "
+                "can resolve, but it is still scored as urgent defence"
+            )
+        for in_time in range(_DEFENSIVE_WINDOW_BEATS, _LAST_DEFENSIBLE_BEAT + 1):
+            assert dodge_score(in_time) >= 80, (
+                f"a hit {in_time} beat(s) out is inside the window a Dodge cast "
+                "now covers, but it is not scored as defensible"
+            )
+        assert dodge_score(_LAST_DEFENSIBLE_BEAT + 1) < 80, (
+            "the stance has expired again by this beat; the defence should not "
+            "be scored as urgent"
+        )
+
+    def test_the_alert_names_the_three_timings_it_can_see(self, strategist):
+        """Too soon, exactly on the boundary, comfortably in time — and silence."""
         def alert_for(bui):
             _, alerts = strategist._enemy_block(
                 [{
@@ -683,9 +845,152 @@ class TestDefensiveWindowMatchesDodgesRealCost:
             )
             return alerts[0] if alerts else ""
 
-        assert "NOW" in alert_for(_DEFENSIVE_WINDOW_BEATS)
         assert "too late" in alert_for(_DEFENSIVE_WINDOW_BEATS - 1)
-        assert alert_for(_DEFENSIVE_WINDOW_BEATS + 1) == ""
+        assert "NOW" in alert_for(_DEFENSIVE_WINDOW_BEATS)
+        assert "lands in time" in alert_for(_DEFENSIVE_WINDOW_BEATS + 1)
+        assert "lands in time" in alert_for(_LAST_DEFENSIBLE_BEAT)
+        # Past the stance's reach: nothing worth spending this beat on.
+        assert alert_for(_LAST_DEFENSIBLE_BEAT + 1) == ""
+
+
+class TestEngineOwnedStatusSets:
+    """The two frozensets are engine knowledge, so derive them from the engine.
+
+    ai/combat_strategist.py cannot import src.states — src/text_format.py's
+    docstring records the rule that the strategist must stay importable without
+    the game engine — so the sets are spelled out there by hand. That is the
+    arrangement that let both go stale: `_DOT_STATUSES` omitted Slimed even
+    though the module's own note for it says "Acid is eating HP on a timer",
+    and `_DODGE_IMPAIRING_STATUSES` omitted Resonant even though it cuts
+    finesse harder than either Slimed or Petrified, both of which were listed.
+    Nothing referenced either set.
+
+    So the rules are mechanical and checked here against src/states.py itself.
+    """
+
+    @staticmethod
+    def _state_classes():
+        """Yield ``(state_name, ClassDef)`` for every State in src/states.py.
+
+        Static parse, not instantiation: several states need a live combatant
+        (or extra constructor arguments) that a stub cannot supply, and the
+        name that reaches the wire is the ``name="..."`` the constructor
+        passes to ``State``, not the Python class name.
+        """
+        tree = ast.parse(_STATES_PY.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for sub in ast.walk(node):
+                if (
+                    isinstance(sub, ast.keyword)
+                    and sub.arg == "name"
+                    and isinstance(sub.value, ast.Constant)
+                ):
+                    yield sub.value.value, node
+                    break
+
+    def test_every_hp_draining_state_is_a_dot_status(self):
+        """Rule: the state's ``effect()`` runs ``target.hp -= …``."""
+        draining = {
+            name
+            for name, cls in self._state_classes()
+            if any(
+                isinstance(sub, ast.AugAssign)
+                and isinstance(sub.op, ast.Sub)
+                and isinstance(sub.target, ast.Attribute)
+                and sub.target.attr == "hp"
+                for fn in cls.body
+                if isinstance(fn, ast.FunctionDef) and fn.name == "effect"
+                for sub in ast.walk(fn)
+            )
+        }
+        assert draining, "the src/states.py scan found nothing — it broke"
+        assert draining == set(_DOT_STATUSES), (
+            "states that bill their holder HP on a timer, versus what "
+            "_DOT_STATUSES (ai/combat_strategist.py) believes: missing "
+            f"{sorted(draining - set(_DOT_STATUSES))}, stale "
+            f"{sorted(set(_DOT_STATUSES) - draining)}. Time works against "
+            "whoever carries one, which is what both the player and enemy "
+            "branches of the fallback read this set for."
+        )
+
+    def test_every_finesse_cutting_state_impairs_dodging(self):
+        """Rule: the state's ``__init__`` assigns a NEGATED ``add_fin``.
+
+        Evasion is ``int(round(finesse))``, so anything that subtracts finesse
+        makes a Dodge buy less than the scorer would otherwise assume. The
+        negation has to be in the assignment itself — Dodging and Fervent both
+        assign ``add_fin`` too, and theirs are bonuses.
+        """
+        impairing = {
+            name
+            for name, cls in self._state_classes()
+            if any(
+                isinstance(sub, ast.Assign)
+                and len(sub.targets) == 1
+                and isinstance(sub.targets[0], ast.Attribute)
+                and sub.targets[0].attr == "add_fin"
+                and isinstance(sub.value, ast.UnaryOp)
+                and isinstance(sub.value.op, ast.USub)
+                for sub in ast.walk(cls)
+            )
+        }
+        assert impairing, "the src/states.py scan found nothing — it broke"
+        assert impairing == set(_DODGE_IMPAIRING_STATUSES), (
+            "states that cut the holder's finesse, versus what "
+            "_DODGE_IMPAIRING_STATUSES (ai/combat_strategist.py) believes: "
+            f"missing {sorted(impairing - set(_DODGE_IMPAIRING_STATUSES))}, "
+            f"stale {sorted(set(_DODGE_IMPAIRING_STATUSES) - impairing)}."
+        )
+
+
+class TestCategoryScoresCoverTheEngineVocabulary:
+    """`_CATEGORY_BASE_SCORES` is keyed on the ENGINE's categories, not the UI's.
+
+    CombatAdapter forwards ``move.category`` verbatim into the strategist's
+    context, so this table has to hold every category a castable move can
+    carry. It was a third hand-written copy of that vocabulary and the only one
+    outside an integrity check, and it had drifted into a live gameplay defect:
+    it priced a "Special", which is a frontend BUTTON name and not an engine
+    category, and had no entry for `Mastery` — so the seven 2500-XP capstone
+    moves fell through to the default and scored below Defensive.
+
+    The vocabulary is derived by AST scan in
+    tests/test_move_categories_ui_contract.py, which holds the frontend's
+    CATEGORY_GROUPS to the same list. Imported rather than re-scanned: a second
+    copy of the derivation is the thing this test exists to prevent.
+    """
+
+    @staticmethod
+    def _engine_categories():
+        from tests.test_move_categories_ui_contract import (
+            _categories_used_by_castable_moves,
+        )
+
+        return set(_categories_used_by_castable_moves())
+
+    def test_every_engine_category_is_priced(self):
+        unpriced = self._engine_categories() - set(_CATEGORY_BASE_SCORES)
+        assert not unpriced, (
+            f"engine move categories with no base score: {sorted(unpriced)}. "
+            "They fall through to _DEFAULT_CATEGORY_SCORE, which is the "
+            "Miscellaneous price — this is how Mastery moves came to score "
+            "below Defensive."
+        )
+
+    def test_no_price_is_set_for_a_category_the_engine_never_emits(self):
+        phantom = set(_CATEGORY_BASE_SCORES) - self._engine_categories()
+        assert not phantom, (
+            f"base scores for categories no castable move carries: "
+            f"{sorted(phantom)}. Dead entries read as decisions; 'Special' sat "
+            "here for exactly that reason (it is the UI button that collects "
+            "the engine's Mastery moves, not a category)."
+        )
+
+    def test_a_capstone_move_outranks_a_defensive_one(self):
+        """The concrete regression: seven 2500-XP moves priced below Dodge."""
+        assert _CATEGORY_BASE_SCORES["Mastery"] > _CATEGORY_BASE_SCORES["Defensive"]
 
 
 class TestEstimateIncomingDamage:
@@ -868,3 +1173,42 @@ class TestExtractNames:
 
     def test_dict_without_name_skipped(self, strategist):
         assert strategist._extract_names([{"foo": "bar"}]) == []
+
+
+class TestEngineOwnedHeatPenalty:
+    """`_HEAT_MISS_PENALTY` restates a number the engine owns.
+
+    The strategist quotes the cost of a miss in its system prompt, so the
+    number has to match what `Move.miss()` actually applies. It cannot import
+    `Move` to find out -- this module stays importable without the game engine
+    on purpose -- so the two are pinned to each other here instead. Parsed
+    rather than imported for the same reason.
+    """
+
+    @staticmethod
+    def _engine_value():
+        tree = ast.parse(_MOVES_BASE_PY.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(t, ast.Name) and t.id == "_HEAT_MISS_PENALTY"
+                    for t in node.targets
+                )
+                and isinstance(node.value, ast.Constant)
+            ):
+                return node.value.value
+        return None
+
+    def test_the_engine_still_declares_the_constant(self):
+        """Guard the guard: a rename must fail loudly, not silently pass."""
+        assert self._engine_value() is not None, (
+            "src/moves/_base.py no longer declares Move._HEAT_MISS_PENALTY -- "
+            "this check cannot see a renamed constant, so update both."
+        )
+
+    def test_the_strategists_copy_matches_the_engine(self):
+        assert _HEAT_MISS_PENALTY == self._engine_value(), (
+            "ai/combat_strategist.py quotes a miss penalty the engine does not "
+            "apply; src/moves/_base.py's Move._HEAT_MISS_PENALTY is the owner."
+        )

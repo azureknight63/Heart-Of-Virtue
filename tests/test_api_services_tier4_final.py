@@ -4,11 +4,11 @@ History: this file used to be 26 blanket-skipped tests whose bodies were
 ``try: ... except Exception: pass`` or ``assert isinstance(result, tuple)``.
 Every one of them was simultaneously vacuous *and* redundant:
 
-* ``TestAuthService``      -> superseded by ``tests/test_auth_service_and_npc_availability.py``
-  (17 real tests covering create_user validation, the dummy-hash timing guard,
-  rehash-on-verify, and the encrypt/decrypt round trip).
-* ``TestSessionManager``   -> superseded by ``tests/test_session_manager_coverage.py``
-  (88 real tests).  Half its cases called methods that do not exist at all
+* ``TestAuthService``      -> superseded by ``tests/test_auth_service_and_npc_availability.py``,
+  which covers create_user validation, the dummy-hash timing guard,
+  rehash-on-verify, and the encrypt/decrypt round trip.
+* ``TestSessionManager``   -> superseded by ``tests/test_session_manager_coverage.py``.
+  Half its cases called methods that do not exist at all
   (``validate_session``, ``delete_session``, ``get_player_from_session``,
   ``update_session_data``, ``cleanup_expired_sessions``) behind ``hasattr``
   guards or ``except Exception: pass``, so they ran zero production statements.

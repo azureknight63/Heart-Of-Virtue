@@ -3,6 +3,7 @@ paths:
   - "ai/**"
   - "src/npc/_chat_llm.py"
   - "src/npc/_llm.py"
+  - "src/npc/_chat_guard.py"
   - "tools/measure_llm_tokens.py"
   - "tests/integration/**"
 ---

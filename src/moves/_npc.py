@@ -265,7 +265,9 @@ class TelegraphedSurge(NpcAttack):
     constants and supply flavour text; the mechanics are shared here.
 
     Subclass interface:
-        _DAMAGE_MULTIPLIER  float  — final power = NpcAttack power × this
+        _DAMAGE_MULTIPLIER  float  — declared and documented on ``Move``
+                                     (src/moves/_base.py); evaluate() below
+                                     scales NpcAttack's rolled power by it
         _EXTRA_PREP_BEATS   int    — extra beats added to prep phase (dodge window)
         _prep_text(npc)     str    — yellow telegraph line shown during wind-up
         _hit_text(npc, target_name)  str  — red line shown on impact
@@ -275,7 +277,6 @@ class TelegraphedSurge(NpcAttack):
 
     web_animation = "shockwave"
 
-    _DAMAGE_MULTIPLIER = 1.0
     _EXTRA_PREP_BEATS = 0
 
     def _prep_text(self, npc):
@@ -396,9 +397,13 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     # `_estimate_incoming_damage` renders the wire value as a ±20% band and
     # flags POTENTIALLY LETHAL when the band's midpoint reaches HALF the
     # player's HP. That 0.5 already IS the margin for a high roll, so a
-    # ceiling here would double-count it and cry wolf; it would also make this
-    # attribute mean something different from the TelegraphedSurge multipliers
-    # above, which are the exact factor applied.
+    # ceiling here would double-count it and cry wolf.
+    #
+    # The TelegraphedSurge multipliers above are midpoints on this same scale,
+    # not exact factors: NpcAttack.evaluate has already rolled power through
+    # uniform(0.8, 1.2) by the time TelegraphedSurge.evaluate multiplies by
+    # them, so 2.2/2.5/1.8 centre the hit on the user's damage exactly as this
+    # midpoint does. Every declaration in this module means the same thing.
     _POWER_ROLL_MIN = 1.5
     _POWER_ROLL_MAX = 3.0
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
@@ -716,12 +721,6 @@ class SpiderBite(Move):  # Poisonous attack
     # serializer puts on the wire for the Tactical Advisor's threat estimate.
     # Derived rather than re-typed, so retuning the roll cannot leave the wire
     # value stale (see GorranClub for why the midpoint and not the ceiling).
-    #
-    # The midpoint here is 1.0, which is also what the serializer defaults to
-    # for a move that declares nothing — so this move's wire value happened to
-    # be correct while the bounds sat as a bare literal in evaluate(). Nothing
-    # recorded that coincidence, and shifting either bound by a tenth would
-    # have broken it silently.
     _POWER_ROLL_MIN = 0.8
     _POWER_ROLL_MAX = 1.2
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2

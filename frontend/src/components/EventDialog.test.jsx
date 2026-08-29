@@ -46,16 +46,8 @@ describe('EventDialog', () => {
   /** Skip the typewriter deterministically: the container finishes on click. */
   const finishText = () => fireEvent.click(screen.getByTestId('event-text-container'));
 
-  /**
-   * The typed prose only. TypewriterOutput also renders an inline <style> blob
-   * for the cursor keyframes, which lands in `textContent` and would otherwise
-   * force every text assertion into a fuzzy `toContain`.
-   */
-  const bodyText = () => {
-    const el = screen.getByTestId('event-text-container').cloneNode(true);
-    el.querySelectorAll('style').forEach((s) => s.remove());
-    return el.textContent.trim();
-  };
+  /** The typed prose only, trimmed of the caret's whitespace. */
+  const bodyText = () => screen.getByTestId('event-text-container').textContent.trim();
 
   const renderDialog = (event = mockEvent, props = {}) =>
     render(

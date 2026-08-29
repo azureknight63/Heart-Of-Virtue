@@ -1,7 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
 import npcChat from '../api/npcChat'
 import { portraitUrl } from '../utils/portraits'
-import { conversationSegment, DEFAULT_EMOTION } from '../utils/conversationSegment'
+import {
+  conversationSegment,
+  npcCast,
+  DEFAULT_EMOTION,
+  JEAN_ID,
+} from '../utils/conversationSegment'
+import { apiErrorDetail } from '../utils/apiError'
+
+// Re-exported so the panel and its suites keep one import for the whole live
+// chat vocabulary; both now live in utils/conversationSegment, beside the
+// segment shape whose `speaker` and `reactions` keys they name.
+export { npcCast, JEAN_ID }
+
+/** @typedef {import('../utils/conversationSegment').ConversationSegment} ConversationSegment */
 
 // Jean's chosen tone -> the portrait she wears while she says it. `direct` /
 // `guarded` / `open` are the only tones the engine emits (src/npc/_chat_llm.py).
@@ -28,6 +41,22 @@ export const QUALITY_EMOTIONS = {
 export const NPC_LISTENING_EMOTION = 'curious'
 
 /**
+ * The conversation's state machine, as a vocabulary rather than fifteen loose
+ * string literals.
+ *
+ * `failed` is distinct from `ended` on purpose: a transport error is not a
+ * finished conversation, and rendering it as one hid End Conversation behind a
+ * message ("Conversation ended.") that Retry could never clear.
+ */
+export const CHAT_PHASES = {
+  OPENING: 'opening',
+  WAITING_JEAN: 'waiting_jean',
+  WAITING_NPC: 'waiting_npc',
+  ENDED: 'ended',
+  FAILED: 'failed',
+}
+
+/**
  * Resolve a tagged value against an emotion table, defaulting to neutral.
  *
  * Both tables are looked up the same way — case-folded, with an unmapped or
@@ -46,12 +75,6 @@ export function qualityEmotion(quality) {
   return mapEmotion(QUALITY_EMOTIONS, quality)
 }
 
-// Jean is always the player's side of the conversation — the cast roster,
-// the optimistic segment speaker, and the NPC's reaction key all need to
-// agree on the same id, so it's hoisted once instead of repeated as a string
-// literal that could silently drift out of sync.
-export const JEAN_ID = 'Jean'
-
 // How long a finished conversation stays on screen before the panel closes
 // itself. NpcChatPanel's `cancelAutoClose` dance (suspending the close while
 // the player reads the transcript) is written against this exact window, so it
@@ -67,17 +90,38 @@ const AUTO_CLOSE_DELAY_MS = 2000
 // being shown to the player.
 const OPEN_FAILED_MESSAGE = 'Failed to open conversation'
 const RESPOND_FAILED_MESSAGE = 'NPC did not respond'
+// A throttled turn is not a failed one. `npc_chat.py`'s rate limiter answers
+// 429 for a burst of clicks, and showing that as "NPC did not respond" beside
+// a live Retry invited the player to keep clicking straight back into the
+// throttle. Still OUR copy, not the server's — see the note above.
+const THROTTLED_MESSAGE = 'Too many messages — give it a moment.'
 
-/** The most specific detail available for a failed request, for the log only.
+/** The fixed copy for a failure, chosen by what kind of failure it is. */
+function failureMessage(err, fallback) {
+  return err?.response?.status === 429 ? THROTTLED_MESSAGE : fallback
+}
+
+/**
+ * End a server-side conversation the panel has walked away from.
  *
- * `message` outranks `error` because a 429 from `rate_limited_response()` puts
- * the machine token "rate_limited" in `error` and the prose in `message`;
- * reading `error` first would log the token and drop the only useful half.
- * Every other failure here puts prose in `error` and sends no `message`.
+ * `npc_chat_end` (src/api/services/game_service.py) pops
+ * `player._active_chat_npc_id`, which `_recover_npc_loquacity` reads as "a
+ * conversation is in progress, do not tick". Leaving it set costs the player
+ * that recovery until their next move self-heals it — and leaves the
+ * conversation recorded as open in the meantime.
+ *
+ * Fire-and-forget: nothing is on screen to retry into, and the panel is
+ * already gone. The failure is still logged, because a rejected `/end` is the
+ * signal that the marker is genuinely stuck.
+ *
+ * @param {?string} npcKey - Session key from `/open`; a falsy value means no
+ *   conversation was ever opened, so there is nothing to end.
  */
-function serverDetail(err) {
-  const body = err?.response?.data
-  return body?.message || body?.error || err?.message || err
+function endAbandonedConversation(npcKey) {
+  if (!npcKey) return
+  npcChat.end(npcKey).catch((err) => {
+    console.error('[npcChat] end after dismissal failed:', apiErrorDetail(err))
+  })
 }
 
 // Portrait art is ~270 KB per emotion and the emotion changes on essentially
@@ -127,13 +171,6 @@ function preloadTurnPortraits(npcId, options) {
   })
 }
 
-export function npcCast(npcId, npcName) {
-  return [
-    { id: JEAN_ID, name: JEAN_ID, side: 'left', emotion: 'neutral' },
-    { id: npcId, name: npcName || npcId, side: 'right', emotion: 'neutral' },
-  ]
-}
-
 /**
  * useNpcChat — owns every API-state concern for a live NPC conversation:
  * opening the session on mount, sending Jean's chosen response, ending the
@@ -153,9 +190,9 @@ export function npcCast(npcId, npcName) {
  * @returns {{
  *   phase: string,
  *   displayName: string,
- *   conversationSegments: Array,
- *   conversationCast: ?Array,
- *   currentOptions: Array,
+ *   conversationSegments: ConversationSegment[],
+ *   conversationCast: ?Array<{id: string, name: string, side: string, emotion: string}>,
+ *   currentOptions: Array<{text: string, tone: string}>,
  *   loquacity: {current: number, max: number},
  *   loading: boolean,
  *   error: ?string,
@@ -167,18 +204,13 @@ export function npcCast(npcId, npcName) {
  * }}
  */
 export function useNpcChat(npcId, npcName, onClose) {
-  // 'opening' | 'waiting_jean' | 'waiting_npc' | 'ended' | 'failed'
-  // 'failed' is distinct from 'ended' on purpose: a transport error is not a
-  // finished conversation, and rendering it as one hid End Conversation behind
-  // a message ("Conversation ended.") that Retry could never clear.
-  const [phase, setPhase] = useState('opening')
+  const [phase, setPhase] = useState(CHAT_PHASES.OPENING)
   const [npcKey, setNpcKey] = useState(null)
   const [displayName, setDisplayName] = useState(npcName)
   const [conversationSegments, setConversationSegments] = useState([])
   const [conversationCast, setConversationCast] = useState(null)
   const [currentOptions, setCurrentOptions] = useState([])
   const [loquacity, setLoquacity] = useState({ current: 0, max: 1 })
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [relationship, setRelationship] = useState(null)
   // State, not a ref: NpcChatPanel reads this during render to decide whether
@@ -186,10 +218,22 @@ export function useNpcChat(npcId, npcName, onClose) {
   // only because each assignment happened to sit next to a `setError` on the
   // same tick — reorder either and Retry silently vanishes.)
   const [retry, setRetry] = useState(null)
+
+  // Derived, never stored. `loading` and `phase` used to be two useStates
+  // encoding one fact, kept in step by hand across six setter pairs — and the
+  // tell that nobody trusted them was the panel disabling End Conversation on
+  // `loading || phase === 'opening'`, both halves of the same fact.
+  const loading = phase === CHAT_PHASES.OPENING || phase === CHAT_PHASES.WAITING_NPC
+
   // Guards async setState calls (open/respond) from firing after unmount, and
   // lets the "conversation ended" auto-close timer be cancelled on unmount.
   const isMountedRef = useRef(true)
   const endTimeoutRef = useRef(null)
+  // The key of a conversation this hook opened server-side and has NOT ended.
+  // A ref rather than the `npcKey` state because the two paths that have to
+  // read it — the unmount cleanup, and an `/open` that resolves after the
+  // panel is already gone — both run outside render, where state is stale.
+  const openNpcKeyRef = useRef(null)
   // Bumped every time the hook is pointed at a different NPC. `isMountedRef`
   // only covers unmount, and the `cancelled` flag below is scoped to one run of
   // the open effect — neither can stop an in-flight `/respond` for NPC A from
@@ -209,6 +253,12 @@ export function useNpcChat(npcId, npcName, onClose) {
     return () => {
       isMountedRef.current = false
       clearTimeout(endTimeoutRef.current)
+      // The panel can be taken off screen without ever routing through
+      // `handleEndConversation` — InteractPanel drops `selectedTarget` when the
+      // room resyncs, and the panel is keyed per NPC. Whatever conversation is
+      // still open server-side is closed out here.
+      endAbandonedConversation(openNpcKeyRef.current)
+      openNpcKeyRef.current = null
     }
   }, [])
 
@@ -250,7 +300,7 @@ export function useNpcChat(npcId, npcName, onClose) {
     setRelationship(null)
     setError(null)
     setRetry(null)
-    setPhase('opening')
+    setPhase(CHAT_PHASES.OPENING)
 
     // Supersession guard. `isMountedRef` only covers unmount, so on an
     // A -> B -> A switch a late response could overwrite a newer one; it also
@@ -260,13 +310,28 @@ export function useNpcChat(npcId, npcName, onClose) {
 
     const openConversation = async () => {
       try {
-        setLoading(true)
         setError(null)
-        setPhase('opening')
+        setPhase(CHAT_PHASES.OPENING)
         const response = await npcChat.open(npcId)
-        if (cancelled || !isMountedRef.current) return
         const data = response.data
 
+        // Unmount is checked FIRST, and separately from `cancelled`, because
+        // the two cases need opposite treatment and unmount sets both flags.
+        //
+        //   unmounted   the server just opened a conversation for a panel that
+        //               no longer exists. Dropping `npc_key` here was the last
+        //               door left open to a leaked `_active_chat_npc_id`.
+        //   cancelled   the hook was pointed at a DIFFERENT NPC. That NPC's
+        //               `/open` has already claimed the marker, and
+        //               `npc_chat_end` pops it unconditionally — so ending the
+        //               superseded conversation would clear the NEW one's.
+        if (!isMountedRef.current) {
+          endAbandonedConversation(data?.npc_key)
+          return
+        }
+        if (cancelled) return
+
+        openNpcKeyRef.current = data.npc_key
         setNpcKey(data.npc_key)
         setDisplayName(data.npc_name || npcName)
         setConversationCast(npcCast(npcId, data.npc_name || npcName))
@@ -277,7 +342,7 @@ export function useNpcChat(npcId, npcName, onClose) {
             conversationSegment({
               text: data.npc_opening,
               speaker: npcId,
-              emotion: 'neutral',
+              emotion: DEFAULT_EMOTION,
               flavor: data.npc_flavor,
             }),
           ])
@@ -285,15 +350,13 @@ export function useNpcChat(npcId, npcName, onClose) {
           setConversationSegments([])
         }
 
-        setPhase('waiting_jean')
+        setPhase(CHAT_PHASES.WAITING_JEAN)
       } catch (err) {
         if (cancelled || !isMountedRef.current) return
-        console.error('[npcChat] open failed:', serverDetail(err))
+        console.error('[npcChat] open failed:', apiErrorDetail(err))
         setRetry(() => openConversation)
-        setError(OPEN_FAILED_MESSAGE)
-        setPhase('failed')
-      } finally {
-        if (!cancelled && isMountedRef.current) setLoading(false)
+        setError(failureMessage(err, OPEN_FAILED_MESSAGE))
+        setPhase(CHAT_PHASES.FAILED)
       }
     }
 
@@ -308,7 +371,7 @@ export function useNpcChat(npcId, npcName, onClose) {
   }, [npcId])
 
   const handleOptionClick = async (option) => {
-    if (phase !== 'waiting_jean' || !npcKey) return
+    if (phase !== CHAT_PHASES.WAITING_JEAN || !npcKey) return
 
     // Captured before the request goes out; every post-await write below is
     // gated on it still being the turn on screen.
@@ -328,8 +391,7 @@ export function useNpcChat(npcId, npcName, onClose) {
     })
 
     try {
-      setPhase('waiting_npc')
-      setLoading(true)
+      setPhase(CHAT_PHASES.WAITING_NPC)
 
       // Add Jean's response to the portrait-backed conversation stage.
       setConversationSegments((prev) => [...prev, jeanSegment])
@@ -356,23 +418,25 @@ export function useNpcChat(npcId, npcName, onClose) {
 
       // Check if conversation ended
       if (data.conversation_ended) {
-        setPhase('ended')
+        // `npc_chat_respond` already popped `_active_chat_npc_id` server-side
+        // for exactly this case, so the auto-close below must not also fire an
+        // `/end` on the way out.
+        openNpcKeyRef.current = null
+        setPhase(CHAT_PHASES.ENDED)
         endTimeoutRef.current = setTimeout(() => {
           if (isMountedRef.current) onClose()
         }, AUTO_CLOSE_DELAY_MS)
       } else {
-        setPhase('waiting_jean')
+        setPhase(CHAT_PHASES.WAITING_JEAN)
       }
     } catch (err) {
       if (!isCurrentTurn(seq)) return
-      console.error('[npcChat] respond failed:', serverDetail(err))
+      console.error('[npcChat] respond failed:', apiErrorDetail(err))
       // Roll back the optimistic segment — the retry re-adds it.
       setConversationSegments((prev) => prev.filter((segment) => segment !== jeanSegment))
       setRetry(() => () => handleOptionClick(option))
-      setError(RESPOND_FAILED_MESSAGE)
-      setPhase('waiting_jean')
-    } finally {
-      if (isCurrentTurn(seq)) setLoading(false)
+      setError(failureMessage(err, RESPOND_FAILED_MESSAGE))
+      setPhase(CHAT_PHASES.WAITING_JEAN)
     }
   }
 
@@ -390,13 +454,17 @@ export function useNpcChat(npcId, npcName, onClose) {
     if (endingRef.current) return
 
     // `/open` never resolved (or failed outright), so there is no server-side
-    // conversation to end — closing is the whole of the work.
+    // conversation to end — closing is the whole of the work. A response still
+    // in flight is not lost: it ends itself when it lands on an unmounted hook.
     if (!npcKey) {
       onClose()
       return
     }
 
     endingRef.current = true
+    // Claimed before the request goes out, so the unmount cleanup this close
+    // triggers does not send a second `/end` for the same conversation.
+    openNpcKeyRef.current = null
     try {
       await npcChat.end(npcKey)
     } catch (err) {
@@ -404,7 +472,7 @@ export function useNpcChat(npcId, npcName, onClose) {
       // can mean an expired key or leaked server-side conversation state, and
       // swallowing it whole made that invisible to player, dev and log pipeline
       // at once.
-      console.error('[npcChat] end failed; closing anyway:', serverDetail(err))
+      console.error('[npcChat] end failed; closing anyway:', apiErrorDetail(err))
     } finally {
       // The one async path that used to close unconditionally: if the panel is
       // already gone when `/end` settles, `onClose` would ask its owner to

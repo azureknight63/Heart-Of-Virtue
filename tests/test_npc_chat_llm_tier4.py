@@ -42,9 +42,11 @@ from tests._gs_fixtures import live_world
 from tests._npc_fixtures import (
     ScriptedAdapter,
     chat_npc,
+    chat_player,
     prohibit,
     qc_npc,
     ready_npc,
+    wired_chat_npc,
 )
 
 
@@ -53,15 +55,7 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_basic(self):
         """Test basic initialization of chat attributes."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._init_chat_attrs()
-
-        npc = TestNPC()
+        npc = chat_npc()
         assert npc.loquacity_current == 0
         assert npc.loquacity_max == 0
         assert npc.loquacity_threshold == 0
@@ -75,19 +69,13 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_chat_keyword_not_duplicated_if_present(self):
         """Test that a pre-existing 'chat' keyword is left alone, not duplicated."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = ["chat", "talk"]
-                self._init_chat_attrs()
-
-        npc = TestNPC()
+        npc = chat_npc(keywords=["chat", "talk"])
         assert npc.keywords.count("chat") == 1
 
     def test_init_chat_attrs_no_keywords_attr(self):
         """Test initialization when keywords attribute doesn't exist."""
+        # Not built with chat_npc: ChatHost always assigns ``keywords``, so the
+        # factory cannot produce the missing-attribute state this pins.
         class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
@@ -102,16 +90,7 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_with_config_path(self):
         """Test initialization with character config path."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._init_chat_attrs()
-
-        npc = TestNPC()
+        npc = chat_npc(config_path=None)
         assert npc._chat_char_config is None
 
     def test_prohibited_patterns_are_empty_without_a_character_config(self):
@@ -207,30 +186,21 @@ class TestStoryMethod:
 
     def test_story_with_valid_universe(self):
         """Test _story returns story dict from player."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
+        npc = chat_npc(init=False)
         player = MagicMock()
         player.universe.story = {"chapter": 1}
         assert npc._story(player) == {"chapter": 1}
 
     def test_story_with_missing_universe(self):
         """Test _story returns empty dict when universe missing."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
+        npc = chat_npc(init=False)
         player = MagicMock(spec=[])
         result = npc._story(player)
         assert result == {}
 
     def test_story_with_missing_story_attr(self):
         """Test _story returns empty dict when story attr missing."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
+        npc = chat_npc(init=False)
         player = MagicMock()
         player.universe = MagicMock(spec=[])
         result = npc._story(player)
@@ -238,10 +208,7 @@ class TestStoryMethod:
 
     def test_story_with_none_story(self):
         """Test _story returns empty dict when story is None."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
+        npc = chat_npc(init=False)
         player = MagicMock()
         player.universe.story = None
         result = npc._story(player)
@@ -253,20 +220,14 @@ class TestGetChapter:
 
     def test_get_chapter_from_story(self):
         """Test chapter retrieval from story dict."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
+        npc = chat_npc(init=False)
         player = MagicMock()
         player.universe.story = {"chapter": 2}
         assert npc._get_chapter(player) == "2"
 
     def test_get_chapter_default(self):
         """Test default chapter when not in story."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
+        npc = chat_npc(init=False)
         player = MagicMock()
         player.universe.story = {}
         assert npc._get_chapter(player) == "1"
@@ -277,26 +238,8 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_basic(self):
         """Test basic loquacity computation with default base."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(charisma=10, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
         assert npc.loquacity_max >= 20  # Min is 20
@@ -305,24 +248,12 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_caches_result(self):
         """Test loquacity is only computed once."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 50
-                self.loquacity_current = 50
-                self.loquacity_threshold = 10
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc(
+            loquacity_max=50,
+            loquacity_current=50,
+            loquacity_threshold=10,
+        )
+        player = chat_player(charisma=10, equipped={}, allies=[])
 
         original_max = npc.loquacity_max
         npc._compute_loquacity(player)
@@ -330,26 +261,8 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_npc_charisma_bonus(self):
         """Test NPC charisma bonus to loquacity."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 15
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc(charisma=15)
+        player = chat_player(charisma=10, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
         # Charisma 15 gives +5*3=+15 bonus
@@ -357,26 +270,10 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_reputation_bonus(self):
         """Test positive reputation bonus."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {"TestNPC": 1}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(
+            charisma=10, reputation={"TestNPC": 1}, equipped={}, allies=[]
+        )
 
         npc._compute_loquacity(player)
         # Positive rep gives +20
@@ -384,26 +281,10 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_reputation_penalty(self):
         """Test negative reputation penalty."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {"TestNPC": -1}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(
+            charisma=10, reputation={"TestNPC": -1}, equipped={}, allies=[]
+        )
 
         npc._compute_loquacity(player)
         # Negative rep gives -20
@@ -411,26 +292,8 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_jean_charisma_bonus(self):
         """Test Jean's charisma modifier."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 15
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(charisma=15, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
         # Jean charisma 15 gives +5*2=+10 bonus
@@ -438,26 +301,10 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_equipment_bonus(self):
         """Test equipment modifiers."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {"head": {"name": "Crucifix"}}
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(
+            charisma=10, equipped={"head": {"name": "Crucifix"}}, allies=[]
+        )
 
         npc._compute_loquacity(player)
         # Crucifix gives +10
@@ -465,28 +312,10 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_gorran_ally_bonus(self):
         """Test Gorran in allies gives bonus."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
         gorran = MagicMock()
         gorran.name = "Gorran"
-        player.allies = [gorran]
+        npc = chat_npc()
+        player = chat_player(charisma=10, equipped={}, allies=[gorran])
 
         npc._compute_loquacity(player)
         # Gorran gives +10
@@ -494,26 +323,8 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_recovery_from_wisdom(self):
         """Test recovery rate derived from wisdom."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 16
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc(wisdom=16)
+        player = chat_player(charisma=10, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
         # Wisdom 16 gives recovery = 16 // 8 = 2
@@ -521,26 +332,10 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_min_threshold(self):
         """Test loquacity threshold has minimum."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 1
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 1
-        player.reputation = {"TestNPC": -1}
-        player.equipped = {}
-        player.allies = []
+        npc = chat_npc(charisma=1)
+        player = chat_player(
+            charisma=1, reputation={"TestNPC": -1}, equipped={}, allies=[]
+        )
 
         npc._compute_loquacity(player)
         # Min threshold is 10
@@ -552,14 +347,13 @@ class TestGetNPCKey:
 
     def test_get_npc_key_story_npc(self):
         """Test story NPC uses name as key."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_config_path = "/path/to/config.json"
-                self._chat_char_config = {"some": "config"}
-                self._chat_npc_key = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            config_path="/path/to/config.json",
+            _chat_char_config={"some": "config"},
+            _chat_npc_key=None,
+        )
         player = MagicMock()
         player.npc_chat_histories = {}
 
@@ -569,6 +363,8 @@ class TestGetNPCKey:
 
     def test_get_npc_key_generic_first_instance(self):
         """Test generic NPC gets unique key."""
+        # Not built with chat_npc: the key is type(self).__name__, so this test
+        # needs a class of its own to have a name to assert on.
         class CustomNomad(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "NomadTrader"
@@ -585,6 +381,8 @@ class TestGetNPCKey:
 
     def test_get_npc_key_generic_instance_count(self):
         """Test generic NPCs increment instance counter."""
+        # Not built with chat_npc: the per-class counter is keyed on
+        # type(self).__name__, which a shared host class cannot vary.
         class CustomNomad(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "NomadTrader"
@@ -604,14 +402,12 @@ class TestGetNPCKey:
 
     def test_get_npc_key_caching(self):
         """Test key is cached after first call."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_npc_key = "cached_key"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            config_path=None,
+            _chat_char_config=None,
+            _chat_npc_key="cached_key",
+        )
         player = MagicMock()
         player.npc_chat_histories = {}
 
@@ -624,30 +420,26 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_no_persistence_attr(self):
         """Test loading when player has no npc_chat_histories."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_history = []
-                self._chat_personality = None
-                self.loquacity_current = 0
-                self._chat_npc_key = "test_key"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            _chat_history=[],
+            _chat_personality=None,
+            loquacity_current=0,
+            _chat_npc_key="test_key",
+        )
         player = MagicMock(spec=[])
         npc._load_history_from_persistence(player)
         assert npc._chat_history == []
 
     def test_load_history_key_not_found(self):
         """Test loading when key not in histories."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_history = []
-                self._chat_personality = None
-                self.loquacity_current = 0
-                self._chat_npc_key = "missing_key"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            _chat_history=[],
+            _chat_personality=None,
+            loquacity_current=0,
+            _chat_npc_key="missing_key",
+        )
         player = MagicMock()
         player.npc_chat_histories = {"other_key": {}}
         npc._load_history_from_persistence(player)
@@ -655,15 +447,13 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_with_exchanges(self):
         """Test loading exchanges from persistence."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_history = []
-                self._chat_personality = None
-                self.loquacity_current = 0
-                self._chat_npc_key = "test_key"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            _chat_history=[],
+            _chat_personality=None,
+            loquacity_current=0,
+            _chat_npc_key="test_key",
+        )
         player = MagicMock()
         exchanges = [
             {"npc": "Hello", "jean": "Hi"},
@@ -675,15 +465,13 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_with_personality(self):
         """Test loading personality from persistence."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_history = []
-                self._chat_personality = None
-                self.loquacity_current = 0
-                self._chat_npc_key = "test_key"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            _chat_history=[],
+            _chat_personality=None,
+            loquacity_current=0,
+            _chat_npc_key="test_key",
+        )
         player = MagicMock()
         personality = {"given_name": "Ren", "voice": "sparse"}
         player.npc_chat_histories = {
@@ -694,15 +482,13 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_with_loquacity(self):
         """Test loading loquacity from persistence."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_history = []
-                self._chat_personality = None
-                self.loquacity_current = 0
-                self._chat_npc_key = "test_key"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            _chat_history=[],
+            _chat_personality=None,
+            loquacity_current=0,
+            _chat_npc_key="test_key",
+        )
         player = MagicMock()
         player.npc_chat_histories = {"test_key": {"exchanges": [], "loquacity_current": 42}}
         npc._load_history_from_persistence(player)
@@ -712,15 +498,13 @@ class TestLoadHistoryFromPersistence:
         """A persisted 0 (patience fully exhausted) must be restored as 0, not
         confused with 'never persisted' and silently reset back to a nonzero
         default (issue #381)."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_history = []
-                self._chat_personality = None
-                self.loquacity_current = 99  # pre-existing nonzero value
-                self._chat_npc_key = "test_key"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            _chat_history=[],
+            _chat_personality=None,
+            loquacity_current=99,  # pre-existing nonzero value
+            _chat_npc_key="test_key",
+        )
         player = MagicMock()
         player.npc_chat_histories = {"test_key": {"exchanges": [], "loquacity_current": 0}}
         npc._load_history_from_persistence(player)
@@ -737,15 +521,13 @@ class TestSaveExchangeToPersistence:
         actually persist the exchange, whether the attribute was never set
         or was explicitly None.
         """
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self._chat_npc_key = "test_key"
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            loquacity_current=50,
+            loquacity_max=100,
+            _chat_npc_key="test_key",
+            _chat_personality=None,
+        )
         player = MagicMock(spec=["universe"])
         player.npc_chat_histories = None
         npc._save_exchange_to_persistence(player, "NPC text", "Jean text", 10, "1")
@@ -758,15 +540,13 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_creates_entry(self):
         """Test creating new history entry."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self._chat_npc_key = "test_key"
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            loquacity_current=50,
+            loquacity_max=100,
+            _chat_npc_key="test_key",
+            _chat_personality=None,
+        )
         player = MagicMock()
         player.npc_chat_histories = {}
         npc._save_exchange_to_persistence(player, "Hello", "Hi", 10, "1")
@@ -778,15 +558,13 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_keeps_last_20(self):
         """Test that only last 20 exchanges are kept."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self._chat_npc_key = "test_key"
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            loquacity_current=50,
+            loquacity_max=100,
+            _chat_npc_key="test_key",
+            _chat_personality=None,
+        )
         player = MagicMock()
         exchanges = [{"npc": f"msg{i}", "jean": f"response{i}"} for i in range(25)]
         player.npc_chat_histories = {"test_key": {"exchanges": exchanges}}
@@ -802,15 +580,13 @@ class TestSaveExchangeToPersistence:
         jean_text-truthy increment here would never fire for either caller —
         it was dead code and has been removed).
         """
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self._chat_npc_key = "test_key"
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            loquacity_current=50,
+            loquacity_max=100,
+            _chat_npc_key="test_key",
+            _chat_personality=None,
+        )
         player = MagicMock()
         player.npc_chat_histories = {}
         # Even with a non-empty jean_text, the count stays untouched.
@@ -824,15 +600,13 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_stores_personality(self):
         """Test personality is stored when present."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self._chat_npc_key = "test_key"
-                self._chat_personality = {"given_name": "Ren"}
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            loquacity_current=50,
+            loquacity_max=100,
+            _chat_npc_key="test_key",
+            _chat_personality={"given_name": "Ren"},
+        )
         player = MagicMock()
         player.npc_chat_histories = {}
         npc._save_exchange_to_persistence(player, "Hello", "Hi", 10, "1")
@@ -1053,25 +827,22 @@ class TestEnsurePersonality:
 
     def test_ensure_personality_already_story_npc(self):
         """Test personality skipped for story NPCs."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {"some": "config"}
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={"some": "config"},
+            _chat_personality=None,
+        )
         npc._ensure_personality(MagicMock())
         assert npc._chat_personality is None
 
     def test_ensure_personality_already_generated(self):
         """Test personality skipped if already generated."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_char_config = None
-                self._chat_personality = {"given_name": "Ren"}
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            _chat_char_config=None,
+            _chat_personality={"given_name": "Ren"},
+        )
         npc._ensure_personality(MagicMock())
         assert npc._chat_personality == {"given_name": "Ren"}
 
@@ -1166,47 +937,27 @@ class TestJaccard:
 
     def test_jaccard_identical_text(self):
         """Test Jaccard of identical text is 1.0."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        sim = npc._jaccard("hello world", "hello world")
+        sim = chat_npc(init=False)._jaccard("hello world", "hello world")
         assert sim == 1.0
 
     def test_jaccard_completely_different(self):
         """Test Jaccard of completely different text is 0.0."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        sim = npc._jaccard("hello world", "foo bar")
+        sim = chat_npc(init=False)._jaccard("hello world", "foo bar")
         assert sim == 0.0
 
     def test_jaccard_partial_overlap(self):
         """Test Jaccard with partial overlap."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        sim = npc._jaccard("hello world test", "hello foo bar")
+        sim = chat_npc(init=False)._jaccard("hello world test", "hello foo bar")
         assert 0 < sim < 1
 
     def test_jaccard_empty_strings(self):
         """Test Jaccard with empty strings."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        sim = npc._jaccard("", "")
+        sim = chat_npc(init=False)._jaccard("", "")
         assert sim == 1.0
 
     def test_jaccard_one_empty(self):
         """Test Jaccard with one empty string."""
-        class TestNPC(ConversationalNPCMixin):
-            pass
-
-        npc = TestNPC()
-        sim = npc._jaccard("hello", "")
+        sim = chat_npc(init=False)._jaccard("hello", "")
         assert sim == 0.0
 
 
@@ -1586,7 +1337,7 @@ class TestQCJeanOptions:
     @pytest.mark.parametrize("length", [_MIN_OPTION_CHARS, MAX_OPTION_CHARS])
     def test_the_length_bounds_are_inclusive(self, npc, length):
         """``MAX_OPTION_CHARS`` is the single shared bound the llm_client
-        truncates at and this filter drops at (S7).
+        truncates at and this filter drops at.
 
         Imported rather than written as 160: a literal here is the bug written
         down as a test — retune the constant and this keeps asserting the old
@@ -1724,9 +1475,9 @@ class TestChatOpen:
     def test_an_internal_error_returns_a_structured_failure(self, player):
         """``chat_open`` must never propagate — the game loop keeps running.
 
-        Master asserted the raw ``"Test error"`` string here; A05 (S5) made the
-        client-facing message a fixed generic one, with the detail kept
-        server-side by ``logger.error(..., exc_info=True)``.
+        Master asserted the raw ``"Test error"`` string here; the client-facing
+        message is now a fixed generic one, with the detail kept server-side by
+        ``logger.error(..., exc_info=True)``.
         """
         npc = ready_npc()
         npc._compute_loquacity = lambda player: (_ for _ in ()).throw(
@@ -1778,7 +1529,7 @@ class TestChatOpen:
     ):
         """PRODUCT BUG, pinned here so it is visible rather than silent.
 
-        An adapter that *raises* is now handled (S8 — see the test below), but a
+        An adapter that *raises* is now handled (see the test below), but a
         response of the wrong *shape* still escapes ``_generate_turn`` into
         ``chat_open``'s outer handler, so Jean gets ``success: False`` instead of
         the authored fallback line the pool exists to provide. CLAUDE.md's
@@ -1786,7 +1537,7 @@ class TestChatOpen:
         and ``_run_npc_turn`` already documents itself as returning None "if the
         caller should fall back".
 
-        The conversation is at least not *crashed*, and per A05 (S5) the raw
+        The conversation is at least not *crashed*, and the raw
         ``AttributeError`` text no longer reaches the client. When the fallback
         is fixed, this test should expect ``success: True`` and the pool line.
         """
@@ -1810,7 +1561,7 @@ class TestChatOpen:
         assert leaked_detail not in result["error"]
 
     def test_an_adapter_that_raises_falls_back_to_the_authored_line(self, player):
-        """S8: a timeout or connection error from the LLM must never cost the
+        """A timeout or connection error from the LLM must never cost the
         player a turn. Master pinned the old behaviour (the exception escaped
         to ``chat_open``'s handler and ended the conversation); the adapter call
         is now wrapped, so the authored fallback pool takes over."""
@@ -1835,20 +1586,19 @@ class TestChatOpen:
         assert len(result["jean_options"]) == 3
 
     def test_chat_open_error_message_is_generic_not_raw_exception(self):
-        """A05: the client never sees raw internal exception text.
+        """The client never sees raw internal exception text.
 
         The exception detail belongs server-side (via logger.error's
         exc_info=True); the client-facing error must be a fixed, generic
         message so an internal exception string never leaks in a 400 body.
         """
-        class BrokenNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "BrokenNPC"
-
-            def _compute_loquacity(self, player):
-                raise ValueError("some sensitive internal detail: /etc/secret")
-
-        npc = BrokenNPC()
+        npc = chat_npc(
+            init=False,
+            name="BrokenNPC",
+            _compute_loquacity=lambda player: (_ for _ in ()).throw(
+                ValueError("some sensitive internal detail: /etc/secret")
+            ),
+        )
         player = MagicMock()
         result = npc.chat_open(player)
         assert result["success"] is False
@@ -1861,64 +1611,12 @@ class TestChatRespond:
 
     def test_chat_respond_success(self):
         """Test successful chat response."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = None
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = None
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-            def _compute_loquacity(self, player):
-                pass
-
-            def _get_npc_key(self, player):
-                return "test_key"
-
-            def _load_history_from_persistence(self, player):
-                pass
-
-            def _ensure_personality(self, player):
-                pass
-
-            def _build_system_prompt(self, player):
-                return "System prompt"
-
-            def _get_adapter(self):
-                return None
-
-            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
-                return "Response from fallback."
-
-            def _get_fallback_jean_options(self):
-                return [
-                    {"tone": "direct", "text": "What else?"},
-                    {"tone": "guarded", "text": "I see."},
-                    {"tone": "open", "text": "Tell me more."},
-                ]
-
-            def _get_chapter(self, player):
-                return "1"
-
-            def _save_exchange_to_persistence(self, player, npc, jean, tick, chapter):
-                pass
-
-            def _display_name(self):
-                return self.name
-
-        npc = TestNPC()
+        npc = wired_chat_npc(
+            None,
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+            loquacity_current=50,
+            loquacity_threshold=20,
+        )
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -1932,64 +1630,12 @@ class TestChatRespond:
 
     def test_chat_respond_loquacity_drain(self):
         """Test loquacity is drained on response."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = None
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = None
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-            def _compute_loquacity(self, player):
-                pass
-
-            def _get_npc_key(self, player):
-                return "test_key"
-
-            def _load_history_from_persistence(self, player):
-                pass
-
-            def _ensure_personality(self, player):
-                pass
-
-            def _build_system_prompt(self, player):
-                return "System prompt"
-
-            def _get_adapter(self):
-                return None
-
-            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
-                return "Response from fallback."
-
-            def _get_fallback_jean_options(self):
-                return [
-                    {"tone": "direct", "text": "What else?"},
-                    {"tone": "guarded", "text": "I see."},
-                    {"tone": "open", "text": "Tell me more."},
-                ]
-
-            def _get_chapter(self, player):
-                return "1"
-
-            def _save_exchange_to_persistence(self, player, npc, jean, tick, chapter):
-                pass
-
-            def _display_name(self):
-                return self.name
-
-        npc = TestNPC()
+        npc = wired_chat_npc(
+            None,
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+            loquacity_current=50,
+            loquacity_threshold=20,
+        )
         original = npc.loquacity_current
         player = MagicMock()
         player.universe.game_tick = 10
@@ -2002,28 +1648,26 @@ class TestChatRespond:
 
     def test_chat_respond_error_handling(self):
         """Test chat respond handles errors."""
-        class BrokenNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "BrokenNPC"
-
-            def _compute_loquacity(self, player):
-                raise ValueError("Test error")
-
-        npc = BrokenNPC()
+        npc = chat_npc(
+            init=False,
+            name="BrokenNPC",
+            _compute_loquacity=lambda player: (_ for _ in ()).throw(
+                ValueError("Test error")
+            ),
+        )
         player = MagicMock()
         result = npc.chat_respond(player, "Hello", "direct")
         assert result["success"] is False
 
     def test_chat_respond_error_message_is_generic_not_raw_exception(self):
-        """A05: the client never sees raw internal exception text (chat_respond)."""
-        class BrokenNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "BrokenNPC"
-
-            def _compute_loquacity(self, player):
-                raise ValueError("some sensitive internal detail: /etc/secret")
-
-        npc = BrokenNPC()
+        """The client never sees raw internal exception text (chat_respond)."""
+        npc = chat_npc(
+            init=False,
+            name="BrokenNPC",
+            _compute_loquacity=lambda player: (_ for _ in ()).throw(
+                ValueError("some sensitive internal detail: /etc/secret")
+            ),
+        )
         player = MagicMock()
         result = npc.chat_respond(player, "Hello", "direct")
         assert result["success"] is False
@@ -2036,40 +1680,28 @@ class TestLoquacityTick:
 
     def test_loquacity_tick_recovery(self):
         """Test loquacity recovers each tick."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_max = 100
-                self.loquacity_current = 50
-                self.loquacity_recovery = 5
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False, loquacity_max=100, loquacity_current=50, loquacity_recovery=5
+        )
         npc.loquacity_tick()
         assert npc.loquacity_current == 55
 
     def test_loquacity_tick_respects_max(self):
         """Test loquacity doesn't exceed max."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_max = 100
-                self.loquacity_current = 98
-                self.loquacity_recovery = 10
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False, loquacity_max=100, loquacity_current=98, loquacity_recovery=10
+        )
         npc.loquacity_tick()
         assert npc.loquacity_current == 100
 
     def test_loquacity_tick_not_initialized(self):
         """Test loquacity tick skips if not initialized."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_max = 0  # Not initialized
-                self.loquacity_current = 0
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            loquacity_max=0,  # Not initialized
+            loquacity_current=0,
+            loquacity_recovery=2,
+        )
         npc.loquacity_tick()
         assert npc.loquacity_current == 0
 
@@ -2079,35 +1711,32 @@ class TestDisplayName:
 
     def test_display_name_story_npc(self):
         """Test story NPC displays actual name."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {"some": "config"}
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={"some": "config"},
+            _chat_personality=None,
+        )
         assert npc._display_name() == "Gorran"
 
     def test_display_name_generic_with_personality(self):
         """Test generic NPC displays personality name."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "GenericNomad"
-                self._chat_char_config = None
-                self._chat_personality = {"given_name": "Ren"}
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="GenericNomad",
+            _chat_char_config=None,
+            _chat_personality={"given_name": "Ren"},
+        )
         assert npc._display_name() == "Ren"
 
     def test_display_name_generic_fallback(self):
         """Test generic NPC without personality uses name."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "GenericNomad"
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="GenericNomad",
+            _chat_char_config=None,
+            _chat_personality=None,
+        )
         assert npc._display_name() == "GenericNomad"
 
 
@@ -2116,25 +1745,17 @@ class TestGetBrushOffLine:
 
     def test_get_brush_off_line_story_npc(self):
         """Test story NPC uses config brush-off."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {
-                    "closing_lines_when_exhausted": ["I'm tired now."]
-                }
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={"closing_lines_when_exhausted": ["I'm tired now."]},
+        )
         line = npc._get_brush_off_line()
         assert line == "I'm tired now."
 
     def test_get_brush_off_line_generic(self):
         """Test generic NPC uses fallback."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "GenericNomad"
-                self._chat_char_config = None
-
-        npc = TestNPC()
+        npc = chat_npc(init=False, name="GenericNomad", _chat_char_config=None)
         line = npc._get_brush_off_line()
         assert line in [
             "They're not in the mood to talk.",
@@ -2148,66 +1769,52 @@ class TestGetFallbackNpcLine:
 
     def test_get_fallback_npc_line_story_opening(self):
         """Test story NPC opening fallback from config."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {
-                    "conversation_starters_by_chapter": {"1": ["Hello, friend!"]}
-                }
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={
+                "conversation_starters_by_chapter": {"1": ["Hello, friend!"]}
+            },
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         line = npc._get_fallback_npc_line(is_opening=True, player=player)
         assert line == "Hello, friend!"
 
     def test_get_fallback_npc_line_story_non_opening(self):
         """Test story NPC non-opening fallback from config."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {
-                    "closing_lines_when_exhausted": ["Goodbye."]
-                }
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={"closing_lines_when_exhausted": ["Goodbye."]},
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         line = npc._get_fallback_npc_line(is_opening=False, player=player)
         assert line == "Goodbye."
 
     def test_get_fallback_npc_line_generic(self):
         """Test generic NPC uses personality speech sample."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "GenericNomad"
-                self._chat_char_config = None
-                self._chat_personality = {"speech_sample": "The river's cold."}
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="GenericNomad",
+            _chat_char_config=None,
+            _chat_personality={"speech_sample": "The river's cold."},
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         line = npc._get_fallback_npc_line(is_opening=True, player=player)
         assert line == "The river's cold."
 
     def test_get_fallback_npc_line_default(self):
         """Test default fallback when nothing else available."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "GenericNomad"
-                self._chat_char_config = None
-                self._chat_personality = None
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="GenericNomad",
+            _chat_char_config=None,
+            _chat_personality=None,
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         line = npc._get_fallback_npc_line(is_opening=True, player=player)
         assert line == "Nothing to say right now."
@@ -2219,19 +1826,16 @@ class TestGetFallbackNpcLine:
         NPC repeat the exact same line on every turn when the LLM was
         unavailable.
         """
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {
-                    "conversation_starters_by_chapter": {
-                        "1": ["First line.", "Second line.", "Third line."]
-                    }
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={
+                "conversation_starters_by_chapter": {
+                    "1": ["First line.", "Second line.", "Third line."]
                 }
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+            },
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         lines = [
             npc._get_fallback_npc_line(is_opening=True, player=player)
@@ -2243,18 +1847,15 @@ class TestGetFallbackNpcLine:
 
     def test_get_fallback_npc_line_exhausted_uses_closing(self):
         """When the conversation is actually ending, use the closing pool."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {
-                    "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
-                    "closing_lines_when_exhausted": ["Farewell."],
-                }
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={
+                "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
+                "closing_lines_when_exhausted": ["Farewell."],
+            },
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=True)
         assert line == "Farewell."
@@ -2264,38 +1865,32 @@ class TestGetFallbackNpcLine:
         is done talking — it should reuse chapter-flavor starters instead of
         the 'done talking' closing lines.
         """
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Gorran"
-                self._chat_char_config = {
-                    "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
-                    "closing_lines_when_exhausted": ["Farewell."],
-                }
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={
+                "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
+                "closing_lines_when_exhausted": ["Farewell."],
+            },
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=False)
         assert line == "Hello, friend!"
 
     def test_get_fallback_npc_line_generic_rotates(self):
         """Generic-nomad fallback must vary rather than repeat the speech sample."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "GenericNomad"
-                self._chat_char_config = None
-                self._chat_personality = {
-                    "given_name": "Ren",
-                    "speech_sample": "The river's cold.",
-                    "knowledge": ["river crossings"],
-                }
-
-            def _get_chapter(self, player):
-                return "1"
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            name="GenericNomad",
+            _chat_char_config=None,
+            _chat_personality={
+                "given_name": "Ren",
+                "speech_sample": "The river's cold.",
+                "knowledge": ["river crossings"],
+            },
+            _get_chapter=lambda player: "1",
+        )
         player = MagicMock()
         first = npc._get_fallback_npc_line(is_opening=False, player=player)
         second = npc._get_fallback_npc_line(is_opening=False, player=player)
@@ -2308,12 +1903,7 @@ class TestGetFallbackJeanOptions:
 
     def test_get_fallback_jean_options_rotation(self):
         """Test Jean options rotate through pool."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_fallback_idx = 0
-
-        npc = TestNPC()
+        npc = chat_npc(init=False, _chat_fallback_idx=0)
         opts1 = npc._get_fallback_jean_options()
         opts2 = npc._get_fallback_jean_options()
         # Different calls should potentially use different pool entries
@@ -2322,12 +1912,7 @@ class TestGetFallbackJeanOptions:
 
     def test_get_fallback_jean_options_format(self):
         """Test Jean options have correct format."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_fallback_idx = 0
-
-        npc = TestNPC()
+        npc = chat_npc(init=False, _chat_fallback_idx=0)
         opts = npc._get_fallback_jean_options()
         for opt in opts:
             assert "text" in opt
@@ -2340,35 +1925,31 @@ class TestIntegrationChatFlow:
 
     def test_full_conversation_cycle(self):
         """Test opening and responding in sequence."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Ren"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_adapter = None
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 0
-                self.loquacity_max = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.universe.game_tick = 10
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
-        player.npc_chat_histories = {}
+        # Not ready_npc: this drives the real _get_adapter lookup, and
+        # ready_npc always installs an adapter of its own.
+        npc = chat_npc(
+            init=False,
+            name="Ren",
+            _chat_char_config=None,
+            _chat_world_facts={},
+            _chat_personality={"given_name": "Ren"},
+            _chat_history=[],
+            _chat_npc_key=None,
+            _chat_adapter=None,
+            _chat_fallback_idx=0,
+            _prohibited_patterns=[],
+            loquacity_current=0,
+            loquacity_max=0,
+            loquacity_threshold=0,
+            loquacity_recovery=2,
+        )
+        player = chat_player(
+            persist=True,
+            universe=MagicMock(story={}, game_tick=10),
+            charisma=10,
+            equipped={},
+            allies=[],
+        )
 
         # Open chat
         open_result = npc.chat_open(player)
@@ -2383,64 +1964,12 @@ class TestIntegrationChatFlow:
 
     def test_loquacity_exhaustion(self):
         """Test conversation ends when loquacity exhausted."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = None
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = None
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 15  # Below threshold of 20
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-            def _compute_loquacity(self, player):
-                pass
-
-            def _get_npc_key(self, player):
-                return "test_key"
-
-            def _load_history_from_persistence(self, player):
-                pass
-
-            def _ensure_personality(self, player):
-                pass
-
-            def _build_system_prompt(self, player):
-                return "System prompt"
-
-            def _get_adapter(self):
-                return None
-
-            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
-                return "Response from fallback."
-
-            def _get_fallback_jean_options(self):
-                return [
-                    {"tone": "direct", "text": "What else?"},
-                    {"tone": "guarded", "text": "I see."},
-                    {"tone": "open", "text": "Tell me more."},
-                ]
-
-            def _get_chapter(self, player):
-                return "1"
-
-            def _save_exchange_to_persistence(self, player, npc, jean, tick, chapter):
-                pass
-
-            def _display_name(self):
-                return self.name
-
-        npc = TestNPC()
+        npc = wired_chat_npc(
+            None,
+            _chat_history=[{"npc": "Hello", "jean": ""}],
+            loquacity_current=15,  # Below threshold of 20
+            loquacity_threshold=20,
+        )
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2460,18 +1989,8 @@ class TestCacheManagement:
         """Test world facts cache is shared across instances."""
         ConversationalNPCMixin._world_facts_cache = {"cached": True}
 
-        class TestNPC1(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "NPC1"
-                self.keywords = []
-
-        class TestNPC2(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "NPC2"
-                self.keywords = []
-
-        npc1 = TestNPC1()
-        npc2 = TestNPC2()
+        npc1 = chat_npc(init=False, name="NPC1")
+        npc2 = chat_npc(init=False, name="NPC2")
 
         # Both should use the same cache reference
         assert ConversationalNPCMixin._world_facts_cache == {"cached": True}
@@ -2480,14 +1999,7 @@ class TestCacheManagement:
         """Test character config cache."""
         ConversationalNPCMixin._char_config_cache = {}
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.keywords = []
-                self._chat_config_path = "/nonexistent/path.json"
-                self._init_chat_attrs()
-
-        npc = TestNPC()
+        chat_npc(config_path="/nonexistent/path.json")
         # Cache should be populated even on error
         assert "/nonexistent/path.json" in ConversationalNPCMixin._char_config_cache
 
@@ -2558,26 +2070,10 @@ class TestEquipmentHandling:
 
     def test_compute_loquacity_equipment_non_dict(self):
         """Test equipment handling when value is not dict."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {"hand": "Sword"}  # String, not dict
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(
+            charisma=10, equipped={"hand": "Sword"}, allies=[]  # String, not dict
+        )
 
         npc._compute_loquacity(player)
         # Should handle gracefully
@@ -2585,26 +2081,10 @@ class TestEquipmentHandling:
 
     def test_compute_loquacity_religious_token(self):
         """Test religious token equipment bonus."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {"neck": {"name": "Religious Token"}}
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(
+            charisma=10, equipped={"neck": {"name": "Religious Token"}}, allies=[]
+        )
 
         npc._compute_loquacity(player)
         # Should get equipment bonus
@@ -2612,26 +2092,10 @@ class TestEquipmentHandling:
 
     def test_compute_loquacity_nomad_gear(self):
         """Test nomad gear equipment bonus."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self.loquacity_max = 0
-                self.loquacity_current = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-                self._chat_char_config = None
-                self._chat_personality = None
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {"back": {"name": "Nomad Gear Pack"}}
-        player.allies = []
+        npc = chat_npc()
+        player = chat_player(
+            charisma=10, equipped={"back": {"name": "Nomad Gear Pack"}}, allies=[]
+        )
 
         npc._compute_loquacity(player)
         # Should get equipment bonus
@@ -2656,35 +2120,19 @@ class TestChatOpenWithLLM:
                     {"text": "What do you want?", "tone": "guarded"},
                 ]
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapter()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 0
-                self.loquacity_max = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.universe.game_tick = 10
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
-        player.npc_chat_histories = {}
+        npc = ready_npc(
+            MockAdapter(),
+            loquacity_current=0,
+            loquacity_max=0,
+            loquacity_threshold=0,
+        )
+        player = chat_player(
+            persist=True,
+            universe=MagicMock(story={}, game_tick=10),
+            charisma=10,
+            equipped={},
+            allies=[],
+        )
 
         result = npc.chat_open(player)
         assert result["success"] is True
@@ -2714,27 +2162,7 @@ class TestChatRespondWithLLM:
                     {"text": "What else?", "tone": "direct"},
                 ]
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapter()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
+        npc = ready_npc(MockAdapter(), _chat_history=[{"npc": "Hello", "jean": ""}])
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2768,27 +2196,7 @@ class TestChatRespondWithLLM:
                     {"text": "What else?", "tone": "direct"},
                 ]
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapter()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
+        npc = ready_npc(MockAdapter(), _chat_history=[{"npc": "Hello", "jean": ""}])
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2821,27 +2229,7 @@ class TestChatRespondWithLLM:
                     {"text": "Tell me more.", "tone": "open"},
                 ]
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = [{"npc": "Hello", "jean": ""}]
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapter()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
+        npc = ready_npc(MockAdapter(), _chat_history=[{"npc": "Hello", "jean": ""}])
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2859,64 +2247,14 @@ class TestHistoryUpdating:
 
     def test_chat_respond_updates_last_entry(self):
         """Test chat_respond updates last history entry."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = None
-                self._chat_history = [{"npc": "Hello", "jean": "", "game_tick": 5, "chapter": "1"}]
-                self._chat_npc_key = None
-                self._chat_adapter = None
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self.loquacity_threshold = 20
-                self.loquacity_recovery = 2
-
-            def _compute_loquacity(self, player):
-                pass
-
-            def _get_npc_key(self, player):
-                return "test_key"
-
-            def _load_history_from_persistence(self, player):
-                pass
-
-            def _ensure_personality(self, player):
-                pass
-
-            def _build_system_prompt(self, player):
-                return "System prompt"
-
-            def _get_adapter(self):
-                return None
-
-            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
-                return "Response."
-
-            def _get_fallback_jean_options(self):
-                return [
-                    {"tone": "direct", "text": "What?"},
-                    {"tone": "guarded", "text": "OK."},
-                    {"tone": "open", "text": "Yes."},
-                ]
-
-            def _get_chapter(self, player):
-                return "1"
-
-            def _save_exchange_to_persistence(self, player, npc, jean, tick, chapter):
-                pass
-
-            def _display_name(self):
-                return self.name
-
-        npc = TestNPC()
+        npc = wired_chat_npc(
+            None,
+            _chat_history=[
+                {"npc": "Hello", "jean": "", "game_tick": 5, "chapter": "1"}
+            ],
+            loquacity_current=50,
+            loquacity_threshold=20,
+        )
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2996,16 +2334,7 @@ class TestCharConfigLoading:
         try:
             ConversationalNPCMixin._char_config_cache = {}
 
-            class TestNPC(ConversationalNPCMixin):
-                def __init__(self):
-                    self.name = "TestNPC"
-                    self.charisma = 10
-                    self.wisdom = 10
-                    self.keywords = []
-                    self._chat_config_path = temp_path
-                    self._init_chat_attrs()
-
-            npc = TestNPC()
+            npc = chat_npc(config_path=temp_path)
             # Should gracefully handle load error
             assert npc._chat_char_config is None
         finally:
@@ -3035,35 +2364,19 @@ class TestALLMRetryLogic:
                     {"text": "Tell.", "tone": "open"},
                 ]
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapterFailThenSucceed()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 0
-                self.loquacity_max = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.universe.game_tick = 10
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
-        player.npc_chat_histories = {}
+        npc = ready_npc(
+            MockAdapterFailThenSucceed(),
+            loquacity_current=0,
+            loquacity_max=0,
+            loquacity_threshold=0,
+        )
+        player = chat_player(
+            persist=True,
+            universe=MagicMock(story={}, game_tick=10),
+            charisma=10,
+            equipped={},
+            allies=[],
+        )
 
         result = npc.chat_open(player)
         assert result["success"] is True
@@ -3201,6 +2514,8 @@ class TestCharConfigPathHandling:
 
     def test_init_chat_attrs_without_config_path_attr(self):
         """Test _init_chat_attrs when config path not pre-set."""
+        # Not built with chat_npc: ChatHost always assigns ``_chat_config_path``,
+        # so the factory cannot produce the missing-attribute state this pins.
         class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
@@ -3238,35 +2553,19 @@ class TestRetryOnQCFailure:
                     {"text": "Option three ok", "tone": "open"},
                 ]
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapterBadThenGood()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 0
-                self.loquacity_max = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.universe.game_tick = 10
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
-        player.npc_chat_histories = {}
+        npc = ready_npc(
+            MockAdapterBadThenGood(),
+            loquacity_current=0,
+            loquacity_max=0,
+            loquacity_threshold=0,
+        )
+        player = chat_player(
+            persist=True,
+            universe=MagicMock(story={}, game_tick=10),
+            charisma=10,
+            equipped={},
+            allies=[],
+        )
 
         result = npc.chat_open(player)
         assert result["success"] is True
@@ -3290,35 +2589,19 @@ class TestJeanOptionsQCRetry:
                 # Return invalid options that QC will reject
                 return [{"text": "x"}]  # Not list of 3
 
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_world_facts = {}
-                self._chat_personality = {"given_name": "Ren"}
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_adapter = MockAdapterBadOptions()
-                self._chat_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 0
-                self.loquacity_max = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-
-        npc = TestNPC()
-        player = MagicMock()
-        player.universe.story = {}
-        player.universe.game_tick = 10
-        player.charisma = 10
-        player.reputation = {}
-        player.equipped = {}
-        player.allies = []
-        player.npc_chat_histories = {}
+        npc = ready_npc(
+            MockAdapterBadOptions(),
+            loquacity_current=0,
+            loquacity_max=0,
+            loquacity_threshold=0,
+        )
+        player = chat_player(
+            persist=True,
+            universe=MagicMock(story={}, game_tick=10),
+            charisma=10,
+            equipped={},
+            allies=[],
+        )
 
         result = npc.chat_open(player)
         assert result["success"] is True
@@ -3331,15 +2614,13 @@ class TestHistoryPersistenceAppend:
 
     def test_save_exchange_appends_new_entry(self):
         """Test saving with empty history appends new entry."""
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self.loquacity_current = 50
-                self.loquacity_max = 100
-                self._chat_npc_key = "test_key"
-                self._chat_personality = None
-
-        npc = TestNPC()
+        npc = chat_npc(
+            init=False,
+            loquacity_current=50,
+            loquacity_max=100,
+            _chat_npc_key="test_key",
+            _chat_personality=None,
+        )
         player = MagicMock()
         player.npc_chat_histories = {}
 
@@ -3367,45 +2648,35 @@ class TestChatRespondHistoryIntegrity:
     """
 
     def _make_npc(self, starters, closing):
-        class TestNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "Mara"
-                self.charisma = 10
-                self.wisdom = 10
-                self.keywords = []
-                self._chat_config_path = None
-                self._chat_char_config = {
-                    "conversation_starters_by_chapter": {"1": starters},
-                    "closing_lines_when_exhausted": closing,
-                }
-                self._chat_world_facts = {}
-                self._chat_personality = None
-                self._chat_history = []
-                self._chat_npc_key = None
-                self._chat_fallback_idx = 0
-                self._chat_npc_fallback_idx = 0
-                self._prohibited_patterns = []
-                self.loquacity_current = 0
-                self.loquacity_max = 0
-                self.loquacity_threshold = 0
-                self.loquacity_recovery = 2
-
-            def _get_adapter(self):
-                return None  # force the deterministic fallback path
-
-            def _get_chapter(self, player):
-                return "1"
-
-        return TestNPC()
+        return chat_npc(
+            init=False,
+            name="Mara",
+            _chat_char_config={
+                "conversation_starters_by_chapter": {"1": starters},
+                "closing_lines_when_exhausted": closing,
+            },
+            _chat_world_facts={},
+            _chat_personality=None,
+            _chat_history=[],
+            _chat_npc_key=None,
+            _chat_fallback_idx=0,
+            _chat_npc_fallback_idx=0,
+            _prohibited_patterns=[],
+            loquacity_current=0,
+            loquacity_max=0,
+            loquacity_threshold=0,
+            loquacity_recovery=2,
+            _get_adapter=lambda: None,  # force the deterministic fallback path
+            _get_chapter=lambda player: "1",
+        )
 
     def _make_player(self):
-        player = MagicMock(spec=["universe", "reputation", "charisma", "equipped", "allies"])
-        player.universe.game_tick = 0
-        player.universe.story = {}
-        player.reputation = {}
-        player.charisma = 10
-        player.equipped = {}
-        player.allies = []
+        player = chat_player(
+            universe=MagicMock(story={}, game_tick=0),
+            charisma=10,
+            equipped={},
+            allies=[],
+        )
         # Deliberately no npc_chat_histories attribute — matches a real
         # Player, which never initializes it (unlike MinimalPlayer).
         assert not hasattr(player, "npc_chat_histories")

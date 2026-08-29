@@ -10,6 +10,7 @@ import requests
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player
 from src.api.rate_limiter import (
+    RateLimiter,
     client_ip,
     limiter_from_env,
     rate_limited_response,
@@ -121,9 +122,12 @@ def _neutralise_github_markup(text: str) -> str:
 
 # Simple in-memory rate limiter: 10 submissions per client per hour.
 # Per-worker (not shared across Gunicorn workers) — see GitHub issue #284 and
-# `src.api.rate_limiter` for the bounded-store rationale, shared with auth.py's
-# login throttle and npc_chat.py's chat throttles.
-# Override with FEEDBACK_RATE_LIMIT_PER_HOUR; 0 disables the limiter.
+# `src.api.rate_limiter` for the bounded-store rationale, the `None`-tolerant
+# `RateLimiter.check` and the shared 429 body, all of which auth.py's login
+# throttles and npc_chat.py's chat throttles use too.
+# Override with FEEDBACK_RATE_LIMIT_PER_HOUR; 0 disables the limiter — which is
+# why `_is_rate_limited` spends this budget through `RateLimiter.check` rather
+# than dereferencing the limiter directly.
 _RATE_LIMIT = 10
 _RATE_WINDOW = 3600  # seconds
 _feedback_limiter = limiter_from_env(
@@ -155,15 +159,24 @@ def _throttle_keys(session) -> list:
 def _is_rate_limited(session) -> bool:
     """True if this client has spent its submission budget.
 
-    Counts the call against every tier unless that tier is already limited. A
-    disabled limiter (env var set to 0) is ``None`` and never limits.
+    Counts the call against every tier unless that tier is already limited.
+
+    ``FEEDBACK_RATE_LIMIT_PER_HOUR=0`` is a documented disable, and
+    ``limiter_from_env`` expresses it by returning ``None``, so the ``None``
+    case here is load-bearing rather than defensive. It is spelled
+    ``RateLimiter.check`` rather than an ``is None`` test of this module's own
+    because that polarity is easy to invert — a disabled tier read as a tripped
+    one would 429 every submission — and the module that invented ``None``
+    owns the rule for reading it. auth.py and npc_chat.py spend their budgets
+    the same way.
     """
-    if _feedback_limiter is None:
-        return False
     # List, not a generator: `any` short-circuits, and a short-circuit here
     # would leave the second tier uncounted whenever the first one tripped.
     return any(
-        [_feedback_limiter.check_and_record(key) for key in _throttle_keys(session)]
+        [
+            RateLimiter.check(_feedback_limiter, key)
+            for key in _throttle_keys(session)
+        ]
     )
 
 

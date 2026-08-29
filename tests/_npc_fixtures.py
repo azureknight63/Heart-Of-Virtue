@@ -10,16 +10,40 @@ test could not reach the prohibited-phrase branch at all), some omitted
 ``_chat_world_facts`` (so the invented-proper-noun scan silently saw an empty
 allow-list), and none of them was reusable from a sibling file.
 
+That migration is **in progress, not finished** — the number above is where it
+started, and roughly eighty of those bodies were still inline when this
+paragraph was written. Treat any count here as stale on sight and run
+``grep -c "class TestNPC" tests/test_npc_chat_llm_tier4.py`` instead; the point
+of the sentence is that new tests must not add to the pile, which does not
+depend on the exact figure.
+
 :func:`chat_npc` builds one host object carrying the mixin's *whole* documented
 attribute contract (see the module docstring of ``src/npc/_chat_llm.py``), with
 overrides for the handful a given test cares about. Because it starts from the
 full contract, a test that forgets an attribute gets a working object rather
 than an ``AttributeError`` that then gets "fixed" by narrowing the test.
+:func:`chat_player` and :func:`make_turn` do the same for the other two halves
+of a chat round: the player handed to ``chat_open``, and the turn payload an
+adapter hands back.
 
-These are plain functions rather than ``@pytest.fixture`` definitions on
-purpose: this file is not a ``conftest.py``, so fixtures declared here would not
-be auto-discovered. Each test module wraps whichever factory it needs in a
-one-line local fixture. **These should be promoted to ``tests/conftest.py``.**
+Why these stay plain functions, and stay here
+---------------------------------------------
+This file is not a ``conftest.py``, so nothing in it is auto-discovered; a test
+module imports what it needs by name. Earlier revisions carried a standing note
+saying these should be promoted into ``tests/conftest.py``. They should not, and
+the note is retired rather than acted on: ``tests/conftest.py`` is the *root*
+conftest, so a fixture added there is visible to all ~1000 tests in the suite,
+including the several hundred that have nothing to do with NPCs. Names like
+``chat_player`` and ``make_turn`` are generic enough to shadow a file-local
+fixture in a suite that never meant to use them, and the resulting failure
+points at a file the author never opened — which is the exact papercut that
+deleting the broken ``flask_app``/``flask_client``/``app_with_session``
+fixtures from the root conftest was meant to stop repeating.
+
+The import line these factories cost is the price of that isolation, and it is
+also documentation: it says on the face of the test file where its objects come
+from. If they ever do warrant fixture form, the right home is a
+``conftest.py`` under an ``npc``-scoped test directory, not the root.
 """
 
 import re
@@ -35,7 +59,90 @@ __all__ = [
     "ScriptedAdapter",
     "ready_npc",
     "wired_chat_npc",
+    "ChatPlayer",
+    "chat_player",
+    "make_turn",
 ]
+
+
+class ChatPlayer:
+    """The player side of the mixin's contract: ``universe`` and ``reputation``.
+
+    Those two, plus the optional ``npc_chat_histories``, are the *only* things
+    ``src/npc/_chat_llm.py`` ever reads off a player. See :func:`chat_player`
+    for why this is a double rather than a real ``Player``.
+    """
+
+    def __init__(self, universe=None, reputation=None):
+        self.universe = universe
+        self.reputation = {} if reputation is None else reputation
+
+
+def chat_player(persist=False, **overrides):
+    """Build the player object a chat test hands to ``chat_open``/``chat_respond``.
+
+    ``player = chat_player()`` is the ordinary case. Nothing else is needed:
+    ``universe = None`` makes ``_story()`` return an empty dict, which is what a
+    test not asserting on story state wants.
+
+    Args:
+        persist: also give the player an empty ``npc_chat_histories`` dict, for
+            a test driving the real persistence path
+            (``wired_chat_npc(adapter, persist=True)``). The mixin creates the
+            attribute itself when it is missing, so this is not required — it is
+            for tests that want to *read* the dict afterwards without depending
+            on that creation having happened.
+        **overrides: any further attribute, set on the finished instance —
+            a pre-seeded ``reputation``, a stub ``universe`` carrying a
+            ``story``, and so on.
+
+    A double rather than a real ``src.player.Player`` on purpose, and this is
+    the one place in the NPC suite where that is the right call: ``reputation``
+    and ``npc_chat_histories`` are attributes a fresh ``Player`` does not have
+    at all (CLAUDE.md lists both), so the mixin's own code creates them on
+    first write. A real ``Player`` would therefore test the creation path and
+    nothing else, while costing a full engine construction per test.
+
+    This replaces four hand-rolled copies that had already collided on names:
+    ``_Player`` existed in two files with identical bodies, ``_EndToEndPlayer``
+    was a third copy under a third name, and ``_PersistPlayer`` was the same
+    thing plus ``npc_chat_histories`` -- which is the ``persist=True`` argument.
+    """
+    player = ChatPlayer()
+    if persist:
+        player.npc_chat_histories = {}
+    for key, value in overrides.items():
+        setattr(player, key, value)
+    return player
+
+
+def make_turn(npc_text, **overrides):
+    """One structured turn payload, as an adapter's ``generate_turn`` returns it.
+
+    ``make_turn("The road north is closed.")``, or
+    ``make_turn("...", reputation_delta=3, jean_options=[...])``.
+
+    The six keys are the shape ``_qc_npc_text`` and the loquacity/reputation
+    bookkeeping read, and the defaults are the inert value for each: empty
+    flavor, ``"neutral"`` quality, no reputation movement, the ordinary
+    ``-5`` loquacity cost, no options. A test therefore states only the field
+    it is varying, which is also the field the assertion is about -- the whole
+    dict spelled out inline buries that one field among five constants.
+
+    Deliberately not validated against a schema: several tests exist precisely
+    to feed this pipeline a ``reputation_delta`` of ``"not-a-number"`` or
+    ``999999`` and watch it clamp, so every override passes through untouched.
+    """
+    turn = {
+        "npc_text": npc_text,
+        "npc_flavor": "",
+        "conversation_quality": "neutral",
+        "reputation_delta": 0,
+        "loquacity_delta": -5,
+        "jean_options": [],
+    }
+    turn.update(overrides)
+    return turn
 
 
 class ChatHost(ConversationalNPCMixin):

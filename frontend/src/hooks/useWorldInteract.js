@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import apiEndpoints from '../api/endpoints'
+import { apiErrorMessage } from '../utils/apiError'
 
 /**
  * useWorldInteract — owns InteractPanel's world-interaction API calls and the
@@ -91,7 +92,7 @@ export function useWorldInteract({
                     takenLabels.push(label)
                 } else {
                     // Stop on error
-                    setError(data.error || data.message || 'Failed to take item')
+                    setError(apiErrorMessage(data, 'Failed to take item'))
                     break
                 }
             } catch (err) {
@@ -124,7 +125,7 @@ export function useWorldInteract({
                 setInteractionOutput(response.data.message || `Took ${itemName}`)
                 if (onRefetch) await onRefetch()
             } else {
-                setError(response.data.error || 'Failed to take item')
+                setError(apiErrorMessage(response.data, 'Failed to take item'))
             }
         } catch (err) {
             setError('Network error')
@@ -211,7 +212,7 @@ export function useWorldInteract({
 
                 if (onInteractionComplete) onInteractionComplete()
             } else {
-                setError(data.error || data.message || 'Interaction failed')
+                setError(apiErrorMessage(data, 'Interaction failed'))
             }
             return data
         } catch (err) {

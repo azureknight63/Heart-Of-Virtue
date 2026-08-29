@@ -449,6 +449,10 @@ class TestMara:
         ConversationalNPCMixin._init_chat_attrs() deliberately does not
         auto-append a "chat" keyword: every mixin host already carries
         "talk", and duplicating it produced two buttons for one action.
+
+        This pins the Python half of that rule only. The map payloads are the
+        other half and can overwrite it -- see
+        ``TestMapPayloadsDoNotReintroduceTheChatKeyword`` below.
         """
         mara = Mara()
         assert mara.keywords == ["talk"]
@@ -2515,6 +2519,126 @@ class TestMerchantInitializeShopEdgeCases:
         jambo.inventory = None
         jambo.initialize_shop()
         assert jambo.inventory == []
+
+
+MAPS_DIR = PROJECT_ROOT / "src" / "resources" / "maps"
+
+#: The keyword the "one talk button" rule exists to keep out. Compared
+#: case-insensitively: the UI renders a button per keyword, so ``"Chat"`` is
+#: the same second button as ``"chat"``.
+_FORBIDDEN_KEYWORD = "chat"
+
+
+def _npc_keyword_payloads(map_data):
+    """``(coord, index, keywords)`` for every NPC payload declaring keywords.
+
+    Map JSON is ``{"(x, y)": {"npcs": [{"props": {...}}, ...], ...}}`` with a
+    ``"metadata"`` key alongside the coordinates.
+    """
+    for coord, tile in map_data.items():
+        if coord == "metadata" or not isinstance(tile, dict):
+            continue
+        for index, npc in enumerate(tile.get("npcs") or []):
+            if not isinstance(npc, dict):
+                continue
+            props = npc.get("props") or {}
+            keywords = props.get("keywords")
+            if isinstance(keywords, list):
+                yield coord, index, keywords
+
+
+class TestMapPayloadsDoNotReintroduceTheChatKeyword:
+    """The other half of ``TestMara.test_mara_keywords``.
+
+    ``Mara().keywords == ["talk"]`` pins what ``__init__`` produces, and
+    ``src/universe.py``'s deserializer then walks the map payload's ``props``
+    and ``setattr``s each one onto the instance -- ``keywords`` included. So a
+    payload carrying ``["talk", "chat"]`` overwrites the constructor's answer
+    outright and puts the duplicate button back, with the Python-side test
+    still green.
+
+    Twenty-two payloads carried ``["talk", "chat"]`` and were hand-cleaned with
+    nothing guarding the result. This is that guard.
+    """
+
+    def _maps(self):
+        paths = sorted(MAPS_DIR.glob("*.json"))
+        assert paths, f"no map JSON found under {MAPS_DIR}"
+        return paths
+
+    def test_no_npc_payload_carries_the_chat_keyword(self):
+        offences = []
+        inspected = 0
+        for path in self._maps():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for coord, index, keywords in _npc_keyword_payloads(data):
+                inspected += 1
+                if any(
+                    str(k).strip().lower() == _FORBIDDEN_KEYWORD for k in keywords
+                ):
+                    offences.append(f"{path.name} {coord} npcs[{index}]: {keywords}")
+
+        # Non-vacuity. A scanner that walked the wrong shape -- a renamed
+        # "npcs" key, props moved up a level -- would find nothing to inspect
+        # and report no offences, which is indistinguishable from a pass.
+        assert inspected, (
+            "no NPC payload with a 'keywords' list was found in any map; the "
+            "scan is looking at the wrong shape and would pass on anything"
+        )
+        assert offences == [], (
+            "map payloads reintroduce the 'chat' keyword, which "
+            "src/universe.py setattrs over whatever __init__ produced -- "
+            "giving one action two buttons: " + "; ".join(offences)
+        )
+
+    def test_talk_is_what_those_payloads_actually_carry(self):
+        """Non-vacuity, sharpened. The test above holds on maps whose NPCs
+        declare no conversational verb at all. At least some of them must
+        still offer ``talk``, or the rule it guards has no subject left."""
+        talkers = 0
+        for path in self._maps():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for _coord, _index, keywords in _npc_keyword_payloads(data):
+                if any(str(k).strip().lower() == "talk" for k in keywords):
+                    talkers += 1
+        assert talkers, "no NPC payload offers 'talk' -- nothing here to guard"
+
+    def test_the_scan_reports_a_payload_that_does_carry_it(self):
+        """Failability, on the shape the real files use. Without this, a
+        scanner that silently matched nothing would look identical to a clean
+        repository."""
+        planted = {
+            "metadata": {"name": "planted"},
+            "(1, 1)": {
+                "npcs": [
+                    {"props": {"keywords": ["talk"]}},
+                    {"props": {"keywords": ["talk", "chat"]}},
+                    {"props": {"keywords": ["talk", "Chat"]}},
+                    {"props": {}},
+                ]
+            },
+        }
+        found = list(_npc_keyword_payloads(planted))
+        assert len(found) == 3, found
+        offending = [
+            index
+            for _coord, index, keywords in found
+            if any(str(k).strip().lower() == _FORBIDDEN_KEYWORD for k in keywords)
+        ]
+        assert offending == [1, 2], "the scan missed a planted 'chat' keyword"
+
+    def test_the_scan_ignores_object_keywords(self):
+        """Objects legitimately carry many verbs (``open``, ``loot``,
+        ``examine``). Sweeping every ``keywords`` key in the file would make
+        this a test of scenery, and one day a scenery verb named ``chat``
+        would fail it for the wrong reason."""
+        planted = {
+            "(0, 0)": {
+                "objects": [{"props": {"keywords": ["chat", "read"]}}],
+                "npcs": [{"props": {"keywords": ["talk"]}}],
+            }
+        }
+        assert [kw for _c, _i, kw in _npc_keyword_payloads(planted)] == [["talk"]]
 
 
 if __name__ == "__main__":

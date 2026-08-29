@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAudio } from '../context/AudioContext'
+import { apiErrorMessage } from '../utils/apiError'
 
 /**
  * The seven allocatable attributes, in display order. Both the level-up modal
@@ -74,10 +75,10 @@ export function useAttributeAllocation({
         setAmount('1')
         setError('')
       } else {
-        setError(result?.error || failureMessage)
+        setError(apiErrorMessage(result, failureMessage))
       }
     } catch (e) {
-      setError(e.response?.data?.error || e.message || failureMessage)
+      setError(apiErrorMessage(e, e.message || failureMessage))
     } finally {
       setIsSubmitting(false)
     }

@@ -6,6 +6,7 @@ paths:
   - "src/objects.py"
   - "src/map_placeholders.py"
   - "src/resources/maps/**"
+  - "src/tilesets/**"
   - "src/resources/books/**"
   - "src/resources/outline.md"
   - "docs/lore/**"
@@ -18,7 +19,7 @@ paths:
 ## Story events (`src/story/ch0N.py`)
 - Events subclass `src.events.Event` (memory flashes: `src/story/effects.py`'s `MemoryFlash`). Output goes through the narration sink — `cprint`, `narrate`, `say`, `begin_conversation`, `enter_op`/`exit_op`, `react` from `src.narration`. Never `print`, never `input()`.
 - `narrate(*parts, color=None)` joins like `print` and color is **keyword-only**; `cprint(text, color)` is positional. A `narrate()` split can drop a sentence — re-read the output when converting prose.
-- Staged portrait dialogue: `begin_conversation(cast)` then `say()` per beat. Each stage that needs input hands the client a fresh `segments` array; the frontend resets per stage, so an event may call `begin_conversation()` more than once across `process_event_input` round-trips — but every stage-exit op needs its fade `span`, and the **canonical speaker id must not leak onto a portrait before the in-fiction naming beat** (the Gorran/Votha Krr spoiler lesson). Recurring casts go in a module-level constant (`_JEAN_SOLO`).
+- Staged portrait dialogue: `begin_conversation(cast)` then `say()` per beat. Each stage that needs input hands the client a fresh `segments` array; the frontend resets per stage, so an event may call `begin_conversation()` more than once across `process_event_input` round-trips — but every stage-exit op needs its fade `span`, and the **canonical speaker id must not leak onto a portrait before the in-fiction naming beat** (the Gorran/Votha Krr spoiler lesson). Recurring casts go in a named constant rather than a retyped tuple — but a cast used by more than one chapter belongs in **one** shared story module, not re-declared per file: `_JEAN_SOLO = [("Jean", "left", "neutral")]` is currently defined identically in `ch01.py` and `ch02.py`, and the `("Jean", "left", "neutral")` tuple itself is re-typed inside every multi-person cast in all three chapters. Collapse the shared ones into one story-level module (`src/story/effects.py` is the existing shared home) the next time you touch a chapter's casts.
 - Multi-stage events: the API mints a new `event_id` per stage; persist progress in story state so an event can't re-trigger across sessions (`Ch01ChestRumblerBattle` fires only after the chest is looted, and stays fired).
 - `skipdialog` / `testmode` / `skipintro` (`config_*.ini`) skip most descriptive prints and the intro — test both paths when an event branches on them.
 - Exceptions raised inside tile events are swallowed by the event loop. If an event "doesn't fire", check the logs before assuming its conditions failed.

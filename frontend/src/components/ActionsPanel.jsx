@@ -4,6 +4,7 @@ import { useAudio } from '../context/AudioContext'
 import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
+import { apiErrorMessage } from '../utils/apiError'
 
 /**
  * The commands this panel knows about — one entry per command, carrying both
@@ -122,7 +123,7 @@ export default function ActionsPanel({ location, onClose }) {
       if (response.data && response.data.success) {
         setTimedMessage(response.data.message || 'Game saved successfully!', 3000)
       } else {
-        setTimedMessage(response.data?.error || 'Save failed.', 3000)
+        setTimedMessage(apiErrorMessage(response.data, 'Save failed.'), 3000)
       }
     } catch (err) {
       // apiEndpoints.saves.save() rejects for any non-2xx response (403 no
@@ -131,8 +132,7 @@ export default function ActionsPanel({ location, onClose }) {
       // and gets replaced with an uninformative "Command failed." toast that
       // hides the real, often actionable, backend error message (e.g. "Maximum
       // number of manual saves reached (20)."). Surface it here instead.
-      const backendMessage = err.response?.data?.error
-      setTimedMessage(backendMessage || 'Save failed. Please try again.', 3000)
+      setTimedMessage(apiErrorMessage(err, 'Save failed. Please try again.'), 3000)
     }
   }
 
@@ -185,7 +185,14 @@ export default function ActionsPanel({ location, onClose }) {
             color: colors.gold,
             textAlign: 'center',
             boxShadow: '0 0 15px rgba(255, 170, 0, 0.2)',
-            animation: 'fadeIn 0.3s ease-out'
+            // Declared in styles/index.css. Named `fadeIn` until it was found
+            // to be declared only inside a style element local to
+            // ItemDetailDialog, so this message animated only while an item
+            // dialog happened to be open. (The literal tag name is spelled out
+            // nowhere in this comment on purpose: tests/test_security_headers.py
+            // greps the frontend for it to decide which components still inject
+            // styles, and a comment mentioning one counts as one.)
+            animation: 'fade-in-scale 0.3s ease-out'
           }}>
             {actionMessage}
           </div>

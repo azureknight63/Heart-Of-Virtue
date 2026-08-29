@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import InteractPanel from './InteractPanel';
+import InteractPanel, { actionKeywords } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
 import React from 'react';
 
@@ -1222,5 +1222,57 @@ describe('InteractPanel', () => {
       expect(screen.queryByText(/First message\./)).toBeNull();
       expect((await settledOutput()).textContent).toContain('Second message.');
     });
+  });
+});
+
+describe('actionKeywords', () => {
+  // Asserted against the pure function rather than a rendered button count,
+  // because the count cannot say WHICH of the three rules dropped a keyword.
+
+  describe('the chat-alias collapse', () => {
+    it('renders one button for an NPC serving both "Talk" and "chat"', () => {
+      // The shape 22 nomad-camp NPCs shipped with. Both keywords route to the
+      // same LLM chat panel, so the second button did nothing the first did
+      // not. A plain `new Set(keywords)` would NOT have caught this: "Talk"
+      // and "chat" are distinct strings that merely share a handler.
+      expect(
+        actionKeywords({ keywords: ['Talk', 'chat'], llm_chat_enabled: true })
+      ).toEqual(['Talk']);
+    });
+
+    it('keeps a lone "chat" — the collapse drops duplicates, not the action', () => {
+      expect(actionKeywords({ keywords: ['chat'], llm_chat_enabled: true })).toEqual(['chat']);
+    });
+
+    it('leaves both keywords alone when chat is not LLM-backed', () => {
+      // Without `llm_chat_enabled` the two are separate engine actions with
+      // separate outcomes, so collapsing them would delete a real button.
+      expect(actionKeywords({ keywords: ['Talk', 'chat'] })).toEqual(['Talk', 'chat']);
+    });
+  });
+
+  it('keeps the first spelling of a case-folded duplicate', () => {
+    expect(actionKeywords({ keywords: ['Open', 'open'] })).toEqual(['Open']);
+  });
+
+  it("drops a container's Loot and Take_all, which duplicate its contents list", () => {
+    expect(
+      actionKeywords({ is_container: true, keywords: ['Loot', 'Take_all', 'Open'] })
+    ).toEqual(['Open']);
+  });
+
+  it('keeps Loot on a target that is not a container', () => {
+    expect(actionKeywords({ keywords: ['Loot', 'Open'] })).toEqual(['Loot', 'Open']);
+  });
+
+  it('drops a keyword the engine marks as an alias of another', () => {
+    expect(
+      actionKeywords({ keywords: ['Open', 'Unlock'], action_aliases: ['Unlock'] })
+    ).toEqual(['Open']);
+  });
+
+  it('returns an empty list for a target with no keywords at all', () => {
+    expect(actionKeywords(undefined)).toEqual([]);
+    expect(actionKeywords({})).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useNpcChat, npcCast, JEAN_ID } from '../hooks/useNpcChat'
+import { useNpcChat, npcCast, JEAN_ID, CHAT_PHASES } from '../hooks/useNpcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
@@ -8,12 +8,20 @@ import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
 import { colors, spacing, fonts, commonStyles } from '../styles/theme'
 
+/** @typedef {import('../utils/conversationSegment').ConversationSegment} ConversationSegment */
+
 /**
  * ChatLoadingIndicator — shared loading affordance for the conversation
  * stage. Used both while the very first NPC line is being fetched (block
  * layout, larger text) and while a reply to Jean's chosen option is pending
  * (inline layout, stacked under the existing segments). Both call sites
  * share the same testid/aria contract so it can't drift between them.
+ *
+ * @param {Object} props
+ * @param {string} props.message - The wait being narrated, e.g. "Mynx is
+ *   gathering a reply…".
+ * @param {'block'|'inline'} [props.variant] - `block` for the empty stage,
+ *   `inline` for a reply pending under lines already on it.
  */
 function ChatLoadingIndicator({ message, variant = 'block' }) {
   const isInline = variant === 'inline'
@@ -45,6 +53,61 @@ function ChatLoadingIndicator({ message, variant = 'block' }) {
   )
 }
 
+// Marks the stage direction as a stage direction. An aside is FLAVOR, NOT
+// SPEECH — the stage renders it in its own italic slot above the line, and the
+// announcer has no typography to say that with, so it says it in words.
+// Without this a screen-reader user heard "She does not look up. Coin first."
+// as one continuous utterance from the NPC.
+const ASIDE_LEAD_IN = 'Aside:'
+
+/**
+ * Reduce a run of sentence terminators to the one that ends the sentence.
+ *
+ * Mirrors `_collapse_terminator_run` in `src/npc/_chat_llm.py`, which was
+ * added for the identical seam on the server: a run of dots three or longer is
+ * the author's own ellipsis and is kept (normalised to three); ".." never is;
+ * a mixed run keeps its first character, the terminator the sentence actually
+ * ended on.
+ *
+ * @param {string} run - One or more of `.`, `!`, `?`.
+ * @returns {string} The single terminator that should stand in its place.
+ */
+function collapseTerminatorRun(run) {
+  if (run.split('').every((char) => char === '.')) return run.length > 2 ? '...' : '.'
+  return run[0]
+}
+
+/**
+ * The aside, terminated exactly once, ready to precede the spoken line.
+ *
+ * Joining the two with a bare `'. '` produced "She does not look up.. Coin
+ * first." whenever the flavor already ended in punctuation — most of the time,
+ * since the server terminates every line it emits.
+ *
+ * @param {string} flavor - The stage direction as the server wrote it.
+ * @returns {string} The aside with its lead-in and one terminator.
+ */
+function announcedAside(flavor) {
+  const trimmed = `${ASIDE_LEAD_IN} ${flavor}`.trim()
+  const run = trimmed.match(/[.!?]+$/)
+  const body = run ? trimmed.slice(0, -run[0].length) : trimmed
+  return body + collapseTerminatorRun(run ? run[0] : '.')
+}
+
+/**
+ * What a screen reader should hear for one beat: the aside first, named as an
+ * aside, then the words actually spoken.
+ *
+ * @param {ConversationSegment} segment - The beat being announced.
+ * @returns {string} The announcement, empty when there is nothing to say.
+ */
+function announcementFor(segment) {
+  const line = segment.text || ''
+  const flavor = segment.flavor || ''
+  if (!flavor) return line
+  return line ? `${announcedAside(flavor)} ${line}` : announcedAside(flavor)
+}
+
 /**
  * ReplyAnnouncer — the screen-reader channel for the feature's actual payload.
  *
@@ -60,13 +123,15 @@ function ChatLoadingIndicator({ message, variant = 'block' }) {
  *
  * Visually hidden rather than `display: none`, which would take it out of the
  * accessibility tree along with everything else.
+ *
+ * @param {Object} props
+ * @param {ConversationSegment[]} props.segments - The conversation so far;
+ *   only the newest beat is ever announced.
  */
 function ReplyAnnouncer({ segments }) {
   const latest = segments[segments.length - 1]
   const announced =
-    latest && latest.speaker && latest.speaker !== JEAN_ID
-      ? [latest.flavor, latest.text].filter(Boolean).join('. ')
-      : ''
+    latest && latest.speaker && latest.speaker !== JEAN_ID ? announcementFor(latest) : ''
 
   return (
     <div
@@ -95,6 +160,12 @@ function ReplyAnnouncer({ segments }) {
  * PreviousLineRecap — the "Previously" strip showing the turn immediately
  * before the one on stage (see the comment above its call site for why it
  * exists). Renders nothing when there is no prior turn yet.
+ *
+ * @param {Object} props
+ * @param {?ConversationSegment} props.segment - The beat before the one on
+ *   stage, or null on the opening turn.
+ * @param {Array<{id: string, name: string, side: string}>} props.cast - The
+ *   roster the segment's `speaker` is resolved against.
  */
 function PreviousLineRecap({ segment, cast }) {
   if (!segment) return null
@@ -119,6 +190,9 @@ function PreviousLineRecap({ segment, cast }) {
  * Loquacity bar colour, purely as a function of how much conversation is left.
  * Zero (including the malformed-payload `max: 0` case, which renders a
  * zero-width bar anyway) reads as spent, same as any other empty meter.
+ *
+ * @param {number} percentage - Conversation remaining, 0-100.
+ * @returns {string} A colour from the theme palette.
  */
 function barColorFor(percentage) {
   if (percentage > 60) return colors.primary // Green
@@ -132,6 +206,9 @@ function barColorFor(percentage) {
  * closes over nothing, so keeping it inside the component only meant rebuilding
  * the closure on every typewriter re-render and hiding a lookup table inside a
  * render body.
+ *
+ * @param {?{attitude: string}} relationship - The served standing badge.
+ * @returns {string} A colour from the theme palette.
  */
 function relationshipColorFor(relationship) {
   switch (relationship?.attitude) {
@@ -147,7 +224,12 @@ function relationshipColorFor(relationship) {
   }
 }
 
-/** LoquacityBar — how much conversation the NPC has left, as a meter. */
+/**
+ * LoquacityBar — how much conversation the NPC has left, as a meter.
+ *
+ * @param {Object} props
+ * @param {number} props.percentage - Conversation remaining, 0-100.
+ */
 function LoquacityBar({ percentage }) {
   return (
     <div
@@ -172,7 +254,13 @@ function LoquacityBar({ percentage }) {
   )
 }
 
-/** RelationshipBadge — the NPC's standing towards Jean: emoji, attitude, trust. */
+/**
+ * RelationshipBadge — the NPC's standing towards Jean: emoji, attitude, trust.
+ *
+ * @param {Object} props
+ * @param {?{emoji: string, attitude: string, trust_level: string}} props.relationship -
+ *   The served standing badge; absent until the first turn lands.
+ */
 function RelationshipBadge({ relationship }) {
   if (!relationship) return null
   return (
@@ -200,19 +288,26 @@ function RelationshipBadge({ relationship }) {
  *
  * The copy is the hook's own fixed string; the server's `error` field carries
  * diagnostic detail and is only ever logged.
+ *
+ * Wears `commonStyles.errorBox` rather than a hand-copied version of it — the
+ * same house box `EventDialog` and `InteractPanel` spread. Re-spelling it here
+ * meant a raw `rgba(255, 68, 68, 0.1)` (which is `colors.bg.negative`) living
+ * in a component file, free to drift from the two panels beside it.
+ *
+ * @param {Object} props
+ * @param {?string} props.error - Fixed player-facing copy, or null for no failure.
+ * @param {?Function} props.retry - Re-issues the failed call; absent when the
+ *   failure is not retryable.
+ * @param {boolean} props.disabled - Whether Retry is inert (a retry re-issues
+ *   a PAID request, so it is gated like every other control here).
  */
 function ChatErrorBox({ error, retry, disabled }) {
   if (!error) return null
   return (
     <div
       style={{
-        color: colors.danger,
-        fontFamily: fonts.main,
-        fontSize: '12px',
+        ...commonStyles.errorBox,
         padding: spacing.md,
-        backgroundColor: 'rgba(255, 68, 68, 0.1)',
-        border: `1px solid ${colors.danger}`,
-        borderRadius: '6px',
         marginBottom: spacing.md,
       }}
     >
@@ -237,7 +332,20 @@ function ChatErrorBox({ error, retry, disabled }) {
   )
 }
 
-/** ConversationActionRow — the "View History" / "End Conversation" button row. */
+/**
+ * ConversationActionRow — the "View History" / "End Conversation" button row.
+ *
+ * @param {Object} props
+ * @param {string} props.phase - One of `CHAT_PHASES`.
+ * @param {boolean} props.loading - Whether a request is in flight. Derived
+ *   from `phase` in the hook, so it already covers the opening turn — the
+ *   gate here used to spell out `loading || phase === 'opening'`, both halves
+ *   of the same fact.
+ * @param {boolean} props.historyOpen - Whether the transcript is stacked over
+ *   the panel; nothing behind it may be actioned.
+ * @param {Function} props.onOpenHistory
+ * @param {Function} props.onEndConversation
+ */
 function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onEndConversation }) {
   return (
     <div style={{ display: 'flex', gap: spacing.md, flexWrap: 'wrap' }}>
@@ -250,12 +358,12 @@ function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onE
       >
         View History
       </GameButton>
-      {phase !== 'ended' && (
+      {phase !== CHAT_PHASES.ENDED && (
         <GameButton
           variant="secondary"
           size="medium"
           onClick={onEndConversation}
-          disabled={loading || phase === 'opening' || historyOpen}
+          disabled={loading || historyOpen}
           style={{
             flex: '2 1 220px',
             opacity: 0.7,
@@ -303,7 +411,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
   const handleCloseHistory = () => {
     setHistoryOpen(false)
-    if (phase === 'ended') onClose()
+    if (phase === CHAT_PHASES.ENDED) onClose()
   }
 
   const loquacityPercentage = loquacity.max > 0 ? (loquacity.current / loquacity.max) * 100 : 0
@@ -394,7 +502,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       <ChatErrorBox error={error} retry={retry} disabled={loading || historyOpen} />
 
       {/* Options */}
-      {phase === 'waiting_jean' && !error && (
+      {phase === CHAT_PHASES.WAITING_JEAN && !error && (
         <div
           style={{
             display: 'flex',
@@ -457,7 +565,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       )}
 
       {/* Auto-close on conversation end */}
-      {phase === 'ended' && (
+      {phase === CHAT_PHASES.ENDED && (
         <GameText
           as="div"
           variant="muted"

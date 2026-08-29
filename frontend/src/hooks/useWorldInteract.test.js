@@ -147,6 +147,19 @@ describe('useWorldInteract', () => {
       expect(result.current.takingAllItems).toBe(false)
     })
 
+    it('surfaces the prose of a throttled response, not the "rate_limited" token', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: false, error: 'rate_limited', message: 'Slow down — too many actions.' },
+      })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.takeAll([{ id: 'item1', name: 'Gold Coin', count: 1 }])
+      })
+
+      expect(result.current.error).toBe('Slow down — too many actions.')
+    })
+
     it('stops on the first failure and surfaces the error', async () => {
       apiEndpoints.world.interact
         .mockResolvedValueOnce({ data: { success: true } })
@@ -294,7 +307,7 @@ describe('useWorldInteract', () => {
       expect(result.current.interactionOutput).toBe('Action completed.')
     })
 
-    it('sets an error on failure, preferring data.error then data.message then a default', async () => {
+    it('sets an error on failure', async () => {
       apiEndpoints.world.interact.mockResolvedValue({ data: { success: false, error: 'You cannot do that.' } })
       const { result } = renderHook(() => useWorldInteract())
 
@@ -303,6 +316,22 @@ describe('useWorldInteract', () => {
       })
 
       expect(result.current.error).toBe('You cannot do that.')
+    })
+
+    it('surfaces the prose of a throttled response, not the "rate_limited" token', async () => {
+      // `rate_limited_response()` (src/api/rate_limiter.py) puts a MACHINE
+      // token in `error` and the player-facing half in `message`. This site
+      // used to read `data.error || data.message`, so the token won.
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: false, error: 'rate_limited', message: 'Slow down — too many actions.' },
+      })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.interact({ id: 'npc1', count: 1 }, 'attack', null)
+      })
+
+      expect(result.current.error).toBe('Slow down — too many actions.')
     })
 
     it('falls back to "Interaction failed" when both error and message are absent', async () => {

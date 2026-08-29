@@ -15,11 +15,10 @@ sys.path.insert(0, PROJECT_ROOT_STR)
 if "utils" in sys.modules and not hasattr(sys.modules["utils"], "__path__"):
     sys.modules.pop("utils")
 
-# Disable LLM and reduce delays for tests
-os.environ["MYNX_LLM_ENABLED"] = "0"
+# Reduce delays for tests. The LLM gates themselves are pinned further down,
+# after .env has been loaded — see the sweep below for why that ordering is
+# load-bearing.
 os.environ["MYNX_FALLBACK_DELAY"] = "0"
-# Prevent CombatStrategist from making discovery requests
-os.environ["MYNX_LLM_PROVIDER"] = "none"
 # Blank the REAL provider credentials .env loads at import (ai/llm_client.py,
 # src/api/db.py): the provider chain treats a present key as dialable, so a
 # leaked key would let a unit test spend real quota. Set to "" rather than
@@ -33,10 +32,56 @@ os.environ["MYNX_LLM_PROVIDER"] = "none"
 # ai.llm_client runs its load_project_env() first, so .env is fully loaded
 # before the loop below overwrites it — assignment wins over override=False
 # either way.
-from tests.llm_doubles import PROVIDER_KEY_ENVS  # noqa: E402
+#
+# CREDENTIAL_ENVS, not PROVIDER_KEY_ENVS: GITHUB_TOKEN rides in on the same
+# .env, and feedback.py's issue-filing path has no TESTING guard by design, so
+# a live token plus a test that forgets to patch requests.post files a REAL
+# GitHub issue. That is not hypothetical — it is how the harness once filed 20
+# of them. tools/bug_hunt.py blanks it for its own runs; until now the pytest
+# suite did not, leaving "the author remembered to patch" as the only control.
+from tests.llm_doubles import CREDENTIAL_ENVS  # noqa: E402
 
-for _key_env in PROVIDER_KEY_ENVS:
+for _key_env in CREDENTIAL_ENVS:
     os.environ[_key_env] = ""
+
+# Neutralise every per-feature LLM gate, host and model the environment is
+# carrying, then pin the three the suite relies on by name.
+#
+# Pinning MYNX_LLM_ENABLED=0 and MYNX_LLM_PROVIDER=none used to be the whole of
+# it, on the assumption that every adapter read those. That stopped being true
+# when adapters started declaring their own variables: GenericLLMClient
+# subclasses name a gate/provider/model trio and resolve it with "first
+# non-empty wins", so CombatLLMAdapter's ("COMBAT_LLM_ENABLED",
+# "MYNX_LLM_ENABLED") means a developer whose .env sets COMBAT_LLM_ENABLED=1
+# walks straight past both pins — measured: _resolve_enabled() True, provider
+# groq, model whatever .env named, on a plain `pytest` run. The comment that
+# used to sit on the MYNX_LLM_PROVIDER line claiming it stopped the combat
+# strategist from making discovery requests had simply gone stale.
+#
+# Swept by suffix rather than from a list of adapter classes. The names follow
+# a convention (<FEATURE>_LLM_ENABLED / _PROVIDER / _MODEL) that all eight
+# declared names in the tree obey, and a suffix sweep needs no imports, so a
+# feature adapter added tomorrow — or one whose module is mid-refactor and does
+# not currently import — is covered anyway. Sweeping only what is *present* is
+# sufficient: ai.llm_client's load_project_env() has already run by this line
+# (that is what the import above triggers), so anything .env can contribute is
+# in os.environ now, and a later load_dotenv(override=False) cannot add to it.
+#
+# Assigned "" rather than popped, for the reason spelled out above: a deleted
+# key is refilled from .env, an assigned empty one is not. Empty reads as unset
+# to every consumer — _first_env() strips and skips it, and the enabled gate
+# compares against ("1", "true", "True").
+_GATE_SUFFIXES = ("_LLM_ENABLED", "_LLM_PROVIDER", "_LLM_MODEL")
+for _name in [k for k in os.environ if k.endswith(_GATE_SUFFIXES)]:
+    os.environ[_name] = ""
+
+# The explicit pins, applied after the sweep so it cannot blank them.
+# "none" is PROVIDER_DISABLED and is stronger than empty: empty falls
+# through to DEFAULT_PROVIDER ("ollama"), so a test that constructs an
+# adapter with `enabled` forced True would probe a local Ollama if one
+# happens to be running. "none" leaves nothing to probe.
+os.environ["MYNX_LLM_ENABLED"] = "0"
+os.environ["MYNX_LLM_PROVIDER"] = "none"
 os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
 # Same reason, different cost: .env ships LOG_LEVEL=DEBUG, so once db.py's
 # load_dotenv() has run the whole suite pays formatting and stderr writes for
@@ -245,33 +290,22 @@ def gorran_npc():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Flask App Fixtures for API Testing
+# Flask app fixtures for API testing: see `make_api_app` below.
 # ─────────────────────────────────────────────────────────────────────────────
-
-@pytest.fixture
-def flask_app():
-    """Create a Flask app instance for testing."""
-    from src.api.app import create_app
-    from src.api.config import TestingConfig
-    app = create_app(TestingConfig)
-    return app
-
-
-@pytest.fixture
-def flask_client(flask_app):
-    """Create a Flask test client."""
-    return flask_app.test_client()
-
-
-@pytest.fixture
-def app_with_session(flask_app):
-    """Create a Flask app with test session support."""
-    with flask_app.app_context():
-        from src.api.services.session_manager import SessionManager
-        # Initialize session manager if needed
-        session_mgr = SessionManager()
-        flask_app.session_manager = session_mgr
-    return flask_app
+# There were three more here — `flask_app`, `flask_client` and
+# `app_with_session` — and all three were broken from the day they were written.
+# `flask_app` did `app = create_app(TestingConfig)`, but `create_app` returns
+# `(app, socketio)`, so the fixture yielded a 2-tuple and the other two
+# AttributeError'd on `.test_client()` / `.app_context()` the moment anything
+# asked for them. Nothing ever did; the two apparent `app_with_session`
+# consumers are class-local fixtures of the same name that unpack the tuple
+# themselves.
+#
+# They are not replaced, because `make_api_app` already is the replacement and
+# says so in its docstring. Deleted rather than fixed on purpose: three fixtures
+# with the most obvious names in the suite, sitting in the file every test file
+# loads, all of them landmines. A new test file that guessed `flask_client`
+# would have got an AttributeError from a conftest it never opened.
 
 
 # ─────────────────────────────────────────────────────────────────────────────

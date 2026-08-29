@@ -109,7 +109,7 @@ except Exception as _constants_import_error:  # pragma: no cover - no AI stack
     # ImportError. But a genuine error *inside* ai.llm_client degrades the chat
     # to hard-coded numbers and used to do it invisibly, so say so once, with
     # the exception type — the fallbacks below are only correct while they
-    # agree with llm_client, which tests/test_npc_chat_round_five.py asserts
+    # agree with llm_client, which tests/test_npc_chat_turn_pipeline.py asserts
     # by reading both halves of this guard out of the source.
     logger.warning(
         "ai.llm_client constants unavailable (%s: %s); falling back to the "

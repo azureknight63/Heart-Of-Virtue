@@ -71,10 +71,11 @@ describe('useNpcChat', () => {
     // tests, so without this the "each URL only once" counts below would
     // depend on which describe block ran first.
     __resetPreloadedPortraits()
-    // The hook logs the raw server detail on every failure path (it is never
-    // rendered — that text is provider-SDK exception detail). Silenced so the
-    // expected-failure tests do not spew, and spied so "logged, not shown" is
-    // actually assertable.
+    // The hook logs the server's detail on every failure path and never
+    // renders it: the field is diagnostic (endpoint, model id, status body,
+    // request id) and the hook holds whether or not the server sanitised it.
+    // Silenced so the expected-failure tests do not spew, and spied so
+    // "logged, not shown" is actually assertable.
     consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     npcChat.open.mockResolvedValue({ data: openData })
     npcChat.respond.mockResolvedValue({
@@ -422,6 +423,11 @@ describe('useNpcChat', () => {
         makeJeanOption({ text: 'Peace, Gorran.', tone: 'open' }),
       ])
       expect(result.current.conversationCast).toEqual(npcCast('Gorran', 'Gorran'))
+      // Dropped, NOT ended. `npc_chat_end` pops `_active_chat_npc_id`
+      // unconditionally, and Gorran's `/open` has already claimed it — so
+      // ending Mynx's superseded conversation would clear GORRAN's marker.
+      // This is the one case that must not be treated like an unmount.
+      expect(npcChat.end).not.toHaveBeenCalled()
     })
 
     it('ignores a superseded /open REJECTION rather than showing an error for the old NPC', async () => {
@@ -483,6 +489,52 @@ describe('useNpcChat', () => {
 
       await waitFor(() => expect(result.current.phase).toBe('failed'))
       expect(consoleError).toHaveBeenCalledWith('[npcChat] open failed:', 'Network Error')
+    })
+
+    it('logs a string, never the error object, when nothing else is available', async () => {
+      // utils/logger mirrors console arguments to /api/logs/browser and
+      // JSON-stringifies any object it is handed — and `AxiosError.toJSON()`
+      // carries `config.headers.Authorization`, the Bearer session id, with it.
+      npcChat.open.mockRejectedValue({ config: { headers: { Authorization: 'Bearer sekrit' } } })
+      const { result } = mount()
+
+      await waitFor(() => expect(result.current.phase).toBe('failed'))
+      const [, detail] = consoleError.mock.calls.find(([label]) => label === '[npcChat] open failed:')
+      expect(typeof detail).toBe('string')
+      expect(detail).not.toContain('sekrit')
+    })
+
+    it('logs the prose in `message` ahead of the machine token in `error`', async () => {
+      // A 429 from `rate_limited_response()` puts the token "rate_limited" in
+      // `error` and the prose in `message`. Reading `error` first would log the
+      // token and drop the only useful half — and nothing pinned that order.
+      npcChat.open.mockRejectedValue({
+        response: {
+          status: 429,
+          data: { error: 'rate_limited', message: 'Slow down — too many messages.' },
+        },
+      })
+      const { result } = mount()
+
+      await waitFor(() => expect(result.current.phase).toBe('failed'))
+      expect(consoleError).toHaveBeenCalledWith(
+        '[npcChat] open failed:',
+        'Slow down — too many messages.'
+      )
+    })
+
+    it('tells a throttled player to wait instead of blaming the NPC', async () => {
+      npcChat.open.mockRejectedValue({
+        response: { status: 429, data: { error: 'rate_limited', message: 'Slow down.' } },
+      })
+      const { result } = mount()
+
+      await waitFor(() => expect(result.current.phase).toBe('failed'))
+      // Our copy, not the server's — the fixed-string policy holds for a 429
+      // exactly as it does for every other failure.
+      expect(result.current.error).toBe('Too many messages — give it a moment.')
+      expect(result.current.error).not.toBe('Failed to open conversation')
+      expect(result.current.error).not.toContain('Slow down')
     })
 
     it('exposes a retry that clears the failed phase on success', async () => {
@@ -718,6 +770,23 @@ describe('useNpcChat', () => {
       // remaining choice for the rest of the conversation.
       expect(result.current.error).toBeNull()
     })
+
+    it('tells a throttled player to wait rather than that the NPC went quiet', async () => {
+      // The turn was never delivered: `npc_chat.py` rejected it before the NPC
+      // saw it. "NPC did not respond" beside a live Retry invited the player to
+      // keep clicking straight back into the throttle.
+      npcChat.respond.mockRejectedValue({
+        response: { status: 429, data: { error: 'rate_limited', message: 'Slow down.' } },
+      })
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+
+      expect(result.current.error).toBe('Too many messages — give it a moment.')
+      expect(result.current.phase).toBe('waiting_jean')
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -837,7 +906,13 @@ describe('useNpcChat', () => {
   })
 
   describe('unmount safety', () => {
-    it('drops an /open response that lands after unmount', async () => {
+    it('ends the conversation an /open opened for a panel that is already gone', async () => {
+      // The last door left open to a leaked `_active_chat_npc_id`. The panel is
+      // dismissed mid-`/open`; the server opens the conversation anyway and
+      // sends back an `npc_key` that used to be dropped on the floor, so `/end`
+      // was never sent and `_recover_npc_loquacity` (game_service.py) went on
+      // reading "a conversation is in progress" until the next move self-healed
+      // the marker.
       const pending = deferred()
       npcChat.open.mockReturnValue(pending.promise)
       const { unmount } = mount()
@@ -845,8 +920,68 @@ describe('useNpcChat', () => {
       unmount()
       await act(async () => { pending.resolve({ data: openData }) })
 
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
       // No setState on an unmounted hook, and nothing schedules a close.
       expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('ends a live conversation when the panel is taken off screen without a dismissal', async () => {
+      // InteractPanel drops `selectedTarget` when the room resyncs, and the
+      // chat panel is keyed per NPC — both unmount it without ever routing
+      // through `handleEndConversation`.
+      const { unmount } = await mountOpened()
+
+      unmount()
+
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+    })
+
+    it('does not re-end a conversation the server already closed', async () => {
+      // `npc_chat_respond` pops the marker itself when it reports
+      // `conversation_ended`, so the auto-close on the way out has nothing left
+      // to end and must not spend a request saying so.
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({
+          npc_response: 'Farewell.',
+          jean_options: [],
+          conversation_ended: true,
+        }),
+      })
+      const { result, unmount } = await mountOpened()
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+      expect(result.current.phase).toBe('ended')
+
+      unmount()
+
+      expect(npcChat.end).not.toHaveBeenCalled()
+    })
+
+    it('sends exactly one /end when a dismissal is what unmounted the panel', async () => {
+      const { result, unmount } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleEndConversation()
+      })
+      unmount()
+
+      expect(npcChat.end).toHaveBeenCalledTimes(1)
+    })
+
+    it('logs a failed post-dismissal /end rather than swallowing it', async () => {
+      npcChat.end.mockRejectedValue(new Error('expired key'))
+      const { unmount } = await mountOpened()
+
+      unmount()
+      // The rejection settles a microtask later, with nothing on screen to
+      // await against.
+      await act(async () => {})
+
+      expect(consoleError).toHaveBeenCalledWith(
+        '[npcChat] end after dismissal failed:',
+        'expired key'
+      )
     })
 
     it('drops an /open rejection that lands after unmount', async () => {

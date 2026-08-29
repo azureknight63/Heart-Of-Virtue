@@ -28,6 +28,8 @@ This is a plain module, not a ``conftest.py``, so nothing here is auto-injected;
 docstring). Sibling harness for the NPC/chat mixin: ``tests/_npc_fixtures.py``.
 """
 
+from typing import Any, Dict, Mapping, Optional, Type, TypeVar
+
 from ai.llm_client import (
     _OPENAI_COMPATIBLE_PROVIDERS,
     GenericLLMClient,
@@ -74,23 +76,63 @@ class Resp:
     ordering the larger set of call sites already used.
     """
 
-    def __init__(self, status=200, payload=None, text="", headers=None):
+    def __init__(
+        self,
+        status: int = 200,
+        payload: Optional[Dict[str, Any]] = None,
+        text: str = "",
+        headers: Optional[Dict[str, str]] = None,
+        json_error: Optional[BaseException] = None,
+    ) -> None:
         self.status_code = status
         self._payload = payload or {
             "choices": [{"message": {"content": '{"npc_text": "Fine."}'}}]
         }
         self.text = text
         self.headers = headers or {}
+        self._json_error = json_error
 
-    def json(self):
+    def json(self) -> Dict[str, Any]:
+        """The decoded body, or ``json_error`` raised.
+
+        A real ``requests`` response raises out of ``.json()`` whenever the
+        body is not JSON -- an HTML error page from a proxy, a truncated
+        stream, an empty 200. Two production branches exist for exactly that
+        and neither was reachable from this class until ``json_error`` was
+        added: ``_ollama_chat``'s ``except Exception: data = None``, which then
+        falls back to ``r.text``, and ``NpcChatLLMAdapter._call_llm``'s chain
+        safety net, which must move to the next provider rather than let one
+        malformed body abort the round. Both were covered only by ad-hoc
+        ``MagicMock(json=Mock(side_effect=...))`` in a single file.
+
+        Pass any exception instance: ``Resp(json_error=ValueError("no json"))``.
+        ``requests`` raises its own ``JSONDecodeError`` in real life, but both
+        call sites catch bare ``Exception``, so the type is not part of the
+        contract under test and pinning it here would only couple the double to
+        the ``requests`` version.
+        """
+        if self._json_error is not None:
+            raise self._json_error
         return self._payload
 
-    def raise_for_status(self):
+    def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise RuntimeError("HTTP %s" % self.status_code)
 
 
-def _build(cls, provider, model, api_key, overrides):
+#: Any ``GenericLLMClient`` subclass, so :func:`_build` returns the class it
+#: was handed rather than the base class -- which is the whole reason the two
+#: public factories below have distinct return types.
+_ClientT = TypeVar("_ClientT", bound=GenericLLMClient)
+
+
+def _build(
+    cls: Type[_ClientT],
+    provider: Optional[str],
+    model: Optional[str],
+    api_key: Optional[str],
+    overrides: Mapping[str, Any],
+) -> _ClientT:
     obj = cls.__new__(cls)
     obj.enabled = True
     if provider is not None:
@@ -105,7 +147,12 @@ def _build(cls, provider, model, api_key, overrides):
     return obj
 
 
-def make_chat_adapter(provider="openrouter", model="m", api_key="or-key", **overrides):
+def make_chat_adapter(
+    provider: Optional[str] = "openrouter",
+    model: Optional[str] = "m",
+    api_key: Optional[str] = "or-key",
+    **overrides: Any,
+) -> NpcChatLLMAdapter:
     """An ``NpcChatLLMAdapter`` built without running ``__init__``.
 
     ``__init__`` reads the environment and can start provider discovery, so
@@ -127,7 +174,12 @@ def make_chat_adapter(provider="openrouter", model="m", api_key="or-key", **over
     return _build(NpcChatLLMAdapter, provider, model, api_key, overrides)
 
 
-def make_generic_client(provider="openrouter", model="m", api_key="k", **overrides):
+def make_generic_client(
+    provider: Optional[str] = "openrouter",
+    model: Optional[str] = "m",
+    api_key: Optional[str] = "k",
+    **overrides: Any,
+) -> GenericLLMClient:
     """:func:`make_chat_adapter` for the ``GenericLLMClient`` base class.
 
     Separate from the adapter factory because the two classes are tested for
@@ -186,7 +238,7 @@ def isolate_llm_class_state(monkeypatch, tmp_path):
     GenericLLMClient._nightly_refresh_started = False
 
 
-def child_env(**overrides):
+def child_env(**overrides: str) -> Dict[str, str]:
     """A subprocess environment that inherits PATH etc. but no live credentials.
 
     ``os.environ.copy()`` alone hands the child everything ``python-dotenv``

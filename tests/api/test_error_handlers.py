@@ -5,6 +5,15 @@ handlers are registered — see `src/api/handlers/error_handler.py`. Every
 other status code (400/401/403/422/429/503) is produced by routes/middleware
 building their own JSON response inline (issue #437), so there is no global
 handler to test for those; asserting on them here would test dead code.
+
+NOTHING IN THIS FILE RUNS. `pytest.ini`'s `norecursedirs` excludes
+`tests/api`, so this module is collected only when the directory is named
+explicitly. Do not add a guard here expecting it to hold: the security
+assertion that used to live here (a 500's `description` must not reach the
+client) has been moved to `tests/test_error_handler_logging.py`, along with
+the message-field check, because that file is inside the walked suite. Every
+remaining test below is duplicated by `TestErrorHandler` in
+`tests/test_api_routes_and_serializers.py`, which does run.
 """
 
 import sys
@@ -48,16 +57,6 @@ class TestErrorHandlers:
 
             abort(500)
 
-        @app.route("/test_500_detail")
-        def test_500_detail():
-            from werkzeug.exceptions import InternalServerError
-
-            # Simulate an internal error whose description carries sensitive
-            # detail (stack/path info) that must never reach the client.
-            raise InternalServerError(
-                description="secret-db-password=hunter2 at /etc/private/config.py"
-            )
-
         @app.route("/test_exception")
         def test_exception():
             raise Exception("Test exception")
@@ -85,24 +84,9 @@ class TestErrorHandlers:
         assert data["success"] is False
         assert "Internal server error" in data["error"]
 
-    def test_500_error_does_not_leak_exception_detail(self, client):
-        """Regression test for issue #262: the 500 handler must return a
-        generic message and never echo str(error) / exception detail."""
-        response = client.get("/test_500_detail")
-        assert response.status_code == 500
-        data = response.get_json()
-        assert data["success"] is False
-        assert data["message"] == "An unexpected error occurred"
-        assert "secret-db-password" not in data["message"]
-        assert "hunter2" not in data["message"]
-        assert "/etc/private/config.py" not in data["message"]
-
-    def test_error_contains_message_field(self, client):
-        """Test that all error responses contain a message field."""
-        response = client.get("/test_404")
-        data = response.get_json()
-        assert "message" in data
-        assert isinstance(data["message"], str)
+    # The issue #262 leak regression and the message-field check that used to
+    # sit here now live in tests/test_error_handler_logging.py, inside the
+    # walked suite. See this module's docstring.
 
     def test_generic_exception_handler(self, client):
         """Test generic exception handler for unhandled exceptions."""
