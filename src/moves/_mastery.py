@@ -23,6 +23,72 @@ def _is_highest(p, stat_val):
     return stat_val == highest and stats.count(highest) == 1
 
 
+def _proximity_of(user):
+    """The user's ``combat_proximity`` when it is a real distance mapping.
+
+    Returns ``None`` when the user carries no usable proximity data (a
+    combatant not yet wired into a fight, or a degraded/mock user). Callers
+    read that as *range unknown* and decline to block, the same trust rule
+    ``Move._hostiles_in_proximity`` applies to a missing ``combat_list``:
+    a gate that fires on absent information would silently disable the move
+    outside real combat.
+    """
+    proximity = getattr(user, "combat_proximity", None)
+    return proximity if isinstance(proximity, dict) else None
+
+
+def _reaches(move, target):
+    """True when ``target`` stands inside ``move.mvrange``.
+
+    Bounds are **inclusive at both ends** — ``range_min <= distance <=
+    range_max`` — matching ``Move.standard_viability_attack``. A move that
+    used strict bounds would be uncastable at exactly its own stated reach.
+
+    A target absent from a populated ``combat_proximity`` is out of range,
+    not unknown: the player's proximity map holds every combatant in the
+    fight, so a miss there means the pair has no measured distance.
+    """
+    proximity = _proximity_of(move.user)
+    if proximity is None:
+        return True
+    if target is None or target is move.user:
+        return False
+    distance = proximity.get(target)
+    if distance is None:
+        return False
+    range_min, range_max = move.mvrange
+    return range_min <= distance <= range_max
+
+
+def _in_range(move):
+    """Reachability half of a targeted mastery move's ``viable()``.
+
+    None of the mastery moves checked ``mvrange`` at all, so every one of
+    the three targeted ones was castable — and, for Killing Precision, a
+    guaranteed hit — against a combatant at any distance the client cared
+    to name.
+
+    When a target is already committed (``move.target`` is some combatant
+    other than the user: the adapter assigns it before ``execute()``, and
+    ``Move._viable_for`` swaps one in for a per-target preview) the gate is
+    that target's own distance. Before a target is committed the move is
+    offered whenever *some* hostile stands inside the band, which is what
+    ``standard_viability_attack`` does; allies are excluded via
+    ``Move._hostiles_in_proximity`` so a friend standing next to Jean
+    cannot make an attack look reachable.
+    """
+    target = move.target
+    if target is not None and target is not move.user:
+        return _reaches(move, target)
+    if _proximity_of(move.user) is None:
+        return True
+    range_min, range_max = move.mvrange
+    return any(
+        range_min <= distance <= range_max
+        for _, distance in move._hostiles_in_proximity()
+    )
+
+
 class Pulverize(Move):
     """Strength mastery: devastating overhead blow that ignores all protection."""
     display_name = 'Pulverize'
@@ -77,13 +143,28 @@ class Pulverize(Move):
     def viable(self):
         if not getattr(self.user, "in_combat", False):
             return False
-        return _is_highest(self.user, self.user.strength)
+        if not _is_highest(self.user, self.user.strength):
+            return False
+        # Reachability: a targeted strike is not castable against a
+        # combatant outside mvrange (see _in_range).
+        return _in_range(self)
 
     def execute(self, player):
         self.prep_colors()
         narrate(self.stage_announce[1])
         target = self.target
-        hit_chance = to_hit_chance(player, target, floor=5)
+        # Reachability re-check at strike time: a target that has left the
+        # move's band during its wind-up — or one the client named directly,
+        # bypassing the range-filtered target list — cannot be struck. Mirrors
+        # the `if self.viable()` / `hit_chance = -1` auto-miss that
+        # `Move.standard_execute_attack` applies in _base.py, but scoped to
+        # range alone: the stat-dominance half of viable() can flip mid-move
+        # (Secret Plans buffs strength/finesse/speed by 30%), and a buff must
+        # not turn a landed strike into a miss.
+        if _reaches(self, target):
+            hit_chance = to_hit_chance(player, target, floor=5)
+        else:
+            hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         roll = random.randint(0, 100)
@@ -165,7 +246,11 @@ class KillingPrecision(Move):
     def viable(self):
         if not getattr(self.user, "in_combat", False):
             return False
-        return _is_highest(self.user, self.user.finesse)
+        if not _is_highest(self.user, self.user.finesse):
+            return False
+        # Reachability: a targeted strike is not castable against a
+        # combatant outside mvrange (see _in_range).
+        return _in_range(self)
 
     def preview_hit_chance(self, target=None):
         """Killing Precision never misses (see execute(): no roll, no
@@ -195,8 +280,15 @@ class KillingPrecision(Move):
         player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)
-        # Always hits — no roll, but parry can still work
-        if functions.check_parry(target):
+        # Always hits — no roll, but parry can still work. The guarantee is
+        # deliberate (an endgame payoff gated behind finesse > 30) and is NOT
+        # weakened here; it is only made conditional on the target being
+        # reachable, which the move never checked. Without this, a client that
+        # named any combatant — at any distance — got a guaranteed >= 1 damage
+        # hit, since damage is floored at 1 and no roll exists to fail.
+        if not _reaches(self, target):
+            self.miss()
+        elif functions.check_parry(target):
             self.parry()
         else:
             self.hit(damage, False)
@@ -257,13 +349,28 @@ class LightningAssault(Move):
     def viable(self):
         if not getattr(self.user, "in_combat", False):
             return False
-        return _is_highest(self.user, self.user.speed)
+        if not _is_highest(self.user, self.user.speed):
+            return False
+        # Reachability: a targeted strike is not castable against a
+        # combatant outside mvrange (see _in_range).
+        return _in_range(self)
 
     def execute(self, player):
         self.prep_colors()
         narrate(self.stage_announce[1])
         target = self.target
-        hit_chance = to_hit_chance(player, target, floor=5)
+        # Reachability re-check at strike time: a target that has left the
+        # move's band during its wind-up — or one the client named directly,
+        # bypassing the range-filtered target list — cannot be struck. Mirrors
+        # the `if self.viable()` / `hit_chance = -1` auto-miss that
+        # `Move.standard_execute_attack` applies in _base.py, but scoped to
+        # range alone: the stat-dominance half of viable() can flip mid-move
+        # (Secret Plans buffs strength/finesse/speed by 30%), and a buff must
+        # not turn a landed strike into a miss.
+        if _reaches(self, target):
+            hit_chance = to_hit_chance(player, target, floor=5)
+        else:
+            hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         _ensure_weapon_exp(player)
