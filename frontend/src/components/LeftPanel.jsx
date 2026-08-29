@@ -8,6 +8,7 @@ import SettingsDialog from './SettingsDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
 import CollapsibleRoomDescription from './CollapsibleRoomDescription'
+import { logEntryKey } from '../utils/combatLogKey'
 import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
@@ -26,24 +27,6 @@ import MomentumMeter from './MomentumMeter'
 import ShopDialog from './ShopDialog'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
-
-/**
- * Identity of a combat-log entry, for de-duplicating the reveal queue.
- *
- * The engine has no per-entry id, so identity is derived from content. Both the
- * pending filter and the append guard must use THIS function: they previously
- * keyed on different field sets, which silently dropped lines that matched on
- * message+round but differed in type.
- *
- * The separator is U+001F (unit separator), a control character the engine
- * never emits inside a message, so no combination of field values can forge
- * a collision across a field boundary. A space would not be safe here --
- * messages are prose and contain spaces. Written as an escape rather than a
- * literal control character so it survives editors and diff tooling.
- */
-const LOG_KEY_SEP = '\u001F'
-const logEntryKey = (entry) =>
-  [entry?.round ?? '', entry?.type ?? '', entry?.message ?? ''].join(LOG_KEY_SEP)
 
 /**
  * Moves that are instant / non-turn-consuming on the backend.

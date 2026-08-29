@@ -258,6 +258,8 @@ describe('collectAnimationStates', () => {
     // stagger elapses; it must render nothing until then.
     expect(collectAnimationStates([anim({ source_id: 'player', phase: null })], 'player')).toEqual([]);
     expect(collectAnimationStates([], 'player')).toEqual([]);
+    expect(collectAnimationStates(undefined, 'player')).toEqual([]);
+    expect(collectAnimationStates([anim({ source_id: 'player' })], undefined)).toEqual([]);
   });
 
   it('collects EVERY animation an entity is involved in, not just the first', () => {
@@ -297,6 +299,8 @@ describe('collectAnimationStates', () => {
 describe('mergeAnimationStyles', () => {
   it('returns an empty style for no states', () => {
     expect(mergeAnimationStyles([])).toEqual({});
+    expect(mergeAnimationStyles(undefined)).toEqual({});
+    expect(mergeAnimationStyles([null])).toEqual({});
   });
 
   it('composes transforms rather than letting the last one win', () => {

@@ -4,6 +4,7 @@ import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
 import { getAnimationConfig, impactSfxFor, strikeFlashFor } from '../utils/animationConfigs';
+import { logEntryKey, LOG_KEY_SEP } from '../utils/combatLogKey';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
 import { beatSfxFor, animationImpactCue } from '../utils/combatSfx';
 import { scheduleSfxChain, scheduleAnimationLayers, effectiveDuration } from '../utils/combatTiming';
@@ -98,21 +99,6 @@ const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 /** Phase duration lookup on a config; falls back when the phase is unknown. */
 const phaseDurationOf = (config, phaseName, fallback = 200) =>
   config?.phases?.find((p) => p.name === phaseName)?.duration ?? fallback;
-
-/**
- * MIRROR of LeftPanel's `logEntryKey` — round + type + message, joined by the
- * unit separator the engine never emits inside a message.
- *
- * Duplicated rather than imported because LeftPanel does not export it and this
- * component cannot reach into it. Keep the two in step; if they drift, the only
- * casualty is *pacing* (animations lead or trail the revealed text by an entry
- * or two) — never correctness, because what has already been animated is
- * tracked separately, by identity. Lifting this into a shared util is the real
- * fix and belongs with whoever owns LeftPanel.
- */
-const LOG_KEY_SEP = '\u001F';
-const logEntryKey = (entry) =>
-  [entry?.round ?? '', entry?.type ?? '', entry?.message ?? ''].join(LOG_KEY_SEP);
 
 /**
  * The revealed slice of the combat log, each entry paired with a stable id.
@@ -253,6 +239,10 @@ const animationStyleFor = (state) => {
   return {};
 };
 
+/** Stable empty default for `animationStates`, so a token with no animation
+ *  never hands React.memo a fresh array and re-renders on every frame. */
+const NO_ANIMATION_STATES = Object.freeze([]);
+
 /** Heavy hits and shockwaves rattle the target cell — but never on a miss. */
 const isShakingTarget = (state) => Boolean(
   state.isTarget
@@ -344,7 +334,7 @@ const CombatantMarker = React.memo(({
   isCompact = false,
   isHovered = false,
   isSelected = false,
-  animationStates = null,
+  animationStates = NO_ANIMATION_STATES,
   displaySymbol = null,
 }) => {
   const move = entity.current_move;
@@ -384,13 +374,13 @@ const CombatantMarker = React.memo(({
   // currently part of (it can be the source of the swing and the target of a
   // concurrent landing at the same time).
   const animationStyle = useMemo(
-    () => mergeAnimationStyles((animationStates || []).map(animationStyleFor)),
+    () => mergeAnimationStyles(animationStates.map(animationStyleFor)),
     [animationStates]
   );
 
   // Target shake — heavy hits and shockwaves rattle the target cell. Any one
   // qualifying landing is enough; the CSS class is not additive.
-  const targetShake = (animationStates || []).some(isShakingTarget);
+  const targetShake = animationStates.some(isShakingTarget);
 
   return (
     <div
