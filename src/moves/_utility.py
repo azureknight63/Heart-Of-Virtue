@@ -224,16 +224,15 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                     user.combat_position, enemy.combat_position
                 )
 
-                # Determine relative direction (front/flank/rear)
-                if angle_diff < 45:
-                    direction = "front"
-                    color = "red"
-                elif angle_diff < 90:
-                    direction = "flank"
-                    color = "yellow"
-                else:
-                    direction = "rear"
-                    color = "green"
+                # Label the band through positions.FACING_BANDS, which is the
+                # same table get_damage_modifier reads. A hand-rolled ladder
+                # here banded at 45/90 into three buckets and so reported a
+                # 100-degree angle -- a 1.25x deep flank -- as "rear", and
+                # called the 45- and 90-degree boundaries by the next band's
+                # name. The player was told one thing and scored another.
+                band = positions.facing_band(angle_diff)
+                direction = band.label
+                color = band.color
 
                 cprint(
                     "{} at {} facing {} is {} ft away ({}, {}-facing)".format(
@@ -273,12 +272,12 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                                 ally.combat_position, enemy.combat_position
                             )
 
-                            if ally_angle_diff < 45:
-                                ally_dir = "front"
-                            elif ally_angle_diff < 90:
-                                ally_dir = "flank"
-                            else:
-                                ally_dir = "rear"
+                            # Same shared band table as the enemy line: the
+                            # ladder was duplicated here, so both copies had to
+                            # be corrected and both could drift again.
+                            ally_dir = positions.facing_band_label(
+                                ally_angle_diff
+                            )
 
                             cprint(
                                 "  → {} at ({}, {}) is {} ft away ({}-facing)".format(

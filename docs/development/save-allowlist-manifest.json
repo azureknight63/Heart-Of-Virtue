@@ -1513,6 +1513,10 @@
       "name": "Direction"
     },
     {
+      "module": "src.positions",
+      "name": "FacingBand"
+    },
+    {
       "module": "src.secure_pickle",
       "name": "RestrictedUnpicklingError"
     },
@@ -1917,6 +1921,6 @@
       "name": "UUID"
     }
   ],
-  "count": 479,
+  "count": 480,
   "header_version": 1
 }

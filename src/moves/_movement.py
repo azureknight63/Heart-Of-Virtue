@@ -670,6 +670,27 @@ class TacticalRetreat(Move):
         )
 
 
+#: What ``FlankingManeuver`` announces for each band of
+#: :data:`positions.FACING_BANDS`. Keyed by band label so a renamed or added
+#: band shows up as a missing key rather than silently reusing a neighbour's
+#: wording; ``tests/test_facing_band_labels.py`` asserts the coverage is total.
+_FLANK_OUTCOMES = {
+    "front": (
+        "{user} circled, but {target} turned to meet it -- "
+        "still square in front of {target}!"
+    ),
+    "flank": "{user} successfully positioned to flank {target}!",
+    "deep flank": (
+        "{user} successfully positioned to flank {target}, "
+        "deep behind the guard!"
+    ),
+    "rear": "{user} slipped all the way around to {target}'s back!",
+}
+#: Used only if a band is added without a matching line above; the suite fails
+#: first, but the game loop should not crash over a display string.
+_FLANK_OUTCOME_DEFAULT = "{user} maneuvered around {target}!"
+
+
 class FlankingManeuver(Move):
     """Position to the side of target for combat advantage."""
     display_name = 'Flanking Maneuver'
@@ -781,16 +802,21 @@ class FlankingManeuver(Move):
                 user.combat_position, self.target.combat_position
             )
 
-            if 45 < angle_diff <= 135:
-                cprint(
-                    f"{user.name} successfully positioned to flank {self.target.name}! (+15-25% damage bonus)",
-                    "green",
-                )
-            else:
-                cprint(
-                    f"{user.name} moved to the side of {self.target.name}!",
-                    "green",
-                )
+            # Report the band the maneuver actually reached, using the same
+            # positions.FACING_BANDS table the damage curve reads. The old
+            # else-branch said "moved to the side" for BOTH a failed head-on
+            # approach (<= 45 deg, a 0.85x penalty) and a genuine rear position
+            # (> 135 deg, the strongest 1.40x band in the game) -- the best
+            # outcome the move has was reported as a sideways shuffle. The
+            # bonus figure is derived from the band, so it cannot drift from
+            # the multiplier the engine applies.
+            band = positions.facing_band(angle_diff)
+            outcome = _FLANK_OUTCOMES.get(band.label, _FLANK_OUTCOME_DEFAULT)
+            cprint(
+                outcome.format(user=user.name, target=self.target.name)
+                + f" ({band.damage_percent_label} damage)",
+                "green",
+            )
         elif self.target and self.target.is_alive():
             cprint(f"{user.name} finished maneuvering.", "green")
 

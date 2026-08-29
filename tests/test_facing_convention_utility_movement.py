@@ -114,8 +114,11 @@ class FakeCombatant:
 
 
 #: Positions at these bearings *from the defender* (which faces north) land in
-#: each labelled band. ``Check``'s display buckets are <45 front, <90 flank,
-#: else rear.
+#: each labelled band. ``Check`` labels the angle through
+#: ``positions.facing_band_label``, i.e. the same four bands the damage curve
+#: uses: <=45 front, <=90 flank, <=135 deep flank, else rear. (It used to
+#: collapse those into three buckets banding at 45/90 of its own, which is why
+#: the deep flank went unnamed and both boundaries read one band too high.)
 _DEFENDER_AT = (5, 5)
 _BEARING_FROM_DEFENDER = {
     "front": (5, 10),   # due north of it -- it is looking right at us: 0 deg
@@ -254,7 +257,11 @@ class TestFlankingManeuverSuccessMessage:
         """
         out = _flank_execute((10, 10))
         assert _FLANK_SUCCESS not in out
-        assert "moved to the side" in out
+        # The failure is now reported as one -- and quotes the penalty the
+        # engine will actually apply. It used to share the vague "moved to the
+        # side" line with a genuine rear position, the strongest band there is.
+        assert "turned to meet it" in out
+        assert "(-15% damage)" in out
 
     def test_head_on_stays_silent(self):
         out = _flank_execute(_BEARING_FROM_DEFENDER["front"])
@@ -268,6 +275,18 @@ class TestFlankingManeuverSuccessMessage:
         """180 deg is the rear, not a flank: the move's own band excludes it."""
         out = _flank_execute(_BEARING_FROM_DEFENDER["rear"])
         assert _FLANK_SUCCESS not in out
+
+    def test_directly_behind_is_reported_as_the_rear_it_is(self):
+        """The rear is the best result the move has; say so.
+
+        Both this and a failed head-on approach used to print "moved to the
+        side of {target}" -- identical text for a x1.40 bonus and a x0.85
+        penalty.
+        """
+        rear = _flank_execute(_BEARING_FROM_DEFENDER["rear"])
+        head_on = _flank_execute(_BEARING_FROM_DEFENDER["front"])
+        assert "(+40% damage)" in rear
+        assert rear != head_on
 
 
 # ---------------------------------------------------------------------------

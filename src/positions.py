@@ -407,10 +407,104 @@ def attack_angle_diff(
     )
 
 
+# ============================================================================
+# Attack-angle bands (facing)
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class FacingBand:
+    """One band of the attack-angle curve: its name, colour and multipliers.
+
+    A band covers the angles ``(previous band's max_angle, max_angle]`` -- the
+    first band additionally includes 0. Because the player-facing *label* and
+    the numeric *multipliers* live on the same record, a display site and a
+    damage site can never disagree about where a boundary is.
+
+    Attributes:
+        label: Player-facing name of the band ("front", "flank", ...)
+        color: Narration colour used when a display site prints the label
+        damage_modifier: Damage multiplier for an attack landing in this band
+        accuracy_modifier: Accuracy multiplier for an attack in this band
+        max_angle: Inclusive upper bound of the band, in degrees
+    """
+
+    label: str
+    color: str
+    damage_modifier: float
+    accuracy_modifier: float
+    max_angle: int
+
+    @property
+    def damage_percent_label(self) -> str:
+        """Signed percentage form of :attr:`damage_modifier` (e.g. ``"+25%"``)."""
+        return "{:+.0f}%".format(round((self.damage_modifier - 1.0) * 100))
+
+
+#: The canonical attack-angle bands, ordered by ascending ``max_angle``. This is
+#: the single source of truth for both the modifiers the engine applies and the
+#: label the player is shown; do not re-band either one at a call site.
+FACING_BANDS: Tuple[FacingBand, ...] = (
+    FacingBand("front", "red", 0.85, 0.95, 45),
+    FacingBand("flank", "yellow", 1.15, 1.10, 90),
+    FacingBand("deep flank", "magenta", 1.25, 1.20, 135),
+    FacingBand("rear", "green", 1.40, 1.30, 180),
+)
+
+
+def facing_band(angle_diff: float) -> FacingBand:
+    """Look up the band covering an attack angle.
+
+    Args:
+        angle_diff: Angular difference (0-180°), as returned by
+            :func:`attack_angle_diff`
+
+    Returns:
+        The :class:`FacingBand` for that angle. Angles outside 0-180° fall back
+        to the rear band, preserving the historical ``else`` behaviour of the
+        modifier lookups.
+    """
+    if angle_diff >= 0:
+        for band in FACING_BANDS:
+            if angle_diff <= band.max_angle:
+                return band
+    return FACING_BANDS[-1]
+
+
+def facing_band_label(angle_diff: float) -> str:
+    """Player-facing name of the band an attack angle falls in.
+
+    Display sites must use this rather than re-banding the angle themselves:
+    a hand-rolled ladder drifts from :func:`get_damage_modifier` silently, and
+    the game then tells the player one thing while scoring another.
+
+    Args:
+        angle_diff: Angular difference (0-180°)
+
+    Returns:
+        Band name -- one of "front", "flank", "deep flank", "rear"
+    """
+    return facing_band(angle_diff).label
+
+
+def facing_band_color(angle_diff: float) -> str:
+    """Narration colour for the band an attack angle falls in.
+
+    Args:
+        angle_diff: Angular difference (0-180°)
+
+    Returns:
+        Colour name to pass to ``cprint``/``narrate``
+    """
+    return facing_band(angle_diff).color
+
+
 def get_damage_modifier(angle_diff: int) -> float:
     """Get damage multiplier based on attack angle relative to target's facing.
 
     Frontal attacks are defended, while flanking and rear attacks bypass defense.
+    The bands come from :data:`FACING_BANDS`, shared with the player-facing
+    labels so the two cannot diverge.
 
     Args:
         angle_diff: Angular difference (0-180°)
@@ -418,21 +512,15 @@ def get_damage_modifier(angle_diff: int) -> float:
     Returns:
         Damage multiplier (e.g., 1.0 = normal, 1.15 = +15% damage)
     """
-    if 0 <= angle_diff <= 45:  # Front quarter
-        return 0.85  # -15% damage
-    elif 45 < angle_diff <= 90:  # Flanking
-        return 1.15  # +15% damage
-    elif 90 < angle_diff <= 135:  # Deep flank
-        return 1.25  # +25% damage
-    else:  # Rear (135-180)
-        return 1.40  # +40% damage
+    return facing_band(angle_diff).damage_modifier
 
 
 def get_accuracy_modifier(angle_diff: int) -> float:
     """Get accuracy multiplier based on attack angle relative to target's facing.
 
     Frontal attacks are easier to see/defend against. Rear attacks are nearly
-    impossible to defend.
+    impossible to defend. The bands come from :data:`FACING_BANDS`, shared with
+    the player-facing labels so the two cannot diverge.
 
     Args:
         angle_diff: Angular difference (0-180°)
@@ -440,14 +528,7 @@ def get_accuracy_modifier(angle_diff: int) -> float:
     Returns:
         Accuracy multiplier (e.g., 1.0 = normal, 1.10 = +10% accuracy)
     """
-    if 0 <= angle_diff <= 45:  # Front quarter
-        return 0.95  # -5% accuracy
-    elif 45 < angle_diff <= 90:  # Flanking
-        return 1.10  # +10% accuracy
-    elif 90 < angle_diff <= 135:  # Deep flank
-        return 1.20  # +20% accuracy
-    else:  # Rear (135-180)
-        return 1.30  # +30% accuracy
+    return facing_band(angle_diff).accuracy_modifier
 
 
 # ============================================================================
@@ -1149,6 +1230,11 @@ __all__ = [
     "angle_to_target",
     "attack_angle_difference",
     "attack_angle_diff",
+    "FacingBand",
+    "FACING_BANDS",
+    "facing_band",
+    "facing_band_label",
+    "facing_band_color",
     "get_damage_modifier",
     "get_accuracy_modifier",
     "random_position_in_zone",
