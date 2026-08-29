@@ -11,10 +11,15 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     apply_facing_damage,
     Move,
+    OUTCOME_ABSORB,
+    OUTCOME_HIT,
+    OUTCOME_MISS,
+    OUTCOME_PARRY,
     PassiveMove,
     _ensure_weapon_exp,
     _apply_work_the_gap,
     _apply_to_hit_modifiers,
+    publish_outcome,
     to_hit_chance,
 )  # noqa: F401
 
@@ -165,17 +170,30 @@ class ChipAway(Move):
                 * user.heat
             ) * random.uniform(0.8, 1.2)
             damage = max(0, int(damage))
+            # One outcome per STRIKE. The flurry is three independent
+            # resolutions against the same target, so it reports three impacts
+            # rather than one summarising the lot (see _base.publish_outcome).
+            # Chip Away rolls damage variance but never inspects the hit margin,
+            # so it has no glancing blow; a strike that lands under the target's
+            # armour is an `absorb`, which must not play the flesh-impact cue.
             if hit_chance >= roll:
                 if functions.check_parry(self.target):
+                    publish_outcome(self.user, OUTCOME_PARRY, self.target)
                     cprint(f"{self.target.name} parried strike {i + 1}!", "yellow")
                 else:
                     self.target.hp = max(0, self.target.hp - damage)
+                    publish_outcome(
+                        self.user,
+                        OUTCOME_HIT if damage > 0 else OUTCOME_ABSORB,
+                        self.target,
+                    )
                     cprint(
                         f"Strike {i + 1}: {damage} damage to {self.target.name}!",
                         "red",
                     )
                     total_hits += 1
             else:
+                publish_outcome(self.user, OUTCOME_MISS, self.target)
                 cprint(f"Strike {i + 1} missed!", "yellow")
 
             if not self.target.is_alive():

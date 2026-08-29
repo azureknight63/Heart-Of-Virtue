@@ -273,10 +273,13 @@ class TestCombatOutputCapture:
     def test_capture_attaches_the_outcome_to_the_log_entry(self, outcome):
         """The engine-published outcome rides out on the entry and fires once.
 
-        ``write()`` calls ``delattr(entity, "_pending_animation")`` once it
-        fires, so reading ``entity._pending_animation`` afterwards can never see
-        the outcome -- it travels out on the log entry's ``animation_data``,
-        which is what the client actually consumes.
+        ``write()`` disarms the pending animation the moment it fires (clearing
+        the outcome), so reading ``entity._pending_animation`` afterwards can
+        never see it -- the outcome travels out on the log entry's
+        ``animation_data``, which is what the client actually consumes. The
+        animation dict itself is deliberately left in place: an area move
+        publishes one outcome per enemy in its arc and needs somewhere to put
+        the next one.
 
         The line of text is deliberately outcome-neutral: the adapter no longer
         reads the prose, so nothing but the published fact can drive this.
@@ -292,9 +295,13 @@ class TestCombatOutputCapture:
         assert entry["message"] == "The exchange resolves."
         assert entry["trigger_animation"] is True
         assert entry["animation_data"] == {"outcome": outcome, "move_name": "Attack"}
-        assert not hasattr(entity, "_pending_animation"), (
-            "the pending animation must be consumed so it fires exactly once"
+
+        capture.write("And the dust settles.")
+        assert len([e for e in capture.get_log() if e.get("trigger_animation")]) == 1, (
+            "a disarmed animation must not fire again"
         )
+        assert entity._pending_animation["outcome"] is None
+        assert entity._pending_animation["_reported"] is True
 
     def test_capture_fires_the_animation_only_once(self):
         """A second line with no fresh pending animation must not re-trigger."""

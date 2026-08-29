@@ -60,13 +60,26 @@ MOVE_OUTCOMES = (
 )
 
 
-def publish_outcome(entity, outcome):
-    """Record ``outcome`` on ``entity``'s pending combat animation, if any.
+def publish_outcome(entity, outcome, target=None):
+    """Record ``outcome`` (against ``target``) on ``entity``'s pending animation.
 
     The adapter tags the acting combatant with a ``_pending_animation`` dict
-    before a move runs and consumes it the moment an outcome appears, so the
+    before a move runs and reads the outcome the moment it appears, so the
     animation and its impact SFX are attributed to the entity that actually
     swung -- never to a bystander that happens to narrate in the same beat.
+
+    **Outcomes are per target, not per swing.** An arc attack resolves
+    independently against every enemy it reaches: one may parry, one may be
+    missed, two may be struck clean. Each of those is published separately,
+    immediately before the line that narrates it, and the adapter emits one
+    impact per publication. ``target`` is the combatant this particular
+    resolution happened to -- the *object*, not a wire id; mapping it to an id
+    is the API's job, not the engine's.
+
+    Call this once per resolution and narrate immediately afterwards: the
+    adapter pairs each published outcome with the next narration line, so a
+    publication with no line of its own would be attributed to whatever is
+    narrated next.
 
     A no-op outside the API (no pending animation), and deliberately silent
     about entities that carry a non-dict placeholder, so nothing here can crash
@@ -75,6 +88,10 @@ def publish_outcome(entity, outcome):
     pending = getattr(entity, "_pending_animation", None)
     if isinstance(pending, dict):
         pending["outcome"] = outcome
+        # Always assign (never just when target is truthy): a stale target left
+        # over from the previous enemy in an arc loop would silently reattribute
+        # this resolution to the wrong combatant.
+        pending["outcome_target"] = target
 
 
 def _apply_work_the_gap(user, target, landed_hits=1):
@@ -696,6 +713,15 @@ class Move:  # master class for all moves
     # Concrete engine moves must declare a player-facing name. Internal `name`
     # values remain stable for command routing and AI logic.
     display_name = None
+    # Damage type the move's weapon deals, derived in evaluate(). Declared here
+    # so every read is safe before the first evaluate() -- preview_damage runs
+    # for every known move on every combat poll, and a move restored from a
+    # pickled save has whatever __dict__ it was saved with. combat_resistance
+    # already treats None as the 1.0 default, so the class-level value is the
+    # correct pre-evaluate answer rather than a placeholder. A class attribute
+    # rather than getattr() at each site: the sites are not enumerable, and the
+    # ones that get missed are exactly the bugs this guards against.
+    base_damage_type = None
 
     def __init__(
         self,
@@ -1270,7 +1296,7 @@ class Move:  # master class for all moves
                 self.targetcolor = "cyan"
 
     def parry(self):
-        publish_outcome(self.user, OUTCOME_PARRY)
+        publish_outcome(self.user, OUTCOME_PARRY, self.target)
         narrate(
             colored(self.target.name, self.targetcolor)
             + colored(" parried the attack from ", "red")
@@ -1308,12 +1334,14 @@ class Move:  # master class for all moves
         # either from the prose below is what this replaces.
         if damage > 0:
             publish_outcome(
-                self.user, OUTCOME_GLANCE if glance else OUTCOME_HIT
+                self.user,
+                OUTCOME_GLANCE if glance else OUTCOME_HIT,
+                self.target,
             )
         else:
             # Zero damage ("did no damage") and negative damage ("absorbed N")
             # are both blows the target shrugged off: no flesh-impact cue.
-            publish_outcome(self.user, OUTCOME_ABSORB)
+            publish_outcome(self.user, OUTCOME_ABSORB, self.target)
         if damage > 0:
             if glance:
                 narrate(
@@ -1375,7 +1403,7 @@ class Move:  # master class for all moves
                 self.target.combat_exp["Basic"] += 15
 
     def miss(self):
-        publish_outcome(self.user, OUTCOME_MISS)
+        publish_outcome(self.user, OUTCOME_MISS, self.target)
         narrate(colored(self.user.name, self.usercolor) + "'s attack just missed!")
         if self.target.name == "Jean":
             for state in self.target.states:

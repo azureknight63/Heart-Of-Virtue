@@ -59,6 +59,59 @@ def _strip_combatant_prefix(target_id: str) -> str:
     return target_id
 
 
+#: Animation type used for every resolution after the first in a single swing.
+#: An area move reports one outcome per enemy it reaches (see
+#: src/moves/_base.publish_outcome); replaying the move's own config once per
+#: enemy would render one arc as four consecutive 960 ms spins. The swing plays
+#: once, then each further landing gets this short outcome flash. Defined in
+#: frontend/src/utils/animationConfigs.js like every other animation type.
+FOLLOW_UP_IMPACT_ANIMATION = "impact"
+
+
+def _wire_animation(pending: dict) -> dict:
+    """The client-safe copy of a pending animation.
+
+    ``publish_outcome`` stores the resolved combatant *object* on the pending
+    dict so the adapter can name it; ``_reported`` is the adapter's own
+    bookkeeping. Neither may reach the client: the combat log is jsonified on
+    every poll and pickled into every save, so a live combatant here is a 500
+    and a save that drags the enemy's object graph with it.
+
+    Every path that emits an animation goes through this -- both the
+    per-resolution path and the end-of-move fallback. They built the payload
+    two different ways before, and only one of them stripped these keys.
+    """
+    animation = dict(pending)
+    animation.pop("_reported", None)
+    target = animation.pop("outcome_target", None)
+    if target is not None:
+        animation["target_id"] = CombatantSerializer.stream_id(target)
+    return animation
+
+
+def _take_resolution(pending: dict) -> dict:
+    """Snapshot one published resolution off a pending animation and re-arm it.
+
+    The engine publishes an outcome per *target*, not per swing, so a pending
+    animation can be resolved several times before the move ends. Each call
+    returns the animation to emit for the resolution now on ``pending`` and
+    clears the outcome so the next narration line can't re-fire it; ``pending``
+    itself is deliberately left in place, flagged as reported, so a later
+    resolution in the same swing still has somewhere to publish to and the
+    end-of-move fallback knows not to emit it again.
+
+    The first resolution keeps the move's own animation (the sweep, the lunge);
+    later ones downgrade to ``FOLLOW_UP_IMPACT_ANIMATION``.
+    """
+    animation = _wire_animation(pending)
+    if pending.get("_reported"):
+        animation["type"] = FOLLOW_UP_IMPACT_ANIMATION
+    pending["_reported"] = True
+    pending["outcome"] = None
+    pending["outcome_target"] = None
+    return animation
+
+
 class CombatOutputCapture:
     """Captures print statements and stores them in a combat log."""
 
@@ -111,11 +164,7 @@ class CombatOutputCapture:
                 if entity is not None:
                     pending = getattr(entity, "_pending_animation", None)
                     if isinstance(pending, dict) and pending.get("outcome"):
-                        trigger_anim_data = pending
-                        try:
-                            delattr(entity, "_pending_animation")
-                        except AttributeError:
-                            pass
+                        trigger_anim_data = _take_resolution(pending)
 
                 entry = {
                     "round": self.current_round,
@@ -388,6 +437,7 @@ class ApiCombatAdapter:
         beat_index: int = 0,
         animation_data: dict = None,
         timestamp: str = None,
+        allow_duplicate: bool = False,
     ):
         """Add a log entry with deduplication check.
 
@@ -415,8 +465,9 @@ class ApiCombatAdapter:
         # entry's animation would be silently dropped from the frontend log.
         # For non-animation entries source_id is None on both sides, preserving
         # the original (message, round) dedup behaviour.
+        # ``allow_duplicate`` opts an entry out entirely — see _emit_animation_log.
         new_source = (animation_data or {}).get("source_id")
-        is_duplicate = any(
+        is_duplicate = not allow_duplicate and any(
             existing.get("message") == message
             and existing.get("round") == round_num
             and (existing.get("animation") or {}).get("source_id") == new_source
@@ -449,14 +500,54 @@ class ApiCombatAdapter:
                     print(f"[SOCKET ERROR] Failed to emit log: {e}")
 
     def _emit_animation_log(self, beat, animation_data):
-        """Add the fallback log entry for an animation without impact text."""
+        """Add the carrier log entry for one animation.
+
+        ``allow_duplicate`` is not optional here. One swing can resolve several
+        times — an arc catching four enemies, Chip Away's three strikes — and
+        every one of those carriers shares its message, round and acting entity
+        with the first, so the deduplicator in ``_add_log_entry`` (which exists
+        to collapse a repeated *narration* line) would silently throw away every
+        landing after the first and undo the whole per-target outcome channel.
+        Two resolutions can even be identical on the wire (Chip Away landing
+        twice on one target for the same outcome), so no message-mangling scheme
+        distinguishes them; the emission itself is the fact, and by the time we
+        are here the decision to emit has already been made exactly once.
+
+        The message is a carrier, not player-facing text: CombatLog filters
+        ``type === 'animation'`` entries out of the visible log.
+        """
         self._add_log_entry(
             beat,
             f"{animation_data.get('move_display_name', animation_data.get('move_name', 'Move'))} animation",
             "animation",
             beat_index=self.current_beat_state_index,
             animation_data=animation_data,
+            allow_duplicate=True,
         )
+
+    def _flush_pending_animations(self):
+        """Clear every combatant's pending animation at the end of a move.
+
+        Emits a fallback log entry only for animations that never resolved —
+        a move that dealt no damage and narrated nothing the capture paired an
+        outcome with. An animation already reported (once, or once per enemy for
+        an arc swing) is dropped silently: re-emitting it would append a phantom
+        trailing animation to every attack in the game.
+        """
+        for entity in self._all_combatants():
+            if not hasattr(entity, "_pending_animation"):
+                continue
+            animation_data = entity._pending_animation
+            if not isinstance(animation_data, dict):
+                # publish_outcome tolerates a non-dict placeholder; emitting it
+                # would raise AttributeError on .get() inside the move loop.
+                delattr(entity, "_pending_animation")
+                continue
+            if not animation_data.get("_reported"):
+                self._emit_animation_log(
+                    self.player.combat_beat, _wire_animation(animation_data)
+                )
+            delattr(entity, "_pending_animation")
 
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
@@ -1335,7 +1426,7 @@ class ApiCombatAdapter:
                 self.player.last_move_name = move.name
 
                 self.player.last_move_target_id = (
-                    getattr(move.target, "id", f"enemy_{id(move.target)}")
+                    CombatantSerializer.stream_id(move.target)
                     if getattr(move, "target", None)
                     else None
                 )
@@ -1355,9 +1446,12 @@ class ApiCombatAdapter:
                     "source_id": "player",
                     "target_id": (
                         (
-                            f"enemy_{id(move.target)}"
-                            if move.target != self.player
-                            else "player"
+                            # stream_id, not a hardcoded "enemy_" prefix: an
+                            # ally target is ally_<id> everywhere else,
+                            # including the resolution path, and a mismatch
+                            # means the client matches the animation to no
+                            # entity at all.
+                            CombatantSerializer.stream_id(move.target)
                         )
                         if move.targeted and move.target
                         else None
@@ -1486,14 +1580,7 @@ class ApiCombatAdapter:
         ]  # Last 5 relevant entries
         self.player.last_move_summary = " ".join(move_logs)
 
-        # Fallback: emit any animation that never found a matching impact line.
-        # This can happen when a move deals no damage (e.g. a miss with unusual text),
-        # ensuring the animation is never silently dropped.
-        for entity in self._all_combatants():
-            if hasattr(entity, "_pending_animation"):
-                animation_data = entity._pending_animation
-                self._emit_animation_log(self.player.combat_beat, animation_data)
-                delattr(entity, "_pending_animation")
+        self._flush_pending_animations()
 
         # Move execution finished
 
@@ -1844,11 +1931,11 @@ class ApiCombatAdapter:
                     # Create animation data
                     animation_data = {
                         "type": animation_type,
-                        "source_id": f"enemy_{id(npc)}",
+                        "source_id": CombatantSerializer.stream_id(npc),
                         "target_id": (
-                            "player"
-                            if npc.target == self.player
-                            else (f"enemy_{id(npc.target)}" if npc.target else None)
+                            CombatantSerializer.stream_id(npc.target)
+                            if npc.target
+                            else None
                         ),
                         "move_name": npc.current_move.name,
                         "move_display_name": display_name_of(npc.current_move),
@@ -1947,9 +2034,10 @@ class ApiCombatAdapter:
         if item in inventory:
             inventory.remove(item)
 
-        target_label = (
-            "player" if heal_target == self.player else f"ally_{id(heal_target)}"
-        )
+        # stream_id already returns "player" for the player and ally_/enemy_
+        # for anyone else, so it subsumes this conditional -- and it cannot
+        # mislabel a heal aimed at something that is not an ally.
+        target_label = CombatantSerializer.stream_id(heal_target)
         self._add_log_entry(
             self.player.combat_beat,
             f"{npc.name} uses {item_name} on {heal_target.name}!",

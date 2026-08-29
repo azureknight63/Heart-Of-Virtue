@@ -39,6 +39,32 @@ describe('ANIMATION_CONFIGS', () => {
   });
 });
 
+describe('impact — the follow-up resolution of a multi-target swing', () => {
+  // An area move resolves independently against every enemy in its arc, so it
+  // reports one outcome per target. The first resolution rides the move's own
+  // animation (the sweep, the spin); the rest need a flash that says "and it
+  // landed here too" without replaying the whole swing — four consecutive
+  // 960 ms sweeps for one arc would be both slow and a lie about how many
+  // times the weapon moved.
+  const cfg = ANIMATION_CONFIGS.impact;
+
+  it('exists as its own animation type', () => {
+    expect(cfg).toBeDefined();
+  });
+
+  it('is short enough to chain several per swing', () => {
+    // Four enemies => swing + 3 impacts must stay inside a readable beat.
+    expect(cfg.duration).toBeLessThanOrEqual(260);
+  });
+
+  it('flashes the target with the outcome and moves no one', () => {
+    expect(cfg.target).toBe('strike');
+    expect(cfg.phases.some((p) => p.name === 'impact')).toBe(true);
+    expect(cfg.sfx.impact).toBe('outcome');
+    expect(cfg.motion).toBeUndefined();
+  });
+});
+
 describe('getAnimationConfig', () => {
   it('returns the requested config', () => {
     expect(getAnimationConfig('projectile')).toBe(ANIMATION_CONFIGS.projectile);

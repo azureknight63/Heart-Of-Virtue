@@ -13,8 +13,12 @@ from ._base import (
     apply_facing_damage,
     hostiles_in_arc,
     Move,
+    OUTCOME_HIT,
+    OUTCOME_MISS,
+    OUTCOME_PARRY,
     PassiveMove,
     _apply_to_hit_modifiers,
+    publish_outcome,
     to_hit_chance,
 )  # noqa: F401
 
@@ -287,14 +291,29 @@ class Sweep(Move):
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
+            # One outcome per enemy, published immediately before that enemy's
+            # own line (see _base.publish_outcome). A single outcome for the
+            # whole arc would report whoever narrated first as everyone's
+            # result. Sweep has no glancing-blow branch -- its damage is flat
+            # `max(1, power - protection)` with no hit-margin test -- so it can
+            # only ever publish hit/parry/miss.
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
+                    publish_outcome(self.user, OUTCOME_PARRY, enemy)
                     cprint(f"{enemy.name} blocked the sweep!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
+                    publish_outcome(self.user, OUTCOME_HIT, enemy)
                     cprint(
                         f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
                     )
+            else:
+                # A whiffed enemy used to produce no line at all, so the arc
+                # simply went quiet and the player could not tell a miss from an
+                # enemy standing outside the cone. Every enemy the swing reaches
+                # now reports what happened to it.
+                publish_outcome(self.user, OUTCOME_MISS, enemy)
+                cprint(f"The sweep passes wide of {enemy.name}!", "yellow")
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -504,12 +523,19 @@ class HalberdSpin(Move):
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
+            # Per-enemy outcomes; see the same block in Sweep above. Halberd
+            # Spin shares Sweep's flat damage line and likewise has no glance.
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
+                    publish_outcome(self.user, OUTCOME_PARRY, enemy)
                     cprint(f"{enemy.name} parried the spin!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
+                    publish_outcome(self.user, OUTCOME_HIT, enemy)
                     cprint(f"{enemy.name} takes {base_dmg} damage!", "red")
+            else:
+                publish_outcome(self.user, OUTCOME_MISS, enemy)
+                cprint(f"The spin whirls past {enemy.name}!", "yellow")
 
         # Random facing after spin
         try:

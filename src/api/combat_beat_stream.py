@@ -44,9 +44,21 @@ def _last_message(log_entries):
 def _derive_outcome(anim, hp_changes, killed, target_id):
     """Use the engine-tracked outcome when present; else infer from the diff.
 
-    parry/block/deflect/crit/absorb are only knowable from the engine's own
-    outcome tag; the diff can only distinguish a landed hit from a whiff, so the
-    fallback is deliberately limited to ``hit`` / ``miss``.
+    The engine tag is authoritative and is what the client resolves its impact
+    cue and strike flash from. The HP/kill diff below is only a fallback for
+    beats that carry no tagged animation at all, and it can distinguish nothing
+    finer than a landed hit from a whiff — so it is deliberately limited to
+    ``hit`` / ``miss``.
+
+    Every other member of ``OUTCOMES`` is knowable only from the tag, because
+    none of them is visible in an HP delta: ``glance`` (landed, but deflected
+    for half damage) and ``absorb`` (fully shrugged off) both produce an HP
+    change the diff would read as a plain hit or a plain miss, and
+    ``parry``/``block``/``deflect``/``crit`` are engine decisions with no
+    distinguishing footprint in the snapshot either. Do not enumerate the
+    vocabulary here — ``OUTCOMES`` in src/api/schemas/combat_beat.py is the list,
+    and this docstring has already gone stale against it once by omitting
+    ``glance``.
     """
     if anim and anim.get("outcome"):
         return anim["outcome"]

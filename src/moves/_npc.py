@@ -1551,9 +1551,12 @@ class SeismicSlam(Move):
                 )
                 # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
                 hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
+                # Bind the target before the roll: a miss has to publish
+                # against the enemy it missed, and self.target is restored in
+                # the finally below either way.
+                self.target = enemy
+                self.prep_colors()
                 if random.randint(0, 100) <= hit_chance:
-                    self.target = enemy
-                    self.prep_colors()
                     if functions.check_parry(enemy):
                         self.parry()
                         continue
@@ -1561,6 +1564,11 @@ class SeismicSlam(Move):
                     functions.inflict(
                         states.Staggered(enemy), enemy, chance=self._STAGGER_CHANCE
                     )
+                else:
+                    # Every enemy inside the radius gets an outcome, the
+                    # whiffed ones included -- otherwise the slam passes
+                    # through them in silence.
+                    self.miss()
         finally:
             # Restore the original target even if a hit()/inflict() raises mid-loop,
             # so later recoil/cooldown stages don't act on a stale loop enemy.

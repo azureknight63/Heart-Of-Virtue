@@ -260,6 +260,12 @@ class WhirlAttack(Move):
                             else:
                                 self.hit(damage, glance)
                                 self.affected_enemies.append(enemy)
+                        else:
+                            # Every enemy the spin reaches gets an outcome, the
+                            # whiffed ones included. Without this the swing
+                            # passed through an enemy in silence and the client
+                            # could not tell a miss from a target out of range.
+                            self.miss()
         finally:
             # Restore the original target even if a hit() raises mid-loop, so the
             # facing/fatigue stages below don't act on a stale loop enemy.

@@ -13,9 +13,13 @@ from ._base import (
     apply_facing_damage,
     hostiles_in_arc,
     Move,
+    OUTCOME_HIT,
+    OUTCOME_MISS,
+    OUTCOME_PARRY,
     PassiveMove,
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
+    publish_outcome,
     to_hit_chance,
 )  # noqa: F401
 
@@ -201,16 +205,29 @@ class Reap(Move):
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
+            # One outcome per enemy, published immediately before that enemy's
+            # own line (see _base.publish_outcome) -- a single outcome for the
+            # whole arc would report whoever narrated first as everyone's
+            # result. Reap deals flat `max(1, power - protection)` with no
+            # hit-margin test, so it has no glancing blow to report.
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
+                    publish_outcome(self.user, OUTCOME_PARRY, enemy)
                     cprint(f"{enemy.name} parried the sweep!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
                     if marked:
                         enemy._reapers_mark = False
+                    publish_outcome(self.user, OUTCOME_HIT, enemy)
                     cprint(
                         f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
                     )
+            else:
+                # Previously silent: a whiffed enemy produced no line at all, so
+                # the arc went quiet and the player could not tell a miss from an
+                # enemy standing outside the cone.
+                publish_outcome(self.user, OUTCOME_MISS, enemy)
+                cprint(f"The scythe passes wide of {enemy.name}!", "yellow")
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:

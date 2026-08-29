@@ -51,6 +51,7 @@ from src.items import (
     Crossbow,
     Dagger,
     Longbow,
+    Mace,
     Pole,
     Scythe,
     Shortsword,
@@ -59,7 +60,9 @@ from src.items import (
 from src.moves import (
     Backstab,
     HalberdSpin,
+    Jab,
     PommelStrike,
+    PowerStrike,
     Reap,
     ShootBow,
     ShootCrossbow,
@@ -523,6 +526,126 @@ class TestPreviewMatchesRealExecute:
     def test_ranged_with_in_execute_power_term(self, variance, key):
         self._assert_bounds_hold(self._shoot_bow, variance, key)
 
+    # -- shape 5: unarmed hand-rolled execute at live heat -------------------
+    #
+    # The unarmed pair (Jab, Power Strike) hand-roll their damage line like
+    # Slash does, but they are the only attacks the player can reach while
+    # bare-handed -- so they are the pair a fists build reads its previews
+    # from all game. Both cases below run at ``heat=2.0`` and against a
+    # resistant target *on purpose*: at heat 1.0 with resistance 1.0 the
+    # canonical expression and a line that simply forgot both terms return the
+    # same number, and a fixture that cannot tell them apart is the mock-on-
+    # mock failure this module exists to avoid.
+
+    @staticmethod
+    def _unarmed_pair(move_cls, weapon, damage_type, resistance):
+        # strength=30 purely for headroom: at base stats a halved-resistance
+        # fists swing lands on 1 damage, and a one-point number cannot show
+        # that a multiplier was dropped.
+        player = _make_player(weapon, heat=2.0, strength=30)
+        enemy = _make_enemy()
+        enemy.protection = 3
+        enemy.resistance[damage_type] = resistance
+        _link(player, enemy, 2)
+        _place(player, enemy, 2)
+        move = move_cls(player)
+        move.target = enemy
+        move.evaluate()
+        return player, enemy, move
+
+    @classmethod
+    def _jab(cls):
+        # ``weapon=None`` keeps the Player's default fists equipped -- Jab is
+        # fists-only and refuses to score off anything else.
+        return cls._unarmed_pair(Jab, None, "pure", 0.5)
+
+    @pytest.mark.parametrize("variance,key", [(0.8, "min"), (1.2, "max")])
+    def test_unarmed_jab(self, variance, key):
+        """Jab is deliberately flat -- no heat, no variance -- so min and max
+        must both equal the single number it deals, exactly as they do for the
+        flat arc moves. Running both ends of the band through the same
+        assertion is the point: a preview that reported a spread here would be
+        advertising one the engine cannot produce."""
+        self._assert_bounds_hold(self._jab, variance, key)
+
+    def test_jab_previews_a_single_number_not_a_band(self):
+        _, enemy, move = self._jab()
+        preview = move.preview_damage(enemy)
+        assert preview["min"] == preview["max"], (
+            "Jab deals flat damage; a min != max preview promises a roll it "
+            "does not make"
+        )
+
+    @classmethod
+    def _power_strike(cls):
+        return cls._unarmed_pair(PowerStrike, Mace(), "crushing", 0.5)
+
+    @pytest.mark.parametrize("variance,key", [(0.8, "min"), (1.2, "max")])
+    def test_unarmed_power_strike(self, variance, key):
+        self._assert_bounds_hold(self._power_strike, variance, key)
+
+    def test_jab_damage_is_deliberately_independent_of_heat(self):
+        """Jab is the heat *builder*, not a heat spender -- pinned, not assumed.
+
+        Unarmed trades damage capacity for tactical control: its moves stack
+        momentum that the heavy moves cash in. Jab has the shortest cycle in
+        the game (one beat) and so is by far the fastest heat generator; if it
+        also scaled with the heat it generates, the fastest builder would be
+        the best spender and there would be no reason to ever swing anything
+        else. Measured: routing Jab onto the canonical (heat-scaled) line puts
+        Jab-spam at 29.85 sustained damage per beat against Power Strike's
+        2.97 -- 10x the move it is supposed to be setting up.
+
+        So this is a *designed* omission, and it needs a test saying so out
+        loud, or the next reader will "fix" it back.
+        """
+        dealt = {}
+        for heat in (1.0, 3.4, 10.0):
+            player, enemy, move = self._jab()
+            player.heat = heat
+            dealt[heat] = _damage_dealt(move, player, enemy, 1.0)
+        assert min(dealt.values()) > 0, (
+            f"fixture deals no damage at all ({dealt}) -- this assertion "
+            "would pass on three zeroes and prove nothing"
+        )
+        assert len(set(dealt.values())) == 1, (
+            f"Jab's damage moved with heat ({dealt}) -- it is the builder, "
+            "and a builder that also spends is a compounding loop"
+        )
+
+    def test_jab_preview_tracks_heat_the_same_way_execute_does(self):
+        """Whatever Jab does about heat, the preview must do the same.
+
+        The original defect was not that Jab ignored heat -- it was that
+        ``preview_damage`` did not: at heat 2.0 the client advertised 14-21
+        for a swing that removed 9 HP.
+        """
+        previews = {}
+        for heat in (1.0, 3.4, 10.0):
+            _, enemy, move = self._jab()
+            move.user.heat = heat
+            previews[heat] = move.preview_damage(enemy)["max"]
+        assert min(previews.values()) > 0, f"vacuous fixture: {previews}"
+        assert len(set(previews.values())) == 1, (
+            f"the preview scaled with heat while execute() did not: {previews}"
+        )
+
+    def test_jab_damage_responds_to_resistance(self):
+        """...and so must the target's resistance to the damage type."""
+        dealt = {}
+        for resistance in (1.0, 0.5):
+            player, enemy, move = self._jab()
+            enemy.resistance[move.base_damage_type] = resistance
+            dealt[resistance] = _damage_dealt(move, player, enemy, 1.0)
+        assert dealt[0.5] > 0, (
+            "the resisted case floored to 0, so the comparison below would "
+            "pass even if Jab ignored resistance entirely"
+        )
+        assert dealt[0.5] < dealt[1.0], (
+            f"resistance 1.0 dealt {dealt[1.0]}, resistance 0.5 dealt "
+            f"{dealt[0.5]} -- Jab ignores the target's resistances"
+        )
+
 
 #: Every submodule of ``src.moves``, globbed rather than listed. Same rule as
 #: ``tests/test_facing_damage_hand_rolled_attacks.py`` and for the same reason:
@@ -553,17 +676,14 @@ _DAMAGE_SIGNALS = ("self.hit(", "hp -=", "hp = max(", ".hp = max(")
 #: with the reason. Not a shim: nothing here changes what any move does. An
 #: entry is a debt to be paid by *fixing the move*, and the test below fails if
 #: one stops naming a real divergence.
-_KNOWN_GAPS = {
-    "Jab": (
-        "Known mispricing, not a decision. Jab's execute() deals "
-        "`power - protection` with no resistance, no heat scaling and no "
-        "variance roll, so the default preview overstates it exactly as the "
-        "shim table's absence always did. Left alone during the shim migration "
-        "because correcting it moves numbers the player sees, which is a "
-        "balance-visible change and not a refactor. Fix it with a "
-        "preview_damage override on Jab and delete this entry."
-    ),
-}
+#:
+#: Empty, and meant to stay that way: the one entry it ever held (Jab, whose
+#: execute() dealt a bare `power - protection` with no resistance, no heat and
+#: no variance while the default preview advertised the full canonical line)
+#: was paid off by putting Jab's execute() *on* that line rather than by
+#: teaching the preview to describe the divergence. ``TestPreviewMatchesReal
+#: Execute.test_unarmed_jab`` now pins the two together directly.
+_KNOWN_GAPS = {}
 
 
 def _defining_class(cls, method_name):
@@ -592,6 +712,52 @@ def _castable_move_classes():
     return found
 
 
+def _code_tree(source):
+    """The parsed body of an ``execute()``, with comments and docstrings gone.
+
+    Every signal below reads this rather than the raw text. A raw substring
+    scan is silenced by prose: ``Jab.execute`` carries a long comment
+    explaining *why* it drops heat, and that comment alone made the
+    heat signal below report "applies heat" for the one move in the package
+    that deliberately does not. A guard that the thing it guards can switch
+    off by describing itself is the failure mode this file exists to catch.
+    """
+    return ast.parse(textwrap.dedent(source))
+
+
+def _calls(tree, name):
+    """True when the body actually calls ``name`` (not merely mentions it)."""
+    return any(
+        isinstance(node, ast.Call)
+        and (getattr(node.func, "id", None) or getattr(node.func, "attr", None))
+        == name
+        for node in ast.walk(tree)
+    )
+
+
+def _applies_heat(tree):
+    """True when the body reads a combatant's ``heat`` or resolves it.
+
+    Three spellings are in use across the package and all three count:
+    ``user.heat`` (an attribute), ``_resolve_heat(user)`` (the sanitizing
+    helper), and ``getattr(player, "heat", 1.0)`` -- which ``Disrupt`` uses and
+    which an attribute-only check reports as a missing heat term.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "heat":
+            return True
+        if isinstance(node, ast.Call):
+            named = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if named == "_resolve_heat":
+                return True
+            if named == "getattr" and any(
+                isinstance(arg, ast.Constant) and arg.value == "heat"
+                for arg in node.args
+            ):
+                return True
+    return False
+
+
 def _divergences(source):
     """Why this ``execute()`` departs from the canonical damage path, if it does.
 
@@ -603,10 +769,21 @@ def _divergences(source):
     before that move grew an override.
     """
     reasons = []
-    if "_hostiles_in_proximity()" in source:
+    tree = _code_tree(source)
+    canonical = _calls(tree, "standard_execute_attack")
+    if _calls(tree, "_hostiles_in_proximity"):
         reasons.append("damages a set of enemies rather than self.target")
-    if "standard_execute_attack(" not in source and "random.uniform(" not in source:
+    if not canonical and not _calls(tree, "uniform"):
         reasons.append("scores damage outside the canonical variance expression")
+    # A hand-rolled damage line that never mentions heat has silently dropped
+    # the attacker's momentum multiplier. This is the signal the enumeration
+    # was missing: PowerStrike kept its variance roll and its facing curve and
+    # so tripped none of the other checks, while omitting heat entirely -- so
+    # its preview advertised 128-192 against 64-96 actually dealt at heat 2.0,
+    # and the game's heaviest bludgeon finisher could not cash in the momentum
+    # it exists to spend. Nothing detected that until this line.
+    if not canonical and not _applies_heat(tree):
+        reasons.append("omits the attacker's heat multiplier")
     for node in ast.walk(ast.parse(textwrap.dedent(source))):
         if isinstance(node, ast.Call):
             named = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
@@ -706,6 +883,10 @@ class TestDivergentMovesOwnTheirPreview:
             "Reap",
             "Sweep",
             "HalberdSpin",
+            # Jab: still divergent, but no longer a *gap*. It deals flat
+            # damage on purpose (see test_jab_damage_is_deliberately_
+            # independent_of_heat) and now owns a preview_damage that says so,
+            # which is what the guard below actually demands.
             "Jab",
         ):
             assert expected in found, f"{expected} vanished from the enumeration"
@@ -754,17 +935,38 @@ class TestDivergentMovesOwnTheirPreview:
         assert move.preview_affected() == []
         assert move.preview_damage() is None
 
-    @pytest.mark.parametrize("name", sorted(_KNOWN_GAPS))
-    def test_each_known_gap_still_describes_a_real_divergence(self, name):
+    def test_each_known_gap_still_describes_a_real_divergence(self):
         """Gaps rot into lies. If the move stops diverging (or grows the
         override), the entry must go rather than sit there implying a debt that
-        no longer exists."""
+        no longer exists.
+
+        Written as one loop rather than a parametrize so that an empty
+        ``_KNOWN_GAPS`` -- the state we want it in -- reports as a pass rather
+        than as a skip. A suite-wide skip count is the metric this project has
+        already been burned by (see CLAUDE.md), and "no debts left" should not
+        register as "test not run".
+        """
         paths = {n: cls for _, n, cls, _ in _divergent_damage_paths()}
-        assert name in paths, f"_KNOWN_GAPS['{name}'] no longer diverges -- delete it"
-        assert _defining_class(paths[name], "preview_damage") is moves_base.Move, (
-            f"{name} now overrides preview_damage -- delete its _KNOWN_GAPS entry"
+        # With the table empty the loop below is a no-op, so assert the two
+        # premises that make "empty" meaningful: the scan still finds real
+        # divergent moves (an inert scan would empty the table by accident),
+        # and the emptiness is the intended state rather than an oversight.
+        assert paths, (
+            "the divergence scan found no hand-rolled damage paths at all -- "
+            "the signals have gone inert, not the moves canonical"
         )
-        assert len(_KNOWN_GAPS[name]) > 40, "a gap needs a reason, not a label"
+        assert _KNOWN_GAPS == {}, (
+            "_KNOWN_GAPS is no longer empty; every entry is a move whose "
+            "preview knowingly lies, and each needs the assertions below"
+        )
+        for name, reason in sorted(_KNOWN_GAPS.items()):
+            assert name in paths, (
+                f"_KNOWN_GAPS['{name}'] no longer diverges -- delete it"
+            )
+            assert _defining_class(paths[name], "preview_damage") is moves_base.Move, (
+                f"{name} now overrides preview_damage -- delete its _KNOWN_GAPS entry"
+            )
+            assert len(reason) > 40, "a gap needs a reason, not a label"
 
 
 # ---------------------------------------------------------------------------

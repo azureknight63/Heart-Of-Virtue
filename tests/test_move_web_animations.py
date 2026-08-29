@@ -136,3 +136,21 @@ def test_instances_resolve_class_attribute():
     )
     assert probe.web_animation == "pierce"
     assert getattr(Move, "web_animation", "missing") is None
+
+
+def test_adapter_substituted_animation_types_exist_in_the_frontend():
+    """Types the API layer emits itself must be real configs too.
+
+    The contract above only covers types declared on move classes. The combat
+    adapter substitutes its own for the follow-up resolutions of a multi-target
+    swing (``FOLLOW_UP_IMPACT_ANIMATION``), and an unknown type there fails the
+    way every wire-name drift in this codebase fails — silently: the client
+    falls back to ``pulse``, which has no target treatment, so the extra enemies
+    a sweep caught would flash nothing at all and nobody would see an error.
+    """
+    from src.api.combat_adapter import FOLLOW_UP_IMPACT_ANIMATION
+
+    frontend_types = _frontend_animation_types()
+    assert FOLLOW_UP_IMPACT_ANIMATION in frontend_types, (
+        f"{FOLLOW_UP_IMPACT_ANIMATION!r} is not a key of ANIMATION_CONFIGS"
+    )

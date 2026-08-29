@@ -274,7 +274,15 @@ class TestCombatOutputCapture:
         entry = cap.log_entries[0]
         assert entry.get("trigger_animation") is True
         assert entry["animation_data"]["outcome"] == outcome
-        assert not hasattr(player, "_pending_animation")
+        # The pending animation is retained but disarmed: an area move publishes
+        # one outcome per enemy in its arc, so the animation has to survive to
+        # carry the next resolution. What must not survive is the resolution
+        # just reported — a further line cannot re-fire it, and the end-of-move
+        # fallback sees it as already reported.
+        cap.write("Another line entirely.")
+        assert len([e for e in cap.log_entries if e.get("trigger_animation")]) == 1
+        assert player._pending_animation["outcome"] is None
+        assert player._pending_animation["_reported"] is True
 
     def test_write_ignores_impact_prose_with_no_published_outcome(self):
         """Prose alone must never fire an animation (regression guard)."""

@@ -156,9 +156,17 @@ def test_every_branch_emits_exactly_one_outcome_from_the_vocabulary(
     outcome = impacts[0]["animation_data"]["outcome"]
     assert outcome == expected
     assert outcome in OUTCOMES
-    assert not hasattr(attacker, "_pending_animation"), (
-        "the pending animation must be consumed so it fires exactly once"
-    )
+
+    # Fires exactly once. The pending animation is deliberately RETAINED after a
+    # resolution (an arc swing publishes one outcome per enemy and needs
+    # somewhere to publish the next), so "once" is enforced by clearing the
+    # outcome rather than by deleting the animation: a further narration line
+    # must not re-fire the same resolution, and the end-of-move fallback must
+    # see it as already reported.
+    capture.write("Dust settles over the floor.")
+    assert len(_impact_entries(capture.get_log())) == 1
+    assert attacker._pending_animation["outcome"] is None
+    assert attacker._pending_animation["_reported"] is True
 
 
 # ── regression guard: text must not drive the outcome ───────────────────────
@@ -303,3 +311,239 @@ def test_real_glancing_blow_through_standard_execute_attack():
     impacts = _impact_entries(entries)
     assert len(impacts) == 1
     assert impacts[0]["animation_data"]["outcome"] == "glance"
+
+
+# ── per-target outcomes: one animation is not enough ────────────────────────
+#
+# An area move resolves independently against every enemy in its arc. The
+# pending animation carries ONE outcome, so consuming-and-deleting it on the
+# first narration line reported the first enemy's result for the whole swing
+# and dropped every later one. write() now re-arms the animation after each
+# consumption so a swing can report as many resolutions as it actually made.
+
+
+def test_a_second_published_outcome_fires_a_second_impact(rig):
+    move, attacker, capture = rig
+
+    entries = _run(
+        capture,
+        lambda: (move.hit(12, False), move.parry()),
+    )
+
+    impacts = _impact_entries(entries)
+    assert [i["animation_data"]["outcome"] for i in impacts] == ["hit", "parry"], (
+        entries
+    )
+
+
+def test_only_the_first_resolution_replays_the_move_animation(rig):
+    """One swing, several landings.
+
+    Re-playing the full ``sweep`` config once per enemy would render a single
+    arc as four consecutive spins (960 ms each). Later resolutions therefore
+    downgrade to the short flash-only ``impact`` animation: the swing already
+    happened, what is left is where it landed.
+    """
+    move, attacker, capture = rig
+
+    entries = _run(
+        capture,
+        lambda: (move.hit(12, False), move.miss(), move.parry()),
+    )
+
+    impacts = _impact_entries(entries)
+    assert [i["animation_data"]["type"] for i in impacts] == [
+        "attack",
+        "impact",
+        "impact",
+    ], entries
+
+
+def test_each_impact_names_the_combatant_the_outcome_happened_to(rig):
+    """An arc swing reassigns ``self.target`` per enemy; each impact must
+    follow it rather than keep the id the animation was stamped with at cast.
+    """
+    from src.api.serializers.combat import CombatantSerializer
+
+    move, attacker, capture = rig
+    first = move.target
+    second = _Combatant("Cave Bat")
+
+    def _swing():
+        move.hit(12, False)
+        move.target = second
+        move.miss()
+
+    entries = _run(capture, _swing)
+
+    impacts = _impact_entries(entries)
+    assert [i["animation_data"]["target_id"] for i in impacts] == [
+        CombatantSerializer.stream_id(first),
+        CombatantSerializer.stream_id(second),
+    ], impacts
+
+
+def test_the_end_of_move_fallback_does_not_re_emit_a_consumed_animation(rig):
+    """The fallback exists for animations that never found an impact line.
+
+    Retaining the pending animation so it can be re-armed means the fallback
+    must be able to tell "already reported" from "never reported" — otherwise
+    every attack would gain a phantom trailing animation entry.
+    """
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    move, attacker, capture = rig
+    _run(capture, lambda: move.hit(12, False))
+
+    adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+    emitted = []
+    adapter._emit_animation_log = lambda beat, data: emitted.append(data)
+    adapter.player = attacker
+    attacker.combat_beat = 1
+    adapter._all_combatants = lambda: [attacker]
+
+    adapter._flush_pending_animations()
+
+    assert emitted == []
+    assert not hasattr(attacker, "_pending_animation")
+
+
+def test_the_fallback_still_emits_an_animation_that_never_resolved():
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    attacker = _Combatant("Slime")
+    attacker.combat_beat = 1
+    attacker._pending_animation = {"move_name": "Sweep", "outcome": None}
+
+    adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+    emitted = []
+    adapter._emit_animation_log = lambda beat, data: emitted.append(data)
+    adapter.player = attacker
+    adapter._all_combatants = lambda: [attacker]
+
+    adapter._flush_pending_animations()
+
+    assert [e["move_name"] for e in emitted] == ["Sweep"]
+    assert not hasattr(attacker, "_pending_animation")
+
+
+def test_an_unconsumed_resolution_never_reaches_the_wire_holding_a_combatant():
+    """The end-of-move fallback must sanitize, not emit the raw pending dict.
+
+    ``publish_outcome`` stores the *combatant object* on ``_pending_animation``
+    so the adapter can map it to a stream id. ``_take_resolution`` pops that
+    object off before the animation goes out. The fallback path did not: it
+    passed ``entity._pending_animation`` straight to the log, so an outcome the
+    engine published but no narration line consumed shipped a live NPC into
+    ``player.combat_log`` -- which is jsonify'd on every combat poll (a 500,
+    measured as "Object of type Slime is not JSON serializable") and pickled
+    into every save, dragging the enemy's whole object graph in with it.
+    """
+    import json
+
+    from src.api.combat_adapter import ApiCombatAdapter, CombatOutputCapture
+    from src.api.serializers.combat import CombatantSerializer
+    import src.npc as npc
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    player.combat_beat = 1
+    enemy = npc.Slime()
+    enemy.name = "Slime"
+
+    adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+    adapter.player = player
+    adapter.session_id = None
+    adapter.current_beat_state_index = 0
+    adapter.output_capture = CombatOutputCapture(player=player)
+    adapter._all_combatants = lambda: [player]
+
+    player._pending_animation = {
+        "type": "sweep",
+        "move_name": "Sweep",
+        "move_display_name": "Sweep",
+        "outcome": "hit",
+        "outcome_target": enemy,
+    }
+    adapter._flush_pending_animations()
+
+    emitted = [e["animation"] for e in player.combat_log if e.get("animation")]
+    assert len(emitted) == 1, "the unresolved animation must still be emitted once"
+    animation = emitted[0]
+    assert "outcome_target" not in animation, (
+        "the raw combatant object reached the wire: "
+        f"{type(animation.get('outcome_target')).__name__}"
+    )
+    assert "_reported" not in animation, "internal bookkeeping leaked to the client"
+    assert animation.get("target_id") == CombatantSerializer.stream_id(enemy), (
+        "the fallback must map the target to its stream id like _take_resolution"
+    )
+    json.dumps(player.combat_log)
+
+
+def test_a_non_dict_pending_animation_cannot_crash_the_move_loop():
+    """A degraded ``_pending_animation`` must be discarded, not dereferenced.
+
+    The flush guarded its ``_reported`` read with ``isinstance(..., dict)`` --
+    conceding a non-dict is possible -- and then handed that same value to
+    ``_emit_animation_log``, which calls ``.get()`` on it. That AttributeError
+    escapes into the combat loop, which the project's error-handling rule says
+    must degrade silently rather than wedge the fight.
+    """
+    from src.api.combat_adapter import ApiCombatAdapter, CombatOutputCapture
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    player.combat_beat = 1
+
+    adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+    adapter.player = player
+    adapter.session_id = None
+    adapter.current_beat_state_index = 0
+    adapter.output_capture = CombatOutputCapture(player=player)
+    adapter._all_combatants = lambda: [player]
+
+    player._pending_animation = "not a dict"
+    adapter._flush_pending_animations()
+
+    assert not hasattr(player, "_pending_animation")
+    assert not [e for e in player.combat_log if e.get("animation")]
+
+
+def test_no_animation_payload_hardcodes_a_combatant_wire_id():
+    """Wire ids come from ``stream_id``, never from an inline f-string.
+
+    ``CombatantSerializer.stream_id`` is the single source of truth for the
+    ``player`` / ``ally_<id>`` / ``enemy_<id>`` scheme. Three animation payloads
+    hand-rolled ``f"enemy_{id(x)}"`` instead, which is simply wrong for an ally:
+    a move aimed at Gorran was announced as ``enemy_140...`` at cast time and
+    resolved as ``ally_140...``, and ``BattlefieldGrid`` matches an animation to
+    a cell by ``target_id === entityId`` -- so the two spellings matched nothing
+    and the animation landed on no one.
+
+    A structural check rather than a behavioural one: the failure is invisible
+    at runtime unless a test happens to aim an animated move at an ally, which
+    is exactly why it survived. Derived by scanning the source so a fourth site
+    cannot be added without this failing.
+    """
+    import pathlib
+    import re
+
+    source = pathlib.Path("src/api/combat_adapter.py").read_text()
+    offenders = re.findall(r'f"(?:enemy|ally)_\{id\([^)]*\)\}"', source)
+    assert not offenders, (
+        "these hand-rolled combatant ids bypass CombatantSerializer.stream_id "
+        f"and mislabel allies: {offenders}"
+    )
+
+
+def test_the_hardcoded_id_scan_can_actually_find_something():
+    """A regex guard that matches nothing passes forever."""
+    import re
+
+    assert re.findall(
+        r'f"(?:enemy|ally)_\{id\([^)]*\)\}"',
+        '        "source_id": f"enemy_{id(npc)}",',
+    ), "the offender pattern no longer matches the shape it was written for"
