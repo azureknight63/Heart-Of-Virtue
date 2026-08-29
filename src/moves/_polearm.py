@@ -223,7 +223,14 @@ class Sweep(Move):
         cprint(f"{user.name} sweeps the polearm in a broad arc!", "cyan")
         arc_range = self.mvrange[1]
 
-        for enemy in list(self.user.combat_proximity.keys()):
+        # Hostiles only. This loop used to walk combat_proximity directly,
+        # which holds BOTH sides -- so every arc and spin dealt full damage
+        # to Jean's own allies, silently and with no warning. Measured
+        # before the fix: Whirl Attack dealt 27 to Gorran against 23 to the
+        # enemy it was aimed at. Blood of Martyrs was the only area move
+        # that got this right, purely because it happened to iterate
+        # combat_list. _hostiles_in_proximity is that same rule, shared.
+        for enemy, _distance in list(self._hostiles_in_proximity()):
             if not enemy.is_alive():
                 continue
 
@@ -428,7 +435,14 @@ class HalberdSpin(Move):
         cprint(f"{user.name} spins the halberd in a devastating full circle!", "cyan")
         arc_range = self.mvrange[1]
 
-        for enemy in list(self.user.combat_proximity.keys()):
+        # Hostiles only. This loop used to walk combat_proximity directly,
+        # which holds BOTH sides -- so every arc and spin dealt full damage
+        # to Jean's own allies, silently and with no warning. Measured
+        # before the fix: Whirl Attack dealt 27 to Gorran against 23 to the
+        # enemy it was aimed at. Blood of Martyrs was the only area move
+        # that got this right, purely because it happened to iterate
+        # combat_list. _hostiles_in_proximity is that same rule, shared.
+        for enemy, _distance in list(self._hostiles_in_proximity()):
             if not enemy.is_alive():
                 continue
 
