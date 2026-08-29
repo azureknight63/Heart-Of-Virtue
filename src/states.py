@@ -91,6 +91,70 @@ class State:  # master class for all states
                     self.on_removal(target)
 
 
+#: A state whose bonus is a percentage (or offset) of one of the target's stats
+#: must never read that stat straight off the target: ``functions.reset_stats``
+#: recomputes ``strength``/``finesse``/``speed``/``protection`` as
+#: ``base + sum(add_* from equipped items and active states)``, so an already
+#: active instance of the very same state is *folded into the number its own*
+#: ``__init__``/``compound`` *reads back*. Re-application then feeds the bonus
+#: into itself:
+#:
+#:   * A ``compounding`` state keeps the existing instance and calls
+#:     ``compound()`` on it (see ``functions.inflict``), so the feedback is
+#:     geometric and unbounded. Measured on a 20-strength target, ``Fervent``
+#:     ran +6, +9, +13, +17, +22, +28, +35, +43 strength over eight
+#:     re-applications -- the per-cast increment *accelerating* -- where the
+#:     design intent ("the fire burns hotter") is a flat +15% per re-cast.
+#:   * A non-compounding state is replaced wholesale, so the feedback converges
+#:     rather than exploding, but it converges on the wrong number:
+#:     ``SecretPlansState`` settled at +8 strength instead of the +6 a single
+#:     cast grants (re-casting bought a free buff), while the percentage
+#:     *debuffs* -- ``Disoriented``, ``Resonant`` -- got weaker on re-application
+#:     because they were taking their cut of an already reduced stat.
+#:
+#: Every such bonus in this module therefore goes through
+#: :func:`stat_without_state_bonus`, which strips the state's own contribution
+#: before the percentage is taken. It deliberately keeps contributions from
+#: equipment and from *other* states: that scaling is designed -- a -25%
+#: protection mark should scale with the armour actually being worn.
+#:
+#: Deriving from the ``*_base`` attributes instead (``finesse_base`` etc. do
+#: exist and are maintained) would also strip gear and other states, silently
+#: retuning every one of these effects for any equipped target; and Player has
+#: no ``protection_base`` at all -- its gear protection is recomputed by
+#: ``refresh_protection_rating`` -- so the four protection-scaling states could
+#: not use that route anyway. Half a rule is what produced this defect once
+#: already.
+def stat_without_state_bonus(target, stat_attr, bonus_attr, state_cls):
+    """Read ``target.<stat_attr>`` with ``state_cls``'s own contribution removed.
+
+    :param target: the player/NPC carrying the stat and a ``states`` list.
+    :param stat_attr: live stat to read, e.g. ``"finesse"``.
+    :param bonus_attr: the ``add_*`` attribute through which ``state_cls`` feeds
+        that stat, e.g. ``"add_fin"``.
+    :param state_cls: the state class whose contribution to exclude. Pass
+        ``type(self)`` -- that is exactly the class-matching rule
+        ``functions.inflict`` uses to decide an instance is already active.
+    :return: the stat as it would read with no instance of ``state_cls``
+        active, floored at 0. Non-numeric stats and targets without an
+        iterable ``states`` (test doubles, partially built combatants) are
+        returned untouched.
+    """
+    value = getattr(target, stat_attr, 0)
+    if not isinstance(value, (int, float)):
+        return value
+    try:
+        active = list(getattr(target, "states", ()) or ())
+    except TypeError:
+        return value
+    for existing in active:
+        if isinstance(existing, state_cls):
+            contribution = getattr(existing, bonus_attr, 0)
+            if isinstance(contribution, (int, float)):
+                value -= contribution
+    return max(0, value)
+
+
 #: Evasion granted by :class:`Dodging` to a combatant with no finesse at all,
 #: and the rate at which that grant decays as the dodger's own finesse rises.
 #:
@@ -108,9 +172,10 @@ class State:  # master class for all states
 #: hostile accuracy from roughly 70–87% to roughly 34–50%. Dodging is therefore
 #: worth a beat for anyone and decisive for no one.
 #:
-#: Decay also makes the state self-limiting under re-application: ``__init__``
-#: reads ``target.finesse``, which already includes any active bonus, so a
-#: growing term compounds on reapply while a shrinking one converges.
+#: Decay also makes the state self-limiting under re-application, and
+#: :func:`stat_without_state_bonus` makes it exactly idempotent: ``__init__``
+#: subtracts any active Dodging grant before reading finesse, so re-applying
+#: re-derives the same number instead of oscillating toward a larger one.
 DODGE_EVASION_BASE = 42
 DODGE_EVASION_FINESSE_DIVISOR = 2
 #: Floor so the state is never worthless (or negative). It binds once decay
@@ -125,7 +190,11 @@ class Dodging(State):
         super().__init__(name="Dodging", target=target, beats_max=7, hidden=True)
         self.add_fin = max(
             DODGE_EVASION_MIN,
-            DODGE_EVASION_BASE - int(target.finesse / DODGE_EVASION_FINESSE_DIVISOR),
+            DODGE_EVASION_BASE
+            - int(
+                stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+                / DODGE_EVASION_FINESSE_DIVISOR
+            ),
         )
 
 
@@ -346,8 +415,16 @@ class Disoriented(State):
             persistent=False,
             description="Finesse -30%, Protection -25%. Defensive positioning is compromised.",
         )
-        self.add_fin = -int(target.finesse * 0.3)  # Reduce finesse by 30%
-        self.add_protection = -int(target.protection * 0.25)  # Reduce protection by 25%
+        # 30% / 25% of the *undisoriented* stats -- see stat_without_state_bonus.
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.3
+        )
+        self.add_protection = -int(
+            stat_without_state_bonus(
+                target, "protection", "add_protection", type(self)
+            )
+            * 0.25
+        )
 
     def on_application(self, target):
         cprint(
@@ -391,8 +468,15 @@ class Slimed(State):
         )
         self.tick = 0
         self.execute_on = 6
-        self.add_fin = -int(target.finesse * 0.20)
-        self.add_protection = -int(target.protection * 0.15)
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.20
+        )
+        self.add_protection = -int(
+            stat_without_state_bonus(
+                target, "protection", "add_protection", type(self)
+            )
+            * 0.15
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -412,9 +496,21 @@ class Slimed(State):
             target.hp -= damage
 
     def compound(self, target):
+        # Worsening on re-application is intended (compounding=True, "Worsens if
+        # reapplied"). Each coat costs a further 5% of the *unslimed* stats, so
+        # the escalation is linear per re-application rather than a fraction of
+        # the already-slimed value -- which decayed toward zero finesse and, at
+        # ordinary stat magnitudes, truncated to a no-op after the first coat.
         cprint("The slime coating on {} thickens!".format(target.name), "cyan")
-        self.add_fin -= int(target.finesse * 0.05)
-        self.add_protection -= int(target.protection * 0.05)
+        self.add_fin -= int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.05
+        )
+        self.add_protection -= int(
+            stat_without_state_bonus(
+                target, "protection", "add_protection", type(self)
+            )
+            * 0.05
+        )
         self.beats_max = int(self.beats_max * 1.1)
         self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
         self.steps_max = int(self.steps_max * 1.1)
@@ -444,7 +540,9 @@ class Resonant(State):
         )
         self.tick = 0
         self.execute_on = 5
-        self.add_fin = -int(target.finesse * 0.25)
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.25
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -529,9 +627,18 @@ class Petrified(State):
         )
         self.tick = 0
         self.execute_on = 6
-        self.add_fin = -int(target.finesse * 0.20)
-        self.add_speed = -int(target.speed * 0.35)
-        self.add_protection = int(target.protection * 0.25)
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.20
+        )
+        self.add_speed = -int(
+            stat_without_state_bonus(target, "speed", "add_speed", type(self)) * 0.35
+        )
+        self.add_protection = int(
+            stat_without_state_bonus(
+                target, "protection", "add_protection", type(self)
+            )
+            * 0.25
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -564,9 +671,22 @@ class Petrified(State):
             "The mineral sediment deepens its grip on {}.".format(target.name),
             "white",
         )
-        self.add_fin -= int(target.finesse * 0.10)
-        self.add_speed -= int(target.speed * 0.10)
-        self.add_protection += int(target.protection * 0.10)
+        # Deepening on re-application is intended (compounding=True, "Worsens if
+        # reapplied"); each layer is 10% of the *uncrusted* stats, so the crust
+        # thickens linearly. Taken off the already-crusted values, the
+        # protection term in particular grew geometrically and without bound.
+        self.add_fin -= int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.10
+        )
+        self.add_speed -= int(
+            stat_without_state_bonus(target, "speed", "add_speed", type(self)) * 0.10
+        )
+        self.add_protection += int(
+            stat_without_state_bonus(
+                target, "protection", "add_protection", type(self)
+            )
+            * 0.10
+        )
         self.beats_max = int(self.beats_max * 1.1)
         self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
         self.steps_max = int(self.steps_max * 1.1)
@@ -644,8 +764,12 @@ class Fervent(State):
         )
         self.tick = 0
         self.execute_on = 5
-        self.add_str = int(target.strength * 0.30)
-        self.add_fin = int(target.finesse * 0.15)
+        self.add_str = int(
+            stat_without_state_bonus(target, "strength", "add_str", type(self)) * 0.30
+        )
+        self.add_fin = int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.15
+        )
         self.add_endurance = -3
 
     def on_application(self, target):
@@ -678,8 +802,15 @@ class Fervent(State):
             target.fatigue = max(0, target.fatigue - fatigue_drain)
 
     def compound(self, target):
+        # Burning hotter on re-application is intended (compounding=True), but
+        # the increment is a flat 15% of the *unfervent* strength. Read off the
+        # already-fervent value it compounded geometrically: +6, +9, +13, +17,
+        # +22, +28, +35, +43 strength over eight re-applications on a
+        # 20-strength target, with no ceiling.
         cprint("The fire in {} burns hotter!".format(target.name), "red")
-        self.add_str += int(target.strength * 0.15)
+        self.add_str += int(
+            stat_without_state_bonus(target, "strength", "add_str", type(self)) * 0.15
+        )
         self.add_endurance -= 2
         self.beats_left = min(self.beats_max, self.beats_left + 10)
         functions.refresh_stat_bonuses(target)
@@ -800,9 +931,15 @@ class SecretPlansState(State):
             persistent=False,
             description="Strength +30%, Finesse +30%, Speed +30% for 25 beats.",
         )
-        self.add_str = int(target.strength * 0.30)
-        self.add_fin = int(target.finesse * 0.30)
-        self.add_speed = int(target.speed * 0.30)
+        self.add_str = int(
+            stat_without_state_bonus(target, "strength", "add_str", type(self)) * 0.30
+        )
+        self.add_fin = int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.30
+        )
+        self.add_speed = int(
+            stat_without_state_bonus(target, "speed", "add_speed", type(self)) * 0.30
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -858,7 +995,12 @@ class Quarried(State):
             persistent=False,
             description="Weak points exposed — protection reduced by 25%.",
         )
-        self.add_protection = -int(target.protection * 0.25)
+        self.add_protection = -int(
+            stat_without_state_bonus(
+                target, "protection", "add_protection", type(self)
+            )
+            * 0.25
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
