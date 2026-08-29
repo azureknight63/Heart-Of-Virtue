@@ -109,7 +109,6 @@ def _pinned_dice():
     )
 
 
-
 @pytest.mark.parametrize("move_name,weapon_cls", AREA_MOVES)
 def test_area_moves_never_harm_an_ally(move_name, weapon_cls):
     """The behavioural half, with the ally standing where the enemy stands."""
