@@ -12,7 +12,8 @@ from tools.songs.ambient import MineralPoolsSong, DreamSpaceSong
 from tools.songs.sfx import (
     ClickSFX, MoveSFX, ErrorSFX, UiConfirmSFX,
     CombatStartSFX, AttackSFX, AttackSwipeSFX, AttackHitSFX,
-    AttackMissSFX, AttackParrySFX, EnemyDeathSFX, LowHealthWarningSFX,
+    AttackMissSFX, AttackParrySFX, AttackGlanceSFX, EnemyDeathSFX,
+    LowHealthWarningSFX,
     LevelUpSFX, QuestCompleteSFX, ItemUseSFX, HealSFX, StatusHitSFX, PlayerDeathSFX,
 )
 
@@ -37,6 +38,7 @@ SONG_LIST = [
     AttackHitSFX(),
     AttackMissSFX(),
     AttackParrySFX(),
+    AttackGlanceSFX(),
     EnemyDeathSFX(),
     LowHealthWarningSFX(),
     # Progression / reward SFX
