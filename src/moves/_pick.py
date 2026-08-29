@@ -11,15 +11,12 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     apply_facing_damage,
     Move,
-    OUTCOME_ABSORB,
-    OUTCOME_HIT,
-    OUTCOME_MISS,
-    OUTCOME_PARRY,
     PassiveMove,
     _ensure_weapon_exp,
     _apply_work_the_gap,
     _apply_to_hit_modifiers,
-    publish_outcome,
+    resolve_damage,
+    resolve_strike_outcome,
     to_hit_chance,
 )  # noqa: F401
 
@@ -162,39 +159,32 @@ class ChipAway(Move):
 
         for i in range(self.STRIKES):
             roll = random.randint(0, 100)
-            damage = (
-                (
-                    (sub_power * functions.combat_resistance(self.target, self.base_damage_type))
-                    - self.target.protection
-                )
-                * user.heat
-            ) * random.uniform(0.8, 1.2)
-            damage = max(0, int(damage))
+            damage = int(
+                resolve_damage(user, self.target, sub_power, self.base_damage_type)
+            )
             # One outcome per STRIKE. The flurry is three independent
             # resolutions against the same target, so it reports three impacts
-            # rather than one summarising the lot (see _base.publish_outcome).
-            # Chip Away rolls damage variance but never inspects the hit margin,
-            # so it has no glancing blow; a strike that lands under the target's
-            # armour is an `absorb`, which must not play the flesh-impact cue.
-            if hit_chance >= roll:
-                if functions.check_parry(self.target):
-                    publish_outcome(self.user, OUTCOME_PARRY, self.target)
-                    cprint(f"{self.target.name} parried strike {i + 1}!", "yellow")
-                else:
-                    self.target.hp = max(0, self.target.hp - damage)
-                    publish_outcome(
-                        self.user,
-                        OUTCOME_HIT if damage > 0 else OUTCOME_ABSORB,
-                        self.target,
-                    )
-                    cprint(
-                        f"Strike {i + 1}: {damage} damage to {self.target.name}!",
-                        "red",
-                    )
-                    total_hits += 1
-            else:
-                publish_outcome(self.user, OUTCOME_MISS, self.target)
-                cprint(f"Strike {i + 1} missed!", "yellow")
+            # rather than one summarising the lot -- see
+            # _base.resolve_strike_outcome, which is where that pairing now
+            # lives. Chip Away rolls damage variance but never inspects the hit
+            # margin, so it has no glancing blow; a strike that lands under the
+            # target's armour is an `absorb`, which must not play the
+            # flesh-impact cue, hence absorb_on_zero. The roll is passed in
+            # rather than taken there because it is drawn BEFORE the damage
+            # variance above, and swapping those two draws would silently
+            # change every seeded outcome.
+            if resolve_strike_outcome(
+                self,
+                self.target,
+                damage,
+                hit_chance,
+                hit_line=f"Strike {i + 1}: {damage} damage to {self.target.name}!",
+                parry_line=f"{self.target.name} parried strike {i + 1}!",
+                miss_line=f"Strike {i + 1} missed!",
+                roll=roll,
+                absorb_on_zero=True,
+            ):
+                total_hits += 1
 
             if not self.target.is_alive():
                 break
@@ -317,14 +307,7 @@ class ExploitWeakness(Move):
         roll = random.randint(0, 100)
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
@@ -476,14 +459,7 @@ class Stupefy(Move):
         roll = random.randint(0, 100)
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True

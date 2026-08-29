@@ -23,13 +23,24 @@ from src.api.schemas.combat_beat import (
 logger = logging.getLogger(__name__)
 
 
-def _last_animation(log_entries):
-    """Return the animation dict of the most recent animated log entry, or None."""
-    for entry in reversed(log_entries or []):
-        anim = entry.get("animation")
-        if anim:
-            return anim
-    return None
+def _beat_animations(log_entries):
+    """Every animation dict in a beat's log, in the order the engine emitted it.
+
+    This used to return only the LAST one, which lost two different things.
+    A multi-target swing resolves once per enemy and appends one animation
+    carrier per resolution, so "last" was the last enemy's — the move's own
+    animation and every other landing were dropped on this channel. And because
+    a beat's log holds the player's move *and* the NPC turns that follow it, the
+    last animation in an ordinary beat is usually an NPC's, so even a plain
+    one-target swing was reported under the wrong actor and the wrong animation.
+    The first animation is the one that opened the beat; the rest are its
+    fellow resolutions, and they ride along as their own SFX emissions.
+    """
+    return [
+        entry["animation"]
+        for entry in (log_entries or [])
+        if entry.get("animation")
+    ]
 
 
 def _last_message(log_entries):
@@ -99,7 +110,8 @@ class CombatBeatStreamer:
         for snapshot in beat_states or []:
             curr = snapshot.get("combatants", [])
             hp_changes, killed, status_changes = diff_combatants(self._last, curr)
-            anim = _last_animation(snapshot.get("log"))
+            animations = _beat_animations(snapshot.get("log"))
+            anim = animations[0] if animations else None
 
             if anim is None and not hp_changes and not killed and not status_changes:
                 self._last = curr
@@ -110,17 +122,27 @@ class CombatBeatStreamer:
             web_animation = (anim.get("type") if anim else None) or "pulse"
             has_swing = bool(target_id) and target_id != actor_id
 
+            # One resolution per animation carrier, each against the combatant it
+            # actually happened to, so a swing that parries off one enemy and
+            # lands on three is audible as all four events rather than as
+            # whichever one happened to be narrated last.
+            outcomes = [
+                _derive_outcome(a, hp_changes, killed, a.get("target_id"))
+                for a in animations
+            ] or [_derive_outcome(None, hp_changes, killed, None)]
+
             beat = build_beat(
                 seq=self._next_seq(),
                 actor_id=actor_id,
                 target_id=target_id,
                 web_animation=web_animation,
-                outcome=_derive_outcome(anim, hp_changes, killed, target_id),
+                outcome=outcomes[0],
                 hp_changes=hp_changes,
                 killed=killed,
                 status_changes=status_changes,
                 log_line=_last_message(snapshot.get("log")),
                 has_swing=has_swing,
+                outcomes=outcomes,
             )
             self._emit(BEAT_EVENT, beat)
             self._last = curr

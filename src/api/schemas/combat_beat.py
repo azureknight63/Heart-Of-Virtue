@@ -72,14 +72,25 @@ def build_sfx_chain(
     status_changes=None,
     actor_id=None,
     has_swing=True,
+    outcomes=None,
 ):
     """Return the ordered, server-indexed semantic SFX emissions for a beat.
 
-    Causal/sonic order: ``swing`` (windup) → ``impact`` (resolves via
-    ``outcome`` + the beat's ``web_animation`` client-side) → one ``status`` per
-    landed status → ``heal`` (a positive HP change on the actor, i.e. lifesteal)
-    → one ``death`` per id that died. Indices are assigned sequentially so the
-    client can play them in this exact order with the 75% partial-stack rule.
+    Causal/sonic order: ``swing`` (windup) → one ``impact`` per resolution
+    (each resolving via its own ``outcome`` + the beat's ``web_animation``
+    client-side) → one ``status`` per landed status → ``heal`` (a positive HP
+    change on the actor, i.e. lifesteal) → one ``death`` per id that died.
+    Indices are assigned sequentially so the client can play them in this exact
+    order with the 75% partial-stack rule.
+
+    ``outcomes`` carries the per-target resolutions of a single swing: one arc
+    catching four enemies parries off one and lands on three, and each of those
+    is its own audible event. Pass it and the chain gets one ``impact`` per
+    entry, in engine order; omit it and the chain falls back to the single
+    ``outcome``, which is what a one-target swing needs. ``cueForEmission`` in
+    frontend/src/utils/combatSfx.js already prefers ``emission.outcome`` over
+    the beat's, and ``scheduleSfxChain`` already staggers a chain of any length
+    at 75% overlap, so no client change is needed to hear all of them.
     """
     hp_changes = hp_changes or []
     status_changes = status_changes or []
@@ -88,7 +99,8 @@ def build_sfx_chain(
     emissions = []
     if has_swing:
         emissions.append({"kind": "swing"})
-    emissions.append({"kind": "impact", "outcome": outcome})
+    for resolution in (outcomes if outcomes is not None else [outcome]):
+        emissions.append({"kind": "impact", "outcome": resolution})
     for change in status_changes:
         emissions.append({"kind": "status", "status": change.get("status")})
     if actor_id is not None and any(
@@ -115,6 +127,7 @@ def build_beat(
     status_changes=None,
     log_line="",
     has_swing=True,
+    outcomes=None,
 ):
     """Build a ``combat:beat`` payload from structured engine facts.
 
@@ -125,6 +138,10 @@ def build_beat(
     ``departed`` is a list of ``{"id", "reason"}`` for combatants that LEFT the
     battlefield alive (flee/warp/scripted removal) — the client drops the token
     without a death animation/sound. ``status_changes`` is ``{"id", "status"}``.
+
+    ``outcome`` is the beat's headline resolution (the one the client falls back
+    to); ``outcomes`` is every resolution the beat contained, one per target of
+    a multi-target swing. See ``build_sfx_chain``.
     """
     hp_changes = list(hp_changes or [])
     killed = list(killed or [])
@@ -148,6 +165,7 @@ def build_beat(
             status_changes=status_changes,
             actor_id=actor_id,
             has_swing=has_swing,
+            outcomes=outcomes,
         ),
     }
 

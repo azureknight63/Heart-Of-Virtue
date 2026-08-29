@@ -13,13 +13,12 @@ from ._base import (
     apply_facing_damage,
     hostiles_in_arc,
     Move,
-    OUTCOME_HIT,
-    OUTCOME_MISS,
-    OUTCOME_PARRY,
     PassiveMove,
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
-    publish_outcome,
+    resolve_damage,
+    resolve_strike_outcome,
+    target_protection,
     to_hit_chance,
 )  # noqa: F401
 
@@ -149,85 +148,46 @@ class Reap(Move):
 
     def execute(self, user):
         cprint(f"{user.name} sweeps the scythe in a devastating arc!", "magenta")
-        wpn_range = getattr(getattr(self.user, "eq_weapon", None), "wpnrange", (0, 5))
-        arc_range = wpn_range[1]
 
-        # Hostiles only. This loop used to walk combat_proximity directly,
-        # which holds BOTH sides -- so every arc and spin dealt full damage
-        # to Jean's own allies, silently and with no warning. Measured
-        # before the fix: Whirl Attack dealt 27 to Gorran against 23 to the
-        # enemy it was aimed at. Blood of Martyrs was the only area move
-        # that got this right, purely because it happened to iterate
-        # combat_list. _hostiles_in_proximity is that same rule, shared.
-        for enemy, _distance in list(self._hostiles_in_proximity()):
-            if not enemy.is_alive():
-                continue
-
-            # Frontal arc check when coordinates available
-            if (
-                hasattr(self.user, "combat_position")
-                and self.user.combat_position is not None
-                and hasattr(enemy, "combat_position")
-                and enemy.combat_position is not None
-            ):
-                dist = positions.distance_from_coords(
-                    self.user.combat_position, enemy.combat_position
-                )
-                if dist > arc_range:
-                    continue
-                try:
-                    atk_angle = positions.angle_to_target(
-                        self.user.combat_position, enemy.combat_position
-                    )
-                    angle_diff = positions.attack_angle_difference(
-                        atk_angle, self.user.combat_position.facing
-                    )
-                    if angle_diff > 90:  # outside frontal hemisphere
-                        continue
-                except Exception:
-                    pass
-            else:
-                dist = self.user.combat_proximity.get(enemy, 9999)
-                if dist > arc_range:
-                    continue
-
+        # Enemy selection is hostiles_in_arc -- the same function, at the same
+        # reach (preview_reach() is this move's weapon-derived arc), that
+        # preview_affected() above calls. The gate was hand-rolled here
+        # (alive / distance / 90-degree cone / proximity fallback) and again in
+        # Sweep, Halberd Spin and Whirl Attack: four copies of a rule the
+        # *preview* also had to state, and the miss line below is only truthful
+        # for the enemies the preview agrees are in the arc. Two derivations of
+        # "who does this swing reach" can diverge; one cannot.
+        for enemy in hostiles_in_arc(self, self.preview_reach(), frontal=True):
             # Facing/angle damage (#394) - see apply_facing_damage.
             # Scored per enemy: an arc swing reaches each one from a
             # different angle, so one hoisted multiplier would be wrong
             # for every target but one.
             swing_power = apply_facing_damage(self.user, enemy, self.power)
-            base_dmg = max(1, int(swing_power - enemy.protection))
+            base_dmg = max(1, int(swing_power - target_protection(enemy)))
             # Truncated per multiplier, in order -- see _damage_multipliers.
             for multiplier in self._damage_multipliers(enemy):
                 base_dmg = int(base_dmg * multiplier)
-            # ReapersMark is consumed on a landed hit; see below.
+            # ReapersMark is consumed on a landed hit; read before the strike
+            # because _damage_multipliers has already priced it in.
             marked = getattr(enemy, "_reapers_mark", False) is True
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
             # One outcome per enemy, published immediately before that enemy's
-            # own line (see _base.publish_outcome) -- a single outcome for the
-            # whole arc would report whoever narrated first as everyone's
-            # result. Reap deals flat `max(1, power - protection)` with no
-            # hit-margin test, so it has no glancing blow to report.
-            if random.randint(0, 100) <= hit_chance:
-                if functions.check_parry(enemy):
-                    publish_outcome(self.user, OUTCOME_PARRY, enemy)
-                    cprint(f"{enemy.name} parried the sweep!", "yellow")
-                else:
-                    enemy.hp = max(0, enemy.hp - base_dmg)
-                    if marked:
-                        enemy._reapers_mark = False
-                    publish_outcome(self.user, OUTCOME_HIT, enemy)
-                    cprint(
-                        f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
-                    )
-            else:
-                # Previously silent: a whiffed enemy produced no line at all, so
-                # the arc went quiet and the player could not tell a miss from an
-                # enemy standing outside the cone.
-                publish_outcome(self.user, OUTCOME_MISS, enemy)
-                cprint(f"The scythe passes wide of {enemy.name}!", "yellow")
+            # own line -- see _base.resolve_strike_outcome. Reap deals flat
+            # `max(1, power - protection)` with no hit-margin test and floors
+            # at 1, so it has neither a glancing blow nor an absorb to report.
+            landed = resolve_strike_outcome(
+                self,
+                enemy,
+                base_dmg,
+                hit_chance,
+                hit_line=f"{enemy.name} takes {base_dmg} damage from the sweep!",
+                parry_line=f"{enemy.name} parried the sweep!",
+                miss_line=f"The scythe passes wide of {enemy.name}!",
+            )
+            if landed and marked:
+                enemy._reapers_mark = False
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -421,14 +381,7 @@ class DeathsHarvest(Move):
         roll = random.randint(0, 100)
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True

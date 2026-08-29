@@ -139,18 +139,47 @@ def test_instances_resolve_class_attribute():
 
 
 def test_adapter_substituted_animation_types_exist_in_the_frontend():
-    """Types the API layer emits itself must be real configs too.
+    """Types the API layer picks itself must be real configs too.
 
-    The contract above only covers types declared on move classes. The combat
-    adapter substitutes its own for the follow-up resolutions of a multi-target
-    swing (``FOLLOW_UP_IMPACT_ANIMATION``), and an unknown type there fails the
-    way every wire-name drift in this codebase fails — silently: the client
-    falls back to ``pulse``, which has no target treatment, so the extra enemies
-    a sweep caught would flash nothing at all and nobody would see an error.
+    The contract above only covers types declared on move classes. The adapter
+    also chooses a type of its own whenever a move declares none — the
+    damaging-move and the generic fallbacks — and an unknown type there fails
+    the way every wire-name drift in this codebase fails: silently. The client
+    falls back to ``pulse``, so the move would flash nothing recognisable and
+    nobody would see an error.
+
+    This used to pin ``FOLLOW_UP_IMPACT_ANIMATION``, the short flash the adapter
+    substituted for every resolution after the first of a multi-target swing.
+    That downgrade is gone (every target now plays the move in full, layered
+    client-side), so the constant is gone with it and the two remaining
+    adapter-chosen types are what this guards.
     """
-    from src.api.combat_adapter import FOLLOW_UP_IMPACT_ANIMATION
+    from src.api.combat_adapter import (
+        DEFAULT_ANIMATION,
+        DEFAULT_DAMAGE_ANIMATION,
+    )
 
     frontend_types = _frontend_animation_types()
-    assert FOLLOW_UP_IMPACT_ANIMATION in frontend_types, (
-        f"{FOLLOW_UP_IMPACT_ANIMATION!r} is not a key of ANIMATION_CONFIGS"
+    for substituted in (DEFAULT_ANIMATION, DEFAULT_DAMAGE_ANIMATION):
+        assert substituted in frontend_types, (
+            f"{substituted!r} is not a key of ANIMATION_CONFIGS"
+        )
+
+
+def test_the_adapter_substitutes_no_type_this_test_does_not_know_about():
+    """A structural backstop for the test above.
+
+    The behavioural contract can only check the constants it imports, so a new
+    hardcoded animation-type literal in the adapter would slip past it. Pin the
+    fallbacks to named constants instead: this fails if a bare string literal is
+    ever assigned to ``animation_type`` again.
+    """
+    import pathlib
+    import re
+
+    source = pathlib.Path("src/api/combat_adapter.py").read_text(encoding="utf-8")
+    literals = re.findall(r'animation_type = "(\w+)"', source)
+    assert not literals, (
+        "these adapter-chosen animation types bypass the frontend contract "
+        f"check above; give them a module constant instead: {literals}"
     )

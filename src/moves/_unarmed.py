@@ -12,45 +12,12 @@ from ._base import (
     weapon_scaled_power,
     Move,
     PassiveMove,
-    DAMAGE_VARIANCE_MAX,
-    DAMAGE_VARIANCE_MIN,
     _apply_carry_fatigue,
-    _resolve_heat,
     apply_facing_damage,
+    flat_resisted_damage,
     preview_payload,
+    resolve_damage,
 )  # noqa: F401
-
-
-def flat_unarmed_damage(target, faced_power, damage_type):
-    """Jab's damage line, stated once so ``execute()`` and ``preview_damage()``
-    cannot drift apart again.
-
-    ``faced_power`` is the move's power *after* ``apply_facing_damage``. The
-    facing curve is deliberately left to the two callers rather than folded in
-    here: ``tests/test_facing_damage_hand_rolled_attacks.py`` is a static scan
-    of each ``execute()``'s own source for that call, and a move that reaches
-    the curve only through a helper reads to it as a move that skips the curve
-    entirely. That guard exists because opting out of positional damage is
-    silent -- no error, no symptom -- so it is worth keeping literal.
-
-    What is left is the whole rest of the line: the target's resistance, then
-    its protection, then nothing. No momentum multiplier and no
-    ``random.uniform`` band -- a design decision rather than an oversight, see
-    ``Jab.execute``. The flat shape has precedent (``flat_arc_damage_bounds``
-    in ``_base`` serves Reap, Sweep and Halberd Spin) but not this exact
-    expression: those three skip resistance and floor at 1, where Jab honours
-    resistance and floors at 0. Written here rather than borrowed and quietly
-    mis-stated.
-
-    Returns a float; callers apply their own ``int()`` where the engine does.
-    """
-    protection = getattr(target, "protection", 0)
-    if not isinstance(protection, (int, float)) or isinstance(protection, bool):
-        protection = 0
-    damage = (
-        faced_power * functions.combat_resistance(target, damage_type)
-    ) - protection
-    return damage if damage > 0 else 0.0
 
 
 class PowerStrike(Move):
@@ -242,29 +209,25 @@ class PowerStrike(Move):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        # The canonical damage expression -- the one standard_execute_attack
-        # runs and damage_bounds predicts: resistance, then protection, then
-        # heat, then the same +/-20% band. This used to be
-        # `power * uniform(0.8, 1.2) - protection`, which dropped the
-        # resistance and heat terms and subtracted protection on the wrong
-        # side of the roll. Two consequences: preview_damage (which has always
-        # computed this line) overstated the move by the whole heat multiplier
-        # -- 128-192 advertised against 64-96 dealt at heat 2.0 -- and the
-        # heavy bludgeon finisher, the move whose entire role is to cash in
-        # accumulated momentum, was the one attack momentum could not move.
+        # The canonical damage expression, which is now a single shared
+        # function rather than a line each attack writes out for itself:
+        # resistance, then protection, then heat, then the +/-20% band. Power
+        # Strike used to spell it as `power * uniform(0.8, 1.2) - protection`,
+        # dropping the resistance and heat terms and subtracting protection on
+        # the wrong side of the roll. Two consequences: preview_damage (which
+        # has always computed the real line) overstated the move by the whole
+        # heat multiplier -- 128-192 advertised against 64-96 dealt at heat 2.0
+        # -- and the heavy bludgeon finisher, the move whose entire role is to
+        # cash in accumulated momentum, was the one attack momentum could not
+        # move. A copy that has drifted looks exactly like one that has not,
+        # which is why there is no copy here any more.
         #
-        # The variance stays here rather than in evaluate(): evaluate() runs
-        # once per beat for every known move, so rolling there re-rolled the
-        # move's power continuously -- the displayed power flickered and the
-        # value that landed was whichever beat happened to be last.
-        resistance = functions.combat_resistance(self.target, self.base_damage_type)
-        damage = (
-            ((power * resistance) - self.target.protection)
-            * _resolve_heat(self.user)
-            * random.uniform(DAMAGE_VARIANCE_MIN, DAMAGE_VARIANCE_MAX)
-        )
-        if damage <= 0:
-            damage = 0
+        # The variance is rolled at strike time (inside resolve_damage) rather
+        # than in evaluate(): evaluate() runs once per beat for every known
+        # move, so rolling there re-rolled the move's power continuously -- the
+        # displayed power flickered and the value that landed was whichever
+        # beat happened to be last.
+        damage = resolve_damage(self.user, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
             damage /= 2
             glance = True
@@ -444,7 +407,7 @@ class Jab(Move):
             return None
         resolved = target if target is not None else self.target
         faced = apply_facing_damage(self.user, resolved, self.power)
-        damage = int(flat_unarmed_damage(resolved, faced, self.base_damage_type))
+        damage = int(flat_resisted_damage(resolved, faced, self.base_damage_type))
         return preview_payload(damage, damage, resolved)
 
     def execute(self, npc):
@@ -494,7 +457,7 @@ class Jab(Move):
         # any of this -- preview_damage() above reports exactly this line, and
         # the whole reason this comment exists is that it once did not, quoting
         # 14-21 for a swing that removed 9 HP at heat 2.0.
-        damage = flat_unarmed_damage(self.target, power, self.base_damage_type)
+        damage = flat_resisted_damage(self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
             damage /= 2
             glance = True

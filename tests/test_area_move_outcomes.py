@@ -386,13 +386,14 @@ def test_area_moves_never_publish_a_glance(move_cls, subtype):
     assert seen <= set(OUTCOMES), seen
 
 
-def test_a_multi_enemy_sweep_plays_one_arc_then_flashes_each_landing(monkeypatch):
-    """One swing of the weapon must not render as four swings.
+def test_a_multi_enemy_sweep_animates_in_full_on_every_enemy_it_reaches(monkeypatch):
+    """Every enemy an arc catches gets the arc, in full, against its own id.
 
-    The arc animation plays once, for the first resolution; every later enemy
-    the same swing reaches gets the short flash-only ``impact`` animation, which
-    the client queues and plays strictly one at a time (so four enemies also
-    cannot stack four impact cues onto the same frame).
+    The adapter used to downgrade every resolution after the first to a short
+    flash-only ``impact`` animation, because the client played a beat's
+    animations strictly one at a time and four full sweeps read as four swings.
+    The client now plays them concurrently and layers their SFX, so the
+    downgrade only cost the later targets their animation.
     """
     import src.moves._polearm as polearm
 
@@ -407,12 +408,7 @@ def test_a_multi_enemy_sweep_plays_one_arc_then_flashes_each_landing(monkeypatch
 
     entries = _run(_capture_for(user), lambda: move.execute(user))
 
-    assert [i["type"] for i in _impacts(entries)] == [
-        "sweep",
-        "impact",
-        "impact",
-        "impact",
-    ], entries
+    assert [i["type"] for i in _impacts(entries)] == ["sweep"] * 4, entries
 
 
 def _adapter_for(user):
@@ -526,3 +522,121 @@ def test_whirl_attack_reports_a_whiffed_enemy_like_every_other_arc():
         f"{len(published)} outcomes: {published}"
     )
     assert {name for _, name in published} == {"Slime1", "Slime2", "Slime3"}, published
+
+
+# ── Blood of Martyrs (faith mastery, battlefield-wide detonation) ───────────
+
+
+class _AbsorbState:
+    """Stand-in for ``states.BloodOfMartyrsState`` — the only two attributes
+    ``BloodOfMartyrs.execute`` reads off it."""
+
+    def __init__(self, absorbed):
+        self.name = "Blood of Martyrs"
+        self._absorbing = True
+        self.absorbed = absorbed
+
+
+def _martyr_user(absorbed=50):
+    user = _make_user("Sword")
+    user.faith = 40
+    user.strength = user.finesse = user.speed = 10
+    user.endurance = user.charisma = user.intelligence = 10
+    user.states = [_AbsorbState(absorbed)]
+    return user
+
+
+def test_blood_of_martyrs_publishes_one_outcome_per_enemy():
+    """The detonation is one resolution per enemy, exactly like an arc swing.
+
+    It damages every living enemy on the battlefield and narrates a line for
+    each — but published nothing at all, so the whole map-wide blast fell
+    through to the adapter's end-of-move fallback: one animation, no per-target
+    impact, and no way for the client to flash the enemies that were actually
+    hit.
+    """
+    from src.moves._mastery import BloodOfMartyrs
+
+    user = _martyr_user()
+    enemies = [_make_enemy(f"E{i}") for i in range(3)]
+    user.combat_list = list(enemies)
+
+    move = BloodOfMartyrs(user)
+    _arm(user, move)
+
+    entries = _run(_capture_for(user), lambda: move.execute(user))
+
+    assert _outcomes(entries) == ["hit", "hit", "hit"], entries
+
+
+def test_blood_of_martyrs_attributes_each_outcome_to_its_own_enemy():
+    from src.api.serializers.combat import CombatantSerializer
+    from src.moves._mastery import BloodOfMartyrs
+
+    user = _martyr_user()
+    enemies = [_make_enemy(f"E{i}") for i in range(3)]
+    user.combat_list = list(enemies)
+
+    move = BloodOfMartyrs(user)
+    _arm(user, move)
+
+    entries = _run(_capture_for(user), lambda: move.execute(user))
+
+    assert [i["target_id"] for i in _impacts(entries)] == [
+        CombatantSerializer.stream_id(enemy) for enemy in enemies
+    ], entries
+
+
+def test_blood_of_martyrs_publishes_absorb_when_the_blast_does_nothing():
+    """A ``pure`` resistance of 0 collapses the blast to zero damage against
+    that enemy. Zero damage is an ``absorb``, not a ``hit`` — publishing a hit
+    would play the full flesh-impact cue for a blow the enemy shrugged off,
+    the same distinction ``Move.hit()`` and Chip Away already draw.
+    """
+    from src.moves._mastery import BloodOfMartyrs
+
+    user = _martyr_user()
+    immune, struck = _make_enemy("Immune"), _make_enemy("Struck")
+    immune.resistance = dict(RESISTANCE, pure=0.0)
+    user.combat_list = [immune, struck]
+
+    move = BloodOfMartyrs(user)
+    _arm(user, move)
+
+    entries = _run(_capture_for(user), lambda: move.execute(user))
+
+    assert _outcomes(entries) == ["absorb", "hit"], entries
+
+
+def test_blood_of_martyrs_skips_the_dead_without_publishing():
+    """Only the living get a resolution — a corpse is not a target the client
+    should flash."""
+    from src.moves._mastery import BloodOfMartyrs
+
+    user = _martyr_user()
+    dead, alive = _make_enemy("Dead"), _make_enemy("Alive")
+    dead.is_alive = lambda: False
+    user.combat_list = [dead, alive]
+
+    move = BloodOfMartyrs(user)
+    _arm(user, move)
+
+    entries = _run(_capture_for(user), lambda: move.execute(user))
+
+    assert _outcomes(entries) == ["hit"], entries
+
+
+def test_blood_of_martyrs_publishes_nothing_when_it_absorbed_nothing():
+    """No absorbed damage means no detonation at all — and therefore no
+    per-enemy resolutions to report."""
+    from src.moves._mastery import BloodOfMartyrs
+
+    user = _martyr_user(absorbed=0)
+    user.combat_list = [_make_enemy("E0")]
+
+    move = BloodOfMartyrs(user)
+    _arm(user, move)
+
+    entries = _run(_capture_for(user), lambda: move.execute(user))
+
+    assert _outcomes(entries) == [], entries

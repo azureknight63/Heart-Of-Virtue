@@ -33,6 +33,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.api.combat_adapter import (
+    REPORTED_BEAT_KEY,
     ApiCombatAdapter,
     CombatOutputCapture,
     _strip_combatant_prefix,
@@ -278,11 +279,13 @@ class TestCombatOutputCapture:
         # one outcome per enemy in its arc, so the animation has to survive to
         # carry the next resolution. What must not survive is the resolution
         # just reported — a further line cannot re-fire it, and the end-of-move
-        # fallback sees it as already reported.
+        # fallback sees it as already reported. "Reported" is recorded as the
+        # BEAT it happened in, not as a lifetime boolean, so a move that swings
+        # again in a later beat is a first-class swing rather than a follow-up.
         cap.write("Another line entirely.")
         assert len([e for e in cap.log_entries if e.get("trigger_animation")]) == 1
         assert player._pending_animation["outcome"] is None
-        assert player._pending_animation["_reported"] is True
+        assert REPORTED_BEAT_KEY in player._pending_animation
 
     def test_write_ignores_impact_prose_with_no_published_outcome(self):
         """Prose alone must never fire an animation (regression guard)."""

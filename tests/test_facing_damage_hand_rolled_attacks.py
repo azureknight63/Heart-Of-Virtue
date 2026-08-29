@@ -313,7 +313,18 @@ class TestHandRolledAttacksRespondToFacing:
 #: guard certified them while they were genuinely unwired. A signal list that
 #: is too narrow fails silently in the safe-looking direction; add to it
 #: whenever a new spelling appears.
-_DAMAGE_SIGNALS = ("self.hit(", "hp -=", "hp = max(", ".hp = max(")
+_DAMAGE_SIGNALS = (
+    "self.hit(",
+    "hp -=",
+    "hp = max(",
+    ".hp = max(",
+    # Fifth spelling: the shared per-target resolver
+    # (_base.resolve_strike_outcome) applies the HP itself, so Reap, Sweep,
+    # Halberd Spin and Chip Away no longer write it in their own bodies. A
+    # signal list that is too narrow fails silently in the safe-looking
+    # direction -- which is exactly how `hp = max(0,` came to be added.
+    "resolve_strike_outcome(",
+)
 
 #: Reaching either of these means the curve is applied.
 _WIRED_SIGNALS = ("apply_facing_damage(", "standard_execute_attack(")

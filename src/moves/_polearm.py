@@ -13,12 +13,10 @@ from ._base import (
     apply_facing_damage,
     hostiles_in_arc,
     Move,
-    OUTCOME_HIT,
-    OUTCOME_MISS,
-    OUTCOME_PARRY,
     PassiveMove,
     _apply_to_hit_modifiers,
-    publish_outcome,
+    resolve_strike_outcome,
+    target_protection,
     to_hit_chance,
 )  # noqa: F401
 
@@ -242,78 +240,39 @@ class Sweep(Move):
 
     def execute(self, user):
         cprint(f"{user.name} sweeps the polearm in a broad arc!", "cyan")
-        arc_range = self.mvrange[1]
 
-        # Hostiles only. This loop used to walk combat_proximity directly,
-        # which holds BOTH sides -- so every arc and spin dealt full damage
-        # to Jean's own allies, silently and with no warning. Measured
-        # before the fix: Whirl Attack dealt 27 to Gorran against 23 to the
-        # enemy it was aimed at. Blood of Martyrs was the only area move
-        # that got this right, purely because it happened to iterate
-        # combat_list. _hostiles_in_proximity is that same rule, shared.
-        for enemy, _distance in list(self._hostiles_in_proximity()):
-            if not enemy.is_alive():
-                continue
-
-            if (
-                hasattr(self.user, "combat_position")
-                and self.user.combat_position is not None
-                and hasattr(enemy, "combat_position")
-                and enemy.combat_position is not None
-            ):
-                dist = positions.distance_from_coords(
-                    self.user.combat_position, enemy.combat_position
-                )
-                if dist > arc_range:
-                    continue
-                try:
-                    atk_angle = positions.angle_to_target(
-                        self.user.combat_position, enemy.combat_position
-                    )
-                    angle_diff = positions.attack_angle_difference(
-                        atk_angle, self.user.combat_position.facing
-                    )
-                    if angle_diff > 90:
-                        continue
-                except Exception:
-                    pass
-            else:
-                dist = self.user.combat_proximity.get(enemy, 9999)
-                if dist > arc_range:
-                    continue
-
+        # Enemy selection is hostiles_in_arc -- the same function, with the
+        # same reach, that preview_affected() above calls. The gate was
+        # hand-rolled here (alive / distance / 90-degree cone / proximity
+        # fallback) and again in Reap, Halberd Spin and Whirl Attack: four
+        # copies of a rule the *preview* also had to state, and the miss line
+        # below is only truthful for the enemies the preview agrees are in the
+        # arc. Two derivations of "who does this swing reach" can diverge; one
+        # cannot.
+        for enemy in hostiles_in_arc(self, self.preview_reach(), frontal=True):
             # Facing/angle damage (#394) - see apply_facing_damage.
             # Scored per enemy: an arc swing reaches each one from a
             # different angle, so one hoisted multiplier would be wrong
             # for every target but one.
             swing_power = apply_facing_damage(self.user, enemy, self.power)
-            base_dmg = max(1, int(swing_power - enemy.protection))
+            base_dmg = max(1, int(swing_power - target_protection(enemy)))
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
             # One outcome per enemy, published immediately before that enemy's
-            # own line (see _base.publish_outcome). A single outcome for the
-            # whole arc would report whoever narrated first as everyone's
-            # result. Sweep has no glancing-blow branch -- its damage is flat
-            # `max(1, power - protection)` with no hit-margin test -- so it can
-            # only ever publish hit/parry/miss.
-            if random.randint(0, 100) <= hit_chance:
-                if functions.check_parry(enemy):
-                    publish_outcome(self.user, OUTCOME_PARRY, enemy)
-                    cprint(f"{enemy.name} blocked the sweep!", "yellow")
-                else:
-                    enemy.hp = max(0, enemy.hp - base_dmg)
-                    publish_outcome(self.user, OUTCOME_HIT, enemy)
-                    cprint(
-                        f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
-                    )
-            else:
-                # A whiffed enemy used to produce no line at all, so the arc
-                # simply went quiet and the player could not tell a miss from an
-                # enemy standing outside the cone. Every enemy the swing reaches
-                # now reports what happened to it.
-                publish_outcome(self.user, OUTCOME_MISS, enemy)
-                cprint(f"The sweep passes wide of {enemy.name}!", "yellow")
+            # own line -- see _base.resolve_strike_outcome, which is where that
+            # pairing now lives. Sweep has no glancing-blow branch (flat
+            # `max(1, power - protection)`, no hit-margin test) and its damage
+            # floors at 1, so it can only ever publish hit/parry/miss.
+            resolve_strike_outcome(
+                self,
+                enemy,
+                base_dmg,
+                hit_chance,
+                hit_line=f"{enemy.name} takes {base_dmg} damage from the sweep!",
+                parry_line=f"{enemy.name} blocked the sweep!",
+                miss_line=f"The sweep passes wide of {enemy.name}!",
+            )
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -485,57 +444,36 @@ class HalberdSpin(Move):
 
     def execute(self, user):
         cprint(f"{user.name} spins the halberd in a devastating full circle!", "cyan")
-        arc_range = self.mvrange[1]
 
-        # Hostiles only. This loop used to walk combat_proximity directly,
-        # which holds BOTH sides -- so every arc and spin dealt full damage
-        # to Jean's own allies, silently and with no warning. Measured
-        # before the fix: Whirl Attack dealt 27 to Gorran against 23 to the
-        # enemy it was aimed at. Blood of Martyrs was the only area move
-        # that got this right, purely because it happened to iterate
-        # combat_list. _hostiles_in_proximity is that same rule, shared.
-        for enemy, _distance in list(self._hostiles_in_proximity()):
-            if not enemy.is_alive():
-                continue
-
-            if (
-                hasattr(self.user, "combat_position")
-                and self.user.combat_position is not None
-                and hasattr(enemy, "combat_position")
-                and enemy.combat_position is not None
-            ):
-                dist = positions.distance_from_coords(
-                    self.user.combat_position, enemy.combat_position
-                )
-                if dist > arc_range:
-                    continue
-            else:
-                dist = self.user.combat_proximity.get(enemy, 9999)
-                if dist > arc_range:
-                    continue
-
+        # Enemy selection is hostiles_in_arc -- the same function, with the
+        # same reach, that preview_affected() above calls. The gate was
+        # hand-rolled here (alive / distance / full circle / proximity
+        # fallback) and again in Sweep, Reap and Whirl Attack: four copies of
+        # a rule the *preview* also had to state, and the miss line below is
+        # only truthful for the enemies the preview agrees the spin reaches.
+        # Two derivations of "who does this swing reach" can diverge; one
+        # cannot.
+        for enemy in hostiles_in_arc(self, self.preview_reach()):
             # Facing/angle damage (#394) - see apply_facing_damage.
-            # Scored per enemy: an arc swing reaches each one from a
-            # different angle, so one hoisted multiplier would be wrong
-            # for every target but one.
+            # Scored per enemy: a spin reaches each one from a different
+            # angle, so one hoisted multiplier would be wrong for every
+            # target but one.
             swing_power = apply_facing_damage(self.user, enemy, self.power)
-            base_dmg = max(1, int(swing_power - enemy.protection))
+            base_dmg = max(1, int(swing_power - target_protection(enemy)))
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
-            # Per-enemy outcomes; see the same block in Sweep above. Halberd
+            # Per-enemy outcomes; see the same call in Sweep above. Halberd
             # Spin shares Sweep's flat damage line and likewise has no glance.
-            if random.randint(0, 100) <= hit_chance:
-                if functions.check_parry(enemy):
-                    publish_outcome(self.user, OUTCOME_PARRY, enemy)
-                    cprint(f"{enemy.name} parried the spin!", "yellow")
-                else:
-                    enemy.hp = max(0, enemy.hp - base_dmg)
-                    publish_outcome(self.user, OUTCOME_HIT, enemy)
-                    cprint(f"{enemy.name} takes {base_dmg} damage!", "red")
-            else:
-                publish_outcome(self.user, OUTCOME_MISS, enemy)
-                cprint(f"The spin whirls past {enemy.name}!", "yellow")
+            resolve_strike_outcome(
+                self,
+                enemy,
+                base_dmg,
+                hit_chance,
+                hit_line=f"{enemy.name} takes {base_dmg} damage!",
+                parry_line=f"{enemy.name} parried the spin!",
+                miss_line=f"The spin whirls past {enemy.name}!",
+            )
 
         # Random facing after spin
         try:

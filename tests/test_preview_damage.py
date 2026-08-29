@@ -670,7 +670,19 @@ NPC_MOVE_MODULE = "src.moves._npc"
 #: as the facing-curve guard, and for the same reason: the package genuinely
 #: uses several, and a signal list that is too narrow fails silently in the
 #: safe-looking direction.
-_DAMAGE_SIGNALS = ("self.hit(", "hp -=", "hp = max(", ".hp = max(")
+_DAMAGE_SIGNALS = (
+    "self.hit(",
+    "hp -=",
+    "hp = max(",
+    ".hp = max(",
+    # The shared per-target resolver (_base.resolve_strike_outcome) applies the
+    # HP itself, so the four area swings that route through it stopped writing
+    # `hp = max(` in their own bodies. Without this spelling they read as "not
+    # a damage path" and the scan silently certified them -- the exact
+    # too-narrow-signal failure the comment above warns about, one refactor
+    # later.
+    "resolve_strike_outcome(",
+)
 
 #: Damage paths that diverge but are knowingly left on the default preview,
 #: with the reason. Not a shim: nothing here changes what any move does. An
@@ -770,8 +782,25 @@ def _divergences(source):
     """
     reasons = []
     tree = _code_tree(source)
-    canonical = _calls(tree, "standard_execute_attack")
-    if _calls(tree, "_hostiles_in_proximity"):
+    # Two spellings of "this execute() is on the canonical line", and both have
+    # to count. ``standard_execute_attack`` is the shared pipeline; a
+    # hand-rolled execute() that calls ``resolve_damage`` scores the identical
+    # expression -- it IS the expression now, extracted out of the ~20 copies
+    # that used to spell it out inline (see
+    # tests/test_canonical_damage_expression.py). Before the extraction this
+    # function recognised canonical damage by the ``random.uniform`` roll and a
+    # ``heat`` read *in the body*; both moved into the helper, so without this
+    # every canonical attack in the package would suddenly read as divergent.
+    canonical = _calls(tree, "standard_execute_attack") or _calls(
+        tree, "resolve_damage"
+    )
+    # Two spellings of "this execute() damages a *set*". The four area swings
+    # used to walk _hostiles_in_proximity themselves; they now select through
+    # the shared hostiles_in_arc -- the same function their preview_affected()
+    # calls, which is the point -- and an area move must stay divergent either
+    # way, because self.target (the user, for all of them) cannot describe who
+    # it hits.
+    if _calls(tree, "_hostiles_in_proximity") or _calls(tree, "hostiles_in_arc"):
         reasons.append("damages a set of enemies rather than self.target")
     if not canonical and not _calls(tree, "uniform"):
         reasons.append("scores damage outside the canonical variance expression")

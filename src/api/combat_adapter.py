@@ -59,20 +59,64 @@ def _strip_combatant_prefix(target_id: str) -> str:
     return target_id
 
 
-#: Animation type used for every resolution after the first in a single swing.
-#: An area move reports one outcome per enemy it reaches (see
-#: src/moves/_base.publish_outcome); replaying the move's own config once per
-#: enemy would render one arc as four consecutive 960 ms spins. The swing plays
-#: once, then each further landing gets this short outcome flash. Defined in
-#: frontend/src/utils/animationConfigs.js like every other animation type.
-FOLLOW_UP_IMPACT_ANIMATION = "impact"
+#: Animation the adapter picks for a targeted, damaging move that declares no
+#: ``web_animation`` of its own, and the generic fallback for everything else.
+#: Both must be keys of ANIMATION_CONFIGS in
+#: frontend/src/utils/animationConfigs.js -- an unknown type there degrades
+#: silently to ``pulse`` client-side, which is exactly how wire-name drift hides
+#: in this codebase. Guarded by tests/test_move_web_animations.py.
+DEFAULT_DAMAGE_ANIMATION = "attack"
+DEFAULT_ANIMATION = "pulse"
+
+#: Bookkeeping key recording the beat in which a pending animation last
+#: published a resolution. Its ABSENCE means "never resolved", which is the one
+#: thing the end-of-move fallback needs to know; recording the beat rather than
+#: a bare boolean scopes the fact to the beat it happened in instead of to the
+#: lifetime of the pending dict (which spans a whole player move, and for an NPC
+#: spans every beat from cast until it re-selects).
+REPORTED_BEAT_KEY = "_reported_beat"
+
+#: How much of ``player.combat_log`` survives a trim, per kind of entry.
+#:
+#: The log is the player's RECAP, not the load-bearing combat UI -- the
+#: battlefield is where a fight is read -- but it is also returned in full on
+#: every client poll and pickled into every save under a 5 MB cap, and it was
+#: never trimmed at all. Per-target resolutions made that worse: one arc now
+#: appends one animation carrier per enemy it reaches instead of one per swing.
+#:
+#: The two kinds are capped separately because they are consumed completely
+#: differently. Animation carriers (``type == "animation"``) are drained by the
+#: battlefield as they arrive and are filtered out of the visible log by
+#: CombatLog, so they are dead weight within a poll or two of being written;
+#: 400 of them is dozens of swings of client backlog against a sub-second
+#: consume latency. Visible entries are what the player scrolls back through,
+#: so they get their own budget and are never sacrificed to make room for
+#: carriers -- 400 lines is far more recap than any fight's readable history.
+#:
+#: Together they bound the pickled log at ~800 entries (~200 KB), and the trim
+#: only runs once the log has overshot by ``COMBAT_LOG_TRIM_SLACK``, so
+#: rebuilding the dedup key index afterwards is amortized over that many inserts
+#: rather than paid on each one.
+MAX_ANIMATION_LOG_ENTRIES = 400
+MAX_VISIBLE_LOG_ENTRIES = 400
+COMBAT_LOG_TRIM_SLACK = 100
+
+
+def _dedup_key(message, round_num, source_id):
+    """The identity ``_add_log_entry`` collapses duplicate log entries on.
+
+    Message and round alone are not enough: two distinct combatants using
+    identically-named moves in the same beat would collide, and the second
+    entry's animation would be dropped from the log the client reads.
+    """
+    return (message, round_num, source_id)
 
 
 def _wire_animation(pending: dict) -> dict:
     """The client-safe copy of a pending animation.
 
     ``publish_outcome`` stores the resolved combatant *object* on the pending
-    dict so the adapter can name it; ``_reported`` is the adapter's own
+    dict so the adapter can name it; ``REPORTED_BEAT_KEY`` is the adapter's own
     bookkeeping. Neither may reach the client: the combat log is jsonified on
     every poll and pickled into every save, so a live combatant here is a 500
     and a save that drags the enemy's object graph with it.
@@ -82,31 +126,38 @@ def _wire_animation(pending: dict) -> dict:
     two different ways before, and only one of them stripped these keys.
     """
     animation = dict(pending)
-    animation.pop("_reported", None)
+    animation.pop(REPORTED_BEAT_KEY, None)
     target = animation.pop("outcome_target", None)
     if target is not None:
         animation["target_id"] = CombatantSerializer.stream_id(target)
     return animation
 
 
-def _take_resolution(pending: dict) -> dict:
+def _take_resolution(pending: dict, beat=None) -> dict:
     """Snapshot one published resolution off a pending animation and re-arm it.
 
     The engine publishes an outcome per *target*, not per swing, so a pending
     animation can be resolved several times before the move ends. Each call
     returns the animation to emit for the resolution now on ``pending`` and
     clears the outcome so the next narration line can't re-fire it; ``pending``
-    itself is deliberately left in place, flagged as reported, so a later
-    resolution in the same swing still has somewhere to publish to and the
-    end-of-move fallback knows not to emit it again.
+    itself is deliberately left in place so a later resolution -- in this beat
+    or in a later one -- still has somewhere to publish to.
 
-    The first resolution keeps the move's own animation (the sweep, the lunge);
-    later ones downgrade to ``FOLLOW_UP_IMPACT_ANIMATION``.
+    **Every resolution carries the move's own animation, in full.** An arc that
+    catches four enemies emits the arc four times, once per ``target_id``, and
+    the client plays them concurrently, layered with their SFX, rather than
+    end to end. This used to downgrade every landing after the first to a short
+    ``impact`` flash -- a workaround for sequential client playback that cost the
+    later targets their real animation, and that also demoted the second
+    *genuine* swing of a move striking across two beats, because the flag it
+    keyed on lived for the whole pending dict rather than for a beat.
+
+    ``beat`` is recorded rather than a bare boolean so the record names the beat
+    it belongs to; its absence is what the end-of-move fallback reads to tell
+    "never resolved" from "already shown".
     """
     animation = _wire_animation(pending)
-    if pending.get("_reported"):
-        animation["type"] = FOLLOW_UP_IMPACT_ANIMATION
-    pending["_reported"] = True
+    pending[REPORTED_BEAT_KEY] = beat
     pending["outcome"] = None
     pending["outcome_target"] = None
     return animation
@@ -164,7 +215,12 @@ class CombatOutputCapture:
                 if entity is not None:
                     pending = getattr(entity, "_pending_animation", None)
                     if isinstance(pending, dict) and pending.get("outcome"):
-                        trigger_anim_data = _take_resolution(pending)
+                        # combat_beat is the shared per-beat counter and lives
+                        # on the player, so it dates the resolution the same way
+                        # for an NPC's swing as for Jean's.
+                        trigger_anim_data = _take_resolution(
+                            pending, getattr(self.player, "combat_beat", None)
+                        )
 
                 entry = {
                     "round": self.current_round,
@@ -429,6 +485,85 @@ class ApiCombatAdapter:
     def available_options(self, value):
         self.player.combat_adapter_state["available_options"] = value
 
+    @staticmethod
+    def _log_entry_key(entry):
+        """The dedup identity of an already-stored log entry.
+
+        Same spelling as the key ``_add_log_entry`` builds for the entry it is
+        about to insert -- deliberately one function, because an index keyed one
+        way and probed another silently swallows real entries.
+        """
+        return _dedup_key(
+            entry.get("message"),
+            entry.get("round"),
+            (entry.get("animation") or {}).get("source_id"),
+        )
+
+    def _log_key_index(self):
+        """The dedup key index for ``player.combat_log``, rebuilt when stale.
+
+        ``combat_log`` lives on the pickled *player*, so it outlives this
+        adapter and is replaced outright by ``initialize_combat`` (and by
+        loading a save). The index is therefore bound to the exact list object
+        and its length: any rebinding or any mutation this adapter did not make
+        falls out of sync and is rebuilt lazily here rather than silently
+        swallowing a real entry (or leaking a duplicate).
+
+        A trim invalidates the index outright rather than un-counting what it
+        dropped: ``allow_duplicate`` entries share a key by design (see
+        ``_emit_animation_log``), so per-entry removal would need multiplicities,
+        and a rebuild after a trim is both simpler and cheap -- the trim only
+        fires once per COMBAT_LOG_TRIM_SLACK inserts.
+        """
+        log = getattr(self.player, "combat_log", None)
+        if log is None:
+            log = self.player.combat_log = []
+        if (
+            getattr(self, "_log_key_source", None) is not log
+            or getattr(self, "_log_key_count", None) != len(log)
+        ):
+            self._log_keys = {self._log_entry_key(e) for e in log}
+            self._log_key_source = log
+            self._log_key_count = len(log)
+        return self._log_keys
+
+    def _trim_combat_log(self):
+        """Bound the combat log, newest-first, per kind of entry.
+
+        Rewrites the list IN PLACE: ``player.combat_log`` is read through the
+        player everywhere and pickled with it, so rebinding would strand any
+        held reference. Relative order is preserved, so the recap still reads
+        chronologically across the seam.
+
+        See MAX_ANIMATION_LOG_ENTRIES / MAX_VISIBLE_LOG_ENTRIES for the policy.
+        """
+        log = self.player.combat_log
+        ceiling = (
+            MAX_ANIMATION_LOG_ENTRIES
+            + MAX_VISIBLE_LOG_ENTRIES
+            + COMBAT_LOG_TRIM_SLACK
+        )
+        if len(log) <= ceiling:
+            return
+
+        animation_budget = MAX_ANIMATION_LOG_ENTRIES
+        visible_budget = MAX_VISIBLE_LOG_ENTRIES
+        kept = []
+        for entry in reversed(log):
+            if entry.get("type") == "animation":
+                if animation_budget <= 0:
+                    continue
+                animation_budget -= 1
+            else:
+                if visible_budget <= 0:
+                    continue
+                visible_budget -= 1
+            kept.append(entry)
+        kept.reverse()
+        log[:] = kept
+        # Force the lazy rebuild in _log_key_index rather than recomputing here.
+        self._log_key_count = None
+
     def _add_log_entry(
         self,
         round_num: int,
@@ -466,13 +601,19 @@ class ApiCombatAdapter:
         # For non-animation entries source_id is None on both sides, preserving
         # the original (message, round) dedup behaviour.
         # ``allow_duplicate`` opts an entry out entirely — see _emit_animation_log.
-        new_source = (animation_data or {}).get("source_id")
-        is_duplicate = not allow_duplicate and any(
-            existing.get("message") == message
-            and existing.get("round") == round_num
-            and (existing.get("animation") or {}).get("source_id") == new_source
-            for existing in self.player.combat_log
+        #
+        # Membership in a hash index, not a scan of the whole cumulative log:
+        # the scan was O(n) per insert and therefore O(n²) over a fight, and
+        # per-target resolutions raised n by a factor of however many enemies an
+        # arc reaches.
+        key = _dedup_key(
+            message, round_num, (animation_data or {}).get("source_id")
         )
+        # Resolve the index unconditionally: `and` would short-circuit past it
+        # for an allow_duplicate entry, leaving the index unbuilt for the very
+        # insert that is about to update it.
+        index = self._log_key_index()
+        is_duplicate = not allow_duplicate and key in index
         if not is_duplicate:
             entry = {
                 "round": round_num,
@@ -487,6 +628,9 @@ class ApiCombatAdapter:
                 entry["animation"] = animation_data
 
             self.player.combat_log.append(entry)
+            index.add(key)
+            self._log_key_count = len(self.player.combat_log)
+            self._trim_combat_log()
 
             # Emit socket event if session is known
             if self.session_id:
@@ -526,13 +670,21 @@ class ApiCombatAdapter:
         )
 
     def _flush_pending_animations(self):
-        """Clear every combatant's pending animation at the end of a move.
+        """Retire the pending animation of every combatant whose move is over.
 
         Emits a fallback log entry only for animations that never resolved —
         a move that dealt no damage and narrated nothing the capture paired an
-        outcome with. An animation already reported (once, or once per enemy for
-        an arc swing) is dropped silently: re-emitting it would append a phantom
-        trailing animation to every attack in the game.
+        outcome with. An animation that reported in ANY beat (once, or once per
+        enemy for an arc swing) is dropped silently: re-emitting it would append
+        a phantom trailing animation to every attack in the game.
+
+        A combatant still mid-move is skipped entirely. This flush runs at the
+        end of each *player* move, which is not the end of everyone else's: an
+        NPC three beats into a five-beat wind-up would otherwise have the very
+        channel its impact publishes to deleted out from under it, turning
+        ``publish_outcome`` into a silent no-op for the swing still to come —
+        and, on the way out, emitting a fallback animation for a move that had
+        not landed yet.
         """
         for entity in self._all_combatants():
             if not hasattr(entity, "_pending_animation"):
@@ -543,7 +695,9 @@ class ApiCombatAdapter:
                 # would raise AttributeError on .get() inside the move loop.
                 delattr(entity, "_pending_animation")
                 continue
-            if not animation_data.get("_reported"):
+            if getattr(entity, "current_move", None) is not None:
+                continue
+            if REPORTED_BEAT_KEY not in animation_data:
                 self._emit_animation_log(
                     self.player.combat_beat, _wire_animation(animation_data)
                 )
@@ -734,6 +888,12 @@ class ApiCombatAdapter:
             # Process initial NPC turns only for new combats
             if not reinit:
                 self._process_initial_turns()
+                # A first-strike NPC gets a whole beat here, outside any move
+                # loop. Without a flush its pending animation survives until the
+                # end of the player's FIRST move and is emitted a beat or more
+                # late; moves still winding up are skipped by the flush and keep
+                # their channel.
+                self._flush_pending_animations()
 
             # Set up for player's move selection OR resume existing move
             if reinit and self.player.current_move is not None:
@@ -1436,9 +1596,9 @@ class ApiCombatAdapter:
                 if animation_type is None:
                     # Apply fallback logic
                     if move.targeted and self._move_deals_damage(move):
-                        animation_type = "attack"
+                        animation_type = DEFAULT_DAMAGE_ANIMATION
                     else:
-                        animation_type = "pulse"
+                        animation_type = DEFAULT_ANIMATION
 
                 # Create animation metadata
                 animation_data = {
@@ -1924,9 +2084,9 @@ class ApiCombatAdapter:
                         if npc.current_move.targeted and self._move_deals_damage(
                             npc.current_move
                         ):
-                            animation_type = "attack"
+                            animation_type = DEFAULT_DAMAGE_ANIMATION
                         else:
-                            animation_type = "pulse"
+                            animation_type = DEFAULT_ANIMATION
 
                     # Create animation data
                     animation_data = {
@@ -2444,6 +2604,18 @@ class ApiCombatAdapter:
         # event_temp_ally combatants (CombatEventConfig.ally_list, issue #427) are scoped
         # to this one fight and never carried forward into the party roster either.
         # Invariant: combat_list_allies[0] is always the player.
+        #
+        # Discard every animation channel first, while the roster still names
+        # everyone who was in the fight. The end-of-move flush deliberately
+        # leaves an in-flight move's channel armed (see
+        # _flush_pending_animations); once combat is over nothing will ever
+        # publish to it, and a pending dict can hold a reference to the
+        # combatant its last resolution landed on, which would then be pickled
+        # into the save with the rest of the player.
+        for entity in self._all_combatants():
+            if hasattr(entity, "_pending_animation"):
+                delattr(entity, "_pending_animation")
+
         self.player.combat_list = []
         existing_allies = [
             a for a in self.player.combat_list_allies

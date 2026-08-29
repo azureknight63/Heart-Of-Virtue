@@ -6,10 +6,15 @@ import src.states as states
 import src.functions as functions
 from ._base import (
     Move,
+    OUTCOME_ABSORB,
+    OUTCOME_HIT,
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
     apply_facing_damage,
+    publish_outcome,
     to_hit_chance,
+    resolve_damage,
+    target_protection,
 )
 
 
@@ -173,11 +178,14 @@ class Pulverize(Move):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(player, target, power)
-        # Ignores ALL protection — no protection subtraction
-        damage = int(
-            power * target.resistance.get("crushing", 1.0) * player.heat * random.uniform(0.8, 1.2)
-        )
-        damage = max(0, damage)
+        # The canonical damage expression (see _base.resolve_damage), with the
+        # protection term overridden to zero: Pulverize ignores armour
+        # entirely, which is the whole identity of the strength mastery.
+        # Resistance is read through functions.combat_resistance rather than
+        # target.resistance.get(): the shared choke point falls back to
+        # resistance_base and coerces a non-finite multiplier, where the raw
+        # dict read raised on a target carrying no resistance mapping at all.
+        damage = int(resolve_damage(player, target, power, "crushing", protection=0))
         _ensure_weapon_exp(player)
         player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
@@ -270,12 +278,18 @@ class KillingPrecision(Move):
         # frontal penalty, i.e. the best head-on option in the game and an
         # active incentive not to position.
         power = apply_facing_damage(player, target, power)
-        # Only 20% of protection applies
-        damage = int(
-            (power * target.resistance.get("piercing", 1.0) - target.protection * 0.2)
-            * player.heat * random.uniform(0.8, 1.2)
+        # The canonical damage expression with only a fifth of the target's
+        # armour scored — see _base.resolve_damage, and Pulverize above for
+        # why resistance now goes through functions.combat_resistance.
+        damage = max(
+            1,
+            int(
+                resolve_damage(
+                    player, target, power, "piercing",
+                    protection=target_protection(target) * 0.2,
+                )
+            ),
         )
-        damage = max(1, damage)
         _ensure_weapon_exp(player)
         player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
@@ -385,11 +399,7 @@ class LightningAssault(Move):
             # hoisted: power is recomputed per strike, and a future strike
             # that repositions mid-flurry should be scored where it lands.
             power = apply_facing_damage(player, target, power)
-            damage = int(
-                (power * target.resistance.get("slashing", 1.0) - target.protection)
-                * player.heat * random.uniform(0.8, 1.2)
-            )
-            damage = max(0, damage)
+            damage = int(resolve_damage(player, target, power, "slashing"))
             if hit_chance >= roll:
                 if functions.check_parry(target):
                     self.parry()
@@ -658,6 +668,20 @@ class BloodOfMartyrs(Move):
                     enemy.hp -= pure_damage
                     if hasattr(enemy, "clamp_hp"):
                         enemy.clamp_hp()
+                    # One outcome per enemy, published immediately before that
+                    # enemy's own line — the detonation is a battlefield-wide
+                    # set of independent resolutions, not one swing (see
+                    # _base.publish_outcome). Without this the whole blast fell
+                    # through to the adapter's end-of-move fallback: one
+                    # animation and no per-target impact at all. A ``pure``
+                    # resistance of 0 collapses the blast against that enemy,
+                    # which is an `absorb` — the same distinction Move.hit()
+                    # draws — and must not play the flesh-impact cue.
+                    publish_outcome(
+                        self.user,
+                        OUTCOME_HIT if pure_damage > 0 else OUTCOME_ABSORB,
+                        enemy,
+                    )
                     cprint(f"  {enemy.name} takes {pure_damage} damage!", "red")
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)

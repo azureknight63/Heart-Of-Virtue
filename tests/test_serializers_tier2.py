@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 import src.items as items
 
 from src.api.combat_adapter import (
+    REPORTED_BEAT_KEY,
     ApiCombatAdapter,
     CombatOutputCapture,
     _strip_combatant_prefix,
@@ -301,7 +302,8 @@ class TestCombatOutputCapture:
             "a disarmed animation must not fire again"
         )
         assert entity._pending_animation["outcome"] is None
-        assert entity._pending_animation["_reported"] is True
+        # Recorded as the beat it resolved in, not as a lifetime boolean.
+        assert REPORTED_BEAT_KEY in entity._pending_animation
 
     def test_capture_fires_the_animation_only_once(self):
         """A second line with no fresh pending animation must not re-trigger."""

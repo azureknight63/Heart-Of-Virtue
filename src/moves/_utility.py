@@ -20,6 +20,7 @@ from ._base import (
     apply_facing_damage,
     to_hit_chance,
     display_name_of,
+    resolve_damage,
 )  # noqa: F401
 
 
@@ -542,15 +543,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         # hand-rolls its damage line and so silently skipped it. Applied to
         # power pre-protection, so armour keeps its full bite from every angle.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        if damage <= 0:
-            damage = 0
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
             damage /= 2
             glance = True
@@ -835,17 +828,7 @@ class Disrupt(Move):
         # standard_execute_attack, which Disrupt's hand-rolled damage line
         # bypasses. Applied to power pre-protection.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (
-                    power
-                    * functions.combat_resistance(self.target, self.base_damage_type)
-                )
-                - self.target.protection
-            )
-            * getattr(player, "heat", 1.0)
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
             damage /= 2
             glance = True

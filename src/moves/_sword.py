@@ -17,6 +17,7 @@ from ._base import (
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
     to_hit_chance,
+    resolve_damage,
 )  # noqa: F401
 
 
@@ -210,62 +211,56 @@ class WhirlAttack(Move):
 
         # Find all enemies in range
         try:
-            # Hostiles only. This loop used to walk combat_proximity directly,
-            # which holds BOTH sides -- so every arc and spin dealt full damage
-            # to Jean's own allies, silently and with no warning. Measured
-            # before the fix: Whirl Attack dealt 27 to Gorran against 23 to the
-            # enemy it was aimed at. Blood of Martyrs was the only area move
-            # that got this right, purely because it happened to iterate
-            # combat_list. _hostiles_in_proximity is that same rule, shared.
-            for enemy, _distance in list(self._hostiles_in_proximity()):
-                if not enemy.is_alive():
-                    continue
+            # Enemy selection is hostiles_in_arc -- the same function, at the
+            # same reach, that preview_affected() above calls, with
+            # require_position because this spin (unlike the cone swings) skips
+            # an enemy with no coordinates outright rather than falling back to
+            # combat_proximity distance. The gate was hand-rolled here and
+            # again in Sweep, Reap and Halberd Spin: four copies of a rule the
+            # *preview* also had to state, and two derivations of "who does
+            # this swing reach" can diverge where one cannot.
+            #
+            # hostiles_in_arc is also where "hostiles only" lives. This loop
+            # used to walk combat_proximity directly, which holds BOTH sides --
+            # so every arc and spin dealt full damage to Jean's own allies,
+            # silently and with no warning. Measured before the fix: Whirl
+            # Attack dealt 27 to Gorran against 23 to the enemy it was aimed at.
+            for enemy in hostiles_in_arc(
+                self, self.preview_reach(), require_position=True
+            ):
+                # Route damage through the shared pipeline (issue #402):
+                # resistances, heat scaling, and self.hit()/parry() bookkeeping.
+                self.target = enemy
+                self.prep_colors()
+                # Facing/angle damage (#394) - see apply_facing_damage.
+                # Scored per enemy: a spin hits each one from a different
+                # angle, so a single hoisted multiplier would be wrong for
+                # every target but one.
+                power = apply_facing_damage(self.user, enemy, self.power)
+                damage = resolve_damage(self.user, enemy, power, base_damage_type)
 
-                if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
-                    dist = positions.distance_from_coords(
-                        self.user.combat_position, enemy.combat_position
-                    )
-                    if dist <= self.mvrange[1]:
-                        # Route damage through the shared pipeline (issue #402):
-                        # resistances, heat scaling, and self.hit()/parry() bookkeeping.
-                        self.target = enemy
-                        self.prep_colors()
-                        # Facing/angle damage (#394) - see apply_facing_damage.
-                        # Scored per enemy: a spin hits each one from a
-                        # different angle, so a single hoisted multiplier would
-                        # be wrong for every target but one.
-                        power = apply_facing_damage(self.user, enemy, self.power)
-                        damage = (
-                            (
-                                (power * functions.combat_resistance(enemy, base_damage_type))
-                                - enemy.protection
-                            )
-                            * self.user.heat
-                        ) * random.uniform(0.8, 1.2)
-                        damage = max(0, damage)
+                hit_chance = to_hit_chance(self.user, enemy, base=85)
+                # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+                hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
+                roll = random.randint(0, 100)
+                glance = False
+                if hit_chance >= roll and hit_chance - roll < 10:
+                    damage /= 2
+                    glance = True
+                damage = int(damage)
 
-                        hit_chance = to_hit_chance(self.user, enemy, base=85)
-                        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-                        hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
-                        roll = random.randint(0, 100)
-                        glance = False
-                        if hit_chance >= roll and hit_chance - roll < 10:
-                            damage /= 2
-                            glance = True
-                        damage = int(damage)
-
-                        if hit_chance >= roll:
-                            if functions.check_parry(enemy):
-                                self.parry()
-                            else:
-                                self.hit(damage, glance)
-                                self.affected_enemies.append(enemy)
-                        else:
-                            # Every enemy the spin reaches gets an outcome, the
-                            # whiffed ones included. Without this the swing
-                            # passed through an enemy in silence and the client
-                            # could not tell a miss from a target out of range.
-                            self.miss()
+                if hit_chance >= roll:
+                    if functions.check_parry(enemy):
+                        self.parry()
+                    else:
+                        self.hit(damage, glance)
+                        self.affected_enemies.append(enemy)
+                else:
+                    # Every enemy the spin reaches gets an outcome, the whiffed
+                    # ones included. Without this the swing passed through an
+                    # enemy in silence and the client could not tell a miss
+                    # from a target out of range.
+                    self.miss()
         finally:
             # Restore the original target even if a hit() raises mid-loop, so the
             # facing/fatigue stages below don't act on a stale loop enemy.
@@ -391,14 +386,7 @@ class VertigoSpin(Move):
         base_damage_type = getattr(self, "base_damage_type", "slashing")
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, base_damage_type))
-                - self.target.protection
-            )
-            * self.user.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(self.user, self.target, power, base_damage_type)
 
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
@@ -636,14 +624,7 @@ class DisarmingSlash(Move):
         roll = random.randint(0, 100)
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
@@ -806,17 +787,10 @@ class Riposte(Move):
         try:
             # Facing/angle damage (#394) - see apply_facing_damage.
             power = apply_facing_damage(self.user, self.target, self.power)
-            damage = (
-                (
-                    (power * functions.combat_resistance(self.target, self.base_damage_type))
-                    - self.target.protection
-                )
-                * player.heat
-            ) * random.uniform(0.8, 1.2)
+            damage = resolve_damage(player, self.target, power, self.base_damage_type)
         finally:
             player.heat = old_heat
 
-        damage = max(0, damage)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True

@@ -16,6 +16,7 @@ from ._base import (
     _apply_to_hit_modifiers,
     apply_facing_damage,
     to_hit_chance,
+    resolve_damage,
 )  # noqa: F401
 
 
@@ -411,15 +412,7 @@ class ShootBow(
         # not of the attacker's leverage, and the accuracy half of the pair
         # already applies here through _apply_to_hit_modifiers.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        if damage <= 0:
-            damage = 0
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
             damage /= 2
             glance = True
@@ -666,14 +659,7 @@ class ShootCrossbow(Move):
         # not of the attacker's leverage, and the accuracy half of the pair
         # already applies here through _apply_to_hit_modifiers.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
@@ -821,14 +807,7 @@ class BroadheadBolt(Move):
         # not of the attacker's leverage, and the accuracy half of the pair
         # already applies here through _apply_to_hit_modifiers.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
@@ -978,14 +957,7 @@ class AimedShot(Move):
         # not of the attacker's leverage, and the accuracy half of the pair
         # already applies here through _apply_to_hit_modifiers.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
@@ -1131,14 +1103,7 @@ class PinningBolt(Move):
         # not of the attacker's leverage, and the accuracy half of the pair
         # already applies here through _apply_to_hit_modifiers.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True

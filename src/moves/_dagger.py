@@ -18,6 +18,7 @@ from ._base import (
     apply_facing_damage,
     facing_damage_multiplier,
     to_hit_chance,
+    resolve_damage,
 )  # noqa: F401
 
 
@@ -177,15 +178,7 @@ class Slash(
         # standard_execute_attack; Slash hand-rolls its damage line and so
         # would otherwise be one of the paths the fix silently skips.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        if damage <= 0:
-            damage = 0
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
             damage /= 2
             glance = True
@@ -420,14 +413,7 @@ class FeintAndPivot(Move):
         # launched from the blind side should be rewarded for the blind side it
         # was launched from, not the one it ends up on.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, base_damage_type))
-                - self.target.protection
-            )
-            * self.user.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(self.user, self.target, power, base_damage_type)
 
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
@@ -662,14 +648,7 @@ class Backstab(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True

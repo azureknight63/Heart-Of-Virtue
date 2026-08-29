@@ -1358,8 +1358,11 @@ class TestReap:
         move.power = 20
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        # The per-target parry/hit/miss narration moved into the shared
+        # _base.resolve_strike_outcome, so the cprint to intercept is _base's.
+        # The line itself is unchanged -- only the module it is emitted from.
         with patch("src.moves._scythe.functions.check_parry", return_value=True), \
-             patch("src.moves._scythe.cprint") as mock_cprint:
+             patch("src.moves._base.cprint") as mock_cprint:
             move.execute(user)
 
         assert tgt.hp == 100  # parried, no damage
@@ -1869,9 +1872,11 @@ class TestChipAway:
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        # As in TestReap above: the per-strike narration is emitted from the
+        # shared _base.resolve_strike_outcome now, not from _pick.
         with patch("src.moves._pick.functions.check_parry", return_value=True), \
              patch.object(move, "viable", return_value=True), \
-             patch("src.moves._pick.cprint") as mock_cprint:
+             patch("src.moves._base.cprint") as mock_cprint:
             move.execute(user)
 
         assert any("parried" in str(c.args[0]) for c in mock_cprint.call_args_list)

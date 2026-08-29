@@ -359,22 +359,101 @@ def _resolve_heat(attacker, heat=None):
     return heat
 
 
+def target_protection(target):
+    """``target``'s armour value, sanitised into a number the damage line can
+    safely subtract.
+
+    A missing, ``None`` or otherwise non-numeric ``protection`` reads as 0
+    rather than raising inside the combat loop, and a **bool** reads as 0 too:
+    ``isinstance(True, int)`` is True, so an unsanitised subtraction quietly
+    charged one point of armour for a flag somebody set on the wrong attribute.
+
+    One definition, three former copies. ``damage_bounds``,
+    ``flat_arc_damage_bounds`` and Jab's flat line each carried this block
+    verbatim, and all three had to stay in agreement for a preview and the
+    ``execute()`` it predicts to agree about the same defender -- while the
+    ~20 hand-written execute() copies of the canonical line did not sanitise
+    at all, so the preview quietly reported a number for a target whose
+    protection made the real swing raise.
+    """
+    protection = getattr(target, "protection", 0)
+    if not isinstance(protection, (int, float)) or isinstance(protection, bool):
+        return 0
+    return protection
+
+
+def resolve_damage(
+    attacker,
+    target,
+    faced_power,
+    damage_type,
+    heat=None,
+    protection=None,
+    variance=None,
+):
+    """**The engine's damage expression. There is no second copy of it.**
+
+    ``(((faced_power * resistance) - protection) * heat) * variance``, clamped
+    at zero, returned as a float so the caller can apply its own glancing-blow
+    halving and ``int()`` where the engine does.
+
+    This line used to be written out by hand at roughly two dozen ``execute()``
+    sites plus ``damage_bounds``, which is the *prediction* of it the player
+    commits a beat to. Two of those copies had silently drifted -- Jab and
+    Power Strike each advertised twice the damage they dealt, for months --
+    because a copy that has drifted is indistinguishable from one that has not.
+    ``damage_bounds`` now predicts by calling this function with ``variance``
+    pinned to each end of the band, so the two cannot disagree.
+
+    **Term order is load-bearing.** CLAUDE.md records what happened the last
+    time an expression in this engine was "simplified" into an algebraically
+    equal regrouping (``to_hit_chance``: a one-point shift for ~0.7% of integer
+    stat pairs, because binary floating point is not associative and ``int()``
+    truncates). ``tests/test_canonical_damage_expression.py`` runs the
+    pre-extraction expression against this one over a wide grid and demands
+    bit-identical floats; do not regroup these terms.
+
+    ``attacker`` is read for one thing only -- its ``heat`` -- via
+    ``_resolve_heat``, so pass the combatant whose momentum is being spent
+    (which is not always ``move.user``: Riposte scores with a temporarily
+    boosted ``player.heat``). ``heat`` overrides that outright; leave it None
+    for the live value.
+
+    ``protection`` overrides the defender's armour for the moves that
+    deliberately do not score all of it -- Pulverize and Armor Pierce ignore it
+    (``protection=0``), Killing Precision applies a fifth. Left None it is the
+    sanitised ``target_protection`` read.
+
+    A non-positive or non-finite product collapses to ``0.0``. Both were
+    already the intent: every call site followed the expression with
+    ``max(0, damage)`` or ``if damage <= 0: damage = 0``, and a non-finite
+    product crashed on the call site's own ``int()`` before ``Move.hit``'s
+    sanitiser (issue #296) could ever see it.
+    """
+    if protection is None:
+        protection = target_protection(target)
+    if variance is None:
+        variance = random.uniform(DAMAGE_VARIANCE_MIN, DAMAGE_VARIANCE_MAX)
+    resistance = functions.combat_resistance(target, damage_type)
+    damage = (
+        ((faced_power * resistance) - protection) * _resolve_heat(attacker, heat)
+    ) * variance
+    if damage <= 0 or not math.isfinite(damage):
+        return 0.0
+    return damage
+
+
 def damage_bounds(attacker, target, power, damage_type, heat=None, steepness=1.0):
     """Return ``(min, max)`` integer damage for a landed, non-glancing hit.
 
-    **This is the one place the engine's damage expression is stated for
-    prediction.** ``standard_execute_attack`` resolves a hit as::
-
-        power  = apply_facing_damage(user, target, power)
-        damage = ((power * combat_resistance(target, type)) - target.protection)
-                 * user.heat * random.uniform(0.8, 1.2)
-
-    with a clamp at zero and a final ``int()``. This evaluates that same line
-    with the ``uniform`` roll pinned to each end of its band, so the pair it
-    returns brackets every non-glancing outcome exactly -- ``tests/
-    test_preview_damage.py`` pins the RNG, runs the real ``execute()``, and
-    asserts the HP removed equals these numbers rather than merely falling
-    between them.
+    **The prediction half of ``resolve_damage``, and nothing more.** It scores
+    the facing curve, then calls that function twice with the ``uniform`` roll
+    pinned to each end of its band -- so the pair it returns brackets every
+    non-glancing outcome exactly rather than approximately, and a change to the
+    damage expression reaches the preview by construction rather than by
+    somebody remembering to edit a second copy. ``tests/test_preview_damage.py``
+    pins the RNG, runs the real ``execute()``, and asserts the HP removed
+    equals these numbers rather than merely falling between them.
 
     **Glancing blows are deliberately excluded from this band.** A glance
     halves the damage, but only lands in the narrow window where the roll
@@ -392,19 +471,53 @@ def damage_bounds(attacker, target, power, damage_type, heat=None, steepness=1.0
     ends land on the same floor rather than reporting a negative spread.
     """
     power = apply_facing_damage(attacker, target, power, steepness)
-    resistance = functions.combat_resistance(target, damage_type)
-    protection = getattr(target, "protection", 0)
-    if not isinstance(protection, (int, float)) or isinstance(protection, bool):
-        protection = 0
-    core = ((power * resistance) - protection) * _resolve_heat(attacker, heat)
+    return (
+        int(
+            resolve_damage(
+                attacker, target, power, damage_type,
+                heat=heat, variance=DAMAGE_VARIANCE_MIN,
+            )
+        ),
+        int(
+            resolve_damage(
+                attacker, target, power, damage_type,
+                heat=heat, variance=DAMAGE_VARIANCE_MAX,
+            )
+        ),
+    )
 
-    def _at(variance):
-        damage = core * variance
-        if damage <= 0 or not math.isfinite(damage):
-            return 0
-        return int(damage)
 
-    return _at(DAMAGE_VARIANCE_MIN), _at(DAMAGE_VARIANCE_MAX)
+def flat_resisted_damage(target, faced_power, damage_type):
+    """The *flat resisted* damage line: resistance, then protection, and
+    nothing else -- no heat multiplier and no variance roll.
+
+    Jab's expression, and the reason it lives here beside
+    ``flat_arc_damage_bounds`` and ``resolve_damage`` rather than in the
+    unarmed weapon module: it is a general shape, not an unarmed one. The name
+    it had (``flat_unarmed_damage``) claimed the whole unarmed tree while Power
+    Strike, in that same file, is deliberately on the canonical line -- so it
+    described neither what it computes nor who uses it.
+
+    ``faced_power`` is the move's power *after* ``apply_facing_damage``. The
+    facing curve is deliberately left to the callers rather than folded in
+    here: ``tests/test_facing_damage_hand_rolled_attacks.py`` is a static scan
+    of each ``execute()``'s own source for that call, and a move that reached
+    the curve only through a helper would read to it as a move that skips the
+    curve entirely. That guard exists because opting out of positional damage
+    is silent -- no error, no symptom -- so it is worth keeping literal.
+
+    Dropping heat and variance is a design decision rather than an oversight;
+    see ``Jab.execute``. The flat shape has precedent in
+    ``flat_arc_damage_bounds`` (Reap, Sweep, Halberd Spin) but not this exact
+    expression: those three skip resistance and floor at 1, where this honours
+    resistance and floors at 0.
+
+    Returns a float; callers apply their own ``int()`` where the engine does.
+    """
+    damage = (
+        faced_power * functions.combat_resistance(target, damage_type)
+    ) - target_protection(target)
+    return damage if damage > 0 else 0.0
 
 
 def flat_arc_damage_bounds(attacker, target, power, bonuses=()):
@@ -428,10 +541,7 @@ def flat_arc_damage_bounds(attacker, target, power, bonuses=()):
     other bases, and the engine's order is the authority.
     """
     swing = apply_facing_damage(attacker, target, power)
-    protection = getattr(target, "protection", 0)
-    if not isinstance(protection, (int, float)) or isinstance(protection, bool):
-        protection = 0
-    damage = max(1, int(swing - protection))
+    damage = max(1, int(swing - target_protection(target)))
     for multiplier in bonuses:
         damage = int(damage * multiplier)
     return damage, damage
@@ -502,6 +612,68 @@ def hostiles_in_arc(move, arc_range, frontal=False, require_position=False):
                 continue
         affected.append(enemy)
     return affected
+
+
+def resolve_strike_outcome(
+    move,
+    target,
+    damage,
+    hit_chance,
+    hit_line,
+    parry_line,
+    miss_line,
+    roll=None,
+    absorb_on_zero=False,
+):
+    """Resolve one strike against ``target``: roll, publish, narrate, apply.
+
+    **The outcome/narration pairing rule, stated once.** ``publish_outcome``
+    documents it in prose -- one publication per resolution, immediately before
+    the line that narrates it, because the adapter pairs each published outcome
+    with the *next* narration line and an unpaired line is therefore attributed
+    to the previous enemy. That rule was then re-implemented by hand in Sweep,
+    Halberd Spin, Reap and Chip Away, which differed from one another only in
+    their flavour strings and Reap's mark clear. Four copies of a rule is four
+    chances to get the ordering subtly wrong in a way nothing fails on.
+
+    These four moves do not route through ``Move.hit()/miss()/parry()``: they
+    write HP directly and narrate their own per-target lines, which is why they
+    need this rather than the shared pipeline.
+
+    ``roll`` lets a caller supply a to-hit roll it has already taken. Chip Away
+    does, and the reason is ordering rather than taste: it rolls *before* it
+    scores damage, and its damage carries a ``random.uniform`` band, so letting
+    this function roll would swap the order the two draws come off the shared
+    RNG -- a silent change to every seeded outcome. Left None, the roll happens
+    here, which is what the three flat arc swings (no dice in their damage at
+    all) already did inline.
+
+    ``absorb_on_zero`` distinguishes a blow the target shrugged off from one
+    that landed: a zero-damage strike is an ``absorb``, not a ``hit``, and must
+    not play the flesh-impact cue. Only the moves that can actually produce
+    zero damage pass it -- the flat arc swings floor at 1 and never can, and
+    claiming otherwise would be a lie in the safe-looking direction.
+
+    Returns True when the strike landed, False for a parry or a miss.
+    """
+    if roll is None:
+        roll = random.randint(0, 100)
+    if hit_chance >= roll:
+        if functions.check_parry(target):
+            publish_outcome(move.user, OUTCOME_PARRY, target)
+            cprint(parry_line, "yellow")
+            return False
+        target.hp = max(0, target.hp - damage)
+        publish_outcome(
+            move.user,
+            OUTCOME_ABSORB if (absorb_on_zero and damage <= 0) else OUTCOME_HIT,
+            target,
+        )
+        cprint(hit_line, "red")
+        return True
+    publish_outcome(move.user, OUTCOME_MISS, target)
+    cprint(miss_line, "yellow")
+    return False
 
 
 def _apply_facing_accuracy(attacker, defender, hit_chance):
@@ -1598,15 +1770,10 @@ class Move:  # master class for all moves
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        if damage <= 0:
-            damage = 0
+        # The canonical damage expression, stated once in resolve_damage and
+        # predicted by damage_bounds through that same function -- see its
+        # docstring for why this must not be re-inlined here or anywhere else.
+        damage = resolve_damage(player, self.target, power, base_damage_type)
         if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
             damage /= 2
             glance = True

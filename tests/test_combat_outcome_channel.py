@@ -166,7 +166,7 @@ def test_every_branch_emits_exactly_one_outcome_from_the_vocabulary(
     capture.write("Dust settles over the floor.")
     assert len(_impact_entries(capture.get_log())) == 1
     assert attacker._pending_animation["outcome"] is None
-    assert attacker._pending_animation["_reported"] is True
+    assert "_reported_beat" in attacker._pending_animation
 
 
 # ── regression guard: text must not drive the outcome ───────────────────────
@@ -336,29 +336,6 @@ def test_a_second_published_outcome_fires_a_second_impact(rig):
     )
 
 
-def test_only_the_first_resolution_replays_the_move_animation(rig):
-    """One swing, several landings.
-
-    Re-playing the full ``sweep`` config once per enemy would render a single
-    arc as four consecutive spins (960 ms each). Later resolutions therefore
-    downgrade to the short flash-only ``impact`` animation: the swing already
-    happened, what is left is where it landed.
-    """
-    move, attacker, capture = rig
-
-    entries = _run(
-        capture,
-        lambda: (move.hit(12, False), move.miss(), move.parry()),
-    )
-
-    impacts = _impact_entries(entries)
-    assert [i["animation_data"]["type"] for i in impacts] == [
-        "attack",
-        "impact",
-        "impact",
-    ], entries
-
-
 def test_each_impact_names_the_combatant_the_outcome_happened_to(rig):
     """An arc swing reassigns ``self.target`` per enemy; each impact must
     follow it rather than keep the id the animation was stamped with at cast.
@@ -476,6 +453,7 @@ def test_an_unconsumed_resolution_never_reaches_the_wire_holding_a_combatant():
         f"{type(animation.get('outcome_target')).__name__}"
     )
     assert "_reported" not in animation, "internal bookkeeping leaked to the client"
+    assert "_reported_beat" not in animation, "beat bookkeeping leaked to the client"
     assert animation.get("target_id") == CombatantSerializer.stream_id(enemy), (
         "the fallback must map the target to its stream id like _take_resolution"
     )
@@ -547,3 +525,319 @@ def test_the_hardcoded_id_scan_can_actually_find_something():
         r'f"(?:enemy|ally)_\{id\([^)]*\)\}"',
         '        "source_id": f"enemy_{id(npc)}",',
     ), "the offender pattern no longer matches the shape it was written for"
+
+
+# ── TASK 1/2/3/4 (see report): per-target animations, beat scoping, streaming,
+#    and the combat log as a bounded recap ────────────────────────────────────
+
+
+def _adapter_with_player(player):
+    """A bare adapter wired to ``player`` with no __init__ side effects."""
+    from src.api.combat_adapter import ApiCombatAdapter, CombatOutputCapture
+
+    adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+    adapter.player = player
+    adapter.session_id = None
+    adapter.current_beat_state_index = 0
+    adapter.output_capture = CombatOutputCapture(player=player)
+    adapter._all_combatants = lambda: [player]
+    return adapter
+
+
+# ── TASK 1: every target gets the move's full animation ─────────────────────
+
+
+def test_every_resolution_replays_the_full_move_animation(rig):
+    """One swing, several landings — every landing plays the move in full.
+
+    The client plays a beat's animations concurrently/layered (owner decision),
+    so four enemies caught by one arc each get the arc, each with its own
+    ``target_id`` and its own SFX emission. The old behaviour downgraded every
+    resolution after the first to a 200 ms ``impact`` flash because the client
+    played them sequentially and four sweeps read as four swings.
+    """
+    move, attacker, capture = rig
+
+    entries = _run(
+        capture,
+        lambda: (move.hit(12, False), move.miss(), move.parry()),
+    )
+
+    impacts = _impact_entries(entries)
+    assert [i["animation_data"]["type"] for i in impacts] == [
+        "attack",
+        "attack",
+        "attack",
+    ], entries
+
+
+def test_the_adapter_no_longer_downgrades_follow_up_animations():
+    """The impact-downgrade constant and its substitution are gone for good."""
+    import src.api.combat_adapter as combat_adapter
+
+    assert not hasattr(combat_adapter, "FOLLOW_UP_IMPACT_ANIMATION"), (
+        "the follow-up downgrade constant is still defined"
+    )
+
+
+# ── TASK 2: the reported flag is scoped to a beat, not to a dict lifetime ───
+
+
+def test_a_resolution_records_the_beat_it_happened_in(rig):
+    """``_reported`` was a lifetime boolean; it is now a per-beat record."""
+    move, attacker, capture = rig
+
+    class _P:
+        combat_beat = 7
+
+    capture.player = _P()
+
+    _run(capture, lambda: move.hit(12, False))
+
+    assert attacker._pending_animation["_reported_beat"] == 7
+    assert "_reported" not in attacker._pending_animation
+
+
+def test_the_beat_marker_never_reaches_the_client(rig):
+    move, attacker, capture = rig
+
+    entries = _run(capture, lambda: move.hit(12, False))
+
+    animation = _impact_entries(entries)[0]["animation_data"]
+    assert "_reported_beat" not in animation
+    assert "_reported" not in animation
+
+
+def test_a_move_still_in_flight_keeps_its_animation_channel():
+    """The flush must not disarm a move that has not swung yet.
+
+    ``_flush_pending_animations`` ran at the end of every *player* move and
+    deleted every combatant's pending animation unconditionally. An NPC three
+    beats into a five-beat wind-up therefore lost the channel its impact would
+    have published to, and ``publish_outcome`` became a silent no-op for the
+    swing that was still coming.
+    """
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    player.combat_beat = 4
+    player.current_move = None
+
+    npc = _Combatant("Slime")
+    npc.current_move = object()  # still winding up
+    npc._pending_animation = {"move_name": "Telegraphed Surge", "outcome": None}
+
+    adapter = _adapter_with_player(player)
+    adapter._all_combatants = lambda: [player, npc]
+    adapter._flush_pending_animations()
+
+    assert hasattr(npc, "_pending_animation"), (
+        "the in-flight move's animation channel was destroyed"
+    )
+    assert not [e for e in player.combat_log if e.get("animation")], (
+        "a phantom animation was emitted for a move that has not landed"
+    )
+
+
+def test_initialize_combat_flushes_animations_left_by_the_initial_turns():
+    """A first-strike NPC's unresolved animation must not leak into beat 2.
+
+    ``initialize_combat`` -> ``_process_initial_turns`` processes a whole NPC
+    beat and never flushed, so an animation that never found an impact line sat
+    on the NPC until the end of the player's *next* move and was emitted a beat
+    or more late.
+    """
+    import inspect
+
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    source = inspect.getsource(ApiCombatAdapter.initialize_combat)
+    assert "_flush_pending_animations" in source, (
+        "initialize_combat never flushes the animations _process_initial_turns "
+        "leaves behind"
+    )
+
+
+# ── TASK 3: the streaming channel must not collapse a multi-target swing ────
+
+
+def _snap(combatants, log):
+    return {"combatants": combatants, "log": log}
+
+
+def _c(cid, hp, statuses=()):
+    return {
+        "id": cid,
+        "hp": hp,
+        "status_effects": [{"name": s} for s in statuses],
+    }
+
+
+def _anim_entry(source, target, atype, outcome):
+    return {
+        "message": f"{source} -> {target}",
+        "animation": {
+            "type": atype,
+            "source_id": source,
+            "target_id": target,
+            "outcome": outcome,
+        },
+    }
+
+
+def test_stream_beats_keeps_the_moves_own_animation_for_a_multi_target_swing():
+    from src.api.combat_beat_stream import CombatBeatStreamer
+
+    emitted = []
+
+    class _Socket:
+        def emit(self, event, payload, room=None):
+            emitted.append((event, payload))
+
+    streamer = CombatBeatStreamer(
+        _Socket(),
+        "room",
+        initial_combatants=[_c("enemy_1", 20), _c("enemy_2", 20)],
+    )
+    streamer.stream_beats(
+        [
+            _snap(
+                [_c("enemy_1", 12), _c("enemy_2", 20)],
+                [
+                    _anim_entry("player", "enemy_1", "sweep", "hit"),
+                    _anim_entry("player", "enemy_2", "sweep", "parry"),
+                    # A beat's log holds the NPC turns that follow the player's
+                    # move too, so the LAST animation in an ordinary beat is an
+                    # NPC's — which is what the old walk-backwards returned.
+                    _anim_entry("enemy_2", "player", "pierce", "miss"),
+                ],
+            )
+        ]
+    )
+
+    assert len(emitted) == 1
+    beat = emitted[0][1]
+    assert beat["web_animation"] == "sweep", "the beat was attributed to the NPC"
+    assert beat["actor_id"] == "player"
+    assert beat["target_id"] == "enemy_1"
+    assert beat["outcome"] == "hit"
+    impacts = [e for e in beat["sfx"] if e["kind"] == "impact"]
+    assert [e["outcome"] for e in impacts] == ["hit", "parry", "miss"], beat["sfx"]
+    assert [e["index"] for e in beat["sfx"]] == list(range(len(beat["sfx"])))
+
+
+def test_build_sfx_chain_emits_one_impact_per_resolution():
+    from src.api.schemas.combat_beat import build_sfx_chain, validate_beat, build_beat
+
+    chain = build_sfx_chain("hit", outcomes=["hit", "miss", "glance"])
+    assert [e["kind"] for e in chain] == ["swing", "impact", "impact", "impact"]
+    assert [e.get("outcome") for e in chain[1:]] == ["hit", "miss", "glance"]
+    assert [e["index"] for e in chain] == [0, 1, 2, 3]
+
+    beat = build_beat(
+        1, "player", "enemy_1", "sweep", "hit", outcomes=["hit", "miss"]
+    )
+    assert validate_beat(beat) == []
+
+
+# ── TASK 4: the combat log is a bounded recap ───────────────────────────────
+
+
+def test_the_dedup_does_not_rescan_the_whole_log():
+    """The duplicate check must be a hash membership test, not a linear scan."""
+    import inspect
+
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    source = inspect.getsource(ApiCombatAdapter._add_log_entry)
+    assert "for existing in self.player.combat_log" not in source, (
+        "_add_log_entry still scans the whole cumulative log per insert"
+    )
+
+
+def test_dedup_still_collapses_a_repeated_narration_line():
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    adapter = _adapter_with_player(player)
+
+    adapter._add_log_entry(1, "Jean swings wildly.", "combat")
+    adapter._add_log_entry(1, "Jean swings wildly.", "combat")
+    adapter._add_log_entry(2, "Jean swings wildly.", "combat")
+
+    assert [e["round"] for e in player.combat_log] == [1, 2]
+
+
+def test_dedup_recovers_when_the_log_is_replaced_underneath_it():
+    """``combat_log`` lives on the pickled player and outlives the adapter."""
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    adapter = _adapter_with_player(player)
+
+    adapter._add_log_entry(1, "A line.", "combat")
+    player.combat_log = []  # e.g. a new fight, or a reloaded save
+    adapter._add_log_entry(1, "A line.", "combat")
+
+    assert len(player.combat_log) == 1, "a stale key set swallowed a real entry"
+
+
+def test_the_combat_log_is_bounded_and_keeps_the_recap():
+    """Animation carriers are trimmed first; the visible recap survives."""
+    from src.api.combat_adapter import (
+        COMBAT_LOG_TRIM_SLACK,
+        MAX_ANIMATION_LOG_ENTRIES,
+        MAX_VISIBLE_LOG_ENTRIES,
+    )
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    adapter = _adapter_with_player(player)
+
+    total = (MAX_ANIMATION_LOG_ENTRIES + MAX_VISIBLE_LOG_ENTRIES) * 2
+    for i in range(total):
+        adapter._add_log_entry(i, f"line {i}", "combat")
+        adapter._emit_animation_log(i, {"move_name": "Sweep", "type": "sweep"})
+
+    log = player.combat_log
+    animations = [e for e in log if e["type"] == "animation"]
+    visible = [e for e in log if e["type"] != "animation"]
+
+    # The trim fires only once the log has overshot by the slack (so the key
+    # index rebuild is amortized), which is the slack's whole point; the cap is
+    # therefore a steady-state floor, not a per-insert hard ceiling.
+    assert len(log) <= (
+        MAX_ANIMATION_LOG_ENTRIES + MAX_VISIBLE_LOG_ENTRIES + COMBAT_LOG_TRIM_SLACK
+    )
+    assert len(animations) <= MAX_ANIMATION_LOG_ENTRIES + COMBAT_LOG_TRIM_SLACK
+    assert len(visible) <= MAX_VISIBLE_LOG_ENTRIES + COMBAT_LOG_TRIM_SLACK
+    # The newest entries are the ones kept — the recap ends where the fight is.
+    assert visible[-1]["message"] == f"line {total - 1}"
+    # ...and it is still a useful recap, not a stub.
+    assert len(visible) >= MAX_VISIBLE_LOG_ENTRIES // 2
+    # Chronological order is preserved across the trim.
+    assert [e["round"] for e in visible] == sorted(e["round"] for e in visible)
+
+
+def test_trimming_preserves_the_combat_log_list_identity():
+    """``combat_log`` is read through ``player.combat_log`` everywhere and is
+    pickled with the player; rebinding it would strand any held reference."""
+    from src.api.combat_adapter import (
+        MAX_ANIMATION_LOG_ENTRIES,
+        MAX_VISIBLE_LOG_ENTRIES,
+    )
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    held = player.combat_log
+    adapter = _adapter_with_player(player)
+
+    for i in range((MAX_ANIMATION_LOG_ENTRIES + MAX_VISIBLE_LOG_ENTRIES) * 2):
+        adapter._add_log_entry(i, f"line {i}", "combat")
+
+    assert player.combat_log is held
