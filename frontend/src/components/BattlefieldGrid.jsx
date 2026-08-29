@@ -3,7 +3,7 @@ import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
-import { getAnimationConfig, impactSfxFor } from '../utils/animationConfigs';
+import { getAnimationConfig, impactSfxFor, strikeFlashFor } from '../utils/animationConfigs';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
 import { beatSfxFor } from '../utils/combatSfx';
 import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
@@ -202,16 +202,10 @@ const CombatantMarker = React.memo(({
           zIndex: 60,
         };
       }
-      // Outcome-dependent strike flash
-      switch (animationState.outcome) {
-        case 'hit': return { backgroundColor: 'rgba(255, 0, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
-        case 'miss': return { opacity: 0.3, transition: 'opacity 0.2s', filter: 'blur(2px)' };
-        case 'parry':
-        case 'block':
-        case 'deflect':
-          return { backgroundColor: 'rgba(255, 200, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
-        default: return {};
-      }
+      // Outcome-dependent strike flash. Resolved in animationConfigs so the
+      // visual treatment and the impact SFX cue for an outcome are declared
+      // together and stay in step with the engine's OUTCOMES vocabulary.
+      return strikeFlashFor(animationState.outcome);
     }
 
     if (animationState.isSource) {

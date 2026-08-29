@@ -40,6 +40,9 @@ DEPARTURE_REASONS = (
 )
 
 # Attack/resolution outcomes an ``impact`` SFX emission resolves against.
+# ``glance`` is a blow that landed but deflected for half damage; it is a
+# distinct sonic and visual event from a solid ``hit``, and ``absorb`` (a blow
+# the target shrugged off entirely) must never play the flesh-impact cue.
 OUTCOMES = (
     "hit",
     "miss",
@@ -47,6 +50,7 @@ OUTCOMES = (
     "block",
     "deflect",
     "crit",
+    "glance",
     "absorb",
 )
 

@@ -33,6 +33,50 @@ def display_name_of(move, default="Unknown"):
     return getattr(move, "display_name", None) or getattr(move, "name", default)
 
 
+# ── Attack outcome channel ──────────────────────────────────────────────────
+# The engine resolves what an attack did; the API must never re-derive it from
+# the narration prose. ``hit()``/``miss()``/``parry()`` publish one of these
+# names onto the acting entity's pending animation, which the combat adapter
+# reads verbatim.
+#
+# These are engine facts. The *wire* vocabulary that carries them to the client
+# is ``OUTCOMES`` in src/api/schemas/combat_beat.py (mirrored in
+# frontend/src/utils/combatBeatSchema.js); every name below must be a member of
+# it, which tests/test_combat_outcome_channel.py asserts. The engine does not
+# import the API schema -- adaptation flows one way only.
+OUTCOME_HIT = "hit"
+OUTCOME_GLANCE = "glance"
+OUTCOME_MISS = "miss"
+OUTCOME_PARRY = "parry"
+OUTCOME_ABSORB = "absorb"
+
+#: Every outcome a Move can publish. Contract-tested against the wire vocabulary.
+MOVE_OUTCOMES = (
+    OUTCOME_HIT,
+    OUTCOME_GLANCE,
+    OUTCOME_MISS,
+    OUTCOME_PARRY,
+    OUTCOME_ABSORB,
+)
+
+
+def publish_outcome(entity, outcome):
+    """Record ``outcome`` on ``entity``'s pending combat animation, if any.
+
+    The adapter tags the acting combatant with a ``_pending_animation`` dict
+    before a move runs and consumes it the moment an outcome appears, so the
+    animation and its impact SFX are attributed to the entity that actually
+    swung -- never to a bystander that happens to narrate in the same beat.
+
+    A no-op outside the API (no pending animation), and deliberately silent
+    about entities that carry a non-dict placeholder, so nothing here can crash
+    the combat loop.
+    """
+    pending = getattr(entity, "_pending_animation", None)
+    if isinstance(pending, dict):
+        pending["outcome"] = outcome
+
+
 def _apply_work_the_gap(user, target, landed_hits=1):
     """WorkTheGap passive: each landed pick strike shaves the target's
     protection (a progressive armour strip), floored at 0.
@@ -1226,6 +1270,7 @@ class Move:  # master class for all moves
                 self.targetcolor = "cyan"
 
     def parry(self):
+        publish_outcome(self.user, OUTCOME_PARRY)
         narrate(
             colored(self.target.name, self.targetcolor)
             + colored(" parried the attack from ", "red")
@@ -1256,6 +1301,19 @@ class Move:  # master class for all moves
         if not math.isfinite(damage):
             damage = 0
         damage = int(damage)
+        # Publish before narrating: the adapter listens on the narration sink,
+        # so the outcome must already be on the pending animation when the
+        # impact line goes out. A glance and a fully-absorbed blow are distinct
+        # outcomes precisely because they sound and look different -- deriving
+        # either from the prose below is what this replaces.
+        if damage > 0:
+            publish_outcome(
+                self.user, OUTCOME_GLANCE if glance else OUTCOME_HIT
+            )
+        else:
+            # Zero damage ("did no damage") and negative damage ("absorbed N")
+            # are both blows the target shrugged off: no flesh-impact cue.
+            publish_outcome(self.user, OUTCOME_ABSORB)
         if damage > 0:
             if glance:
                 narrate(
@@ -1317,6 +1375,7 @@ class Move:  # master class for all moves
                 self.target.combat_exp["Basic"] += 15
 
     def miss(self):
+        publish_outcome(self.user, OUTCOME_MISS)
         narrate(colored(self.user.name, self.usercolor) + "'s attack just missed!")
         if self.target.name == "Jean":
             for state in self.target.states:

@@ -30,6 +30,8 @@ Targets the large uncovered sections by exercising:
 import uuid
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.api.combat_adapter import (
     ApiCombatAdapter,
     CombatOutputCapture,
@@ -188,6 +190,18 @@ class TestStripCombatantPrefix:
 # ---------------------------------------------------------------------------
 
 
+class _PendingAnim:
+    """Entity stand-in carrying a real ``_pending_animation`` dict.
+
+    ``write()`` both reads and ``delattr``s that attribute; a bare ``MagicMock``
+    answers ``hasattr`` for attributes never set and swallows the delete, so it
+    cannot honestly model either half.
+    """
+
+    def __init__(self, animation):
+        self._pending_animation = animation
+
+
 class TestCombatOutputCapture:
     def test_write_captures_message(self):
         cap = CombatOutputCapture()
@@ -243,44 +257,45 @@ class TestCombatOutputCapture:
         cap.clear()
         assert cap.get_log() == []
 
-    def test_write_hit_outcome(self):
-        """Impact text resolves pending animation with 'hit' outcome; stores in log entry."""
-        player = MagicMock()
-        player._pending_animation = {"type": "attack", "outcome": None}
+    @pytest.mark.parametrize(
+        "outcome", ["hit", "glance", "miss", "parry", "absorb"]
+    )
+    def test_write_emits_the_outcome_the_engine_published(self, outcome):
+        """The engine stamps the outcome; write() forwards it untouched.
+
+        These cases previously drove the outcome from the prose ("struck" +
+        "damage" -> hit, and so on), which silently dropped every glancing blow
+        and mislabelled absorbs as hits. The text below is deliberately generic
+        so only the published fact can produce the assertion.
+        """
+        player = _PendingAnim({"type": "attack", "outcome": outcome})
+        cap = CombatOutputCapture(player=player)
+        cap.write("Something resolves on the battlefield.")
+        entry = cap.log_entries[0]
+        assert entry.get("trigger_animation") is True
+        assert entry["animation_data"]["outcome"] == outcome
+        assert not hasattr(player, "_pending_animation")
+
+    def test_write_ignores_impact_prose_with_no_published_outcome(self):
+        """Prose alone must never fire an animation (regression guard)."""
+        player = _PendingAnim({"type": "attack", "outcome": None})
         cap = CombatOutputCapture(player=player)
         cap.write("Jean struck Goblin for 12 damage")
-        # After impact the animation is removed from the entity and stored in the log entry
-        entry = cap.log_entries[0]
-        assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "hit"
-
-    def test_write_parry_outcome(self):
-        player = MagicMock()
-        player._pending_animation = {"type": "attack"}
-        cap = CombatOutputCapture(player=player)
         cap.write("Goblin parried the blow")
-        entry = cap.log_entries[0]
-        assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "parry"
-
-    def test_write_miss_outcome(self):
-        player = MagicMock()
-        player._pending_animation = {"type": "attack"}
-        cap = CombatOutputCapture(player=player)
         cap.write("Jean just missed Goblin")
-        entry = cap.log_entries[0]
-        assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "miss"
+        assert all("trigger_animation" not in e for e in cap.log_entries)
+        assert player._pending_animation["outcome"] is None
 
     def test_write_impact_triggers_animation_entry(self):
-        """When impact resolves a pending animation, entry gets trigger_animation=True."""
-        player = MagicMock()
-        player._pending_animation = {"type": "attack", "move_name": "Slash"}
+        """When an outcome resolves, entry gets trigger_animation=True."""
+        player = _PendingAnim(
+            {"type": "attack", "move_name": "Slash", "outcome": "hit"}
+        )
         cap = CombatOutputCapture(player=player)
-        cap.write("Jean struck Goblin for 5 damage")
+        cap.write("Jean strikes with his sword!")
         entry = cap.log_entries[0]
         assert entry.get("trigger_animation") is True
-        assert "animation_data" in entry
+        assert entry["animation_data"]["move_name"] == "Slash"
 
     def test_write_uses_active_entity_over_player(self):
         """active_entity takes precedence over player for animation matching."""
@@ -288,15 +303,14 @@ class TestCombatOutputCapture:
         # Player has no _pending_animation attribute
         if hasattr(player, "_pending_animation"):
             del player._pending_animation
-        entity = MagicMock()
-        entity._pending_animation = {"type": "attack"}
+        entity = _PendingAnim({"type": "attack", "outcome": "glance"})
         cap = CombatOutputCapture(player=player)
         cap.active_entity = entity
-        cap.write("Jean struck Goblin for 5 damage")
+        cap.write("The blow skids off.")
         # Animation resolved on entity and stored in log entry
         entry = cap.log_entries[0]
         assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "hit"
+        assert entry["animation_data"]["outcome"] == "glance"
 
     def test_round_number_in_entry(self):
         cap = CombatOutputCapture()

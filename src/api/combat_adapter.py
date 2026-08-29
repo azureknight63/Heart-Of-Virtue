@@ -85,31 +85,37 @@ class CombatOutputCapture:
                     return
 
                 trigger_anim_data = None
-                # Detect combat outcomes — only check the entity whose move is
-                # currently advancing so we never misattribute an impact line to
-                # a different combatant's pending animation.
+                # Read the outcome the ENGINE published; never infer it from the
+                # prose. Move.hit()/miss()/parry() stamp the resolved outcome
+                # onto the acting entity's pending animation immediately before
+                # they narrate (see src/moves/_base.publish_outcome), so by the
+                # time the impact line reaches us the fact is already there.
+                #
+                # This used to string-match the narration ("struck" + "damage" ->
+                # hit, "parried" -> parry, "missed" -> miss). A glancing blow
+                # narrates "just barely hit ... for N damage!" and matched none
+                # of them, so ~10% of all landed hits played no animation and no
+                # sound at all; a fully absorbed blow ("struck X but did no
+                # damage!") matched the *hit* branch and played the flesh-impact
+                # cue for zero damage. Prose is not a wire protocol -- do not
+                # reintroduce a text branch here.
+                #
+                # Only the entity whose move is currently advancing is consulted,
+                # so an outcome is never misattributed to a different combatant
+                # that also has an animation pending in the same beat.
                 entity = (
                     self.active_entity
                     if self.active_entity is not None
                     else self.player
                 )
-                if entity is not None and hasattr(entity, "_pending_animation"):
-                    is_impact = False
-                    # fmt: off
-                    if "struck" in clean_text and "damage" in clean_text:
-                        entity._pending_animation["outcome"] = "hit"
-                        is_impact = True
-                    elif "parried" in clean_text:
-                        entity._pending_animation["outcome"] = "parry"
-                        is_impact = True
-                    elif "missed" in clean_text or "just missed" in clean_text:
-                        entity._pending_animation["outcome"] = "miss"
-                        is_impact = True
-                    # fmt: on
-
-                    if is_impact:
-                        trigger_anim_data = entity._pending_animation
-                        delattr(entity, "_pending_animation")
+                if entity is not None:
+                    pending = getattr(entity, "_pending_animation", None)
+                    if isinstance(pending, dict) and pending.get("outcome"):
+                        trigger_anim_data = pending
+                        try:
+                            delattr(entity, "_pending_animation")
+                        except AttributeError:
+                            pass
 
                 entry = {
                     "round": self.current_round,

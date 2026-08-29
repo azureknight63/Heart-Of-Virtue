@@ -21,7 +21,8 @@
  *   source        per-phase marker styling for the acting entity:
  *     { [phaseName]: { scale, glow } }   glow = CSS color for a box-shadow halo
  *   target        treatment of the target marker during the 'impact' phase:
- *     'strike'      outcome-dependent flash (hit red / miss blur / parry gold)
+ *     'strike'      outcome-dependent flash, resolved by strikeFlashFor()
+ *                   (hit red / glance offset amber / miss blur / parry gold)
  *     { glow, scale }  fixed styling (buff/debuff/drain style effects)
  *   shake         true → target cell shakes during the impact phase
  *   effect        overlay drawn by the battlefield effects layer:
@@ -32,7 +33,8 @@
  *     anchor        'source' (default) | 'target' — which cell a ring sits on
  *   sfx           { [phaseName]: cue } — cue is an sfx/<name>.wav basename, or
  *                 the special value 'outcome' which resolves via the
- *                 animation's outcome (hit/miss/parry) at play time
+ *                 animation's outcome (hit/glance/miss/parry/...) at play time
+ *                 through impactSfxFor()
  */
 
 /**
@@ -43,6 +45,12 @@
 export const impactSfxFor = (outcome) => {
   switch (outcome) {
     case 'miss': return 'attack_miss';
+    // A glancing blow landed but skidded off for half damage — neither a solid
+    // hit nor a negation, so it gets its own thinner, deflected cue. It used to
+    // arrive with no outcome at all (the adapter inferred outcomes from the
+    // narration prose and "just barely hit" matched none of its patterns), so
+    // roughly one landed hit in ten played no impact sound whatsoever.
+    case 'glance': return 'attack_glance';
     // Every negated outcome shares the parry cue. `absorb` belongs here rather
     // than with 'hit': the damage did not land, so it must not play the
     // flesh-impact sound the player reads as taking a real hit.
@@ -54,6 +62,48 @@ export const impactSfxFor = (outcome) => {
     case 'hit':
     default:
       return 'attack_hit';
+  }
+};
+
+/**
+ * Map an attack outcome to the target marker's flash during the `impact` phase
+ * of a `target: 'strike'` animation (see the config shape above).
+ *
+ * Lives here rather than inline in BattlefieldGrid so the visual treatment and
+ * the audio cue for an outcome are declared side by side and stay in step with
+ * `OUTCOMES`. Returns a plain CSS-in-JS style object; `{}` means "no flash",
+ * which is also the safe answer for an outcome the client doesn't know.
+ */
+export const strikeFlashFor = (outcome) => {
+  switch (outcome) {
+    case 'hit':
+      return {
+        backgroundColor: 'rgba(255, 0, 0, 0.7)',
+        transition: 'background-color 0.1s',
+        zIndex: 60,
+      };
+    // Deflection: the strike skids off at an angle instead of landing square,
+    // so the flash is offset, dimmer and cooler than the solid red of a hit —
+    // enough to read as contact, not enough to read as a clean landing.
+    case 'glance':
+      return {
+        backgroundColor: 'rgba(255, 140, 60, 0.35)',
+        transform: 'translate(8%, -8%) scale(0.94)',
+        transition: 'background-color 0.1s, transform 0.12s ease-out',
+        zIndex: 60,
+      };
+    case 'miss':
+      return { opacity: 0.3, transition: 'opacity 0.2s', filter: 'blur(2px)' };
+    case 'parry':
+    case 'block':
+    case 'deflect':
+      return {
+        backgroundColor: 'rgba(255, 200, 0, 0.7)',
+        transition: 'background-color 0.1s',
+        zIndex: 60,
+      };
+    default:
+      return {};
   }
 };
 

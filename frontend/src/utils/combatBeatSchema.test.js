@@ -49,6 +49,7 @@ describe('combatBeatSchema', () => {
       'block',
       'deflect',
       'crit',
+      'glance',
       'absorb',
     ]);
   });

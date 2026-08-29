@@ -36,7 +36,12 @@ export const BEAT_FIELDS = [
  */
 export const DEPARTURE_REASONS = ['death', 'fled', 'warped', 'removed'];
 
-/** Outcomes an `impact` SFX emission resolves against. */
+/**
+ * Outcomes an `impact` SFX emission resolves against.
+ * `glance` is a blow that landed but deflected for half damage — a distinct
+ * sonic and visual event from a solid `hit`; `absorb` is a blow the target
+ * shrugged off entirely and must never play the flesh-impact cue.
+ */
 export const OUTCOMES = [
   'hit',
   'miss',
@@ -44,6 +49,7 @@ export const OUTCOMES = [
   'block',
   'deflect',
   'crit',
+  'glance',
   'absorb',
 ];
 
