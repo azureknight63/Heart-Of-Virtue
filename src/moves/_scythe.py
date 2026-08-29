@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    weapon_scaled_power,
     apply_facing_damage,
     Move,
     PassiveMove,
@@ -16,7 +17,6 @@ from ._base import (
     _apply_to_hit_modifiers,
     to_hit_chance,
 )  # noqa: F401
-from ._sword import weapon_scaled_power
 
 
 class Reap(Move):

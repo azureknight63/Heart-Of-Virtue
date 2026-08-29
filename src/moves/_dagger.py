@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    weapon_scaled_power,
     Move,
     STANDARD_FATIGUE_BASE,
     PassiveMove,
@@ -18,7 +19,6 @@ from ._base import (
     facing_damage_multiplier,
     to_hit_chance,
 )  # noqa: F401
-from ._sword import weapon_scaled_power
 
 
 #: How much steeper Backstab's positional damage curve is than the baseline

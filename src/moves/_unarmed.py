@@ -8,8 +8,8 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from ._sword import weapon_scaled_power
 from ._base import (
+    weapon_scaled_power,
     Move,
     PassiveMove,
     _apply_carry_fatigue,

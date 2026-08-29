@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    weapon_scaled_power,
     apply_facing_damage,
     Move,
     PassiveMove,
@@ -16,56 +17,6 @@ from ._base import (
     _apply_to_hit_modifiers,
     to_hit_chance,
 )  # noqa: F401
-
-
-def weapon_scaled_power(user, factor):
-    """Weapon-scaled power for the sweep/spin/pivot moves that deliberately do
-    *not* route through ``standard_evaluate_attack``.
-
-    Those moves keep hand-rolled ``evaluate()`` bodies because their timing is
-    fixed rather than weapon-derived — but every one of them used to score
-    power as ``weapon.damage * k + strength * k2``, which drops the weapon's
-    ``str_mod``/``fin_mod`` entirely.  On a stat-scaling weapon that is not a
-    small discrepancy: a Scythe deals only 5 flat damage and earns the rest
-    through ``str_mod=2``/``fin_mod=2``, so Reap — a Scythe-only move — scored
-    **5** power against Death's Harvest's 60 on the very same weapon.
-
-    This mirrors ``standard_evaluate_attack``'s power line
-    (``damage + strength*str_mod + finesse*fin_mod``) and then applies the
-    caller's archetype ``factor``, so an area/utility move stays a fixed
-    fraction of a full swing on *every* weapon rather than only on the
-    flat-damage ones.  It lives in ``_sword.py`` because this module hosts the
-    package's two weapon-agnostic moves (WhirlAttack, VertigoSpin); the
-    scythe/polearm/dagger modules import it from here.  It is deliberately
-    pure — it reads ``user`` and returns a number, never writing move state —
-    so repeated ``evaluate()`` calls stay idempotent.
-    """
-    def _num(value, default=0.0):
-        """Coerce to float, or ``default`` for anything non-numeric.
-
-        Applied per *term* rather than around the whole expression on purpose:
-        a weapon that carries a real ``damage`` but a missing or unusable
-        ``str_mod`` should still score off its damage, not collapse to the
-        no-weapon fallback. Wrapping the whole sum instead is what made the
-        earlier hand-rolled versions silently bottom out at 1.
-        """
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return default
-
-    wpn = getattr(user, "eq_weapon", None)
-    damage = _num(getattr(wpn, "damage", None), default=None) if wpn else None
-    strength = _num(getattr(user, "strength", 0))
-    if damage is None:
-        base = strength
-    else:
-        base = (
-            damage
-            + strength * _num(getattr(wpn, "str_mod", 0))
-            + _num(getattr(user, "finesse", 0)) * _num(getattr(wpn, "fin_mod", 0))
-        )
-    return max(1, int(base * _num(factor)))
 
 
 class PommelStrike(Move):
