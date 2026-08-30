@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { logEntryKey, LOG_KEY_SEP } from './combatLogKey';
+import { logEntryKey, LOG_KEY_SEP, distinctLogCount } from './combatLogKey';
 
 describe('logEntryKey', () => {
   it('separates fields so no value can collide across a boundary', () => {
@@ -47,5 +47,34 @@ describe('no component keeps a private copy', () => {
 
   it('the scan can actually find a private definition', () => {
     expect('const logEntryKey = (entry) =>').toMatch(/const\s+logEntryKey\s*=/);
+  });
+});
+
+describe('distinctLogCount', () => {
+  it('counts one swing\'s identical carriers as a single entry', () => {
+    // A four-target sweep: four byte-identical carriers, one revealed line.
+    const carrier = { round: 2, type: 'animation', message: 'Sweep animation' };
+    const log = [
+      { round: 1, type: 'combat', message: 'Jean swings.' },
+      carrier, { ...carrier }, { ...carrier }, { ...carrier },
+    ];
+    expect(log.length).toBe(5);
+    expect(distinctLogCount(log)).toBe(2);
+  });
+
+  it('is what a revealed-count comparison must use', () => {
+    // The defect: raw length permanently exceeds LeftPanel's deduped count
+    // once any multi-target swing lands, so `log.length > displayedLogCount`
+    // never goes false and the victory dialog never fires.
+    const carrier = { round: 2, type: 'animation', message: 'Sweep animation' };
+    const log = [carrier, { ...carrier }, { ...carrier }];
+    const displayedLogCount = distinctLogCount(log); // what LeftPanel reports
+    expect(log.length > displayedLogCount).toBe(true); // the broken comparison
+    expect(distinctLogCount(log) > displayedLogCount).toBe(false); // the fix
+  });
+
+  it('tolerates an empty or missing log', () => {
+    expect(distinctLogCount([])).toBe(0);
+    expect(distinctLogCount(undefined)).toBe(0);
   });
 });

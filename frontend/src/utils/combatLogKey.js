@@ -30,3 +30,20 @@ export const LOG_KEY_SEP = '\u001F';
 
 export const logEntryKey = (entry) =>
   [entry?.round ?? '', entry?.type ?? '', entry?.message ?? ''].join(LOG_KEY_SEP);
+
+/**
+ * How many *distinct* entries a combat log holds.
+ *
+ * The raw `log.length` and the number of lines a reader actually sees are
+ * different quantities, because this key is deliberately not unique: the
+ * per-target carriers of one swing are byte-identical and are emitted with
+ * `allow_duplicate=True`, so a four-target sweep adds four raw entries and
+ * one revealed line.
+ *
+ * Anything comparing "how much log is there" against LeftPanel's revealed
+ * count must compare like with like. Comparing the raw length instead meant
+ * the gate could never close after any multi-target resolution -- which held
+ * the victory/defeat dialog shut for the rest of the session.
+ */
+export const distinctLogCount = (log) =>
+  new Set((log || []).map(logEntryKey)).size;

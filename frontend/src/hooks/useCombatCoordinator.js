@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { distinctLogCount } from '../utils/combatLogKey'
 
 /**
  * Custom hook for managing combat coordination state and handlers.
@@ -77,7 +78,11 @@ export function useCombatCoordinator({
      */
     useEffect(() => {
         const maybeEnd = combat?.end_state
-        const combatLogLength = combat?.log?.length || 0
+        // Distinct entries, not raw length: the per-target carriers of one
+        // swing are byte-identical, so the raw log permanently exceeds
+        // LeftPanel's deduped count after any multi-target resolution and this
+        // gate would never close -- holding the end-of-combat dialog shut.
+        const combatLogLength = distinctLogCount(combat?.log)
         const hasPendingLogs = combatLogLength > displayedLogCount
 
         if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {

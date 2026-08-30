@@ -157,9 +157,13 @@ export const revealedLogEntries = (log, displayedLogCount) => {
  * queued layers render as if absent. Source still wins over target *within one
  * animation*: a self-targeted move must not fight its own strike flash.
  */
+/** Stable empty default for `animationStates`, so a token with no animation
+ *  never hands React.memo a fresh array and re-renders on every frame. */
+const NO_ANIMATION_STATES = Object.freeze([]);
+
 export const collectAnimationStates = (activeAnimations, entityId) => {
   const states = [];
-  if (entityId == null) return states;
+  if (entityId == null) return NO_ANIMATION_STATES;
   for (const anim of activeAnimations || []) {
     if (!anim?.phase) continue;
     const common = { phase: anim.phase, outcome: anim.outcome, config: anim.config, anim };
@@ -169,7 +173,11 @@ export const collectAnimationStates = (activeAnimations, entityId) => {
       states.push({ ...common, isSource: false, isTarget: true });
     }
   }
-  return states;
+  // The frozen singleton on the empty path, not a fresh []: every token that
+  // is in no animation would otherwise hand React.memo a new array identity on
+  // every render and re-render the whole roster. Each layer now ticks its own
+  // phase, so that churn is multiplied by layers x phases per swing.
+  return states.length ? states : NO_ANIMATION_STATES;
 };
 
 /**
@@ -238,10 +246,6 @@ const animationStyleFor = (state) => {
   }
   return {};
 };
-
-/** Stable empty default for `animationStates`, so a token with no animation
- *  never hands React.memo a fresh array and re-renders on every frame. */
-const NO_ANIMATION_STATES = Object.freeze([]);
 
 /** Heavy hits and shockwaves rattle the target cell — but never on a miss. */
 const isShakingTarget = (state) => Boolean(
@@ -719,12 +723,16 @@ const EntityLayer = React.memo(({
       // so the hit connects visually, then ease back on return. Spin motions
       // rotate in place instead of travelling.
       //
-      // A token has ONE position, so only one layer can drive it: the first
-      // (the lead of the swing). Every layer of a batch shares a config and
-      // therefore a motion path, and two different actors never animate
-      // concurrently (takeAnimationBatch), so the lead is always the right one.
+      // A token has ONE position, so only one layer may drive it: the lead of
+      // the swing, tagged in playAnimations. Selecting "the first source layer
+      // still in flight" instead looks equivalent and is not -- the lead is
+      // removed from activeAnimations the moment its phases end, after which a
+      // follower aimed at a different cell inherits the token and the marker
+      // snaps toward the new target mid-arc.
       let transformStyle = {};
-      const animState = animStates.find((s) => s.isSource && s.config?.motion);
+      const animState = animStates.find(
+        (s) => s.isSource && s.config?.motion && s.anim.isLead
+      );
       if (animState) {
         const cfg = animState.config;
         const motion = cfg.motion;
@@ -1673,6 +1681,11 @@ function BattlefieldGrid({
   // Guard ref: set to true on unmount to prevent stale setTimeout callbacks
   const animationCancelRef = useRef(false);
   const animationTimeoutsRef = useRef([]);
+  // Distinguish "a new fight started" from "this fight ended" -- the pan/reset
+  // effect below runs for both, and only the first may reset the animation
+  // cursor. See the comment there.
+  const prevCombatIdRef = useRef(null);
+  const prevCombatActiveRef = useRef(false);
 
   const [hoveredEntity, setHoveredEntity] = useState(null);
   // Store the id, not the entity object. Every beat replaces `combat` with freshly
@@ -1912,6 +1925,21 @@ function BattlefieldGrid({
     if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
     touchPanRef.current = { x: 0, y: 0 };
     applyPanTransform();
+
+    // This effect also runs when a fight ENDS: `combatActive` flips to false
+    // while the grid stays mounted. Resetting the animation cursor on that
+    // transition replays the whole fight -- Battlefield clears accBeatStates,
+    // which re-runs the enqueue effect against an emptied processed set, so
+    // every still-revealed carrier is treated as new and the fight animates
+    // again from the top, holding onAnimatingChange open through the victory
+    // grace timer. Only a genuinely NEW fight may reset the cursor.
+    const startingNewFight =
+      (combatId != null && combatId !== prevCombatIdRef.current) ||
+      (combatActive && !prevCombatActiveRef.current);
+    prevCombatIdRef.current = combatId;
+    prevCombatActiveRef.current = combatActive;
+    if (!startingNewFight) return;
+
     // The queue is per-fight. Without this it lives for the whole session,
     // replaying a finished fight's animations into the next one.
     setAnimationQueue([]);
@@ -1921,6 +1949,15 @@ function BattlefieldGrid({
     // fight's opening entries carry the same ids as the old one's and would be
     // mistaken for already-animated.
     processedLogIdsRef.current = new Set();
+    // In-flight layers are per-fight too. Clearing only the queue left the
+    // previous fight's stagger timeouts (up to MAX_LAYER_LEAD_MS) and phase
+    // chains running: they fired into the new arena, and because
+    // activeAnimations stayed non-empty the new fight's first batch could
+    // never drain -- leaving onAnimatingChange latched true.
+    animationTimeoutsRef.current.forEach(clearTimeout);
+    animationTimeoutsRef.current = [];
+    setActiveAnimations([]);
+    setDyingEntities([]);
   }, [combatId, combatActive, applyPanTransform]);
 
   // Clicking the map background clears the selection — as the panel's own
@@ -2140,11 +2177,17 @@ function BattlefieldGrid({
   // covers the whole volley and the queue can't drain early) but stays
   // phase-less, and therefore invisible, until its own start.
   const playAnimations = useCallback((batch) => {
-    const entries = batch.map((animData) => ({
+    const entries = batch.map((animData, index) => ({
       ...animData,
       config: getAnimationConfig(animData.type),
       animId: (animIdRef.current += 1),
       phase: null,
+      // The lead owns the token's motion and the swing's non-impact cues. It
+      // travels WITH the layer rather than being derived at read time: the
+      // lead leaves activeAnimations when its phases finish, and a "first
+      // still in flight" rule then promotes a follower whose target_id is a
+      // different cell, snapping the token mid-arc.
+      isLead: index === 0,
     }));
     setActiveAnimations((prev) => [...prev, ...entries]);
 
@@ -2155,7 +2198,7 @@ function BattlefieldGrid({
     );
 
     entries.forEach((entry, index) => {
-      const begin = () => startAnimationLayer(entry, index === 0);
+      const begin = () => startAnimationLayer(entry, entry.isLead);
       // scheduleAnimationLayers already divides startMs by combatSpeed.
       const startMs = layers[index]?.startMs || 0;
       if (startMs > 0) trackTimeout(begin, startMs);

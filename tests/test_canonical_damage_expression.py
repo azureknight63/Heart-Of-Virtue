@@ -287,21 +287,37 @@ def _move_module_paths():
     )
 
 
+def _reads_resistance_dict(node):
+    """True for the ``x.resistance`` half of ``x.resistance.get(...)``/``[...]``."""
+    return isinstance(node, ast.Attribute) and node.attr == "resistance"
+
+
 def _hand_written_damage_lines(path):
     """Function names in ``path`` that spell the canonical line out by hand.
 
-    The signature is the co-occurrence of all three terms in one function:
-    a ``combat_resistance`` call, a ``protection`` attribute, and a
-    ``random.uniform`` roll. Nothing else in the package does all three --
-    ``_npc.py`` rolls variance into *power* and ``SeismicSlam`` reads
-    resistance and protection with no roll at all, and neither trips this.
+    The signature is a ``random.uniform`` roll next to ANY term the canonical
+    expression owns: a resistance read (``combat_resistance(...)``, or the
+    ``target.resistance.get(...)``/``[...]`` spelling three of the deleted
+    copies used), a ``protection`` attribute, or a ``heat`` read.
+
+    Deliberately a disjunction rather than the conjunction it started as.
+    Requiring all three meant a PARTIAL copy passed -- and every historical
+    drift here was partial. PowerStrike's real bug was
+    ``power * uniform(0.8, 1.2) - protection`` with resistance and heat gone,
+    so it carried two of the three markers and the original scan would have
+    certified it clean. ``test_the_damage_line_scan_catches_a_partial_copy``
+    pins that shape and two others.
+
+    ``_npc.py`` rolls variance into *power* rather than into the damage line,
+    so it does not trip this; that exemption is why its four hand-written
+    resisted lines are out of scope here.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     offenders = []
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        resistance = protection = uniform = False
+        resistance = protection = uniform = heat = False
         for child in ast.walk(node):
             if isinstance(child, ast.Call):
                 named = getattr(child.func, "id", None) or getattr(
@@ -311,9 +327,30 @@ def _hand_written_damage_lines(path):
                     resistance = True
                 elif named == "uniform":
                     uniform = True
+                elif named == "get" and _reads_resistance_dict(
+                    getattr(child.func, "value", None)
+                ):
+                    # `target.resistance.get("crushing", 1.0)` -- how three of
+                    # the copies this module deleted actually spelled it. A
+                    # scan looking only for combat_resistance() calls does not
+                    # see them.
+                    resistance = True
             elif isinstance(child, ast.Attribute) and child.attr == "protection":
                 protection = True
-        if resistance and protection and uniform:
+            elif isinstance(child, ast.Attribute) and child.attr == "heat":
+                heat = True
+            elif isinstance(child, ast.Subscript) and _reads_resistance_dict(
+                child.value
+            ):
+                resistance = True
+        # A hand-written damage line is a variance roll next to ANY of the
+        # terms the canonical expression owns -- not all three at once.
+        # Requiring the conjunction is what let the shape that motivated this
+        # module slip through: PowerStrike's real bug was
+        # `power * uniform(0.8, 1.2) - protection`, with resistance and heat
+        # dropped entirely, so it carried two of the three markers and a
+        # three-way AND would have certified it as clean.
+        if uniform and (resistance or protection or heat):
             offenders.append(f"{path.name}:{node.name} (line {node.lineno})")
     return offenders
 
@@ -366,3 +403,62 @@ def test_the_protection_sanitiser_has_exactly_one_definition():
         f"{bool_guards} copies of the protection sanitiser survive -- it belongs "
         "in target_protection() only"
     )
+
+
+def test_the_damage_line_scan_catches_a_partial_copy():
+    """The positive control this guard went without.
+
+    A guard that only fires on a complete copy cannot catch the copies that
+    actually happen. Every historical drift in this package was PARTIAL --
+    PowerStrike kept its variance roll and its facing curve while dropping
+    resistance and heat, which is precisely why nothing detected it for
+    months. Each snippet below is a real shape from this package's history and
+    must be flagged; the canonical call must not be.
+    """
+    import tempfile
+
+    partial_copies = {
+        "power_strike_pre_fix": (
+            "def execute(self, x):\n"
+            "    damage = self.power * random.uniform(0.8, 1.2)"
+            " - self.target.protection\n"
+        ),
+        "resistance_dict_get": (
+            "def execute(self, x):\n"
+            "    damage = (self.power"
+            " * self.target.resistance.get('crushing', 1.0))"
+            " * random.uniform(0.8, 1.2)\n"
+        ),
+        "heat_only": (
+            "def execute(self, x):\n"
+            "    damage = self.power * self.user.heat"
+            " * random.uniform(0.8, 1.2)\n"
+        ),
+    }
+    for name, source in partial_copies.items():
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
+            fh.write(source)
+            probe = pathlib.Path(fh.name)
+        try:
+            assert _hand_written_damage_lines(probe), (
+                f"the scan does not flag {name} -- the shape it exists to catch"
+            )
+        finally:
+            probe.unlink()
+
+
+def test_the_damage_line_scan_does_not_flag_the_canonical_call():
+    """...and does not fire on a move that routes through the helper."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
+        fh.write(
+            "def execute(self, x):\n"
+            "    damage = resolve_damage(self.user, self.target,"
+            " power, self.base_damage_type)\n"
+        )
+        probe = pathlib.Path(fh.name)
+    try:
+        assert not _hand_written_damage_lines(probe)
+    finally:
+        probe.unlink()
