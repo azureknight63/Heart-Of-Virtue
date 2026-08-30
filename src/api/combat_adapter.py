@@ -535,6 +535,13 @@ class ApiCombatAdapter:
         held reference. Relative order is preserved, so the recap still reads
         chronologically across the seam.
 
+        Returns the number of entries dropped off the FRONT, because callers
+        hold positions into this list: ``execute_player_move`` records
+        ``log_len_before`` and slices the tail to scope one beat's entries, and
+        an in-place front-trim shifts every position under it. Ignoring the
+        return means that beat's window comes back wrong -- usually empty -- and
+        the beat protocol silently emits nothing for it.
+
         See MAX_ANIMATION_LOG_ENTRIES / MAX_VISIBLE_LOG_ENTRIES for the policy.
         """
         log = self.player.combat_log
@@ -544,8 +551,9 @@ class ApiCombatAdapter:
             + COMBAT_LOG_TRIM_SLACK
         )
         if len(log) <= ceiling:
-            return
+            return 0
 
+        before = len(log)
         animation_budget = MAX_ANIMATION_LOG_ENTRIES
         visible_budget = MAX_VISIBLE_LOG_ENTRIES
         kept = []
@@ -563,6 +571,7 @@ class ApiCombatAdapter:
         log[:] = kept
         # Force the lazy rebuild in _log_key_index rather than recomputing here.
         self._log_key_count = None
+        return before - len(kept)
 
     def _add_log_entry(
         self,
@@ -630,7 +639,10 @@ class ApiCombatAdapter:
             self.player.combat_log.append(entry)
             index.add(key)
             self._log_key_count = len(self.player.combat_log)
-            self._trim_combat_log()
+            self._log_trimmed_since_beat = (
+                getattr(self, "_log_trimmed_since_beat", 0)
+                + self._trim_combat_log()
+            )
 
             # Emit socket event if session is known
             if self.session_id:
@@ -668,6 +680,22 @@ class ApiCombatAdapter:
             animation_data=animation_data,
             allow_duplicate=True,
         )
+
+    def _discard_pending_animations(self):
+        """Drop every combatant's animation channel, in flight or not.
+
+        The end-of-move flush deliberately leaves a mid-wind-up move's channel
+        armed so its impact still has somewhere to publish. That is right while
+        the fight continues and wrong the moment it ends: nothing will ever
+        publish again, and the dict can still hold ``outcome_target`` -- a live
+        combatant -- which is then pickled into the save along with the player.
+
+        Both endings need this, not just victory. On defeat the player is
+        pickled too, and the player's own channel can be the armed one.
+        """
+        for entity in self._all_combatants():
+            if hasattr(entity, "_pending_animation"):
+                delattr(entity, "_pending_animation")
 
     def _flush_pending_animations(self):
         """Retire the pending animation of every combatant whose move is over.
@@ -1660,6 +1688,10 @@ class ApiCombatAdapter:
                 # a stale animation from several beats ago on quiet beats, misattributing
                 # e.g. a Whirl Attack wind-up beat to the enemy's last attack).
                 log_len_before = len(getattr(self.player, "combat_log", []))
+                # The trim rewrites combat_log in place from the front, so this
+                # position can move under us mid-beat. Count what it drops and
+                # correct the slice below rather than losing the whole beat.
+                self._log_trimmed_since_beat = 0
 
                 # Capture output for THIS beat only
                 with self._capture_output():
@@ -1703,8 +1735,11 @@ class ApiCombatAdapter:
 
                 # Add log to beat state — only entries added during THIS beat, not
                 # the full cumulative combat log (see log_len_before above).
+                beat_window_start = max(
+                    0, log_len_before - getattr(self, "_log_trimmed_since_beat", 0)
+                )
                 beat_state["log"] = list(
-                    getattr(self.player, "combat_log", [])[log_len_before:]
+                    getattr(self.player, "combat_log", [])[beat_window_start:]
                 )
                 beat_states.append(beat_state)
 
@@ -1762,6 +1797,7 @@ class ApiCombatAdapter:
                     "message": "You have been defeated.",
                     "game_over": True,
                 }
+                self._discard_pending_animations()
             except Exception:
                 self.player.combat_end_summary = {
                     "id": str(uuid.uuid4()),
@@ -2210,7 +2246,7 @@ class ApiCombatAdapter:
             beat_index=self.current_beat_state_index,
             animation_data={
                 "type": "pulse",
-                "source_id": f"{'ally' if npc.friend else 'enemy'}_{id(npc)}",
+                "source_id": CombatantSerializer.stream_id(npc),
                 "target_id": target_label,
                 "move_name": f"Use {item_name}",
             },
@@ -2612,9 +2648,7 @@ class ApiCombatAdapter:
         # publish to it, and a pending dict can hold a reference to the
         # combatant its last resolution landed on, which would then be pickled
         # into the save with the rest of the player.
-        for entity in self._all_combatants():
-            if hasattr(entity, "_pending_animation"):
-                delattr(entity, "_pending_animation")
+        self._discard_pending_animations()
 
         self.player.combat_list = []
         existing_allies = [
@@ -2895,7 +2929,7 @@ class ApiCombatAdapter:
         distance = self.player.combat_proximity.get(combatant, 0)
         in_range = range_min <= distance <= range_max
         entry = {
-            "id": f"{'ally' if is_ally else 'enemy'}_{id(combatant)}",
+            "id": CombatantSerializer.stream_id(combatant),
             "name": combatant.name,
             "distance": distance,
             "is_ally": is_ally,

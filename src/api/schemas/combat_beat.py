@@ -99,7 +99,7 @@ def build_sfx_chain(
     emissions = []
     if has_swing:
         emissions.append({"kind": "swing"})
-    for resolution in (outcomes if outcomes is not None else [outcome]):
+    for resolution in (outcomes or [outcome]):
         emissions.append({"kind": "impact", "outcome": resolution})
     for change in status_changes:
         emissions.append({"kind": "status", "status": change.get("status")})

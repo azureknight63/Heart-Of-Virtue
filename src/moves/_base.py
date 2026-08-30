@@ -379,6 +379,13 @@ def target_protection(target):
     protection = getattr(target, "protection", 0)
     if not isinstance(protection, (int, float)) or isinstance(protection, bool):
         return 0
+    if not math.isfinite(protection):
+        # NaN/inf reach int() in flat_arc_damage_bounds and in the three flat
+        # arc execute()s, which raise ValueError/OverflowError from inside the
+        # combat loop -- a preview poll that 500s every time, or a wedged
+        # fight. _resolve_heat and combat_resistance both coerce for the same
+        # reason (issue #296); this sanitiser stopped one step short of them.
+        return 0
     return protection
 
 
@@ -517,6 +524,11 @@ def flat_resisted_damage(target, faced_power, damage_type):
     damage = (
         faced_power * functions.combat_resistance(target, damage_type)
     ) - target_protection(target)
+    if not math.isfinite(damage):
+        # +inf survived `damage > 0` and reached Jab's int(), raising
+        # OverflowError inside the preview poll. resolve_damage clamps the
+        # same way; this sibling did not.
+        return 0.0
     return damage if damage > 0 else 0.0
 
 

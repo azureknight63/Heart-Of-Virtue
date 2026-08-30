@@ -126,9 +126,17 @@ class CombatBeatStreamer:
             # actually happened to, so a swing that parries off one enemy and
             # lands on three is audible as all four events rather than as
             # whichever one happened to be narrated last.
+            # Only the headline actor's resolutions. A beat's log holds the
+            # player's move AND the NPC turns that follow it, so an unfiltered
+            # list makes a beat where Jean swings once and three NPCs act emit
+            # four impacts, all under Jean's actor_id and animation -- while
+            # the NPC swings still get no beat of their own. The per-target
+            # fan-out this exists for is one actor resolving against several
+            # targets, not several actors sharing one beat.
+            own = [a for a in animations if a.get("source_id") == actor_id]
             outcomes = [
                 _derive_outcome(a, hp_changes, killed, a.get("target_id"))
-                for a in animations
+                for a in own
             ] or [_derive_outcome(None, hp_changes, killed, None)]
 
             beat = build_beat(

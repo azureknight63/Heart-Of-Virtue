@@ -1574,6 +1574,11 @@ class TestGetAvailableTargets:
         player = _make_player()
         ally = _make_enemy(name="Ally")
         ally.is_alive.return_value = True
+        # Real allies (Gorran, Mara, The Adjutant) all set friend=True, and
+        # CombatantSerializer.stream_id -- the single source of truth for wire
+        # ids -- reads that attribute. _make_enemy hardcodes friend=False, so
+        # without this the fixture is an "ally" the engine would call an enemy.
+        ally.friend = True
         player.combat_list = []
         player.combat_list_allies = [player, ally]
         player.combat_proximity = {ally: 3}

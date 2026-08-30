@@ -490,6 +490,14 @@ def test_a_non_dict_pending_animation_cannot_crash_the_move_loop():
     assert not [e for e in player.combat_log if e.get("animation")]
 
 
+#: A hand-rolled wire id is any f-string that interpolates ``id(...)`` next to
+#: an ally/enemy discriminator. Keying on ``id(`` rather than on a literal
+#: ``enemy_``/``ally_`` prefix is deliberate: the prefix can be spelled as a
+#: conditional, and the first version of this guard missed a real site that
+#: did exactly that.
+_HANDROLLED_ID = r'f"[^"]*(?:ally|enemy)[^"]*\{id\([^)]*\)\}[^"]*"'
+
+
 def test_no_animation_payload_hardcodes_a_combatant_wire_id():
     """Wire ids come from ``stream_id``, never from an inline f-string.
 
@@ -510,7 +518,7 @@ def test_no_animation_payload_hardcodes_a_combatant_wire_id():
     import re
 
     source = pathlib.Path("src/api/combat_adapter.py").read_text()
-    offenders = re.findall(r'f"(?:enemy|ally)_\{id\([^)]*\)\}"', source)
+    offenders = re.findall(_HANDROLLED_ID, source)
     assert not offenders, (
         "these hand-rolled combatant ids bypass CombatantSerializer.stream_id "
         f"and mislabel allies: {offenders}"
@@ -518,13 +526,33 @@ def test_no_animation_payload_hardcodes_a_combatant_wire_id():
 
 
 def test_the_hardcoded_id_scan_can_actually_find_something():
-    """A regex guard that matches nothing passes forever."""
+    """A guard that matches nothing passes forever -- and this one already did.
+
+    The first version of this scan looked for the literal prefixes
+    ``f"enemy_{id(...)}"`` / ``f"ally_{id(...)}"``. A fifth site spelled the
+    same thing as a conditional -- ``f"{'ally' if npc.friend else 'enemy'}_{id(npc)}"``
+    -- and sailed straight past it, which is the enumeration-shaped guard this
+    codebase keeps rediscovering. The pattern now keys on the ``id(...)``
+    interpolation, which is what actually makes an id hand-rolled, and every
+    known spelling is pinned below as a positive control.
+    """
     import re
 
-    assert re.findall(
-        r'f"(?:enemy|ally)_\{id\([^)]*\)\}"',
+    known_spellings = [
         '        "source_id": f"enemy_{id(npc)}",',
-    ), "the offender pattern no longer matches the shape it was written for"
+        '        "target_id": f"ally_{id(target)}",',
+        '        "source_id": f"{\'ally\' if npc.friend else \'enemy\'}_{id(npc)}",',
+        '        label = f"enemy_{id(move.target)}" if x else "player"',
+    ]
+    for spelling in known_spellings:
+        assert re.findall(_HANDROLLED_ID, spelling), (
+            f"the offender pattern no longer matches a known shape: {spelling}"
+        )
+
+    # ...and does not fire on a legitimate stream_id call.
+    assert not re.findall(
+        _HANDROLLED_ID, '        "source_id": CombatantSerializer.stream_id(npc),'
+    )
 
 
 # ── TASK 1/2/3/4 (see report): per-target animations, beat scoping, streaming,
@@ -723,7 +751,10 @@ def test_stream_beats_keeps_the_moves_own_animation_for_a_multi_target_swing():
     assert beat["target_id"] == "enemy_1"
     assert beat["outcome"] == "hit"
     impacts = [e for e in beat["sfx"] if e["kind"] == "impact"]
-    assert [e["outcome"] for e in impacts] == ["hit", "parry", "miss"], beat["sfx"]
+    # The NPC's own animation rides in this beat's log but is NOT one of the
+    # swing's resolutions -- attributing its "miss" to Jean's sweep is the
+    # actor-conflation this filter removes. Two targets, two impacts.
+    assert [e["outcome"] for e in impacts] == ["hit", "parry"], beat["sfx"]
     assert [e["index"] for e in beat["sfx"]] == list(range(len(beat["sfx"])))
 
 
@@ -841,3 +872,57 @@ def test_trimming_preserves_the_combat_log_list_identity():
         adapter._add_log_entry(i, f"line {i}", "combat")
 
     assert player.combat_log is held
+
+
+def test_a_beat_keeps_its_own_log_window_even_when_the_trim_fires():
+    """The beat window is an identity, not an index into a list that shrinks.
+
+    ``execute_player_move`` records ``log_len_before = len(player.combat_log)``
+    and later slices ``combat_log[log_len_before:]`` to scope one beat's
+    entries. ``_trim_combat_log`` rewrites that same list IN PLACE, dropping
+    entries off the FRONT -- so a trim firing mid-beat shifts every position
+    down and the slice returns the wrong window, usually empty. The beat then
+    carries no animations, and CombatBeatStreamer emits nothing for it: a
+    silent loss of the whole beat protocol for that beat, reachable only in a
+    long fight, which is exactly the kind that would never be reproduced.
+    """
+    from src.api.combat_adapter import (
+        ApiCombatAdapter,
+        COMBAT_LOG_TRIM_SLACK,
+        MAX_ANIMATION_LOG_ENTRIES,
+        MAX_VISIBLE_LOG_ENTRIES,
+    )
+    from src.player import Player
+
+    player = Player()
+    player.combat_beat = 1
+    ceiling = (
+        MAX_ANIMATION_LOG_ENTRIES + MAX_VISIBLE_LOG_ENTRIES + COMBAT_LOG_TRIM_SLACK
+    )
+    # A fight already at the ceiling: the next entry trips the trim.
+    player.combat_log = [
+        {"round": 1, "type": "combat", "message": f"old {i}"} for i in range(ceiling)
+    ]
+
+    adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+    adapter.player = player
+    adapter._log_key_count = None
+    adapter._log_keys = set()
+    adapter._log_key_source = None
+
+    log_len_before = len(player.combat_log)
+    this_beat = {"round": 2, "type": "combat", "message": "this beat's only line"}
+    player.combat_log.append(this_beat)
+    removed = adapter._trim_combat_log()
+
+    assert isinstance(removed, int), (
+        "_trim_combat_log must report how many entries it dropped so callers "
+        "holding a position can correct it"
+    )
+    assert removed > 0, "the fixture did not actually trip the trim"
+
+    window = player.combat_log[max(0, log_len_before - removed):]
+    assert this_beat in window, (
+        "the beat's own entry fell outside its window after the trim shifted "
+        f"positions by {removed}"
+    )

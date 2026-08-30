@@ -376,6 +376,12 @@ maintenant et à l'heure de notre mort. Amen.""",
         state.pop("_combat_adapter", None)
         # Transient API-layer suggestion state — regenerated each session, not part of the save
         state.pop("suggestions_paused", None)
+        # The adapter's animation channel holds `outcome_target` -- a LIVE
+        # combatant object, written across the engine/API boundary by
+        # src.moves._base.publish_outcome. Pickling it drags the enemy's whole
+        # object graph into the save, and the channel is transient state the
+        # next session rebuilds from scratch.
+        state.pop("_pending_animation", None)
         return state
 
     def get_hp_pcnt(self):
