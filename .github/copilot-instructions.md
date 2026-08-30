@@ -481,11 +481,10 @@ return jsonify({"success": True, "data": result}), 200
 - **Testing:**
   - `tests/conftest.py` - Test environment setup and module shimming
   - `tests/api/conftest.py` - Flask test configuration
-  - `tests/api/test_session_manager.py` - SessionManager tests (12)
-  - `tests/api/test_game_service.py` - GameService tests (15)
-  - `tests/api/test_validators.py` - Validator tests (28)
-  - `tests/api/test_routes_integration.py` - Integration tests (27)
-  - `tests/api/test_error_handlers.py` - Error handler tests (9)
+  - `tests/api/` - real-engine-through-HTTP integration tests only. Unit-level
+    cover for services, serializers, validators and routes lives in `tests/`
+    proper (`test_session_manager_coverage.py`, `test_validators_and_sanitizer.py`,
+    `test_world_routes_coverage.py`, `test_error_handler_logging.py`, ...).
 - **Other:**
   - `ai/llm_client.py` - LLM adapter implementation
   - `utils/map_generator.py` - Map editor GUI

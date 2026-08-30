@@ -89,6 +89,32 @@ class TestStartCombat:
         assert game_service.start_combat(player, "not-an-id") == {"error": "Enemy not found"}
         assert player.in_combat is not True
 
+    def test_enemy_is_resolved_from_current_room_when_the_universe_tile_has_none(
+        self, game_service, player, world
+    ):
+        """The second of ``start_combat``'s two lookups.
+
+        The universe tile at the player's coordinates is consulted first; only
+        when it holds no matching NPC does ``player.current_room`` get asked.
+        That fallback is what an event relies on when it stages a fight in a
+        room the player has been placed into without their coordinates having
+        caught up. Every other test here satisfies the first lookup, so without
+        this one the fallback could be deleted and nothing would notice until
+        an event tried to use it.
+        """
+        tiles = world[1]
+        staged_room = tiles[(1, 0)]
+        enemy = Slime()
+        staged_room.npcs_here = [enemy]
+        # Leave the coordinate tile empty so the first lookup genuinely misses.
+        tiles[(player.location_x, player.location_y)].npcs_here = []
+        player.current_room = staged_room
+
+        result = game_service.start_combat(player, enemy_id(enemy))
+
+        assert player.combat_list == [enemy]
+        assert result["combat_active"] is True
+
     def test_other_aggro_hostiles_join_the_fight(self, game_service, player, tile):
         clicked, bystander = Slime(), Slime()
         bystander.aggro = True

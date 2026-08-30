@@ -141,13 +141,15 @@ src/api/
 └── schemas/
     └── __init__.py
 
-tests/api/
+tests/api/                   # real engine, driven through HTTP
 ├── conftest.py              # Flask test fixtures
-├── test_session_manager.py  # SessionManager tests (12)
-├── test_game_service.py     # GameService tests (15)
-├── test_validators.py       # Validator tests (28)
-├── test_routes_integration.py # Integration tests (27)
-└── test_error_handlers.py   # Error handler tests (9)
+├── test_combat_routes_integration.py
+├── test_combat_command_fuzz.py / test_api_fuzz.py
+├── test_cloud_integration.py   # the only AuthService/DB path in the suite
+└── ...                         # quickswap, repeat-last, map switching
+
+# Unit-level cover for services, serializers, validators and routes lives in
+# tests/ proper -- those run against mocks and are the bulk of the API's tests.
 ```
 
 ---

@@ -342,6 +342,34 @@ class TestLogsRoutes:
         data = rv.get_json()
         assert "1 log" in data["message"]
 
+    def test_receive_logs_skips_non_dict_entries(self, client, tmp_path):
+        """A hostile or buggy client can put bare strings in the logs array.
+
+        The writer indexes every entry with ``.get()``, so a non-dict entry
+        would raise mid-write and take the whole batch down with it — including
+        the well-formed entries either side of it. It is skipped instead, and
+        the count in the response reflects only what was actually written.
+        """
+        payload = {
+            "logs": [
+                "not-a-dict",
+                {"timestamp": "2026-01-01T00:00:00Z", "level": "LOG", "message": "kept"},
+                42,
+            ],
+            "session_id": "test_session",
+        }
+        with (
+            patch("src.api.routes.logs.LOGS_DIR", tmp_path),
+            patch("src.api.routes.logs.cleanup_manager") as mock_cm,
+        ):
+            mock_cm.cleanup.return_value = {}
+            rv = client.post("/api/logs/browser", json=payload)
+
+        assert rv.status_code == 200
+        written = "".join(p.read_text(encoding="utf-8") for p in tmp_path.glob("*.log"))
+        assert "kept" in written
+        assert "not-a-dict" not in written
+
     def test_receive_logs_no_logs_key(self, client):
         rv = client.post("/api/logs/browser", json={"session_id": "x"})
         assert rv.status_code == 400

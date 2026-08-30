@@ -60,13 +60,6 @@ def authenticated_session(app):
     return session_id, player, session_manager
 
 
-@pytest.fixture
-def api_client():
-    """Create a Flask test client (when routes are implemented)."""
-    # TODO: Implement when app factory is complete
-    pass
-
-
 # Patch terminal output functions for tests to avoid encoding issues on Windows
 @pytest.fixture(autouse=True)
 def patch_terminal_output(monkeypatch):

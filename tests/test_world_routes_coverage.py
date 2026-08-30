@@ -228,6 +228,21 @@ class TestMovePlayer:
     def test_move_missing_direction(self, client):
         rv = client.post("/world/move", json={}, headers=AUTH)
         assert rv.status_code == 400
+
+    def test_move_rejects_a_direction_the_engine_does_not_support(self, client):
+        """A well-formed string that is not one of the eight compass headings.
+
+        Distinct from the missing-direction case above: that one is caught by
+        ``validate_string_field`` (absent/blank), this one by
+        ``validate_direction`` (present, a string, and still not a heading
+        ``move_player`` can act on). The route must answer before reaching the
+        game service, or the engine is handed a direction it has no branch for.
+        """
+        rv = client.post("/world/move", json={"direction": "widdershins"}, headers=AUTH)
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+        assert "widdershins" in data["error"] or "direction" in data["error"].lower()
         data = rv.get_json()
         assert "direction" in data["error"]
 

@@ -821,6 +821,21 @@ class TestStateEffectSerializer:
         )
         assert result["active"] is False
 
+    def test_a_statustype_already_in_the_wire_vocabulary_passes_straight_through(self):
+        """`_get_effect_type` has three branches; this is the first.
+
+        A state whose `statustype` is already one of the frontend's three
+        categories is returned verbatim — no lookup in `_STATUSTYPE_CATEGORY`,
+        no `_generic_effect_type` inference. The other two branches (the
+        "generic" sentinel, and an engine statustype needing translation) are
+        covered below and in the category-table tests; without this one the
+        pass-through could be deleted and only an engine state that happens to
+        name a wire category would notice.
+        """
+        for wire_category in ("buff", "debuff", "ailment"):
+            state = _state(statustype=wire_category)
+            assert self.StateEffectSerializer._get_effect_type(state) == wire_category
+
     def test_get_severity_light(self):
         state = _state(statustype="revive")
         result = self.StateEffectSerializer._get_severity(state)

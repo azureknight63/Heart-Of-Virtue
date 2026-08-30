@@ -195,13 +195,12 @@ Heart-Of-Virtue/
 │   └── ... (other existing modules)
 │
 ├── tests/
-│   ├── api/                          # ← NEW API Tests
-│   │   ├── conftest.py              # Test configuration
-│   │   ├── test_session_manager.py  # 12 tests
-│   │   ├── test_game_service.py     # 15 tests
-│   │   ├── test_routes_integration.py # 27 tests
-│   │   ├── test_validators.py       # 28 tests
-│   │   └── test_error_handlers.py   # 9 tests
+│   ├── api/                          # real engine, driven through HTTP
+│   │   ├── conftest.py              # Flask test fixtures
+│   │   ├── test_combat_routes_integration.py
+│   │   ├── test_cloud_integration.py    # only AuthService/DB path
+│   │   └── ...                          # fuzz, quickswap, map switching
+│   │                                 # (unit cover lives in tests/ proper)
 │   │
 │   └── ... (existing game tests)
 │
