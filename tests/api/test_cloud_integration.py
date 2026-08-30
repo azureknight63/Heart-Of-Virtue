@@ -1,9 +1,39 @@
+"""Registration, login and cloud-save persistence against a REAL database.
+
+OPT-IN. These tests write real rows -- ``auth_service.create_user`` has no
+TESTING guard, and ``src/api/db.py`` reads ``TURSO_DATABASE_URL`` straight from
+the environment rather than from Flask config, so with a configured ``.env``
+this file INSERTs into whatever database that URL names. Run it deliberately:
+
+    HOV_LIVE_DB=1 python -m pytest tests/api/test_cloud_integration.py -v
+
+Without the opt-in every test here skips, and ``tests/conftest.py`` separately
+blanks ``TURSO_DATABASE_URL``/``TURSO_AUTH_TOKEN`` so an un-gated DB write in
+any other test fails loudly instead of succeeding against production.
+
+The gate is a separate variable from ``HOV_LIVE_LLM`` for the same reason that
+one is separate from the provider pins: opting into spending free-tier quota
+and opting into writing user rows are different decisions.
+
+This file spent months inside ``pytest.ini``'s ``norecursedirs``, which is what
+hid the exposure. Un-excluding the directory put it in the default gate; the
+coverage measurement that justified the rescue did not ask whether a rescued
+module had external side effects. It does now.
+"""
+
+import os
+
 import pytest
 import uuid
 import json
 import asyncio
 from src.api.services.auth_service import auth_service
 from src.api.db import db
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("HOV_LIVE_DB", "0") not in ("1", "true", "True"),
+    reason="writes real rows to the configured Turso database; set HOV_LIVE_DB=1",
+)
 
 
 class TestCloudIntegration:

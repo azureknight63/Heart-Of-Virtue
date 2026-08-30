@@ -44,6 +44,22 @@ from tests.llm_doubles import CREDENTIAL_ENVS  # noqa: E402
 for _key_env in CREDENTIAL_ENVS:
     os.environ[_key_env] = ""
 
+# The database is a credential too, and it is the one that writes.
+#
+# CREDENTIAL_ENVS covers the provider keys and GITHUB_TOKEN -- the things that
+# SPEND or POST. It stopped one variable short of the thing that PERSISTS:
+# src/api/db.py reads TURSO_DATABASE_URL/TURSO_AUTH_TOKEN straight from the
+# environment (not from Flask config), and auth_service.create_user has no
+# TESTING guard, so any test that reaches POST /api/auth/register writes a real
+# row to the live Turso database. tests/api/ was excluded from the default run
+# for months, which hid that; un-excluding it put such a test in the gate.
+#
+# Same shape as the GITHUB_TOKEN incident above, one layer down. Blank both, so
+# an unguarded DB write fails loudly with "TURSO_DATABASE_URL is not set"
+# instead of succeeding against production.
+for _db_env in ("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"):
+    os.environ[_db_env] = ""
+
 # Neutralise every per-feature LLM gate, host and model the environment is
 # carrying, then pin the three the suite relies on by name.
 #
