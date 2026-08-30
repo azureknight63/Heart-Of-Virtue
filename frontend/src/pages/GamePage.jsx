@@ -23,7 +23,6 @@ import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 import { TAB_KEYS } from '../utils/mobileTabs'
-import { distinctLogCount } from '../utils/combatLogKey'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -374,12 +373,10 @@ export default function GamePage() {
       setCombatDialogShown(false)
       // Handle combat end state
       const maybeEnd = combat?.end_state
-        // Distinct entries, not raw length: the per-target carriers of one
-      // swing are byte-identical, so the raw log permanently exceeds
-      // LeftPanel's deduped count after any multi-target resolution and this
-      // gate would never close -- holding the end-of-combat dialog shut.
-      const combatLogLength = distinctLogCount(combat?.log)
-      const hasPendingLogs = combatLogLength > displayedLogCount
+      // The end-of-combat gate lives in useCombatCoordinator, which compares
+      // the DEDUPED log count (utils/combatLogKey) against LeftPanel's reveal
+      // count. This effect used to carry its own copy of that comparison;
+      // nothing here ever read it, so it was deleted rather than kept in sync.
 
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)

@@ -456,6 +456,43 @@ describe('BattlefieldGrid — animation cursor', () => {
     act(() => vi.advanceTimersByTime(2000));
     expect(countCue('attack_hit')).toBe(1);
   });
+
+  it('does not treat the end-of-fight id blip as a new fight', () => {
+    // combat:ended is synthesized client-side with NO combat_id (useApi
+    // normalizes the end summary to { combat_active: false, log: [] }), so
+    // the grid's combatId prop blips to undefined at every fight end. An
+    // unconditional prevCombatIdRef assignment recorded that undefined, and
+    // the next ordinary poll -- same fight, id still present -- then read as
+    // undefined -> 'fight-1': a fake new fight that cleared the processed-id
+    // cursor and replayed the whole revealed log. The replay bug's side door.
+    const log = [...resolution(1, 'Jean strikes A.', sweepAt('foe_a'))];
+    const { rerender } = render(
+      <BattlefieldGrid
+        combat={{ ...combat, log }} tab="overview" zoom={1}
+        combatId="fight-1" combatActive displayedLogCount={2}
+      />
+    );
+    act(() => vi.advanceTimersByTime(2000));
+    expect(countCue('attack_hit')).toBe(1);
+    mockPlaySFX.mockClear();
+
+    // The synthesized ended payload: no id, inactive, empty log.
+    rerender(
+      <BattlefieldGrid
+        combat={{ ...combat, log: [] }} tab="overview" zoom={1}
+        combatId={undefined} combatActive={false} displayedLogCount={2}
+      />
+    );
+    // The next poll still serves the finished fight's state and id.
+    rerender(
+      <BattlefieldGrid
+        combat={{ ...combat, log }} tab="overview" zoom={1}
+        combatId="fight-1" combatActive={false} displayedLogCount={2}
+      />
+    );
+    act(() => vi.advanceTimersByTime(2000));
+    expect(countCue('attack_hit')).toBe(0);
+  });
 });
 
 describe('revealedLogEntries', () => {

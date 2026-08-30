@@ -1936,7 +1936,12 @@ function BattlefieldGrid({
     const startingNewFight =
       (combatId != null && combatId !== prevCombatIdRef.current) ||
       (combatActive && !prevCombatActiveRef.current);
-    prevCombatIdRef.current = combatId;
+    // Record only REAL ids. combat:ended is synthesized with no combat_id
+    // (useApi.applyCombatState), so combatId blips to undefined at every
+    // fight end; recording that blip made the next ordinary poll read as
+    // undefined -> same-id, a fake "new fight" that cleared the cursor and
+    // replayed the whole revealed log -- the replay bug's side door.
+    if (combatId != null) prevCombatIdRef.current = combatId;
     prevCombatActiveRef.current = combatActive;
     if (!startingNewFight) return;
 
