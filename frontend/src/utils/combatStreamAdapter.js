@@ -2,12 +2,24 @@
  * Adapt an engine combat:beat into BattlefieldGrid animations (issue #436).
  *
  * Pure. Produces the ordered animation entries BattlefieldGrid's queue plays:
- * the actor's move animation (carrying the source `beat` so its 75% SFX chain
- * fires at start), plus a death burst for each engine-reported `killed` id
- * (marked suppressSfx — the death sound is already in the beat's chain).
- * Positions for the death burst are read from the current combat snapshot,
- * which still contains the just-killed combatant (resolved isn't applied yet).
+ * one full move animation per impact resolution in the beat's SFX chain (a
+ * four-enemy arc animates four times, once per `target_id`, layered — not
+ * once while sounding four times), plus a death burst for each engine-reported
+ * `killed` id (marked suppressSfx — the death sound is already in the beat's
+ * chain). Positions for the death burst are read from the current combat
+ * snapshot, which still contains the just-killed combatant (resolved isn't
+ * applied yet).
+ *
+ * Contract with the rest of the client:
+ * - Every emitted animation carries `swing_key: String(beat.seq)` (undefined
+ *   when the beat has no seq, which the batching rule treats as matching
+ *   undefined for back-compat). Concurrent layers are batched only when
+ *   `swing_key` matches.
+ * - Only the FIRST fanned animation carries the source `beat`, so the beat's
+ *   75% SFX chain fires exactly once; the other layers are `suppressSfx`.
  */
+import { MAX_BEAT_RESOLUTIONS } from './combatBeatSchema';
+
 /**
  * Locate a combatant by wire id and report which side it fights on.
  *
@@ -29,15 +41,26 @@ function findCombatant(combat, id) {
 
 export function beatToAnimations(beat, combat) {
   if (!beat) return [];
-  const animations = [
-    {
-      type: beat.web_animation,
-      source_id: beat.actor_id,
-      target_id: beat.target_id,
-      outcome: beat.outcome,
-      beat,
-    },
-  ];
+  const swingKey = beat.seq != null ? String(beat.seq) : undefined;
+
+  // One animation per impact resolution — same move, same actor, each landing
+  // on its own target. A beat with no impact emissions (older server, or a
+  // pure system beat) degrades to the single beat-level animation.
+  const impacts = (beat.sfx || [])
+    .filter((emission) => emission.kind === 'impact')
+    .slice(0, MAX_BEAT_RESOLUTIONS);
+  const resolutions = impacts.length > 0 ? impacts : [null];
+
+  const animations = resolutions.map((impact, i) => ({
+    type: beat.web_animation,
+    source_id: beat.actor_id,
+    target_id: impact?.target_id ?? beat.target_id,
+    outcome: impact?.outcome ?? beat.outcome,
+    swing_key: swingKey,
+    // The beat rides on the first layer only: it is what fires the SFX chain,
+    // and the chain already contains every landing's cue.
+    ...(i === 0 ? { beat } : { suppressSfx: true }),
+  }));
 
   for (const id of beat.killed || []) {
     const found = findCombatant(combat, id);
@@ -48,6 +71,7 @@ export function beatToAnimations(beat, combat) {
         position: found.entity.position,
         entity: found.entity,
         friendly: found.friendly,
+        swing_key: swingKey,
         suppressSfx: true,
       });
     }

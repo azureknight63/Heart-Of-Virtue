@@ -14,6 +14,7 @@ import logging
 
 from src.api.schemas.combat_beat import (
     BEAT_EVENT,
+    DEFAULT_ANIMATION,
     ENDED_EVENT,
     RESOLVED_EVENT,
     build_beat,
@@ -33,8 +34,12 @@ def _beat_animations(log_entries):
     a beat's log holds the player's move *and* the NPC turns that follow it, the
     last animation in an ordinary beat is usually an NPC's, so even a plain
     one-target swing was reported under the wrong actor and the wrong animation.
-    The first animation is the one that opened the beat; the rest are its
-    fellow resolutions, and they ride along as their own SFX emissions.
+
+    The first animation is the one that opened the beat and names the headline
+    actor. The rest are a mix: some are that actor's further resolutions, but
+    in an ordinary beat many are OTHER combatants' animations from the turns
+    that followed — which is exactly why ``stream_beats`` filters this list by
+    ``source_id`` before treating anything in it as the swing's resolutions.
     """
     return [
         entry["animation"]
@@ -73,7 +78,10 @@ def _derive_outcome(anim, hp_changes, killed, target_id):
     """
     if anim and anim.get("outcome"):
         return anim["outcome"]
-    if killed:
+    # Only the resolution's OWN target counts. Answering "hit" whenever
+    # anything at all died in the beat made a whiffed second landing read as a
+    # hit the moment the first landing killed.
+    if target_id is not None and target_id in killed:
         return "hit"
     for change in hp_changes:
         if change.get("id") == target_id and change.get("delta", 0) < 0:
@@ -119,38 +127,54 @@ class CombatBeatStreamer:
 
             actor_id = anim.get("source_id") if anim else None
             target_id = anim.get("target_id") if anim else None
-            web_animation = (anim.get("type") if anim else None) or "pulse"
+            web_animation = (
+                anim.get("type") if anim else None
+            ) or DEFAULT_ANIMATION
             has_swing = bool(target_id) and target_id != actor_id
 
-            # One resolution per animation carrier, each against the combatant it
-            # actually happened to, so a swing that parries off one enemy and
-            # lands on three is audible as all four events rather than as
-            # whichever one happened to be narrated last.
-            # Only the headline actor's resolutions. A beat's log holds the
-            # player's move AND the NPC turns that follow it, so an unfiltered
-            # list makes a beat where Jean swings once and three NPCs act emit
-            # four impacts, all under Jean's actor_id and animation -- while
-            # the NPC swings still get no beat of their own. The per-target
-            # fan-out this exists for is one actor resolving against several
-            # targets, not several actors sharing one beat.
-            own = [a for a in animations if a.get("source_id") == actor_id]
-            outcomes = [
-                _derive_outcome(a, hp_changes, killed, a.get("target_id"))
-                for a in own
-            ] or [_derive_outcome(None, hp_changes, killed, None)]
+            # A beat's log holds the headline actor's move AND the other
+            # combatants' turns, so only the animations sharing the headline
+            # ``actor_id`` are this swing's resolutions: one per target it
+            # reached, each carrying the outcome AND the combatant it resolved
+            # against so the client can fan a full animation per landing. The
+            # other actors' animations are deliberately excluded — folding
+            # them in would replay their outcomes under this actor's animation.
+            own_animations = [
+                animation
+                for animation in animations
+                if animation.get("source_id") == actor_id
+            ]
+            resolutions = [
+                {
+                    "outcome": _derive_outcome(
+                        animation, hp_changes, killed, animation.get("target_id")
+                    ),
+                    "target_id": animation.get("target_id"),
+                }
+                for animation in own_animations
+            ] or [
+                {
+                    "outcome": _derive_outcome(
+                        anim, hp_changes, killed, target_id
+                    ),
+                    "target_id": target_id,
+                }
+            ]
 
             beat = build_beat(
                 seq=self._next_seq(),
                 actor_id=actor_id,
                 target_id=target_id,
                 web_animation=web_animation,
-                outcome=outcomes[0],
+                # The headline outcome is derived by build_beat from the first
+                # resolution — passing it here too keeps the call self-evident.
+                outcome=resolutions[0]["outcome"],
                 hp_changes=hp_changes,
                 killed=killed,
                 status_changes=status_changes,
                 log_line=_last_message(snapshot.get("log")),
                 has_swing=has_swing,
-                outcomes=outcomes,
+                outcomes=resolutions,
             )
             self._emit(BEAT_EVENT, beat)
             self._last = curr
@@ -194,7 +218,7 @@ class CombatBeatStreamer:
             seq=self._next_seq(),
             actor_id=None,
             target_id=killed[0] if killed else None,
-            web_animation="death" if killed else "pulse",
+            web_animation="death" if killed else DEFAULT_ANIMATION,
             outcome="hit" if killed else "miss",
             hp_changes=hp_changes,
             killed=killed,

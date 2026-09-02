@@ -61,3 +61,12 @@ export const SFX_KINDS = [
   'heal',
   'death',
 ];
+
+/**
+ * Ceiling on the per-target resolutions one beat may fan out into. The server
+ * truncates the beat's impact emissions at this constant (build_sfx_chain in
+ * src/api/schemas/combat_beat.py) and beatToAnimations caps its per-resolution
+ * animation fan-out to match — a degenerate payload must not become an
+ * unbounded animation storm. Keep the two values identical.
+ */
+export const MAX_BEAT_RESOLUTIONS = 16;

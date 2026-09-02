@@ -153,8 +153,11 @@ def test_adapter_substituted_animation_types_exist_in_the_frontend():
     That downgrade is gone (every target now plays the move in full, layered
     client-side), so the constant is gone with it and the two remaining
     adapter-chosen types are what this guards.
+
+    The constants live in ``src/api/schemas/combat_beat.py`` (the wire-protocol
+    home) so both the adapter and the beat streamer share one definition.
     """
-    from src.api.combat_adapter import (
+    from src.api.schemas.combat_beat import (
         DEFAULT_ANIMATION,
         DEFAULT_DAMAGE_ANIMATION,
     )
@@ -166,20 +169,65 @@ def test_adapter_substituted_animation_types_exist_in_the_frontend():
         )
 
 
+#: An adapter-chosen animation-type literal: either an ``animation_type = "x"``
+#: assignment (any quote style) or a literal ``"type": "x"`` value inside an
+#: animation payload dict — recognised by the ``"source_id"`` key adjacent to
+#: it, which animation payloads carry and log entries (whose own ``"type":
+#: "combat"`` literal is legitimate) do not. The first version of this scan
+#: matched only double-quoted assignments, so a single-quoted assignment or a
+#: payload built as a dict literal (exactly how ``_npc_try_heal_ally``
+#: hardcoded ``"pulse"``) sailed past it.
+_TYPE_LITERAL = re.compile(
+    r"""animation_type\s*=\s*['"](\w+)['"]"""
+    r"""|['"]type['"]\s*:\s*['"](\w+)['"]\s*,\s*['"]source_id['"]""",
+    re.DOTALL,
+)
+
+_API_FILES = (
+    _ROOT / "src" / "api" / "combat_adapter.py",
+    _ROOT / "src" / "api" / "combat_beat_stream.py",
+)
+
+
 def test_the_adapter_substitutes_no_type_this_test_does_not_know_about():
     """A structural backstop for the test above.
 
     The behavioural contract can only check the constants it imports, so a new
     hardcoded animation-type literal in the adapter would slip past it. Pin the
-    fallbacks to named constants instead: this fails if a bare string literal is
-    ever assigned to ``animation_type`` again.
+    fallbacks to named constants instead: this fails if a string literal is
+    ever assigned to ``animation_type`` (either quote style) or hardcoded as a
+    ``"type"`` value in an animation payload again. Paths are repo-rooted, not
+    cwd-relative — a cwd-relative read silently scans nothing when pytest runs
+    from another directory.
     """
-    import pathlib
-    import re
-
-    source = pathlib.Path("src/api/combat_adapter.py").read_text(encoding="utf-8")
-    literals = re.findall(r'animation_type = "(\w+)"', source)
-    assert not literals, (
-        "these adapter-chosen animation types bypass the frontend contract "
-        f"check above; give them a module constant instead: {literals}"
+    offenders = {}
+    for path in _API_FILES:
+        found = [
+            m.group(1) or m.group(2)
+            for m in _TYPE_LITERAL.finditer(path.read_text(encoding="utf-8"))
+        ]
+        if found:
+            offenders[path.name] = found
+    assert not offenders, (
+        "these hardcoded animation types bypass the frontend contract "
+        f"check above; give them a module constant instead: {offenders}"
     )
+
+
+def test_the_type_literal_scan_can_actually_find_something():
+    """Positive control: every known offender spelling must match the scan."""
+    known_spellings = [
+        'animation_type = "attack"',
+        "animation_type = 'pulse'",
+        '"type": "pulse",\n                "source_id": x,',
+        "'type': 'attack', 'source_id': x,",
+    ]
+    for spelling in known_spellings:
+        match = _TYPE_LITERAL.search(spelling)
+        assert match, f"the scan no longer matches a known shape: {spelling}"
+    # ...and it does not fire on a constant-backed assignment, a payload built
+    # from a variable, or a log ENTRY's legitimate "type": "combat" literal
+    # (log entries carry no "source_id" key).
+    assert not _TYPE_LITERAL.search("animation_type = DEFAULT_ANIMATION")
+    assert not _TYPE_LITERAL.search('"type": animation_type,\n"source_id": x,')
+    assert not _TYPE_LITERAL.search('"type": "combat",\n"timestamp": now,')

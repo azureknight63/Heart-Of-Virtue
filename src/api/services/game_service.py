@@ -24,6 +24,7 @@ from src.api.serializers.inventory import (
     EquipmentSerializer,
 )
 from src.api.serializers.combat import (
+    CombatantSerializer,
     CombatStateSerializer,
 )
 from src.moves._base import display_name_of
@@ -2392,10 +2393,14 @@ class GameService:
         ]
         # combat_list_allies[0] is always the player — skip it to avoid a duplicate
         # entry in the combatants list (same pattern as the [1:] slice at line ~1898).
+        # Ids come from CombatantSerializer.stream_id, never a hand-rolled
+        # f-string: an unconditional ally_/enemy_ prefix mislabels the player
+        # (and any combatant on the "wrong" list), and the client matches
+        # these ids against the serialized combat state's.
         for ally in getattr(player, "combat_list_allies", [])[1:]:
             combatants.append(
                 {
-                    "id": f"ally_{id(ally)}",
+                    "id": CombatantSerializer.stream_id(ally),
                     "name": getattr(ally, "name", "Ally"),
                     "is_player": False,
                     "is_ally": True,
@@ -2404,7 +2409,7 @@ class GameService:
         for e in getattr(player, "combat_list", []):
             combatants.append(
                 {
-                    "id": f"enemy_{id(e)}",
+                    "id": CombatantSerializer.stream_id(e),
                     "name": getattr(e, "name", "Enemy"),
                     "is_player": False,
                     "is_ally": False,
@@ -2656,10 +2661,16 @@ class GameService:
                 if not actual_target_id:
                     return {"error": "No valid target for repeat move"}
 
-                # Check if the target is still alive
+                # Check if the target is still alive. Compare via stream_id —
+                # last_move_target_id was minted by stream_id, so a hand-rolled
+                # spelling here is the exact ally-mislabel drift the adapter
+                # already fixed once.
                 target_enemy = None
                 for enemy in player.combat_list:
-                    if f"enemy_{id(enemy)}" == actual_target_id and enemy.is_alive():
+                    if (
+                        CombatantSerializer.stream_id(enemy) == actual_target_id
+                        and enemy.is_alive()
+                    ):
                         target_enemy = enemy
                         break
 
@@ -2927,7 +2938,9 @@ class GameService:
             "states": player_states,
             "party_members": [
                 {
-                    "id": f"ally_{id(a)}",
+                    # stream_id, not a hand-rolled prefix — see the combat
+                    # serializer for the id scheme.
+                    "id": CombatantSerializer.stream_id(a),
                     "name": getattr(a, "name", "Unknown"),
                     "hp": getattr(a, "hp", 0),
                     "max_hp": getattr(a, "maxhp", 0),
@@ -4817,8 +4830,13 @@ class GameService:
         """Mirror item-use output into the active combat log line-by-line.
 
         Prefers the combat adapter's deduplicating ``_add_log_entry`` and falls
-        back to appending raw entries when no adapter is attached yet.
+        back to appending raw entries when no adapter is attached yet. The
+        fallback path has no trim behind it, so it caps the log itself: an
+        unbounded append here would quietly regrow the very list the adapter
+        bounds (it is pickled into every save).
         """
+        from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
+
         current_beat = getattr(player, "combat_beat", 0)
         adapter = getattr(player, "_combat_adapter", None)
         for line in str(message).split("\n"):
@@ -4833,6 +4851,10 @@ class GameService:
                 player.combat_log.append(
                     {"round": current_beat, "message": line, "type": "combat"}
                 )
+                overshoot = len(player.combat_log) - MAX_VISIBLE_LOG_ENTRIES
+                if overshoot > 0:
+                    # In place, oldest first — held references must survive.
+                    del player.combat_log[:overshoot]
 
     def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get the current combat state.

@@ -511,17 +511,26 @@ def test_no_animation_payload_hardcodes_a_combatant_wire_id():
 
     A structural check rather than a behavioural one: the failure is invisible
     at runtime unless a test happens to aim an animated move at an ally, which
-    is exactly why it survived. Derived by scanning the source so a fourth site
-    cannot be added without this failing.
+    is exactly why it survived. Scans ALL of ``src/api/`` -- the adapter-only
+    scan let ``game_service.py`` grow four sites of its own, two of which
+    labelled the player ``ally_<id>`` and one of which compared a hand-rolled
+    spelling against a client-supplied id. Only ``serializers/combat.py`` is
+    excluded: it *defines* the scheme.
     """
     import pathlib
     import re
 
-    source = pathlib.Path("src/api/combat_adapter.py").read_text()
-    offenders = re.findall(_HANDROLLED_ID, source)
+    api_root = pathlib.Path(__file__).resolve().parents[1] / "src" / "api"
+    offenders = {}
+    for path in sorted(api_root.rglob("*.py")):
+        if path.relative_to(api_root).as_posix() == "serializers/combat.py":
+            continue
+        found = re.findall(_HANDROLLED_ID, path.read_text(encoding="utf-8"))
+        if found:
+            offenders[path.relative_to(api_root).as_posix()] = found
     assert not offenders, (
         "these hand-rolled combatant ids bypass CombatantSerializer.stream_id "
-        f"and mislabel allies: {offenders}"
+        f"and can mislabel the player or an ally: {offenders}"
     )
 
 
@@ -676,14 +685,15 @@ def test_initialize_combat_flushes_animations_left_by_the_initial_turns():
     on the NPC until the end of the player's *next* move and was emitted a beat
     or more late.
     """
-    import inspect
-
     from src.api.combat_adapter import ApiCombatAdapter
 
-    source = inspect.getsource(ApiCombatAdapter.initialize_combat)
-    assert "_flush_pending_animations" in source, (
-        "initialize_combat never flushes the animations _process_initial_turns "
-        "leaves behind"
+    calls = _method_calls(ApiCombatAdapter.initialize_combat)
+    # An ast.Call, not a source-substring: a comment or docstring mentioning
+    # the flush would satisfy a text search without ever running it.
+    assert "_flush_pending_animations" in calls, (
+        "initialize_combat never CALLS _flush_pending_animations; the "
+        "animations _process_initial_turns leaves behind are emitted a beat "
+        "late"
     )
 
 
@@ -755,6 +765,10 @@ def test_stream_beats_keeps_the_moves_own_animation_for_a_multi_target_swing():
     # swing's resolutions -- attributing its "miss" to Jean's sweep is the
     # actor-conflation this filter removes. Two targets, two impacts.
     assert [e["outcome"] for e in impacts] == ["hit", "parry"], beat["sfx"]
+    # ...and each impact names the combatant it resolved against, so the client
+    # can fan one full animation per landing instead of animating once and
+    # sounding twice.
+    assert [e["target_id"] for e in impacts] == ["enemy_1", "enemy_2"], beat["sfx"]
     assert [e["index"] for e in beat["sfx"]] == list(range(len(beat["sfx"])))
 
 
@@ -772,19 +786,147 @@ def test_build_sfx_chain_emits_one_impact_per_resolution():
     assert validate_beat(beat) == []
 
 
+def test_sfx_impact_emissions_carry_their_own_target():
+    """A resolution is (outcome, target): the chain must keep both together."""
+    from src.api.schemas.combat_beat import build_sfx_chain
+
+    chain = build_sfx_chain(
+        "hit",
+        outcomes=[
+            {"outcome": "hit", "target_id": "enemy_1"},
+            {"outcome": "parry", "target_id": "enemy_2"},
+        ],
+    )
+    impacts = [e for e in chain if e["kind"] == "impact"]
+    assert [(e["outcome"], e["target_id"]) for e in impacts] == [
+        ("hit", "enemy_1"),
+        ("parry", "enemy_2"),
+    ]
+    # A bare-string resolution (legacy shape) still works, with no target.
+    legacy = build_sfx_chain("hit", outcomes=["miss"])
+    assert [e for e in legacy if e["kind"] == "impact"][0]["target_id"] is None
+
+
+def test_build_beat_headline_outcome_is_the_first_resolution():
+    """The invariant is structural, not a comment: outcome == outcomes[0]."""
+    from src.api.schemas.combat_beat import build_beat
+
+    beat = build_beat(
+        1,
+        "player",
+        "enemy_1",
+        "sweep",
+        "miss",  # deliberately contradicts the first resolution
+        outcomes=[
+            {"outcome": "hit", "target_id": "enemy_1"},
+            {"outcome": "parry", "target_id": "enemy_2"},
+        ],
+    )
+    assert beat["outcome"] == "hit"
+
+
+def test_validate_beat_checks_every_impact_outcome_not_just_the_headline():
+    from src.api.schemas.combat_beat import build_beat, validate_beat
+
+    beat = build_beat(1, "player", "enemy_1", "sweep", "hit")
+    beat["sfx"][1]["outcome"] = "obliterated"
+    problems = validate_beat(beat)
+    assert any("invalid impact outcome" in p for p in problems), problems
+
+
+def test_the_per_target_fan_out_is_capped():
+    """A pathological beat must not fan into an unbounded animation storm."""
+    from src.api.schemas.combat_beat import MAX_BEAT_RESOLUTIONS, build_sfx_chain
+
+    chain = build_sfx_chain(
+        "hit",
+        outcomes=[
+            {"outcome": "hit", "target_id": f"enemy_{i}"} for i in range(100)
+        ],
+    )
+    impacts = [e for e in chain if e["kind"] == "impact"]
+    assert len(impacts) == MAX_BEAT_RESOLUTIONS
+    # The cap is a cross-side constant: frontend/src/utils/combatBeatSchema.js
+    # mirrors it and combatBeatSchema.test.js pins the same number, so the two
+    # sides cannot silently disagree about where the fan-out stops.
+    assert MAX_BEAT_RESOLUTIONS == 16
+
+
+def test_a_whiffed_landing_in_a_killing_beat_still_reads_as_a_miss():
+    """The ``killed`` fallback only applies to the resolution's OWN target.
+
+    ``_derive_outcome`` used to answer "hit" for any untagged resolution the
+    moment *anything* died in the beat -- so an arc that killed enemy_1 and
+    whiffed enemy_2 reported the whiff as a hit.
+    """
+    from src.api.combat_beat_stream import _derive_outcome
+
+    untagged = {"source_id": "player", "target_id": "enemy_2", "outcome": None}
+    assert (
+        _derive_outcome(untagged, [], ["enemy_1"], "enemy_2") == "miss"
+    ), "a whiff against enemy_2 borrowed enemy_1's death"
+    # ...while the resolution whose own target died still reads as a hit.
+    assert _derive_outcome(untagged, [], ["enemy_2"], "enemy_2") == "hit"
+
+
 # ── TASK 4: the combat log is a bounded recap ───────────────────────────────
 
 
-def test_the_dedup_does_not_rescan_the_whole_log():
-    """The duplicate check must be a hash membership test, not a linear scan."""
-    import inspect
+def _method_calls(func):
+    """Names of every ``self.<name>(...)``/bare ``<name>(...)`` call in ``func``.
 
+    The positive-property complement to a negative substring check: asserting
+    "the old scan's spelling is absent" passes forever once the loop is renamed,
+    while asserting "the key index is consulted" keeps meaning something.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            target = node.func
+            if isinstance(target, ast.Attribute):
+                names.add(target.attr)
+            elif isinstance(target, ast.Name):
+                names.add(target.id)
+    return names
+
+
+def test_the_dedup_consults_the_key_index_not_a_linear_scan():
+    """The duplicate check must be a hash membership test, not a rescan.
+
+    Asserted positively (the index method is actually CALLED) rather than as a
+    negative substring on the old loop's exact spelling, which any rename or
+    reshaping of a rescan would sail past.
+    """
     from src.api.combat_adapter import ApiCombatAdapter
 
-    source = inspect.getsource(ApiCombatAdapter._add_log_entry)
-    assert "for existing in self.player.combat_log" not in source, (
-        "_add_log_entry still scans the whole cumulative log per insert"
+    calls = _method_calls(ApiCombatAdapter._add_log_entry)
+    assert "_log_key_index" in calls, (
+        "_add_log_entry no longer consults the dedup key index"
     )
+
+
+def test_the_method_call_walker_can_actually_find_calls():
+    """Positive control for ``_method_calls`` itself."""
+
+    class _Probe:
+        def caller(self):
+            self.helper()
+            _module_level()
+
+        def helper(self):
+            pass
+
+    def _module_level():
+        pass
+
+    calls = _method_calls(_Probe.caller)
+    assert "helper" in calls and "_module_level" in calls
+    assert "missing_name" not in calls
 
 
 def test_dedup_still_collapses_a_repeated_narration_line():
@@ -926,3 +1068,400 @@ def test_a_beat_keeps_its_own_log_window_even_when_the_trim_fires():
         "the beat's own entry fell outside its window after the trim shifted "
         f"positions by {removed}"
     )
+
+
+# ── A1: one builder for every animation_data payload ────────────────────────
+#
+# The payload was built at three sites (player cast, NPC cast, NPC item-heal)
+# and the target gate drifted: the player site nulled target_id for a
+# non-targeted move while the NPC site shipped npc.target regardless -- so a
+# non-targeted NPC move (a rest, a self-buff) carried a target_id, and the
+# streaming layer's has_swing flag (bool(target_id)) read it as a swing.
+
+
+class _StubMove:
+    def __init__(self, name="Stub", targeted=False, target=None, web_animation=None):
+        self.name = name
+        self.targeted = targeted
+        self.target = target
+        if web_animation is not None:
+            self.web_animation = web_animation
+
+
+def test_a_non_targeted_npc_move_ships_no_target_id():
+    from src.npc import Slime
+
+    npc = Slime()
+    victim = Slime()
+    npc.target = victim  # the NPC has picked a target for the BEAT...
+    move = _StubMove(name="Npc Rest", targeted=False, target=victim)
+
+    adapter = _adapter_with_player(_Combatant("bystander"))
+    data = adapter._build_animation_data(npc, move)
+
+    # ...but the MOVE is not aimed at anyone, so no target ships.
+    assert data["target_id"] is None, data
+
+
+def test_a_targeted_move_ships_its_targets_stream_id():
+    from src.api.serializers.combat import CombatantSerializer
+    from src.npc import Slime
+
+    npc = Slime()
+    victim = Slime()
+    move = _StubMove(name="Slime Slam", targeted=True, target=victim)
+
+    adapter = _adapter_with_player(_Combatant("bystander"))
+    data = adapter._build_animation_data(npc, move)
+
+    assert data["source_id"] == CombatantSerializer.stream_id(npc)
+    assert data["target_id"] == CombatantSerializer.stream_id(victim)
+    assert data["move_name"] == "Slime Slam"
+
+
+def test_the_builder_applies_the_type_fallback_ladder():
+    from src.api.schemas.combat_beat import (
+        DEFAULT_ANIMATION,
+        DEFAULT_DAMAGE_ANIMATION,
+    )
+    from src.npc import Slime
+
+    npc = Slime()
+    victim = Slime()
+    adapter = _adapter_with_player(_Combatant("bystander"))
+
+    declared = adapter._build_animation_data(
+        npc, _StubMove(targeted=True, target=victim, web_animation="sweep")
+    )
+    assert declared["type"] == "sweep"
+
+    damaging = adapter._build_animation_data(
+        npc, _StubMove(name="Slam Attack", targeted=True, target=victim)
+    )
+    assert damaging["type"] == DEFAULT_DAMAGE_ANIMATION
+
+    passive = adapter._build_animation_data(npc, _StubMove(name="Ponder"))
+    assert passive["type"] == DEFAULT_ANIMATION
+
+
+def test_all_three_cast_sites_route_through_the_shared_builder():
+    """Player cast, NPC cast and the NPC item-heal all call the one builder."""
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    for site in ("_execute_move_inner", "_process_npc", "_npc_try_heal_ally"):
+        calls = _method_calls(getattr(ApiCombatAdapter, site))
+        assert "_build_animation_data" in calls, (
+            f"{site} builds its animation payload by hand instead of through "
+            "_build_animation_data"
+        )
+
+
+# ── A2: lifecycle -- teardown, event/abort flushes, legacy key strip ────────
+
+
+def test_teardown_clears_every_channel_and_resets_the_roster():
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    player._pending_animation = {"move_name": "Slash", "outcome": None}
+
+    ally = _Combatant("Gorran")
+    ally.friend = True
+    ally.in_combat = True
+    ally.is_alive = lambda: True
+    ally._pending_animation = {"move_name": "Smash", "outcome": None}
+
+    temp_ally = _Combatant("Conscript")
+    temp_ally.in_combat = True
+    temp_ally.is_alive = lambda: True
+    temp_ally.event_temp_ally = True
+
+    enemy = _Combatant("Slime")
+    enemy.is_alive = lambda: True
+    enemy._pending_animation = {"move_name": "Slam", "outcome": None}
+
+    player.combat_list = [enemy]
+    player.combat_list_allies = [player, ally, temp_ally]
+
+    adapter = _adapter_with_player(player)
+    del adapter.__dict__["_all_combatants"]  # use the real roster walk
+    adapter._teardown_combat_roster()
+
+    for entity in (player, ally, enemy):
+        assert not hasattr(entity, "_pending_animation"), entity.name
+    assert player.combat_list == []
+    assert player.combat_list_allies == [player, ally], (
+        "surviving real allies stay; event-scoped temp allies do not"
+    )
+    assert ally.in_combat is False
+
+
+def test_both_endings_route_through_the_shared_teardown():
+    """Victory and defeat ran verbatim-duplicated teardown tails; and on the
+    defeat path the discard sat inside a ``try`` whose except only rebuilt the
+    summary, so a raise skipped it silently and the armed channel -- holding a
+    live combatant -- was pickled into the save."""
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    assert "_teardown_combat_roster" in _method_calls(
+        ApiCombatAdapter._handle_victory
+    )
+    inner_calls = _method_calls(ApiCombatAdapter._execute_move_inner)
+    assert "_teardown_combat_roster" in inner_calls, (
+        "the defeat tail no longer routes through the shared teardown"
+    )
+    assert "_discard_pending_animations" not in inner_calls, (
+        "_execute_move_inner discards directly instead of via the teardown "
+        "(the defeat-path discard used to hide inside a try that swallowed it)"
+    )
+
+
+def test_no_combatant_retains_a_pending_animation_after_defeat():
+    """Defeat pickles the player; an armed channel must not ride into the save."""
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    player._pending_animation = {"move_name": "Slash", "outcome": None}
+    enemy = _Combatant("Slime")
+    enemy.is_alive = lambda: True
+    enemy._pending_animation = {
+        "move_name": "Slam",
+        "outcome": "hit",
+        "outcome_target": player,  # a live combatant, mid-publication
+    }
+    player.combat_list = [enemy]
+    player.combat_list_allies = [player]
+
+    adapter = _adapter_with_player(player)
+    del adapter.__dict__["_all_combatants"]
+    adapter._teardown_combat_roster()
+
+    assert not hasattr(player, "_pending_animation")
+    assert not hasattr(enemy, "_pending_animation")
+
+
+def test_clearing_an_interrupted_move_is_followed_by_a_flush():
+    """Both sites that null ``current_move`` AFTER the main flush re-flush.
+
+    The end-of-move flush deliberately skips a combatant whose move is still
+    attached. The event branch (and the all-enemies-defeated branch) clear
+    ``player.current_move`` after that flush already ran, so the interrupted
+    move's channel survived armed with nothing left to publish to it.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    tree = ast.parse(
+        textwrap.dedent(inspect.getsource(ApiCombatAdapter._execute_move_inner))
+    )
+    flush_calls = sum(
+        1
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_flush_pending_animations"
+    )
+    # Main end-of-move flush + the victory-path clear + the event-branch clear.
+    assert flush_calls >= 3, (
+        f"expected the two current_move=None sites to re-flush; found only "
+        f"{flush_calls} _flush_pending_animations call(s)"
+    )
+
+
+def test_abort_flushes_the_abandoned_moves_channel():
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    player.combat_beat = 3
+    player._pending_animation = {"move_name": "Aimed Shot", "outcome": None}
+
+    class _Windup:
+        name = "Aimed Shot"
+        display_name = "Aimed Shot"
+        current_stage = 0
+        beats_left = 12
+        stage_beat = [25, 1, 1, 10]
+
+        def advance(self, user):
+            # The engine's interrupt branch detaches the move.
+            user.current_move = None
+
+    move = _Windup()
+    player.current_move = move
+    player.combat_list = []
+    player.combat_list_allies = [player]
+
+    adapter = _adapter_with_player(player)
+    del adapter.__dict__["_all_combatants"]
+    adapter._get_available_moves = lambda: []
+    adapter.get_combat_state = lambda: {}
+    adapter.player.combat_adapter_state = {}
+
+    result = adapter.abort_current_move()
+
+    assert "error" not in result
+    assert not hasattr(player, "_pending_animation"), (
+        "the aborted move's channel stayed armed after the abort"
+    )
+
+
+def test_wire_animation_strips_the_legacy_reported_key():
+    """Pre-rename saves carry ``"_reported"``; it must never reach the client."""
+    from src.api.combat_adapter import _wire_animation
+
+    wired = _wire_animation(
+        {"move_name": "Slash", "outcome": "hit", "_reported": True}
+    )
+    assert "_reported" not in wired
+
+
+# ── A4: robustness + bounds ─────────────────────────────────────────────────
+
+
+class _AttachPlayer:
+    """Just enough player for ApiCombatAdapter.__init__ to attach to."""
+
+    def __init__(self, combat_log):
+        self.combat_log = combat_log
+
+
+def test_adapter_attach_sanitizes_a_poisoned_combat_log():
+    """One non-dict entry (tampered/legacy save) used to raise on every insert.
+
+    ``_log_entry_key`` calls ``.get`` on each existing entry, so a single str
+    in a loaded log raised from inside the narration listener on every insert,
+    again in the trim, and again in move_logs. Sanitizing once at attach is the
+    single choke point every one of those paths sits behind.
+    """
+    from unittest.mock import patch
+
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    good = {"round": 1, "message": "kept", "type": "combat"}
+    log = [good, "poison", 42, None, ["nested"]]
+    player = _AttachPlayer(log)
+    with patch("src.api.combat_adapter.CombatStrategist"):
+        adapter = ApiCombatAdapter(player, session_id=None)
+
+    assert player.combat_log == [good]
+    assert player.combat_log is log, "sanitize must rewrite in place, not rebind"
+    # ...and inserting afterwards works (this used to raise AttributeError).
+    adapter._add_log_entry(2, "after the poison", "combat")
+    assert player.combat_log[-1]["message"] == "after the poison"
+
+
+def test_animation_carriers_are_stamped_with_a_monotonic_seq():
+    """Cross-agent contract: each animation payload carries a per-fight seq.
+
+    The frontend prefers ``entry.animation.seq`` as carrier identity when
+    present (falling back to its positional scheme), which is what makes
+    identity survive a front-trim of the log.
+    """
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    adapter = _adapter_with_player(player)
+
+    adapter._emit_animation_log(1, {"move_name": "Sweep", "type": "sweep"})
+    adapter._emit_animation_log(1, {"move_name": "Sweep", "type": "sweep"})
+    adapter._emit_animation_log(2, {"move_name": "Jab", "type": "attack"})
+
+    seqs = [
+        e["animation"]["seq"] for e in player.combat_log if e.get("animation")
+    ]
+    assert seqs == [1, 2, 3], seqs
+
+
+def test_the_animation_seq_is_reset_when_a_new_fight_starts():
+    from src.api.combat_adapter import ApiCombatAdapter
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    adapter = _adapter_with_player(player)
+    adapter._emit_animation_log(1, {"move_name": "Sweep", "type": "sweep"})
+    assert player.combat_adapter_state["animation_seq"] == 1
+
+    adapter._reset_animation_seq()
+    adapter._emit_animation_log(1, {"move_name": "Jab", "type": "attack"})
+    assert player.combat_adapter_state["animation_seq"] == 1
+
+    # ...and initialize_combat's non-reinit branch actually calls the reset.
+    assert "_reset_animation_seq" in _method_calls(
+        ApiCombatAdapter.initialize_combat
+    )
+
+
+def test_item_use_fallback_log_append_is_bounded():
+    """With no adapter attached the raw append must still be capped."""
+    from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
+    from src.api.services.game_service import GameService
+
+    class _P:
+        in_combat = True
+        combat_beat = 1
+
+    player = _P()
+    player.combat_log = []
+    held = player.combat_log
+    for i in range(MAX_VISIBLE_LOG_ENTRIES * 2):
+        GameService._log_item_use_to_combat(player, f"line {i}")
+
+    assert len(player.combat_log) <= MAX_VISIBLE_LOG_ENTRIES
+    assert player.combat_log is held, "cap must trim in place, not rebind"
+    assert player.combat_log[-1]["message"] == f"line {MAX_VISIBLE_LOG_ENTRIES * 2 - 1}"
+
+
+def test_the_one_caller_stream_id_wrapper_is_gone():
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    assert not hasattr(ApiCombatAdapter, "_combatant_stream_id"), (
+        "_combatant_stream_id had exactly one caller; use "
+        "CombatantSerializer.stream_id directly"
+    )
+
+
+# ── A6: the per-beat trim counter is reset at each beat's window-open ───────
+
+
+def test_log_trimmed_since_beat_is_reset_at_each_beats_window_open():
+    """The counter corrects one beat's log window; it must start at 0 per beat.
+
+    A stale count from an earlier beat would shift the window start and scope
+    the wrong entries to the beat (usually an empty window -- the whole beat
+    silently vanishing from the stream).
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    tree = ast.parse(
+        textwrap.dedent(inspect.getsource(ApiCombatAdapter._execute_move_inner))
+    )
+    loops = [n for n in ast.walk(tree) if isinstance(n, ast.While)]
+    assert loops, "_execute_move_inner no longer has a beat loop"
+
+    def _resets_counter(node):
+        return (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(t, ast.Attribute)
+                and t.attr == "_log_trimmed_since_beat"
+                for t in node.targets
+            )
+            and isinstance(node.value, ast.Constant)
+            and node.value.value == 0
+        )
+
+    assert any(
+        _resets_counter(node) for loop in loops for node in ast.walk(loop)
+    ), "_log_trimmed_since_beat is not reset to 0 inside the beat loop"

@@ -2018,3 +2018,70 @@ class TestNpcTryHealAlly:
         adapter = _make_adapter(player)
         result = adapter._npc_try_heal_ally(npc)
         assert result is False
+
+
+class TestAffectedPreviewsReuseTheArcScan:
+    """The adapter already computed the affected set; nothing may recompute it.
+
+    ``_get_affected_previews`` calls ``move.preview_affected()`` once to decide
+    which cards to build, then builds one card per combatant -- and each card's
+    ``preview_damage`` used to re-run the same ``hostiles_in_arc`` scan through
+    ``_area_preview_damage``'s membership gate. That is 1+N arc scans (proximity
+    walk, per-enemy distance, frontal-cone trig) per area move per poll, for a
+    set the caller was already holding. The engine grew an ``affected=``
+    passthrough for exactly this; the adapter must use it.
+    """
+
+    def test_the_arc_is_scanned_once_not_once_per_target(self):
+        import src.items as items
+        import src.moves as moves
+        import src.npc as npc
+        import src.positions as positions
+        from src.player import Player
+
+        player = Player()
+        weapon = items.Pole()
+        player.inventory.append(weapon)
+        weapon.isequipped = True
+        player.eq_weapon = weapon
+        player.combat_exp.setdefault(weapon.subtype, 0)
+        player.combat_position = positions.CombatPosition(
+            10, 10, positions.Direction.N
+        )
+        enemies = []
+        for i in range(3):
+            enemy = npc.Slime()
+            enemy.name = f"Slime{i + 1}"
+            enemy.maxhp = enemy.hp = 500
+            enemy.combat_position = positions.CombatPosition(
+                10, 11 + i, positions.Direction.S
+            )
+            enemies.append(enemy)
+        player.combat_list = list(enemies)
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 2 for enemy in enemies}
+        player.in_combat = True
+        player.fatigue = player.maxfatigue
+
+        move = moves.Sweep(player)
+        move.evaluate()
+
+        adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+        adapter.player = player
+
+        calls = {"n": 0}
+        real = move.preview_affected
+
+        def counting():
+            calls["n"] += 1
+            return real()
+
+        move.preview_affected = counting
+        cards = adapter._get_affected_previews(move)
+
+        assert len(cards) == 3, "fixture must actually reach three enemies"
+        assert calls["n"] == 1, (
+            f"preview_affected ran {calls['n']} times for one affected-preview "
+            "build -- each target card re-scanned the arc the adapter had "
+            "already computed"
+        )

@@ -1047,10 +1047,16 @@ class TestDefeatHandling:
 
         assert player.combat_list_allies == [player, persistent_ally]
 
-    def test_defeat_summary_survives_uuid_failure_on_first_attempt(self):
-        """Covers the except branch (1165-1166): if building combat_end_summary
-        raises the first time (e.g. a transient uuid failure), the handler
-        retries the exact same construction rather than propagating."""
+    def test_defeat_discards_every_pending_animation_channel(self):
+        """The defeat tail routes through ``_teardown_combat_roster``.
+
+        This used to pin a retry-except around the summary build ("uuid boom"
+        retried the identical construction) -- but that same except silently
+        swallowed ``_discard_pending_animations``, so a raise left an armed
+        channel (which can hold a live combatant object) to be pickled into
+        the save. The except is gone; what defeat must now guarantee is that
+        the summary is built and NO combatant retains ``_pending_animation``.
+        """
         move = _make_move("Wait", instant=False)
         player = _make_player()
         player.is_alive.return_value = False
@@ -1060,6 +1066,7 @@ class TestDefeatHandling:
         player.combat_list_allies = [player]
         player.current_move = move
         move.target = player
+        player._pending_animation = {"move_name": "Slash", "outcome": None}
         adapter = _make_adapter(player)
 
         with (
@@ -1068,13 +1075,14 @@ class TestDefeatHandling:
                 "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
                 return_value=dict(_STUB_BEAT_STATE),
             ),
-            patch("uuid.uuid4", side_effect=[RuntimeError("uuid boom"), "fallback-id"]),
         ):
             result = adapter._execute_move_inner(move)
 
         assert result is not None
         assert player.combat_end_summary["status"] == "defeat"
-        assert player.combat_end_summary["id"] == "fallback-id"
+        # MagicMock honours deletion: after the teardown's delattr this access
+        # raises, so hasattr is genuinely False rather than auto-vivified.
+        assert not hasattr(player, "_pending_animation")
 
 
 # ---------------------------------------------------------------------------
