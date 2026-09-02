@@ -9,7 +9,13 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from src.combatant import MOVE_STAGE_EXECUTE, MOVE_STAGE_PREP
+from src.combatant import (
+    MOVE_STAGE_EXECUTE,
+    MOVE_STAGE_PREP,
+    OUTCOME_KEY,
+    OUTCOME_TARGET_KEY,
+    PENDING_ANIMATION_ATTR,
+)
 
 
 def _apply_carry_fatigue(user, fatigue_cost):
@@ -126,13 +132,13 @@ def publish_outcome(entity, outcome, target=None):
     about entities that carry a non-dict placeholder, so nothing here can crash
     the combat loop.
     """
-    pending = getattr(entity, "_pending_animation", None)
+    pending = getattr(entity, PENDING_ANIMATION_ATTR, None)
     if isinstance(pending, dict):
-        pending["outcome"] = outcome
+        pending[OUTCOME_KEY] = outcome
         # Always assign (never just when target is truthy): a stale target left
         # over from the previous enemy in an arc loop would silently reattribute
         # this resolution to the wrong combatant.
-        pending["outcome_target"] = target
+        pending[OUTCOME_TARGET_KEY] = target
 
 
 def _apply_work_the_gap(user, target, landed_hits=1):

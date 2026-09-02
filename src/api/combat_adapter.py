@@ -30,6 +30,12 @@ from src.api.schemas.combat_beat import (
 )
 from src.api.combat_beat_stream import CombatBeatStreamer
 from ai.combat_strategist import CombatStrategist
+from src.combatant import (
+    OUTCOME_KEY,
+    OUTCOME_TARGET_KEY,
+    PENDING_ANIMATION_ATTR,
+    REPORTED_BEAT_KEY,
+)
 from src.moves._base import select_weighted_target, display_name_of
 from src.story import gorran_flavor
 
@@ -64,30 +70,40 @@ def _strip_combatant_prefix(target_id: str) -> str:
     return target_id
 
 
-#: Bookkeeping key marking that a pending animation has published at least one
-#: resolution. Only its PRESENCE is read -- ``_flush_pending_animations`` uses
-#: it to tell "never resolved" (emit the fallback animation) from "already
-#: shown" (drop silently). The stored value, the beat the latest resolution
-#: happened in, is diagnostic only: nothing branches on it, but it names the
-#: beat when a pending dict is inspected in a debugger or a bug report.
-REPORTED_BEAT_KEY = "_reported_beat"
-
 #: ── The ``_pending_animation`` lifecycle, in one place ──────────────────────
 #:
-#: ``entity._pending_animation`` is the per-combatant animation channel: a dict
-#: created at cast time and mutated as the move resolves. Every writer and both
-#: deletion points are listed here -- the sites themselves point back at this
-#: block instead of restating fragments of it.
+#: ``entity._pending_animation`` (``PENDING_ANIMATION_ATTR``) is the
+#: per-combatant animation channel: a dict created at cast time and mutated as
+#: the move resolves. Every writer and both deletion points are listed here --
+#: the sites themselves point back at this block instead of restating fragments
+#: of it.
+#:
+#: The attribute name and the key names below are NOT spelled as literals in
+#: this module: they are minted once in ``src/combatant.py`` and imported above,
+#: because the channel is written on one side of the engine/API boundary and
+#: read on the other. A bare literal that drifts on one side fails silently --
+#: the channel simply stops resolving.
 #:
 #: Keys:
 #:   type, source_id, target_id,      -- the wire payload, built once at cast
 #:   move_name, move_display_name        by ``_build_animation_data``
 #:   outcome                          -- the engine-published resolution now
-#:                                       awaiting emission (None = nothing armed)
+#:   (OUTCOME_KEY)                       awaiting emission (None = nothing armed)
 #:   outcome_target                   -- the combatant OBJECT that resolution
-#:                                       happened to; mapped to a stream id and
+#:   (OUTCOME_TARGET_KEY)                happened to; mapped to a stream id and
 #:                                       stripped by ``_wire_animation``
-#:   _reported_beat                   -- see REPORTED_BEAT_KEY above
+#:   _reported_beat                   -- bookkeeping marking that this channel
+#:   (REPORTED_BEAT_KEY)                 has published at least one resolution.
+#:                                       Only its PRESENCE is read --
+#:                                       ``_flush_pending_animations`` uses it to
+#:                                       tell "never resolved" (emit the fallback
+#:                                       animation) from "already shown" (drop
+#:                                       silently). The stored value, the beat
+#:                                       the latest resolution happened in, is
+#:                                       diagnostic only: nothing branches on it,
+#:                                       but it names the beat when a pending
+#:                                       dict is inspected in a debugger or a
+#:                                       bug report.
 #:   seq                              -- stamped by ``_emit_animation_log`` on
 #:                                       the emitted COPY only, never on the
 #:                                       channel itself
@@ -176,7 +192,7 @@ _WIRE_ANIMATION_KEYS = (
     "target_id",
     "move_name",
     "move_display_name",
-    "outcome",
+    OUTCOME_KEY,
 )
 
 
@@ -202,7 +218,7 @@ def _wire_animation(pending: dict) -> dict:
     two different ways before, and only one of them sanitized.
     """
     animation = {k: pending[k] for k in _WIRE_ANIMATION_KEYS if k in pending}
-    target = pending.get("outcome_target")
+    target = pending.get(OUTCOME_TARGET_KEY)
     if target is not None:
         animation["target_id"] = CombatantSerializer.stream_id(target)
     return animation
@@ -227,12 +243,12 @@ def _take_resolution(pending: dict, beat: Optional[int] = None) -> dict:
     the full animation for every resolution) is the whole of the multi-target
     fix; recording ``beat`` under ``REPORTED_BEAT_KEY`` is separate
     bookkeeping for the end-of-move fallback, whose presence-only contract is
-    documented on the constant.
+    documented in the lifecycle block at the top of this module.
     """
     animation = _wire_animation(pending)
     pending[REPORTED_BEAT_KEY] = beat
-    pending["outcome"] = None
-    pending["outcome_target"] = None
+    pending[OUTCOME_KEY] = None
+    pending[OUTCOME_TARGET_KEY] = None
     return animation
 
 
@@ -286,8 +302,8 @@ class CombatOutputCapture:
                     else self.player
                 )
                 if entity is not None:
-                    pending = getattr(entity, "_pending_animation", None)
-                    if isinstance(pending, dict) and pending.get("outcome"):
+                    pending = getattr(entity, PENDING_ANIMATION_ATTR, None)
+                    if isinstance(pending, dict) and pending.get(OUTCOME_KEY):
                         # combat_beat is the shared per-beat counter and lives
                         # on the player, so it dates the resolution the same way
                         # for an NPC's swing as for Jean's.
@@ -872,7 +888,7 @@ class ApiCombatAdapter:
 
         The deletion point for a move CANCELLED mid-wind-up -- an abort, an
         event interrupt, or the roster emptying under it (see the
-        ``_pending_animation`` lifecycle block beside ``REPORTED_BEAT_KEY``).
+        ``_pending_animation`` lifecycle block at the top of this module).
         The end-of-move flush's fallback emission is right for a move that ran
         to completion without resolving; for a cancelled wind-up it is a
         phantom: the swing never happened, and emitting the full move
@@ -888,14 +904,14 @@ class ApiCombatAdapter:
         site -- the three cancellation paths legitimately differ there.
         """
         entity.current_move = None
-        if hasattr(entity, "_pending_animation"):
-            delattr(entity, "_pending_animation")
+        if hasattr(entity, PENDING_ANIMATION_ATTR):
+            delattr(entity, PENDING_ANIMATION_ATTR)
 
     def _discard_pending_animations(self):
         """Drop every combatant's animation channel, in flight or not.
 
         The teardown deletion point in the ``_pending_animation`` lifecycle
-        (see the block beside ``REPORTED_BEAT_KEY``). The end-of-move flush
+        (see the block at the top of this module). The end-of-move flush
         deliberately leaves a mid-wind-up move's channel armed so its impact
         still has somewhere to publish. That is right while the fight
         continues and wrong the moment it ends: nothing will ever publish
@@ -909,14 +925,14 @@ class ApiCombatAdapter:
         channel can be the armed one.
         """
         for entity in self._all_combatants():
-            if hasattr(entity, "_pending_animation"):
-                delattr(entity, "_pending_animation")
+            if hasattr(entity, PENDING_ANIMATION_ATTR):
+                delattr(entity, PENDING_ANIMATION_ATTR)
 
     def _flush_pending_animations(self):
         """Retire the pending animation of every combatant whose move is over.
 
         The end-of-move deletion point in the ``_pending_animation`` lifecycle
-        (see the block beside ``REPORTED_BEAT_KEY``) — for moves that RAN TO
+        (see the block at the top of this module) — for moves that RAN TO
         COMPLETION. A move cancelled mid-wind-up goes through
         ``_detach_current_move`` instead, which discards rather than emits.
 
@@ -935,13 +951,13 @@ class ApiCombatAdapter:
         not landed yet.
         """
         for entity in self._all_combatants():
-            if not hasattr(entity, "_pending_animation"):
+            if not hasattr(entity, PENDING_ANIMATION_ATTR):
                 continue
-            animation_data = entity._pending_animation
+            animation_data = getattr(entity, PENDING_ANIMATION_ATTR)
             if not isinstance(animation_data, dict):
                 # publish_outcome tolerates a non-dict placeholder; emitting it
                 # would raise AttributeError on .get() inside the move loop.
-                delattr(entity, "_pending_animation")
+                delattr(entity, PENDING_ANIMATION_ATTR)
                 continue
             if getattr(entity, "current_move", None) is not None:
                 continue
@@ -949,7 +965,7 @@ class ApiCombatAdapter:
                 self._emit_animation_log(
                     self.player.combat_beat, _wire_animation(animation_data)
                 )
-            delattr(entity, "_pending_animation")
+            delattr(entity, PENDING_ANIMATION_ATTR)
 
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
@@ -1811,7 +1827,7 @@ class ApiCombatAdapter:
         duplicated per site.
 
         For the payload's full key set and lifecycle, see the
-        ``_pending_animation`` block beside ``REPORTED_BEAT_KEY``.
+        ``_pending_animation`` block at the top of this module.
         """
         animation_type = getattr(move, "web_animation", None)
         targeted = getattr(move, "targeted", False)
@@ -1890,8 +1906,10 @@ class ApiCombatAdapter:
                 # Store for outcome tracking (updated when combat output is
                 # captured). One builder for every cast site — see
                 # _build_animation_data.
-                self.player._pending_animation = self._build_animation_data(
-                    self.player, move
+                setattr(
+                    self.player,
+                    PENDING_ANIMATION_ATTR,
+                    self._build_animation_data(self.player, move),
                 )
                 # Tag the active entity so write() can find the right pending animation
                 self.output_capture.active_entity = self.player
@@ -2349,8 +2367,10 @@ class ApiCombatAdapter:
                     # non-targeted NPC move (rest, self-buff) ships
                     # target_id: None instead of the beat-target the NPC
                     # happened to be holding.
-                    npc._pending_animation = self._build_animation_data(
-                        npc, npc.current_move
+                    setattr(
+                        npc,
+                        PENDING_ANIMATION_ATTR,
+                        self._build_animation_data(npc, npc.current_move),
                     )
 
                     with self._capture_output():
