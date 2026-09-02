@@ -27,6 +27,7 @@ export default function useScrollIndicators() {
 
   useEffect(() => {
     if (!el) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the initial measurement of an external system (the element's scroll geometry), knowable only once it is attached; skipping it leaves both indicators wrong until the first scroll or resize.
     check()
     el.addEventListener('scroll', check, { passive: true })
     const ro = new ResizeObserver(check)
