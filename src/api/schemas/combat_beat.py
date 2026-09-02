@@ -64,13 +64,14 @@ SFX_KINDS = (
     "death",
 )
 
-#: Ceiling on the per-target resolutions one beat may fan out into — applied
-#: server-side when the SFX chain is built and client-side when
-#: ``beatToAnimations`` fans one animation per resolution. 16 comfortably
-#: covers the largest real arc (every combatant a dynamic grid can hold);
-#: anything beyond it is a degenerate/adversarial payload that would otherwise
-#: become an unbounded animation storm. Mirrored in
-#: frontend/src/utils/combatBeatSchema.js.
+#: Ceiling on the per-target emissions one beat may fan out into — applied
+#: server-side to each per-target loop of the SFX chain (the impact
+#: resolutions, the landed statuses, and the deaths) and client-side when
+#: ``beatToAnimations`` fans one animation per resolution and one burst per
+#: kill. 16 comfortably covers the largest real arc (every combatant a
+#: dynamic grid can hold); anything beyond it is a degenerate/adversarial
+#: payload that would otherwise become an unbounded animation/SFX storm.
+#: Mirrored in frontend/src/utils/combatBeatSchema.js.
 MAX_BEAT_RESOLUTIONS = 16
 
 #: Animation the API layer picks for a targeted, damaging move that declares
@@ -145,13 +146,16 @@ def build_sfx_chain(
                 "target_id": normalized["target_id"],
             }
         )
-    for change in status_changes:
+    # The same per-target cap bounds every fan-out loop, not just the impacts:
+    # a crafted/degenerate beat with hundreds of status_changes or killed ids
+    # must not become an unbounded SFX storm either.
+    for change in status_changes[:MAX_BEAT_RESOLUTIONS]:
         emissions.append({"kind": "status", "status": change.get("status")})
     if actor_id is not None and any(
         c.get("id") == actor_id and c.get("delta", 0) > 0 for c in hp_changes
     ):
         emissions.append({"kind": "heal"})
-    for _ in killed:
+    for _ in killed[:MAX_BEAT_RESOLUTIONS]:
         emissions.append({"kind": "death"})
 
     for index, emission in enumerate(emissions):

@@ -851,6 +851,88 @@ class TestBeatLoopEventCallback:
 
 
 # ---------------------------------------------------------------------------
+# cancelled wind-ups are discarded, never flush-emitted (phantom swings)
+# ---------------------------------------------------------------------------
+
+
+class TestCancelledWindupDiscard:
+    """A move reset mid-wind-up must not play its animation.
+
+    The event-interrupt branch and the roster-emptied precheck both clear
+    ``current_move`` AFTER the main end-of-move flush ran (which skipped the
+    then-attached move). Re-running the flush there emitted the never-resolved
+    channel's fallback — the full animation of a swing that never happened.
+    Both sites now discard via ``_detach_current_move``.
+    """
+
+    @staticmethod
+    def _windup_move(name):
+        """A multi-beat move whose advance() does NOT detach (still winding up)."""
+        move = _make_move(name, instant=False)
+        move.advance = MagicMock(return_value=None)
+        return move
+
+    def test_an_event_interrupt_discards_the_windup_channel_without_emitting(self):
+        move = self._windup_move("Aimed Shot")
+        player = _make_player()
+        enemy = _make_enemy()
+        player.known_moves = [move]
+        player.combat_list = [enemy]
+        player.current_move = move
+        move.target = enemy
+
+        callback = MagicMock(return_value=[{"event": "SomethingHappened"}])
+        adapter = _make_adapter(player, on_event_callback=callback)
+
+        with (
+            patch("src.functions.refresh_stat_bonuses"),
+            patch(
+                "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
+                return_value=dict(_STUB_BEAT_STATE),
+            ),
+        ):
+            result = adapter._execute_move_inner(move)
+
+        assert result.get("events_triggered") == [{"event": "SomethingHappened"}]
+        # The interrupted move was reset for reselection...
+        assert player.current_move is None
+        assert move.current_stage == 0
+        # ...and its channel was discarded, not emitted: no phantom carrier.
+        assert not hasattr(player, "_pending_animation")
+        assert not [e for e in player.combat_log if "animation" in e], (
+            "the event-interrupted wind-up's animation was flush-emitted — "
+            "the reset move plays as a phantom swing over the event dialog"
+        )
+
+    def test_a_windup_cancelled_by_an_emptied_roster_is_discarded_not_emitted(self):
+        """Ally kill / DoT felled the last enemy while Jean was still winding up."""
+        move = self._windup_move("Aimed Shot")
+        player = _make_player()
+        player.known_moves = [move]
+        player.combat_list = []  # the roster emptied under the wind-up
+        player.current_move = move
+        move.target = player
+        adapter = _make_adapter(player)
+
+        with (
+            patch("src.functions.refresh_stat_bonuses"),
+            patch(
+                "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
+                return_value=dict(_STUB_BEAT_STATE),
+            ),
+        ):
+            result = adapter._execute_move_inner(move)
+
+        assert result is not None
+        assert player.current_move is None
+        assert not hasattr(player, "_pending_animation")
+        assert not [e for e in player.combat_log if "animation" in e], (
+            "the cancelled wind-up's animation was flush-emitted — a phantom "
+            "swing plays over the already-empty battlefield"
+        )
+
+
+# ---------------------------------------------------------------------------
 # beat loop — current_move-is-None guards
 # ---------------------------------------------------------------------------
 

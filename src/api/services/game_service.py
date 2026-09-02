@@ -6,6 +6,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
+from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
@@ -4833,10 +4834,12 @@ class GameService:
         back to appending raw entries when no adapter is attached yet. The
         fallback path has no trim behind it, so it caps the log itself: an
         unbounded append here would quietly regrow the very list the adapter
-        bounds (it is pickled into every save).
+        bounds (it is pickled into every save). Sibling of
+        ``ApiCombatAdapter._trim_combat_log`` — a cap policy change there
+        likely needs mirroring here. Running only when no adapter exists is
+        also what keeps the adapter's dedup key index honest: its docstring's
+        "no in-place rewriter it can't see" claim depends on this exemption.
         """
-        from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
-
         current_beat = getattr(player, "combat_beat", 0)
         adapter = getattr(player, "_combat_adapter", None)
         for line in str(message).split("\n"):

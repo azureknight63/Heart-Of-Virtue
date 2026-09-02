@@ -169,19 +169,56 @@ def test_adapter_substituted_animation_types_exist_in_the_frontend():
         )
 
 
-#: An adapter-chosen animation-type literal: either an ``animation_type = "x"``
-#: assignment (any quote style) or a literal ``"type": "x"`` value inside an
-#: animation payload dict — recognised by the ``"source_id"`` key adjacent to
-#: it, which animation payloads carry and log entries (whose own ``"type":
-#: "combat"`` literal is legitimate) do not. The first version of this scan
-#: matched only double-quoted assignments, so a single-quoted assignment or a
-#: payload built as a dict literal (exactly how ``_npc_try_heal_ally``
-#: hardcoded ``"pulse"``) sailed past it.
-_TYPE_LITERAL = re.compile(
-    r"""animation_type\s*=\s*['"](\w+)['"]"""
-    r"""|['"]type['"]\s*:\s*['"](\w+)['"]\s*,\s*['"]source_id['"]""",
-    re.DOTALL,
-)
+def _type_literal_offenders(source):
+    """Adapter-chosen animation-type literals hardcoded in ``source``.
+
+    Two shapes: an ``animation_type = "x"`` assignment (name or attribute
+    target, any quote style), and a string-literal ``"type"`` value inside any
+    dict literal that ALSO carries a ``"source_id"`` key — which animation
+    payloads carry and log entries (whose own ``"type": "combat"`` literal is
+    legitimate) do not. AST-based, so key ORDER and formatting cannot dodge
+    it: the first regex version required ``"source_id"`` to sit immediately
+    after ``"type"``, so a payload spelled with the keys reordered, or with
+    another key between them, sailed straight past — the enumeration-shaped
+    guard failure this codebase keeps rediscovering. (An earlier version
+    still matched only double-quoted assignments, missing exactly how
+    ``_npc_try_heal_ally`` hardcoded ``"pulse"``.)
+    """
+    import ast
+
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                name = (
+                    target.id
+                    if isinstance(target, ast.Name)
+                    else getattr(target, "attr", None)
+                )
+                if (
+                    name == "animation_type"
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                ):
+                    found.append(node.value.value)
+        elif isinstance(node, ast.Dict):
+            keys = {
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant)
+            }
+            if "type" not in keys or "source_id" not in keys:
+                continue
+            for key, value in zip(node.keys, node.values):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == "type"
+                    and isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                ):
+                    found.append(value.value)
+    return found
+
 
 _API_FILES = (
     _ROOT / "src" / "api" / "combat_adapter.py",
@@ -202,10 +239,7 @@ def test_the_adapter_substitutes_no_type_this_test_does_not_know_about():
     """
     offenders = {}
     for path in _API_FILES:
-        found = [
-            m.group(1) or m.group(2)
-            for m in _TYPE_LITERAL.finditer(path.read_text(encoding="utf-8"))
-        ]
+        found = _type_literal_offenders(path.read_text(encoding="utf-8"))
         if found:
             offenders[path.name] = found
     assert not offenders, (
@@ -219,15 +253,23 @@ def test_the_type_literal_scan_can_actually_find_something():
     known_spellings = [
         'animation_type = "attack"',
         "animation_type = 'pulse'",
-        '"type": "pulse",\n                "source_id": x,',
-        "'type': 'attack', 'source_id': x,",
+        'self.animation_type = "sweep"',
+        'x = {"type": "pulse",\n     "source_id": s}',
+        "x = {'type': 'attack', 'source_id': s}",
+        # Key order must not matter...
+        'x = {"source_id": s, "type": "pulse"}',
+        # ...and neither may keys sitting between the two.
+        'x = {"type": "pulse", "move_name": n, "source_id": s}',
     ]
     for spelling in known_spellings:
-        match = _TYPE_LITERAL.search(spelling)
-        assert match, f"the scan no longer matches a known shape: {spelling}"
+        assert _type_literal_offenders(spelling), (
+            f"the scan no longer matches a known shape: {spelling}"
+        )
     # ...and it does not fire on a constant-backed assignment, a payload built
     # from a variable, or a log ENTRY's legitimate "type": "combat" literal
     # (log entries carry no "source_id" key).
-    assert not _TYPE_LITERAL.search("animation_type = DEFAULT_ANIMATION")
-    assert not _TYPE_LITERAL.search('"type": animation_type,\n"source_id": x,')
-    assert not _TYPE_LITERAL.search('"type": "combat",\n"timestamp": now,')
+    assert not _type_literal_offenders("animation_type = DEFAULT_ANIMATION")
+    assert not _type_literal_offenders(
+        'x = {"type": animation_type,\n     "source_id": s}'
+    )
+    assert not _type_literal_offenders('x = {"type": "combat", "timestamp": now}')

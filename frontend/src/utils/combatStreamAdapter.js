@@ -46,8 +46,11 @@ export function beatToAnimations(beat, combat) {
   // One animation per impact resolution — same move, same actor, each landing
   // on its own target. A beat with no impact emissions (older server, or a
   // pure system beat) degrades to the single beat-level animation.
-  const impacts = (beat.sfx || [])
-    .filter((emission) => emission.kind === 'impact')
+  // Wire reads are guarded shape by shape: a malformed beat (non-array sfx,
+  // null emission entries) must degrade, never TypeError out of the socket
+  // handler.
+  const impacts = (Array.isArray(beat.sfx) ? beat.sfx : [])
+    .filter((emission) => emission && emission.kind === 'impact')
     .slice(0, MAX_BEAT_RESOLUTIONS);
   const resolutions = impacts.length > 0 ? impacts : [null];
 
@@ -62,7 +65,13 @@ export function beatToAnimations(beat, combat) {
     ...(i === 0 ? { beat } : { suppressSfx: true }),
   }));
 
-  for (const id of beat.killed || []) {
+  // Same cap as the impact fan-out: a degenerate/adversarial killed list must
+  // not become an unbounded death-burst storm (the server slices its death
+  // emissions at the same constant — build_sfx_chain).
+  const killed = Array.isArray(beat.killed)
+    ? beat.killed.slice(0, MAX_BEAT_RESOLUTIONS)
+    : [];
+  for (const id of killed) {
     const found = findCombatant(combat, id);
     if (found?.entity?.position) {
       animations.push({

@@ -852,6 +852,58 @@ def test_the_per_target_fan_out_is_capped():
     assert MAX_BEAT_RESOLUTIONS == 16
 
 
+def test_every_per_target_sfx_loop_is_capped_not_just_the_impacts():
+    """status/death fan-outs are bounded by the same constant as the impacts.
+
+    The cap used to apply to the impact loop alone, so a degenerate or
+    crafted beat with hundreds of status_changes or killed ids still became
+    an unbounded SFX storm through the two loops beside it.
+    """
+    from src.api.schemas.combat_beat import MAX_BEAT_RESOLUTIONS, build_sfx_chain
+
+    chain = build_sfx_chain(
+        "hit",
+        status_changes=[
+            {"id": f"enemy_{i}", "status": "poisoned"} for i in range(100)
+        ],
+        killed=[f"enemy_{i}" for i in range(100)],
+    )
+    statuses = [e for e in chain if e["kind"] == "status"]
+    deaths = [e for e in chain if e["kind"] == "death"]
+    assert len(statuses) == MAX_BEAT_RESOLUTIONS
+    assert len(deaths) == MAX_BEAT_RESOLUTIONS
+    # Indexing stays sequential across the capped chain.
+    assert [e["index"] for e in chain] == list(range(len(chain)))
+
+
+def test_an_off_vocabulary_engine_tag_falls_back_to_the_diff_derivation():
+    """The engine tag is read out of the pickled combat log — attacker data.
+
+    ``validate_beat`` has no production caller, so an off-vocabulary outcome
+    string in a crafted save used to ship to the wire verbatim. The read site
+    clamps to OUTCOMES membership and falls back to the HP/kill diff.
+    """
+    from src.api.combat_beat_stream import _derive_outcome
+
+    crafted = {
+        "source_id": "player",
+        "target_id": "enemy_2",
+        "outcome": "obliterated<script>",
+    }
+    # Unknown tag + damage on the resolution's own target -> diff says hit.
+    assert (
+        _derive_outcome(
+            crafted, [{"id": "enemy_2", "delta": -4}], [], "enemy_2"
+        )
+        == "hit"
+    )
+    # Unknown tag + no footprint -> diff says miss; the tag never ships.
+    assert _derive_outcome(crafted, [], [], "enemy_2") == "miss"
+    # A legitimate tag still wins over the diff.
+    tagged = dict(crafted, outcome="parry")
+    assert _derive_outcome(tagged, [{"id": "enemy_2", "delta": -4}], [], "enemy_2") == "parry"
+
+
 def test_a_whiffed_landing_in_a_killing_beat_still_reads_as_a_miss():
     """The ``killed`` fallback only applies to the resolution's OWN target.
 
@@ -1242,38 +1294,87 @@ def test_no_combatant_retains_a_pending_animation_after_defeat():
     assert not hasattr(enemy, "_pending_animation")
 
 
-def test_clearing_an_interrupted_move_is_followed_by_a_flush():
-    """Both sites that null ``current_move`` AFTER the main flush re-flush.
-
-    The end-of-move flush deliberately skips a combatant whose move is still
-    attached. The event branch (and the all-enemies-defeated branch) clear
-    ``player.current_move`` after that flush already ran, so the interrupted
-    move's channel survived armed with nothing left to publish to it.
-    """
+def _calls_of(func, name):
+    """Every ``ast.Call`` of ``self.<name>``/bare ``<name>`` inside ``func``."""
     import ast
     import inspect
     import textwrap
 
-    from src.api.combat_adapter import ApiCombatAdapter
-
-    tree = ast.parse(
-        textwrap.dedent(inspect.getsource(ApiCombatAdapter._execute_move_inner))
-    )
-    flush_calls = sum(
-        1
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    return [
+        node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "_flush_pending_animations"
+        and (
+            (isinstance(node.func, ast.Attribute) and node.func.attr == name)
+            or (isinstance(node.func, ast.Name) and node.func.id == name)
+        )
+    ]
+
+
+def test_every_mid_windup_cancellation_site_routes_through_the_detach_helper():
+    """Cancelled wind-ups are DISCARDED, never flush-emitted.
+
+    The end-of-move flush's fallback emission is right for a move that ran to
+    completion without resolving; for a move CANCELLED mid-wind-up it plays
+    the full animation of a swing that never happened. All three cancellation
+    sites — the event-interrupt branch and the roster-emptied precheck in
+    ``_execute_move_inner``, plus ``abort_current_move`` — must pair the
+    ``current_move`` clear with the channel discard through the ONE helper
+    that encodes the pairing (``_detach_current_move``), not through a
+    re-flush (a phantom emission) or a bare clear (a leaked channel).
+    """
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    inner_detaches = _calls_of(
+        ApiCombatAdapter._execute_move_inner, "_detach_current_move"
     )
-    # Main end-of-move flush + the victory-path clear + the event-branch clear.
-    assert flush_calls >= 3, (
-        f"expected the two current_move=None sites to re-flush; found only "
-        f"{flush_calls} _flush_pending_animations call(s)"
+    assert len(inner_detaches) == 2, (
+        "expected the event-interrupt and roster-emptied sites to detach via "
+        f"_detach_current_move; found {len(inner_detaches)} call(s)"
+    )
+    assert len(
+        _calls_of(ApiCombatAdapter.abort_current_move, "_detach_current_move")
+    ) == 1, "abort_current_move must discard the aborted channel via the helper"
+
+    # The flush now appears exactly once in the move loop (the legitimate
+    # end-of-move retirement) and never in abort — a second flush at a
+    # cancellation site is the phantom-swing regression coming back.
+    assert len(
+        _calls_of(ApiCombatAdapter._execute_move_inner, "_flush_pending_animations")
+    ) == 1
+    assert not _calls_of(
+        ApiCombatAdapter.abort_current_move, "_flush_pending_animations"
     )
 
 
-def test_abort_flushes_the_abandoned_moves_channel():
+def test_the_detach_helper_clears_the_move_and_discards_the_channel():
+    """The pairing invariant, behaviourally: detach + discard, no emission."""
+    from src.player import Player
+
+    player = Player()
+    player.combat_log = []
+    player.current_move = object()
+    player._pending_animation = {"move_name": "Aimed Shot", "outcome": None}
+
+    adapter = _adapter_with_player(player)
+    adapter._detach_current_move(player)
+
+    assert player.current_move is None
+    assert not hasattr(player, "_pending_animation")
+    assert not [e for e in player.combat_log if e.get("animation")], (
+        "a cancelled wind-up's channel was emitted instead of discarded"
+    )
+
+
+def test_abort_discards_the_abandoned_moves_channel_without_emitting():
+    """Breaking off a wind-up must not play the move's animation.
+
+    The abort used to re-run the end-of-move flush, whose never-resolved
+    fallback EMITTED the aborted move's full animation carrier — the player
+    cancels the shot and watches it fire anyway. The channel is discarded
+    instead: no carrier, no surviving channel.
+    """
     from src.player import Player
 
     player = Player()
@@ -1309,6 +1410,10 @@ def test_abort_flushes_the_abandoned_moves_channel():
     assert not hasattr(player, "_pending_animation"), (
         "the aborted move's channel stayed armed after the abort"
     )
+    assert not [e for e in player.combat_log if e.get("animation")], (
+        "aborting the wind-up emitted the move's animation carrier — the "
+        "swing the player just broke off would play as a phantom"
+    )
 
 
 def test_wire_animation_strips_the_legacy_reported_key():
@@ -1319,6 +1424,47 @@ def test_wire_animation_strips_the_legacy_reported_key():
         {"move_name": "Slash", "outcome": "hit", "_reported": True}
     )
     assert "_reported" not in wired
+
+
+def test_wire_animation_is_an_allow_list_not_a_deny_list():
+    """Crafted extra keys on a restored pending dict must never ship.
+
+    The pending dict rides in the pickled save; the deny-list version copied
+    the whole dict and popped the keys it knew about, so any key a crafted
+    save smuggled in went to the client verbatim (jsonified on every poll).
+    The copy is rebuilt from the documented key set instead.
+    """
+    from src.api.combat_adapter import _WIRE_ANIMATION_KEYS, _wire_animation
+
+    crafted = {
+        "type": "sweep",
+        "source_id": "player",
+        "target_id": "enemy_1",
+        "move_name": "Sweep",
+        "move_display_name": "Sweep",
+        "outcome": "hit",
+        # ...plus everything an attacker might smuggle:
+        "__proto__": {"polluted": True},
+        "constructor": "x",
+        "onload": "javascript:alert(1)",
+        "_reported_beat": 3,
+        "_reported": True,
+        "extra_blob": "A" * 64,
+    }
+    wired = _wire_animation(crafted)
+
+    assert set(wired) <= set(_WIRE_ANIMATION_KEYS), (
+        f"unexpected keys reached the wire: {set(wired) - set(_WIRE_ANIMATION_KEYS)}"
+    )
+    # The documented payload itself is intact.
+    assert wired == {
+        "type": "sweep",
+        "source_id": "player",
+        "target_id": "enemy_1",
+        "move_name": "Sweep",
+        "move_display_name": "Sweep",
+        "outcome": "hit",
+    }
 
 
 # ── A4: robustness + bounds ─────────────────────────────────────────────────
@@ -1356,6 +1502,89 @@ def test_adapter_attach_sanitizes_a_poisoned_combat_log():
     assert player.combat_log[-1]["message"] == "after the poison"
 
 
+@pytest.mark.parametrize(
+    "poison", ["a whole string log", {"round": 1}, 42, ("t", "u")]
+)
+def test_adapter_attach_resets_a_non_list_combat_log(poison):
+    """A crafted save can make ``combat_log`` any pickled value at all.
+
+    The old sanitize was gated on ``isinstance(log, list)``, so a str/dict
+    slipped straight past it and raised from ``_log_key_index`` on every
+    insert (a str is iterated char by char; each char has no ``.get``) —
+    bricking every combat action of the loaded fight. Non-lists reset to [].
+    """
+    from unittest.mock import patch
+
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    player = _AttachPlayer(poison)
+    with patch("src.api.combat_adapter.CombatStrategist"):
+        adapter = ApiCombatAdapter(player, session_id=None)
+
+    assert player.combat_log == []
+    adapter._add_log_entry(1, "still inserting", "combat")
+    assert player.combat_log[-1]["message"] == "still inserting"
+
+
+def test_adapter_attach_drops_non_dict_animation_values():
+    """A crafted ``{"animation": "x"}`` entry raised in the index rebuild.
+
+    ``_log_entry_key`` reads ``(entry.get("animation") or {}).get(...)`` for
+    every stored entry on every rebuild, so one string-valued ``animation``
+    raised AttributeError per combat action. The attach pass strips the
+    poisoned value while keeping the entry's visible text.
+    """
+    from unittest.mock import patch
+
+    from src.api.combat_adapter import ApiCombatAdapter
+
+    good_anim = {"round": 1, "message": "ok", "animation": {"source_id": "s"}}
+    poisoned = {"round": 1, "message": "kept text", "animation": "crafted"}
+    log = [good_anim, poisoned]
+    player = _AttachPlayer(log)
+    with patch("src.api.combat_adapter.CombatStrategist"):
+        adapter = ApiCombatAdapter(player, session_id=None)
+
+    assert player.combat_log is log
+    assert "animation" not in poisoned, "the crafted value survived the attach"
+    assert poisoned["message"] == "kept text"
+    assert good_anim["animation"] == {"source_id": "s"}, (
+        "a legitimate animation dict must survive the pass"
+    )
+    # The rebuild this used to crash now runs.
+    adapter._add_log_entry(2, "after the poison", "combat")
+    assert player.combat_log[-1]["message"] == "after the poison"
+
+
+def test_a_crafted_animation_seq_cannot_brick_or_spoof_the_sequence():
+    """``animation_seq`` rides in the pickled save — an attacker's value.
+
+    ``int()`` on a str/list raised out of every ``_emit_animation_log`` call
+    (bricking the loaded fight's combat loop); a negative or absurd int
+    shipped verbatim as client carrier identity. Junk restarts the sequence.
+    """
+    from src.api.combat_adapter import MAX_ANIMATION_SEQ
+    from src.player import Player
+
+    for planted, expected_next in [
+        ("not a number", 1),
+        (["boom"], 1),
+        (-5, 1),
+        (10**18, 1),
+        (MAX_ANIMATION_SEQ + 1, 1),
+        (7, 8),          # a sane stored value still continues monotonically
+        ("12", 13),      # numeric strings coerce rather than reset
+    ]:
+        player = Player()
+        player.combat_log = []
+        player.combat_adapter_state = {"animation_seq": planted}
+        adapter = _adapter_with_player(player)
+        adapter._emit_animation_log(1, {"move_name": "Sweep", "type": "sweep"})
+        assert player.combat_adapter_state["animation_seq"] == expected_next, (
+            f"planted {planted!r}"
+        )
+
+
 def test_animation_carriers_are_stamped_with_a_monotonic_seq():
     """Cross-agent contract: each animation payload carries a per-fight seq.
 
@@ -1380,7 +1609,6 @@ def test_animation_carriers_are_stamped_with_a_monotonic_seq():
 
 
 def test_the_animation_seq_is_reset_when_a_new_fight_starts():
-    from src.api.combat_adapter import ApiCombatAdapter
     from src.player import Player
 
     player = Player()
@@ -1393,10 +1621,58 @@ def test_the_animation_seq_is_reset_when_a_new_fight_starts():
     adapter._emit_animation_log(1, {"move_name": "Jab", "type": "attack"})
     assert player.combat_adapter_state["animation_seq"] == 1
 
-    # ...and initialize_combat's non-reinit branch actually calls the reset.
-    assert "_reset_animation_seq" in _method_calls(
-        ApiCombatAdapter.initialize_combat
+
+def _real_combat_adapter():
+    """A full-construction adapter on a real Player, suggestions stubbed."""
+    from unittest.mock import patch
+
+    from src.api.combat_adapter import ApiCombatAdapter
+    from src.player import Player
+
+    player = Player()
+    with patch("src.api.combat_adapter.CombatStrategist"):
+        adapter = ApiCombatAdapter(player)
+    # The async suggestion thread is irrelevant here and nondeterministic.
+    adapter.refresh_suggestions = lambda: None
+    return player, adapter
+
+
+def test_a_reinit_preserves_the_mid_fight_animation_seq():
+    """The seq reset must live in initialize_combat's ``not reinit`` branch.
+
+    The previous guard asserted only that ``_reset_animation_seq`` is called
+    SOMEWHERE in initialize_combat — an unconditional reset (which restarts
+    carrier identity on every wave transition / reinforcement spawn, exactly
+    what the seq exists to survive) satisfied it. Driving reinit=True
+    behaviourally is the real contract: mid-fight seq is preserved and stays
+    monotonic across the reinit, while a genuinely new fight (reinit=False,
+    below) restarts it — proving the guard fires in both directions.
+    """
+    from src.npc import Slime
+
+    player, adapter = _real_combat_adapter()
+    enemy = Slime()
+
+    with capture_narration():
+        adapter.initialize_combat([enemy])
+    adapter._emit_animation_log(1, {"move_name": "Sweep", "type": "sweep"})
+    adapter._emit_animation_log(1, {"move_name": "Sweep", "type": "sweep"})
+    assert player.combat_adapter_state["animation_seq"] == 2
+
+    # Wave transition / reinforcement spawn: same fight, same seq.
+    with capture_narration():
+        adapter.initialize_combat([enemy], reinit=True)
+    assert player.combat_adapter_state["animation_seq"] == 2, (
+        "a reinit reset the per-fight animation seq — carrier identity "
+        "breaks mid-fight on every wave transition"
     )
+    adapter._emit_animation_log(2, {"move_name": "Jab", "type": "attack"})
+    assert player.combat_adapter_state["animation_seq"] == 3
+
+    # A genuinely new combat DOES restart the sequence.
+    with capture_narration():
+        adapter.initialize_combat([enemy])
+    assert player.combat_adapter_state["animation_seq"] == 0
 
 
 def test_item_use_fallback_log_append_is_bounded():

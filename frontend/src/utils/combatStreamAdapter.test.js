@@ -186,6 +186,61 @@ describe('beatToAnimations', () => {
     expect(anim.outcome).toBe('hit');
   });
 
+  // ── malformed wire payloads must degrade, never throw ────────────────────
+
+  it('degrades a non-array sfx to the single beat-level animation', () => {
+    // A malformed beat (older server, tampered payload) used to TypeError on
+    // (beat.sfx || []).filter — a string sfx passes `||` but has no .filter
+    // that takes this predicate shape usefully, and a number/object throws.
+    for (const sfx of ['corrupt', 42, { kind: 'impact' }, null, undefined]) {
+      const anims = beatToAnimations(beat({ sfx }), combat);
+      expect(anims).toHaveLength(1);
+      expect(anims[0]).toMatchObject({
+        type: 'attack',
+        target_id: 'enemy_1',
+        outcome: 'hit',
+      });
+    }
+  });
+
+  it('skips null/undefined emission entries instead of throwing', () => {
+    const anims = beatToAnimations(
+      beat({
+        sfx: [
+          null,
+          { index: 0, kind: 'impact', outcome: 'hit', target_id: 'enemy_1' },
+          undefined,
+        ],
+      }),
+      combat
+    );
+    expect(anims.filter((a) => a.type === 'attack')).toHaveLength(1);
+    expect(anims[0].target_id).toBe('enemy_1');
+  });
+
+  it('caps the death-burst fan-out at MAX_BEAT_RESOLUTIONS', () => {
+    // Server-side build_sfx_chain slices its death emissions at the same
+    // constant; the client must bound its bursts too, or a crafted killed
+    // list becomes an unbounded animation storm.
+    const anims = beatToAnimations(
+      beat({
+        killed: Array.from({ length: 100 }, () => 'enemy_1'),
+      }),
+      combat
+    );
+    expect(anims.filter((a) => a.type === 'death')).toHaveLength(
+      MAX_BEAT_RESOLUTIONS
+    );
+  });
+
+  it('treats a non-array killed as empty rather than iterating it', () => {
+    // A string killed would iterate per character; an object would throw.
+    for (const killed of ['enemy_1', 42, { id: 'enemy_1' }]) {
+      const anims = beatToAnimations(beat({ killed }), combat);
+      expect(anims.filter((a) => a.type === 'death')).toEqual([]);
+    }
+  });
+
   it('caps the fan-out at MAX_BEAT_RESOLUTIONS', () => {
     const anims = beatToAnimations(
       beat({

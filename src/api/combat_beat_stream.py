@@ -16,6 +16,7 @@ from src.api.schemas.combat_beat import (
     BEAT_EVENT,
     DEFAULT_ANIMATION,
     ENDED_EVENT,
+    OUTCOMES,
     RESOLVED_EVENT,
     build_beat,
     diff_combatants,
@@ -75,8 +76,15 @@ def _derive_outcome(anim, hp_changes, killed, target_id):
     vocabulary here — ``OUTCOMES`` in src/api/schemas/combat_beat.py is the list,
     and this docstring has already gone stale against it once by omitting
     ``glance``.
+
+    The tag is clamped to ``OUTCOMES`` membership before it ships: the
+    animation dicts read here come out of ``player.combat_log``, which rides
+    in the pickled save, so a crafted save controls the stored outcome string
+    and ``validate_beat`` has no production caller to catch it downstream. An
+    off-vocabulary tag falls back to the diff derivation below instead of
+    reaching the wire.
     """
-    if anim and anim.get("outcome"):
+    if anim and anim.get("outcome") in OUTCOMES:
         return anim["outcome"]
     # Only the resolution's OWN target counts. Answering "hit" whenever
     # anything at all died in the beat made a whiffed second landing read as a
@@ -166,9 +174,11 @@ class CombatBeatStreamer:
                 actor_id=actor_id,
                 target_id=target_id,
                 web_animation=web_animation,
-                # The headline outcome is derived by build_beat from the first
-                # resolution — passing it here too keeps the call self-evident.
-                outcome=resolutions[0]["outcome"],
+                # build_beat DERIVES the headline outcome from outcomes[0]
+                # whenever outcomes is non-empty (it always is here — see the
+                # `or [...]` fallback above), so it is the one authority and
+                # nothing is passed that could disagree with it.
+                outcome=None,
                 hp_changes=hp_changes,
                 killed=killed,
                 status_changes=status_changes,

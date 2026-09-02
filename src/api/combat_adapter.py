@@ -100,13 +100,24 @@ REPORTED_BEAT_KEY = "_reported_beat"
 #:   * ``_take_resolution`` -- snapshots one resolution off the dict, records
 #:     ``_reported_beat`` and re-arms ``outcome``/``outcome_target`` to None
 #:
-#: Deletion points (exactly two):
+#: Deletion points (exactly three):
 #:   * ``_flush_pending_animations`` -- end of each player move (and after the
-#:     initial NPC turns / an abort): retires every channel whose move is over,
+#:     initial NPC turns): retires every channel whose move ran to completion,
 #:     emitting a fallback only if the channel never resolved
+#:   * ``_detach_current_move`` -- a move CANCELLED mid-wind-up (abort, event
+#:     interrupt, roster emptied under it): clears ``current_move`` and
+#:     discards that entity's channel as one operation. Never a fallback
+#:     emission -- the cancelled swing never happened, so emitting its
+#:     animation would play a phantom swing
 #:   * ``_discard_pending_animations`` -- combat teardown
-#:     (``_teardown_combat_roster``): drops every channel unconditionally so a
-#:     live ``outcome_target`` is never pickled into the save
+#:     (``_teardown_combat_roster``): drops every channel unconditionally as
+#:     post-fight reference hygiene (a pending dict can hold a live
+#:     ``outcome_target`` nothing will ever consume)
+#:
+#: Pickle safety is NOT what the deletions provide: ``Combatant.__getstate__``
+#: (extended by ``Player.__getstate__``) strips ``_pending_animation`` at
+#: pickle time, so a channel that survives to a save is never serialized.
+#: The teardown discard is defense-in-depth on top of that guard.
 
 #: How much of ``player.combat_log`` survives a trim, per kind of entry.
 #:
@@ -136,6 +147,14 @@ MAX_ANIMATION_LOG_ENTRIES = 96
 MAX_VISIBLE_LOG_ENTRIES = 400
 COMBAT_LOG_TRIM_SLACK = 100
 
+#: Sanity ceiling for the per-fight animation carrier sequence restored from a
+#: save. The seq is only client-side carrier identity, so the bound needs no
+#: precision — it just has to dwarf any real fight (a marathon at one carrier
+#: per beat-target for hours stays far below it) while rejecting the absurd
+#: values a crafted save could plant. Out-of-range restarts the sequence at 0;
+#: see _next_animation_seq.
+MAX_ANIMATION_SEQ = 1_000_000
+
 
 def _dedup_key(message, round_num, source_id):
     """The identity ``_add_log_entry`` collapses duplicate log entries on.
@@ -147,26 +166,43 @@ def _dedup_key(message, round_num, source_id):
     return (message, round_num, source_id)
 
 
+#: The documented wire payload of a pending animation -- the key set
+#: ``_build_animation_data`` creates plus the ``outcome`` that
+#: ``publish_outcome`` stamps. ``_wire_animation`` copies exactly these, so a
+#: crafted key smuggled onto a restored pending dict never ships.
+_WIRE_ANIMATION_KEYS = (
+    "type",
+    "source_id",
+    "target_id",
+    "move_name",
+    "move_display_name",
+    "outcome",
+)
+
+
 def _wire_animation(pending: dict) -> dict:
     """The client-safe copy of a pending animation.
 
-    ``publish_outcome`` stores the resolved combatant *object* on the pending
-    dict so the adapter can name it; ``REPORTED_BEAT_KEY`` is the adapter's own
-    bookkeeping. Neither may reach the client: the combat log is jsonified on
-    every poll and pickled into every save, so a live combatant here is a 500
-    and a save that drags the enemy's object graph with it.
+    Built as an ALLOW-list over ``_WIRE_ANIMATION_KEYS`` rather than by
+    stripping known-bad keys from a full copy: the pending dict rides in the
+    pickled save, so a crafted save can stamp arbitrary extra keys onto it,
+    and a deny-list would ship every one of them verbatim into the combat log
+    the client reads. (The deny-list era had to enumerate ``REPORTED_BEAT_KEY``,
+    its pre-rename ``"_reported"`` spelling, and ``outcome_target`` one by one
+    -- and anything it forgot leaked.)
+
+    ``publish_outcome`` stores the resolved combatant *object* under
+    ``outcome_target`` so the adapter can name it; it is mapped to a stream id
+    here and never copied. The combat log is jsonified on every poll and
+    pickled into every save, so a live combatant in the copy is a 500 and a
+    save that drags the enemy's object graph with it.
 
     Every path that emits an animation goes through this -- both the
     per-resolution path and the end-of-move fallback. They built the payload
-    two different ways before, and only one of them stripped these keys.
-    ``"_reported"`` is the pre-rename spelling of ``REPORTED_BEAT_KEY``:
-    a save written before the rename can still carry it on a mid-move pending
-    dict, so it is stripped here too rather than shipped to the client.
+    two different ways before, and only one of them sanitized.
     """
-    animation = dict(pending)
-    animation.pop(REPORTED_BEAT_KEY, None)
-    animation.pop("_reported", None)
-    target = animation.pop("outcome_target", None)
+    animation = {k: pending[k] for k in _WIRE_ANIMATION_KEYS if k in pending}
+    target = pending.get("outcome_target")
     if target is not None:
         animation["target_id"] = CombatantSerializer.stream_id(target)
     return animation
@@ -295,11 +331,30 @@ class ApiCombatAdapter:
     # Class-level defaults for the dedup-index cache and the per-beat trim
     # counter, so an adapter built without __init__ (tests construct bare
     # instances via __new__ throughout the suite) still reads coherent state.
-    # __init__ re-declares them per instance below.
+    # _reset_log_index_state is the one shared definition of this baseline;
+    # keep these four values in lockstep with it.
     _log_keys = None
     _log_key_source = None
     _log_key_count = None
     _log_trimmed_since_beat = 0
+
+    def _reset_log_index_state(self):
+        """The single definition of the dedup-index/trim-counter baseline.
+
+        Mirrored by the class-level defaults above so bare ``__new__``
+        instances read the same state without running __init__.
+        """
+        # Dedup key index for player.combat_log — rebuilt lazily whenever the
+        # list is rebound or mutated behind this adapter's back (see
+        # _log_key_index). _log_key_source/_log_key_count bind the cached key
+        # set to the exact list object and its length.
+        self._log_keys = None
+        self._log_key_source = None
+        self._log_key_count = None
+        # Entries the in-place front-trim dropped since the current beat's log
+        # window opened; _execute_move_inner resets it per beat and corrects
+        # the beat's window start by it.
+        self._log_trimmed_since_beat = 0
 
     def __init__(
         self,
@@ -326,38 +381,36 @@ class ApiCombatAdapter:
         # emitting the terminal SocketIO event more than once per combat.
         self._terminal_event_emitted = False
 
-        # Dedup key index for player.combat_log — rebuilt lazily whenever the
-        # list is rebound or mutated behind this adapter's back (see
-        # _log_key_index). _log_key_source/_log_key_count bind the cached key
-        # set to the exact list object and its length.
-        self._log_keys = None
-        self._log_key_source = None
-        self._log_key_count = None
-        # Entries the in-place front-trim dropped since the current beat's log
-        # window opened; _execute_move_inner resets it per beat and corrects
-        # the beat's window start by it.
-        self._log_trimmed_since_beat = 0
+        self._reset_log_index_state()
 
         # combat_log rides in the pickled save, so a tampered or legacy save
-        # can hand this adapter a log with non-dict entries — which would raise
-        # from inside the narration listener on every insert (the dedup key
-        # reads .get on each entry), again in the trim, and again in move_logs.
-        # Sanitize ONCE here at attach; everything downstream may then assume
-        # dict entries. In place, so held references survive.
+        # can hand this adapter anything at all — a non-list log (a str would
+        # be iterated char by char, raising in _log_key_index on every
+        # insert), a log with non-dict entries (which would raise from inside
+        # the narration listener on every insert — the dedup key reads .get on
+        # each entry — again in the trim, and again in move_logs), or a dict
+        # entry whose "animation" value is not a dict (the index rebuild calls
+        # .get on it per entry). Sanitize ONCE here at attach; everything
+        # downstream may then assume a list of dicts with dict-or-absent
+        # animations. In place, so held references survive.
         log = getattr(self.player, "combat_log", None)
-        if isinstance(log, list) and any(
-            not isinstance(entry, dict) for entry in log
-        ):
-            log[:] = [entry for entry in log if isinstance(entry, dict)]
+        if log is not None and not isinstance(log, list):
+            self.player.combat_log = []
+        elif isinstance(log, list):
+            if any(not isinstance(entry, dict) for entry in log):
+                log[:] = [entry for entry in log if isinstance(entry, dict)]
+            for entry in log:
+                animation = entry.get("animation")
+                if animation is not None and not isinstance(animation, dict):
+                    del entry["animation"]
 
-        # Initialize persistent state if missing
-        if not hasattr(self.player, "combat_adapter_state"):
-            self.player.combat_adapter_state = {
-                "awaiting_input": False,
-                "input_type": None,
-                "pending_move_index": None,
-                "available_options": [],
-            }
+        # Initialize persistent state if missing; the properties below read
+        # these keys back through .get with the same defaults.
+        state = self._adapter_state()
+        state.setdefault("awaiting_input", False)
+        state.setdefault("input_type", None)
+        state.setdefault("pending_move_index", None)
+        state.setdefault("available_options", [])
 
         # Track async suggestion loading state
         self.player.suggestions_loading = False
@@ -477,6 +530,19 @@ class ApiCombatAdapter:
         except Exception:
             logger.exception("combat beat streaming failed")
 
+    def _adapter_state(self) -> dict:
+        """``player.combat_adapter_state``, created empty when missing.
+
+        The single home of the lazy init that five sites used to carry as
+        their own ``if not hasattr(...)`` copy. The dict lives on the player
+        (not on ``self``) because the adapter object is not the fight's
+        lifetime — see the ``combat_id`` property.
+        """
+        state = getattr(self.player, "combat_adapter_state", None)
+        if not isinstance(state, dict):
+            state = self.player.combat_adapter_state = {}
+        return state
+
     @property
     def combat_id(self):
         """Stable identity for the current fight.
@@ -582,9 +648,13 @@ class ApiCombatAdapter:
         loading a save). The index is therefore bound to the exact list object
         and its length. That detects a rebinding and any mutation that changes
         the length; a same-length in-place rewrite by a third party would slip
-        past it, but no such writer exists -- the adapter's own trim (the one
-        length-preserving-ish rewriter) explicitly invalidates via
-        ``_invalidate_log_key_index``.
+        past it, but no such writer runs while an adapter is attached -- the
+        adapter's own trim (the one length-preserving-ish rewriter) explicitly
+        invalidates via ``_invalidate_log_key_index``, and the only other
+        in-place rewriter, ``GameService._log_item_use_to_combat``'s fallback
+        trim, runs exclusively when the player has NO adapter (it prefers
+        ``_add_log_entry`` whenever one is attached), so no live index can be
+        stale against it.
 
         A trim invalidates the index outright rather than un-counting what it
         dropped: ``allow_duplicate`` entries share a key by design (see
@@ -593,7 +663,10 @@ class ApiCombatAdapter:
         fires once per COMBAT_LOG_TRIM_SLACK inserts.
         """
         log = getattr(self.player, "combat_log", None)
-        if log is None:
+        if not isinstance(log, list):
+            # Missing, None, or a non-list a crafted save smuggled past the
+            # attach sanitize (e.g. rebound after __init__): a str here would
+            # be iterated char by char below and raise on every insert.
             log = self.player.combat_log = []
         if self._log_key_source is not log or self._log_key_count != len(log):
             self._log_keys = {self._log_entry_key(e) for e in log}
@@ -617,6 +690,9 @@ class ApiCombatAdapter:
         the beat protocol silently emits nothing for it.
 
         See MAX_ANIMATION_LOG_ENTRIES / MAX_VISIBLE_LOG_ENTRIES for the policy.
+        ``GameService._log_item_use_to_combat`` keeps a sibling no-adapter
+        fallback cap over the same list -- a policy change here likely needs
+        mirroring there.
         """
         log = self.player.combat_log
         ceiling = (
@@ -733,16 +809,26 @@ class ApiCombatAdapter:
         does: the adapter object is not the fight's lifetime, and a
         replacement adapter built mid-fight must keep the sequence monotonic.
         """
-        if not hasattr(self.player, "combat_adapter_state"):
-            self.player.combat_adapter_state = {}
-        self.player.combat_adapter_state["animation_seq"] = 0
+        self._adapter_state()["animation_seq"] = 0
 
     def _next_animation_seq(self) -> int:
-        """The next per-fight animation sequence number (1-based, monotonic)."""
-        if not hasattr(self.player, "combat_adapter_state"):
-            self.player.combat_adapter_state = {}
-        state = self.player.combat_adapter_state
-        seq = int(state.get("animation_seq", 0) or 0) + 1
+        """The next per-fight animation sequence number (1-based, monotonic).
+
+        ``animation_seq`` rides in ``combat_adapter_state`` on the pickled
+        player, so a crafted save controls the stored value: a str/list would
+        raise out of ``int()`` and brick every move of the loaded fight, and a
+        negative or absurd int would ship as client-side carrier identity.
+        Anything non-numeric or out of ``[0, MAX_ANIMATION_SEQ]`` restarts the
+        sequence at 0 instead.
+        """
+        state = self._adapter_state()
+        try:
+            seq = int(state.get("animation_seq", 0) or 0)
+        except (TypeError, ValueError):
+            seq = 0
+        if not 0 <= seq <= MAX_ANIMATION_SEQ:
+            seq = 0
+        seq += 1
         state["animation_seq"] = seq
         return seq
 
@@ -781,19 +867,46 @@ class ApiCombatAdapter:
             allow_duplicate=True,
         )
 
+    def _detach_current_move(self, entity):
+        """Clear ``entity.current_move`` AND discard its animation channel.
+
+        The deletion point for a move CANCELLED mid-wind-up -- an abort, an
+        event interrupt, or the roster emptying under it (see the
+        ``_pending_animation`` lifecycle block beside ``REPORTED_BEAT_KEY``).
+        The end-of-move flush's fallback emission is right for a move that ran
+        to completion without resolving; for a cancelled wind-up it is a
+        phantom: the swing never happened, and emitting the full move
+        animation would play the very attack the player just broke off (or an
+        event just reset). A channel that DID resolve mid-flight is dropped
+        just as silently -- its resolutions were already emitted, and nothing
+        is left to publish to it.
+
+        Detach and discard are one operation on purpose: a site that clears
+        ``current_move`` and leaves the channel armed leaks it (nothing will
+        ever publish again), and one that flushes instead emits the phantom.
+        Stage bookkeeping (cooldown charge, stage reset) stays with each call
+        site -- the three cancellation paths legitimately differ there.
+        """
+        entity.current_move = None
+        if hasattr(entity, "_pending_animation"):
+            delattr(entity, "_pending_animation")
+
     def _discard_pending_animations(self):
         """Drop every combatant's animation channel, in flight or not.
 
-        One of the two deletion points in the ``_pending_animation`` lifecycle
-        (see the block beside ``REPORTED_BEAT_KEY``): the teardown one. The
-        end-of-move flush deliberately leaves a mid-wind-up move's channel
-        armed so its impact still has somewhere to publish. That is right while
-        the fight continues and wrong the moment it ends: nothing will ever
-        publish again, and the dict can still hold ``outcome_target`` -- a live
-        combatant -- which is then pickled into the save along with the player.
+        The teardown deletion point in the ``_pending_animation`` lifecycle
+        (see the block beside ``REPORTED_BEAT_KEY``). The end-of-move flush
+        deliberately leaves a mid-wind-up move's channel armed so its impact
+        still has somewhere to publish. That is right while the fight
+        continues and wrong the moment it ends: nothing will ever publish
+        again, and the dict can still hold ``outcome_target`` -- a live
+        combatant nothing will consume. Dropping it here is reference hygiene
+        and defense-in-depth; the actual pickle guard is
+        ``Combatant.__getstate__``, which strips ``_pending_animation`` from
+        every save regardless.
 
-        Both endings need this, not just victory. On defeat the player is
-        pickled too, and the player's own channel can be the armed one.
+        Both endings need this, not just victory: on defeat the player's own
+        channel can be the armed one.
         """
         for entity in self._all_combatants():
             if hasattr(entity, "_pending_animation"):
@@ -802,8 +915,10 @@ class ApiCombatAdapter:
     def _flush_pending_animations(self):
         """Retire the pending animation of every combatant whose move is over.
 
-        The other deletion point in the ``_pending_animation`` lifecycle (see
-        the block beside ``REPORTED_BEAT_KEY``): the end-of-move one.
+        The end-of-move deletion point in the ``_pending_animation`` lifecycle
+        (see the block beside ``REPORTED_BEAT_KEY``) — for moves that RAN TO
+        COMPLETION. A move cancelled mid-wind-up goes through
+        ``_detach_current_move`` instead, which discards rather than emits.
 
         Emits a fallback log entry only for animations that never resolved —
         a move that dealt no damage and narrated nothing the capture paired an
@@ -1847,9 +1962,7 @@ class ApiCombatAdapter:
                     events = self.on_event_callback(self.player)
                     if events:
                         # Narrative pause: record events and stop processing beats for now
-                        if not hasattr(self.player, "combat_adapter_state"):
-                            self.player.combat_adapter_state = {}
-                        self.player.combat_adapter_state["events_triggered"] = events
+                        self._adapter_state()["events_triggered"] = events
 
                         # Stop processing beats
                         break
@@ -1945,25 +2058,22 @@ class ApiCombatAdapter:
             # Clearing current_move prevents initialize_combat(reinit=True), called later by
             # story events like Ch01PostRumbler, from re-executing a stale attack against the
             # newly spawned reinforcements.
-            self.player.current_move = None
-            # The main flush above ran while current_move was still attached
-            # and deliberately skipped it; now that the move is detached its
-            # channel would stay armed with nothing left to publish to it, so
-            # flush again. (If events below spawn reinforcements, the fight
-            # continues and _handle_victory's teardown never runs for it.)
-            self._flush_pending_animations()
+            #
+            # The main flush above ran while current_move was still attached and
+            # deliberately skipped it. A wind-up cancelled because an ally kill
+            # or a DoT felled the last enemy under it is discarded, never
+            # flush-emitted — the swing never happened, and the fallback would
+            # play a phantom attack over the empty battlefield. (If events
+            # below spawn reinforcements, the fight continues and
+            # _handle_victory's teardown never runs for it.)
+            self._detach_current_move(self.player)
             if self.on_event_callback:
                 # Use the bridge to GameService so results are consistent
                 new_events = self.on_event_callback(self.player)
                 if new_events:
-                    if not hasattr(self.player, "combat_adapter_state"):
-                        self.player.combat_adapter_state = {}
-                    existing = self.player.combat_adapter_state.get(
-                        "events_triggered", []
-                    )
-                    self.player.combat_adapter_state["events_triggered"] = (
-                        existing + new_events
-                    )
+                    state = self._adapter_state()
+                    existing = state.get("events_triggered", [])
+                    state["events_triggered"] = existing + new_events
 
             # After event callbacks run, any newly-spawned enemies that were added via
             # combat_engage() won't have a combat_position (they only got a legacy proximity
@@ -2004,10 +2114,7 @@ class ApiCombatAdapter:
                     pass
 
         # Check if events triggered (BEFORE calling get_combat_state which consumes them)
-        event_just_triggered = (
-            hasattr(self.player, "combat_adapter_state")
-            and "events_triggered" in self.player.combat_adapter_state
-        )
+        event_just_triggered = "events_triggered" in self._adapter_state()
 
         # ALWAYS handle victory when all enemies are defeated
         # (even if post-combat events like Ch01PostRumbler3 are firing).
@@ -2058,12 +2165,13 @@ class ApiCombatAdapter:
                     self.player.current_move.beats_left = 0
                 except Exception:
                     pass
-                self.player.current_move = None
                 # The main flush ran BEFORE this clear and skipped the
-                # then-attached move, so the event-interrupted move's channel
-                # survived armed with no fallback emission left to come.
-                # Re-flush now that it is detached.
-                self._flush_pending_animations()
+                # then-attached move. The event-interrupted move is cancelled,
+                # not completed: its channel is discarded, never flush-emitted
+                # — the fallback would play the reset move's full animation as
+                # a phantom swing over the event dialog. (A channel that
+                # resolved mid-recoil is dropped just as silently, as before.)
+                self._detach_current_move(self.player)
             if self.player.in_combat:
                 self.awaiting_input = True
                 self.input_type = "move_selection"
@@ -2341,14 +2449,17 @@ class ApiCombatAdapter:
         )
         # An item use is not a Move, but its animation payload must obey the
         # same contract as every other cast, so it goes through the shared
-        # builder with a pseudo-move (targeted at the healed ally; no declared
-        # web_animation, no damage keywords, so the ladder resolves it to
-        # DEFAULT_ANIMATION). stream_id inside the builder cannot mislabel the
-        # player or an ally.
+        # builder with a pseudo-move targeted at the healed ally. The
+        # animation type is pinned explicitly rather than left to the
+        # builder's fallback ladder: the ladder's damaging-move branch keys on
+        # name keywords, so a heal item whose name happens to contain one
+        # ("...Strike Salve") would ship the attack animation for a heal.
+        # stream_id inside the builder cannot mislabel the player or an ally.
         pseudo_move = SimpleNamespace(
             name=f"Use {item_name}",
             targeted=True,
             target=heal_target,
+            web_animation=DEFAULT_ANIMATION,
         )
         self._emit_animation_log(
             self.player.combat_beat,
@@ -2750,8 +2861,10 @@ class ApiCombatAdapter:
         leaves an in-flight move's channel armed (see
         _flush_pending_animations); once combat is over nothing will ever
         publish to it, and a pending dict can hold a reference to the
-        combatant its last resolution landed on, which would then be pickled
-        into the save with the rest of the player.
+        combatant its last resolution landed on. The discard is post-fight
+        reference hygiene and defense-in-depth -- ``Combatant.__getstate__``
+        is what actually keeps ``_pending_animation`` out of every pickled
+        save.
 
         Then clears enemies and preserves only living allies, so the party
         roster survives the fight without dead NPCs haunting recall_friends or
@@ -2819,10 +2932,13 @@ class ApiCombatAdapter:
             self.output_capture.active_entity = self.player
             move.advance(self.player)
             self.output_capture.active_entity = None
-        # The interrupt branch detached the move; without a flush its channel
-        # would stay armed with nothing coming to publish to it (the end-of-
-        # move flush only runs inside the move loop, which an abort bypasses).
-        self._flush_pending_animations()
+        # The interrupt branch detached the move; its never-resolved channel
+        # is DISCARDED, not flushed. The flush's fallback emission exists for
+        # a move that finished without resolving — here the swing was broken
+        # off before it happened, and emitting would play the aborted move's
+        # full animation the instant the player cancels it. (Re-clearing
+        # current_move is a no-op after the engine's detach.)
+        self._detach_current_move(self.player)
         self._add_log_entry(
             getattr(self.player, "combat_beat", 0),
             f"{self.player.name} breaks off {aborted_name}.",
@@ -3203,6 +3319,8 @@ class ApiCombatAdapter:
         if not isinstance(affected, (list, tuple)) or not affected:
             return []
         range_min, range_max = self._move_range(move)
+        # One list object, shared: it is both iterated below and passed as the
+        # per-card `affected` kwarg (a tuple-returning hook is normalized too).
         affected = list(affected)
         return [
             self._build_target_entry(
@@ -3333,13 +3451,11 @@ class ApiCombatAdapter:
                 )
 
         # Include check_data if available (from Check move)
-        if (
-            hasattr(self.player, "combat_adapter_state")
-            and "check_data" in self.player.combat_adapter_state
-        ):
-            battle_state["check_data"] = self.player.combat_adapter_state["check_data"]
+        adapter_state = self._adapter_state()
+        if "check_data" in adapter_state:
+            battle_state["check_data"] = adapter_state["check_data"]
             # Clear check_data after including it once
-            del self.player.combat_adapter_state["check_data"]
+            del adapter_state["check_data"]
 
         grid_size = self.combat_grid_size
         result: Dict[str, Any] = {
@@ -3360,15 +3476,10 @@ class ApiCombatAdapter:
         }
 
         # Include triggered events if any (narrative pause)
-        if (
-            hasattr(self.player, "combat_adapter_state")
-            and "events_triggered" in self.player.combat_adapter_state
-        ):
-            result["events_triggered"] = self.player.combat_adapter_state[
-                "events_triggered"
-            ]
+        if "events_triggered" in adapter_state:
+            result["events_triggered"] = adapter_state["events_triggered"]
             # Clear after including
-            del self.player.combat_adapter_state["events_triggered"]
+            del adapter_state["events_triggered"]
 
         # Include end-of-combat summary (victory/defeat) if present
         if not self.player.in_combat and getattr(
