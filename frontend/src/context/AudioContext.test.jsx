@@ -456,6 +456,29 @@ describe('AudioContext', () => {
         expect(paused).toEqual(sfx.slice(0, 4)); // oldest-first, never the newest
     });
 
+    it('fully releases an evicted SFX element: onended detached, src cleared', () => {
+        // "Paused and released" must be literal. Leaving `onended` and `src`
+        // set keeps the callback closure and the loaded resource pinned to a
+        // media element that is only waiting for GC — an evicted element must
+        // hold neither.
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => {
+            for (let i = 0; i < 17; i++) result.current.playSFX('attack_hit');
+        });
+
+        const sfx = global.__audioInstances.slice(1); // instance 0 is BGM
+        const evicted = sfx[0];
+        expect(evicted.pause).toHaveBeenCalled();
+        expect(evicted.onended).toBeNull();
+        expect(evicted.src).toBe('');
+        // The survivors are untouched.
+        const newest = sfx[sfx.length - 1];
+        expect(typeof newest.onended).toBe('function');
+        expect(newest.src).toContain('sounds/sfx/attack_hit.wav');
+    });
+
     it('defaults SFX playbackRate to 1x with pitch preserved', () => {
         const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
         const { result } = renderHook(() => useAudio(), { wrapper });

@@ -146,6 +146,13 @@ describe('scheduleAnimationLayers', () => {
   // least the compressed-worst-case gap the batch clamp guarantees:
   // MAX_LAYER_LEAD_MS / (MAX_CONCURRENT_LAYERS - 1).
   it.each([8, 12])('keeps N=%i layers on distinct, well-spaced frames past the knee', (n) => {
+    // Premise: compression must actually engage for this N — the raw
+    // (floored) lead has to exceed the cap, or a retune of the cue length,
+    // stagger floor, or lead cap silently turns this into a pre-knee scenario
+    // asserting nothing about compression.
+    const rawGap = Math.max(MIN_LAYER_STAGGER_MS, chainGapMs(durationOf('attack_hit')));
+    expect((n - 1) * rawGap).toBeGreaterThan(MAX_LAYER_LEAD_MS);
+
     const layers = scheduleAnimationLayers(
       Array.from({ length: n }, () => 'attack_hit'), durationOf
     );

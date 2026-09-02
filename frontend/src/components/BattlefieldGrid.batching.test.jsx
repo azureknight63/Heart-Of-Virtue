@@ -184,6 +184,31 @@ describe('BattlefieldGrid — batch identity (F2)', () => {
       />
     );
 
+  it('keeps two same-actor swings sequential when the server resets beat_index per action', () => {
+    // The server resets beat_index to 0 at the top of EVERY player action, so
+    // two successive swings by one actor (kill A, immediately attack B with no
+    // intervening carriers) both arrive with beat_index 0. A fallback swing
+    // key of the beat index alone merges them into one batch — the second
+    // swing loses its windup and whoosh, exactly the bug swing keys exist to
+    // prevent. `round` is monotonic per fight, so the compound round:beat
+    // fallback keeps them distinct.
+    const entries = [
+      ...swingCarriers(['foe_a'], { beatIndex: 0, round: 1 }),
+      ...swingCarriers(['foe_b'], { beatIndex: 0, round: 2 }),
+    ];
+    renderSequentialSwings(entries);
+
+    // Mid-flight: only the first swing has landed.
+    act(() => vi.advanceTimersByTime(500));
+    expect(countCue('attack_hit')).toBe(1);
+    expect(countCue('attack_swipe')).toBe(1);
+
+    // The second swing drains after the first finishes — with its own whoosh.
+    settle();
+    expect(countCue('attack_hit')).toBe(2);
+    expect(countCue('attack_swipe')).toBe(2);
+  });
+
   it('starts at most MAX_CONCURRENT_LAYERS layers for a 20-carrier swing', () => {
     // A 20-deep same-swing batch must not start 20 SFX chains / overlays /
     // timer chains inside one lead window: the overflow waits its turn as a
@@ -441,6 +466,51 @@ describe('BattlefieldGrid — seq-based processed identity (F4)', () => {
   });
 });
 
+describe('BattlefieldGrid — enqueue early-out signature (F5)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockPlaySFX.mockClear();
+  });
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it('enqueues the landing added by a same-length front-trim of byte-identical carriers', () => {
+    // Aliasing shape: the adapter front-trims one entry while one byte-identical
+    // UNSTAMPED carrier appends. Length, tail key/beat/seq, reveal count and
+    // fight generation all match the previous poll — a signature built from
+    // those alone early-outs and the new landing is silently dropped.
+    const other = {
+      round: 1, type: 'animation', message: 'first strike animation', beat_index: 0,
+      animation: { type: 'attack', source_id: 'player', target_id: 'foe_b', outcome: 'hit' },
+    };
+    const c = () => ({
+      round: 1, type: 'animation', message: 'attack animation', beat_index: 0,
+      animation: { type: 'attack', source_id: 'player', target_id: 'foe_a', outcome: 'hit' },
+    });
+    const { rerender } = render(
+      <BattlefieldGrid
+        combat={{ ...combat, log: [other, c(), c()] }}
+        tab="overview" zoom={1} displayedLogCount={2}
+      />
+    );
+    settle();
+    expect(countCue('attack_hit')).toBe(3);
+
+    rerender(
+      <BattlefieldGrid
+        combat={{ ...combat, log: [c(), c(), c()] }}
+        tab="overview" zoom={1} displayedLogCount={2}
+      />
+    );
+    settle();
+
+    // The appended third carrier is a new landing and must play.
+    expect(countCue('attack_hit')).toBe(4);
+  });
+});
+
 describe('takeAnimationBatch', () => {
   const item = (i, over = {}) => ({
     queueId: i, type: 'attack', source_id: 'player', swing_key: 'k1', ...over,
@@ -479,6 +549,37 @@ describe('takeAnimationBatch', () => {
     const [batch, rest] = takeAnimationBatch([item(1), death, item(2)]);
     expect(batch.map((x) => x.queueId)).toEqual([1, 2]);
     expect(rest.map((x) => x.queueId)).toEqual([9]);
+  });
+
+  it('defers a mid-swing death behind the same swing\'s clamp overflow, not ahead of it', () => {
+    // [11 carriers, death, more carriers]: the death is encountered while the
+    // batch still has room, so a 12th carrier fills the batch after it and the
+    // remaining same-swing carriers overflow to rest. The dying target must
+    // not fall over before those overflow landings (13+) have played.
+    const queue = [
+      ...Array.from({ length: 11 }, (_, i) => item(i)),
+      { queueId: 99, type: 'death', target_id: 'foe_a' },
+      item(11), item(12), item(13),
+    ];
+    const [batch, rest] = takeAnimationBatch(queue);
+    expect(batch).toHaveLength(MAX_CONCURRENT_LAYERS);
+    expect(batch.map((x) => x.queueId)).toEqual([...Array.from({ length: 11 }, (_, i) => i), 11]);
+    // Overflow landings of the SAME swing first, then the deferred death.
+    expect(rest.map((x) => x.queueId)).toEqual([12, 13, 99]);
+  });
+
+  it('keeps a deferred death ahead of a DIFFERENT swing that follows the overflow', () => {
+    // The death hops only its own swing's overflow — an unrelated later swing
+    // must still play after the death, in queue order.
+    const queue = [
+      ...Array.from({ length: 11 }, (_, i) => item(i)),
+      { queueId: 99, type: 'death', target_id: 'foe_a' },
+      item(11),                          // fills the batch
+      item(12),                          // same-swing overflow
+      item(20, { swing_key: 'k2' }),     // a different swing
+    ];
+    const [, rest] = takeAnimationBatch(queue);
+    expect(rest.map((x) => x.queueId)).toEqual([12, 99, 20]);
   });
 });
 

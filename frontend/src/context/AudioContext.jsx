@@ -213,6 +213,12 @@ export const AudioProvider = ({ children }) => {
         while (activeSFXRef.current.size >= MAX_CONCURRENT_SFX) {
             const oldest = activeSFXRef.current.values().next().value;
             oldest.pause();
+            // "Released" literally: detach the handler and drop the source so
+            // the evicted element pins neither a callback closure nor its
+            // loaded audio resource while it waits for GC. pause() alone left
+            // both attached.
+            oldest.onended = null;
+            oldest.src = '';
             activeSFXRef.current.delete(oldest);
         }
         const path = getAssetPath(`/assets/sounds/sfx/${sfxName}.wav`);

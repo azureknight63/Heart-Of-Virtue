@@ -421,7 +421,12 @@ describe('BattlefieldGrid — animation cursor', () => {
         displayedLogCount={4}
       />
     );
-    act(() => vi.advanceTimersByTime(3000));
+    // A and B are separate swings (rounds 1 and 2), so they play as
+    // SEQUENTIAL batches — and the queue drains on React commits, so each
+    // follow-up batch needs its own act() for its timers to be scheduled and
+    // then advanced. (They used to finish inside one advance only because the
+    // beat_index-only swing-key fallback wrongly merged them into one batch.)
+    for (let i = 0; i < 4; i++) act(() => vi.advanceTimersByTime(1500));
     expect(countCue('attack_hit')).toBe(2);
 
     // The adapter trims the two oldest entries and appends a new resolution.
@@ -434,7 +439,7 @@ describe('BattlefieldGrid — animation cursor', () => {
         displayedLogCount={6}
       />
     );
-    act(() => vi.advanceTimersByTime(3000));
+    for (let i = 0; i < 4; i++) act(() => vi.advanceTimersByTime(1500));
 
     // C animates (an index cursor would slice past the end and lose it), and B
     // does not animate a second time.

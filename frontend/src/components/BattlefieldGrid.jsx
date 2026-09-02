@@ -303,19 +303,23 @@ const isShakingTarget = (state) => Boolean(
  *
  * A death chained onto a member of the swing is pushed back behind the whole
  * batch rather than splitting it: an arc that kills its second of four targets
- * must still land on the other two before anyone falls over.
+ * must still land on the other two before anyone falls over. "The whole batch"
+ * includes the clamp's overflow — a death deferred before the batch filled
+ * must also sit behind any same-swing carriers that overflowed past
+ * MAX_CONCURRENT_LAYERS, or a >cap swing drops its victim before landings
+ * cap+1..N play.
  */
 export const takeAnimationBatch = (queue) => {
   if (!queue || queue.length === 0) return [[], []];
   const head = queue[0];
   const batch = [head];
-  const rest = [];
+  const deferredDeaths = [];
   let cursor = 1;
   // Deaths and sourceless entries are events in their own right, never a swing.
   if (head.type !== 'death' && head.source_id != null) {
     for (; cursor < queue.length && batch.length < MAX_CONCURRENT_LAYERS; cursor++) {
       const next = queue[cursor];
-      if (next.type === 'death') { rest.push(next); continue; }
+      if (next.type === 'death') { deferredDeaths.push(next); continue; }
       if (
         next.type === head.type
         && next.source_id === head.source_id
@@ -327,7 +331,27 @@ export const takeAnimationBatch = (queue) => {
       break;
     }
   }
-  rest.push(...queue.slice(cursor));
+  const remainder = queue.slice(cursor);
+  // Deferred deaths go behind the same swing's clamp overflow: the contiguous
+  // same-swing prefix of the remainder holds this swing's landings that did
+  // not fit the batch, and they must play before the target falls over.
+  // Everything past that prefix is a different event and keeps its queue
+  // order after the deaths.
+  let overflowEnd = 0;
+  if (deferredDeaths.length) {
+    while (
+      overflowEnd < remainder.length
+      && remainder[overflowEnd].type !== 'death'
+      && remainder[overflowEnd].type === head.type
+      && remainder[overflowEnd].source_id === head.source_id
+      && remainder[overflowEnd].swing_key === head.swing_key
+    ) overflowEnd += 1;
+  }
+  const rest = [
+    ...remainder.slice(0, overflowEnd),
+    ...deferredDeaths,
+    ...remainder.slice(overflowEnd),
+  ];
   return [batch, rest];
 };
 
@@ -2017,8 +2041,11 @@ function BattlefieldGrid({
   // New-fight housekeeping: (1) reset the touch-pan offset, on EVERY fight
   // boundary; (2) reset the animation pipeline (queue, cursor, in-flight
   // layers, kill registry), only when a genuinely NEW fight starts. The two
-  // share one effect because they key on the same transition and the second
-  // depends on the first's prev-refs to recognize it.
+  // share one effect because the prev-ref update below (prevCombatIdRef /
+  // prevCombatActiveRef) must run exactly once per transition: split into two
+  // effects keyed on the same deps, each would have to record the transition
+  // itself, and the duplicate recording means whichever compares second sees
+  // prev === current and misses the fight boundary.
   //
   // Keyed on the props Battlefield passes from the top-level combat object,
   // NOT on `combat` — that prop is a beat state here, and
@@ -2169,16 +2196,37 @@ function BattlefieldGrid({
     // Early out when nothing can have changed: `combat.log` is a freshly
     // deserialized array on every poll, so without this the full (~800-entry)
     // log was re-walked through revealedLogEntries per poll even when idle.
-    // Length + last-entry identity covers appends and front-trims (a trim
-    // that keeps the length also replaces the tail entry's key/beat/seq),
-    // the reveal count covers LeftPanel progress, and the fight generation
-    // covers a new fight with an identical-looking log.
+    // What each component covers: length + tail key/beat/seq catch plain
+    // appends and most trims; the HEAD entry's key and the tail's within-beat
+    // repeat ordinal catch a front-trim that removes k entries while k
+    // byte-identical UNSTAMPED carriers append (length, tail identity, reveal
+    // count and generation all match in that shape, and skipping it dropped
+    // the new landing); the reveal count covers LeftPanel progress; the fight
+    // generation covers a new fight with an identical-looking log. A log
+    // change this signature still cannot see is one whose positional entry
+    // ids are byte-identical too, and the enqueue walk below would find
+    // nothing new in that case either — the signature is exactly as
+    // discriminating as the id scheme it gates.
     const lastEntry = log.length ? log[log.length - 1] : null;
+    // The tail's within-beat repeat ordinal: how many earlier entries of the
+    // tail's own beat share its key. Walks back only through the tail's beat
+    // (a handful of entries), so the idle-poll cost stays O(beat), not O(log).
+    let tailRepeat = 0;
+    if (lastEntry) {
+      const tailKey = logEntryKey(lastEntry);
+      const tailBeat = lastEntry.beat_index ?? 0;
+      for (let i = log.length - 2; i >= 0; i--) {
+        if ((log[i]?.beat_index ?? 0) !== tailBeat) break;
+        if (logEntryKey(log[i]) === tailKey) tailRepeat += 1;
+      }
+    }
     const signature = [
       log.length,
+      log.length ? logEntryKey(log[0]) : '',
       lastEntry ? logEntryKey(lastEntry) : '',
       lastEntry?.beat_index ?? '',
       lastEntry?.animation?.seq ?? '',
+      tailRepeat,
       displayedLogCount,
       fightGenerationRef.current,
     ].join(LOG_KEY_SEP);
@@ -2201,11 +2249,17 @@ function BattlefieldGrid({
       if (processed.has(id)) return;
       processed.add(id);
       // The batch predicate needs a per-swing key (see takeAnimationBatch).
-      // One actor resolves at most one move per beat, so the beat index IS the
-      // swing identity on the log path; an adapter-stamped key wins if present.
+      // The beat index alone is NOT a fight-wide swing identity: the server
+      // resets beat_index to 0 at the top of EVERY player action, so two
+      // successive same-type swings by one actor (kill A, immediately attack
+      // B with no intervening carriers) would share it and merge into one
+      // batch — the second swing losing its windup and whoosh. `round` is
+      // monotonic per fight, so compounding round:beat scopes the key to one
+      // swing; an adapter-stamped key wins if present.
       const anim = {
         ...entry.animation,
-        swing_key: entry.animation.swing_key ?? String(entry.beat_index ?? 0),
+        swing_key: entry.animation.swing_key
+          ?? `${entry.round ?? 0}:${entry.beat_index ?? 0}`,
       };
       animations.push(anim);
 
@@ -2401,6 +2455,14 @@ function BattlefieldGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startAnimationLayer, combatSpeed]);
 
+  // Stale-generation guard shared by the drain's two filters below. Unstamped
+  // items (generation undefined) predate the stamp and always pass. Stable
+  // identity: it reads only a ref, so it can sit in effect deps harmlessly.
+  const isCurrentGeneration = useCallback(
+    (item) => item.generation === undefined || item.generation === fightGenerationRef.current,
+    []
+  );
+
   // Queue drain: when nothing is in flight, take the next batch and play it.
   useEffect(() => {
     if (activeAnimations.length !== 0 || animationQueue.length === 0) return;
@@ -2408,17 +2470,13 @@ function BattlefieldGrid({
     // SAME COMMIT (the reset effect runs first, bumps the generation and
     // schedules the state clear — but this effect's deps still show the old
     // queue). Stale-generation items must be dropped, never played.
-    const fresh = animationQueue.filter(
-      (item) => item.generation === undefined || item.generation === fightGenerationRef.current
-    );
+    const fresh = animationQueue.filter(isCurrentGeneration);
     if (fresh.length === 0) {
       // Nothing playable — sweep the stale items out of the live queue.
       // Return `prev` untouched when there is nothing to remove, or the fresh
       // array identity would re-run this effect forever.
       setAnimationQueue((prev) => {
-        const kept = prev.filter(
-          (item) => item.generation === undefined || item.generation === fightGenerationRef.current
-        );
+        const kept = prev.filter(isCurrentGeneration);
         return kept.length === prev.length ? prev : kept;
       });
       return;
@@ -2429,7 +2487,7 @@ function BattlefieldGrid({
     // see removeBatchByIdentity's invariant.
     setAnimationQueue((prev) => removeBatchByIdentity(prev, batch));
     playAnimations(batch);
-  }, [activeAnimations, animationQueue, playAnimations]);
+  }, [activeAnimations, animationQueue, playAnimations, isCurrentGeneration]);
 
   // Compute player position before camera effect (needed for camera target calculation)
   const playerPos = getPos(combat?.player);
