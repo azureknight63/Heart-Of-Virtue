@@ -174,7 +174,7 @@ real session mutates module-level registries and pollutes downstream tests.
 | Layer | Current | CI minimum |
 |---|---|---|
 | Backend (Python) | 96% | 85% (`--cov-fail-under=85`) |
-| Frontend (React) | 99% lines | 95% (lines/statements/functions/branches) |
+| Frontend (React) | 99% lines, ~95.3% branches | 95% (lines/statements/functions/branches) |
 
 Frontend thresholds are enforced by `coverage.thresholds` in
 `frontend/vite.config.js`; the build fails below them. See
