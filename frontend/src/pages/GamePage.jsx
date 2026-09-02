@@ -373,8 +373,10 @@ export default function GamePage() {
       setCombatDialogShown(false)
       // Handle combat end state
       const maybeEnd = combat?.end_state
-      const combatLogLength = combat?.log?.length || 0
-      const hasPendingLogs = combatLogLength > displayedLogCount
+      // The end-of-combat gate lives in useCombatCoordinator, which compares
+      // the DEDUPED log count (utils/combatLogKey) against LeftPanel's reveal
+      // count. This effect used to carry its own copy of that comparison;
+      // nothing here ever read it, so it was deleted rather than kept in sync.
 
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)

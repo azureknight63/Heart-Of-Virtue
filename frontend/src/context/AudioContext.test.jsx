@@ -418,13 +418,11 @@ describe('AudioContext', () => {
     });
 
     it('wires an onended cleanup handler onto each SFX instance', () => {
-        // NOTE: `activeSFXRef` is a WRITE-ONLY Set — playSFX adds to it and
-        // onended/the play-failure path delete from it, but nothing in
-        // AudioContext.jsx ever READS it, so "was it removed?" has no
-        // observable consequence to assert. (Reported: same shape as the
-        // retired write-only hov_local_autosave blob.) What IS assertable is
-        // that the handler is installed on the right instance and is safe to
-        // fire more than once, which is what a browser can do on seek/replay.
+        // `activeSFXRef` is read by the concurrency cap (see the eviction
+        // test), so onended's removal now has an observable consequence: an
+        // ended cue no longer counts toward the cap. This test pins that the
+        // handler is installed on the right instance and is safe to fire more
+        // than once, which is what a browser can do on seek/replay.
         const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
@@ -437,6 +435,48 @@ describe('AudioContext', () => {
         sfxInstance.onended();
         // Double-firing must not resurrect playback or raise.
         expect(sfxInstance.play).toHaveBeenCalledTimes(1);
+    });
+
+    it('caps concurrent one-shot SFX elements, dropping the oldest', () => {
+        // A layered impact burst (or a stuck onended) must not pile up an
+        // unbounded number of live media elements: past the cap the oldest
+        // still-active one-shot is paused and released before a new one starts.
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => {
+            for (let i = 0; i < 20; i++) result.current.playSFX('attack_hit');
+        });
+
+        // Instance 0 is the provider's shared BGM element; SFX start at 1.
+        const sfx = global.__audioInstances.slice(1);
+        expect(sfx).toHaveLength(20);
+        const paused = sfx.filter((a) => a.pause.mock.calls.length > 0);
+        expect(paused).toHaveLength(4); // 20 played, cap 16 → 4 oldest evicted
+        expect(paused).toEqual(sfx.slice(0, 4)); // oldest-first, never the newest
+    });
+
+    it('fully releases an evicted SFX element: onended detached, src cleared', () => {
+        // "Paused and released" must be literal. Leaving `onended` and `src`
+        // set keeps the callback closure and the loaded resource pinned to a
+        // media element that is only waiting for GC — an evicted element must
+        // hold neither.
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => {
+            for (let i = 0; i < 17; i++) result.current.playSFX('attack_hit');
+        });
+
+        const sfx = global.__audioInstances.slice(1); // instance 0 is BGM
+        const evicted = sfx[0];
+        expect(evicted.pause).toHaveBeenCalled();
+        expect(evicted.onended).toBeNull();
+        expect(evicted.src).toBe('');
+        // The survivors are untouched.
+        const newest = sfx[sfx.length - 1];
+        expect(typeof newest.onended).toBe('function');
+        expect(newest.src).toContain('sounds/sfx/attack_hit.wav');
     });
 
     it('defaults SFX playbackRate to 1x with pitch preserved', () => {

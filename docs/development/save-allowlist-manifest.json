@@ -1166,6 +1166,10 @@
     },
     {
       "module": "src.moves._utility",
+      "name": "Disrupt"
+    },
+    {
+      "module": "src.moves._utility",
       "name": "MasterTactician"
     },
     {
@@ -1507,6 +1511,10 @@
     {
       "module": "src.positions",
       "name": "Direction"
+    },
+    {
+      "module": "src.positions",
+      "name": "FacingBand"
     },
     {
       "module": "src.secure_pickle",
@@ -1905,6 +1913,10 @@
       "name": "Universe"
     },
     {
+      "module": "types",
+      "name": "SimpleNamespace"
+    },
+    {
       "module": "typing",
       "name": "Any"
     },
@@ -1913,6 +1925,6 @@
       "name": "UUID"
     }
   ],
-  "count": 478,
+  "count": 481,
   "header_version": 1
 }

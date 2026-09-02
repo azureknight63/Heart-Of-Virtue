@@ -40,6 +40,9 @@ DEPARTURE_REASONS = (
 )
 
 # Attack/resolution outcomes an ``impact`` SFX emission resolves against.
+# ``glance`` is a blow that landed but deflected for half damage; it is a
+# distinct sonic and visual event from a solid ``hit``, and ``absorb`` (a blow
+# the target shrugged off entirely) must never play the flesh-impact cue.
 OUTCOMES = (
     "hit",
     "miss",
@@ -47,6 +50,7 @@ OUTCOMES = (
     "block",
     "deflect",
     "crit",
+    "glance",
     "absorb",
 )
 
@@ -60,6 +64,43 @@ SFX_KINDS = (
     "death",
 )
 
+#: Ceiling on the per-target emissions one beat may fan out into — applied
+#: server-side to each per-target loop of the SFX chain (the impact
+#: resolutions, the landed statuses, and the deaths) and client-side when
+#: ``beatToAnimations`` fans one animation per resolution and one burst per
+#: kill. 16 comfortably covers the largest real arc (every combatant a
+#: dynamic grid can hold); anything beyond it is a degenerate/adversarial
+#: payload that would otherwise become an unbounded animation/SFX storm.
+#: Mirrored in frontend/src/utils/combatBeatSchema.js.
+MAX_BEAT_RESOLUTIONS = 16
+
+#: Animation the API layer picks for a targeted, damaging move that declares
+#: no ``web_animation`` of its own, and the generic fallback for everything
+#: else (including a beat that carries no tagged animation at all). Both must
+#: be keys of ANIMATION_CONFIGS in frontend/src/utils/animationConfigs.js --
+#: an unknown type there degrades silently to ``pulse`` client-side, which is
+#: exactly how wire-name drift hides in this codebase. Defined here, in the
+#: wire-protocol home, because both the combat adapter and the beat streamer
+#: substitute them; guarded by tests/test_move_web_animations.py.
+DEFAULT_DAMAGE_ANIMATION = "attack"
+DEFAULT_ANIMATION = "pulse"
+
+
+def _normalize_resolution(resolution):
+    """One resolution as ``{"outcome", "target_id"}``.
+
+    A resolution may arrive as a plain outcome string (the legacy single-target
+    shape) or as a dict pairing the outcome with the combatant it resolved
+    against. The impact emission needs both together — an outcome without its
+    target cannot be fanned into a per-target animation client-side.
+    """
+    if isinstance(resolution, dict):
+        return {
+            "outcome": resolution.get("outcome"),
+            "target_id": resolution.get("target_id"),
+        }
+    return {"outcome": resolution, "target_id": None}
+
 
 def build_sfx_chain(
     outcome,
@@ -68,14 +109,26 @@ def build_sfx_chain(
     status_changes=None,
     actor_id=None,
     has_swing=True,
+    outcomes=None,
 ):
     """Return the ordered, server-indexed semantic SFX emissions for a beat.
 
-    Causal/sonic order: ``swing`` (windup) → ``impact`` (resolves via
-    ``outcome`` + the beat's ``web_animation`` client-side) → one ``status`` per
-    landed status → ``heal`` (a positive HP change on the actor, i.e. lifesteal)
-    → one ``death`` per id that died. Indices are assigned sequentially so the
-    client can play them in this exact order with the 75% partial-stack rule.
+    Causal/sonic order: ``swing`` (windup) → one ``impact`` per resolution
+    (each resolving via its own ``outcome`` + the beat's ``web_animation``
+    client-side) → one ``status`` per landed status → ``heal`` (a positive HP
+    change on the actor, i.e. lifesteal) → one ``death`` per id that died.
+    Indices are assigned sequentially so the client can play them in this exact
+    order with the 75% partial-stack rule.
+
+    ``outcomes`` carries the per-target resolutions of a single swing: one arc
+    catching four enemies parries off one and lands on three, and each of those
+    is its own audible AND visible event. Each entry is an outcome string or a
+    ``{"outcome", "target_id"}`` dict (see ``_normalize_resolution``); the
+    resulting ``impact`` emission carries both, so the client can fan one full
+    animation per resolution (``beatToAnimations``) as well as play one cue per
+    landing (``cueForEmission`` prefers ``emission.outcome`` over the beat's).
+    Omit it and the chain falls back to the single ``outcome``, which is what a
+    one-target swing needs. The fan-out is capped at ``MAX_BEAT_RESOLUTIONS``.
     """
     hp_changes = hp_changes or []
     status_changes = status_changes or []
@@ -84,14 +137,25 @@ def build_sfx_chain(
     emissions = []
     if has_swing:
         emissions.append({"kind": "swing"})
-    emissions.append({"kind": "impact", "outcome": outcome})
-    for change in status_changes:
+    for resolution in (outcomes or [outcome])[:MAX_BEAT_RESOLUTIONS]:
+        normalized = _normalize_resolution(resolution)
+        emissions.append(
+            {
+                "kind": "impact",
+                "outcome": normalized["outcome"],
+                "target_id": normalized["target_id"],
+            }
+        )
+    # The same per-target cap bounds every fan-out loop, not just the impacts:
+    # a crafted/degenerate beat with hundreds of status_changes or killed ids
+    # must not become an unbounded SFX storm either.
+    for change in status_changes[:MAX_BEAT_RESOLUTIONS]:
         emissions.append({"kind": "status", "status": change.get("status")})
     if actor_id is not None and any(
         c.get("id") == actor_id and c.get("delta", 0) > 0 for c in hp_changes
     ):
         emissions.append({"kind": "heal"})
-    for _ in killed:
+    for _ in killed[:MAX_BEAT_RESOLUTIONS]:
         emissions.append({"kind": "death"})
 
     for index, emission in enumerate(emissions):
@@ -111,6 +175,7 @@ def build_beat(
     status_changes=None,
     log_line="",
     has_swing=True,
+    outcomes=None,
 ):
     """Build a ``combat:beat`` payload from structured engine facts.
 
@@ -121,11 +186,20 @@ def build_beat(
     ``departed`` is a list of ``{"id", "reason"}`` for combatants that LEFT the
     battlefield alive (flee/warp/scripted removal) — the client drops the token
     without a death animation/sound. ``status_changes`` is ``{"id", "status"}``.
+
+    ``outcome`` is the beat's headline resolution (the one the client falls back
+    to); ``outcomes`` is every resolution the beat contained, one per target of
+    a multi-target swing. When ``outcomes`` is non-empty the headline is
+    DERIVED from its first entry rather than trusted from the caller — the
+    invariant "``outcome`` == the first own resolution" is structural here, not
+    a convention the streamer has to remember. See ``build_sfx_chain``.
     """
     hp_changes = list(hp_changes or [])
     killed = list(killed or [])
     departed = list(departed or [])
     status_changes = list(status_changes or [])
+    if outcomes:
+        outcome = _normalize_resolution(outcomes[0])["outcome"]
     return {
         "seq": seq,
         "actor_id": actor_id,
@@ -144,6 +218,7 @@ def build_beat(
             status_changes=status_changes,
             actor_id=actor_id,
             has_swing=has_swing,
+            outcomes=outcomes,
         ),
     }
 
@@ -225,5 +300,15 @@ def validate_beat(beat):
             )
         if emission.get("kind") not in SFX_KINDS:
             problems.append(f"invalid sfx kind: {emission.get('kind')!r}")
+        # Every impact resolves against the outcome vocabulary, not just the
+        # beat's headline: the client fans an animation per impact, so a bad
+        # per-target outcome fails exactly as silently as a bad top-level one.
+        if (
+            emission.get("kind") == "impact"
+            and emission.get("outcome") not in OUTCOMES
+        ):
+            problems.append(
+                f"invalid impact outcome: {emission.get('outcome')!r}"
+            )
 
     return problems

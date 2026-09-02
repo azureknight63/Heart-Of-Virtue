@@ -803,8 +803,8 @@ class TestGetAvailableTargetsBranches:
 
         assert [t["name"] for t in targets] == ["Straw Dummy"]
         chance = targets[0]["hit_chance"]
-        # to_hit_chance(finesse 10 / int 5 vs finesse 10) = int(98 - 10 + 7 + 1.5)
-        assert chance == 96
+        # to_hit_chance(finesse 10 / int 5 vs finesse 10) = int(85 - 10 + 7 + 1.5)
+        assert chance == 83
         assert isinstance(chance, int)
         # Guards the 0-1-fraction drift specifically: a fraction would be <= 1.
         assert 2 <= chance <= 100

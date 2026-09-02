@@ -14,7 +14,9 @@ import logging
 
 from src.api.schemas.combat_beat import (
     BEAT_EVENT,
+    DEFAULT_ANIMATION,
     ENDED_EVENT,
+    OUTCOMES,
     RESOLVED_EVENT,
     build_beat,
     diff_combatants,
@@ -23,13 +25,28 @@ from src.api.schemas.combat_beat import (
 logger = logging.getLogger(__name__)
 
 
-def _last_animation(log_entries):
-    """Return the animation dict of the most recent animated log entry, or None."""
-    for entry in reversed(log_entries or []):
-        anim = entry.get("animation")
-        if anim:
-            return anim
-    return None
+def _beat_animations(log_entries):
+    """Every animation dict in a beat's log, in the order the engine emitted it.
+
+    This used to return only the LAST one, which lost two different things.
+    A multi-target swing resolves once per enemy and appends one animation
+    carrier per resolution, so "last" was the last enemy's — the move's own
+    animation and every other landing were dropped on this channel. And because
+    a beat's log holds the player's move *and* the NPC turns that follow it, the
+    last animation in an ordinary beat is usually an NPC's, so even a plain
+    one-target swing was reported under the wrong actor and the wrong animation.
+
+    The first animation is the one that opened the beat and names the headline
+    actor. The rest are a mix: some are that actor's further resolutions, but
+    in an ordinary beat many are OTHER combatants' animations from the turns
+    that followed — which is exactly why ``stream_beats`` filters this list by
+    ``source_id`` before treating anything in it as the swing's resolutions.
+    """
+    return [
+        entry["animation"]
+        for entry in (log_entries or [])
+        if entry.get("animation")
+    ]
 
 
 def _last_message(log_entries):
@@ -44,13 +61,35 @@ def _last_message(log_entries):
 def _derive_outcome(anim, hp_changes, killed, target_id):
     """Use the engine-tracked outcome when present; else infer from the diff.
 
-    parry/block/deflect/crit/absorb are only knowable from the engine's own
-    outcome tag; the diff can only distinguish a landed hit from a whiff, so the
-    fallback is deliberately limited to ``hit`` / ``miss``.
+    The engine tag is authoritative and is what the client resolves its impact
+    cue and strike flash from. The HP/kill diff below is only a fallback for
+    beats that carry no tagged animation at all, and it can distinguish nothing
+    finer than a landed hit from a whiff — so it is deliberately limited to
+    ``hit`` / ``miss``.
+
+    Every other member of ``OUTCOMES`` is knowable only from the tag, because
+    none of them is visible in an HP delta: ``glance`` (landed, but deflected
+    for half damage) and ``absorb`` (fully shrugged off) both produce an HP
+    change the diff would read as a plain hit or a plain miss, and
+    ``parry``/``block``/``deflect``/``crit`` are engine decisions with no
+    distinguishing footprint in the snapshot either. Do not enumerate the
+    vocabulary here — ``OUTCOMES`` in src/api/schemas/combat_beat.py is the list,
+    and this docstring has already gone stale against it once by omitting
+    ``glance``.
+
+    The tag is clamped to ``OUTCOMES`` membership before it ships: the
+    animation dicts read here come out of ``player.combat_log``, which rides
+    in the pickled save, so a crafted save controls the stored outcome string
+    and ``validate_beat`` has no production caller to catch it downstream. An
+    off-vocabulary tag falls back to the diff derivation below instead of
+    reaching the wire.
     """
-    if anim and anim.get("outcome"):
+    if anim and anim.get("outcome") in OUTCOMES:
         return anim["outcome"]
-    if killed:
+    # Only the resolution's OWN target counts. Answering "hit" whenever
+    # anything at all died in the beat made a whiffed second landing read as a
+    # hit the moment the first landing killed.
+    if target_id is not None and target_id in killed:
         return "hit"
     for change in hp_changes:
         if change.get("id") == target_id and change.get("delta", 0) < 0:
@@ -87,7 +126,8 @@ class CombatBeatStreamer:
         for snapshot in beat_states or []:
             curr = snapshot.get("combatants", [])
             hp_changes, killed, status_changes = diff_combatants(self._last, curr)
-            anim = _last_animation(snapshot.get("log"))
+            animations = _beat_animations(snapshot.get("log"))
+            anim = animations[0] if animations else None
 
             if anim is None and not hp_changes and not killed and not status_changes:
                 self._last = curr
@@ -95,20 +135,56 @@ class CombatBeatStreamer:
 
             actor_id = anim.get("source_id") if anim else None
             target_id = anim.get("target_id") if anim else None
-            web_animation = (anim.get("type") if anim else None) or "pulse"
+            web_animation = (
+                anim.get("type") if anim else None
+            ) or DEFAULT_ANIMATION
             has_swing = bool(target_id) and target_id != actor_id
+
+            # A beat's log holds the headline actor's move AND the other
+            # combatants' turns, so only the animations sharing the headline
+            # ``actor_id`` are this swing's resolutions: one per target it
+            # reached, each carrying the outcome AND the combatant it resolved
+            # against so the client can fan a full animation per landing. The
+            # other actors' animations are deliberately excluded — folding
+            # them in would replay their outcomes under this actor's animation.
+            own_animations = [
+                animation
+                for animation in animations
+                if animation.get("source_id") == actor_id
+            ]
+            resolutions = [
+                {
+                    "outcome": _derive_outcome(
+                        animation, hp_changes, killed, animation.get("target_id")
+                    ),
+                    "target_id": animation.get("target_id"),
+                }
+                for animation in own_animations
+            ] or [
+                {
+                    "outcome": _derive_outcome(
+                        anim, hp_changes, killed, target_id
+                    ),
+                    "target_id": target_id,
+                }
+            ]
 
             beat = build_beat(
                 seq=self._next_seq(),
                 actor_id=actor_id,
                 target_id=target_id,
                 web_animation=web_animation,
-                outcome=_derive_outcome(anim, hp_changes, killed, target_id),
+                # build_beat DERIVES the headline outcome from outcomes[0]
+                # whenever outcomes is non-empty (it always is here — see the
+                # `or [...]` fallback above), so it is the one authority and
+                # nothing is passed that could disagree with it.
+                outcome=None,
                 hp_changes=hp_changes,
                 killed=killed,
                 status_changes=status_changes,
                 log_line=_last_message(snapshot.get("log")),
                 has_swing=has_swing,
+                outcomes=resolutions,
             )
             self._emit(BEAT_EVENT, beat)
             self._last = curr
@@ -152,7 +228,7 @@ class CombatBeatStreamer:
             seq=self._next_seq(),
             actor_id=None,
             target_id=killed[0] if killed else None,
-            web_animation="death" if killed else "pulse",
+            web_animation="death" if killed else DEFAULT_ANIMATION,
             outcome="hit" if killed else "miss",
             hp_changes=hp_changes,
             killed=killed,

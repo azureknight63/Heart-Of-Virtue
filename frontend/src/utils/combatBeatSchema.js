@@ -36,7 +36,12 @@ export const BEAT_FIELDS = [
  */
 export const DEPARTURE_REASONS = ['death', 'fled', 'warped', 'removed'];
 
-/** Outcomes an `impact` SFX emission resolves against. */
+/**
+ * Outcomes an `impact` SFX emission resolves against.
+ * `glance` is a blow that landed but deflected for half damage — a distinct
+ * sonic and visual event from a solid `hit`; `absorb` is a blow the target
+ * shrugged off entirely and must never play the flesh-impact cue.
+ */
 export const OUTCOMES = [
   'hit',
   'miss',
@@ -44,6 +49,7 @@ export const OUTCOMES = [
   'block',
   'deflect',
   'crit',
+  'glance',
   'absorb',
 ];
 
@@ -55,3 +61,12 @@ export const SFX_KINDS = [
   'heal',
   'death',
 ];
+
+/**
+ * Ceiling on the per-target resolutions one beat may fan out into. The server
+ * truncates the beat's impact emissions at this constant (build_sfx_chain in
+ * src/api/schemas/combat_beat.py) and beatToAnimations caps its per-resolution
+ * animation fan-out to match — a degenerate payload must not become an
+ * unbounded animation storm. Keep the two values identical.
+ */
+export const MAX_BEAT_RESOLUTIONS = 16;

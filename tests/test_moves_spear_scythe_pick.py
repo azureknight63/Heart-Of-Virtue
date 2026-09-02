@@ -20,7 +20,20 @@ if str(_ROOT) not in sys.path:
 
 import src.states as states
 import src.positions as positions
+
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: these all used
+# a roll of 100 against a chance of 106, so when HIT_CHANCE_BASE moved 98 -> 85
+# every one of them silently became a miss-path test asserting the wrong
+# branch. Pinning here is immune to retuning the base, to the bestiary's
+# finesse spread, and to the facing/HauntingPresence modifiers alike.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
 from src.moves._spear import (
+    KEEP_AWAY_POWER_FACTOR,
     KeepAway,
     Lunge,
     Impale,
@@ -174,14 +187,15 @@ class TestKeepAway:
     def test_evaluate_sets_power_with_weapon(self):
         user = _make_user("Spear")
         move = KeepAway(user)
-        # Keep Away applies a 45% damage reduction to the evaluated power
-        # (issue #397): power = int(20 * 0.55) = 11.
+        # Keep Away is a control move: its damage is deliberately a fraction
+        # of the evaluated full swing (issue #397).
         with patch.object(
             move, "standard_evaluate_attack", return_value=(20, "piercing")
         ):
             move.evaluate()
-            assert move.power == 11
+            assert move.power == int(20 * KEEP_AWAY_POWER_FACTOR)
             assert move.base_damage_type == "piercing"
+        assert KEEP_AWAY_POWER_FACTOR < 1.0
 
     def test_evaluate_real_weapon_deals_nonzero_damage(self):
         """Regression for #397: the old percent-string mod_power ("-45%")
@@ -189,13 +203,14 @@ class TestKeepAway:
         weapon the move must retain positive power after the 45% reduction.
 
         ``power > 0`` alone would be satisfied by a power of 1; the exact value
-        pins that the 0.55 factor is applied to the real evaluation (spear
-        damage 30, wielder strength 15 -> 29 before the reduction, 16 after).
+        pins that the reduction factor is applied to the real evaluation (spear
+        damage 30, strength 15 * 0.5, finesse 10 * 0.3 -> 40.5 full swing).
         """
         user = _make_user("Spear")
         move = KeepAway(user)
         move.evaluate()
-        assert move.power == 16
+        assert move.power == int(int(40.5) * KEEP_AWAY_POWER_FACTOR)
+        assert move.power > 0
         assert move.base_damage_type == "piercing"
 
     def test_execute_hit_reduces_target_hp(self, monkeypatch):
@@ -341,9 +356,11 @@ class TestKeepAway:
         move.power = 40
         move.base_damage_type = "piercing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+        with patch("src.moves._spear._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._spear.functions.check_parry", return_value=False), \
              patch.object(move, "hit") as mock_hit, \
              patch.object(move, "_push_target"), \
              patch.object(move, "viable", return_value=True), \
@@ -353,7 +370,6 @@ class TestKeepAway:
 
         args, _ = mock_hit.call_args
         assert args[1] is True  # glance flag set
-
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user("Spear")
         tgt = _make_target()
@@ -495,18 +511,19 @@ class TestLunge:
         move.base_damage_type = "piercing"
         tgt.is_alive = lambda: True
 
-        # hit_chance is 108, so a roll of 100 still lands but only just
-        # (108 - 100 = 8 < 10), halving the damage to int(35 / 2) == 17.
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        # The pinned hit chance still lands the roll but only just
+        # (difference 5 < 10), halving the damage to int(35 / 2) == 17.
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+        with patch("src.moves._spear._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._spear.functions.check_parry", return_value=False), \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
         assert tgt.hp == 100 - 17
-
     def test_execute_legacy_proximity_advance(self, monkeypatch):
         """Execute should decrease proximity when no combat_position."""
         user = _make_user("Spear")
@@ -544,7 +561,7 @@ class TestLunge:
         move = Lunge(user)
         assert move.power == 0
         assert move.fatigue_cost == 10
-        assert move.stage_beat == [1, 2, 2, 4]
+        assert move.stage_beat == [2, 1, 2, 3]
 
     def test_execute_coordinate_step_toward_target(self, monkeypatch):
         user = _make_user("Spear")
@@ -618,9 +635,11 @@ class TestLunge:
         move.power = 40
         move.base_damage_type = "piercing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+        with patch("src.moves._spear._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._spear.functions.check_parry", return_value=False), \
              patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
@@ -629,7 +648,6 @@ class TestLunge:
 
         args, _ = mock_hit.call_args
         assert args[1] is True
-
     def test_execute_parry_deals_no_damage_and_staggers_the_user(
         self, monkeypatch
     ):
@@ -706,7 +724,10 @@ class TestImpale:
         user = _make_user("Spear", equip=False)
         move = Impale(user)
         assert move.power == 0
-        assert move.fatigue_cost == 10
+        # The weaponless fallback mirrors the move's real archetype: a heavy's
+        # placeholder must not be cheaper than a chip's.
+        assert move.stage_beat == [9, 2, 4, 5]
+        assert move.fatigue_cost == 25
 
     def test_execute_ignores_60pct_protection(self, monkeypatch):
         """Impale should apply only 40% of target protection."""
@@ -787,9 +808,11 @@ class TestImpale:
         move.power = 40
         move.base_damage_type = "piercing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+        with patch("src.moves._spear._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._spear.functions.check_parry", return_value=False), \
              patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
@@ -798,7 +821,6 @@ class TestImpale:
 
         args, _ = mock_hit.call_args
         assert args[1] is True
-
     def test_execute_parry_deals_no_damage_and_staggers_the_user(
         self, monkeypatch
     ):
@@ -907,7 +929,7 @@ class TestArmorPierce:
         user = _make_user("Pick", equip=False)
         move = ArmorPierce(user)
         assert move.power == 0
-        assert move.stage_beat == [1, 1, 2, 3]
+        assert move.stage_beat == [3, 1, 1, 3]
         assert move.fatigue_cost == 10
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
@@ -968,9 +990,11 @@ class TestArmorPierce:
         move.power = 40
         move.base_damage_type = "piercing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+        with patch("src.moves._spear._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._spear.functions.check_parry", return_value=False), \
              patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
@@ -979,7 +1003,6 @@ class TestArmorPierce:
 
         args, _ = mock_hit.call_args
         assert args[1] is True
-
     def test_execute_parry_deals_no_damage_and_staggers_the_user(
         self, monkeypatch
     ):
@@ -1083,7 +1106,11 @@ class TestReap:
         user.strength = 20
         move = Reap(user)
         move.evaluate()
-        expected = max(1, int(40 * 0.65) + int(20 * 0.2))
+        # Full swing = 40 + 20*0.5 + 10*0.3 = 53, at the area factor. The old
+        # formula ignored str_mod/fin_mod entirely, which on a Scythe -- whose
+        # flat damage is 5 and whose scaling mods are 2/2 -- scored the move at
+        # 5 power against Death's Harvest's 60 on the very same weapon.
+        expected = max(1, int(53 * Reap.AREA_POWER_FACTOR))
         assert move.power == expected
 
     def test_evaluate_no_damage_attribute_uses_strength(self):
@@ -1093,7 +1120,7 @@ class TestReap:
         user.strength = 20
         move = Reap(user)
         move.evaluate()
-        expected = max(1, int(20 * 0.5))
+        expected = max(1, int(20 * Reap.AREA_POWER_FACTOR))
         assert move.power == expected
 
     def test_evaluate_no_weapon_uses_strength(self):
@@ -1101,8 +1128,24 @@ class TestReap:
         user.strength = 20
         move = Reap(user)
         move.evaluate()
-        expected = max(1, int(20 * 0.5))
+        expected = max(1, int(20 * Reap.AREA_POWER_FACTOR))
         assert move.power == expected
+
+    def test_evaluate_scales_off_a_stat_scaling_weapon(self):
+        """Regression: Reap is Scythe-only, and the real Scythe carries 5 flat
+        damage with str_mod/fin_mod of 2 -- so a power formula that reads only
+        ``weapon.damage`` renders the move useless on the one weapon that can
+        cast it."""
+        user = _make_user("Scythe")
+        user.eq_weapon.damage = 5
+        user.eq_weapon.str_mod = 2
+        user.eq_weapon.fin_mod = 2
+        user.strength = 10
+        user.finesse = 10
+        move = Reap(user)
+        move.evaluate()
+        assert move.power == int(45 * Reap.AREA_POWER_FACTOR)
+        assert move.power > 5
 
     def test_execute_hits_alive_enemies_in_range(self, monkeypatch):
         user = _make_user("Scythe")
@@ -1156,12 +1199,19 @@ class TestReap:
         move = Reap(user)
         assert move.viable() is False
 
-    def test_evaluate_exception_sets_power_to_one(self):
+    def test_evaluate_survives_a_garbage_stat(self):
+        """A non-numeric stat must not crash evaluate() or zero the move.
+
+        The coercion is applied per term, so a broken ``strength`` drops only
+        the strength term instead of collapsing the move to a placeholder 1.
+        """
         user = _make_user("Scythe")
         move = Reap(user)
-        user.strength = "abc"  # triggers TypeError in the arithmetic
+        user.strength = "abc"
         move.evaluate()
-        assert move.power == 1
+        # damage 30 + (unreadable strength -> 0) + 10*0.3 = 33, at 45%.
+        assert move.power == int(33 * Reap.AREA_POWER_FACTOR)
+        assert move.power >= 1
 
     def test_prep_announces_the_wind_up_by_name(self):
         user = _make_user("Scythe", name="Gorran")
@@ -1308,8 +1358,11 @@ class TestReap:
         move.power = 20
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        # The per-target parry/hit/miss narration moved into the shared
+        # _base.resolve_strike_outcome, so the cprint to intercept is _base's.
+        # The line itself is unchanged -- only the module it is emitted from.
         with patch("src.moves._scythe.functions.check_parry", return_value=True), \
-             patch("src.moves._scythe.cprint") as mock_cprint:
+             patch("src.moves._base.cprint") as mock_cprint:
             move.execute(user)
 
         assert tgt.hp == 100  # parried, no damage
@@ -1509,8 +1562,8 @@ class TestDeathsHarvest:
         user = _make_user("Scythe", equip=False)
         move = DeathsHarvest(user)
         assert move.power == 0
-        assert move.stage_beat == [2, 1, 3, 5]
-        assert move.fatigue_cost == 10
+        assert move.stage_beat == [10, 2, 6, 6]
+        assert move.fatigue_cost == 25
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
         user = _make_user("Scythe")
@@ -1541,9 +1594,11 @@ class TestDeathsHarvest:
         move.power = 40
         move.base_damage_type = "slashing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+        with patch("src.moves._scythe._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._scythe.functions.check_parry", return_value=False), \
              patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._scythe.cprint"), \
@@ -1552,7 +1607,6 @@ class TestDeathsHarvest:
 
         args, _ = mock_hit.call_args
         assert args[1] is True
-
     def test_execute_grim_persistence_bonus_damage(self, monkeypatch):
         user = _make_user("Scythe")
         user.known_moves = [GrimPersistence(user)]
@@ -1731,6 +1785,14 @@ class TestChipAway:
         user.combat_exp["Pick"] = 0
         tgt = _make_target(hp=1, finesse=0, protection=0)
         tgt.is_alive = lambda: True
+        # resolve_strike_outcome now applies damage exactly as Move.hit does:
+        # ``hp -= damage`` + ``clamp_hp()`` (the old ``max(0, ...)`` write read
+        # a raw hp). Give the mock the real clamp so hp floors at 0 the way a
+        # real combatant's does.
+        from src.combatant import Combatant
+
+        tgt.maxhp = 1
+        tgt.clamp_hp = lambda: Combatant.clamp_hp(tgt)
         move = ChipAway(user)
         move.target = tgt
         move.power = 50
@@ -1818,9 +1880,11 @@ class TestChipAway:
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        # As in TestReap above: the per-strike narration is emitted from the
+        # shared _base.resolve_strike_outcome now, not from _pick.
         with patch("src.moves._pick.functions.check_parry", return_value=True), \
              patch.object(move, "viable", return_value=True), \
-             patch("src.moves._pick.cprint") as mock_cprint:
+             patch("src.moves._base.cprint") as mock_cprint:
             move.execute(user)
 
         assert any("parried" in str(c.args[0]) for c in mock_cprint.call_args_list)
@@ -1925,7 +1989,7 @@ class TestExploitWeakness:
         user = _make_user("Pick", equip=False)
         move = ExploitWeakness(user)
         assert move.power == 0
-        assert move.stage_beat == [1, 1, 2, 3]
+        assert move.stage_beat == [4, 1, 3, 3]
         assert move.fatigue_cost == 10
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
@@ -1984,9 +2048,11 @@ class TestExploitWeakness:
         move.power = 40
         move.base_damage_type = "piercing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+        with patch("src.moves._pick._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._pick.functions.check_parry", return_value=False), \
              patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._pick.cprint"), \
@@ -1995,7 +2061,6 @@ class TestExploitWeakness:
 
         args, _ = mock_hit.call_args
         assert args[1] is True
-
     def test_execute_parry_deals_no_damage_and_staggers_the_user(
         self, monkeypatch
     ):
@@ -2157,7 +2222,7 @@ class TestStupefy:
         user = _make_user("Pick", equip=False)
         move = Stupefy(user)
         assert move.power == 0
-        assert move.stage_beat == [2, 1, 4, 6]
+        assert move.stage_beat == [8, 2, 5, 6]
         assert move.fatigue_cost == 25
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
@@ -2217,9 +2282,11 @@ class TestStupefy:
         move.power = 40
         move.base_damage_type = "crushing"
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
-        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+        with patch("src.moves._pick._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._pick.functions.check_parry", return_value=False), \
              patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._pick.cprint"), \
@@ -2228,7 +2295,6 @@ class TestStupefy:
 
         args, _ = mock_hit.call_args
         assert args[1] is True
-
     def test_execute_parry_deals_no_damage_and_staggers_the_user(
         self, monkeypatch
     ):

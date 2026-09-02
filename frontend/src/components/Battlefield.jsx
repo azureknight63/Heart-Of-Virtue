@@ -208,17 +208,18 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
         )}
       </div>
 
-      {/* Fight status strip. Behind the `beatTimeline` flag, this is a
-          schedule of who resolves when (BeatTimeline) instead of the raw
-          beat counter — the two are mutually exclusive so they can be
-          compared, never both rendered at once. `displayState`, not `combat`:
-          BeatTimeline needs to agree with the living-enemy count and the grid
-          above it, both of which already read the scrub-consistent per-beat
-          snapshot rather than the live top-level state. */}
-      {selectedTab === 'overview' && beatTimelineEnabled && (
-        <BeatTimeline combat={displayState} />
-      )}
-      {selectedTab === 'overview' && !beatTimelineEnabled && (
+      {/* Fight status strip: the raw counters, plus — when the `beatTimeline`
+          flag is on (now the default) — a schedule of who resolves when.
+          The two were originally mutually exclusive so the timeline could be
+          A/B compared against the counter; they are complementary rather than
+          redundant (the timeline carries ordering, the counters carry beat
+          number and how many enemies are left), so both render together now
+          and flipping the flag off drops only the schedule.
+          `displayState`, not `combat`: BeatTimeline needs to agree with the
+          living-enemy count and the grid above it, both of which already read
+          the scrub-consistent per-beat snapshot rather than the live
+          top-level state. */}
+      {selectedTab === 'overview' && (
         <div
           style={{
             display: 'flex', gap: spacing.md, alignItems: 'center',
@@ -235,6 +236,9 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
             {livingEnemyCount} standing
           </span>
         </div>
+      )}
+      {selectedTab === 'overview' && beatTimelineEnabled && (
+        <BeatTimeline combat={displayState} />
       )}
 
       {/* Battlefield Grid */}

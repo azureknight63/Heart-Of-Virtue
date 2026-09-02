@@ -15,6 +15,7 @@ describe('sfxDurations manifest', () => {
     for (const cue of [
       'attack_swipe',
       'attack_hit',
+      'attack_glance',
       'attack_miss',
       'attack_parry',
       'status_hit',

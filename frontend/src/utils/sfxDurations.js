@@ -5,6 +5,7 @@
 
 export const SFX_DURATIONS = {
   "attack": 100,
+  "attack_glance": 120,
   "attack_hit": 150,
   "attack_miss": 250,
   "attack_parry": 200,

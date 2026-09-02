@@ -136,3 +136,140 @@ def test_instances_resolve_class_attribute():
     )
     assert probe.web_animation == "pierce"
     assert getattr(Move, "web_animation", "missing") is None
+
+
+def test_adapter_substituted_animation_types_exist_in_the_frontend():
+    """Types the API layer picks itself must be real configs too.
+
+    The contract above only covers types declared on move classes. The adapter
+    also chooses a type of its own whenever a move declares none — the
+    damaging-move and the generic fallbacks — and an unknown type there fails
+    the way every wire-name drift in this codebase fails: silently. The client
+    falls back to ``pulse``, so the move would flash nothing recognisable and
+    nobody would see an error.
+
+    This used to pin ``FOLLOW_UP_IMPACT_ANIMATION``, the short flash the adapter
+    substituted for every resolution after the first of a multi-target swing.
+    That downgrade is gone (every target now plays the move in full, layered
+    client-side), so the constant is gone with it and the two remaining
+    adapter-chosen types are what this guards.
+
+    The constants live in ``src/api/schemas/combat_beat.py`` (the wire-protocol
+    home) so both the adapter and the beat streamer share one definition.
+    """
+    from src.api.schemas.combat_beat import (
+        DEFAULT_ANIMATION,
+        DEFAULT_DAMAGE_ANIMATION,
+    )
+
+    frontend_types = _frontend_animation_types()
+    for substituted in (DEFAULT_ANIMATION, DEFAULT_DAMAGE_ANIMATION):
+        assert substituted in frontend_types, (
+            f"{substituted!r} is not a key of ANIMATION_CONFIGS"
+        )
+
+
+def _type_literal_offenders(source):
+    """Adapter-chosen animation-type literals hardcoded in ``source``.
+
+    Two shapes: an ``animation_type = "x"`` assignment (name or attribute
+    target, any quote style), and a string-literal ``"type"`` value inside any
+    dict literal that ALSO carries a ``"source_id"`` key — which animation
+    payloads carry and log entries (whose own ``"type": "combat"`` literal is
+    legitimate) do not. AST-based, so key ORDER and formatting cannot dodge
+    it: the first regex version required ``"source_id"`` to sit immediately
+    after ``"type"``, so a payload spelled with the keys reordered, or with
+    another key between them, sailed straight past — the enumeration-shaped
+    guard failure this codebase keeps rediscovering. (An earlier version
+    still matched only double-quoted assignments, missing exactly how
+    ``_npc_try_heal_ally`` hardcoded ``"pulse"``.)
+    """
+    import ast
+
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                name = (
+                    target.id
+                    if isinstance(target, ast.Name)
+                    else getattr(target, "attr", None)
+                )
+                if (
+                    name == "animation_type"
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                ):
+                    found.append(node.value.value)
+        elif isinstance(node, ast.Dict):
+            keys = {
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant)
+            }
+            if "type" not in keys or "source_id" not in keys:
+                continue
+            for key, value in zip(node.keys, node.values):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == "type"
+                    and isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                ):
+                    found.append(value.value)
+    return found
+
+
+_API_FILES = (
+    _ROOT / "src" / "api" / "combat_adapter.py",
+    _ROOT / "src" / "api" / "combat_beat_stream.py",
+)
+
+
+def test_the_adapter_substitutes_no_type_this_test_does_not_know_about():
+    """A structural backstop for the test above.
+
+    The behavioural contract can only check the constants it imports, so a new
+    hardcoded animation-type literal in the adapter would slip past it. Pin the
+    fallbacks to named constants instead: this fails if a string literal is
+    ever assigned to ``animation_type`` (either quote style) or hardcoded as a
+    ``"type"`` value in an animation payload again. Paths are repo-rooted, not
+    cwd-relative — a cwd-relative read silently scans nothing when pytest runs
+    from another directory.
+    """
+    offenders = {}
+    for path in _API_FILES:
+        found = _type_literal_offenders(path.read_text(encoding="utf-8"))
+        if found:
+            offenders[path.name] = found
+    assert not offenders, (
+        "these hardcoded animation types bypass the frontend contract "
+        f"check above; give them a module constant instead: {offenders}"
+    )
+
+
+def test_the_type_literal_scan_can_actually_find_something():
+    """Positive control: every known offender spelling must match the scan."""
+    known_spellings = [
+        'animation_type = "attack"',
+        "animation_type = 'pulse'",
+        'self.animation_type = "sweep"',
+        'x = {"type": "pulse",\n     "source_id": s}',
+        "x = {'type': 'attack', 'source_id': s}",
+        # Key order must not matter...
+        'x = {"source_id": s, "type": "pulse"}',
+        # ...and neither may keys sitting between the two.
+        'x = {"type": "pulse", "move_name": n, "source_id": s}',
+    ]
+    for spelling in known_spellings:
+        assert _type_literal_offenders(spelling), (
+            f"the scan no longer matches a known shape: {spelling}"
+        )
+    # ...and it does not fire on a constant-backed assignment, a payload built
+    # from a variable, or a log ENTRY's legitimate "type": "combat" literal
+    # (log entries carry no "source_id" key).
+    assert not _type_literal_offenders("animation_type = DEFAULT_ANIMATION")
+    assert not _type_literal_offenders(
+        'x = {"type": animation_type,\n     "source_id": s}'
+    )
+    assert not _type_literal_offenders('x = {"type": "combat", "timestamp": now}')

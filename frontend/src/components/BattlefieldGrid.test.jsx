@@ -1227,6 +1227,22 @@ describe('BattlefieldGrid', () => {
             expect(container.querySelector('[style*="rgba(255, 200, 0, 0.7)"]')).not.toBeNull();
         });
 
+        it('applies a distinct deflection flash on the target for a glancing blow', () => {
+            // A glance lands but skids off for half damage. It must read as
+            // contact — unlike a miss — while being visibly lighter and offset
+            // rather than the square red flash of a solid hit.
+            const glanceCombat = { ...mockCombat, log: [{ animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'glance' } }] };
+            const { container } = render(<BattlefieldGrid combat={glanceCombat} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(200 + 160 + 10)); // windup + strike -> into impact
+            const flashed = container.querySelector('[style*="rgba(255, 140, 60, 0.35)"]');
+            expect(flashed).not.toBeNull();
+            expect(flashed.getAttribute('style')).toMatch(/translate/);
+            // Not the solid-hit, miss or parry treatments.
+            expect(container.querySelector('[style*="rgba(255, 0, 0, 0.7)"]')).toBeNull();
+            expect(container.querySelector('[style*="blur(2px)"]')).toBeNull();
+            expect(container.querySelector('[style*="rgba(255, 200, 0, 0.7)"]')).toBeNull();
+        });
+
         it('applies no special target treatment for an unrecognized outcome (default branch)', () => {
             const critCombat = { ...mockCombat, log: [{ animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'crit' } }] };
             const { container } = render(<BattlefieldGrid combat={critCombat} tab="overview" zoom={1} displayedLogCount={1} />);

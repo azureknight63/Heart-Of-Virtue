@@ -32,6 +32,16 @@ from src.moves._utility import (
     Attack as UtilAttack,
 )
 
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: when
+# HIT_CHANCE_BASE moved 98 -> 85 and a sub-100 ceiling was introduced, every
+# such test silently became a miss-path test asserting the wrong branch.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -558,8 +568,18 @@ class TestCheckCoordinateMode:
         player = _make_player()
         del player._combat_adapter
         player.combat_position = self._combat_position()
+        # Jean at (0, 0) is south-west of an enemy at (3, 3) that is looking
+        # due north -- i.e. behind it. The bearing from the enemy back toward
+        # Jean is 225 deg against a facing of 0 deg, so the angle on its guard
+        # is 135 deg: the top of the deep-flank band (x1.25). The inverted
+        # read this test used to encode (bearing from Jean toward the enemy,
+        # 45 deg) called the same geometry a flank, and the old fixture faced
+        # the enemy south so that the inverted answer happened to read "rear".
+        # The label itself then read "rear" as well, because Check collapsed
+        # the engine's four bands into three -- 135 deg pays x1.25, not the
+        # x1.40 "rear" the player was being shown.
         enemy = _make_target()
-        enemy.combat_position = self._combat_position(x=3, y=3, facing=positions.Direction.S)
+        enemy.combat_position = self._combat_position(x=3, y=3, facing=positions.Direction.N)
         player.combat_proximity = {enemy: 5}
         player.combat_list_allies = []
         move = Check(player)
@@ -568,7 +588,7 @@ class TestCheckCoordinateMode:
             move.prep(player)
         # Coordinates present -> the coordinate report, not the legacy one.
         assert [m["text"] for m in messages] == [
-            "Enemy at (3, 3) facing S is 5 ft away (rear, S-facing)"
+            "Enemy at (3, 3) facing N is 5 ft away (deep flank, N-facing)"
         ]
 
     def test_display_coordinate_info_enemy_without_position_falls_back(self):
@@ -593,7 +613,13 @@ class TestCheckCoordinateMode:
         player = _make_player()
         player.combat_position = self._combat_position()
         enemy = _make_target()
-        enemy.combat_position = self._combat_position(x=5, y=5, facing=positions.Direction.S)
+        # Both Jean (0, 0) and Gorran (2, 2) sit south-west of a north-facing
+        # enemy at (5, 5) -- 135 deg off its guard, the top of the deep-flank
+        # band. Facing the enemy south (as this fixture used to) made the
+        # inverted read return "rear" for a position that was really a 45 deg
+        # flank; the three-bucket label then said "rear" for the corrected
+        # geometry too, over-promising x1.40 where the engine pays x1.25.
+        enemy.combat_position = self._combat_position(x=5, y=5, facing=positions.Direction.N)
         player.combat_proximity = {enemy: 7}
 
         ally = _make_target()
@@ -607,8 +633,11 @@ class TestCheckCoordinateMode:
             move._display_coordinate_info(player)
         # Two lines: the enemy report, then the ally's angle on that enemy.
         assert [(m["text"], m["color"]) for m in messages] == [
-            ("Enemy at (5, 5) facing S is 7 ft away (rear, S-facing)", "green"),
-            ("  \u2192 Gorran at (2, 2) is 4 ft away (rear-facing)", "cyan"),
+            (
+                "Enemy at (5, 5) facing N is 7 ft away (deep flank, N-facing)",
+                "magenta",
+            ),
+            ("  \u2192 Gorran at (2, 2) is 4 ft away (deep flank-facing)", "cyan"),
         ]
 
     def test_display_coordinate_info_ally_without_enemy_position(self):
@@ -863,7 +892,9 @@ class TestUtilityAttack:
     def test_execute_glancing_blow(self):
         player, enemy, move = self._viable_setup(target_finesse=0)
         with patch("src.moves._utility.narrate"), \
-             patch("src.moves._utility.random.randint", return_value=100), \
+             patch("src.moves._utility._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._utility.random.randint", return_value=_GLANCING_ROLL), \
              patch("src.moves._utility.random.uniform", return_value=1.0), \
              patch("src.moves._utility.functions.check_parry", return_value=False), \
              patch("src.moves._utility.animate"):
@@ -974,16 +1005,30 @@ class TestCheckDirectionCardinals:
 
 
 class TestCheckCoordinateAngleBrackets:
-    """Covers front/flank/rear branches in _display_coordinate_info (both
-    the primary enemy-facing calc and the ally-relative-to-enemy calc)."""
+    """Covers every band of _display_coordinate_info (both the primary
+    enemy-facing calc and the ally-relative-to-enemy calc). The brackets come
+    from positions.FACING_BANDS, the same table the damage/accuracy curve
+    reads, so a label here can never name a band the engine will not pay."""
 
+    # The player sits at (0, 0) and the enemy at (5, 0), so the player is due
+    # WEST of the enemy and the bearing from the enemy back toward the player
+    # is 270 deg. The bracket is that bearing measured against the enemy's own
+    # facing -- see positions.attack_angle_diff. The old rows named the
+    # opposite facings (E->front, W->rear), which is the 180-deg-inverted
+    # read: they asserted the bug rather than the behaviour.
+    #
+    # The rows now walk all four engine bands (positions.FACING_BANDS) rather
+    # than three: "deep flank" (90 < diff <= 135, x1.25) had no label at all,
+    # and diff 45 was reported as a flank though the engine scores it in the
+    # front quarter at x0.85.
     @pytest.mark.parametrize(
         "enemy_facing, expected_bracket, expected_color",
         [
-            # Attacking from due east of the enemy:
-            ("E", "front", "red"),      # enemy faces East -> diff 0
-            ("NE", "flank", "yellow"),  # diff 45
-            ("W", "rear", "green"),     # diff 180
+            ("W", "front", "red"),            # enemy looks straight at the player
+            ("NW", "front", "red"),           # diff 45 -- the front band's edge
+            ("N", "flank", "yellow"),         # diff 90 -- the flank band's edge
+            ("NE", "deep flank", "magenta"),  # diff 135
+            ("E", "rear", "green"),           # enemy looks away -> diff 180
         ],
     )
     def test_display_coordinate_info_angle_brackets(
@@ -1002,9 +1047,9 @@ class TestCheckCoordinateAngleBrackets:
         move = Check(player)
         with capture_narration() as messages:
             move._display_coordinate_info(player)
-        # The old parametrization passed ``expected_called=True`` for all three
+        # The old parametrization passed ``expected_called=True`` for all
         # rows and asserted ``mock_cprint.called == True`` -- identical in every
-        # case, so the three front/flank/rear branches were never distinguished.
+        # case, so the band branches were never distinguished.
         assert [(m["text"], m["color"]) for m in messages] == [
             (
                 f"Enemy at (5, 0) facing {enemy_facing} is 5 ft away "
@@ -1013,9 +1058,18 @@ class TestCheckCoordinateAngleBrackets:
             )
         ]
 
+    # Same geometry, same correction as the enemy-line parametrization above:
+    # the ally also stands due west of the enemy, so the bearing on its guard
+    # is 270 deg.
     @pytest.mark.parametrize(
         "enemy_facing, expected_bracket",
-        [("E", "front"), ("NE", "flank"), ("W", "rear")],
+        [
+            ("W", "front"),
+            ("NW", "front"),
+            ("N", "flank"),
+            ("NE", "deep flank"),
+            ("E", "rear"),
+        ],
     )
     def test_display_coordinate_info_ally_angle_brackets(
         self, enemy_facing, expected_bracket
@@ -1039,9 +1093,9 @@ class TestCheckCoordinateAngleBrackets:
         move = Check(player)
         with capture_narration() as messages:
             move._display_coordinate_info(player)
-        # The ally line carries its own front/flank/rear bracket, computed from
-        # the ally's bearing rather than the player's. ``mock_cprint.called``
-        # could not tell the three branches apart.
+        # The ally line carries its own band bracket, computed from the ally's
+        # bearing rather than the player's. ``mock_cprint.called`` could not
+        # tell the branches apart.
         assert [m["text"] for m in messages][1] == (
             f"  \u2192 Gorran at (0, 0) is 5 ft away ({expected_bracket}-facing)"
         )

@@ -62,11 +62,42 @@ export function cueForEmission(emission, beat) {
  * server-assigned emission order. Emissions that don't resolve are dropped.
  */
 export function beatSfxFor(beat) {
-  const emissions = (beat && beat.sfx) || [];
+  // Array.isArray, not truthiness: `sfx` crosses the wire, and a regressed
+  // serializer sending a string/object must degrade to silence, not throw
+  // inside a timer callback where nothing catches it.
+  const emissions = (beat && Array.isArray(beat.sfx)) ? beat.sfx : [];
   const cues = [];
   for (const emission of emissions) {
     const cue = cueForEmission(emission, beat);
     if (cue) cues.push(cue);
   }
   return cues;
+}
+
+/**
+ * The concrete cue one queued animation LANDS with, or null when it never
+ * lands (a dash, a death burst, an unrecognized type).
+ *
+ * Two callers, one answer. It paces the animation layers of a multi-target
+ * swing (combatTiming.scheduleAnimationLayers spaces layer i by the length of
+ * cue i), and in the log-spooler path it is also the cue that layer plays on
+ * its impact phase. Deriving both from here is what keeps a landing's flash and
+ * its sound on the same schedule.
+ *
+ * A streamed beat wins over the config: under streaming the engine authors an
+ * outcome per emission, and an arc that parries one enemy while striking
+ * another sends exactly that. The config path (`sfx.impact`, with the special
+ * value 'outcome') is the log-spooler fallback, where no emissions exist.
+ */
+export function animationImpactCue(anim) {
+  if (!anim) return null;
+  const emissions = anim.beat?.sfx;
+  // A malformed (non-array) sfx field falls through to the config path.
+  if (Array.isArray(emissions)) {
+    const impact = emissions.find((e) => e.kind === 'impact');
+    if (impact) return cueForEmission(impact, anim.beat);
+  }
+  const cue = getAnimationConfig(anim.type).sfx?.impact;
+  if (!cue) return null;
+  return cue === 'outcome' ? impactSfxFor(anim.outcome) : cue;
 }

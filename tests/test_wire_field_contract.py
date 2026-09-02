@@ -444,6 +444,18 @@ COMBATANT_CONTRACT = {
     "battle_symbol": "BattlefieldGrid.jsx entitiesToRender displaySymbol fallback chain",
     "position": "BattlefieldGrid.jsx getPos(entity) -> getEntityStyle / fitBox framing",
     "current_move": "BattlefieldGrid.jsx CombatantMarker telegraph + EntityTooltip",
+    # Momentum meter. This is the RAW FLOAT multiplier applied to Jean's damage
+    # by src/moves/_base.py standard_execute_attack.
+    #
+    # battle_state carries a SECOND, different representation of the same
+    # quantity under its own top-level `heat` key — int(player.heat * 100), set
+    # by ApiCombatAdapter.get_combat_state and absent from the per-beat states
+    # the adapter serializes at combat_adapter.py:1338. Reading that one as a
+    # multiplier renders "162.00x"; reading this one is correct. The client has
+    # exactly one reader and no `??` chain across the two (see the header
+    # comment in frontend/src/utils/momentum.js), which is the only reason the
+    # duplication is survivable.
+    "heat": "LeftPanel.jsx combat?.player?.heat -> MomentumMeter (utils/momentum.js)",
 }
 
 # The in-progress move hanging off a combatant (CombatantSerializer.
@@ -508,6 +520,72 @@ class TestCombatantWireContract:
         enemy = Slime()
         payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
         _assert_contract(payload, COMBATANT_CONTRACT, "serialize_combatant(enemy)")
+
+    def test_player_heat_is_a_float_multiplier_at_wire_precision(self):
+        """MomentumMeter renders this number directly, so its scaling is load-bearing.
+
+        `hit_chance` (bug #4) was this exact failure: two plausible scalings for
+        one quantity, and a client that picked the wrong one showed a silently,
+        wildly wrong number. Heat has the same hazard — battle_state's own
+        `heat` key is int(heat * 100) — so pin the multiplier form here.
+
+        The 2dp rounding matters too: ApiCombatAdapter._update_heat's per-beat
+        decay does NOT round the way Player.change_heat does, and the client
+        derives its rise/fall indicator from the difference between consecutive
+        values of this field.
+        """
+        player = Player()
+        player.change_heat(mult=1.25)
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["heat"] == pytest.approx(1.25)
+
+        player.heat = 1.6234567891  # a value _update_heat's decay really produces
+        assert CombatantSerializer.serialize_combatant(player)["heat"] == 1.62
+
+    def test_enemy_heat_is_neutral_because_nothing_scales_npc_damage(self):
+        """Enemies must not render as if they had momentum of their own."""
+        payload = CombatantSerializer.serialize_combatant(Slime(), reference=Player())
+        assert payload["heat"] == 1.0
+
+    @pytest.mark.parametrize(
+        "heat", [0.57, 0.58, 1.13, 1.14, 1.15, 1.16, 2.01, 2.26, 1.62, 0.83]
+    )
+    def test_the_int_percentage_twin_rounds_rather_than_truncates(self, heat):
+        """battle_state's int-percentage heat must be exactly 100x the float.
+
+        Binary floats put 68 of the 951 two-decimal heats in [0.50, 10.00]
+        just below their exact product, so the adapter's original
+        ``int(heat * 100)`` disagreed with the float the client reads for
+        roughly 7% of values -- ``int(1.15 * 100)`` is 114, not 115. A single
+        hand-picked heat cannot see that; most of the values here are drawn
+        from the mismatching set, with a couple of controls.
+
+        Pins the RULE (round) rather than re-deriving the arithmetic: the
+        serialized float is the authority, and the percentage must be its
+        exact hundredfold.
+        """
+        player = Player()
+        player.heat = heat
+        serialized = CombatantSerializer.serialize_combatant(player)["heat"]
+        assert round(player.heat * 100) == round(serialized * 100), (
+            f"heat {heat}: the percentage twin and the float multiplier "
+            "disagree; truncation is how they drift apart"
+        )
+
+    def test_battle_state_heat_percentage_agrees_with_the_player_multiplier(
+        self, real_adapter, real_combat_player
+    ):
+        """The two representations must stay 100x apart, or one of them is a lie.
+
+        Nothing forces them to agree — they are set in different files
+        (serializers/combat.py vs combat_adapter.py get_combat_state) — so if
+        either is ever rescaled independently, the client reading one of them
+        starts rendering nonsense with no other test noticing.
+        """
+        real_combat_player.heat = 1.62
+        battle_state = real_adapter.get_combat_state()["battle_state"]
+        assert battle_state["player"]["heat"] == pytest.approx(1.62)
+        assert battle_state["heat"] == 162
 
     def test_active_move_fields_on_a_real_move_in_progress(self):
         """A real move mid-cast, through the real serializer, so the fields the

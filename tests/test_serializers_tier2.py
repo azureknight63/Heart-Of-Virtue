@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 import src.items as items
 
 from src.api.combat_adapter import (
+    REPORTED_BEAT_KEY,
     ApiCombatAdapter,
     CombatOutputCapture,
     _strip_combatant_prefix,
@@ -61,13 +62,22 @@ def live_encounter(live_player, live_goblin, engage, place, repair_proximity):
 class _AnimEntity:
     """A combatant stand-in carrying a real ``_pending_animation`` dict.
 
-    ``CombatOutputCapture.write`` both mutates and ``delattr``s that attribute,
-    neither of which a bare ``Mock`` models honestly: a Mock answers
-    ``hasattr`` for an attribute that was never set, and swallows the delete.
+    ``CombatOutputCapture.write`` reads and ``delattr``s that attribute, neither
+    of which a bare ``Mock`` models honestly: a Mock answers ``hasattr`` for an
+    attribute that was never set, and swallows the delete.
+
+    ``outcome`` starts unresolved, exactly as the adapter creates it; the engine
+    (``src/moves/_base.publish_outcome``) fills it in from ``hit``/``miss``/
+    ``parry`` before narrating. ``resolve()`` stands in for that engine step.
     """
 
     def __init__(self, move_name="Attack"):
         self._pending_animation = {"outcome": None, "move_name": move_name}
+
+    def resolve(self, outcome):
+        """Publish an outcome the way the engine does, then return self."""
+        self._pending_animation["outcome"] = outcome
+        return self
 
 
 @pytest.fixture
@@ -259,42 +269,45 @@ class TestCombatOutputCapture:
         assert len(logs) == 0
 
     @pytest.mark.parametrize(
-        "text, outcome",
-        [
-            ("Goblin is struck for 15 damage!", "hit"),
-            ("Goblin just missed!", "miss"),
-            ("Jean missed!", "miss"),
-            ("Attack parried!", "parry"),
-        ],
+        "outcome", ["hit", "glance", "miss", "parry", "absorb"]
     )
-    def test_capture_attaches_the_outcome_to_the_log_entry(self, text, outcome):
-        """An impact line stamps the outcome onto the entry and consumes the pending anim.
+    def test_capture_attaches_the_outcome_to_the_log_entry(self, outcome):
+        """The engine-published outcome rides out on the entry and fires once.
 
-        These three cases were skipped as a "Mock setup issue". The real problem
-        was the assertion: ``write()`` calls ``delattr(entity,
-        "_pending_animation")`` once it fires, so reading
-        ``player._pending_animation`` afterwards can never see the outcome. The
-        outcome travels out on the log entry's ``animation_data``, which is what
-        the client actually consumes -- so that is what this now asserts.
+        ``write()`` disarms the pending animation the moment it fires (clearing
+        the outcome), so reading ``entity._pending_animation`` afterwards can
+        never see it -- the outcome travels out on the log entry's
+        ``animation_data``, which is what the client actually consumes. The
+        animation dict itself is deliberately left in place: an area move
+        publishes one outcome per enemy in its arc and needs somewhere to put
+        the next one.
+
+        The line of text is deliberately outcome-neutral: the adapter no longer
+        reads the prose, so nothing but the published fact can drive this.
         """
-        entity = _AnimEntity(move_name="Attack")
+        entity = _AnimEntity(move_name="Attack").resolve(outcome)
         capture = CombatOutputCapture()
         capture.player = entity
         capture.active_entity = entity
 
-        capture.write(text)
+        capture.write("The exchange resolves.")
 
         (entry,) = capture.get_log()
-        assert entry["message"] == text
+        assert entry["message"] == "The exchange resolves."
         assert entry["trigger_animation"] is True
         assert entry["animation_data"] == {"outcome": outcome, "move_name": "Attack"}
-        assert not hasattr(entity, "_pending_animation"), (
-            "the pending animation must be consumed so it fires exactly once"
+
+        capture.write("And the dust settles.")
+        assert len([e for e in capture.get_log() if e.get("trigger_animation")]) == 1, (
+            "a disarmed animation must not fire again"
         )
+        assert entity._pending_animation["outcome"] is None
+        # Recorded as the beat it resolved in, not as a lifetime boolean.
+        assert REPORTED_BEAT_KEY in entity._pending_animation
 
     def test_capture_fires_the_animation_only_once(self):
-        """A second impact line with no fresh pending animation must not re-trigger."""
-        entity = _AnimEntity(move_name="Attack")
+        """A second line with no fresh pending animation must not re-trigger."""
+        entity = _AnimEntity(move_name="Attack").resolve("hit")
         capture = CombatOutputCapture()
         capture.active_entity = entity
 
@@ -317,10 +330,23 @@ class TestCombatOutputCapture:
         assert "trigger_animation" not in entry
         assert entity._pending_animation == {"outcome": None, "move_name": "Attack"}
 
+    def test_capture_impact_prose_alone_leaves_the_animation_unresolved(self):
+        """Rewording a narration line cannot conjure -- or change -- an outcome."""
+        entity = _AnimEntity(move_name="Attack")
+        capture = CombatOutputCapture()
+        capture.active_entity = entity
+
+        capture.write("Goblin is struck for 15 damage!")
+        capture.write("Attack parried!")
+        capture.write("Goblin just missed!")
+
+        assert all("trigger_animation" not in e for e in capture.get_log())
+        assert entity._pending_animation == {"outcome": None, "move_name": "Attack"}
+
     def test_capture_prefers_active_entity_over_player(self):
-        """Impact text must never be misattributed to a different combatant."""
+        """An outcome must never be misattributed to a different combatant."""
         player = _AnimEntity(move_name="Attack")
-        npc = _AnimEntity(move_name="NPC_Attack")
+        npc = _AnimEntity(move_name="NPC_Attack").resolve("hit")
         capture = CombatOutputCapture(player)
         capture.active_entity = npc
 

@@ -12,6 +12,7 @@ import src.genericng as genericng  # type: ignore
 import src.moves as moves  # type: ignore
 
 from ._base import NPC
+from ._combat import move_is_cooling
 from ._loot import loot
 
 
@@ -24,6 +25,7 @@ class Slime(NPC):
             maxhp=20,
             damage=26,
             awareness=30,
+            finesse=10,  # baseline fodder evasion — the bestiary's reference point
             aggro=True,
             exp_award=2,
             idle_message=" is glopping about.",
@@ -70,6 +72,7 @@ class RockRumbler(NPC):
             damage=28,
             protection=28,
             awareness=46,
+            finesse=6,  # armoured and ponderous: easy to hit, hard to hurt
             aggro=True,
             exp_award=120,
         )
@@ -99,6 +102,7 @@ class Lurker(NPC):
             protection=0,
             awareness=60,
             endurance=20,
+            finesse=22,  # long-limbed ambusher; hides in the dark and slips strikes
             aggro=True,
             exp_award=950,
             is_boss=True,
@@ -137,6 +141,7 @@ class GiantSpider(NPC):
             protection=0,
             awareness=30,
             endurance=10,
+            finesse=12,  # skittering, but a big target
             aggro=True,
             exp_award=120,
         )
@@ -166,6 +171,7 @@ class CaveBat(NPC):
             protection=0,
             awareness=14,
             speed=40,
+            finesse=24,  # erratic flier — the early lesson in why accuracy matters
             aggro=True,
             exp_award=6,
             idle_message=" is hanging from the ceiling.",
@@ -205,6 +211,7 @@ class ElderSlime(NPC):
             protection=12,
             awareness=45,
             speed=8,
+            finesse=7,  # bulk over agility; slower even than a common Slime
             aggro=True,
             exp_award=45,
             idle_message=" shifts slowly in the muck.",
@@ -244,6 +251,7 @@ class KingSlime(NPC):
             protection=15,
             awareness=60,
             speed=6,
+            finesse=4,  # colossal and deliberate — nearly impossible to miss
             aggro=True,
             exp_award=500,
             idle_message=" pulses at the centre of the pool.",
@@ -286,6 +294,7 @@ class TalusHound(NPC):
             damage=16,
             protection=6,
             awareness=52,
+            finesse=22,  # explosive speed over broken ground; hit-and-run hunter
             aggro=True,
             exp_award=80,
         )
@@ -384,6 +393,11 @@ class TalusHound(NPC):
                 weighted_moves.append(move)
 
         if not weighted_moves:
+            # Every move is mid-cooldown (refresh_moves filters those out):
+            # rest so the hound recovers fatigue instead of standing still.
+            # Mirrors the same fallback in NPCCombatMixin.select_move.
+            if any(move_is_cooling(m) for m in self.known_moves):
+                self.current_move = moves.NpcRest(self)
             return
 
         # Fatigue management: rest if can't attack
@@ -451,6 +465,7 @@ class ScarpAdder(NPC):
             damage=22,
             protection=5,
             awareness=56,
+            finesse=20,  # coiled ambusher; uncoils faster than the eye tracks
             aggro=True,
             exp_award=95,
         )
@@ -524,6 +539,7 @@ class CorruptedStoneCreature(NPC):
             protection=18,
             awareness=15,
             speed=5,
+            finesse=5,  # blind lurching mineral mass; no evasion instinct
             aggro=True,
             exp_award=18,
             idle_message=" scrapes slowly across the stone floor.",

@@ -22,7 +22,14 @@ class PlayerCombatMixin:
                 narrate(self.combat_hurt_msg[message])
 
     def change_heat(self, mult=1, add=0):
-        """Adjust combat heat multiplier, clamped to [0.5, 10] with 2 decimal precision."""
+        """Adjust combat heat multiplier, clamped to [0.5, 10] with 2 decimal precision.
+
+        ``src.moves._base.projected_hit_heat_sequence`` replays this method
+        *unbound* on a detached shim (``type(user).change_heat(shim, ...)``)
+        to preview multi-strike momentum without touching the live player —
+        keep the body attribute-local (reads/writes ``self.heat`` only) so
+        that replay stays faithful.
+        """
         self.heat *= mult
         self.heat += add
         self.heat = int((self.heat * 100) + 0.5) / 100.0  # enforce 2 decimals

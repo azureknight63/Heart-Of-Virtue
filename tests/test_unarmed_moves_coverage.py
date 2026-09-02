@@ -30,6 +30,16 @@ from src.moves._unarmed import (
     HeavyHanded,
 )
 
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: when
+# HIT_CHANCE_BASE moved 98 -> 85 and a sub-100 ceiling was introduced, every
+# such test silently became a miss-path test asserting the wrong branch.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 5
+
 
 RESISTANCE = {
     "piercing": 1.0,
@@ -191,19 +201,24 @@ class TestPowerStrike:
         user = _make_user(speed=1000)
         move = PowerStrike(user)
         assert move.stage_beat[0] == 1
-        assert move.stage_beat[2] >= 3
+        # Recoil floors at 1 (was 3): the +3 base was trimmed when Power
+        # Strike's cycle was re-cut from 26 beats.
+        assert move.stage_beat[2] >= 1
 
     def test_evaluate_recoil_floor_at_zero_with_negative_speed(self):
         """Negative speed (pathological/edge state) drives the raw recoil
         term below zero; floored to 0 before the +3 base is added (line 89)."""
         user = _make_user(speed=-10)
         move = PowerStrike(user)
-        assert move.stage_beat[2] == 3
+        # Negative speed floors the derived term at 0, then +1.
+        assert move.stage_beat[2] == 1
 
     def test_evaluate_cooldown_floor(self):
         user = _make_user(endurance=100)
         move = PowerStrike(user)
-        assert move.stage_beat[3] == 3
+        # Cooldown now floors at 0 (was 3 via a +3 base) -- high endurance
+        # buys the whole recovery back.
+        assert move.stage_beat[3] == 0
 
     def test_evaluate_iron_fist_boosts_power(self, monkeypatch):
         monkeypatch.setattr(random, "uniform", lambda a, b: 2.0)
@@ -487,8 +502,12 @@ class TestJab:
         move.power = 60
         user.fatigue = 200
 
-        monkeypatch.setattr(random, "randint", lambda a, b: 97)
-        with patch("src.moves._unarmed.functions.check_parry", return_value=False):
+        monkeypatch.setattr(random, "randint", lambda a, b: _GLANCING_ROLL)
+        # Jab reads its chance through Move._standard_preview_hit_chance, so
+        # the funnel is pinned where it actually lives -- in _base.
+        with patch("src.moves._base._apply_to_hit_modifiers",
+                   return_value=_PINNED_HIT_CHANCE), \
+             patch("src.moves._unarmed.functions.check_parry", return_value=False):
             move.execute(user)
         assert tgt.hp < 100
 

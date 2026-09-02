@@ -8,6 +8,7 @@ This module provides serialization for:
 """
 
 import logging
+import math
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
 from src.api.constants import ITEM_USE_RANGE
@@ -25,14 +26,25 @@ logger = logging.getLogger(__name__)
 
 
 def _num(obj, attr, default=0.0) -> float:
-    """Read a numeric attribute defensively, coercing None/garbage to `default`."""
+    """Read a numeric attribute defensively, coercing None/garbage to `default`.
+
+    Non-finite values are coerced too, and that part is load-bearing rather
+    than tidiness: ``float('nan')`` raises neither TypeError nor ValueError, so
+    it used to pass straight through. Flask's JSON provider serialises it as a
+    bare ``NaN`` token, which is not valid JSON -- so `JSON.parse` rejects the
+    response and the ENTIRE combat poll fails, not just the field. A single
+    poisoned stat would take the fight down rather than degrade one number.
+    """
     try:
         value = getattr(obj, attr, default)
         if value is None:
             return float(default)
-        return float(value)
+        value = float(value)
     except (TypeError, ValueError):
         return float(default)
+    if not math.isfinite(value):
+        return float(default)
+    return value
 
 
 def _as_dict(value) -> Dict:
@@ -315,7 +327,19 @@ class CombatantSerializer:
             "maxfatigue": getattr(
                 combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)
             ),
-            "heat": getattr(combatant, "heat", 1.0) if is_player else 1.0,
+            # Momentum multiplier. Only the player has one — `standard_execute_attack`
+            # (src/moves/_base.py) multiplies Jean's damage by it and nothing scales
+            # NPC damage, so enemies report the neutral 1.0.
+            #
+            # Rounded to 2dp because the per-beat decay (ApiCombatAdapter._update_heat)
+            # does NOT round the way Player.change_heat does — heat drifts to values
+            # like 1.6234567891 — and this is the number the client renders directly
+            # (MomentumMeter, via frontend/src/utils/momentum.js). Rounding on the wire
+            # keeps the displayed multiplier and its client-derived per-beat delta
+            # stable instead of jittering in the eighth decimal. `_num` (rather than a
+            # bare getattr) matches every other numeric field here and stops a None or
+            # non-numeric heat reaching the client as a NaN multiplier.
+            "heat": round(_num(combatant, "heat", 1.0), 2) if is_player else 1.0,
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
             "attributes": CombatantSerializer._serialize_base_attributes(combatant),
             "status_effects": CombatantSerializer._serialize_status_effects(combatant),

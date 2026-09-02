@@ -8,6 +8,7 @@ import SettingsDialog from './SettingsDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
 import CollapsibleRoomDescription from './CollapsibleRoomDescription'
+import { logEntryKey } from '../utils/combatLogKey'
 import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
@@ -22,27 +23,10 @@ import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
+import MomentumMeter from './MomentumMeter'
 import ShopDialog from './ShopDialog'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
-
-/**
- * Identity of a combat-log entry, for de-duplicating the reveal queue.
- *
- * The engine has no per-entry id, so identity is derived from content. Both the
- * pending filter and the append guard must use THIS function: they previously
- * keyed on different field sets, which silently dropped lines that matched on
- * message+round but differed in type.
- *
- * The separator is U+001F (unit separator), a control character the engine
- * never emits inside a message, so no combination of field values can forge
- * a collision across a field boundary. A space would not be safe here --
- * messages are prose and contain spaces. Written as an escape rather than a
- * literal control character so it survives editors and diff tooling.
- */
-const LOG_KEY_SEP = '\u001F'
-const logEntryKey = (entry) =>
-  [entry?.round ?? '', entry?.type ?? '', entry?.message ?? ''].join(LOG_KEY_SEP)
 
 /**
  * Moves that are instant / non-turn-consuming on the backend.
@@ -134,12 +118,12 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   // so `combat.log` is per-fight — but `displayedLog` was only ever appended to,
   // making it, and the `displayedLogCount` derived from it, cumulative for the
   // whole session. Three things broke downstream of that mismatch:
-  //   * BattlefieldGrid slices `log.slice(lastProcessedLogIndex, displayedLogCount)`.
-  //     Its cursor resets each fight (RightPanel unmounts the battlefield when
-  //     combat ends) while the count did not, so from fight #2 the two indexed
-  //     different spaces: the whole log dumped at mount, then every later reveal
-  //     sliced past the end and returned nothing. Animations fired in one burst
-  //     at combat start and then stopped for the rest of the fight.
+  //   * BattlefieldGrid recovers its animation window from this count
+  //     (revealedLogEntries walks the log until it has seen that many DISTINCT
+  //     keys). Its per-fight cursor reset while the count did not, so from
+  //     fight #2 the cumulative count admitted the entire new log at mount:
+  //     animations fired in one burst at combat start and pacing was gone for
+  //     the rest of the fight.
   //   * The dedup above swallowed any fight-#2 line whose round/type/message
   //     matched one from fight #1.
   //   * `hasPendingLogs` (GamePage/useCombatCoordinator) compared a short new log
@@ -779,6 +763,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             />
           </div>
         </div>
+
+        {/* Momentum (heat) — the damage multiplier the engine has always applied
+            silently. `combat.player.heat` is the raw float from
+            CombatantSerializer; battle_state's own `heat` key is the same
+            quantity as int(heat*100) and is NOT emitted for beat states, so
+            there is one reader and one field here (see utils/momentum.js). */}
+        {mode === 'combat' && (
+          <MomentumMeter
+            heat={combat?.player?.heat}
+            beat={combat?.beat}
+            combatId={combat?.combat_id}
+          />
+        )}
 
         {/* Cooldown Tray — moves currently on cooldown */}
         {mode === 'combat' && cooldownMoves.length > 0 && (

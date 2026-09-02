@@ -3,10 +3,16 @@ import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
-import { getAnimationConfig, impactSfxFor } from '../utils/animationConfigs';
+import { getAnimationConfig, impactSfxFor, strikeFlashFor } from '../utils/animationConfigs';
+import { logEntryKey, LOG_KEY_SEP } from '../utils/combatLogKey';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
-import { beatSfxFor } from '../utils/combatSfx';
-import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
+import { beatSfxFor, animationImpactCue } from '../utils/combatSfx';
+import {
+  scheduleSfxChain,
+  scheduleAnimationLayers,
+  effectiveDuration,
+  MAX_CONCURRENT_LAYERS,
+} from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
 import useDoubleRaf from '../hooks/useDoubleRaf';
 import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
@@ -99,6 +105,277 @@ const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 const phaseDurationOf = (config, phaseName, fallback = 200) =>
   config?.phases?.find((p) => p.name === phaseName)?.duration ?? fallback;
 
+/**
+ * The revealed slice of the combat log, each entry paired with a stable id.
+ *
+ * Two problems this solves, both of which used to be one arithmetic expression
+ * (`log.slice(lastProcessedLogIndex, displayedLogCount)`):
+ *
+ * 1. `displayedLogCount` is NOT an index into this log. It is the length of
+ *    LeftPanel's revealed list, which dedups by `logEntryKey` — and the N
+ *    carrier entries of one multi-target swing are byte-identical (same round,
+ *    same `"<Move> animation"` message), so the revealed list holds one and the
+ *    raw log holds N. Slicing the raw log by that count cut the window short and
+ *    dropped every resolution after the second. So the frontier is recovered
+ *    properly here: walk the log counting DISTINCT keys until the count is
+ *    reached, keeping the duplicates along the way — they are exactly the
+ *    per-target landings the battlefield has to animate.
+ *
+ * 2. The adapter now bounds `player.combat_log` and trims it from the FRONT, so
+ *    absolute indices shift under the cursor and skew it permanently. When the
+ *    carrier brings its own `animation.seq` (monotonic per fight, streamed by
+ *    the adapter) that IS the id — genuinely trim-proof. Otherwise the id is
+ *    positional only WITHIN one beat (`beat_index` + key + which repeat it is),
+ *    so trimming whole older beats moves nothing; only a trim landing inside a
+ *    beat can disturb that beat's own repeats.
+ */
+export const revealedLogEntries = (log, displayedLogCount) => {
+  const seenKeys = new Set();
+  const repeats = new Map();
+  let distinct = 0;
+  const revealed = [];
+  for (const entry of log || []) {
+    const key = logEntryKey(entry);
+    if (!seenKeys.has(key)) {
+      if (distinct >= displayedLogCount) break;
+      seenKeys.add(key);
+      distinct += 1;
+    }
+    // Repeat ordinals are tracked for EVERY entry (even seq-carrying ones), so
+    // a mixed log cannot shift the ordinals of the entries that need them.
+    const scope = `${entry?.beat_index ?? 0}${LOG_KEY_SEP}${key}`;
+    const repeat = repeats.get(scope) || 0;
+    repeats.set(scope, repeat + 1);
+    const seq = entry?.animation?.seq;
+    const id = Number.isFinite(seq)
+      ? `seq${LOG_KEY_SEP}${seq}`
+      : `${scope}${LOG_KEY_SEP}${repeat}`;
+    revealed.push({ entry, id });
+  }
+  return revealed;
+};
+
+/** Stable empty default for `animationStates`: a token that is in no animation
+ *  would otherwise hand React.memo a fresh array identity on every render and
+ *  re-render the whole roster — and each layer ticks its own phase, so that
+ *  churn is multiplied by layers x phases per swing. */
+const NO_ANIMATION_STATES = Object.freeze([]);
+
+/**
+ * Every animation state one entity is involved in on this frame, as
+ * `{ anim, isSource, isTarget }` — all animation fields are read through
+ * `anim` (one access path; the record used to also mirror phase/outcome/config
+ * at the top level and consumers mixed the two).
+ *
+ * Animations play CONCURRENTLY (one move resolves once per target and each
+ * resolution animates in full — see playAnimations), so an entity can be the
+ * source of one layer while being the target of another, or the target of
+ * several landings at once. This used to pick a single match with an if/else
+ * chain over one active animation; with N in flight, picking one silently drops
+ * the rest and a target hit twice in one swing flashes once.
+ *
+ * A layer that has not started its own phase clock yet (`phase == null` — it is
+ * in the active set but still inside its stagger) contributes nothing, so
+ * queued layers render as if absent. Source still wins over target *within one
+ * animation*: a self-targeted move must not fight its own strike flash.
+ */
+export const collectAnimationStates = (activeAnimations, entityId) => {
+  const states = [];
+  if (entityId == null) return NO_ANIMATION_STATES;
+  for (const anim of activeAnimations || []) {
+    if (!anim?.phase) continue;
+    if (anim.source_id === entityId) {
+      states.push({ anim, isSource: true, isTarget: false });
+    } else if (anim.target_id === entityId) {
+      states.push({ anim, isSource: false, isTarget: true });
+    }
+  }
+  return states.length ? states : NO_ANIMATION_STATES;
+};
+
+/**
+ * Fold the styles of an entity's concurrent animation states into one.
+ *
+ * Later states win on conflicting properties, EXCEPT `transform`, which is
+ * composed: a token scaling as a source while skidding as a glance target needs
+ * both, and a plain spread would silently drop the earlier one — the same
+ * quiet-failure shape as this file's documented drift bugs. `undefined` values
+ * are skipped so an absent property in a later state can't blank an earlier
+ * one (strikeFlashFor and the source-phase styles both emit `undefined` keys).
+ *
+ * Byte-identical transform strings are applied ONCE: transforms multiply, so
+ * two overlapping landings on one token would otherwise square the glance
+ * skid (`translate(8%,-8%) scale(0.94)`, twice) — the same compounding bug the
+ * lead gate in animationStyleFor closes on the source side.
+ */
+export const mergeAnimationStyles = (styles) => {
+  const merged = {};
+  const transforms = [];
+  for (const style of styles || []) {
+    for (const key of Object.keys(style || {})) {
+      const value = style[key];
+      if (value === undefined) continue;
+      if (key === 'transform') {
+        if (!transforms.includes(value)) transforms.push(value);
+        continue;
+      }
+      merged[key] = value;
+    }
+  }
+  if (transforms.length) merged.transform = transforms.join(' ');
+  return merged;
+};
+
+/**
+ * Marker styling for ONE animation state: source phases read scale/glow from
+ * the animation config; the target gets an outcome flash (or a fixed glow for
+ * buff/debuff-style effects) during the config's impact phase.
+ *
+ * Source styling belongs to the LEAD layer alone, like the token's motion and
+ * the swing's non-impact cues: one swing is one movement of the caster, and
+ * every follower emitting the config's `scale()` too compounded them in the
+ * merge — a 4-layer heavy_attack rendered the caster at 1.28^4 ≈ 2.7x.
+ */
+const animationStyleFor = (state) => {
+  const { anim } = state;
+  const cfg = anim.config;
+
+  if (state.isTarget) {
+    if (anim.phase !== 'impact') return {};
+    const treatment = cfg?.target;
+    if (treatment && treatment !== 'strike') {
+      // Fixed treatment (debuff hex, drain wither, ...)
+      return {
+        transform: treatment.scale ? `scale(${treatment.scale})` : undefined,
+        boxShadow: treatment.glow ? `0 0 18px 6px ${treatment.glow}` : undefined,
+        transition: 'all 0.2s ease-out',
+        zIndex: 60,
+      };
+    }
+    // Outcome-dependent strike flash. Resolved in animationConfigs so the
+    // visual treatment and the impact SFX cue for an outcome are declared
+    // together and stay in step with the engine's OUTCOMES vocabulary.
+    return strikeFlashFor(anim.outcome);
+  }
+
+  if (state.isSource && anim.isLead) {
+    const phaseStyle = cfg?.source?.[anim.phase];
+    if (phaseStyle) {
+      return {
+        transform: phaseStyle.scale ? `scale(${phaseStyle.scale})` : undefined,
+        boxShadow: phaseStyle.glow ? `0 0 22px 8px ${phaseStyle.glow}` : undefined,
+        transition: 'transform 0.18s ease-out, box-shadow 0.18s ease-out',
+        zIndex: 100,
+      };
+    }
+    if (anim.phase === 'return' || anim.phase === 'contract')
+      return { transform: 'scale(1)', transition: 'all 0.2s ease-in' };
+  }
+  return {};
+};
+
+/** Heavy hits and shockwaves rattle the target cell — but never on a miss. */
+const isShakingTarget = (state) => Boolean(
+  state.isTarget
+  && state.anim.config?.shake
+  && state.anim.phase === 'impact'
+  && state.anim.outcome !== 'miss'
+);
+
+/**
+ * Split the head of the animation queue into the layers that play together and
+ * the ones that wait. Returns `[batch, rest]` (`[[], []]` for an empty queue).
+ *
+ * One swing = one batch. An area move reports one resolution per target, all
+ * carrying the same `type`, `source_id` and `swing_key`, and the owner wants
+ * every one of them to animate in full, layered. Two *different* actors in the
+ * same beat are two events, though, so they stay sequential — overlapping them
+ * would make the battlefield unreadable, which is the opposite of the point.
+ * `swing_key` scopes the batch to ONE swing: without it, two separate swings
+ * by the same actor merged, and the second lost its windup, motion and whoosh.
+ * Strict equality keeps unstamped payloads batching as before (undefined ===
+ * undefined), so an adapter that does not yet send the key degrades to the
+ * old behaviour rather than serializing everything.
+ *
+ * The batch is clamped to MAX_CONCURRENT_LAYERS: a deep queue must never
+ * start hundreds of Audio elements/overlays/timer chains inside one lead
+ * window. Overflow falls through to `rest` and plays as a follow-up batch.
+ *
+ * A death chained onto a member of the swing is pushed back behind the whole
+ * batch rather than splitting it: an arc that kills its second of four targets
+ * must still land on the other two before anyone falls over. "The whole batch"
+ * includes the clamp's overflow — a death deferred before the batch filled
+ * must also sit behind any same-swing carriers that overflowed past
+ * MAX_CONCURRENT_LAYERS, or a >cap swing drops its victim before landings
+ * cap+1..N play.
+ */
+export const takeAnimationBatch = (queue) => {
+  if (!queue || queue.length === 0) return [[], []];
+  const head = queue[0];
+  const batch = [head];
+  const deferredDeaths = [];
+  let cursor = 1;
+  // Deaths and sourceless entries are events in their own right, never a swing.
+  if (head.type !== 'death' && head.source_id != null) {
+    for (; cursor < queue.length && batch.length < MAX_CONCURRENT_LAYERS; cursor++) {
+      const next = queue[cursor];
+      if (next.type === 'death') { deferredDeaths.push(next); continue; }
+      if (
+        next.type === head.type
+        && next.source_id === head.source_id
+        && next.swing_key === head.swing_key
+      ) {
+        batch.push(next);
+        continue;
+      }
+      break;
+    }
+  }
+  const remainder = queue.slice(cursor);
+  // Deferred deaths go behind the same swing's clamp overflow: the contiguous
+  // same-swing prefix of the remainder holds this swing's landings that did
+  // not fit the batch, and they must play before the target falls over.
+  // Everything past that prefix is a different event and keeps its queue
+  // order after the deaths.
+  let overflowEnd = 0;
+  if (deferredDeaths.length) {
+    while (
+      overflowEnd < remainder.length
+      && remainder[overflowEnd].type !== 'death'
+      && remainder[overflowEnd].type === head.type
+      && remainder[overflowEnd].source_id === head.source_id
+      && remainder[overflowEnd].swing_key === head.swing_key
+    ) overflowEnd += 1;
+  }
+  const rest = [
+    ...remainder.slice(0, overflowEnd),
+    ...deferredDeaths,
+    ...remainder.slice(overflowEnd),
+  ];
+  return [batch, rest];
+};
+
+/**
+ * Remove exactly the drained batch from the live queue, by enqueue-time
+ * identity (`queueId`).
+ *
+ * INVARIANT: the queue snapshot a batch was computed from is NOT necessarily a
+ * prefix of the live queue by the time this functional update runs — the
+ * bounded-append helper trims the queue from the FRONT, and the per-fight
+ * reset can have emptied it in the same commit. Identity filtering is correct
+ * under all of those; the positional arithmetic it replaced
+ * (`prev.slice(snapshot.length)`) resurrected cleared queues and replayed
+ * front-trimmed ones.
+ */
+export const removeBatchByIdentity = (queue, batch) => {
+  const drained = new Set(batch.map((item) => item.queueId));
+  return queue.filter((item) => !drained.has(item.queueId));
+};
+
+/** Append to the animation queue under its ceiling. Trims from the FRONT —
+ *  which is exactly why the drain removes by queueId, never by position. */
+const appendBounded = (queue, items) => [...queue, ...items].slice(-MAX_ANIMATION_QUEUE);
+
 /** Finite number or the supplied default. A non-numeric field must not reach
  *  the percentages: `Math.min(1, Math.max(0, NaN))` is `NaN`, which CSS and SVG
  *  discard as invalid — so a broken HP field would render as *full* health in
@@ -147,7 +424,7 @@ const CombatantMarker = React.memo(({
   isCompact = false,
   isHovered = false,
   isSelected = false,
-  animationState = null,
+  animationStates = NO_ANIMATION_STATES,
   displaySymbol = null,
 }) => {
   const move = entity.current_move;
@@ -183,60 +460,17 @@ const CombatantMarker = React.memo(({
     ? 'absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent filter drop-shadow-sm opacity-90'
     : 'absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent filter drop-shadow opacity-90';
 
-  // Config-driven marker styling: source phases read scale/glow from the
-  // animation config; the target gets an outcome flash (or a fixed glow for
-  // buff/debuff-style effects) during the config's impact phase.
-  const animationStyle = useMemo(() => {
-    if (!animationState) return {};
-    const cfg = animationState.config;
-
-    if (animationState.isTarget) {
-      if (animationState.phase !== 'impact') return {};
-      const treatment = cfg?.target;
-      if (treatment && treatment !== 'strike') {
-        // Fixed treatment (debuff hex, drain wither, ...)
-        return {
-          transform: treatment.scale ? `scale(${treatment.scale})` : undefined,
-          boxShadow: treatment.glow ? `0 0 18px 6px ${treatment.glow}` : undefined,
-          transition: 'all 0.2s ease-out',
-          zIndex: 60,
-        };
-      }
-      // Outcome-dependent strike flash
-      switch (animationState.outcome) {
-        case 'hit': return { backgroundColor: 'rgba(255, 0, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
-        case 'miss': return { opacity: 0.3, transition: 'opacity 0.2s', filter: 'blur(2px)' };
-        case 'parry':
-        case 'block':
-        case 'deflect':
-          return { backgroundColor: 'rgba(255, 200, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
-        default: return {};
-      }
-    }
-
-    if (animationState.isSource) {
-      const phaseStyle = cfg?.source?.[animationState.phase];
-      if (phaseStyle) {
-        return {
-          transform: phaseStyle.scale ? `scale(${phaseStyle.scale})` : undefined,
-          boxShadow: phaseStyle.glow ? `0 0 22px 8px ${phaseStyle.glow}` : undefined,
-          transition: 'transform 0.18s ease-out, box-shadow 0.18s ease-out',
-          zIndex: 100,
-        };
-      }
-      if (animationState.phase === 'return' || animationState.phase === 'contract')
-        return { transform: 'scale(1)', transition: 'all 0.2s ease-in' };
-    }
-    return {};
-  }, [animationState]);
-
-  // Target shake — heavy hits and shockwaves rattle the target cell.
-  const targetShake = Boolean(
-    animationState?.isTarget
-    && animationState.config?.shake
-    && animationState.phase === 'impact'
-    && animationState.outcome !== 'miss'
+  // Config-driven marker styling, folded across every animation this token is
+  // currently part of (it can be the source of the swing and the target of a
+  // concurrent landing at the same time).
+  const animationStyle = useMemo(
+    () => mergeAnimationStyles(animationStates.map(animationStyleFor)),
+    [animationStates]
   );
+
+  // Target shake — heavy hits and shockwaves rattle the target cell. Any one
+  // qualifying landing is enough; the CSS class is not additive.
+  const targetShake = animationStates.some(isShakingTarget);
 
   return (
     <div
@@ -551,8 +785,7 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
 // ---------------------------------------------------------------------------
 const EntityLayer = React.memo(({
   entitiesToRender,
-  activeAnimation,
-  animationPhase,
+  activeAnimations,
   hoveredEntity,
   selectedEntity,
   hoveredTargetId,
@@ -568,26 +801,30 @@ const EntityLayer = React.memo(({
         entityId != null ? hoveredEntity.id === entityId : hoveredEntity === item.entity
       );
 
-      // Derive per-entity animation state
-      let animState = null;
-      if (activeAnimation && animationPhase) {
-        if (activeAnimation.source_id === entityId) {
-          animState = { isSource: true, isTarget: false, phase: animationPhase, outcome: activeAnimation.outcome, config: activeAnimation.config };
-        } else if (activeAnimation.target_id === entityId) {
-          animState = { isSource: false, isTarget: true, phase: animationPhase, outcome: activeAnimation.outcome, config: activeAnimation.config };
-        }
-      }
+      // Derive per-entity animation state — ALL of them, see collectAnimationStates
+      const animStates = collectAnimationStates(activeAnimations, entityId);
 
       // Config-driven source motion: recoil away from the target on windup,
       // travel toward it on the strike/rush phase, hold there through impact
       // so the hit connects visually, then ease back on return. Spin motions
       // rotate in place instead of travelling.
+      //
+      // A token has ONE position, so only one layer may drive it: the lead of
+      // the swing, tagged in playAnimations. Selecting "the first source layer
+      // still in flight" instead looks equivalent and is not -- the lead is
+      // removed from activeAnimations the moment its phases end, after which a
+      // follower aimed at a different cell inherits the token and the marker
+      // snaps toward the new target mid-arc.
       let transformStyle = {};
-      const motion = activeAnimation?.config?.motion;
-      if (animState?.isSource && motion) {
-        const cfg = activeAnimation.config;
-        const targetItem = activeAnimation.target_id
-          ? entitiesToRender.find((e) => e.entity.id === activeAnimation.target_id)
+      const motionState = animStates.find(
+        (s) => s.isSource && s.anim.config?.motion && s.anim.isLead
+      );
+      if (motionState) {
+        const { config: cfg, phase } = motionState.anim;
+        const motion = cfg.motion;
+        const targetId = motionState.anim.target_id;
+        const targetItem = targetId
+          ? entitiesToRender.find((e) => e.entity.id === targetId)
           : null;
         const sPos = getPos(item.entity);
         const tPos = targetItem ? getPos(targetItem.entity) : null;
@@ -597,29 +834,29 @@ const EntityLayer = React.memo(({
         const travel = motion.travel || 0;
         const rotate = motion.spinDegrees ? ` rotate(${motion.spinDegrees}deg)` : '';
 
-        if (animState.phase === motion.windupPhase && motion.recoil) {
+        if (phase === motion.windupPhase && motion.recoil) {
           // Recoil directly away from the target; small upward coil when untargeted
           const len = Math.hypot(dx, dy) || 1;
           transformStyle = {
             transform: tPos
               ? `translate(${(-dx / len) * motion.recoil * 100}%, ${(-dy / len) * motion.recoil * 100}%)`
               : `translate(0, -${motion.recoil * 60}%)`,
-            transition: `transform ${phaseDurationOf(cfg, animState.phase)}ms ease-out`,
+            transition: `transform ${phaseDurationOf(cfg, phase)}ms ease-out`,
             zIndex: 100,
           };
-        } else if (animState.phase === motion.travelPhase) {
+        } else if (phase === motion.travelPhase) {
           transformStyle = {
             transform: `translate(${dx * travel * 100}%, ${dy * travel * 100}%)${rotate}`,
-            transition: `transform ${phaseDurationOf(cfg, animState.phase)}ms ${motion.easing || 'ease-in'}`,
+            transition: `transform ${phaseDurationOf(cfg, phase)}ms ${motion.easing || 'ease-in'}`,
             zIndex: 100,
           };
-        } else if (animState.phase === 'impact' && travel && tPos) {
+        } else if (phase === 'impact' && travel && tPos) {
           // Hold at the target through impact — no snap-back mid-hit
           transformStyle = {
             transform: `translate(${dx * travel * 100}%, ${dy * travel * 100}%)${rotate}`,
             zIndex: 100,
           };
-        } else if (animState.phase === 'return') {
+        } else if (phase === 'return') {
           transformStyle = {
             transform: 'translate(0, 0) rotate(0deg)',
             transition: `transform ${phaseDurationOf(cfg, 'return')}ms ease-in-out`,
@@ -652,7 +889,7 @@ const EntityLayer = React.memo(({
             // This has to live on the wrapper: it is absolutely positioned
             // with a numeric z-index, so it forms a stacking context and any
             // z-index set on the inner motion div is scoped inside it.
-            zIndex: animState ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
+            zIndex: animStates.length ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
           }}
         >
           <div style={{
@@ -671,7 +908,7 @@ const EntityLayer = React.memo(({
               isCompact={isCompact}
               isHovered={(entityId != null && hoveredTargetId === entityId) || isEntityHovered}
               isSelected={entityId != null && selectedEntity?.id === entityId}
-              animationState={animState}
+              animationStates={animStates}
               displaySymbol={item.displaySymbol}
             />
           </div>
@@ -818,137 +1055,156 @@ const TravelDot = ({ fromStyle, toStyle, color, duration, delay = 0, size = 1 })
 // config.effect: projectile streaks, expanding shockwave rings, rising buff
 // particles, and drain streams. Rendered only during the effect's phase.
 // ---------------------------------------------------------------------------
-const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntityStyle, combat }) => {
-  const cfg = activeAnimation?.config;
-  const effect = cfg?.effect;
-
+const EffectsLayer = React.memo(({ activeAnimations, getEntityStyle, combat }) => {
   // Deliberately not the parent's `allCombatants` memo. Two reasons, both
   // load-bearing: EffectsLayer is a separate React.memo component and cannot
   // see that memo without prop-drilling it, and this lookup accepts the
   // literal sentinel 'player' as an id — animation payloads use it for the
-  // source/target of player-originated effects — which a plain id match over
-  // the flat list would not resolve.
+  // source/target of player-originated effects — which a plain id lookup
+  // would not resolve. The id→entity map turns the per-overlay pool scans
+  // into O(1) lookups (a 12-layer batch does 24 of them per render).
+  const entityById = useMemo(() => {
+    const map = new Map();
+    for (const pool of [[combat?.player], combat?.allies, combat?.enemies]) {
+      for (const entity of pool || []) {
+        if (entity?.id != null) map.set(entity.id, entity);
+      }
+    }
+    return map;
+  }, [combat?.player, combat?.allies, combat?.enemies]);
+
   const findEntity = (id) => {
     if (!id || !combat) return null;
-    if (id === 'player' || combat.player?.id === id) return combat.player;
-    return combat.enemies?.find((e) => e.id === id)
-      || combat.allies?.find((e) => e.id === id)
-      || null;
+    if (id === 'player') return combat.player || null;
+    return entityById.get(id) || null;
   };
 
-  if (!effect || animationPhase !== effect.phase) return null;
+  // One overlay per animation currently inside its effect phase. This rendered
+  // exactly one effect for one active animation; a four-target arc now has four
+  // landings in flight, each entitled to its own ring/streak on its own cell.
+  const renderEffect = (anim) => {
+    const cfg = anim?.config;
+    const effect = cfg?.effect;
+    if (!effect || anim?.phase !== effect.phase) return null;
 
-  const duration = phaseDurationOf(cfg, effect.phase, 300);
-  const source = findEntity(activeAnimation.source_id);
-  const target = findEntity(activeAnimation.target_id);
-  const sourceStyle = source ? getEntityStyle(getPos(source), 140) : null;
-  const targetStyle = target ? getEntityStyle(getPos(target), 140) : null;
+    const duration = phaseDurationOf(cfg, effect.phase, 300);
+    const source = findEntity(anim.source_id);
+    const target = findEntity(anim.target_id);
+    const sourceStyle = source ? getEntityStyle(getPos(source), 140) : null;
+    const targetStyle = target ? getEntityStyle(getPos(target), 140) : null;
 
-  let content = null;
-  switch (effect.kind) {
-    case 'projectile': {
-      if (!sourceStyle || !targetStyle) break;
-      content = (
-        <TravelDot
-          fromStyle={sourceStyle}
-          toStyle={targetStyle}
-          color={effect.color}
-          duration={duration}
-        />
-      );
-      break;
-    }
-    case 'drain': {
-      if (!sourceStyle || !targetStyle) break;
-      // Three staggered motes flowing target → source
-      content = [0, 1, 2].map((i) => (
-        <TravelDot
-          key={i}
-          fromStyle={targetStyle}
-          toStyle={sourceStyle}
-          color={effect.color}
-          duration={Math.max(120, duration - i * 120)}
-          delay={i * 120}
-          size={0.7}
-        />
-      ));
-      break;
-    }
-    case 'ring': {
-      // The effect config declares which cell the ring sits on: 'target' for
-      // impact rings, caster (default) for sweep arcs / defensive shells /
-      // shockwaves radiating outward.
-      const anchor = (effect.anchor === 'target' && targetStyle) ? targetStyle : sourceStyle;
-      if (!anchor) break;
-      content = (
-        <div
-          style={{
-            position: 'absolute',
-            ...anchor,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-          }}
-        >
-          <div
-            className="battlefield-effect-ring"
-            style={{
-              width: '90%',
-              height: '90%',
-              border: `3px solid ${effect.color}`,
-              boxShadow: `0 0 12px 2px ${effect.color}`,
-              ['--bf-ring-scale']: (effect.size || 1) * 2.6,
-              animationDuration: `${duration}ms`,
-            }}
+    let content = null;
+    switch (effect.kind) {
+      case 'projectile': {
+        if (!sourceStyle || !targetStyle) break;
+        content = (
+          <TravelDot
+            fromStyle={sourceStyle}
+            toStyle={targetStyle}
+            color={effect.color}
+            duration={duration}
           />
-        </div>
-      );
-      break;
-    }
-    case 'rise': {
-      if (!sourceStyle) break;
-      // Sparks climbing off the caster — offsets in % of the cell
-      content = (
-        <div
-          style={{
-            position: 'absolute',
-            ...sourceStyle,
-            pointerEvents: 'none',
-          }}
-        >
-          {[{ left: '25%', d: 0 }, { left: '50%', d: 120 }, { left: '70%', d: 60 }].map((p, i) => (
+        );
+        break;
+      }
+      case 'drain': {
+        if (!sourceStyle || !targetStyle) break;
+        // Three staggered motes flowing target → source
+        content = [0, 1, 2].map((i) => (
+          <TravelDot
+            key={i}
+            fromStyle={targetStyle}
+            toStyle={sourceStyle}
+            color={effect.color}
+            duration={Math.max(120, duration - i * 120)}
+            delay={i * 120}
+            size={0.7}
+          />
+        ));
+        break;
+      }
+      case 'ring': {
+        // The effect config declares which cell the ring sits on: 'target' for
+        // impact rings, caster (default) for sweep arcs / defensive shells /
+        // shockwaves radiating outward.
+        const anchor = (effect.anchor === 'target' && targetStyle) ? targetStyle : sourceStyle;
+        if (!anchor) break;
+        content = (
+          <div
+            style={{
+              position: 'absolute',
+              ...anchor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
             <div
-              key={i}
-              className="battlefield-effect-rise"
+              className="battlefield-effect-ring"
               style={{
-                position: 'absolute',
-                left: p.left,
-                bottom: '20%',
-                width: '12%',
-                height: '12%',
-                borderRadius: '50%',
-                backgroundColor: effect.color,
-                boxShadow: `0 0 6px 2px ${effect.color}`,
-                animationDuration: `${Math.max(200, duration - p.d)}ms`,
-                animationDelay: `${p.d}ms`,
+                width: '90%',
+                height: '90%',
+                border: `3px solid ${effect.color}`,
+                boxShadow: `0 0 12px 2px ${effect.color}`,
+                ['--bf-ring-scale']: (effect.size || 1) * 2.6,
+                animationDuration: `${duration}ms`,
               }}
             />
-          ))}
-        </div>
-      );
-      break;
+          </div>
+        );
+        break;
+      }
+      case 'rise': {
+        if (!sourceStyle) break;
+        // Sparks climbing off the caster — offsets in % of the cell
+        content = (
+          <div
+            style={{
+              position: 'absolute',
+              ...sourceStyle,
+              pointerEvents: 'none',
+            }}
+          >
+            {[{ left: '25%', d: 0 }, { left: '50%', d: 120 }, { left: '70%', d: 60 }].map((p, i) => (
+              <div
+                key={i}
+                className="battlefield-effect-rise"
+                style={{
+                  position: 'absolute',
+                  left: p.left,
+                  bottom: '20%',
+                  width: '12%',
+                  height: '12%',
+                  borderRadius: '50%',
+                  backgroundColor: effect.color,
+                  boxShadow: `0 0 6px 2px ${effect.color}`,
+                  animationDuration: `${Math.max(200, duration - p.d)}ms`,
+                  animationDelay: `${p.d}ms`,
+                }}
+              />
+            ))}
+          </div>
+        );
+        break;
+      }
+      default:
+        break;
     }
-    default:
-      break;
-  }
 
-  if (!content) return null;
-  return (
-    <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 140 }}>
-      {content}
-    </div>
-  );
+    if (!content) return null;
+    return (
+      <div
+        key={anim.animId}
+        style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 140 }}
+      >
+        {content}
+      </div>
+    );
+  };
+
+  const overlays = (activeAnimations || []).map(renderEffect).filter(Boolean);
+  return overlays.length ? overlays : null;
 });
 
 // ---------------------------------------------------------------------------
@@ -1501,14 +1757,57 @@ function BattlefieldGrid({
   streamedAnimations = [],
   combatSpeed = 1,
 }) {
-  const [activeAnimation, setActiveAnimation] = useState(null);
-  const [animationPhase, setAnimationPhase] = useState(null);
-  const [lastProcessedLogIndex, setLastProcessedLogIndex] = useState(0);
+  /**
+   * @typedef {Object} AnimationLayer
+   * One queued or in-flight animation layer. Field groups, by origin:
+   *  - strike payload (log carrier or stream): `type`, `source_id`,
+   *    `target_id`, `outcome`, `swing_key?` (scopes batching to one swing),
+   *    `seq?` (monotonic per fight, adapter-stamped);
+   *  - streaming extras: `beat?` (drives the 75% SFX chain), `suppressSfx?`;
+   *  - death payload: `type: 'death'`, `target_id`, `position`, `entity`,
+   *    `friendly`, `suppressSfx?`;
+   *  - queue stamps (enqueueAnimations): `queueId` (drain identity),
+   *    `generation` (fight the item belongs to);
+   *  - in-flight stamps (playAnimations): `config`, `animId`, `phase`
+   *    (null until the layer's stagger elapses), `isLead`.
+   */
+  // Every animation currently in flight. One move resolves once per target and
+  // each resolution animates IN FULL, layered — so this is a set, not a single
+  // animation with a single shared phase, and each member carries its own
+  // `phase` clock (null until its stagger elapses).
+  const [activeAnimations, setActiveAnimations] = useState([]);
   const [animationQueue, setAnimationQueue] = useState([]);
+  // Which log entries have already been turned into animations, by identity —
+  // never by list index. See revealedLogEntries: the raw log is front-trimmed
+  // by the adapter, so an index cursor skews under it permanently.
+  const processedLogIdsRef = useRef(new Set());
+  // Monotonic key for the in-flight set. Identity can't come from the payload:
+  // two resolutions of one swing can be byte-identical on the wire (Chip Away
+  // landing twice on one target for the same outcome).
+  const animIdRef = useRef(0);
+  // Monotonic enqueue-time identity for queue items — what the drain removes
+  // by (see removeBatchByIdentity).
+  const queueIdRef = useRef(0);
+  // Which fight the pipeline is animating. Bumped by the per-fight reset;
+  // queue items are stamped with it at enqueue, and the drain/players refuse
+  // items from a moved generation — closing the race where the reset and a
+  // drain of the pre-reset queue snapshot land in the same commit.
+  const fightGenerationRef = useRef(0);
+  // Kills already given a death burst this fight, keyed `${beat}:${target}`.
+  // A per-enqueue-pass set forgot earlier passes, so a kill whose carriers
+  // arrived across two polls chained two bursts.
+  const killedTargetsRef = useRef(new Set());
+  // Early-out signature for the log-enqueue walk (see that effect).
+  const logSignatureRef = useRef(null);
   const [dyingEntities, setDyingEntities] = useState([]);
   // Guard ref: set to true on unmount to prevent stale setTimeout callbacks
   const animationCancelRef = useRef(false);
   const animationTimeoutsRef = useRef([]);
+  // Distinguish "a new fight started" from "this fight ended" -- the pan/reset
+  // effect below runs for both, and only the first may reset the animation
+  // cursor. See the comment there.
+  const prevCombatIdRef = useRef(null);
+  const prevCombatActiveRef = useRef(false);
 
   const [hoveredEntity, setHoveredEntity] = useState(null);
   // Store the id, not the entity object. Every beat replaces `combat` with freshly
@@ -1544,8 +1843,8 @@ function BattlefieldGrid({
   // Notify parent when animation busy-state changes so end-of-combat timing
   // can wait for the death animation to finish before starting the grace timer.
   // prevAnimatingRef skips the callback when the boolean hasn't changed (e.g.
-  // phase transitions within a single animation — all fire activeAnimation!=null
-  // so the value stays true throughout). This avoids unnecessary GamePage
+  // phase transitions within a single animation — the in-flight set stays
+  // non-empty throughout). This avoids unnecessary GamePage
   // re-renders on every phase. Cleanup resets to false on unmount so GamePage
   // never gets stuck with isBattlefieldAnimating=true.
   const prevAnimatingRef = useRef(false);
@@ -1559,12 +1858,14 @@ function BattlefieldGrid({
   // prevAnimatingRef still reads `true`, so the guard below would suppress the
   // corrective `true` and leave the parent believing animation had finished.
   useEffect(() => {
-    const isAnimating = activeAnimation !== null || animationQueue.length > 0;
+    // The LAST layer, not the first: a four-target arc is still animating long
+    // after its lead resolution has finished its return phase.
+    const isAnimating = activeAnimations.length > 0 || animationQueue.length > 0;
     if (onAnimatingChange && isAnimating !== prevAnimatingRef.current) {
       prevAnimatingRef.current = isAnimating;
       onAnimatingChange(isAnimating)
     }
-  }, [activeAnimation, animationQueue, onAnimatingChange]);
+  }, [activeAnimations, animationQueue, onAnimatingChange]);
 
   // Unmount-only reset, so the parent never gets stuck with isBattlefieldAnimating=true.
   useEffect(() => () => {
@@ -1737,19 +2038,71 @@ function BattlefieldGrid({
     // node and panning is silently dead for the rest of the session.
   }, [applyPanTransform, tab]);
 
-  // Reset pan when a new combat begins. Keyed on the props Battlefield passes
-  // from the top-level combat object, NOT on `combat` — that prop is a beat
-  // state here, and serialize_combat_state emits neither field, so reading them
-  // off it made this dep flip uuid <-> undefined every time displayState
-  // alternated shape, resetting the camera mid-fight.
+  // New-fight housekeeping: (1) reset the touch-pan offset, on EVERY fight
+  // boundary; (2) reset the animation pipeline (queue, cursor, in-flight
+  // layers, kill registry), only when a genuinely NEW fight starts. The two
+  // share one effect because the prev-ref update below (prevCombatIdRef /
+  // prevCombatActiveRef) must run exactly once per transition: split into two
+  // effects keyed on the same deps, each would have to record the transition
+  // itself, and the duplicate recording means whichever compares second sees
+  // prev === current and misses the fight boundary.
+  //
+  // Keyed on the props Battlefield passes from the top-level combat object,
+  // NOT on `combat` — that prop is a beat state here, and
+  // serialize_combat_state emits neither field, so reading them off it made
+  // this dep flip uuid <-> undefined every time displayState alternated shape,
+  // resetting the camera mid-fight.
   useEffect(() => {
     if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
     touchPanRef.current = { x: 0, y: 0 };
     applyPanTransform();
+
+    // This effect also runs when a fight ENDS: `combatActive` flips to false
+    // while the grid stays mounted. Resetting the animation cursor on that
+    // transition replays the whole fight -- Battlefield clears accBeatStates,
+    // which re-runs the enqueue effect against an emptied processed set, so
+    // every still-revealed carrier is treated as new and the fight animates
+    // again from the top, holding onAnimatingChange open through the victory
+    // grace timer. Only a genuinely NEW fight may reset the cursor.
+    const startingNewFight =
+      (combatId != null && combatId !== prevCombatIdRef.current) ||
+      (combatActive && !prevCombatActiveRef.current);
+    // Record only REAL ids. combat:ended is synthesized with no combat_id
+    // (useApi.applyCombatState), so combatId blips to undefined at every
+    // fight end; recording that blip made the next ordinary poll read as
+    // undefined -> same-id, a fake "new fight" that cleared the cursor and
+    // replayed the whole revealed log -- the replay bug's side door.
+    if (combatId != null) prevCombatIdRef.current = combatId;
+    prevCombatActiveRef.current = combatActive;
+    if (!startingNewFight) return;
+
+    // Retire the previous fight's generation FIRST: any queue snapshot still
+    // in flight this commit carries the old stamp, and the drain refuses it.
+    fightGenerationRef.current += 1;
     // The queue is per-fight. Without this it lives for the whole session,
     // replaying a finished fight's animations into the next one.
     setAnimationQueue([]);
     setLastProcessedStreamIndex(0);
+    // Same reason, and it must be cleared alongside the queue: the server
+    // clears combat_log per fight and LeftPanel restarts its count, so the new
+    // fight's opening entries carry the same ids as the old one's and would be
+    // mistaken for already-animated.
+    processedLogIdsRef.current = new Set();
+    // Per-fight like the processed set: a respawned roster reuses entity ids,
+    // and a stale kill registry would swallow the new fight's death bursts.
+    killedTargetsRef.current = new Set();
+    // Force the next log-enqueue pass to walk the (possibly identical-looking)
+    // new fight's log.
+    logSignatureRef.current = null;
+    // In-flight layers are per-fight too. Clearing only the queue left the
+    // previous fight's stagger timeouts (up to MAX_LAYER_LEAD_MS) and phase
+    // chains running: they fired into the new arena, and because
+    // activeAnimations stayed non-empty the new fight's first batch could
+    // never drain -- leaving onAnimatingChange latched true.
+    animationTimeoutsRef.current.forEach(clearTimeout);
+    animationTimeoutsRef.current = [];
+    setActiveAnimations([]);
+    setDyingEntities([]);
   }, [combatId, combatActive, applyPanTransform]);
 
   // Clicking the map background clears the selection — as the panel's own
@@ -1799,9 +2152,25 @@ function BattlefieldGrid({
     return id;
   }, []);
 
+  /**
+   * Stamp queue identity + fight generation onto animation payloads and append
+   * them under the queue bound. Every enqueue goes through here: the stamps
+   * are what the drain and the reset-race guards key on.
+   */
+  const enqueueAnimations = useCallback((items) => {
+    const stamped = items.map((item) => ({
+      ...item,
+      queueId: (queueIdRef.current += 1),
+      generation: fightGenerationRef.current,
+    }));
+    setAnimationQueue((prev) => appendBounded(prev, stamped));
+  }, []);
+
   // Streaming (issue #436): enqueue pre-built animations as the engine's beats
   // arrive. Replaces the log-spooler path below; deaths/departures are built by
   // the parent from the engine's authoritative killed/departed, not diffed here.
+  // A streamed animation's `swing_key` (adapter-stamped) rides through the
+  // spread in enqueueAnimations untouched.
   const [lastProcessedStreamIndex, setLastProcessedStreamIndex] = useState(0);
   useEffect(() => {
     if (!streaming) return;
@@ -1813,89 +2182,169 @@ function BattlefieldGrid({
       return;
     }
     if (streamedAnimations.length > lastProcessedStreamIndex) {
-      const next = streamedAnimations.slice(lastProcessedStreamIndex);
-      setAnimationQueue((prev) => [...prev, ...next].slice(-MAX_ANIMATION_QUEUE));
+      enqueueAnimations(streamedAnimations.slice(lastProcessedStreamIndex));
       setLastProcessedStreamIndex(streamedAnimations.length);
     }
-  }, [streaming, streamedAnimations, lastProcessedStreamIndex]);
+  }, [streaming, streamedAnimations, lastProcessedStreamIndex, enqueueAnimations]);
 
   // Enqueue new animations from the combat log as entries are revealed
   useEffect(() => {
     if (streaming) return; // beats drive animation instead (see effect above)
     const log = combatLog || combat?.log;
     if (!log) return;
-    // Mirror of the streaming guard above. LeftPanel empties its revealed set
-    // when a new fight starts, so displayedLogCount drops back to 0; without
-    // re-syncing, the stale cursor sits above it and the new fight's entries
-    // never enqueue.
-    if (displayedLogCount < lastProcessedLogIndex) {
-      setLastProcessedLogIndex(displayedLogCount);
-      return;
+
+    // Early out when nothing can have changed: `combat.log` is a freshly
+    // deserialized array on every poll, so without this the full (~800-entry)
+    // log was re-walked through revealedLogEntries per poll even when idle.
+    // What each component covers: length + tail key/beat/seq catch plain
+    // appends and most trims; the HEAD entry's key and the tail's within-beat
+    // repeat ordinal catch a front-trim that removes k entries while k
+    // byte-identical UNSTAMPED carriers append (length, tail identity, reveal
+    // count and generation all match in that shape, and skipping it dropped
+    // the new landing); the reveal count covers LeftPanel progress; the fight
+    // generation covers a new fight with an identical-looking log. A log
+    // change this signature still cannot see is one whose positional entry
+    // ids are byte-identical too, and the enqueue walk below would find
+    // nothing new in that case either — the signature is exactly as
+    // discriminating as the id scheme it gates.
+    const lastEntry = log.length ? log[log.length - 1] : null;
+    // The tail's within-beat repeat ordinal: how many earlier entries of the
+    // tail's own beat share its key. Walks back only through the tail's beat
+    // (a handful of entries), so the idle-poll cost stays O(beat), not O(log).
+    let tailRepeat = 0;
+    if (lastEntry) {
+      const tailKey = logEntryKey(lastEntry);
+      const tailBeat = lastEntry.beat_index ?? 0;
+      for (let i = log.length - 2; i >= 0; i--) {
+        if ((log[i]?.beat_index ?? 0) !== tailBeat) break;
+        if (logEntryKey(log[i]) === tailKey) tailRepeat += 1;
+      }
     }
-    if (displayedLogCount > lastProcessedLogIndex) {
-      const newEntries = log.slice(lastProcessedLogIndex, displayedLogCount);
-      const animations = [];
-      const killedIds = new Set(); // guard against duplicate death animations in one batch
+    const signature = [
+      log.length,
+      log.length ? logEntryKey(log[0]) : '',
+      lastEntry ? logEntryKey(lastEntry) : '',
+      lastEntry?.beat_index ?? '',
+      lastEntry?.animation?.seq ?? '',
+      tailRepeat,
+      displayedLogCount,
+      fightGenerationRef.current,
+    ].join(LOG_KEY_SEP);
+    if (logSignatureRef.current === signature) return;
+    logSignatureRef.current = signature;
 
-      newEntries.forEach((entry) => {
-        if (!entry.animation) return;
-        const anim = entry.animation;
-        animations.push(anim);
+    const processed = processedLogIdsRef.current;
+    const killed = killedTargetsRef.current;
+    const animations = [];
+    // Every animation-carrier id in the current window — what `processed` is
+    // pruned against below.
+    const windowIds = new Set();
 
-        // Detect a killing blow — chain a death animation immediately after the attack
-        if (anim.target_id && allBeatStates && !killedIds.has(anim.target_id)) {
-          const beatIdx = entry.beat_index ?? 0;
-          const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
-          const stateAt = allBeatStates[beatIdx];
-          // Both liveness checks must read a missing hp field identically.
-          // Divergent defaults across these two lines make an enemy count as
-          // alive before the blow and dead after it, firing a death burst on a
-          // combatant that is still fighting.
-          const wasAlive = stateBefore?.enemies?.some(
-            (en) => en.id === anim.target_id && isLiving(en)
-          );
-          const isNowDead = !stateAt?.enemies?.some(
-            (en) => en.id === anim.target_id && isLiving(en)
-          );
-          if (wasAlive && isNowDead) {
-            const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
-            if (lastKnown?.position) {
-              // friendly: false is sound here — this branch only inspects
-              // `stateBefore.enemies`, so it can only ever synthesize an
-              // enemy death. Streamed deaths (which can be an ally or Jean)
-              // carry their own alignment from `beatToAnimations`.
-              animations.push({
-                type: 'death',
-                target_id: anim.target_id,
-                position: lastKnown.position,
-                entity: lastKnown,
-                friendly: false,
-              });
-              killedIds.add(anim.target_id);
-            }
+    revealedLogEntries(log, displayedLogCount).forEach(({ entry, id }) => {
+      // Prose-only lines are never tracked: their ids embed the full message
+      // text, and recording them held every revealed line's prose in the set
+      // for the whole fight.
+      if (!entry.animation) return;
+      windowIds.add(id);
+      if (processed.has(id)) return;
+      processed.add(id);
+      // The batch predicate needs a per-swing key (see takeAnimationBatch).
+      // The beat index alone is NOT a fight-wide swing identity: the server
+      // resets beat_index to 0 at the top of EVERY player action, so two
+      // successive same-type swings by one actor (kill A, immediately attack
+      // B with no intervening carriers) would share it and merge into one
+      // batch — the second swing losing its windup and whoosh. `round` is
+      // monotonic per fight, so compounding round:beat scopes the key to one
+      // swing; an adapter-stamped key wins if present.
+      const anim = {
+        ...entry.animation,
+        swing_key: entry.animation.swing_key
+          ?? `${entry.round ?? 0}:${entry.beat_index ?? 0}`,
+      };
+      animations.push(anim);
+
+      // Detect a killing blow — chain a death animation after the attack.
+      // The kill registry is per FIGHT (`killedTargetsRef`), not per pass:
+      // a kill whose carriers arrive across two polls must still burst once.
+      const beatIdx = entry.beat_index ?? 0;
+      const killKey = `${beatIdx}:${anim.target_id}`;
+      if (anim.target_id && allBeatStates && !killed.has(killKey)) {
+        const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
+        const stateAt = allBeatStates[beatIdx];
+        // Both liveness checks must read a missing hp field identically.
+        // Divergent defaults across these two lines make an enemy count as
+        // alive before the blow and dead after it, firing a death burst on a
+        // combatant that is still fighting.
+        const wasAlive = stateBefore?.enemies?.some(
+          (en) => en.id === anim.target_id && isLiving(en)
+        );
+        const isNowDead = !stateAt?.enemies?.some(
+          (en) => en.id === anim.target_id && isLiving(en)
+        );
+        if (wasAlive && isNowDead) {
+          const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
+          if (lastKnown?.position) {
+            // friendly: false is sound here — this branch only inspects
+            // `stateBefore.enemies`, so it can only ever synthesize an
+            // enemy death. Streamed deaths (which can be an ally or Jean)
+            // carry their own alignment from `beatToAnimations`.
+            animations.push({
+              type: 'death',
+              target_id: anim.target_id,
+              position: lastKnown.position,
+              entity: lastKnown,
+              friendly: false,
+            });
+            killed.add(killKey);
           }
         }
-      });
-
-      if (animations.length > 0) {
-        setAnimationQueue((prev) => [...prev, ...animations].slice(-MAX_ANIMATION_QUEUE));
       }
-      setLastProcessedLogIndex(displayedLogCount);
-    }
-  }, [streaming, combatLog, combat?.log, lastProcessedLogIndex, displayedLogCount, allBeatStates]);
+    });
 
-  // Run one animation at a time from the queue
-  const playAnimation = useCallback((animData) => {
-    const config = getAnimationConfig(animData.type);
-    setActiveAnimation({ ...animData, config });
+    // Prune ids whose entries have left the revealed window (front-trimmed
+    // away): the set tracks the window, not the whole fight, so it cannot grow
+    // without bound across a long brawl. Within a fight an id never re-enters
+    // the window — it only grows at the tail and shrinks at the front — with
+    // ONE exception: the synthesized combat:ended payload blips `log: []`
+    // while the next poll still serves the finished fight's log. Pruning
+    // against that empty window would wipe the set and replay the whole fight,
+    // so an empty window prunes nothing (there is nothing worth keeping it in
+    // step with anyway).
+    if (windowIds.size > 0) {
+      for (const id of processed) {
+        if (!windowIds.has(id)) processed.delete(id);
+      }
+    }
+
+    if (animations.length > 0) {
+      enqueueAnimations(animations);
+    }
+    // `combatId` is a real dependency, not decoration: the reset effect above
+    // empties the processed-id set when a fight changes, and this effect is
+    // what refills it. Without it, a new fight whose log array happened to be
+    // reference-equal to the old one would never re-enqueue.
+  }, [streaming, combatLog, combat?.log, displayedLogCount, allBeatStates, combatId, enqueueAnimations]);
+
+  // Start one layer's own phase clock. `entry.isLead` (stamped by
+  // playAnimations) gates the swing's NON-IMPACT SFX cues here — followers
+  // play only their landing. The lead's other roles (token motion, source
+  // scale/glow) are read from the same flag by EntityLayer and
+  // animationStyleFor, not by this function.
+  const startAnimationLayer = useCallback((entry) => {
+    if (animationCancelRef.current) return; // component unmounted — bail out
+    // A layer whose fight was reset between scheduling and its staggered start
+    // belongs to an arena that no longer exists — let it die silently.
+    if (entry.generation !== undefined && entry.generation !== fightGenerationRef.current) return;
+    const config = entry.config;
 
     // Streaming (issue #436): fire this beat's ordered SFX as a 75% partial
-    // stack at animation start (the engine authored the emissions); this
-    // replaces the phase-keyed cues below. `suppressSfx` entries stay silent
-    // (e.g. a streamed death whose sound already played in the attack's chain).
-    if (animData.beat) {
+    // stack at layer start (the engine authored the emissions, including
+    // whether a follow-up resolution carries a swing); this replaces the
+    // phase-keyed cues below. `suppressSfx` entries stay silent (e.g. a
+    // streamed death whose sound already played in the attack's chain).
+    if (entry.beat) {
       const schedule = scheduleSfxChain(
-        beatSfxFor(animData.beat),
+        beatSfxFor(entry.beat),
         (cue) => SFX_DURATIONS[cue] || 0,
         combatSpeed
       );
@@ -1907,16 +2356,16 @@ function BattlefieldGrid({
 
     // Register the entity as dying so DeathAnimationLayer can render the burst
     // and EntityLayer can fade out the marker
-    if (animData.type === 'death' && animData.position) {
+    if (entry.type === 'death' && entry.position) {
       setDyingEntities((prev) => [...prev, {
-        id: animData.target_id,
-        position: animData.position,
-        entity: animData.entity,
-        friendly: animData.friendly === true,
+        id: entry.target_id,
+        position: entry.position,
+        entity: entry.entity,
+        friendly: entry.friendly === true,
       }]);
       // Enemy death SFX — play once per kill (streamed deaths are sounded by the
       // attack beat's SFX chain instead, so they carry suppressSfx).
-      if (!animData.suppressSfx) playSFX('enemy_death', combatSpeed);
+      if (!entry.suppressSfx) playSFX('enemy_death', combatSpeed);
     }
 
     let currentPhaseIndex = 0;
@@ -1924,25 +2373,33 @@ function BattlefieldGrid({
     const advancePhase = () => {
       if (animationCancelRef.current) return; // component unmounted — bail out
       if (currentPhaseIndex >= config.phases.length) {
-        setActiveAnimation(null);
-        setAnimationPhase(null);
-        if (animData.type === 'death') {
-          setDyingEntities((prev) => prev.filter((d) => d.id !== animData.target_id));
+        setActiveAnimations((prev) => prev.filter((a) => a.animId !== entry.animId));
+        if (entry.type === 'death') {
+          setDyingEntities((prev) => prev.filter((d) => d.id !== entry.target_id));
         }
         return;
       }
       const phase = config.phases[currentPhaseIndex];
-      setAnimationPhase(phase.name);
+      setActiveAnimations((prev) => prev.map(
+        (a) => (a.animId === entry.animId ? { ...a, phase: phase.name } : a)
+      ));
 
       // Phase-aligned SFX cues, declared on the animation config. The special
       // cue 'outcome' resolves through the animation's outcome
       // ('hit' | 'miss' | 'parry' | ...) to the matching pre-baked WAV.
       // Skipped for streaming beats: their SFX is the 75% chain fired at start
-      // (animData.beat), or intentionally silent (suppressSfx).
-      const usesChain = animData.beat || animData.suppressSfx;
-      const cue = usesChain ? null : config.sfx?.[phase.name];
+      // (entry.beat), or intentionally silent (suppressSfx).
+      //
+      // A follower layer plays its landing and nothing else: one arc is one
+      // movement of the weapon, so four resolutions must not stack four
+      // whooshes. Their landings still layer — the layer stagger IS the SFX
+      // chain's spacing (see playAnimations), so the impact cues arrive as the
+      // partial stack rather than on one frame or one after another.
+      const usesChain = entry.beat || entry.suppressSfx;
+      const silent = usesChain || (!entry.isLead && phase.name !== 'impact');
+      const cue = silent ? null : config.sfx?.[phase.name];
       if (cue) {
-        playSFX(cue === 'outcome' ? impactSfxFor(animData.outcome) : cue, combatSpeed);
+        playSFX(cue === 'outcome' ? impactSfxFor(entry.outcome) : cue, combatSpeed);
       }
 
       trackTimeout(() => {
@@ -1958,13 +2415,79 @@ function BattlefieldGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playSFX, combatSpeed]);
 
+  // Play one swing's resolutions concurrently, dealt out on the SFX chain's
+  // spacing. Every layer joins the in-flight set immediately (so `isAnimating`
+  // covers the whole volley and the queue can't drain early) but stays
+  // phase-less, and therefore invisible, until its own start.
+  const playAnimations = useCallback((batch) => {
+    // A batch whose fight was reset between being taken and this call belongs
+    // to an arena that no longer exists.
+    if (batch.length === 0) return;
+    if (batch[0].generation !== undefined && batch[0].generation !== fightGenerationRef.current) return;
+    const entries = batch.map((animData, index) => ({
+      ...animData,
+      config: getAnimationConfig(animData.type),
+      animId: (animIdRef.current += 1),
+      phase: null,
+      // The lead owns the token's motion and the swing's non-impact cues. It
+      // travels WITH the layer rather than being derived at read time: the
+      // lead leaves activeAnimations when its phases finish, and a "first
+      // still in flight" rule then promotes a follower whose target_id is a
+      // different cell, snapping the token mid-arc.
+      isLead: index === 0,
+    }));
+    setActiveAnimations((prev) => [...prev, ...entries]);
+
+    const layers = scheduleAnimationLayers(
+      entries.map(animationImpactCue),
+      (cue) => SFX_DURATIONS[cue] || 0,
+      combatSpeed
+    );
+
+    entries.forEach((entry, index) => {
+      const begin = () => startAnimationLayer(entry);
+      // scheduleAnimationLayers already divides startMs by combatSpeed.
+      const startMs = layers[index]?.startMs || 0;
+      if (startMs > 0) trackTimeout(begin, startMs);
+      else begin();
+    });
+    // trackTimeout is an empty-dep useCallback; setActiveAnimations is a setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startAnimationLayer, combatSpeed]);
+
+  // Stale-generation guard shared by the drain's two filters below. Unstamped
+  // items (generation undefined) predate the stamp and always pass. Stable
+  // identity: it reads only a ref, so it can sit in effect deps harmlessly.
+  const isCurrentGeneration = useCallback(
+    (item) => item.generation === undefined || item.generation === fightGenerationRef.current,
+    []
+  );
+
+  // Queue drain: when nothing is in flight, take the next batch and play it.
   useEffect(() => {
-    if (!activeAnimation && animationQueue.length > 0) {
-      const nextAnim = animationQueue[0];
-      setAnimationQueue((prev) => prev.slice(1));
-      playAnimation(nextAnim);
+    if (activeAnimations.length !== 0 || animationQueue.length === 0) return;
+    // The snapshot can hold items from a fight that was reset EARLIER IN THIS
+    // SAME COMMIT (the reset effect runs first, bumps the generation and
+    // schedules the state clear — but this effect's deps still show the old
+    // queue). Stale-generation items must be dropped, never played.
+    const fresh = animationQueue.filter(isCurrentGeneration);
+    if (fresh.length === 0) {
+      // Nothing playable — sweep the stale items out of the live queue.
+      // Return `prev` untouched when there is nothing to remove, or the fresh
+      // array identity would re-run this effect forever.
+      setAnimationQueue((prev) => {
+        const kept = prev.filter(isCurrentGeneration);
+        return kept.length === prev.length ? prev : kept;
+      });
+      return;
     }
-  }, [activeAnimation, animationQueue, playAnimation]);
+    const [batch] = takeAnimationBatch(fresh);
+    // Remove by enqueue-time identity, never by position: the live queue may
+    // have been front-trimmed, appended to, or reset since this snapshot —
+    // see removeBatchByIdentity's invariant.
+    setAnimationQueue((prev) => removeBatchByIdentity(prev, batch));
+    playAnimations(batch);
+  }, [activeAnimations, animationQueue, playAnimations, isCurrentGeneration]);
 
   // Compute player position before camera effect (needed for camera target calculation)
   const playerPos = getPos(combat?.player);
@@ -2421,8 +2944,7 @@ function BattlefieldGrid({
 
         <EntityLayer
           entitiesToRender={entitiesToRender}
-          activeAnimation={activeAnimation}
-          animationPhase={animationPhase}
+          activeAnimations={activeAnimations}
           hoveredEntity={hoveredEntity}
           selectedEntity={selectedEntity}
           hoveredTargetId={hoveredTargetId}
@@ -2433,8 +2955,7 @@ function BattlefieldGrid({
         />
 
         <EffectsLayer
-          activeAnimation={activeAnimation}
-          animationPhase={animationPhase}
+          activeAnimations={activeAnimations}
           getEntityStyle={getEntityStyle}
           combat={combat}
         />
@@ -2476,8 +2997,9 @@ function BattlefieldGrid({
           className="absolute top-1 left-1 z-[200] pointer-events-none text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/80 text-lime-400 select-none"
           aria-hidden="true"
         >
-          anim: {activeAnimation?.type || 'idle'}
-          {animationPhase ? ` / ${animationPhase}` : ''}
+          anim: {activeAnimations.length
+            ? activeAnimations.map((a) => `${a.type}${a.phase ? `/${a.phase}` : ''}`).join(' + ')
+            : 'idle'}
           {` · q${animationQueue.length}`}
         </div>
       )}

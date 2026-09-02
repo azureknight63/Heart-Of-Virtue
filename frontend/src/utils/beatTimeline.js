@@ -9,7 +9,7 @@ export const DEFAULT_MAX_COLUMNS = 10;
 
 /**
  * Beat-timeline entry derivation for the battlefield's "who acts next" strip
- * (replaces the old "Beat N / X standing" counter behind the `beatTimeline`
+ * (shown alongside the "Beat N / X standing" counter, behind the `beatTimeline`
  * feature flag — see CLAUDE.md's FFX-CTB/Banner-Saga design reference).
  *
  * Deliberately a passthrough over `beatsUntilResolve`/`isMovePending`

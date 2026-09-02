@@ -341,18 +341,24 @@ describe('Battlefield', () => {
             }],
         };
 
-        it('shows the old beat counter, not the timeline, by default', () => {
-            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
-            expect(screen.getByText('Beat 7')).toBeInTheDocument();
-            expect(screen.queryByLabelText('Beat timeline')).not.toBeInTheDocument();
-        });
-
-        it('shows the timeline instead of the counter once the flag is on', () => {
-            act(() => setFlag('beatTimeline', true));
+        // The timeline now ships ON by default, and renders ALONGSIDE the beat
+        // counter rather than replacing it: the schedule carries ordering, the
+        // counter carries beat number and enemies remaining, and neither
+        // substitutes for the other. Turning the flag off drops only the
+        // schedule.
+        it('shows both the timeline and the beat counter by default', () => {
             render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
             expect(screen.getByLabelText('Beat timeline')).toBeInTheDocument();
-            expect(screen.queryByText('Beat 7')).not.toBeInTheDocument();
+            expect(screen.getByText('Beat 7')).toBeInTheDocument();
             expect(screen.getByText('Jean')).toBeInTheDocument();
+        });
+
+        it('keeps the beat counter and drops only the timeline when the flag is off', () => {
+            act(() => setFlag('beatTimeline', false));
+            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
+            expect(screen.getByText('Beat 7')).toBeInTheDocument();
+            expect(screen.getByText('1 standing')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Beat timeline')).not.toBeInTheDocument();
         });
     });
 });

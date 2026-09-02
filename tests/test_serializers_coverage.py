@@ -457,7 +457,9 @@ class TestCombatantSerializer:
 
         combatant = _combatant()
         move = moves.PowerStrike(combatant)
-        assert move.stage_beat == [5, 4, 8, 9]
+        # [5, 4, 6, 6] since Power Strike's cycle was re-cut from 26 beats to
+        # 21; the recoil and cooldown +3 bases were trimmed.
+        assert move.stage_beat == [5, 4, 6, 6]
         move.current_stage = 1
         move.beats_left = 2
         combatant.current_move = move
@@ -744,8 +746,8 @@ class TestCombatantSerializer:
         stats = self.CombatantSerializer._serialize_combat_stats(combatant)
         assert stats["defense"] == 7  # protection, the real mitigation stat
         assert stats["evasion"] == 20  # finesse, subtracted from attacker accuracy
-        # 98 + finesse*0.7 + intelligence*0.3
-        assert stats["accuracy"] == 115
+        # HIT_CHANCE_BASE (85) + finesse*0.7 + intelligence*0.3
+        assert stats["accuracy"] == 102
         assert stats["damage"] == 20  # weapon base damage
         # weapon damage + strength*str_mod + finesse*fin_mod
         assert stats["attack_power"] == 31
@@ -763,7 +765,7 @@ class TestCombatantSerializer:
         stats = self.CombatantSerializer._serialize_combat_stats(combatant)
         assert stats["defense"] == 3
         assert stats["evasion"] == 12
-        assert stats["accuracy"] == 108
+        assert stats["accuracy"] == 95
         assert stats["attack_power"] != 99
         assert "armor" not in stats
 

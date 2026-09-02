@@ -851,6 +851,88 @@ class TestBeatLoopEventCallback:
 
 
 # ---------------------------------------------------------------------------
+# cancelled wind-ups are discarded, never flush-emitted (phantom swings)
+# ---------------------------------------------------------------------------
+
+
+class TestCancelledWindupDiscard:
+    """A move reset mid-wind-up must not play its animation.
+
+    The event-interrupt branch and the roster-emptied precheck both clear
+    ``current_move`` AFTER the main end-of-move flush ran (which skipped the
+    then-attached move). Re-running the flush there emitted the never-resolved
+    channel's fallback — the full animation of a swing that never happened.
+    Both sites now discard via ``_detach_current_move``.
+    """
+
+    @staticmethod
+    def _windup_move(name):
+        """A multi-beat move whose advance() does NOT detach (still winding up)."""
+        move = _make_move(name, instant=False)
+        move.advance = MagicMock(return_value=None)
+        return move
+
+    def test_an_event_interrupt_discards_the_windup_channel_without_emitting(self):
+        move = self._windup_move("Aimed Shot")
+        player = _make_player()
+        enemy = _make_enemy()
+        player.known_moves = [move]
+        player.combat_list = [enemy]
+        player.current_move = move
+        move.target = enemy
+
+        callback = MagicMock(return_value=[{"event": "SomethingHappened"}])
+        adapter = _make_adapter(player, on_event_callback=callback)
+
+        with (
+            patch("src.functions.refresh_stat_bonuses"),
+            patch(
+                "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
+                return_value=dict(_STUB_BEAT_STATE),
+            ),
+        ):
+            result = adapter._execute_move_inner(move)
+
+        assert result.get("events_triggered") == [{"event": "SomethingHappened"}]
+        # The interrupted move was reset for reselection...
+        assert player.current_move is None
+        assert move.current_stage == 0
+        # ...and its channel was discarded, not emitted: no phantom carrier.
+        assert not hasattr(player, "_pending_animation")
+        assert not [e for e in player.combat_log if "animation" in e], (
+            "the event-interrupted wind-up's animation was flush-emitted — "
+            "the reset move plays as a phantom swing over the event dialog"
+        )
+
+    def test_a_windup_cancelled_by_an_emptied_roster_is_discarded_not_emitted(self):
+        """Ally kill / DoT felled the last enemy while Jean was still winding up."""
+        move = self._windup_move("Aimed Shot")
+        player = _make_player()
+        player.known_moves = [move]
+        player.combat_list = []  # the roster emptied under the wind-up
+        player.current_move = move
+        move.target = player
+        adapter = _make_adapter(player)
+
+        with (
+            patch("src.functions.refresh_stat_bonuses"),
+            patch(
+                "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
+                return_value=dict(_STUB_BEAT_STATE),
+            ),
+        ):
+            result = adapter._execute_move_inner(move)
+
+        assert result is not None
+        assert player.current_move is None
+        assert not hasattr(player, "_pending_animation")
+        assert not [e for e in player.combat_log if "animation" in e], (
+            "the cancelled wind-up's animation was flush-emitted — a phantom "
+            "swing plays over the already-empty battlefield"
+        )
+
+
+# ---------------------------------------------------------------------------
 # beat loop — current_move-is-None guards
 # ---------------------------------------------------------------------------
 
@@ -1047,10 +1129,16 @@ class TestDefeatHandling:
 
         assert player.combat_list_allies == [player, persistent_ally]
 
-    def test_defeat_summary_survives_uuid_failure_on_first_attempt(self):
-        """Covers the except branch (1165-1166): if building combat_end_summary
-        raises the first time (e.g. a transient uuid failure), the handler
-        retries the exact same construction rather than propagating."""
+    def test_defeat_discards_every_pending_animation_channel(self):
+        """The defeat tail routes through ``_teardown_combat_roster``.
+
+        This used to pin a retry-except around the summary build ("uuid boom"
+        retried the identical construction) -- but that same except silently
+        swallowed ``_discard_pending_animations``, so a raise left an armed
+        channel (which can hold a live combatant object) to be pickled into
+        the save. The except is gone; what defeat must now guarantee is that
+        the summary is built and NO combatant retains ``_pending_animation``.
+        """
         move = _make_move("Wait", instant=False)
         player = _make_player()
         player.is_alive.return_value = False
@@ -1060,6 +1148,7 @@ class TestDefeatHandling:
         player.combat_list_allies = [player]
         player.current_move = move
         move.target = player
+        player._pending_animation = {"move_name": "Slash", "outcome": None}
         adapter = _make_adapter(player)
 
         with (
@@ -1068,13 +1157,14 @@ class TestDefeatHandling:
                 "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
                 return_value=dict(_STUB_BEAT_STATE),
             ),
-            patch("uuid.uuid4", side_effect=[RuntimeError("uuid boom"), "fallback-id"]),
         ):
             result = adapter._execute_move_inner(move)
 
         assert result is not None
         assert player.combat_end_summary["status"] == "defeat"
-        assert player.combat_end_summary["id"] == "fallback-id"
+        # MagicMock honours deletion: after the teardown's delattr this access
+        # raises, so hasattr is genuinely False rather than auto-vivified.
+        assert not hasattr(player, "_pending_animation")
 
 
 # ---------------------------------------------------------------------------
@@ -1777,9 +1867,16 @@ class TestGetAvailableMovesRemainingBranches:
         # the move rather than invented by the adapter.
         assert "hit_chance" in target
         assert target["hit_chance"] is move.preview_hit_chance.return_value
+        # `damage_preview`, `in_range` and `shortfall_ft` joined the card with
+        # the pre-commitment damage preview: the client shows what a move would
+        # do, and how far short of reach a target is, before the player commits.
         assert set(target) == {
             "id", "name", "distance", "is_ally", "health", "hit_chance",
+            "damage_preview", "in_range", "shortfall_ft",
         }
+        assert target["in_range"] is True
+        assert target["shortfall_ft"] is None
+        assert target["damage_preview"] is move.preview_damage.return_value
         # A single viable target is auto-resolved, so no selection prompt.
         assert moves[0]["requires_target_selection"] is False
         assert moves[0]["available"] is True
