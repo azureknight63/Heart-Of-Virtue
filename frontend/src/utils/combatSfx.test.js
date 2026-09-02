@@ -145,3 +145,20 @@ describe('animationImpactCue', () => {
     expect(animationImpactCue(null)).toBeNull();
   });
 });
+
+describe('malformed sfx payloads', () => {
+  // `beat.sfx` crosses the wire; a regressed serializer sending a string or an
+  // object must degrade to silence / the config fallback, not throw inside a
+  // timer callback where nothing catches it.
+  it('beatSfxFor treats a non-array sfx field as no emissions', () => {
+    expect(beatSfxFor(beat({ sfx: 'garbage' }))).toEqual([]);
+    expect(beatSfxFor(beat({ sfx: { kind: 'swing' } }))).toEqual([]);
+    expect(beatSfxFor(beat({ sfx: 42 }))).toEqual([]);
+  });
+
+  it('animationImpactCue falls back to the config path on a non-array sfx', () => {
+    const anim = { type: 'attack', outcome: 'hit', beat: beat({ sfx: 'garbage' }) };
+    expect(() => animationImpactCue(anim)).not.toThrow();
+    expect(animationImpactCue(anim)).toBe('attack_hit');
+  });
+});

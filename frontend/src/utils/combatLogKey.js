@@ -13,7 +13,16 @@
  * inside a message, so no field value can collide across a boundary. A space
  * would not be safe -- messages are prose and contain spaces. Written as an
  * escape rather than a literal control character so it survives editors and
- * diff tooling.
+ * diff tooling. Control characters (the separator included) are stripped
+ * from each field before joining, so no field VALUE can forge a boundary
+ * either -- the key always holds exactly three separators.
+ *
+ * Fields: round, type, message, and the animation carrier's `source_id` (''
+ * when the entry carries no animation). The source matters because two
+ * same-named NPCs acting in the same round emit byte-identical carriers --
+ * without the actor in the key they collapsed into one revealed line and one
+ * swing. One swing's own per-target carriers share their source, so they
+ * still collapse (see the NOTE below).
  *
  * Every consumer must use THIS function rather than an ad-hoc field subset.
  * LeftPanel's pending filter and its append guard once keyed on different
@@ -22,14 +31,22 @@
  *
  * NOTE: this key is deliberately NOT unique. The per-target carriers of one
  * multi-target swing are byte-identical on the wire (same round, same type,
- * same "Sweep animation" message), and both callers rely on that: LeftPanel
+ * same "Sweep animation" message, same source), and both callers rely on that: LeftPanel
  * collapses them to one revealed line, while BattlefieldGrid keeps every
  * repeat because each one is a separate landing to animate.
  */
 export const LOG_KEY_SEP = '\u001F';
 
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+const cleanField = (value) => String(value ?? '').replace(CONTROL_CHARS, '');
+
 export const logEntryKey = (entry) =>
-  [entry?.round ?? '', entry?.type ?? '', entry?.message ?? ''].join(LOG_KEY_SEP);
+  [
+    entry?.round ?? '',
+    entry?.type ?? '',
+    entry?.message ?? '',
+    entry?.animation?.source_id ?? '',
+  ].map(cleanField).join(LOG_KEY_SEP);
 
 /**
  * How many *distinct* entries a combat log holds.

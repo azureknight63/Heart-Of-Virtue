@@ -118,12 +118,12 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   // so `combat.log` is per-fight — but `displayedLog` was only ever appended to,
   // making it, and the `displayedLogCount` derived from it, cumulative for the
   // whole session. Three things broke downstream of that mismatch:
-  //   * BattlefieldGrid slices `log.slice(lastProcessedLogIndex, displayedLogCount)`.
-  //     Its cursor resets each fight (RightPanel unmounts the battlefield when
-  //     combat ends) while the count did not, so from fight #2 the two indexed
-  //     different spaces: the whole log dumped at mount, then every later reveal
-  //     sliced past the end and returned nothing. Animations fired in one burst
-  //     at combat start and then stopped for the rest of the fight.
+  //   * BattlefieldGrid recovers its animation window from this count
+  //     (revealedLogEntries walks the log until it has seen that many DISTINCT
+  //     keys). Its per-fight cursor reset while the count did not, so from
+  //     fight #2 the cumulative count admitted the entire new log at mount:
+  //     animations fired in one burst at combat start and pacing was gone for
+  //     the rest of the fight.
   //   * The dedup above swallowed any fight-#2 line whose round/type/message
   //     matched one from fight #1.
   //   * `hasPendingLogs` (GamePage/useCombatCoordinator) compared a short new log

@@ -12,7 +12,9 @@ import BattlefieldGrid, {
   mergeAnimationStyles,
   revealedLogEntries,
 } from './BattlefieldGrid';
-import { getAnimationConfig } from '../utils/animationConfigs';
+import { getAnimationConfig, strikeFlashFor } from '../utils/animationConfigs';
+import { chainGapMs } from '../utils/combatTiming';
+import { SFX_DURATIONS } from '../utils/sfxDurations';
 
 // ---------------------------------------------------------------------------
 // One move, many targets.
@@ -24,7 +26,9 @@ import { getAnimationConfig } from '../utils/animationConfigs';
 // full and the rest degrading to a stub flash.
 // ---------------------------------------------------------------------------
 
-const HIT_FLASH = 'rgba(255, 0, 0, 0.7)'; // strikeFlashFor('hit')
+// Derived from the production sources rather than re-spelled, so a retuned
+// flash colour or cue length cannot silently strand these pins on old numbers.
+const HIT_FLASH = strikeFlashFor('hit').backgroundColor;
 
 const enemyAt = (id, x) => ({
   id,
@@ -59,8 +63,21 @@ const countCue = (cue) => cuesPlayed().filter((c) => c === cue).length;
 // `attack`: windup 200 + strike 160 -> impact opens at 360, closes at 580.
 // Layers are dealt out by the impact cue's SFX chain gap: attack_hit is 150ms,
 // so 0.75 * 150 = 112.5ms per layer -> starts 0 / 112.5 / 225 / 337.5.
-const PRE_IMPACT = 360;
-const LAYER_GAP = 112.5;
+const attackPhaseMs = (name) =>
+  getAnimationConfig('attack').phases.find((p) => p.name === name).duration;
+const PRE_IMPACT = attackPhaseMs('windup') + attackPhaseMs('strike');
+const LAYER_GAP = chainGapMs(SFX_DURATIONS.attack_hit, 1);
+
+const renderSwing = (entries, extra = {}) =>
+  render(
+    <BattlefieldGrid
+      combat={{ ...combat, log: entries }}
+      tab="overview"
+      zoom={1}
+      displayedLogCount={entries.length}
+      {...extra}
+    />
+  );
 
 describe('BattlefieldGrid — concurrent multi-target animations', () => {
   beforeEach(() => {
@@ -71,17 +88,6 @@ describe('BattlefieldGrid — concurrent multi-target animations', () => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });
-
-  const renderSwing = (entries, extra = {}) =>
-    render(
-      <BattlefieldGrid
-        combat={{ ...combat, log: entries }}
-        tab="overview"
-        zoom={1}
-        displayedLogCount={entries.length}
-        {...extra}
-      />
-    );
 
   it('flashes several targets at once instead of one at a time', () => {
     const { container } = renderSwing(swing('attack'));
@@ -273,8 +279,11 @@ describe('collectAnimationStates', () => {
       'player'
     );
     expect(states).toHaveLength(2);
-    expect(states[0]).toMatchObject({ isSource: true, isTarget: false, outcome: 'hit' });
-    expect(states[1]).toMatchObject({ isSource: false, isTarget: true, outcome: 'miss' });
+    // One access path: everything about the animation reads through `anim`.
+    expect(states[0]).toMatchObject({ isSource: true, isTarget: false });
+    expect(states[0].anim.outcome).toBe('hit');
+    expect(states[1]).toMatchObject({ isSource: false, isTarget: true });
+    expect(states[1].anim.outcome).toBe('miss');
   });
 
   it('collects one state per landing when a target is hit repeatedly', () => {
@@ -285,7 +294,7 @@ describe('collectAnimationStates', () => {
       ],
       'foe_a'
     );
-    expect(states.map((s) => s.outcome)).toEqual(['hit', 'glance']);
+    expect(states.map((s) => s.anim.outcome)).toEqual(['hit', 'glance']);
     expect(states.every((s) => s.isTarget)).toBe(true);
   });
 
@@ -514,17 +523,18 @@ describe('revealedLogEntries', () => {
     expect(revealedLogEntries(log, 1).map((r) => r.entry)).toEqual([carrier, carrier, carrier]);
   });
 
-  it('keys on round, type and message — the same fields LeftPanel reveals by', () => {
-    // Drift in any one of these three shifts the pacing window. Each of these
-    // differs from the base entry in exactly one field, so all four are
-    // distinct keys and a count of 4 admits all of them.
+  it('keys on round, type, message and carrier source — the fields LeftPanel reveals by', () => {
+    // Drift in any one of these shifts the pacing window. Each of these
+    // differs from the base entry in exactly one field, so all five are
+    // distinct keys and a count of 5 admits all of them.
     const log = [
       entry({}),
       entry({ round: 2 }),
       entry({ type: 'animation' }),
       entry({ message: 'y' }),
+      entry({ animation: { source_id: 'foe_b' } }),
     ];
-    expect(revealedLogEntries(log, 4)).toHaveLength(4);
+    expect(revealedLogEntries(log, 5)).toHaveLength(5);
     expect(revealedLogEntries(log, 3)).toHaveLength(3);
   });
 

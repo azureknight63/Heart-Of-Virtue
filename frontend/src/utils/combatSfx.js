@@ -62,7 +62,10 @@ export function cueForEmission(emission, beat) {
  * server-assigned emission order. Emissions that don't resolve are dropped.
  */
 export function beatSfxFor(beat) {
-  const emissions = (beat && beat.sfx) || [];
+  // Array.isArray, not truthiness: `sfx` crosses the wire, and a regressed
+  // serializer sending a string/object must degrade to silence, not throw
+  // inside a timer callback where nothing catches it.
+  const emissions = (beat && Array.isArray(beat.sfx)) ? beat.sfx : [];
   const cues = [];
   for (const emission of emissions) {
     const cue = cueForEmission(emission, beat);
@@ -89,7 +92,8 @@ export function beatSfxFor(beat) {
 export function animationImpactCue(anim) {
   if (!anim) return null;
   const emissions = anim.beat?.sfx;
-  if (emissions) {
+  // A malformed (non-array) sfx field falls through to the config path.
+  if (Array.isArray(emissions)) {
     const impact = emissions.find((e) => e.kind === 'impact');
     if (impact) return cueForEmission(impact, anim.beat);
   }

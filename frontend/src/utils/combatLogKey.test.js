@@ -27,6 +27,41 @@ describe('logEntryKey', () => {
     expect(() => logEntryKey(undefined)).not.toThrow();
     expect(logEntryKey({})).toBe(logEntryKey(undefined));
   });
+
+  it('distinguishes identical lines from two different sources', () => {
+    // Two same-named NPCs swinging in the same round emit byte-identical
+    // carriers; without the carrier's source_id in the key they collapsed to
+    // one revealed line and one swing.
+    const line = { round: 3, type: 'animation', message: 'NpcAttack animation' };
+    const a = { ...line, animation: { type: 'attack', source_id: 'enemy_rat_1' } };
+    const b = { ...line, animation: { type: 'attack', source_id: 'enemy_rat_2' } };
+    expect(logEntryKey(a)).not.toBe(logEntryKey(b));
+    expect(distinctLogCount([a, b])).toBe(2);
+  });
+
+  it('still collapses one swing\'s per-target carriers (same source)', () => {
+    const line = { round: 3, type: 'animation', message: 'Sweep animation' };
+    const a = { ...line, animation: { type: 'sweep', source_id: 'player', target_id: 'foe_a' } };
+    const b = { ...line, animation: { type: 'sweep', source_id: 'player', target_id: 'foe_b' } };
+    expect(logEntryKey(a)).toBe(logEntryKey(b));
+    expect(distinctLogCount([a, b])).toBe(1);
+  });
+
+  it('strips control characters so no field can forge a boundary', () => {
+    // A message containing the separator itself must not shift later fields
+    // across a boundary: the key always holds exactly three separators.
+    const forged = {
+      round: 1,
+      type: 'combat',
+      message: `x${LOG_KEY_SEP}animation`,
+      animation: { source_id: `s${LOG_KEY_SEP}1` },
+    };
+    const key = logEntryKey(forged);
+    expect(key.split(LOG_KEY_SEP)).toHaveLength(4);
+    expect(key).toBe(logEntryKey({
+      round: 1, type: 'combat', message: 'xanimation', animation: { source_id: 's1' },
+    }));
+  });
 });
 
 describe('no component keeps a private copy', () => {

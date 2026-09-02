@@ -54,6 +54,14 @@ const getAssetPath = (path) => {
     return `${base}${cleanPath}`;
 };
 
+// Ceiling on live one-shot SFX elements. A layered impact burst (the combat
+// path caps a batch at 12 layers, each with an SFX chain) — or an `onended`
+// that never fires — must not pile up media elements without bound. Past the
+// cap the OLDEST still-active one-shot is paused and released; the newest cue
+// always plays, because the most recent sound is the one that matches what is
+// on screen.
+const MAX_CONCURRENT_SFX = 16;
+
 const BGM_MAP = {
     'adventure': getAssetPath('/assets/sounds/bgm/Virtue Quest.mp3'),
     'battle': getAssetPath('/assets/sounds/bgm/Crossing Blades.mp3'),
@@ -200,6 +208,13 @@ export const AudioProvider = ({ children }) => {
     // playbackRate scales tempo; preservesPitch keeps it from sounding
     // chipmunked/slowed — browser-native pitch-preserving time-stretch, no DSP.
     const playSFX = useCallback((sfxName, speed = 1) => {
+        // Evict the oldest live one-shots down to the cap. Sets iterate in
+        // insertion order, so the first entry is the longest-running cue.
+        while (activeSFXRef.current.size >= MAX_CONCURRENT_SFX) {
+            const oldest = activeSFXRef.current.values().next().value;
+            oldest.pause();
+            activeSFXRef.current.delete(oldest);
+        }
         const path = getAssetPath(`/assets/sounds/sfx/${sfxName}.wav`);
         const audio = new Audio(path);
         audio.volume = isSfxMuted ? 0 : sfxVolume;
