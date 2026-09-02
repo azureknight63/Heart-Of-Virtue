@@ -39,22 +39,23 @@ import contextlib
 import copy
 import importlib
 import inspect
-import pathlib
 import textwrap
 from unittest.mock import patch
 
 import pytest
 
-import src.moves as _moves_pkg
 import src.moves._base as moves_base
+import src.states as states
 from src.items import (
     Crossbow,
     Dagger,
     Longbow,
     Mace,
+    Pickaxe,
     Pole,
     Scythe,
     Shortsword,
+    Spear,
     WoodenArrow,
 )
 from src.moves import (
@@ -630,6 +631,111 @@ class TestPreviewMatchesRealExecute:
             f"the preview scaled with heat while execute() did not: {previews}"
         )
 
+    # -- shape 6: protection-scaling strikes (Impale x0.4, Armor Pierce x0) --
+    #
+    # Both moves pass an explicit ``protection=`` override into
+    # ``resolve_damage`` (src/moves/_spear.py) while previewing with the
+    # default full-armour line, so the preview understated them against
+    # exactly the armoured targets they exist for -- Armor Pierce's card
+    # could read 0 against an enemy it would in fact wound. The fixtures
+    # run against protection 12 at heat 2.0 on purpose: at protection 0 the
+    # override and the default are indistinguishable.
+
+    @classmethod
+    def _armoured_pair(cls, move_cls, weapon, distance, protection=12):
+        player = _make_player(weapon, heat=2.0)
+        enemy = _make_enemy()
+        enemy.protection = protection
+        _link(player, enemy, distance)
+        _place(player, enemy, distance)
+        move = move_cls(player)
+        move.target = enemy
+        move.evaluate()
+        return player, enemy, move
+
+    @classmethod
+    def _impale(cls):
+        from src.moves import Impale
+
+        return cls._armoured_pair(Impale, Spear(), distance=4)
+
+    @pytest.mark.parametrize("variance,key", [(0.8, "min"), (1.2, "max")])
+    def test_impale_previews_its_own_partial_protection(self, variance, key):
+        self._assert_bounds_hold(self._impale, variance, key)
+
+    @classmethod
+    def _armor_pierce(cls):
+        from src.moves import ArmorPierce
+
+        return cls._armoured_pair(ArmorPierce, Pickaxe(), distance=3)
+
+    @pytest.mark.parametrize("variance,key", [(0.8, "min"), (1.2, "max")])
+    def test_armor_pierce_previews_zero_protection(self, variance, key):
+        self._assert_bounds_hold(self._armor_pierce, variance, key)
+
+    # -- shape 7: mastery strikes that score power inside execute() ----------
+    #
+    # Pulverize, Killing Precision and Lightning Assault compute their power
+    # locally inside execute() and never set ``self.power``, so the default
+    # preview returned None and the player committed a 30-50 beat cooldown
+    # with NO estimate at all (measured: they deal real double-digit damage).
+
+    @classmethod
+    def _mastery(cls, move_cls, stat, protection=6):
+        player = _make_player(Mace(), heat=2.0, **{stat: 35})
+        enemy = _make_enemy()
+        enemy.protection = protection
+        _link(player, enemy, 3)
+        _place(player, enemy, 3)
+        move = move_cls(player)
+        move.target = enemy
+        move.evaluate()
+        return player, enemy, move
+
+    @classmethod
+    def _pulverize(cls):
+        from src.moves import Pulverize
+
+        return cls._mastery(Pulverize, "strength")
+
+    @pytest.mark.parametrize("variance,key", [(0.8, "min"), (1.2, "max")])
+    def test_pulverize_previews_its_armour_ignoring_line(self, variance, key):
+        self._assert_bounds_hold(self._pulverize, variance, key)
+
+    @classmethod
+    def _killing_precision(cls):
+        from src.moves import KillingPrecision
+
+        return cls._mastery(KillingPrecision, "finesse", protection=15)
+
+    @pytest.mark.parametrize("variance,key", [(0.8, "min"), (1.2, "max")])
+    def test_killing_precision_previews_its_fifth_of_protection(
+        self, variance, key
+    ):
+        self._assert_bounds_hold(self._killing_precision, variance, key)
+
+    @classmethod
+    def _lightning_assault(cls):
+        from src.moves import LightningAssault
+
+        return cls._mastery(LightningAssault, "speed")
+
+    @pytest.mark.parametrize("variance,key", [(0.8, "min"), (1.2, "max")])
+    def test_lightning_assault_previews_the_full_flurry(self, variance, key):
+        """Three strikes, all landing, at the heat each strike is actually
+        scored with: ``Move.hit`` multiplies Jean's heat by 1.25 per landed
+        blow, so strikes two and three ride the momentum strike one earned.
+        The preview must reproduce that with the real ``change_heat`` -- a
+        second copy of its arithmetic is exactly the drift this file exists
+        to prevent."""
+        self._assert_bounds_hold(self._lightning_assault, variance, key)
+
+    def test_lightning_assault_preview_is_side_effect_free_on_heat(self):
+        _, enemy, move = self._lightning_assault()
+        before = move.user.heat
+        move.preview_damage(enemy)
+        assert move.user.heat == before
+
     def test_jab_damage_responds_to_resistance(self):
         """...and so must the target's resistance to the damage type."""
         dealt = {}
@@ -647,16 +753,16 @@ class TestPreviewMatchesRealExecute:
         )
 
 
-#: Every submodule of ``src.moves``, globbed rather than listed. Same rule as
-#: ``tests/test_facing_damage_hand_rolled_attacks.py`` and for the same reason:
-#: this guard replaces a hand-maintained table of the moves whose damage
-#: diverges, so it must not itself become one. A new weapon module is covered
-#: the day it lands, with nobody having to remember this file exists.
-MOVE_MODULES = tuple(
-    f"src.moves.{path.stem}"
-    for path in sorted(pathlib.Path(_moves_pkg.__file__).parent.glob("*.py"))
-    if path.stem != "__init__"
+#: Every submodule of ``src.moves``, globbed rather than listed -- via the
+#: shared scan module, so this guard, the facing guard and the multi-target
+#: guard all walk the same list. A new weapon module is covered the day it
+#: lands, with nobody having to remember this file exists.
+from tests._moves_scan import (  # noqa: E402
+    DAMAGE_SIGNALS as _DAMAGE_SIGNALS,
+    move_module_names,
 )
+
+MOVE_MODULES = move_module_names()
 
 #: NPC moves are excluded, structurally rather than by name. The preview is
 #: computed only for ``self.player.known_moves`` (see
@@ -666,23 +772,11 @@ MOVE_MODULES = tuple(
 #: grows a damage preview, delete this line — that is the whole change.
 NPC_MOVE_MODULE = "src.moves._npc"
 
-#: How an ``execute()`` is recognised as reducing somebody's HP. Same spellings
-#: as the facing-curve guard, and for the same reason: the package genuinely
-#: uses several, and a signal list that is too narrow fails silently in the
-#: safe-looking direction.
-_DAMAGE_SIGNALS = (
-    "self.hit(",
-    "hp -=",
-    "hp = max(",
-    ".hp = max(",
-    # The shared per-target resolver (_base.resolve_strike_outcome) applies the
-    # HP itself, so the four area swings that route through it stopped writing
-    # `hp = max(` in their own bodies. Without this spelling they read as "not
-    # a damage path" and the scan silently certified them -- the exact
-    # too-narrow-signal failure the comment above warns about, one refactor
-    # later.
-    "resolve_strike_outcome(",
-)
+#: How an ``execute()`` is recognised as reducing somebody's HP: the shared
+#: ``tests/_moves_scan.DAMAGE_SIGNALS`` (imported above), which the facing
+#: guard and the multi-target guard read too. This used to be one of three
+#: hand-synced copies, and the ``resolve_pipeline_strike`` extraction had to
+#: touch all three in one edit -- the drift the shared module removes.
 
 #: Damage paths that diverge but are knowingly left on the default preview,
 #: with the reason. Not a shim: nothing here changes what any move does. An
@@ -794,13 +888,18 @@ def _divergences(source):
     canonical = _calls(tree, "standard_execute_attack") or _calls(
         tree, "resolve_damage"
     )
-    # Two spellings of "this execute() damages a *set*". The four area swings
-    # used to walk _hostiles_in_proximity themselves; they now select through
-    # the shared hostiles_in_arc -- the same function their preview_affected()
-    # calls, which is the point -- and an area move must stay divergent either
-    # way, because self.target (the user, for all of them) cannot describe who
-    # it hits.
-    if _calls(tree, "_hostiles_in_proximity") or _calls(tree, "hostiles_in_arc"):
+    # Three spellings of "this execute() damages a *set*". The four area
+    # swings used to walk _hostiles_in_proximity themselves; they then
+    # selected through the shared hostiles_in_arc; they now iterate their own
+    # preview_affected() -- the same selection the preview prices, which is
+    # the point -- and an area move must stay divergent under every spelling,
+    # because self.target (the user, for all of them) cannot describe who it
+    # hits.
+    if (
+        _calls(tree, "_hostiles_in_proximity")
+        or _calls(tree, "hostiles_in_arc")
+        or _calls(tree, "preview_affected")
+    ):
         reasons.append("damages a set of enemies rather than self.target")
     if not canonical and not _calls(tree, "uniform"):
         reasons.append("scores damage outside the canonical variance expression")
@@ -1167,3 +1266,140 @@ class TestOutOfReachTargetsArePricedHonestly:
         for entry in reachable:
             assert entry["damage_preview"]["max"] > 0
             assert entry["hit_chance"] is not None
+
+
+# ---------------------------------------------------------------------------
+# THE CONTRACT: every targeted damaging move previews a number
+# ---------------------------------------------------------------------------
+
+
+def _targeted_damaging_move_classes():
+    """Every castable, TARGETED move whose ``execute()`` reduces HP.
+
+    Derived structurally -- damage recognised by the same ``_DAMAGE_SIGNALS``
+    the divergence scan uses, targeting read from the ``__init__`` that
+    declares it -- rather than enumerated by name, so a new weapon move is
+    covered the day it lands. Area moves (``targeted=False``) are priced
+    per-affected-enemy through ``preview_affected`` and are covered by
+    ``TestPreviewAffected`` instead.
+    """
+    found = []
+    for module_name, name, cls in _castable_move_classes():
+        defining = _defining_class(cls, "execute")
+        if defining is None or defining is moves_base.Move:
+            continue
+        source = inspect.getsource(vars(defining)["execute"])
+        # standard_execute_attack applies the HP inside _base.py, so the
+        # moves that delegate to it (PommelStrike, Thrust, ...) carry none of
+        # the in-body damage signals -- without this extra spelling the
+        # contract would silently skip the whole standard pipeline.
+        if not any(
+            signal in source
+            for signal in _DAMAGE_SIGNALS + ("standard_execute_attack(",)
+        ):
+            continue
+        init = _defining_class(cls, "__init__")
+        if init is None:
+            continue
+        if "targeted=True" not in inspect.getsource(vars(init)["__init__"]):
+            continue
+        found.append((module_name, name, cls))
+    return found
+
+
+class TestEveryTargetedDamagingMovePreviewsANumber:
+    """A castable, viable, in-range damaging move with no damage preview is a
+    commitment the player makes blind -- the exact gap Pulverize, Killing
+    Precision and Lightning Assault shipped with (execute() scored power
+    locally, ``self.power`` was never set, and the default preview quietly
+    returned None).
+
+    For each move the matrix below is searched for ANY standard fixture --
+    weapon kit x stat profile x distance (x a Parrying stance, for the moves
+    gated on one) -- in which the move reports itself viable against a live,
+    reachable enemy. In that state its ``preview_damage`` must return a
+    number. A move no combo can make viable fails too: a silent "never
+    viable" would make this contract vacuously green for exactly the moves
+    it cannot see.
+    """
+
+    _WEAPON_KITS = (
+        Shortsword,
+        None,  # the player's default fists
+        Dagger,
+        Scythe,
+        Pole,
+        Spear,
+        Pickaxe,
+        Mace,
+        Longbow,
+        Crossbow,
+    )
+    _DISTANCES = (3, 2, 4, 7, 12, 15)
+    #: One attribute pushed to 35 (uniquely dominant) per profile -- the
+    #: mastery moves gate on a dominant stat; {} is the default statline.
+    _PROFILES = ({}, {"strength": 35}, {"finesse": 35}, {"speed": 35})
+
+    @staticmethod
+    def _build(weapon_cls, distance, profile, parrying):
+        player = _make_player(weapon_cls() if weapon_cls else None, **profile)
+        arrow = WoodenArrow()
+        arrow.count = 5
+        player.inventory.append(arrow)
+        player.combat_exp.setdefault("Bow", 0)
+        if parrying:
+            player.states.append(states.Parrying(player))
+        enemy = _make_enemy()
+        _link(player, enemy, distance)
+        _place(player, enemy, distance)
+        return player, enemy
+
+    @classmethod
+    def _combos(cls):
+        for parrying in (False, True):
+            for weapon_cls in cls._WEAPON_KITS:
+                for distance in cls._DISTANCES:
+                    for profile in cls._PROFILES:
+                        yield weapon_cls, distance, profile, parrying
+
+    def test_the_enumeration_actually_finds_the_targeted_attacks(self):
+        names = {name for _, name, _ in _targeted_damaging_move_classes()}
+        assert len(names) >= 20, names
+        for anchor in ("PommelStrike", "Impale", "Pulverize", "ShootBow"):
+            assert anchor in names, f"{anchor} vanished from the enumeration"
+
+    def test_every_viable_targeted_damaging_move_previews_a_number(self):
+        failures = []
+        for module_name, name, cls in _targeted_damaging_move_classes():
+            viable_seen = False
+            previewed = False
+            for weapon_cls, distance, profile, parrying in self._combos():
+                try:
+                    player, enemy = self._build(
+                        weapon_cls, distance, profile, parrying
+                    )
+                    move = cls(player)
+                    move.target = enemy
+                    move.evaluate()
+                    if not (
+                        move._viable_for(enemy) and move._within_reach(enemy)
+                    ):
+                        continue
+                    viable_seen = True
+                    if move.preview_damage(enemy) is not None:
+                        previewed = True
+                        break
+                except Exception:
+                    continue
+            if not previewed:
+                reason = (
+                    "viable and in range, but preview_damage returned None"
+                    if viable_seen
+                    else "no standard fixture makes it viable -- extend the "
+                    "matrix or its viable() is unreachable"
+                )
+                failures.append(f"{module_name}.{name}: {reason}")
+        assert not failures, (
+            "targeted damaging moves the player would commit to blind:\n  "
+            + "\n  ".join(failures)
+        )

@@ -11,6 +11,9 @@ from ._base import (
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
     apply_facing_damage,
+    damage_bounds,
+    preview_payload,
+    projected_hit_heat_sequence,
     publish_outcome,
     to_hit_chance,
     resolve_damage,
@@ -19,7 +22,15 @@ from ._base import (
 
 
 def _all_stats(p):
-    return [p.strength, p.finesse, p.speed, p.endurance, p.charisma, p.intelligence, p.faith]
+    return [
+        p.strength,
+        p.finesse,
+        p.speed,
+        p.endurance,
+        p.charisma,
+        p.intelligence,
+        p.faith,
+    ]
 
 
 def _is_highest(p, stat_val):
@@ -94,11 +105,42 @@ def _in_range(move):
     )
 
 
+def _mastery_strike_power(move, weapon_factor, stat_name, stat_factor):
+    """The power expression the three striking masteries score inside
+    ``execute()``: ``int(weapon.damage * a + stat * b)``.
+
+    They never set ``self.power`` — the number exists only at strike time —
+    so their previews must recompute it from the same live reads, through
+    this one derivation rather than a per-move copy. Returns ``None`` when
+    the reads cannot produce a number (no weapon, or garbage on a degraded
+    save): the preview poll must degrade to "no estimate" rather than raise.
+    """
+    weapon = getattr(move.user, "eq_weapon", None)
+    if weapon is None:
+        return None
+    try:
+        return int(
+            float(getattr(weapon, "damage", 0)) * weapon_factor
+            + float(getattr(move.user, stat_name, 0)) * stat_factor
+        )
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 class Pulverize(Move):
     """Strength mastery: devastating overhead blow that ignores all protection."""
-    display_name = 'Pulverize'
+
+    display_name = "Pulverize"
 
     web_animation = "heavy_attack"
+    #: The damage type execute() scores with — declared so the default
+    #: preview machinery reads the same resistance term the strike applies.
+    base_damage_type = "crushing"
+    #: Power expression coefficients: ``int(weapon.damage * WEAPON_FACTOR +
+    #: strength * STAT_FACTOR)`` — one derivation, read by execute() and
+    #: preview_damage() both (see _mastery_strike_power).
+    WEAPON_FACTOR = 1.8
+    STAT_FACTOR = 3.0
 
     def __init__(self, player):
         super().__init__(
@@ -112,9 +154,15 @@ class Pulverize(Move):
             targeted=True,
             stage_beat=[2, 1, 4, 35],
             stage_announce=[
-                colored(f"{player.name} raises his weapon high, drawing on every ounce of strength.", "red"),
+                colored(
+                    f"{player.name} raises his weapon high, drawing on every ounce of strength.",
+                    "red",
+                ),
                 colored(f"{player.name} drives down a crushing blow!", "red"),
-                colored(f"{player.name} steadies himself after the devastating strike.", "yellow"),
+                colored(
+                    f"{player.name} steadies himself after the devastating strike.",
+                    "yellow",
+                ),
                 "",
             ],
             fatigue_cost=90,
@@ -154,6 +202,20 @@ class Pulverize(Move):
         # combatant outside mvrange (see _in_range).
         return _in_range(self)
 
+    def preview_damage(self, target=None):
+        """Pulverize scores its power at strike time and never sets
+        ``self.power``, so the default preview reported None and the player
+        committed a 35-beat cooldown blind. Same power derivation as
+        execute() (see _mastery_strike_power), same ``protection=0``
+        armour-ignoring override.
+        """
+        power = _mastery_strike_power(
+            self, self.WEAPON_FACTOR, "strength", self.STAT_FACTOR
+        )
+        if power is None:
+            return None
+        return self._standard_preview_damage(target, power=power, protection=0)
+
     def execute(self, player):
         self.prep_colors()
         narrate(self.stage_announce[1])
@@ -173,7 +235,13 @@ class Pulverize(Move):
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         roll = random.randint(0, 100)
-        power = int(player.eq_weapon.damage * 1.8 + player.strength * 3.0)
+        # One derivation, shared with preview_damage. A degraded read (no
+        # weapon on a crafted save) scores 0 rather than raising mid-beat.
+        power = _mastery_strike_power(
+            self, self.WEAPON_FACTOR, "strength", self.STAT_FACTOR
+        )
+        if power is None:
+            power = 0
         # Facing/angle damage (issue #394). This hand-rolled execute() never
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
@@ -202,9 +270,18 @@ class Pulverize(Move):
 
 class KillingPrecision(Move):
     """Finesse mastery: surgically unerring strike that never misses."""
-    display_name = 'Killing Precision'
+
+    display_name = "Killing Precision"
 
     web_animation = "pierce"
+    #: The damage type execute() scores with — declared so the default
+    #: preview machinery reads the same resistance term the strike applies.
+    base_damage_type = "piercing"
+    #: Power expression coefficients — see _mastery_strike_power.
+    WEAPON_FACTOR = 1.5
+    STAT_FACTOR = 2.5
+    #: Fraction of the target's protection the strike scores.
+    PROTECTION_SCALE = 0.2
 
     def __init__(self, player):
         super().__init__(
@@ -218,7 +295,9 @@ class KillingPrecision(Move):
             targeted=True,
             stage_beat=[1, 1, 2, 30],
             stage_announce=[
-                colored(f"{player.name} centres his breathing and locates the gap.", "cyan"),
+                colored(
+                    f"{player.name} centres his breathing and locates the gap.", "cyan"
+                ),
                 colored(f"{player.name} drives a perfect, unerring strike!", "cyan"),
                 colored(f"{player.name} withdraws, composure intact.", "yellow"),
                 "",
@@ -266,11 +345,41 @@ class KillingPrecision(Move):
         t = target if target is not None else self.target
         return 100 if self._viable_for(t) else None
 
+    def preview_damage(self, target=None):
+        """Killing Precision scores its power at strike time and never sets
+        ``self.power``, so the default preview reported None -- the player
+        committed a 30-beat cooldown blind. Same power derivation as
+        execute() (see _mastery_strike_power), same fifth-of-protection
+        override, same ``max(1, ...)`` floor: a viable cast always deals at
+        least 1, and a preview reporting 0-0 for it would promise an absorb
+        the engine cannot produce.
+        """
+        power = _mastery_strike_power(
+            self, self.WEAPON_FACTOR, "finesse", self.STAT_FACTOR
+        )
+        if power is None:
+            return None
+        resolved = target if target is not None else getattr(self, "target", None)
+        gated = self._standard_preview_damage(
+            resolved,
+            power=power,
+            protection=target_protection(resolved) * self.PROTECTION_SCALE,
+        )
+        if gated is None:
+            return None
+        return preview_payload(max(1, gated["min"]), max(1, gated["max"]), resolved)
+
     def execute(self, player):
         self.prep_colors()
         narrate(self.stage_announce[1])
         target = self.target
-        power = int(player.eq_weapon.damage * 1.5 + player.finesse * 2.5)
+        # One derivation, shared with preview_damage. A degraded read (no
+        # weapon on a crafted save) scores 0 rather than raising mid-beat.
+        power = _mastery_strike_power(
+            self, self.WEAPON_FACTOR, "finesse", self.STAT_FACTOR
+        )
+        if power is None:
+            power = 0
         # Facing/angle damage (issue #394). The guaranteed hit is an
         # *accuracy* guarantee — there is no roll for the accuracy half of
         # the pair to modify — but the damage half still applies. Exempting
@@ -285,8 +394,11 @@ class KillingPrecision(Move):
             1,
             int(
                 resolve_damage(
-                    player, target, power, "piercing",
-                    protection=target_protection(target) * 0.2,
+                    player,
+                    target,
+                    power,
+                    "piercing",
+                    protection=target_protection(target) * self.PROTECTION_SCALE,
                 )
             ),
         )
@@ -310,9 +422,17 @@ class KillingPrecision(Move):
 
 class LightningAssault(Move):
     """Speed mastery: three rapid strikes; Disoriented if all land."""
-    display_name = 'Lightning Assault'
+
+    display_name = "Lightning Assault"
 
     web_animation = "quick_attack"
+    #: The damage type execute() scores with — declared so the default
+    #: preview machinery reads the same resistance term the strikes apply.
+    base_damage_type = "slashing"
+    #: Power expression coefficients (per strike) — see _mastery_strike_power.
+    WEAPON_FACTOR = 0.55
+    STAT_FACTOR = 0.75
+    STRIKES = 3
 
     def __init__(self, player):
         super().__init__(
@@ -327,7 +447,9 @@ class LightningAssault(Move):
             targeted=True,
             stage_beat=[1, 1, 1, 30],
             stage_announce=[
-                colored(f"{player.name} shifts his weight and explodes forward.", "cyan"),
+                colored(
+                    f"{player.name} shifts his weight and explodes forward.", "cyan"
+                ),
                 colored(f"{player.name} unleashes a blinding flurry of blows!", "cyan"),
                 colored(f"{player.name} resets his stance.", "yellow"),
                 "",
@@ -369,6 +491,39 @@ class LightningAssault(Move):
         # combatant outside mvrange (see _in_range).
         return _in_range(self)
 
+    def _flurry_heats(self):
+        """The heat each of the three strikes is actually scored with — see
+        ``_base.projected_hit_heat_sequence`` for why the momentum feedback
+        between strikes belongs in the preview.
+        """
+        return projected_hit_heat_sequence(self.user, self.STRIKES)
+
+    def preview_damage(self, target=None):
+        """Lightning Assault scores its per-strike power at strike time and
+        never sets ``self.power``, so the default preview reported None and
+        the player committed a 30-beat cooldown blind. The band is the full
+        flurry with all three strikes landing — each strike ``int()``s its
+        own damage, so the ends are per-strike bounds summed, at the heat
+        each strike really runs at (see ``_flurry_heats``).
+        """
+        power = _mastery_strike_power(
+            self, self.WEAPON_FACTOR, "speed", self.STAT_FACTOR
+        )
+        if power is None:
+            return None
+        resolved = target if target is not None else getattr(self, "target", None)
+        gate = self._standard_preview_damage(resolved, power=power)
+        if gate is None:
+            return None
+        low = high = 0
+        for heat in self._flurry_heats():
+            strike_low, strike_high = damage_bounds(
+                self.user, resolved, power, self.base_damage_type, heat=heat
+            )
+            low += strike_low
+            high += strike_high
+        return preview_payload(low, high, resolved)
+
     def execute(self, player):
         self.prep_colors()
         narrate(self.stage_announce[1])
@@ -392,9 +547,15 @@ class LightningAssault(Move):
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)
         hits_landed = 0
-        for _ in range(3):
+        for _ in range(self.STRIKES):
             roll = random.randint(0, 100)
-            power = int(player.eq_weapon.damage * 0.55 + player.speed * 0.75)
+            # One derivation, shared with preview_damage. A degraded read
+            # scores 0 rather than raising mid-beat.
+            power = _mastery_strike_power(
+                self, self.WEAPON_FACTOR, "speed", self.STAT_FACTOR
+            )
+            if power is None:
+                power = 0
             # Facing/angle damage (issue #394). Inside the loop rather than
             # hoisted: power is recomputed per strike, and a future strike
             # that repositions mid-flurry should be scored where it lands.
@@ -410,14 +571,17 @@ class LightningAssault(Move):
                         break
             else:
                 self.miss()
-        if hits_landed == 3:
+        if hits_landed == self.STRIKES:
             functions.inflict(states.Disoriented(target), target, force=True)
-            cprint(f"{target.name} is left reeling from the relentless assault!", "yellow")
+            cprint(
+                f"{target.name} is left reeling from the relentless assault!", "yellow"
+            )
 
 
 class Ironhide(Move):
     """Endurance mastery: purge ailments, recover HP and fatigue."""
-    display_name = 'Ironhide'
+
+    display_name = "Ironhide"
 
     web_animation = "defend"
 
@@ -429,15 +593,22 @@ class Ironhide(Move):
                 "and restore 60 fatigue. "
                 "Only available when Endurance is your dominant stat."
             ),
-
             xp_gain=3,
             current_stage=0,
             targeted=False,
             stage_beat=[1, 1, 1, 40],
             stage_announce=[
-                colored(f"{player.name} sets his jaw and braces against the pain.", "yellow"),
-                colored(f"{player.name} refuses to fall — sheer will closes his wounds!", "yellow"),
-                colored(f"{player.name} exhales, tension bleeding out of his frame.", "yellow"),
+                colored(
+                    f"{player.name} sets his jaw and braces against the pain.", "yellow"
+                ),
+                colored(
+                    f"{player.name} refuses to fall — sheer will closes his wounds!",
+                    "yellow",
+                ),
+                colored(
+                    f"{player.name} exhales, tension bleeding out of his frame.",
+                    "yellow",
+                ),
                 "",
             ],
             fatigue_cost=25,
@@ -462,7 +633,9 @@ class Ironhide(Move):
         cprint(f"{player.name} recovers {heal} HP!", "green")
         # Purge negative ailment types
         negative_types = {"poison", "stun", "stone", "disoriented", "enflamed"}
-        removed = [s for s in player.states if getattr(s, "statustype", "") in negative_types]
+        removed = [
+            s for s in player.states if getattr(s, "statustype", "") in negative_types
+        ]
         for state in removed:
             player.states.remove(state)
             if hasattr(state, "on_removal"):
@@ -480,7 +653,8 @@ class Ironhide(Move):
 
 class WarCry(Move):
     """Charisma mastery: interrupts all winding enemy moves and stuns for 1 beat."""
-    display_name = 'War Cry'
+
+    display_name = "War Cry"
 
     web_animation = "buff"
 
@@ -498,7 +672,10 @@ class WarCry(Move):
             stage_beat=[1, 1, 2, 30],
             stage_announce=[
                 colored(f"{player.name} draws breath for a battle command.", "magenta"),
-                colored(f"{player.name} unleashes a war cry that shakes the field!", "magenta"),
+                colored(
+                    f"{player.name} unleashes a war cry that shakes the field!",
+                    "magenta",
+                ),
                 colored(f"{player.name} surveys the stunned field.", "yellow"),
                 "",
             ],
@@ -531,14 +708,18 @@ class WarCry(Move):
             functions.inflict(states.WarCryStunned(enemy), enemy, force=True)
             affected += 1
         if affected:
-            cprint(f"{affected} {'enemy' if affected == 1 else 'enemies'} recoil from the war cry!", "magenta")
+            cprint(
+                f"{affected} {'enemy' if affected == 1 else 'enemies'} recoil from the war cry!",
+                "magenta",
+            )
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)
 
 
 class SecretPlans(Move):
     """Intelligence mastery: +30% speed and damage for player and all allies; resets cooldowns."""
-    display_name = 'Secret Plans'
+
+    display_name = "Secret Plans"
 
     web_animation = "buff"
 
@@ -555,7 +736,10 @@ class SecretPlans(Move):
             targeted=False,
             stage_beat=[2, 1, 2, 50],
             stage_announce=[
-                colored(f"{player.name} reads the field and pieces together the advantage.", "cyan"),
+                colored(
+                    f"{player.name} reads the field and pieces together the advantage.",
+                    "cyan",
+                ),
                 colored(f"{player.name} puts the plan into motion!", "cyan"),
                 colored(f"The plan is set. {player.name} stands ready.", "yellow"),
                 "",
@@ -593,7 +777,8 @@ class SecretPlans(Move):
 
 class BloodOfMartyrs(Move):
     """Faith mastery: absorb all damage for 40 beats, then detonate for 2× absorbed."""
-    display_name = 'Blood of Martyrs'
+
+    display_name = "Blood of Martyrs"
 
     web_animation = "buff"
 
@@ -611,9 +796,17 @@ class BloodOfMartyrs(Move):
             # 40-beat prep (absorbing), 1-beat execute (detonation), 5 recoil, 55 cooldown
             stage_beat=[40, 1, 5, 55],
             stage_announce=[
-                colored(f"{player.name} opens himself to every blow, faith holding him upright.", "yellow"),
-                colored(f"{player.name} releases the gathered pain as a wave of holy fire!", "yellow"),
-                colored(f"{player.name} sinks to one knee, spent but unbroken.", "yellow"),
+                colored(
+                    f"{player.name} opens himself to every blow, faith holding him upright.",
+                    "yellow",
+                ),
+                colored(
+                    f"{player.name} releases the gathered pain as a wave of holy fire!",
+                    "yellow",
+                ),
+                colored(
+                    f"{player.name} sinks to one knee, spent but unbroken.", "yellow"
+                ),
                 "",
             ],
             fatigue_cost=40,
@@ -631,7 +824,9 @@ class BloodOfMartyrs(Move):
         if not getattr(self.user, "in_combat", False):
             return False
         # Cannot stack — block if absorption is already active
-        if any(getattr(s, "_absorbing", False) for s in getattr(self.user, "states", [])):
+        if any(
+            getattr(s, "_absorbing", False) for s in getattr(self.user, "states", [])
+        ):
             return False
         return _is_highest(self.user, self.user.faith)
 
@@ -655,7 +850,10 @@ class BloodOfMartyrs(Move):
         self._absorb_state = None
         detonation = int(absorbed * 2)
         if detonation <= 0:
-            cprint(f"{player.name} releases the oath, but no damage was absorbed.", "yellow")
+            cprint(
+                f"{player.name} releases the oath, but no damage was absorbed.",
+                "yellow",
+            )
         else:
             cprint(
                 f"{player.name} unleashes {detonation} pure holy damage across the battlefield!",
@@ -664,7 +862,9 @@ class BloodOfMartyrs(Move):
             for enemy in list(getattr(player, "combat_list", [])):
                 if enemy.is_alive():
                     # Pure damage — bypasses protection and resistance scaling (pure type, resist=1.0)
-                    pure_damage = int(detonation * functions.combat_resistance(enemy, "pure"))
+                    pure_damage = int(
+                        detonation * functions.combat_resistance(enemy, "pure")
+                    )
                     enemy.hp -= pure_damage
                     if hasattr(enemy, "clamp_hp"):
                         enemy.clamp_hp()

@@ -12,8 +12,30 @@ from ._base import (  # noqa: F401
     Move,
     _apply_to_hit_modifiers,
     apply_facing_damage,
+    apply_glancing_blow,
+    resolve_pipeline_strike,
+    target_protection,
     to_hit_chance,
 )
+
+
+def _npc_flat_damage(power, target):
+    """The shared hostile-NPC damage line: ``power - protection``, floored at
+    0 -- no resistance, no heat, variance already rolled into ``power`` by
+    ``evaluate()``.
+
+    Was copy-pasted five times (NpcAttack, GorranClub, VenomClaw, SpiderBite,
+    BatBite). Protection is read through ``target_protection`` -- the same
+    sanitiser every player damage path uses -- so a degraded protection
+    (None, a string, NaN on a crafted save) reads as 0 instead of crashing
+    the NPC's turn mid-beat while the player's identical swing degrades
+    gracefully. Bit-identical to the old line for well-formed inputs
+    (``tests/test_moves_npc_parity.py`` runs the differential).
+    """
+    damage = power - target_protection(target)
+    if damage <= 0:
+        damage = 0
+    return damage
 
 
 #: Base term of the to-hit expression for the shared hostile-NPC attack family
@@ -227,7 +249,6 @@ class NpcAttack(Move):  # basic attack function, NPCs only
             )
 
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
@@ -241,20 +262,9 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = power - self.target.protection
-        if damage <= 0:
-            damage = 0
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
-        if hit_chance >= roll:  # a hit!
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        damage = _npc_flat_damage(power, self.target)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
         self.user.fatigue -= self.fatigue_cost
 
 
@@ -587,7 +597,6 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
             )
 
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=ALLY_HEAVY_HIT_CHANCE_BASE, floor=1
@@ -601,20 +610,9 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = power - self.target.protection
-        if damage <= 0:
-            damage = 0
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
-        if hit_chance >= roll:  # a hit!
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        damage = _npc_flat_damage(power, self.target)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
         self.user.fatigue -= self.fatigue_cost
 
 
@@ -737,7 +735,6 @@ class VenomClaw(Move):  # Poisonous attack
             )
 
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
@@ -751,13 +748,8 @@ class VenomClaw(Move):  # Poisonous attack
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = power - self.target.protection
-        if damage <= 0:
-            damage = 0
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage = _npc_flat_damage(power, self.target)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
                 self.parry()
@@ -889,7 +881,6 @@ class SpiderBite(Move):  # Poisonous attack
             )
 
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
@@ -903,13 +894,8 @@ class SpiderBite(Move):  # Poisonous attack
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = power - self.target.protection
-        if damage <= 0:
-            damage = 0
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage = _npc_flat_damage(power, self.target)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
                 self.parry()
@@ -1041,7 +1027,6 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
             )
 
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
@@ -1055,13 +1040,8 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = power - self.target.protection
-        if damage <= 0:
-            damage = 0
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage = _npc_flat_damage(power, self.target)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
                 self.parry()
@@ -1113,7 +1093,6 @@ class MineralSpit(NpcAttack):
         self.refresh_announcements(npc)
         narrate(self.stage_announce[1])
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
@@ -1127,11 +1106,8 @@ class MineralSpit(NpcAttack):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = max(0, int(power * 0.4) - self.target.protection)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage = damage // 2
-            glance = True
-        damage = int(damage)
+        damage = max(0, int(power * 0.4) - target_protection(self.target))
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:
             if functions.check_parry(self.target):
                 self.parry()
@@ -1181,7 +1157,6 @@ class SoulDrain(NpcAttack):
         self.refresh_announcements(npc)
         narrate(self.stage_announce[1])
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=NPC_HIT_CHANCE_BASE, floor=1
@@ -1195,11 +1170,8 @@ class SoulDrain(NpcAttack):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = max(0, int(power * 0.6) - self.target.protection)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage = damage // 2
-            glance = True
-        damage = int(damage)
+        damage = max(0, int(power * 0.6) - target_protection(self.target))
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:
             if functions.check_parry(self.target):
                 self.parry()
@@ -1265,6 +1237,8 @@ class KeeningToll(NpcAttack):
             if functions.check_parry(self.target):
                 self.parry()
             else:
+                # NOT apply_glancing_blow: this halves a fatigue drain inside
+                # the hit branch, after the parry check -- a different shape.
                 if hit_chance - roll < 10:
                     drain = drain // 2
                 self.target.fatigue = max(0, self.target.fatigue - drain)
@@ -1319,7 +1293,6 @@ class WailStrike(TelegraphedSurge):
         self.refresh_announcements(npc)
         narrate(self.stage_announce[1])
         self.prep_colors()
-        glance = False
         if self.viable():
             hit_chance = to_hit_chance(
                 self.user, self.target, base=WAIL_HIT_CHANCE_BASE, floor=1
@@ -1334,10 +1307,7 @@ class WailStrike(TelegraphedSurge):
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = max(0, int(power * 0.7))  # ignores protection (sonic)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage = damage // 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:
             if functions.check_parry(self.target):
                 self.parry()
@@ -1540,7 +1510,7 @@ class SeismicSlam(Move):
                 # accuracy half below is already applied per enemy, so the
                 # pair would otherwise disagree about the same angle.
                 power = apply_facing_damage(self.user, enemy, self.power)
-                damage = max(0, int(power * resist) - enemy.protection)
+                damage = max(0, int(power * resist) - target_protection(enemy))
                 # Deliberately NOT to_hit_chance(): this is a brute-force slam
                 # with no intelligence term at all, so the shared helper does
                 # not fit at any base/floor. Migrating it "for consistency"
@@ -1644,7 +1614,9 @@ class StoneBulwark(Move):
         pass
 
     def execute(self, user):
-        amount = 6 + int(getattr(user, "protection", 0) * 0.5)
+        # target_protection is the sanitised read (bool/None/NaN -> 0); here
+        # it is the caster's OWN armour, which sizes the party ward.
+        amount = 6 + int(target_protection(user) * 0.5)
         cprint(
             f"{user.name} drives the party's shadows into the stone — rock flows "
             "up and over them like a second skin!",
@@ -1813,7 +1785,7 @@ class TwinFangs(Move):
         # so a marked target struck from behind pays for both.
         power = apply_facing_damage(self.user, target, power)
         resist = functions.combat_resistance(target, "piercing")
-        damage = max(0, int(power * resist) - target.protection)
+        damage = max(0, int(power * resist) - target_protection(target))
         # Deliberately NOT to_hit_chance(): no intelligence term, and finesse
         # is weighted 0.8 rather than the canonical HIT_CHANCE_FINESSE_WEIGHT
         # (0.7) — a precision-striker's accuracy leans harder on finesse.
@@ -1838,6 +1810,8 @@ class TwinFangs(Move):
             if functions.check_parry(target):
                 self.parry()
             else:
+                # NOT apply_glancing_blow: the glance is decided inside the
+                # hit branch, after the parry check -- a different shape.
                 glance = hit_chance - roll < 10
                 if glance:
                     damage //= 2

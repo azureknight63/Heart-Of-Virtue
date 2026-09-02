@@ -139,8 +139,10 @@ def _fixed_rolls(monkeypatch, module, rolls):
     """Feed the to-hit dice a fixed sequence of rolls.
 
     ``module.random`` *is* the stdlib ``random`` module, so this patch is
-    process-wide for the test's duration (monkeypatch undoes it); the ``module``
-    argument only selects which import site to reach through.
+    process-wide for the test's duration (monkeypatch undoes it). The
+    ``module`` argument is therefore cosmetic -- every import site sees the
+    same patched module -- and is kept only so each call site names the
+    module under test; it scopes nothing.
 
     Rolls are consumed in ``combat_proximity`` insertion order -- reordering the
     enemies re-maps which one gets which roll.
@@ -336,6 +338,61 @@ def test_chip_away_publishes_parry_for_a_parried_strike(monkeypatch):
     assert _outcomes(entries) == ["parry", "parry", "parry"], entries
 
 
+def test_chip_away_publishes_absorb_when_armour_swallows_a_strike(monkeypatch):
+    """A strike that lands under the target's protection deals 0 -- that is an
+    ``absorb``, not a ``hit``, and must not play the flesh-impact cue. This is
+    the publication rule ``resolve_strike_outcome`` applies itself
+    (``OUTCOME_ABSORB if damage <= 0 else OUTCOME_HIT``, unconditionally);
+    Chip Away is the caller whose damage line can actually produce the zero.
+    """
+    import src.moves._pick as pick
+
+    user = _make_user("Pick")
+    target = _make_enemy("Ironclad", protection=500)
+    user.combat_proximity = {target: 2}
+    user.combat_list = [target]
+
+    move = ChipAway(user)
+    move.target = target
+    _arm(user, move)
+    _fixed_rolls(monkeypatch, pick, [0, 0, 0])  # every strike lands
+
+    entries = _run(_capture_for(user), lambda: move.execute(user))
+
+    assert _outcomes(entries) == ["absorb", "absorb", "absorb"], entries
+    assert target.hp == 500
+
+
+def test_chip_away_seeded_sequence_pins_the_rng_draw_order(seeded):
+    """Characterisation pin, no monkeypatched dice: for one fixed seed the
+    flurry's exact outcome sequence and per-strike damage numbers are frozen.
+
+    This is what protects ``resolve_strike_outcome``'s ``roll=`` contract:
+    Chip Away draws its to-hit roll BEFORE its damage variance, per strike,
+    so letting the resolver roll internally (or hoisting the variance) swaps
+    the order the draws come off the shared RNG and every number below moves.
+    """
+    user = _make_user("Pick")
+    target = _make_enemy("Dummy")
+    user.combat_proximity = {target: 2}
+    user.combat_list = [target]
+
+    move = ChipAway(user)
+    move.target = target
+    _arm(user, move)
+
+    with seeded(1234):
+        entries = _run(_capture_for(user), lambda: move.execute(user))
+
+    assert _outcomes(entries) == ["miss", "hit", "hit"], _outcomes(entries)
+    struck = [e["message"] for e in entries if "Strike" in e.get("message", "")]
+    assert struck == [
+        "Strike 1 missed!",
+        "Strike 2: 16 damage to Dummy!",
+        "Strike 3: 16 damage to Dummy!",
+    ], struck
+
+
 # ── glance: which area moves can actually produce one ───────────────────────
 
 
@@ -348,7 +405,7 @@ def test_chip_away_publishes_parry_for_a_parried_strike(monkeypatch):
         (ChipAway, "Pick"),
     ],
 )
-def test_area_moves_never_publish_a_glance(move_cls, subtype):
+def test_area_moves_never_publish_a_glance(move_cls, subtype, seeded):
     """None of these four has a glancing-blow branch.
 
     Sweep/Halberd Spin/Reap deal flat ``max(1, power - protection)`` with no
@@ -358,28 +415,26 @@ def test_area_moves_never_publish_a_glance(move_cls, subtype):
     deliberate ``Move.hit(damage, glance=True)`` decision, and adding it here
     would be a balance change dressed up as a feedback fix.
     """
-    import random as _random
-
     seen = set()
     # 60 seeds: enough that the hit/parry/miss branches all fire for every move
     # (the parrying third enemy and the protection ladder need a spread of
     # rolls), while the assertion is an absence, which sampling can only ever
     # support -- the docstring's argument from source is the real proof.
-    rng_state = _random.getstate()
+    # The ``seeded`` fixture restores the RNG state per iteration, and does so
+    # even when an assertion mid-loop fails -- the bare getstate/setstate pair
+    # this replaces leaked a pinned RNG into the next test on any failure.
     for seed in range(60):
-        _random.seed(seed)
-        user = _make_user(subtype)
-        enemies = [_make_enemy(f"E{i}", protection=i * 6) for i in range(3)]
-        enemies[2].states = [states.Parrying(enemies[2])]
-        user.combat_proximity = {e: 2 for e in enemies}
-        user.combat_list = list(enemies)
-        move = move_cls(user)
-        move.target = enemies[0]
-        _arm(user, move)
-        entries = _run(_capture_for(user), lambda: move.execute(user))
-        seen.update(o for o in _outcomes(entries) if o)
-
-    _random.setstate(rng_state)  # never leave the process RNG pinned at seed 59
+        with seeded(seed):
+            user = _make_user(subtype)
+            enemies = [_make_enemy(f"E{i}", protection=i * 6) for i in range(3)]
+            enemies[2].states = [states.Parrying(enemies[2])]
+            user.combat_proximity = {e: 2 for e in enemies}
+            user.combat_list = list(enemies)
+            move = move_cls(user)
+            move.target = enemies[0]
+            _arm(user, move)
+            entries = _run(_capture_for(user), lambda: move.execute(user))
+            seen.update(o for o in _outcomes(entries) if o)
 
     assert seen, f"{move_cls.__name__} published no outcomes at all"
     assert "glance" not in seen, f"{move_cls.__name__} published a glance: {seen}"

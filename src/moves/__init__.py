@@ -32,6 +32,8 @@ from ._base import (
     attacker_accuracy,
     HIT_CHANCE_BASE,
     display_name_of,
+    resolve_damage,
+    damage_bounds,
 )
 from ._utility import (
     StrategicInsight,
@@ -127,6 +129,9 @@ __all__ = [
     "attacker_accuracy",
     "HIT_CHANCE_BASE",
     "display_name_of",
+    # The canonical damage expression and its preview half
+    "resolve_damage",
+    "damage_bounds",
     # Utility
     "StrategicInsight",
     "MasterTactician",

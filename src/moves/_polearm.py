@@ -1,24 +1,20 @@
 """Polearm/halberd moves: OverheadSmash, Sweep, BracePosition, HalberdSpin and passive ReachMastery."""
 
-from src.narration import colored, cprint  # noqa: F401
-import random  # noqa: F401
-import math  # noqa: F401
-import src.states as states  # noqa: F401
-import src.functions as functions  # noqa: F401
-import src.items as items  # noqa: F401
-import src.positions as positions  # noqa: F401
-from src.animations import animate_to_main_screen as animate  # noqa: F401
+from src.narration import colored, cprint
+import random  # a test patches the dice through this module's binding
+import src.states as states
+import src.positions as positions
 from ._base import (
     weapon_scaled_power,
     apply_facing_damage,
+    flat_arc_strike_damage,
     hostiles_in_arc,
     Move,
     PassiveMove,
     _apply_to_hit_modifiers,
     resolve_strike_outcome,
-    target_protection,
     to_hit_chance,
-)  # noqa: F401
+)
 
 
 def _living_hostile_in_arc(move):
@@ -228,12 +224,12 @@ class Sweep(Move):
         """
         return hostiles_in_arc(self, self.preview_reach(), frontal=True)
 
-    def preview_damage(self, target=None):
+    def preview_damage(self, target=None, affected=None):
         """Sweep's loop deals ``max(1, int(swing_power - protection))`` — no
         resistance, no heat scaling and no variance roll, so min and max are
         the same number rather than a band. See ``execute``.
         """
-        return self._area_preview_damage(target, flat=True)
+        return self._area_preview_damage(target, flat=True, affected=affected)
 
     def prep(self, user):
         cprint(f"{user.name} winds up for a wide sweep...", "cyan")
@@ -241,21 +237,18 @@ class Sweep(Move):
     def execute(self, user):
         cprint(f"{user.name} sweeps the polearm in a broad arc!", "cyan")
 
-        # Enemy selection is hostiles_in_arc -- the same function, with the
-        # same reach, that preview_affected() above calls. The gate was
-        # hand-rolled here (alive / distance / 90-degree cone / proximity
-        # fallback) and again in Reap, Halberd Spin and Whirl Attack: four
-        # copies of a rule the *preview* also had to state, and the miss line
-        # below is only truthful for the enemies the preview agrees are in the
-        # arc. Two derivations of "who does this swing reach" can diverge; one
-        # cannot.
-        for enemy in hostiles_in_arc(self, self.preview_reach(), frontal=True):
+        # Exactly the set the preview prices: preview_affected() states the
+        # arc gate once (see hostiles_in_arc's docstring for the rationale),
+        # so the swing and its preview cannot disagree about who is in it.
+        for enemy in self.preview_affected():
             # Facing/angle damage (#394) - see apply_facing_damage.
             # Scored per enemy: an arc swing reaches each one from a
             # different angle, so one hoisted multiplier would be wrong
             # for every target but one.
             swing_power = apply_facing_damage(self.user, enemy, self.power)
-            base_dmg = max(1, int(swing_power - target_protection(enemy)))
+            # The flat arc line, stated once for predictor and executes both
+            # -- see _base.flat_arc_strike_damage.
+            base_dmg = flat_arc_strike_damage(enemy, swing_power)
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
@@ -432,12 +425,12 @@ class HalberdSpin(Move):
         """
         return hostiles_in_arc(self, self.preview_reach())
 
-    def preview_damage(self, target=None):
+    def preview_damage(self, target=None, affected=None):
         """Halberd Spin's loop deals ``max(1, int(swing_power - protection))``
         — no resistance, no heat scaling and no variance roll, so min and max
         are the same number rather than a band. See ``execute``.
         """
-        return self._area_preview_damage(target, flat=True)
+        return self._area_preview_damage(target, flat=True, affected=affected)
 
     def prep(self, user):
         cprint(f"{user.name} begins a wide spinning stance...", "cyan")
@@ -445,21 +438,18 @@ class HalberdSpin(Move):
     def execute(self, user):
         cprint(f"{user.name} spins the halberd in a devastating full circle!", "cyan")
 
-        # Enemy selection is hostiles_in_arc -- the same function, with the
-        # same reach, that preview_affected() above calls. The gate was
-        # hand-rolled here (alive / distance / full circle / proximity
-        # fallback) and again in Sweep, Reap and Whirl Attack: four copies of
-        # a rule the *preview* also had to state, and the miss line below is
-        # only truthful for the enemies the preview agrees the spin reaches.
-        # Two derivations of "who does this swing reach" can diverge; one
-        # cannot.
-        for enemy in hostiles_in_arc(self, self.preview_reach()):
+        # Exactly the set the preview prices: preview_affected() states the
+        # full-circle gate once (see hostiles_in_arc's docstring), so the
+        # spin and its preview cannot disagree about who is in it.
+        for enemy in self.preview_affected():
             # Facing/angle damage (#394) - see apply_facing_damage.
             # Scored per enemy: a spin reaches each one from a different
             # angle, so one hoisted multiplier would be wrong for every
             # target but one.
             swing_power = apply_facing_damage(self.user, enemy, self.power)
-            base_dmg = max(1, int(swing_power - target_protection(enemy)))
+            # The flat arc line, stated once for predictor and executes both
+            # -- see _base.flat_arc_strike_damage.
+            base_dmg = flat_arc_strike_damage(enemy, swing_power)
             hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
@@ -478,9 +468,9 @@ class HalberdSpin(Move):
         # Random facing after spin
         try:
             if hasattr(user, "combat_position") and user.combat_position is not None:
-                import src.positions as _pos
-
-                user.combat_position.facing = random.choice(list(_pos.Direction))
+                user.combat_position.facing = random.choice(
+                    list(positions.Direction)
+                )
         except Exception:
             pass
 

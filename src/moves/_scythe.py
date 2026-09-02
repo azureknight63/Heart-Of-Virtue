@@ -11,6 +11,7 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     weapon_scaled_power,
     apply_facing_damage,
+    flat_arc_strike_damage,
     hostiles_in_arc,
     Move,
     PassiveMove,
@@ -18,7 +19,6 @@ from ._base import (
     _apply_to_hit_modifiers,
     resolve_damage,
     resolve_strike_outcome,
-    target_protection,
     to_hit_chance,
 )  # noqa: F401
 
@@ -108,14 +108,17 @@ class Reap(Move):
         """
         return hostiles_in_arc(self, self.preview_reach(), frontal=True)
 
-    def preview_damage(self, target=None):
+    def preview_damage(self, target=None, affected=None):
         """Reap does not run the canonical damage expression at all: its loop
         deals ``max(1, int(swing_power - protection))``, with no resistance,
         no heat scaling and no variance roll — so min and max are the same
         number — then applies ``_damage_multipliers`` in order. See ``execute``.
         """
         return self._area_preview_damage(
-            target, flat=True, bonuses=self._damage_multipliers(target)
+            target,
+            flat=True,
+            bonuses=self._damage_multipliers(target),
+            affected=affected,
         )
 
     def prep(self, user):
@@ -130,6 +133,12 @@ class Reap(Move):
         twice, once here and once in a preview lookup table in another file.
         Order and per-multiplier truncation are load-bearing: the loop
         ``int()``s after each one, not once at the end.
+
+        Every multiplier this yields is **>= 1.0** — bonuses, never
+        penalties. ``flat_arc_damage_bounds`` leans on that: the chained
+        truncations can only move the floored base up, never back under the
+        flat line's floor of 1, so the bounds stay exact. A future sub-1.0
+        entry would need that floor interaction re-derived.
 
         * Grim Persistence (passive): +25% against a target below 35% HP.
         * Reaper's Mark: +25% against a marked target.
@@ -149,21 +158,18 @@ class Reap(Move):
     def execute(self, user):
         cprint(f"{user.name} sweeps the scythe in a devastating arc!", "magenta")
 
-        # Enemy selection is hostiles_in_arc -- the same function, at the same
-        # reach (preview_reach() is this move's weapon-derived arc), that
-        # preview_affected() above calls. The gate was hand-rolled here
-        # (alive / distance / 90-degree cone / proximity fallback) and again in
-        # Sweep, Halberd Spin and Whirl Attack: four copies of a rule the
-        # *preview* also had to state, and the miss line below is only truthful
-        # for the enemies the preview agrees are in the arc. Two derivations of
-        # "who does this swing reach" can diverge; one cannot.
-        for enemy in hostiles_in_arc(self, self.preview_reach(), frontal=True):
+        # Exactly the set the preview prices: preview_affected() states the
+        # arc gate once (see hostiles_in_arc's docstring), so the sweep and
+        # its preview cannot disagree about who is in it.
+        for enemy in self.preview_affected():
             # Facing/angle damage (#394) - see apply_facing_damage.
             # Scored per enemy: an arc swing reaches each one from a
             # different angle, so one hoisted multiplier would be wrong
             # for every target but one.
             swing_power = apply_facing_damage(self.user, enemy, self.power)
-            base_dmg = max(1, int(swing_power - target_protection(enemy)))
+            # The flat arc line, stated once for predictor and executes both
+            # -- see _base.flat_arc_strike_damage.
+            base_dmg = flat_arc_strike_damage(enemy, swing_power)
             # Truncated per multiplier, in order -- see _damage_multipliers.
             for multiplier in self._damage_multipliers(enemy):
                 base_dmg = int(base_dmg * multiplier)
@@ -382,6 +388,8 @@ class DeathsHarvest(Move):
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        # NOT apply_glancing_blow: its int() would land before the two bonus
+        # multipliers below, where this move's engine order puts it after.
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True

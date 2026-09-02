@@ -162,11 +162,10 @@ def test_area_moves_still_reach_every_hostile(move_name, weapon_cls):
 
 def _damage_loops_over_proximity():
     """Every move whose ``execute()`` walks ``combat_proximity`` unfiltered."""
+    from tests._moves_scan import move_module_paths
+
     offenders = []
-    package_dir = pathlib.Path(moves.__file__).parent
-    for path in sorted(package_dir.glob("*.py")):
-        if path.stem == "__init__":
-            continue
+    for path in move_module_paths():
         module = __import__(f"src.moves.{path.stem}", fromlist=["*"])
         for name, obj in vars(module).items():
             if not isinstance(obj, type) or not issubclass(obj, Move):

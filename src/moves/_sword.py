@@ -9,6 +9,8 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
     weapon_scaled_power,
     apply_facing_damage,
     hostiles_in_arc,
@@ -182,13 +184,13 @@ class WhirlAttack(Move):
         """
         return hostiles_in_arc(self, self.preview_reach(), require_position=True)
 
-    def preview_damage(self, target=None):
+    def preview_damage(self, target=None, affected=None):
         """Each enemy in the spin takes the canonical damage expression on
         ``self.power`` — ``execute`` scores the same line the standard pipeline
         does, per enemy. Only *who* it lands on differs, and that is
         ``preview_affected`` above.
         """
-        return self._area_preview_damage(target)
+        return self._area_preview_damage(target, affected=affected)
 
     def prep(self, user):
         """Prep stage - announce the spin."""
@@ -211,23 +213,12 @@ class WhirlAttack(Move):
 
         # Find all enemies in range
         try:
-            # Enemy selection is hostiles_in_arc -- the same function, at the
-            # same reach, that preview_affected() above calls, with
-            # require_position because this spin (unlike the cone swings) skips
-            # an enemy with no coordinates outright rather than falling back to
-            # combat_proximity distance. The gate was hand-rolled here and
-            # again in Sweep, Reap and Halberd Spin: four copies of a rule the
-            # *preview* also had to state, and two derivations of "who does
-            # this swing reach" can diverge where one cannot.
-            #
-            # hostiles_in_arc is also where "hostiles only" lives. This loop
-            # used to walk combat_proximity directly, which holds BOTH sides --
-            # so every arc and spin dealt full damage to Jean's own allies,
-            # silently and with no warning. Measured before the fix: Whirl
-            # Attack dealt 27 to Gorran against 23 to the enemy it was aimed at.
-            for enemy in hostiles_in_arc(
-                self, self.preview_reach(), require_position=True
-            ):
+            # Exactly the set the preview prices: preview_affected() states
+            # the spin's gate once (require_position and all -- see
+            # hostiles_in_arc's docstring, which also carries the
+            # friendly-fire rationale: the gate is where "hostiles only"
+            # lives), so the spin and its preview cannot disagree.
+            for enemy in self.preview_affected():
                 # Route damage through the shared pipeline (issue #402):
                 # resistances, heat scaling, and self.hit()/parry() bookkeeping.
                 self.target = enemy
@@ -243,11 +234,7 @@ class WhirlAttack(Move):
                 # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
                 hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
                 roll = random.randint(0, 100)
-                glance = False
-                if hit_chance >= roll and hit_chance - roll < 10:
-                    damage /= 2
-                    glance = True
-                damage = int(damage)
+                damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
                 if hit_chance >= roll:
                     if functions.check_parry(enemy):
@@ -391,11 +378,7 @@ class VertigoSpin(Move):
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
-        glance = False
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
             _ensure_weapon_exp(self.user)
@@ -600,7 +583,6 @@ class DisarmingSlash(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -625,10 +607,7 @@ class DisarmingSlash(Move):
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
@@ -758,7 +737,6 @@ class Riposte(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -791,23 +769,14 @@ class Riposte(Move):
         finally:
             player.heat = old_heat
 
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 8
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:

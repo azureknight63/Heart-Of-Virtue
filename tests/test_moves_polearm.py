@@ -311,7 +311,7 @@ class TestSweep:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -327,7 +327,7 @@ class TestSweep:
         move.mvrange = (1, 5)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -344,7 +344,7 @@ class TestSweep:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -374,7 +374,7 @@ class TestSweep:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=True), \
+        with patch("src.functions.check_parry", return_value=True), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -393,7 +393,7 @@ class TestSweep:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -410,7 +410,7 @@ class TestSweep:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -427,7 +427,7 @@ class TestSweep:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -446,7 +446,7 @@ class TestSweep:
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         with patch(
             "src.moves._polearm.positions.angle_to_target", side_effect=Exception("boom")
-        ), patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        ), patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -666,7 +666,7 @@ class TestHalberdSpin:
         move.mvrange = (1, 20)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -683,7 +683,7 @@ class TestHalberdSpin:
         move.mvrange = (1, 20)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -699,7 +699,7 @@ class TestHalberdSpin:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -729,7 +729,7 @@ class TestHalberdSpin:
         move.mvrange = (1, 20)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=True), \
+        with patch("src.functions.check_parry", return_value=True), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -747,7 +747,7 @@ class TestHalberdSpin:
         move.mvrange = (1, 10)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 
@@ -764,7 +764,7 @@ class TestHalberdSpin:
         move.mvrange = (1, 20)
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+        with patch("src.functions.check_parry", return_value=False), \
              patch("src.moves._polearm.cprint"):
             move.execute(user)
 

@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
     apply_facing_damage,
     Move,
     PassiveMove,
@@ -168,12 +169,12 @@ class ChipAway(Move):
             # _base.resolve_strike_outcome, which is where that pairing now
             # lives. Chip Away rolls damage variance but never inspects the hit
             # margin, so it has no glancing blow; a strike that lands under the
-            # target's armour is an `absorb`, which must not play the
-            # flesh-impact cue, hence absorb_on_zero. The roll is passed in
-            # rather than taken there because it is drawn BEFORE the damage
-            # variance above, and swapping those two draws would silently
-            # change every seeded outcome.
-            if resolve_strike_outcome(
+            # target's armour deals 0 and the resolver publishes it as an
+            # `absorb`, which must not play the flesh-impact cue. The roll is
+            # passed in rather than taken there because it is drawn BEFORE the
+            # damage variance above, and swapping those two draws would
+            # silently change every seeded outcome.
+            landed = resolve_strike_outcome(
                 self,
                 self.target,
                 damage,
@@ -182,8 +183,8 @@ class ChipAway(Move):
                 parry_line=f"{self.target.name} parried strike {i + 1}!",
                 miss_line=f"Strike {i + 1} missed!",
                 roll=roll,
-                absorb_on_zero=True,
-            ):
+            )
+            if landed:
                 total_hits += 1
 
             if not self.target.is_alive():
@@ -283,7 +284,6 @@ class ExploitWeakness(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -308,10 +308,7 @@ class ExploitWeakness(Move):
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
@@ -435,7 +432,6 @@ class Stupefy(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -460,10 +456,7 @@ class Stupefy(Move):
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)

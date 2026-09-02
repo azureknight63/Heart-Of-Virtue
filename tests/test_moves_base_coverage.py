@@ -1396,3 +1396,505 @@ class TestAttackerAccuracy:
     def test_carries_no_defender_term(self):
         # It is the attacker half only -- the defender's finesse must not leak in.
         assert attacker_accuracy(10, 5) == to_hit_chance(_Stats(10, 5), _Stats(0))
+
+
+# ---------------------------------------------------------------------------
+# apply_glancing_blow -- the one copy of the glance window (issue: the
+# `hit_chance - roll < 10` block was copy-pasted ~24x with the 10 a bare
+# literal)
+# ---------------------------------------------------------------------------
+
+
+class TestApplyGlancingBlow:
+    """Differential: the helper must be bit-identical to both inline shapes
+    it replaces -- the float shape (`damage /= 2` then `int(damage)`) the
+    player modules used, and the int shape (`damage //= 2`, already int)
+    ``_npc.py``'s ranged attacks used."""
+
+    @staticmethod
+    def _legacy_float(damage, hit_chance, roll):
+        glance = False
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        return int(damage), glance
+
+    @staticmethod
+    def _legacy_int(damage, hit_chance, roll):
+        glance = False
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage = damage // 2
+            glance = True
+        return int(damage), glance
+
+    def test_margin_constant_is_ten(self):
+        from src.moves._base import GLANCE_MARGIN
+
+        assert GLANCE_MARGIN == 10
+
+    def test_matches_the_float_shape_over_a_wide_grid(self):
+        from src.moves._base import apply_glancing_blow
+
+        damages = [0.0, 0.4, 1.0, 1.5, 3.7, 9.99, 10.0, 57.3, 123.45, 999.9]
+        mismatches = []
+        for damage in damages:
+            for hit_chance in range(-1, 111, 3):
+                for roll in range(0, 101, 3):
+                    expected = self._legacy_float(damage, hit_chance, roll)
+                    got = apply_glancing_blow(damage, hit_chance, roll)
+                    if got != expected:
+                        mismatches.append((damage, hit_chance, roll, got, expected))
+        assert not mismatches, mismatches[:5]
+
+    def test_matches_the_int_shape_over_a_wide_grid(self):
+        from src.moves._base import apply_glancing_blow
+
+        mismatches = []
+        for damage in [0, 1, 2, 3, 7, 10, 57, 123, 999]:
+            for hit_chance in range(-1, 111, 3):
+                for roll in range(0, 101, 3):
+                    expected = self._legacy_int(damage, hit_chance, roll)
+                    got = apply_glancing_blow(damage, hit_chance, roll)
+                    if got != expected:
+                        mismatches.append((damage, hit_chance, roll, got, expected))
+        assert not mismatches, mismatches[:5]
+
+    def test_window_edges(self):
+        from src.moves._base import apply_glancing_blow
+
+        # roll lands exactly at the margin: NOT a glance (strict <).
+        assert apply_glancing_blow(10.0, 60, 50) == (10, False)
+        # one inside the window: glance.
+        assert apply_glancing_blow(10.0, 59, 50) == (5, True)
+        # a miss can never glance, whatever the margin arithmetic says.
+        assert apply_glancing_blow(10.0, 49, 50) == (10, False)
+
+
+# ---------------------------------------------------------------------------
+# resolve_pipeline_strike -- the shared hit/parry/miss dispatch
+# ---------------------------------------------------------------------------
+
+
+class _PipelineMove:
+    """Records which of hit/parry/miss the dispatcher chose."""
+
+    def __init__(self, target):
+        self.target = target
+        self.user = MagicMock()
+        self.calls = []
+
+    def hit(self, damage, glance):
+        self.calls.append(("hit", damage, glance))
+
+    def parry(self):
+        self.calls.append(("parry",))
+
+    def miss(self):
+        self.calls.append(("miss",))
+
+
+class TestResolvePipelineStrike:
+    def _move(self):
+        target = MagicMock()
+        target.states = []
+        return _PipelineMove(target)
+
+    def test_hit_when_roll_at_or_under_chance(self):
+        from src.moves._base import resolve_pipeline_strike
+
+        move = self._move()
+        with patch("src.functions.check_parry", return_value=False):
+            landed = resolve_pipeline_strike(move, 7, True, 50, roll=50)
+        assert landed is True
+        assert move.calls == [("hit", 7, True)]
+
+    def test_parry_preempts_the_hit(self):
+        from src.moves._base import resolve_pipeline_strike
+
+        move = self._move()
+        with patch("src.functions.check_parry", return_value=True) as spy:
+            landed = resolve_pipeline_strike(move, 7, False, 50, roll=0)
+        assert landed is False
+        assert move.calls == [("parry",)]
+        spy.assert_called_once_with(move.target)
+
+    def test_miss_when_roll_exceeds_chance(self):
+        from src.moves._base import resolve_pipeline_strike
+
+        move = self._move()
+        with patch("src.functions.check_parry", return_value=False) as spy:
+            landed = resolve_pipeline_strike(move, 7, False, 50, roll=51)
+        assert landed is False
+        assert move.calls == [("miss",)]
+        spy.assert_not_called()
+
+    def test_draws_its_own_roll_only_when_not_supplied(self):
+        from src.moves._base import resolve_pipeline_strike
+
+        move = self._move()
+        with patch("src.functions.check_parry", return_value=False), patch(
+            "random.randint", return_value=100
+        ) as rng:
+            resolve_pipeline_strike(move, 7, False, 99)
+        rng.assert_called_once_with(0, 100)
+        assert move.calls == [("miss",)]
+
+        move = self._move()
+        with patch("src.functions.check_parry", return_value=False), patch(
+            "random.randint"
+        ) as rng:
+            resolve_pipeline_strike(move, 7, False, 99, roll=0)
+        rng.assert_not_called()
+        assert move.calls == [("hit", 7, False)]
+
+
+class TestResolveStrikeOutcomeSignature:
+    def test_narration_lines_are_keyword_only(self):
+        """Three same-typed narration strings in a row are exactly the
+        signature a positional call scrambles silently -- hit text narrated
+        for a parry. All call sites already pass keywords; the signature now
+        enforces it."""
+        from src.moves._base import resolve_strike_outcome
+
+        move = self._armed_move()
+        with pytest.raises(TypeError):
+            resolve_strike_outcome(move, move.target, 5, 90, "hit", "parry", "miss")
+
+    def test_absorb_on_zero_parameter_is_gone(self):
+        """`absorb_on_zero` let a caller claim its zero-damage strikes were
+        hits. Zero damage IS an absorb -- the same rule Move.hit applies --
+        and the flat arc swings floor at 1, so no caller ever reached the
+        False branch with a zero. The flag was a lie waiting to be told."""
+        import inspect as _inspect
+
+        from src.moves._base import resolve_strike_outcome
+
+        assert "absorb_on_zero" not in _inspect.signature(
+            resolve_strike_outcome
+        ).parameters
+
+    @staticmethod
+    def _armed_move():
+        target = MagicMock()
+        target.states = []
+        target.hp = 100
+        move = _PipelineMove(target)
+        move.name = "Probe"
+        return move
+
+    def test_zero_damage_publishes_absorb_unconditionally(self):
+        from src.moves._base import resolve_strike_outcome
+
+        move = self._armed_move()
+        move.user._pending_animation = {"outcome": None}
+        with patch("src.functions.check_parry", return_value=False):
+            landed = resolve_strike_outcome(
+                move,
+                move.target,
+                0,
+                90,
+                hit_line="hit",
+                parry_line="parry",
+                miss_line="miss",
+                roll=0,
+            )
+        assert landed is True
+        assert move.user._pending_animation["outcome"] == "absorb"
+
+    def test_positive_damage_publishes_hit(self):
+        from src.moves._base import resolve_strike_outcome
+
+        move = self._armed_move()
+        move.user._pending_animation = {"outcome": None}
+        with patch("src.functions.check_parry", return_value=False):
+            resolve_strike_outcome(
+                move,
+                move.target,
+                5,
+                90,
+                hit_line="hit",
+                parry_line="parry",
+                miss_line="miss",
+                roll=0,
+            )
+        assert move.user._pending_animation["outcome"] == "hit"
+        assert move.target.hp == 95
+
+
+class TestProjectedHitHeatSequence:
+    """The preview-side replay of Move.hit's momentum reward."""
+
+    def test_constant_matches_the_literal_move_hit_passes(self):
+        """``Move.hit`` must keep its literal 1.25 (the momentum-tooltip
+        contract counts the literals in _base.py), so the named constant the
+        heat-sequence simulation replays cannot be spliced into that call.
+        This is the pin that keeps the two from drifting apart."""
+        import ast
+        import inspect
+        import textwrap
+
+        from src.moves._base import HEAT_GAIN_ON_HIT
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(Move.hit)))
+        literals = [
+            node.args[0].value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "attr", None) == "change_heat"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        ]
+        assert HEAT_GAIN_ON_HIT in literals, (
+            f"Move.hit's change_heat literals {literals} no longer include "
+            f"HEAT_GAIN_ON_HIT={HEAT_GAIN_ON_HIT} -- retune both together"
+        )
+
+    def test_replays_jeans_real_change_heat_and_restores_it(self):
+        from src.player import Player
+        from src.moves._base import projected_hit_heat_sequence
+
+        jean = Player()
+        jean.name = "Jean"
+        jean.heat = 2.0
+        heats = projected_hit_heat_sequence(jean, 3)
+        assert heats[0] == 2.0
+        assert heats[1] > heats[0] and heats[2] > heats[1]
+        assert jean.heat == 2.0  # side-effect-free
+
+    def test_non_jean_user_gets_a_flat_sequence(self):
+        npc = MagicMock()
+        npc.name = "Slime"
+        npc.heat = 1.5
+        from src.moves._base import projected_hit_heat_sequence
+
+        assert projected_hit_heat_sequence(npc, 3) == [1.5, 1.5, 1.5]
+
+
+# ---------------------------------------------------------------------------
+# Finiteness guards (crafted-save DoS surface; availability-only)
+# ---------------------------------------------------------------------------
+
+
+def _positioned_pair():
+    """Attacker at the defender's back so the facing multiplier engages --
+    the int() that non-finite power must survive only runs off the 1.0
+    short-circuit."""
+    attacker = MagicMock()
+    defender = MagicMock()
+    attacker.combat_position = CombatPosition(0, 0, Direction.E)
+    defender.combat_position = CombatPosition(3, 0, Direction.E)
+    return attacker, defender
+
+
+class TestFinitenessGuards:
+    def test_apply_facing_damage_clamps_non_finite_power(self):
+        from src.moves._base import apply_facing_damage
+
+        attacker, defender = _positioned_pair()
+        # Premise: the multiplier genuinely engages for this geometry.
+        assert apply_facing_damage(attacker, defender, 100) > 100
+        for junk in (float("inf"), float("nan")):
+            assert apply_facing_damage(attacker, defender, junk) == 0
+
+    def test_flat_arc_strike_damage_guards_a_non_finite_swing(self):
+        from src.moves._base import flat_arc_strike_damage
+
+        target = MagicMock()
+        target.protection = 5
+        for junk in (float("inf"), float("nan"), None, "junk"):
+            assert flat_arc_strike_damage(target, junk) == 1
+
+    def test_target_protection_reads_non_finite_armour_as_zero(self):
+        from src.moves._base import target_protection
+
+        target = MagicMock()
+        for junk in (float("inf"), float("nan"), float("-inf")):
+            target.protection = junk
+            assert target_protection(target) == 0
+
+    def test_flat_resisted_damage_collapses_a_non_finite_product(self):
+        from src.moves._base import flat_resisted_damage
+
+        target = MagicMock()
+        target.protection = 0
+        target.resistance = {"pure": 1.0}
+        target.resistance_base = {"pure": 1.0}
+        assert flat_resisted_damage(target, float("inf"), "pure") == 0.0
+        assert flat_resisted_damage(target, float("nan"), "pure") == 0.0
+
+    def test_weapon_scaled_power_survives_a_non_finite_weapon(self):
+        from src.moves._base import weapon_scaled_power
+
+        user = MagicMock()
+        user.strength = 10
+        user.finesse = 10
+        user.eq_weapon.damage = float("inf")
+        user.eq_weapon.str_mod = 1.0
+        user.eq_weapon.fin_mod = 1.0
+        # inf damage degrades to the no-weapon fallback (strength), exactly
+        # as a non-numeric damage already did.
+        assert weapon_scaled_power(user, 1.0) == 10
+
+        user.eq_weapon.damage = 10
+        assert weapon_scaled_power(user, float("nan")) == 1
+
+    def test_resolve_strike_outcome_coerces_non_finite_damage(self):
+        """max(0, hp - nan) evaluates to 0 in CPython -- a NaN damage
+        silently EXECUTED the target. Coerce like Move.hit does (#296)."""
+        from src.moves._base import resolve_strike_outcome
+
+        target = MagicMock()
+        target.states = []
+        target.hp = 100
+        move = _PipelineMove(target)
+        move.name = "Probe"
+        move.user._pending_animation = {"outcome": None}
+        with patch("src.functions.check_parry", return_value=False):
+            resolve_strike_outcome(
+                move,
+                target,
+                float("nan"),
+                90,
+                hit_line="hit",
+                parry_line="parry",
+                miss_line="miss",
+                roll=0,
+            )
+        assert target.hp == 100
+        assert move.user._pending_animation["outcome"] == "absorb"
+
+    def test_standard_evaluate_attack_survives_a_zero_speed(self):
+        from src.moves import PommelStrike
+
+        user = MagicMock()
+        user.name = "Probe"
+        user.strength = 10
+        user.finesse = 10
+        user.endurance = 10
+        user.speed = 0  # crafted save: division by zero mid-beat
+        user.known_moves = []
+        user.eq_weapon.damage = 20
+        user.eq_weapon.str_mod = 1.0
+        user.eq_weapon.fin_mod = 1.0
+        user.eq_weapon.weight = 2
+        user.eq_weapon.wpnrange = (0, 5)
+        user.eq_weapon.name = "Probe Sword"
+        user.eq_weapon.subtype = "Sword"
+        move = PommelStrike.__new__(PommelStrike)
+        move.user = user
+        move.stage_announce = ["", "", "", ""]
+        power, damage_type = Move.standard_evaluate_attack(
+            move, base_power=0, base_damage_type="crushing"
+        )
+        assert power > 0
+        assert move.stage_beat[0] >= 1
+
+    def test_standard_evaluate_attack_degrades_a_non_finite_weapon(self):
+        user = MagicMock()
+        user.name = "Probe"
+        user.strength = 10
+        user.finesse = 10
+        user.endurance = 10
+        user.speed = 10
+        user.known_moves = []
+        user.eq_weapon.damage = float("nan")
+        user.eq_weapon.str_mod = 1.0
+        user.eq_weapon.fin_mod = 1.0
+        user.eq_weapon.weight = 2
+        user.eq_weapon.wpnrange = (0, 5)
+        user.eq_weapon.name = "Probe Sword"
+        user.eq_weapon.subtype = "Sword"
+        move = Move.__new__(Move)
+        move.user = user
+        move.stage_announce = ["", "", "", ""]
+        power, _ = Move.standard_evaluate_attack(
+            move, base_power=0, base_damage_type="crushing"
+        )
+        assert power == 0
+
+    def test_preview_power_gates_reject_non_finite_power(self):
+        """A non-finite self.power must preview as None (no estimate), not
+        as a garbage band."""
+        from src.items import Shortsword
+        from src.moves import PommelStrike
+        from src.npc import NPC
+        from src.player import Player
+        from src.positions import CombatPosition as CP, Direction as D
+
+        player = Player()
+        player.name = "Jean"
+        player.in_combat = True
+        weapon = Shortsword()
+        player.eq_weapon = weapon
+        enemy = NPC(
+            name="Dummy", description="d", damage=5, aggro=True, exp_award=1,
+            maxhp=500,
+        )
+        enemy.hp = 500
+        player.combat_list = [enemy]
+        player.combat_proximity = {enemy: 3}
+        enemy.combat_proximity = {player: 3}
+        enemy.combat_list = [player]
+        player.combat_position = CP(0, 0, D.E)
+        enemy.combat_position = CP(3, 0, D.W)
+        move = PommelStrike(player)
+        move.target = enemy
+        assert move.preview_damage(enemy) is not None  # premise
+        move.power = float("inf")
+        assert move.preview_damage(enemy) is None
+        move.power = float("nan")
+        assert move.preview_damage(enemy) is None
+
+
+class TestAreaPreviewAcceptsAPrecomputedAffectedSet:
+    """``_area_preview_damage(affected=...)`` lets a caller that has already
+    computed ``preview_affected()`` (the adapter prices every affected enemy
+    in one poll) skip recomputing the arc per enemy. Supplying it must be
+    behaviourally identical to omitting it; no engine caller changes."""
+
+    def _sweep(self):
+        from src.items import Pole
+        from src.moves import Sweep
+        from src.npc import NPC
+        from src.player import Player
+        from src.positions import CombatPosition as CP, Direction as D
+
+        player = Player()
+        player.name = "Jean"
+        player.in_combat = True
+        player.eq_weapon = Pole()
+        enemy = NPC(
+            name="Dummy", description="d", damage=5, aggro=True, exp_award=1,
+            maxhp=500,
+        )
+        enemy.hp = 500
+        player.combat_list = [enemy]
+        player.combat_proximity = {enemy: 3}
+        enemy.combat_proximity = {player: 3}
+        enemy.combat_list = [player]
+        player.combat_position = CP(0, 0, D.E)
+        enemy.combat_position = CP(3, 0, D.W)
+        return Sweep(player), enemy
+
+    def test_supplied_set_matches_the_recomputed_one(self):
+        move, enemy = self._sweep()
+        affected = move.preview_affected()
+        assert enemy in affected  # premise
+        assert move._area_preview_damage(
+            enemy, flat=True, affected=affected
+        ) == move._area_preview_damage(enemy, flat=True)
+
+    def test_supplied_set_is_authoritative(self):
+        move, enemy = self._sweep()
+        assert move._area_preview_damage(enemy, flat=True, affected=[]) is None
+
+    def test_supplied_set_skips_the_recompute(self):
+        move, enemy = self._sweep()
+        affected = move.preview_affected()
+        with patch.object(
+            type(move), "preview_affected", side_effect=AssertionError
+        ):
+            payload = move._area_preview_damage(
+                enemy, flat=True, affected=affected
+            )
+        assert payload is not None

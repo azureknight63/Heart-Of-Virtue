@@ -9,6 +9,8 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
     weapon_scaled_power,
     Move,
     STANDARD_FATIGUE_BASE,
@@ -150,7 +152,6 @@ class Slash(
         )
 
     def execute(self, player):
-        glance = False  # switch for determining a glancing blow
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -179,20 +180,11 @@ class Slash(
         # would otherwise be one of the paths the fix silently skips.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 10
-        if hit_chance >= roll:  # a hit!
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
         self.user.fatigue -= self.fatigue_cost
         # Every sibling attack clamps here. The adapter checks affordability at
         # CAST time, but the deduction happens several beats later at execute,
@@ -418,24 +410,14 @@ class FeintAndPivot(Move):
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
-        glance = False
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
             _ensure_weapon_exp(self.user)
             self.user.combat_exp[self.user.eq_weapon.subtype] += 5
         self.user.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         # Reposition strategically based on current relative position
         try:
@@ -607,7 +589,6 @@ class Backstab(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         # Facing/angle damage (#394) at Backstab's own steeper curve. Routed
         # through the shared helper rather than multiplying here: the local
@@ -649,23 +630,14 @@ class Backstab(Move):
 
         roll = random.randint(0, 100)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:

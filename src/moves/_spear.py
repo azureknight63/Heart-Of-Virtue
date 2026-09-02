@@ -9,6 +9,8 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
     apply_facing_damage,
     Move,
     PassiveMove,
@@ -108,7 +110,6 @@ class KeepAway(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -133,10 +134,7 @@ class KeepAway(Move):
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
@@ -280,7 +278,6 @@ class Lunge(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
 
         # Step toward target
@@ -336,23 +333,14 @@ class Lunge(Move):
         # Facing/angle damage (#394) - see apply_facing_damage.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -447,8 +435,18 @@ class Impale(Move):
             "green",
         )
 
+    def preview_damage(self, target=None):
+        """Impale scores only 40% of the target's protection — the same
+        override its ``execute()`` passes into ``resolve_damage``. Left on
+        the default full-armour line, the preview understated the move
+        against exactly the armoured targets it exists for.
+        """
+        resolved = target if target is not None else getattr(self, "target", None)
+        return self._standard_preview_damage(
+            resolved, protection=target_protection(resolved) * 0.4
+        )
+
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -478,23 +476,14 @@ class Impale(Move):
         damage = resolve_damage(
             player, self.target, power, self.base_damage_type, protection=effective_prot
         )
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 10
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -596,8 +585,15 @@ class ArmorPierce(Move):
             f"{self.user.name} drives his {wpn} through the gap!", "green"
         )
 
+    def preview_damage(self, target=None):
+        """Armor Pierce ignores protection entirely (``protection=0`` in its
+        ``execute()``'s ``resolve_damage`` call). On the default full-armour
+        preview its card could read 0 against exactly the heavily-armoured
+        targets the move is the answer to.
+        """
+        return self._standard_preview_damage(target, protection=0)
+
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -626,23 +622,14 @@ class ArmorPierce(Move):
         damage = resolve_damage(
             player, self.target, power, self.base_damage_type, protection=0
         )
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:

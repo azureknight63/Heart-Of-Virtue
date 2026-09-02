@@ -176,19 +176,27 @@ def weapon_scaled_power(user, factor):
     a number, never writing move state — so repeated ``evaluate()`` calls stay
     idempotent.
     """
+
     def _num(value, default=0.0):
-        """Coerce to float, or ``default`` for anything non-numeric.
+        """Coerce to a *finite* float, or ``default`` for anything else.
 
         Applied per *term* rather than around the whole expression on purpose:
         a weapon that carries a real ``damage`` but a missing or unusable
         ``str_mod`` should still score off its damage, not collapse to the
         no-weapon fallback. Wrapping the whole sum instead is what made the
         earlier hand-rolled versions silently bottom out at 1.
+
+        Non-finite counts as unusable: an inf/nan survives ``float()`` and
+        then detonates on the final ``int()`` below, mid-beat, off a value
+        only a crafted save can supply.
         """
         try:
-            return float(value)
+            value = float(value)
         except (TypeError, ValueError):
             return default
+        if not math.isfinite(value):
+            return default
+        return value
 
     wpn = getattr(user, "eq_weapon", None)
     damage = _num(getattr(wpn, "damage", None), default=None) if wpn else None
@@ -210,12 +218,9 @@ def _apply_blade_mastery_discount(user, fatigue_cost, floor_fatigue=10):
     Shared by the standard attack pipeline and any hand-rolled attack (e.g.
     basic Attack) that wants the same discount applied to its own fatigue math.
     """
-    if (
-        getattr(getattr(user, "eq_weapon", None), "subtype", None) == "Sword"
-        and any(
-            getattr(m, "name", "") == "Blade Mastery"
-            for m in getattr(user, "known_moves", [])
-        )
+    if getattr(getattr(user, "eq_weapon", None), "subtype", None) == "Sword" and any(
+        getattr(m, "name", "") == "Blade Mastery"
+        for m in getattr(user, "known_moves", [])
     ):
         fatigue_cost = max(floor_fatigue, int(fatigue_cost * 0.85))
     return fatigue_cost
@@ -324,9 +329,13 @@ def apply_facing_damage(attacker, defender, power, steepness=1.0):
 
     A non-positive power is returned untouched: a weaponless or fully-nullified
     attack should stay at zero rather than be floored up to 1 by a flank bonus.
+    A non-finite power collapses to 0 -- ``int(inf)``/``int(nan)`` raise from
+    inside the combat loop, and a crafted save can put either on a move.
     """
     if power <= 0:
         return power
+    if not math.isfinite(power):
+        return 0
     multiplier = facing_damage_multiplier(attacker, defender, steepness)
     if multiplier == 1.0:
         return power
@@ -339,6 +348,45 @@ def apply_facing_damage(attacker, defender, power, steepness=1.0):
 #: they are what ``damage_bounds`` reports as min and max.
 DAMAGE_VARIANCE_MIN = 0.8
 DAMAGE_VARIANCE_MAX = 1.2
+
+
+#: Width of the glancing-blow window: a roll that lands within this many
+#: points of the hit chance halves the damage. Previously a bare ``10``
+#: copy-pasted into every attack's execute() -- retuning the window meant a
+#: sweep across ~24 sites, any one of which could be missed silently.
+GLANCE_MARGIN = 10
+
+
+def apply_glancing_blow(damage, hit_chance, roll):
+    """Apply the engine's glancing-blow rule to a resolved damage value.
+
+    Returns ``(int_damage, glance)`` -- the final integer damage exactly as
+    the inline block produced it, and whether the blow glanced. The inline
+    shape this replaces was::
+
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+    hand-written at ~24 sites. Bit-identity is grid-proved by
+    ``tests/test_moves_base_coverage.py::TestApplyGlancingBlow`` for both
+    shapes in use: the float shape above (``int(damage / 2)`` on a glance),
+    and ``_npc.py``'s ranged attacks, which halve an already-``int`` damage
+    with ``damage // 2`` -- for a non-negative int the two agree, but the
+    int path is kept explicit so the equivalence is by construction, not by
+    the inputs happening to stay in range.
+
+    Only the sites with exactly that shape route through here. Death's
+    Harvest halves *before* its bonus multipliers with the ``int()`` after
+    them, and Keening Toll/Twin Fangs halve inside their hit branches after
+    the parry check -- different shapes, left inline with a comment each.
+    """
+    if hit_chance >= roll and hit_chance - roll < GLANCE_MARGIN:
+        if isinstance(damage, int):
+            return damage // 2, True
+        return int(damage / 2), True
+    return int(damage), False
 
 
 def _resolve_heat(attacker, heat=None):
@@ -357,6 +405,44 @@ def _resolve_heat(attacker, heat=None):
     if not math.isfinite(heat):
         return 1.0
     return heat
+
+
+#: ``Move.hit``'s momentum reward for a landed hit by Jean. The authoritative
+#: call site is the literal inside ``Move.hit`` (the momentum-tooltip contract
+#: counts the literals in this file, so that call must keep its constant);
+#: this name exists so ``projected_hit_heat_sequence`` below can replay the
+#: same reward without a second countable literal.
+#: ``tests/test_moves_base_coverage.py`` pins the two together.
+HEAT_GAIN_ON_HIT = 1.25
+
+
+def projected_hit_heat_sequence(user, count):
+    """Heat ``user`` would be at before each of ``count`` consecutive landed
+    hits, momentum feedback included.
+
+    A multi-strike move resolves each strike's damage *before* its ``hit()``,
+    and ``Move.hit`` multiplies Jean's heat by ``HEAT_GAIN_ON_HIT`` per landed
+    blow -- so strike two is scored at the heat strike one earned. Previews of
+    such moves (Lightning Assault) need the same sequence, computed with the
+    user's REAL ``change_heat`` (saved and restored, so calling this is
+    side-effect-free) rather than a second copy of its clamp-and-round
+    arithmetic.
+
+    A combatant without the Jean-gated bookkeeping (an NPC, a degraded user)
+    scores every strike at its current heat -- exactly what ``Move.hit`` does
+    for it.
+    """
+    if getattr(user, "name", None) != "Jean" or not hasattr(user, "change_heat"):
+        return [_resolve_heat(user, None)] * count
+    original = user.heat
+    heats = []
+    try:
+        for _ in range(count):
+            heats.append(user.heat)
+            user.change_heat(HEAT_GAIN_ON_HIT)
+    finally:
+        user.heat = original
+    return heats
 
 
 def target_protection(target):
@@ -398,11 +484,22 @@ def resolve_damage(
     protection=None,
     variance=None,
 ):
-    """**The engine's damage expression. There is no second copy of it.**
+    """**The engine's canonical damage expression, stated once.**
 
     ``(((faced_power * resistance) - protection) * heat) * variance``, clamped
     at zero, returned as a float so the caller can apply its own glancing-blow
     halving and ``int()`` where the engine does.
+
+    Scope, precisely: this is the only copy of the *canonical* line, but the
+    engine deliberately runs three other damage shapes beside it --
+    ``flat_resisted_damage`` (Jab: resistance and protection, no heat, no
+    variance), the flat arc line in ``flat_arc_damage_bounds`` (Reap, Sweep,
+    Halberd Spin: protection only, floored at 1), and ``_npc.py``'s NPC
+    family, which rolls its variance into *power* inside ``evaluate()`` and
+    subtracts protection flat. PowerStrike is now on this line; Jab is not
+    and must not be -- see ``flat_resisted_damage`` and ``Jab.execute`` for
+    the design reasoning. None of those is a drifted copy of this expression;
+    a new *canonical* copy is what must never come back.
 
     This line used to be written out by hand at roughly two dozen ``execute()``
     sites plus ``damage_bounds``, which is the *prediction* of it the player
@@ -427,9 +524,13 @@ def resolve_damage(
     for the live value.
 
     ``protection`` overrides the defender's armour for the moves that
-    deliberately do not score all of it -- Pulverize and Armor Pierce ignore it
-    (``protection=0``), Killing Precision applies a fifth. Left None it is the
-    sanitised ``target_protection`` read.
+    deliberately do not score all of it. This docstring does not enumerate
+    them -- an earlier enumeration here had already gone stale (it omitted
+    Impale's 40% override), and per the CLAUDE.md ``to_hit_chance``
+    precedent a partial list in the one place people look for authority
+    reads as exhaustive. ``grep -rn "protection=" src/moves/`` is the
+    authority; read the call site. Left None it is the sanitised
+    ``target_protection`` read.
 
     A non-positive or non-finite product collapses to ``0.0``. Both were
     already the intent: every call site followed the expression with
@@ -450,7 +551,15 @@ def resolve_damage(
     return damage
 
 
-def damage_bounds(attacker, target, power, damage_type, heat=None, steepness=1.0):
+def damage_bounds(
+    attacker,
+    target,
+    power,
+    damage_type,
+    heat=None,
+    steepness=1.0,
+    protection=None,
+):
     """Return ``(min, max)`` integer damage for a landed, non-glancing hit.
 
     **The prediction half of ``resolve_damage``, and nothing more.** It scores
@@ -472,23 +581,47 @@ def damage_bounds(attacker, target, power, damage_type, heat=None, steepness=1.0
     ``steepness`` is passed through to ``apply_facing_damage`` for the moves
     that sharpen the facing curve (Backstab). ``heat`` overrides the
     attacker's own multiplier; leave it None for the live value.
+    ``protection`` overrides the defender's armour exactly as it does on
+    ``resolve_damage`` -- pass what the ``execute()`` being predicted passes
+    (Armor Pierce 0, Impale 40% of it), or leave None for the sanitised read.
 
-    Non-positive results collapse to ``(0, 0)``: when protection fully absorbs
-    the swing the engine clamps to zero *before* the variance roll, so both
-    ends land on the same floor rather than reporting a negative spread.
+    The armour read and the heat resolution are hoisted here and passed into
+    both calls: this runs on every combat poll for every viable move, and
+    resolving them twice per pair bought nothing. Both hoists are exact --
+    ``resolve_damage`` performs the identical reads when handed None, and
+    ``_resolve_heat`` is idempotent on its own output.
+
+    Non-positive results collapse to ``(0, 0)``: the expression clamps its
+    final product at zero, and a swing that protection fully absorbs is
+    non-positive at *both* ends of the variance band (a negative core times
+    0.8 and times 1.2 are both negative), so the pair lands on the same floor
+    rather than reporting a negative spread.
     """
     power = apply_facing_damage(attacker, target, power, steepness)
+    if protection is None:
+        protection = target_protection(target)
+    heat = _resolve_heat(attacker, heat)
     return (
         int(
             resolve_damage(
-                attacker, target, power, damage_type,
-                heat=heat, variance=DAMAGE_VARIANCE_MIN,
+                attacker,
+                target,
+                power,
+                damage_type,
+                heat=heat,
+                protection=protection,
+                variance=DAMAGE_VARIANCE_MIN,
             )
         ),
         int(
             resolve_damage(
-                attacker, target, power, damage_type,
-                heat=heat, variance=DAMAGE_VARIANCE_MAX,
+                attacker,
+                target,
+                power,
+                damage_type,
+                heat=heat,
+                protection=protection,
+                variance=DAMAGE_VARIANCE_MAX,
             )
         ),
     )
@@ -532,11 +665,34 @@ def flat_resisted_damage(target, faced_power, damage_type):
     return damage if damage > 0 else 0.0
 
 
+def flat_arc_strike_damage(target, swing):
+    """The flat arc damage line, stated once:
+    ``max(1, int(swing - protection))`` -- no resistance, no heat, no
+    variance, floored at 1.
+
+    ``swing`` is the move's power AFTER ``apply_facing_damage``; the facing
+    call is deliberately left at the call sites for the same reason
+    ``flat_resisted_damage`` documents -- the facing-curve guard
+    (``tests/test_facing_damage_hand_rolled_attacks.py``) reads each
+    ``execute()``'s own source for that call, and a move that reached the
+    curve only through a helper would scan as one that skips it.
+
+    This line was hand-written four times -- ``flat_arc_damage_bounds`` plus
+    the Sweep, Halberd Spin and Reap loops -- and all four had to agree for
+    the preview and the executes to agree about the same defender.
+    """
+    if not isinstance(swing, (int, float)) or not math.isfinite(swing):
+        # A crafted save can put a non-finite power on a move; int(inf)
+        # raises from inside the combat loop, so degrade to the line's own
+        # floor instead. Availability-only -- unreachable for well-formed
+        # saves (apply_facing_damage already returns its input for these).
+        return 1
+    return max(1, int(swing - target_protection(target)))
+
+
 def flat_arc_damage_bounds(attacker, target, power, bonuses=()):
     """Damage bounds for the *flat* arc expression used by Reap, Sweep and
-    Halberd Spin::
-
-        base = max(1, int(apply_facing_damage(power) - target.protection))
+    Halberd Spin -- ``flat_arc_strike_damage`` on the facing-scaled swing.
 
     No resistance, no heat, and no variance roll — which is why these moves
     return an identical min and max: their execute() has no dice in it at all,
@@ -547,13 +703,15 @@ def flat_arc_damage_bounds(attacker, target, power, bonuses=()):
     its own ``int()`` truncation, exactly as the owning loop applies them (the
     only move with any today is Reap -- see its ``_damage_multipliers``, which
     its ``execute()`` loop reads too, so there is one derivation rather than
-    two). Truncating per multiplier rather than once at the end is
-    load-bearing: two chained 1.25x on a base of 7 is 10 the way
+    two; every multiplier it yields is >= 1.0 -- bonuses, never penalties --
+    so the chained truncations can only move the number up from the floor,
+    never back under it). Truncating per multiplier rather than once at the
+    end is load-bearing: two chained 1.25x on a base of 7 is 10 the way
     the engine does it and 10.9 -> 10 either way here, but the two diverge on
     other bases, and the engine's order is the authority.
     """
     swing = apply_facing_damage(attacker, target, power)
-    damage = max(1, int(swing - target_protection(target)))
+    damage = flat_arc_strike_damage(target, swing)
     for multiplier in bonuses:
         damage = int(damage * multiplier)
     return damage, damage
@@ -626,16 +784,54 @@ def hostiles_in_arc(move, arc_range, frontal=False, require_position=False):
     return affected
 
 
+def resolve_pipeline_strike(move, damage, glance, hit_chance, roll=None):
+    """One standard-pipeline strike: roll the dice (or take the caller's
+    roll), then dispatch through ``move.parry()`` / ``move.hit(damage,
+    glance)`` / ``move.miss()``.
+
+    The ``if hit_chance >= roll: if check_parry: parry else hit / else miss``
+    skeleton was hand-written at ~27 sites; this is that skeleton, once, for
+    the sites whose hit branch is *bare* -- nothing but the ``hit()`` call.
+    Sites with extras in the hit branch (arrow embedding, pushes, status
+    infliction, lifesteal) deliberately stay inline rather than growing a
+    callback parameter: a hook argument would just be the same divergence
+    with worse stack traces.
+
+    ``roll`` follows ``resolve_strike_outcome``'s rule exactly: pass the roll
+    you already drew -- every migrated site draws it *before* resolving
+    damage, and letting this function roll instead would swap the order the
+    draws come off the shared RNG. Left None it rolls here.
+
+    Sibling of ``resolve_strike_outcome``, not a replacement: that function
+    is for the arc moves that bypass ``Move.hit()/miss()/parry()`` and
+    publish/narrate per target themselves; this one is for moves that route
+    through the shared pipeline, which does its own publishing.
+
+    Returns True when the strike landed (``hit()`` ran), False for a parry
+    or a miss.
+    """
+    if roll is None:
+        roll = random.randint(0, 100)
+    if hit_chance >= roll:
+        if functions.check_parry(move.target):
+            move.parry()
+            return False
+        move.hit(damage, glance)
+        return True
+    move.miss()
+    return False
+
+
 def resolve_strike_outcome(
     move,
     target,
     damage,
     hit_chance,
+    *,
     hit_line,
     parry_line,
     miss_line,
     roll=None,
-    absorb_on_zero=False,
 ):
     """Resolve one strike against ``target``: roll, publish, narrate, apply.
 
@@ -660,11 +856,18 @@ def resolve_strike_outcome(
     here, which is what the three flat arc swings (no dice in their damage at
     all) already did inline.
 
-    ``absorb_on_zero`` distinguishes a blow the target shrugged off from one
-    that landed: a zero-damage strike is an ``absorb``, not a ``hit``, and must
-    not play the flesh-impact cue. Only the moves that can actually produce
-    zero damage pass it -- the flat arc swings floor at 1 and never can, and
-    claiming otherwise would be a lie in the safe-looking direction.
+    A zero-damage landing publishes ``absorb``, unconditionally: a blow the
+    target shrugged off is not a ``hit`` and must not play the flesh-impact
+    cue -- the same rule ``Move.hit`` applies. There used to be an
+    ``absorb_on_zero`` opt-in here; it was deleted because the distinction it
+    gated is a fact about the damage, not about the caller, and for the flat
+    arc swings (floored at 1, so ``damage <= 0`` is unreachable) the
+    unconditional rule is provably identical.
+
+    The three narration lines are keyword-only: three same-typed strings in
+    a row are exactly the signature a positional call scrambles silently --
+    the hit text narrated for a parry -- and every call site already passed
+    them by keyword.
 
     Returns True when the strike landed, False for a parry or a miss.
     """
@@ -675,10 +878,21 @@ def resolve_strike_outcome(
             publish_outcome(move.user, OUTCOME_PARRY, target)
             cprint(parry_line, "yellow")
             return False
+        # Coerce like Move.hit (issue #296): a NaN damage would otherwise
+        # make ``hp - damage`` NaN, and ``max(0, nan)`` evaluates to 0 in
+        # CPython -- a crafted non-finite damage silently EXECUTED the
+        # target rather than crashing.
+        try:
+            damage = float(damage)
+        except (TypeError, ValueError):
+            damage = 0
+        if not math.isfinite(damage):
+            damage = 0
+        damage = int(damage)
         target.hp = max(0, target.hp - damage)
         publish_outcome(
             move.user,
-            OUTCOME_ABSORB if (absorb_on_zero and damage <= 0) else OUTCOME_HIT,
+            OUTCOME_ABSORB if damage <= 0 else OUTCOME_HIT,
             target,
         )
         cprint(hit_line, "red")
@@ -873,7 +1087,10 @@ def select_weighted_target(candidates):
     weights = []
     for c in candidates:
         w = 1.0
-        if any(getattr(m, "name", "") == "Shadow Step" for m in getattr(c, "known_moves", [])):
+        if any(
+            getattr(m, "name", "") == "Shadow Step"
+            for m in getattr(c, "known_moves", [])
+        ):
             w = 0.5
         weights.append(w)
     return random.choices(candidates, weights=weights, k=1)[0]
@@ -1071,7 +1288,9 @@ class Move:  # master class for all moves
         hit_chance = to_hit_chance(self.user, target, base=base, floor=floor)
         return _apply_to_hit_modifiers(self.user, target, hit_chance)
 
-    def _unconditional_preview_hit_chance(self, target, base=HIT_CHANCE_BASE, floor=None):
+    def _unconditional_preview_hit_chance(
+        self, target, base=HIT_CHANCE_BASE, floor=None
+    ):
         """Shared body for moves whose execute() computes hit_chance
         unconditionally — gated only on "target exists and is alive", never
         on ``self.viable()`` (VertigoSpin, FeintAndPivot). Deliberately does
@@ -1184,7 +1403,7 @@ class Move:  # master class for all moves
             return []
         return [target]
 
-    def _area_preview_damage(self, target, flat=False, bonuses=()):
+    def _area_preview_damage(self, target, flat=False, bonuses=(), affected=None):
         """Shared body for the area swings' ``preview_damage``.
 
         Their gating differs from ``_standard_preview_damage`` in one way that
@@ -1198,17 +1417,30 @@ class Move:  # master class for all moves
         no-heat, no-variance expression Reap, Sweep and Halberd Spin's loops
         actually run — over the canonical ``damage_bounds``. ``bonuses`` are
         the per-target multipliers the owning loop applies, in its order.
+
+        ``affected`` lets a caller that already holds this move's
+        ``preview_affected()`` result (the adapter prices every affected
+        enemy in one poll, so it would otherwise recompute the arc once per
+        enemy) supply it; the list is then authoritative for the reach gate.
+        Left None the gate recomputes, which is the correct default for a
+        single ad-hoc preview.
         """
         if self.passive or target is None or target is self.user:
             return None
         is_alive = getattr(target, "is_alive", None)
         if callable(is_alive) and not is_alive():
             return None
-        if target not in self.preview_affected():
+        if target not in (
+            affected if affected is not None else self.preview_affected()
+        ):
             return None
 
         power = getattr(self, "power", None)
-        if not isinstance(power, (int, float)) or isinstance(power, bool):
+        if (
+            not isinstance(power, (int, float))
+            or isinstance(power, bool)
+            or not math.isfinite(power)
+        ):
             return None
 
         if flat:
@@ -1219,17 +1451,22 @@ class Move:  # master class for all moves
             )
         return preview_payload(low, high, target)
 
-    def _standard_preview_damage(self, target=None, power=None, steepness=1.0):
+    def _standard_preview_damage(
+        self, target=None, power=None, steepness=1.0, protection=None
+    ):
         """Shared body for the moves whose ``preview_damage`` is the canonical
         damage expression — the default path below, plus the moves that
         diverge from it only in an argument to it: the ``power`` their
-        ``execute()`` actually scores with (Shoot Bow) or the steepness of the
-        facing curve (Backstab). Handles the target-resolution, viability and
-        reach gating once so those overrides stay a one-line call, exactly as
-        ``_standard_preview_hit_chance`` does for the to-hit side.
+        ``execute()`` actually scores with (Shoot Bow, the masteries), the
+        steepness of the facing curve (Backstab), or the ``protection``
+        override their damage line passes (Impale, Armor Pierce). Handles the
+        target-resolution, viability and reach gating once so those overrides
+        stay a one-line call, exactly as ``_standard_preview_hit_chance``
+        does for the to-hit side.
 
         ``power`` of ``None`` means "use ``self.power``" — the attribute the
-        canonical path reads.
+        canonical path reads. ``protection`` of ``None`` means the sanitised
+        ``target_protection`` read, exactly as on ``resolve_damage``.
         """
         if self.passive:
             return None
@@ -1253,7 +1490,11 @@ class Move:  # master class for all moves
 
         if power is None:
             power = getattr(self, "power", None)
-        if not isinstance(power, (int, float)) or isinstance(power, bool):
+        if (
+            not isinstance(power, (int, float))
+            or isinstance(power, bool)
+            or not math.isfinite(power)
+        ):
             return None
 
         low, high = damage_bounds(
@@ -1262,6 +1503,7 @@ class Move:  # master class for all moves
             power,
             getattr(self, "base_damage_type", None),
             steepness=steepness,
+            protection=protection,
         )
         return preview_payload(low, high, resolved)
 
@@ -1364,7 +1606,9 @@ class Move:  # master class for all moves
         # Staggered state: add +5 prep beats to caster's next move (consumed after first use)
         if prep > 0 and isinstance(getattr(self.user, "states", None), list):
             for state in self.user.states:
-                if getattr(state, "name", "") == "Staggered" and not getattr(state, "penalty_consumed", False):
+                if getattr(state, "name", "") == "Staggered" and not getattr(
+                    state, "penalty_consumed", False
+                ):
                     prep += getattr(state, "prep_penalty", 5)
                     state.penalty_consumed = True
                     break
@@ -1373,7 +1617,8 @@ class Move:  # master class for all moves
         # (floored at 1) while wielding a crossbow.
         if (
             prep > 1
-            and getattr(getattr(self.user, "eq_weapon", None), "subtype", None) == "Crossbow"
+            and getattr(getattr(self.user, "eq_weapon", None), "subtype", None)
+            == "Crossbow"
             and any(
                 getattr(m, "name", "") == "Quick Reload"
                 for m in getattr(self.user, "known_moves", [])
@@ -1672,22 +1917,36 @@ class Move:  # master class for all moves
         Standard evaluation sequence for typical attack-type abilities
         :return: tuple (self.power, self.base_damage_type)
         """
-        # Power calculation
-        power = (
-            self.user.eq_weapon.damage
-            + base_power
-            + self.user.strength * self.user.eq_weapon.str_mod
-            + self.user.finesse * self.user.eq_weapon.fin_mod
-        )
+        # Power calculation. The try/except and the isfinite check are
+        # crafted-save armour (issue #296 family): a weapon whose
+        # damage/str_mod/fin_mod came off a hostile save can be a string
+        # (TypeError in the sum) or inf/nan (ValueError/OverflowError in the
+        # int() below), either of which wedged the beat. Well-formed weapons
+        # take the identical arithmetic path.
+        try:
+            power = (
+                self.user.eq_weapon.damage
+                + base_power
+                + self.user.strength * self.user.eq_weapon.str_mod
+                + self.user.finesse * self.user.eq_weapon.fin_mod
+            )
+        except TypeError:
+            power = 0
         if isinstance(mod_power, str) and "%" in mod_power:
             mod_power_val = int(mod_power.replace("%", ""))
             power = (power * mod_power_val) / 100
         else:
             power += int(mod_power)
+        if not isinstance(power, (int, float)) or not math.isfinite(power):
+            power = 0
         power = max(0, int(power))
 
-        # Prep calculation
-        prep = int((40 + (self.user.eq_weapon.weight * 3)) / self.user.speed)
+        # Prep calculation. The divisor is floored at 1: a zero or degraded
+        # speed raised ZeroDivisionError (or fed int() a NaN) mid-beat.
+        speed = getattr(self.user, "speed", 1)
+        if not isinstance(speed, (int, float)) or not math.isfinite(speed) or speed < 1:
+            speed = 1
+        prep = int((40 + (self.user.eq_weapon.weight * 3)) / speed)
         prep += int(mod_prep)
         prep = max(1, prep)
 
@@ -1726,7 +1985,9 @@ class Move:  # master class for all moves
         fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
         # BladeMastery passive: sword attacks cost less fatigue
-        fatigue_cost = _apply_blade_mastery_discount(self.user, fatigue_cost, floor_fatigue)
+        fatigue_cost = _apply_blade_mastery_discount(
+            self.user, fatigue_cost, floor_fatigue
+        )
 
         # Range calculation
         mvrange = (
@@ -1747,7 +2008,6 @@ class Move:  # master class for all moves
         return power, base_damage_type
 
     def standard_execute_attack(self, player, power, base_damage_type):
-        glance = False  # switch for determining a glancing blow
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -1786,21 +2046,12 @@ class Move:  # master class for all moves
         # predicted by damage_bounds through that same function -- see its
         # docstring for why this must not be re-inlined here or anywhere else.
         damage = resolve_damage(player, self.target, power, base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
-        if hit_chance >= roll:  # a hit!
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
         self.user.fatigue -= self.fatigue_cost
         # Prevent negative fatigue
         if self.user.fatigue < 0:

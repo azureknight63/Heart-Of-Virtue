@@ -11,6 +11,8 @@ import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from src.combatant import MOVE_STAGE_PREP, move_in_progress
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
     Move,
     PassiveMove,
     default_animations,
@@ -507,7 +509,6 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         self.base_damage_type = items.get_base_damage_type(self.user.eq_weapon)
 
     def execute(self, player):
-        glance = False  # switch for determining a glancing blow
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -544,18 +545,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         # power pre-protection, so armour keeps its full bite from every angle.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         player.combat_exp["Basic"] += 10
-        if hit_chance >= roll:  # a hit!
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
         self.user.fatigue -= self.fatigue_cost
         # Prevent negative fatigue
         if self.user.fatigue < 0:
@@ -823,16 +815,12 @@ class Disrupt(Move):
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
 
-        glance = False
         # Facing/angle damage (issue #394) — same shared curve as
         # standard_execute_attack, which Disrupt's hand-rolled damage line
         # bypasses. Applied to power pre-protection.
         power = apply_facing_damage(self.user, self.target, self.power)
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         player.combat_exp["Basic"] += 5
         if hit_chance >= roll:  # a hit!

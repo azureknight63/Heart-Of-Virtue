@@ -101,6 +101,21 @@ _DEFAULT_STATUS_RESISTANCE = {
 class Combatant:
     """Base class for Player and NPC.  Do not instantiate directly."""
 
+    def __getstate__(self):
+        """Picklable state, minus the adapter's animation channel.
+
+        ``_pending_animation`` is transient API-layer state stamped onto the
+        acting combatant for one beat; its ``outcome_target`` is a LIVE
+        combatant object (written by ``src.moves._base.publish_outcome``), so
+        pickling it drags that enemy's whole object graph into the save. A
+        mid-wind-up NPC holds exactly this channel at autosave time. Player
+        overrides this with further API-layer exclusions of its own (see
+        ``Player.__getstate__``) — keep the two strips in agreement.
+        """
+        state = self.__dict__.copy()
+        state.pop("_pending_animation", None)
+        return state
+
     def _init_resistances(self):
         """Initialise resistance and status-resistance dicts to canonical defaults."""
         self.resistance = dict(_DEFAULT_RESISTANCE)

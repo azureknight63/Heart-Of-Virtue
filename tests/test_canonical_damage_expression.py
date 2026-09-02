@@ -38,6 +38,7 @@ from src.moves._base import (  # noqa: E402
     DAMAGE_VARIANCE_MAX,
     DAMAGE_VARIANCE_MIN,
     damage_bounds,
+    flat_arc_damage_bounds,
     resolve_damage,
     target_protection,
 )
@@ -217,17 +218,141 @@ class TestTheArithmeticIsUnchanged:
                 )
         assert not mismatches, mismatches[:5]
 
-    def test_the_default_variance_stays_inside_the_advertised_band(self):
-        """No variance argument means the real roll, and the real roll is the
-        band ``damage_bounds`` reports -- not a wider one."""
-        import random
+    def test_damage_bounds_forwards_a_protection_override_to_both_ends(self):
+        """Item the preview path needs: ``damage_bounds(protection=...)``
+        must be ``resolve_damage(protection=...)`` with the roll pinned to
+        each end -- same rule as the default-protection case above, so an
+        armour-scaling move's preview (Impale x0.4, Armor Pierce 0) cannot
+        drift from its execute()."""
+        mismatches = []
+        for power, resistance, protection, heat in itertools.product(
+            _POWERS, _RESISTANCES, _PROTECTIONS, _HEATS
+        ):
+            for override in (0, protection * 0.2, protection * 0.4):
+                attacker = _Attacker(heat)
+                target = _Target(resistance, protection)
+                got = damage_bounds(
+                    attacker, target, power, "slashing", protection=override
+                )
+                expected = (
+                    int(
+                        resolve_damage(
+                            attacker, target, power, "slashing",
+                            protection=override, variance=DAMAGE_VARIANCE_MIN,
+                        )
+                    ),
+                    int(
+                        resolve_damage(
+                            attacker, target, power, "slashing",
+                            protection=override, variance=DAMAGE_VARIANCE_MAX,
+                        )
+                    ),
+                )
+                if got != expected:
+                    mismatches.append(
+                        (power, resistance, protection, heat, override,
+                         got, expected)
+                    )
+        assert not mismatches, mismatches[:5]
 
+    def test_damage_bounds_on_a_positioned_pair_scores_the_facing_curve(self):
+        """The grid above runs position-less combatants, so
+        ``apply_facing_damage`` is a no-op across all of it and a regression
+        in how ``damage_bounds`` feeds the faced power into the expression
+        would be invisible. This case stands the attacker at the defender's
+        back (the 1.40x band) and demands the bounds equal the engine's own
+        faced power run through ``resolve_damage`` -- with a premise check
+        that the curve genuinely engaged."""
+        from src.moves._base import apply_facing_damage
+        from src.positions import CombatPosition, Direction
+
+        mismatches = []
+        for power, resistance, protection, heat in itertools.product(
+            _POWERS, _RESISTANCES, _PROTECTIONS, _HEATS
+        ):
+            attacker = _Attacker(heat)
+            target = _Target(resistance, protection)
+            attacker.combat_position = CombatPosition(0, 0, Direction.E)
+            # Defender faces AWAY from the attacker: a rear attack.
+            target.combat_position = CombatPosition(3, 0, Direction.E)
+            faced = apply_facing_damage(attacker, target, power)
+            # int(power * 1.40) only exceeds power from 3 up -- at 1 the
+            # truncation collapses the bonus, which is expected, not broken.
+            if power >= 3:
+                assert faced > power, (
+                    "premise broken: the rear-attack fixture no longer "
+                    "engages the facing multiplier at all"
+                )
+            got = damage_bounds(attacker, target, power, "slashing")
+            expected = (
+                int(
+                    resolve_damage(
+                        attacker, target, faced, "slashing",
+                        variance=DAMAGE_VARIANCE_MIN,
+                    )
+                ),
+                int(
+                    resolve_damage(
+                        attacker, target, faced, "slashing",
+                        variance=DAMAGE_VARIANCE_MAX,
+                    )
+                ),
+            )
+            if got != expected:
+                mismatches.append(
+                    (power, resistance, protection, heat, got, expected)
+                )
+        assert not mismatches, mismatches[:5]
+
+    def test_flat_arc_damage_bounds_reproduces_the_hand_written_line(self):
+        """The flat arc expression -- ``max(1, int(swing - protection))``
+        with per-multiplier truncation -- was hand-written four times
+        (``flat_arc_damage_bounds`` plus the Sweep/Halberd Spin/Reap loops).
+        This differential pins the exact legacy arithmetic so the extraction
+        into one helper cannot shift a point anywhere on the grid, positioned
+        or not."""
+        from src.moves._base import apply_facing_damage
+        from src.positions import CombatPosition, Direction
+
+        mismatches = []
+        for power, protection in itertools.product(_POWERS, _PROTECTIONS):
+            for bonuses in ((), (1.25,), (1.25, 1.25), (1.25, 1.1)):
+                for positioned in (False, True):
+                    attacker = _Attacker(1.0)
+                    target = _Target(1.0, protection)
+                    if positioned:
+                        attacker.combat_position = CombatPosition(
+                            0, 0, Direction.E
+                        )
+                        target.combat_position = CombatPosition(
+                            3, 0, Direction.E
+                        )
+                    swing = apply_facing_damage(attacker, target, power)
+                    legacy = max(1, int(swing - protection))
+                    for multiplier in bonuses:
+                        legacy = int(legacy * multiplier)
+                    got = flat_arc_damage_bounds(
+                        attacker, target, power, bonuses
+                    )
+                    if got != (legacy, legacy):
+                        mismatches.append(
+                            (power, protection, bonuses, positioned,
+                             got, legacy)
+                        )
+        assert not mismatches, mismatches[:5]
+
+    def test_the_default_variance_stays_inside_the_advertised_band(self, seeded):
+        """No variance argument means the real roll, and the real roll is the
+        band ``damage_bounds`` reports -- not a wider one. The ``seeded``
+        fixture restores the process RNG state afterwards -- a bare
+        ``random.seed`` here leaked a pinned RNG into whichever test
+        ``pytest-randomly`` ran next."""
         attacker, target = _Attacker(2.0), _Target(1.0, 10)
         low, high = damage_bounds(attacker, target, 100, "slashing")
-        random.seed(1234)
-        for _ in range(2000):
-            rolled = int(resolve_damage(attacker, target, 100, "slashing"))
-            assert low <= rolled <= high, (rolled, low, high)
+        with seeded(1234):
+            for _ in range(2000):
+                rolled = int(resolve_damage(attacker, target, 100, "slashing"))
+                assert low <= rolled <= high, (rolled, low, high)
 
 
 class TestDegradedInputsDegradeInsteadOfCrashing:
@@ -278,13 +403,12 @@ class TestDegradedInputsDegradeInsteadOfCrashing:
 # ---------------------------------------------------------------------------
 
 
+from tests._moves_scan import move_module_paths  # noqa: E402
+
+
 def _move_module_paths():
-    package_dir = pathlib.Path(_moves_pkg.__file__).parent
-    return tuple(
-        path
-        for path in sorted(package_dir.glob("*.py"))
-        if path.stem not in ("__init__", "_base")
-    )
+    """The weapon modules only: ``_base`` holds the canonical line itself."""
+    return move_module_paths(exclude=("_base",))
 
 
 def _reads_resistance_dict(node):
@@ -292,66 +416,98 @@ def _reads_resistance_dict(node):
     return isinstance(node, ast.Attribute) and node.attr == "resistance"
 
 
+def _damage_term_flags(node):
+    """``(resistance, protection, uniform, heat)`` referenced under ``node``.
+
+    The four markers of a hand-written damage line: a resistance read
+    (``combat_resistance(...)``, or the ``target.resistance.get(...)`` /
+    ``[...]`` spelling three of the deleted copies used), a ``protection``
+    attribute read, a ``random.uniform`` roll, and a ``heat`` read.
+    """
+    resistance = protection = uniform = heat = False
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call):
+            named = getattr(child.func, "id", None) or getattr(
+                child.func, "attr", None
+            )
+            if named == "combat_resistance":
+                resistance = True
+            elif named == "uniform":
+                uniform = True
+            elif named == "get" and _reads_resistance_dict(
+                getattr(child.func, "value", None)
+            ):
+                # `target.resistance.get("crushing", 1.0)` -- how three of
+                # the copies this module deleted actually spelled it. A
+                # scan looking only for combat_resistance() calls does not
+                # see them.
+                resistance = True
+        elif isinstance(child, ast.Attribute) and child.attr == "protection":
+            protection = True
+        elif isinstance(child, ast.Attribute) and child.attr == "heat":
+            heat = True
+        elif isinstance(child, ast.Subscript) and _reads_resistance_dict(
+            child.value
+        ):
+            resistance = True
+    return resistance, protection, uniform, heat
+
+
 def _hand_written_damage_lines(path):
-    """Function names in ``path`` that spell the canonical line out by hand.
+    """Function and class names in ``path`` that spell the canonical line out
+    by hand.
 
     The signature is a ``random.uniform`` roll next to ANY term the canonical
-    expression owns: a resistance read (``combat_resistance(...)``, or the
-    ``target.resistance.get(...)``/``[...]`` spelling three of the deleted
-    copies used), a ``protection`` attribute, or a ``heat`` read.
+    expression owns -- see ``_damage_term_flags``. Deliberately a disjunction
+    rather than the conjunction it started as: requiring all three meant a
+    PARTIAL copy passed, and every historical drift here was partial.
+    PowerStrike's real bug was ``power * uniform(0.8, 1.2) - protection``
+    with resistance and heat gone, so it carried two of the three markers and
+    the original scan would have certified it clean.
+    ``test_the_damage_line_scan_catches_a_partial_copy`` pins that shape and
+    two others.
 
-    Deliberately a disjunction rather than the conjunction it started as.
-    Requiring all three meant a PARTIAL copy passed -- and every historical
-    drift here was partial. PowerStrike's real bug was
-    ``power * uniform(0.8, 1.2) - protection`` with resistance and heat gone,
-    so it carried two of the three markers and the original scan would have
-    certified it clean. ``test_the_damage_line_scan_catches_a_partial_copy``
-    pins that shape and two others.
-
-    ``_npc.py`` rolls variance into *power* rather than into the damage line,
-    so it does not trip this; that exemption is why its four hand-written
-    resisted lines are out of scope here.
+    Applied at TWO scopes. Function scope catches the inline copies. Class
+    scope catches the *split* copy ``_npc.py``'s attack family shipped for
+    months unseen: the variance roll lives in ``evaluate()`` (rolled into
+    ``self.power``) and the protection subtraction in ``execute()``, so no
+    single function ever held both markers and the function-scoped scan was
+    structurally blind to it.
+    ``test_the_damage_line_scan_catches_a_split_copy`` is the positive
+    control. A class already flagged through one of its own methods is not
+    reported a second time.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     offenders = []
+    flagged_functions = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        resistance = protection = uniform = heat = False
-        for child in ast.walk(node):
-            if isinstance(child, ast.Call):
-                named = getattr(child.func, "id", None) or getattr(
-                    child.func, "attr", None
-                )
-                if named == "combat_resistance":
-                    resistance = True
-                elif named == "uniform":
-                    uniform = True
-                elif named == "get" and _reads_resistance_dict(
-                    getattr(child.func, "value", None)
-                ):
-                    # `target.resistance.get("crushing", 1.0)` -- how three of
-                    # the copies this module deleted actually spelled it. A
-                    # scan looking only for combat_resistance() calls does not
-                    # see them.
-                    resistance = True
-            elif isinstance(child, ast.Attribute) and child.attr == "protection":
-                protection = True
-            elif isinstance(child, ast.Attribute) and child.attr == "heat":
-                heat = True
-            elif isinstance(child, ast.Subscript) and _reads_resistance_dict(
-                child.value
-            ):
-                resistance = True
-        # A hand-written damage line is a variance roll next to ANY of the
-        # terms the canonical expression owns -- not all three at once.
-        # Requiring the conjunction is what let the shape that motivated this
-        # module slip through: PowerStrike's real bug was
-        # `power * uniform(0.8, 1.2) - protection`, with resistance and heat
-        # dropped entirely, so it carried two of the three markers and a
-        # three-way AND would have certified it as clean.
+        resistance, protection, uniform, heat = _damage_term_flags(node)
         if uniform and (resistance or protection or heat):
             offenders.append(f"{path.name}:{node.name} (line {node.lineno})")
+            flagged_functions.add(node)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        methods = [
+            child
+            for child in node.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        if any(method in flagged_functions for method in methods):
+            continue  # already reported at function scope
+        resistance = protection = uniform = heat = False
+        for method in methods:
+            r, p, u, h = _damage_term_flags(method)
+            resistance |= r
+            protection |= p
+            uniform |= u
+            heat |= h
+        if uniform and (resistance or protection or heat):
+            offenders.append(
+                f"{path.name}:{node.name} (class scope, line {node.lineno})"
+            )
     return offenders
 
 
@@ -399,9 +555,12 @@ def test_the_protection_sanitiser_has_exactly_one_definition():
         )
         and "protection" in ast.dump(node)
     )
-    assert bool_guards <= 1, (
-        f"{bool_guards} copies of the protection sanitiser survive -- it belongs "
-        "in target_protection() only"
+    # Exactly one: the definition inside target_protection() itself. `<= 1`
+    # would also pass at zero -- i.e. with the sanitiser deleted outright --
+    # which is the vacuous-guard failure mode this file keeps documenting.
+    assert bool_guards == 1, (
+        f"expected exactly the target_protection() copy of the protection "
+        f"sanitiser, found {bool_guards}"
     )
 
 
@@ -442,6 +601,50 @@ def test_the_damage_line_scan_catches_a_partial_copy():
         try:
             assert _hand_written_damage_lines(probe), (
                 f"the scan does not flag {name} -- the shape it exists to catch"
+            )
+        finally:
+            probe.unlink()
+
+
+def test_the_damage_line_scan_catches_a_split_copy():
+    """The class-scope positive control.
+
+    ``_npc.py``'s attack family carried the copy SPLIT across methods --
+    ``evaluate()`` rolled the variance into ``self.power``, ``execute()``
+    subtracted raw ``.protection`` -- so no single function held both
+    markers and the function-scoped scan certified it for months. The fixed
+    shape (protection routed through the ``target_protection`` sanitiser,
+    via ``_npc_flat_damage``) must NOT be flagged: a call is not an
+    attribute read.
+    """
+    import tempfile
+
+    split_copy = (
+        "class Biter:\n"
+        "    def evaluate(self):\n"
+        "        self.power = self.user.damage * random.uniform(0.8, 1.2)\n"
+        "    def execute(self, x):\n"
+        "        damage = self.power - self.target.protection\n"
+    )
+    fixed = (
+        "class Clean:\n"
+        "    def evaluate(self):\n"
+        "        self.power = self.user.damage * random.uniform(0.8, 1.2)\n"
+        "    def execute(self, x):\n"
+        "        damage = _npc_flat_damage(self.power, self.target)\n"
+    )
+    for name, source, expected in (
+        ("split copy", split_copy, True),
+        ("sanitised call", fixed, False),
+    ):
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
+            fh.write(source)
+            probe = pathlib.Path(fh.name)
+        try:
+            flagged = bool(_hand_written_damage_lines(probe))
+            assert flagged is expected, (
+                f"the scan {'missed' if expected else 'wrongly flagged'} "
+                f"the {name}"
             )
         finally:
             probe.unlink()

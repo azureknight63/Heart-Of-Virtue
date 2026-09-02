@@ -39,35 +39,24 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import src.items as items  # noqa: E402
-import src.moves as _moves_pkg  # noqa: E402
 from src.moves._base import Move, PassiveMove  # noqa: E402
 from src.npc import NPC  # noqa: E402
 from src.player import Player  # noqa: E402
 from src.positions import CombatPosition, Direction  # noqa: E402
 
 
-def _all_move_modules():
-    """Every submodule of ``src.moves``, derived by globbing the package.
+# Every submodule of ``src.moves``, globbed (never hand-maintained) via the
+# shared scan module. This guard originally enumerated four modules -- the
+# ones the change that introduced it happened to touch -- and a scrub found
+# thirteen hand-rolled ``execute()`` bodies skipping the facing curve in the
+# eight modules it did not name. Globbing means a NEW module under
+# ``src/moves/`` is covered the day it lands.
+from tests._moves_scan import (  # noqa: E402
+    DAMAGE_SIGNALS as _DAMAGE_SIGNALS,
+    move_module_names,
+)
 
-    Deliberately NOT a hand-maintained list. This guard originally enumerated
-    four modules -- the ones the change that introduced it happened to touch --
-    and a scrub found thirteen hand-rolled ``execute()`` bodies skipping the
-    facing curve in the eight modules it did not name. An opt-in guard
-    certifies exactly the gap it was written to close and nothing else, which
-    is worse than no guard, because it reads as coverage.
-
-    Globbing means a NEW module under ``src/moves/`` is covered the day it
-    lands, with no one having to remember this file exists.
-    """
-    package_dir = pathlib.Path(_moves_pkg.__file__).parent
-    return tuple(
-        f"src.moves.{path.stem}"
-        for path in sorted(package_dir.glob("*.py"))
-        if path.stem != "__init__"
-    )
-
-
-ALL_MOVE_MODULES = _all_move_modules()
+ALL_MOVE_MODULES = move_module_names()
 
 #: Defender sits at (10, 10); the attacker never moves off (10, 5). Only the
 #: defender's facing changes between the two runs, which rules out distance as
@@ -301,30 +290,12 @@ class TestHandRolledAttacksRespondToFacing:
 # The guard
 # ---------------------------------------------------------------------------
 
-#: Substrings that mean "this ``execute`` reduces somebody's HP", i.e. it is a
-#: damage path and owes the player a facing curve. ``self.hit(`` is the shared
-#: damage-delivery call; the raw ``hp -=`` form catches the moves that bypass
-#: it.
-#: How a hand-rolled execute() is recognised as dealing damage. Kept as a
-#: tuple of spellings rather than one pattern because the package genuinely
-#: uses several. `hp = max(0,` is the third and was MISSING from the first
-#: version of this guard -- four area moves (Reap, Sweep, HalberdSpin,
-#: ChipAway) write HP that way, so they read as "not a damage path" and the
-#: guard certified them while they were genuinely unwired. A signal list that
-#: is too narrow fails silently in the safe-looking direction; add to it
-#: whenever a new spelling appears.
-_DAMAGE_SIGNALS = (
-    "self.hit(",
-    "hp -=",
-    "hp = max(",
-    ".hp = max(",
-    # Fifth spelling: the shared per-target resolver
-    # (_base.resolve_strike_outcome) applies the HP itself, so Reap, Sweep,
-    # Halberd Spin and Chip Away no longer write it in their own bodies. A
-    # signal list that is too narrow fails silently in the safe-looking
-    # direction -- which is exactly how `hp = max(0,` came to be added.
-    "resolve_strike_outcome(",
-)
+#: How a hand-rolled execute() is recognised as dealing damage (and so owing
+#: the player a facing curve): the shared ``tests/_moves_scan.DAMAGE_SIGNALS``
+#: imported above. This was one of three hand-synced copies; each new shared
+#: resolver (``resolve_strike_outcome``, then ``resolve_pipeline_strike``)
+#: had to be added to all three at once or a guard silently went blind --
+#: the exact too-narrow-signal failure its history note documents.
 
 #: Reaching either of these means the curve is applied.
 _WIRED_SIGNALS = ("apply_facing_damage(", "standard_execute_attack(")

@@ -9,6 +9,8 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
     weapon_scaled_power,
     Move,
     PassiveMove,
@@ -201,7 +203,6 @@ class PowerStrike(Move):
             )
 
         self.prep_colors()
-        glance = False
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
@@ -228,10 +229,7 @@ class PowerStrike(Move):
         # displayed power flickered and the value that landed was whichever
         # beat happened to be last.
         damage = resolve_damage(self.user, self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
                 self.parry()
@@ -426,7 +424,6 @@ class Jab(Move):
             )
 
         self.prep_colors()
-        glance = False
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
@@ -458,17 +455,8 @@ class Jab(Move):
         # the whole reason this comment exists is that it once did not, quoting
         # 14-21 for a swing that removed 9 HP at heat 2.0.
         damage = flat_resisted_damage(self.target, power, self.base_damage_type)
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
-        if hit_chance >= roll:  # a hit!
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
         self.user.fatigue -= self.fatigue_cost
         # Prevent negative fatigue
         if self.user.fatigue < 0:
