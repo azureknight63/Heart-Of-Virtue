@@ -1,0 +1,159 @@
+{
+  "frame_size": 64,
+  "tile_size": 64,
+  "facings": [
+    "south",
+    "west",
+    "north"
+  ],
+  "clips": {
+    "idle": 4,
+    "walk": 6,
+    "attack": 6,
+    "cast": 6,
+    "defend": 4,
+    "hurt": 3,
+    "death": 6
+  },
+  "sprites": {
+    "gorran": {
+      "clips": {
+        "idle": {
+          "file": "sprites/gorran/idle.png",
+          "frames": 4,
+          "rows": 3,
+          "placeholder": true
+        },
+        "walk": {
+          "file": "sprites/gorran/walk.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "attack": {
+          "file": "sprites/gorran/attack.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "cast": {
+          "file": "sprites/gorran/cast.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "defend": {
+          "file": "sprites/gorran/defend.png",
+          "frames": 4,
+          "rows": 3,
+          "placeholder": true
+        },
+        "hurt": {
+          "file": "sprites/gorran/hurt.png",
+          "frames": 3,
+          "rows": 3,
+          "placeholder": true
+        },
+        "death": {
+          "file": "sprites/gorran/death.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        }
+      }
+    },
+    "jean": {
+      "clips": {
+        "idle": {
+          "file": "sprites/jean/idle.png",
+          "frames": 4,
+          "rows": 3,
+          "placeholder": true
+        },
+        "walk": {
+          "file": "sprites/jean/walk.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "attack": {
+          "file": "sprites/jean/attack.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "cast": {
+          "file": "sprites/jean/cast.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "defend": {
+          "file": "sprites/jean/defend.png",
+          "frames": 4,
+          "rows": 3,
+          "placeholder": true
+        },
+        "hurt": {
+          "file": "sprites/jean/hurt.png",
+          "frames": 3,
+          "rows": 3,
+          "placeholder": true
+        },
+        "death": {
+          "file": "sprites/jean/death.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        }
+      }
+    },
+    "slime": {
+      "clips": {
+        "idle": {
+          "file": "sprites/slime/idle.png",
+          "frames": 4,
+          "rows": 3,
+          "placeholder": true
+        },
+        "walk": {
+          "file": "sprites/slime/walk.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "attack": {
+          "file": "sprites/slime/attack.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "cast": {
+          "file": "sprites/slime/cast.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        },
+        "defend": {
+          "file": "sprites/slime/defend.png",
+          "frames": 4,
+          "rows": 3,
+          "placeholder": true
+        },
+        "hurt": {
+          "file": "sprites/slime/hurt.png",
+          "frames": 3,
+          "rows": 3,
+          "placeholder": true
+        },
+        "death": {
+          "file": "sprites/slime/death.png",
+          "frames": 6,
+          "rows": 3,
+          "placeholder": true
+        }
+      }
+    }
+  },
+  "terrain": {}
+}

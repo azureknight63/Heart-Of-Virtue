@@ -21,6 +21,9 @@ import {
   hasTerrain, terrainKindAt, terrainElevationAt, terrainLabel, terrainVariant,
   terrainKindsPresent, regionLabel, TERRAIN_STYLE,
 } from '../utils/terrain';
+import { spriteFor, spriteClipFor, terrainTileUrl } from '../utils/sprites';
+import { useSpriteManifest } from '../hooks/useSpriteManifest';
+import SpriteToken from './SpriteToken';
 import { isLiving } from '../utils/combatEntities';
 
 // Fragment definitions for the death burst — module-level, never recreated
@@ -430,6 +433,10 @@ const CombatantMarker = React.memo(({
   isSelected = false,
   animationStates = NO_ANIMATION_STATES,
   displaySymbol = null,
+  // Sheet set from the sprite manifest (utils/sprites.spriteFor) and the clip
+  // to play; null sprite = draw the glyph token.
+  sprite = null,
+  spriteClip = 'idle',
 }) => {
   const move = entity.current_move;
   // Only an unresolved move is intent. A combatant in recoil/cooldown must not
@@ -499,14 +506,29 @@ const CombatantMarker = React.memo(({
         ...animationStyle,
       }}
     >
-      {/* Background fill — saturated by alignment for high-contrast friend/foe */}
+      {/* Background fill — saturated by alignment for high-contrast friend/foe.
+          Under a sprite it thins to a tint so the art reads. */}
       <div
         className="absolute inset-0 rounded-full"
         style={{
           backgroundColor: isFriendly ? colors.alpha.primary[30] : colors.alpha.danger[30],
-          opacity: 0.85,
+          opacity: sprite ? 0.35 : 0.85,
         }}
       />
+
+      {/* Animated sprite (art pipeline) — replaces the initial when the
+          manifest has a sheet set for this combatant. Inset so the HP/fatigue
+          torus stays visible around it. */}
+      {sprite && (
+        <div className="absolute inset-[10%] z-10 pointer-events-none">
+          <SpriteToken
+            sprite={sprite}
+            clip={spriteClip}
+            facing={entity.position?.facing}
+            running={!isCompact}
+          />
+        </div>
+      )}
 
       {/* HP / Fatigue torus */}
       <svg className="absolute inset-0 w-full h-full p-[2px]" viewBox="0 0 100 100">
@@ -539,10 +561,12 @@ const CombatantMarker = React.memo(({
         <div className={triangleClass} style={{ borderBottomColor: colors.secondary }} />
       </div>
 
-      {/* Entity initial */}
-      <div className="absolute inset-0 flex items-center justify-center text-white font-bold text-xs select-none z-10 pointer-events-none">
-        {content}
-      </div>
+      {/* Entity initial — the token's identity when no sprite sheet exists */}
+      {!sprite && (
+        <div className="absolute inset-0 flex items-center justify-center text-white font-bold text-xs select-none z-10 pointer-events-none">
+          {content}
+        </div>
+      )}
 
       {/* Hero marker — tiny gold star above Jean so players can always locate
           her amid a crowd of allies. */}
@@ -805,10 +829,12 @@ const EntityLayer = React.memo(({
   onHoverEntity,
   onClearHover,
   onSelectEntity,
+  spriteManifest = null,
 }) => (
   <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
     {entitiesToRender.map((item, idx) => {
       const entityId = item.entity.id;
+      const sprite = spriteFor(spriteManifest, item.entity.sprite_key);
       const isEntityHovered = hoveredEntity != null && (
         entityId != null ? hoveredEntity.id === entityId : hoveredEntity === item.entity
       );
@@ -922,6 +948,12 @@ const EntityLayer = React.memo(({
               isSelected={entityId != null && selectedEntity?.id === entityId}
               animationStates={animStates}
               displaySymbol={item.displaySymbol}
+              sprite={sprite}
+              spriteClip={sprite ? spriteClipFor({
+                animationStates: animStates,
+                isDying: item.isDying,
+                currentMove: item.entity.current_move,
+              }) : 'idle'}
             />
           </div>
 
@@ -1771,15 +1803,22 @@ const TerrainLayer = React.memo(({ cells, gridCols, isCompact }) => (
     {cells.map((cell, i) => {
       if (!cell) return <div key={i} />;
       const style = TERRAIN_STYLE[cell.kind] || TERRAIN_STYLE.open;
+      // Delivered tile art wins over the procedural fill; the raised-cell rim
+      // stays either way so elevation reads even on a busy tile.
+      const tiled = Boolean(cell.tile);
       return (
         <div
           key={i}
           data-terrain={cell.kind}
           data-variant={cell.variant}
+          data-tiled={tiled ? '1' : undefined}
           title={cell.title}
           style={{
-            backgroundColor: style.fill,
-            borderRadius: cell.kind === 'boulder' ? '40%' : '2px',
+            backgroundColor: tiled ? 'transparent' : style.fill,
+            backgroundImage: tiled ? `url("${cell.tile}")` : undefined,
+            backgroundSize: tiled ? 'cover' : undefined,
+            imageRendering: tiled ? 'pixelated' : undefined,
+            borderRadius: !tiled && cell.kind === 'boulder' ? '40%' : '2px',
             boxShadow: cell.elevation > 0
               ? 'inset 2px 2px 0 rgba(255,255,255,0.25), inset -1px -1px 0 rgba(0,0,0,0.5)'
               : 'none',
@@ -1788,10 +1827,10 @@ const TerrainLayer = React.memo(({ cells, gridCols, isCompact }) => (
             fontSize: isCompact ? '6px' : '11px',
             lineHeight: 1,
             userSelect: 'none',
-            pointerEvents: 'auto',
+            pointerEvents: cell.kind === 'open' ? 'none' : 'auto',
           }}
         >
-          {isCompact ? '' : style.glyph}
+          {isCompact || tiled ? '' : style.glyph}
         </div>
       );
     })}
@@ -1937,6 +1976,10 @@ function BattlefieldGrid({
 
   const isFitMode = normalizeViewMode(zoom) === VIEW_MODE_FIT;
   const squareCells = useFeatureFlag('squareBattlefieldCells');
+  // Sprite sheets + region tilesets (public/assets/sprites/manifest.json).
+  // Null until loaded, or forever when no art has been delivered; every
+  // consumer falls back to glyph tokens and procedural terrain on null.
+  const spriteManifest = useSpriteManifest();
 
   // One place the "every combatant on the field" list is built. It was assembled
   // inline at three sites with slightly different shapes, in a file whose
@@ -2964,28 +3007,34 @@ function BattlefieldGrid({
   const terrainActive = hasTerrain(terrain);
   const terrainCells = useMemo(() => {
     if (!terrainActive) return null;
+    const region = terrain.region;
+    const floorTile = terrainTileUrl(spriteManifest, region, terrainVariant(terrain, 'open'));
     const cells = [];
     for (let row = 0; row < gridCols; row++) {
       for (let col = 0; col < gridCols; col++) {
         const worldX = leftX + col;
         const worldY = topY - row;
         const kind = terrainKindAt(terrain, worldX, worldY);
-        if (!kind || kind === 'open') {
+        // Open ground paints nothing procedurally, but takes the region's
+        // floor tile once a tileset has been delivered.
+        if (!kind || (kind === 'open' && !floorTile)) {
           cells.push(null);
           continue;
         }
         const elevation = terrainElevationAt(terrain, worldX, worldY);
         const label = terrainLabel(terrain, kind);
+        const variant = terrainVariant(terrain, kind);
         cells.push({
           kind,
           elevation,
-          variant: terrainVariant(terrain, kind),
-          title: elevation > 0 ? `${label} (+${elevation})` : label,
+          variant,
+          tile: kind === 'open' ? floorTile : terrainTileUrl(spriteManifest, region, variant),
+          title: kind === 'open' ? undefined : (elevation > 0 ? `${label} (+${elevation})` : label),
         });
       }
     }
     return cells;
-  }, [terrainActive, terrain, gridCols, leftX, topY]);
+  }, [terrainActive, terrain, gridCols, leftX, topY, spriteManifest]);
 
   // Living enemies drive the off-screen edge markers.
   const livingEnemies = useMemo(
@@ -3105,6 +3154,7 @@ function BattlefieldGrid({
           onHoverEntity={setHoveredEntity}
           onClearHover={handleClearHover}
           onSelectEntity={setSelectedEntity}
+          spriteManifest={spriteManifest}
         />
 
         <EffectsLayer

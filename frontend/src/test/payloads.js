@@ -286,6 +286,46 @@ export function makeTargetTerrain(overrides = {}) {
 }
 
 /**
+ * public/assets/sprites/manifest.json (tools/sprite_intake.py). Jean and a
+ * Slime have full sheet sets; `kingslime` has none, so it exercises the glyph
+ * fallback. One region tileset so terrain tile lookups can be tested.
+ */
+export function makeSpriteManifest(overrides = {}) {
+  const clips = (slug) => ({
+    idle: { file: `sprites/${slug}/idle.png`, frames: 4, rows: 3 },
+    walk: { file: `sprites/${slug}/walk.png`, frames: 6, rows: 3 },
+    attack: { file: `sprites/${slug}/attack.png`, frames: 6, rows: 3 },
+    cast: { file: `sprites/${slug}/cast.png`, frames: 6, rows: 3 },
+    defend: { file: `sprites/${slug}/defend.png`, frames: 4, rows: 3 },
+    hurt: { file: `sprites/${slug}/hurt.png`, frames: 3, rows: 3 },
+    death: { file: `sprites/${slug}/death.png`, frames: 6, rows: 3 },
+  })
+  return merge(
+    {
+      frame_size: 64,
+      tile_size: 64,
+      facings: ['south', 'west', 'north'],
+      clips: { idle: 4, walk: 6, attack: 6, cast: 6, defend: 4, hurt: 3, death: 6 },
+      sprites: { jean: { clips: clips('jean') }, slime: { clips: clips('slime') } },
+      terrain: {
+        verdette_caverns: {
+          tiles: {
+            cavern_floor: 'terrain/verdette_caverns/cavern_floor.png',
+            shallow_water: 'terrain/verdette_caverns/shallow_water.png',
+            slime: 'terrain/verdette_caverns/slime.png',
+            rock_shelf: 'terrain/verdette_caverns/rock_shelf.png',
+            crystal_cluster: 'terrain/verdette_caverns/crystal_cluster.png',
+            crystal_wall: 'terrain/verdette_caverns/crystal_wall.png',
+            chasm: 'terrain/verdette_caverns/chasm.png',
+          },
+        },
+      },
+    },
+    overrides
+  )
+}
+
+/**
  * battle_state.terrain (src/terrain.py TerrainGrid.to_payload) for a 9x9
  * Verdette fight: one character per cell, row 0 is y == 0. Every kind the
  * engine emits appears at least once except cliff.
