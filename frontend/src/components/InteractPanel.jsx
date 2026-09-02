@@ -52,16 +52,23 @@ const CHAT_KEYWORDS = new Set(['talk', 'chat'])
  */
 export function actionKeywords(target) {
     const seen = new Set()
-    let chatShown = false
-    return (target?.keywords || []).filter((keyword) => {
+    const keywords = target?.keywords || []
+    // Collapse the "talk"/"chat" aliases into ONE control, independent of the
+    // LLM capability flag. Both verbs converge on the backend chat fallback
+    // (NPC.talk / ConversationalNPCMixin.chat — the latter calls talk() when
+    // the LLM panel is not opened), so rendering both is a duplicate button
+    // with no distinct outcome. Prefer the "Talk" spelling when present (keep
+    // the first "talk" entry's original casing); a lone legacy "chat" is
+    // preserved so the action stays reachable.
+    const chatKw = keywords.filter((k) => CHAT_KEYWORDS.has(String(k).toLowerCase()))
+    // Prefer the canonical Talk label when both aliases are present, even if
+    // an older serialized payload listed Chat first.
+    const chatKept = chatKw.find((k) => String(k).toLowerCase() === 'talk') || chatKw[0]
+    return keywords.filter((keyword) => {
         const action = String(keyword).toLowerCase()
         if (target.is_container && (action === 'loot' || action === 'take_all')) return false
         if (target.action_aliases?.includes(keyword)) return false
-        if (target.llm_chat_enabled && CHAT_KEYWORDS.has(action)) {
-            if (chatShown) return false
-            chatShown = true
-            return true
-        }
+        if (CHAT_KEYWORDS.has(action) && keyword !== chatKept) return false
         if (seen.has(action)) return false
         seen.add(action)
         return true

@@ -10,8 +10,9 @@ import { apiErrorMessage } from '../utils/apiError'
  * This hook is intentionally more than a call-proxy: several of the exposed
  * operations are multi-step flows (loop over items with early-exit on
  * failure, an interact call chained into a background events check, local
- * object-state patching) that InteractPanel used to inline. Behavior here is
- * a direct extraction — no logic changes.
+ * object-state patching) that InteractPanel used to inline. Passageway
+ * transitions additionally close the source panel before their confirmation
+ * event is queued, so a destination refresh cannot reopen that panel.
  *
  * Callbacks (all optional) are supplied once at hook init, mirroring
  * useEventManager's pattern of taking parent notification callbacks upfront:
@@ -19,7 +20,7 @@ import { apiErrorMessage } from '../utils/apiError'
  * @param {Function} params.onEventsTriggered - called with an array of triggered events
  * @param {Function} params.onInteractionComplete - called after an interaction fully resolves
  * @param {Function} params.onTypingChange - called with true when new output should type out
- * @param {Function} params.onClose - called (after a delay) when the server reports a teleport
+ * @param {Function} params.onClose - called before a transition event is shown, or after a delay for a direct teleport
  * @param {Function} params.onObjectStateUpdate - called with data.object_state for local target patching
  */
 export function useWorldInteract({
@@ -152,6 +153,31 @@ export function useWorldInteract({
                 // keep the spinner showing instead of flashing "Action completed."
                 // The event UI will take over when it renders.
                 const hasPendingEvents = data.events_triggered && data.events_triggered.length > 0
+                const isPassagewayTransition = Array.isArray(data.events_triggered) &&
+                    data.events_triggered.some(event => event?.type === 'PassagewayTransitionEvent')
+
+                // A passageway transition owns the rest of this interaction.
+                // Close the source-room panel before the confirmation event is
+                // shown; otherwise its location prop follows the later refetch
+                // and the same panel reappears with the destination room selected.
+                if (isPassagewayTransition) {
+                    if (onClose) onClose()
+                    // Close the source panel before refreshing room state. The
+                    // transition confirmation must still be queued if that
+                    // refresh fails, so a transient error cannot strand the
+                    // player behind a closed interaction panel.
+                    if (onRefetch) {
+                        try {
+                            await onRefetch()
+                        } catch (refetchError) {
+                            console.error('Failed to refetch after passageway transition:', refetchError)
+                        }
+                    }
+                    if (onEventsTriggered) onEventsTriggered(data.events_triggered)
+                    if (onInteractionComplete) onInteractionComplete()
+                    return data
+                }
+
                 const message = hasPendingEvents ? '' : (data.message || 'Action completed.')
                 setInteractionOutput(message)
                 if (message && onTypingChange) onTypingChange(true)

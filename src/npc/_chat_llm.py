@@ -620,9 +620,166 @@ _OPTION_META_PATTERN = re.compile(
     r"\[Option|\bAs Jean\b|I don.t know what to say", re.IGNORECASE
 )
 
+# Jean's own name inside one of *Jean's own* dialogue options. The three options
+# are lines Jean himself says, so "Jean has walked a long road" or "Ask her about
+# Jean's armor fit" hands the player a reply in which he talks about himself in
+# the third person — or worse, addresses himself. Models produce these constantly
+# because the prompt names Jean on every line of context.
+#
+# The word boundary is enough to catch the possessive: ``\bjean\b`` matches the
+# "Jean" of "Jean's".
+_JEAN_NAME_PATTERN = re.compile(r"\bjean\b", re.IGNORECASE)
+
+# The single licensed use of the name in Jean's mouth: introducing himself.
+# Deliberately narrow — an explicit self-naming verb phrase, not any first-person
+# sentence that happens to contain the name — because "What would Jean know about
+# the western road?" is exactly the failure this rule exists to remove, and it is
+# both first person in intent and self-referential.
+_JEAN_SELF_INTRO_PATTERN = re.compile(
+    r"^\s*(?:well\s*,\s*)?(?:i['\u2019]?m|i\s+am|my\s+name\s+is|"
+    r"my\s+name['\u2019]?s|they\s+call\s+me|call\s+me)\s+jean"
+    r"(?!['\u2019]s)\b",
+    re.IGNORECASE,
+)
+
+# Shop business, for the merchant rule below. Nothing said in a chat can move an
+# item or a coin (the shop UI owns trade), so a question about price or stock is
+# a dead end for the player and an invitation for the model to invent numbers.
+#
+# Money and stock vocabulary. Context detection below still requires a question
+# or question-shaped sentence, so ordinary lore such as "Is it worth the risk?"
+# remains eligible unless the merchant is clearly being asked to sell, price, or
+# inventory something.
+_MERCHANT_ITEM_PATTERN = re.compile(
+    r"\b(?:armor|armour|weapons?|shields?|helmets?|buckles?|"
+    r"harness(?:es)?|cuirass(?:es)?|leather|chain|gear|wares|goods|items?)\b",
+    re.IGNORECASE,
+)
+
+# Broad vocabulary gate. The classifier below supplies the context and sentence
+# shape checks; this pattern must not itself decide that a lore question is trade.
+_MERCHANT_COMMERCE_PATTERN = re.compile(
+    r"\b(?:inventory|stock\w*|wares|merchandise|shop|for\s+sale|"
+    r"budget|discount\w*|bargain\w*|cheaper|buy\w*|sell\w*|"
+    r"purchas\w*|pay\w*|trade|price|cost|worth|value|coin|gold|"
+    r"selection|variety|assortment|haggling?|haggle|available|"
+    r"offer|carry|got)\b",
+    re.IGNORECASE,
+)
+
+_MERCHANT_EXPLICIT_PATTERN = re.compile(
+    r"\b(?:inventory|stock\w*|wares|merchandise|shop|for\s+sale|"
+    r"budget|discount\w*|bargain\w*|cheaper)\b",
+    re.IGNORECASE,
+)
+_MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
+    r"^\s*(?:what\s+have\s+you\s+got|what\s+can\s+you\s+offer|"
+    r"what\s+do\s+you\s+carry|what\s+do\s+you\s+have|"
+    r"is\s+anything\s+available|are\s+any(?:\s+.+)?\s+available|"
+    r"would\s+you\s+trade|what\s+is\s+it\s+worth)\s*[?.!]*\s*$",
+    re.IGNORECASE,
+)
+_MERCHANT_ITEM_REQUEST_PATTERN = re.compile(
+    r"\b(?:have|carry|keep|offer|get|got)\b|"
+    r"\b(?:available|in\s+stock|for\s+sale)\b",
+    re.IGNORECASE,
+)
+_MERCHANT_PRICE_PATTERN = re.compile(
+    r"\bhow\s+much\s+for\b|"
+    r"\b(?:what\s+(?:is|are|does|do)|how\s+much\s+(?:does|do|would|will|can))\b"
+    r".{0,80}\b(?:price|cost|worth|value)\b|"
+    r"\b(?:does|do|would|will|can)\s+it\s+cost\b|"
+    r"\b(?:does|do|would|will|can)\s+(?:it|the|this|that|these|those|any)\s+cost\s+(?:more|less|extra)\b",
+    re.IGNORECASE,
+)
+_MERCHANT_GOLD_ALLOWANCE_PATTERN = re.compile(
+    r"\bhow\s+much\s+(?:gold|coin)\s+(?:should|would|will|can)\b",
+    re.IGNORECASE,
+)
+_MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
+    r"\b(?:looking|want|need)\s+to\s+(?:buy|sell)\b|"
+    r"\b(?:your|the)\s+(?:selection|variety|assortment)\s+of\b|"
+    r"\b(?:haggling?|haggle)\s+(?:over|for|about)\b",
+    re.IGNORECASE,
+)
+_MERCHANT_TRANSACTION_PATTERN = re.compile(
+    r"\b(?:buy\w*|sell\w*|purchas\w*|pay\w*|trade|coin|gold)\b",
+    re.IGNORECASE,
+)
+
+
+# Roles that put an NPC in merchant context when its authored config declares
+# one. The duck-typed half of the check (shop attributes on the host) covers a
+# merchant whose config failed to load.
+_MERCHANT_ROLE_PATTERN = re.compile(
+    r"\bmerchant\b|\btrader\b|\bshopkeep\w*\b|\bstall\b", re.IGNORECASE
+)
+_MERCHANT_HOST_ATTRS = ("shop_name", "always_stock", "stock_count")
+_MERCHANT_QUESTION_PREFIX_PATTERN = re.compile(
+    r"^\s*(?:what|how|which|who|where|when|do|does|can|could|may|would|"
+    r"is|are|any)\b",
+    re.IGNORECASE,
+)
+
 # Fallback drain amounts keyed by conversation_quality — used only when the LLM
 # does not supply an explicit signed loquacity_delta (legacy adapter / fallback).
 _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30}
+
+# ---------------------------------------------------------------------------
+# Loquacity scale
+#
+# Conversations ran far too long: an authored base of 60-150 against a typical
+# per-turn drain of 3-12 bought a dozen or more turns from every NPC in the
+# game, and the player-visible effect was NPCs who would not stop talking.
+#
+# The whole *stamina pool* is therefore scaled to 15% of its former size by ONE
+# rule, applied at the end of the computation so no input can escape it:
+#
+#     effective value = max(1, round_half_up(raw * 15 / 100))   (0 stays 0)
+#
+# It is applied to the fully-summed maximum (base plus every modifier), to the
+# threshold floor, and to the recovery rate — not to the drains. Scaling the
+# drains as well would cancel the change out exactly and leave conversations the
+# same length, which is the thing being fixed. Turn counts therefore fall to
+# roughly 15% of what they were, while every ratio inside the system (threshold
+# at a fifth of maximum, exhaustion below the threshold, recovery per beat)
+# keeps its meaning.
+#
+# 0 is passed through because ``loquacity_max == 0`` is the "not yet computed"
+# sentinel (see :meth:`ConversationalNPCMixin.loquacity_tick`), and the floor of
+# 1 exists so a small pool can never scale away to nothing — a recovery of 0
+# would leave an exhausted NPC permanently mute.
+LOQUACITY_SCALE_PERCENT = 15
+
+
+def scale_loquacity(value: int) -> int:
+    """Scale one loquacity quantity by :data:`LOQUACITY_SCALE_PERCENT`.
+
+    Integer arithmetic with explicit half-up rounding rather than ``round()``:
+    ``round()`` is banker's rounding, so ``round(10.5)`` is 10 and ``round(22.5)``
+    is 22, which makes the rule unstateable in one sentence and the tests
+    surprising.
+    """
+    try:
+        raw = int(value)
+    except (TypeError, ValueError):
+        return 0
+    if raw <= 0:
+        return 0
+    return max(1, (raw * LOQUACITY_SCALE_PERCENT + 50) // 100)
+
+
+#: Pre-computation placeholder for ``loquacity_recovery``, at the new scale.
+#: ``_compute_loquacity`` overwrites it on the first conversation; it exists so a
+#: host that is inspected (or persisted) before then never carries an old-scale
+#: number.
+_DEFAULT_LOQUACITY_RECOVERY = scale_loquacity(2)
+
+#: Pre-scale floors, kept as the numbers the design was written in so the scaling
+#: rule is visible at the one place it is applied.
+_LOQUACITY_MAX_FLOOR = 20
+_LOQUACITY_THRESHOLD_FLOOR = 10
+_LOQUACITY_THRESHOLD_DIVISOR = 5
 
 # Craft vocabulary a progressing ally is licensed to teach about. The system
 # prompt's COMBAT SELF-KNOWLEDGE block exists precisely so an ally can discuss
@@ -875,7 +1032,7 @@ class ConversationalNPCMixin:
         self.loquacity_current: int = 0
         self.loquacity_max: int = 0
         self.loquacity_threshold: int = 0
-        self.loquacity_recovery: int = 2
+        self.loquacity_recovery: int = _DEFAULT_LOQUACITY_RECOVERY
 
         # "talk" is already present on every host class's base keywords
         # (Friend, Merchant); it alone opens the LLM chat panel client-side,
@@ -972,7 +1129,15 @@ class ConversationalNPCMixin:
         return getattr(getattr(player, "universe", None), "game_tick", 0) or 0
 
     def _compute_loquacity(self, player):
-        """Compute and set loquacity_max, threshold, and recovery. Only on first call."""
+        """Compute and set loquacity_max, threshold, and recovery. Only on first call.
+
+        Every number this produces is passed through :func:`scale_loquacity`
+        (15%) — see the module-level block above for why the drains are not.
+        The scale is applied to the *sum*, after the floor, rather than to the
+        base alone: a modifier left at the old scale (+20 for reputation, +10
+        for a crucifix) would otherwise dwarf the pool it modifies and reputation
+        alone would more than triple an NPC's patience.
+        """
         if self.loquacity_max != 0:
             return  # Already computed
 
@@ -1015,8 +1180,8 @@ class ConversationalNPCMixin:
         allies = getattr(player, "allies", [])
         party_mod = 10 if any(getattr(a, "name", "") == "Gorran" for a in allies) else 0
 
-        loquacity_max = max(
-            20,
+        unscaled_max = max(
+            _LOQUACITY_MAX_FLOOR,
             base
             + npc_charisma_bonus
             + story_mod
@@ -1024,10 +1189,19 @@ class ConversationalNPCMixin:
             + equip_mod
             + party_mod,
         )
+        loquacity_max = scale_loquacity(unscaled_max)
 
         self.loquacity_max = loquacity_max
-        self.loquacity_threshold = max(10, loquacity_max // 5)
-        self.loquacity_recovery = max(2, getattr(self, "wisdom", 10) // 8)
+        # The threshold keeps its meaning — a fifth of the pool — and its floor
+        # is scaled with everything else; an unscaled floor of 10 against a
+        # scaled maximum of 12 would end every conversation on its first turn.
+        self.loquacity_threshold = max(
+            scale_loquacity(_LOQUACITY_THRESHOLD_FLOOR),
+            loquacity_max // _LOQUACITY_THRESHOLD_DIVISOR,
+        )
+        self.loquacity_recovery = scale_loquacity(
+            max(2, getattr(self, "wisdom", 10) // 8)
+        )
 
         if self.loquacity_current == 0:
             self.loquacity_current = loquacity_max
@@ -1075,7 +1249,37 @@ class ConversationalNPCMixin:
         # confused with "no stored value yet" and reset back to full.
         stored_loquacity = entry.get("loquacity_current")
         if stored_loquacity is not None:
-            self.loquacity_current = stored_loquacity
+            self.loquacity_current = self._rescale_persisted_loquacity(
+                stored_loquacity, entry.get("loquacity_max")
+            )
+
+    def _rescale_persisted_loquacity(self, stored_current, stored_max) -> int:
+        """Bring a persisted ``loquacity_current`` onto the current scale.
+
+        Saves written before the 15% scale (see :func:`scale_loquacity`) hold
+        old-scale numbers — a current of 72 against a stored maximum of 80 —
+        and restoring one verbatim would hand the player a full old-scale
+        conversation out of a pool of 12, which is exactly the generosity the
+        scale exists to remove. The stored maximum is the scale marker: when it
+        is larger than the maximum computed for this NPC now, the remaining
+        patience is carried across as the same *fraction* of the new pool rather
+        than being clamped flat, so an NPC halfway to exhaustion stays halfway.
+
+        Anything else is clamped into ``[0, loquacity_max]``. ``loquacity_max``
+        is read with ``getattr`` and a 0 default because this method also runs
+        for hosts that never called ``_compute_loquacity`` (the mixin's own
+        ``_load_turn_state`` computes first, but tests and API fallbacks load
+        directly), and with no computed pool there is nothing to rescale against.
+        """
+        current = _coerce_int(stored_current, 0)
+        max_now = _coerce_int(getattr(self, "loquacity_max", 0), 0)
+        if max_now <= 0:
+            return current
+        old_max = _coerce_int(stored_max, 0)
+        if old_max > max_now and current > 0:
+            # Half-up rounding, integer arithmetic (same rule as scale_loquacity).
+            current = (current * max_now + old_max // 2) // old_max
+        return max(0, min(max_now, current))
 
     def _save_exchange_to_persistence(
         self, player, npc_text: str, jean_text: str, game_tick: int, chapter: str
@@ -1102,7 +1306,10 @@ class ConversationalNPCMixin:
                 "personality": None,
                 "loquacity_current": self.loquacity_current,
                 "loquacity_max": self.loquacity_max,
-                "loquacity_recovery": getattr(self, "loquacity_recovery", 2),
+                "loquacity_recovery": getattr(
+                    self, "loquacity_recovery", _DEFAULT_LOQUACITY_RECOVERY
+                ),
+                "loquacity_scale": LOQUACITY_SCALE_PERCENT,
                 "exchanges": [],
                 "last_talked_tick": 0,
                 "conversation_count": 0,
@@ -1124,7 +1331,10 @@ class ConversationalNPCMixin:
 
         entry["loquacity_current"] = self.loquacity_current
         entry["loquacity_max"] = self.loquacity_max
-        entry["loquacity_recovery"] = getattr(self, "loquacity_recovery", 2)
+        entry["loquacity_recovery"] = getattr(
+            self, "loquacity_recovery", _DEFAULT_LOQUACITY_RECOVERY
+        )
+        entry["loquacity_scale"] = LOQUACITY_SCALE_PERCENT
         entry["last_talked_tick"] = game_tick
 
         # Store personality for generics
@@ -1151,6 +1361,52 @@ class ConversationalNPCMixin:
                 hists[key].get("conversation_count", 0) + 1
             )
 
+    def _is_merchant_chat(self) -> bool:
+        """Whether this NPC's chat is backed by the shop interface.
+
+        The mixin cannot import ``_merchants`` without creating an import cycle,
+        so merchant context is deliberately duck-typed. Authored roles cover
+        story merchants, while shop attributes and trade verbs cover concrete
+        merchants whose character JSON is absent or failed to load.
+        """
+        config = getattr(self, "_chat_char_config", None)
+        role = config.get("role", "") if isinstance(config, dict) else ""
+        if _MERCHANT_ROLE_PATTERN.search(str(role)):
+            return True
+        for attr in _MERCHANT_HOST_ATTRS:
+            value = getattr(self, attr, None)
+            if attr == "stock_count" and value is not None:
+                return True
+            if value:
+                return True
+        keywords = getattr(self, "keywords", ()) or ()
+        return any(
+            str(keyword).strip().lower() in {"buy", "sell", "trade"}
+            for keyword in keywords
+        )
+
+    @staticmethod
+    def _is_genuine_jean_introduction(text: str) -> bool:
+        """True only for a narrow first-person introduction containing Jean's name."""
+        text = str(text).strip()
+        if not _JEAN_SELF_INTRO_PATTERN.match(text):
+            return False
+        # Do not let an introductory prefix smuggle a later third-person
+        # reference through ("My name is Jean. Jean has seen worse roads.").
+        return sum(1 for _ in _JEAN_NAME_PATTERN.finditer(text)) == 1
+
+    def _build_trade_block(self) -> str:
+        """Tell merchant-context models that chat cannot perform transactions."""
+        if not self._is_merchant_chat():
+            return ""
+        return (
+            "TRADE: Buying, selling, and stock belong to the shop interface, not "
+            "conversation. Do not ask Jean what he wants to buy, quote or negotiate "
+            "a price, ask about his budget, list inventory or wares, or make a purchase "
+            "promise. If commerce comes up, steer toward craft, fit, maintenance, "
+            "provenance, or general lore instead."
+        )
+
     def _build_system_prompt(self, player) -> str:
         """Assemble the system prompt out of its blocks, in order.
 
@@ -1164,6 +1420,7 @@ class ConversationalNPCMixin:
         blocks = [
             self._build_world_facts_block(),
             self._build_character_block(),
+            self._build_trade_block(),
             # Combat self-knowledge (progressing allies only) — the chat is the
             # sole surface for ally growth (no UI elements by design), so the
             # NPC must be able to speak about its own techniques and experience.
@@ -1790,6 +2047,112 @@ class ConversationalNPCMixin:
             )
         return FilterResult(text, None, removed)
 
+    def _is_merchant_commerce_question(self, text: str) -> bool:
+        """True when a merchant line asks about shop transactions or stock."""
+        if not self._is_merchant_chat():
+            return False
+        if "?" not in text and not _MERCHANT_QUESTION_PREFIX_PATTERN.search(text):
+            return False
+
+        has_item = bool(_MERCHANT_ITEM_PATTERN.search(text))
+        lore_frame = self._is_lore_frame(text)
+
+        # In a lore frame, only block if the sentence is still clearly a shop
+        # transaction. "That old cuirass has seen three wars." stays chat; "How
+        # much for the old cuirass?" is still a price question.
+        if has_item and lore_frame:
+            if _MERCHANT_PRICE_PATTERN.search(text):
+                return True
+            if _MERCHANT_ITEM_REQUEST_PATTERN.search(text):
+                return True
+            if _MERCHANT_TRANSACTION_PATTERN.search(text):
+                return True
+            return False
+
+        # Explicit shop nouns outside a lore frame are always commerce.
+        if _MERCHANT_EXPLICIT_PATTERN.search(text):
+            return True
+
+        # These short forms are common inventory questions even without an item.
+        if _MERCHANT_STOCK_REQUEST_PATTERN.search(text):
+            return True
+        if re.search(
+            r"\b(?:any|anything|something)\s+available\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return True
+
+        # An item combined with a request, price, or transaction verb is a shop
+        # question. Do not confuse craft questions such as "How does leather
+        # compare with chain?" with a transaction just because an item is named.
+        if has_item:
+            if _MERCHANT_ITEM_REQUEST_PATTERN.search(text):
+                return True
+            if _MERCHANT_PRICE_PATTERN.search(text):
+                return True
+            if _MERCHANT_TRANSACTION_PATTERN.search(text):
+                return True
+
+        # Price/cost forms without an item are only blocked when they explicitly
+        # ask for an item's price or an actionable purchasing amount. "gold in"/
+        # "coin in" is deliberately excluded from the offer fragment below — it
+        # reads as ordinary lore ("the gold in this region") far more often than
+        # as an offer, unlike "gold for" ("less coin for the buckles").
+        if re.search(
+            r"\b(?:does|do|would|will|can)\s+it\s+cost\b|"
+            r"\b(?:what|which)\s+(?:is|are)\s+it\s+worth\b|"
+            r"\bhow\s+much\s+(?:gold|coin)\s+(?:should|would|will|can)\b|"
+            r"\b(?:coin|gold)\s+for\b|"
+            r"\b(?:pay|paid|paying)\s+(?:for|in)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return True
+
+        if _MERCHANT_DIRECT_TRADE_PATTERN.search(text):
+            return has_item
+        return False
+
+    def _is_lore_frame(self, text: str) -> bool:
+        """True when the sentence reads as history, ritual, or biography."""
+        return bool(
+            re.search(
+                r"\b(?:old|war|siege|history|memories?|story|symbolize|symbol|"
+                r"rite|region|empire|freedom|learn|learned|taught)\b",
+                text,
+                re.IGNORECASE,
+            )
+        )
+
+    def _qc_merchant_commerce(
+        self, text: str, allow_rewrite: bool
+    ) -> FilterResult:
+        """Reject or remove merchant price/inventory questions from NPC prose."""
+        sentences = _split_sentences(text)
+        offending = {
+            sentence
+            for sentence in sentences
+            if self._is_merchant_commerce_question(sentence)
+        }
+        if not offending:
+            return FilterResult(text, None, False)
+        if not allow_rewrite:
+            return FilterResult(
+                text,
+                "it asked about price, inventory, stock, or purchasing in merchant chat",
+                False,
+            )
+        kept = [sentence for sentence in sentences if sentence not in offending]
+        cleaned = self._cleanup_removed_spans(" ".join(kept))
+        if not _has_real_npc_text(cleaned):
+            return FilterResult(
+                cleaned,
+                "nothing remained after removing a merchant price or inventory question",
+                True,
+            )
+        return FilterResult(cleaned, None, True)
+
     def _apply_content_filters(self, text: str, allow_rewrite: bool) -> FilterResult:
         """Run the content filters in order, stopping at the first rejection.
 
@@ -1802,7 +2165,12 @@ class ConversationalNPCMixin:
         wanting to is what caused the drift.
         """
         rewrote = False
-        stages = (self._qc_invented_nouns, self._qc_slang, self._qc_prohibited)
+        stages = (
+            self._qc_invented_nouns,
+            self._qc_slang,
+            self._qc_prohibited,
+            self._qc_merchant_commerce,
+        )
         for stage in stages:
             text, reason, stage_rewrote = stage(text, allow_rewrite)
             rewrote = rewrote or stage_rewrote
@@ -2031,6 +2399,20 @@ class ConversationalNPCMixin:
 
             # No meta-speech
             if _OPTION_META_PATTERN.search(text):
+                continue
+
+            # Jean speaks in the first person. His name is allowed only when he
+            # is genuinely introducing himself; all other self-references are
+            # third-person or self-address and do not make a usable option.
+            if _JEAN_NAME_PATTERN.search(text) and not self._is_genuine_jean_introduction(
+                text
+            ):
+                continue
+
+            # A merchant's chat cannot answer a shop question; the shop UI owns
+            # prices and stock. Keep the rule scoped so useful armor/craft lore
+            # questions remain available for the player.
+            if self._is_merchant_commerce_question(text):
                 continue
 
             tone = str(opt.get("tone", "")).lower()

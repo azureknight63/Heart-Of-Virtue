@@ -427,6 +427,77 @@ describe('useWorldInteract', () => {
       expect(onEventsTriggered).toHaveBeenCalledWith([{ output_text: 'A trap springs!' }])
     })
 
+    it('closes before refetching when a passageway transition confirmation is returned', async () => {
+      const order = []
+      const passagewayEvent = {
+        type: 'PassagewayTransitionEvent',
+        event_id: 'passage-1',
+        needs_input: true,
+      }
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true, message: '', events_triggered: [passagewayEvent] },
+      })
+      apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } })
+      const onClose = vi.fn(() => order.push('close'))
+      const onRefetch = vi.fn().mockImplementation(async () => order.push('refetch'))
+      const onEventsTriggered = vi.fn(() => order.push('event'))
+      const onInteractionComplete = vi.fn(() => order.push('complete'))
+
+      const { result } = renderHook(() => useWorldInteract({
+        onClose,
+        onRefetch,
+        onEventsTriggered,
+        onInteractionComplete,
+      }))
+
+      await act(async () => {
+        await result.current.interact({ id: 'passage-1', count: 1 }, 'enter', null)
+      })
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(order.slice(0, 4)).toEqual(['close', 'refetch', 'event', 'complete'])
+      expect(apiEndpoints.world.getEvents).not.toHaveBeenCalled()
+      expect(onEventsTriggered).toHaveBeenCalledWith([passagewayEvent])
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
+    })
+
+    it('still shows the transition when the destination refetch fails', async () => {
+      const refetchError = new Error('destination unavailable')
+      const passagewayEvent = {
+        type: 'PassagewayTransitionEvent',
+        event_id: 'passage-1',
+        needs_input: true,
+      }
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true, message: '', events_triggered: [passagewayEvent] },
+      })
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const onClose = vi.fn()
+      const onRefetch = vi.fn().mockRejectedValue(refetchError)
+      const onEventsTriggered = vi.fn()
+      const onInteractionComplete = vi.fn()
+      const { result } = renderHook(() => useWorldInteract({
+        onClose,
+        onRefetch,
+        onEventsTriggered,
+        onInteractionComplete,
+      }))
+
+      await act(async () => {
+        await result.current.interact({ id: 'passage-1', count: 1 }, 'enter', null)
+      })
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(onEventsTriggered).toHaveBeenCalledWith([passagewayEvent])
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Failed to refetch after passageway transition:',
+        refetchError
+      )
+      expect(result.current.loading).toBe(false)
+      errorSpy.mockRestore()
+    })
+
     it('chains a getEvents check after interact and forwards displayable events', async () => {
       apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Ok.' } })
       apiEndpoints.world.getEvents.mockResolvedValue({

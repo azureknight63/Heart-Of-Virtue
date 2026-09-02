@@ -2318,35 +2318,41 @@ class GameService:
         enemy = None
         tile = None
 
-        # 1. Try universe tile
+        # 1. Try the universe tile at the player's coordinates. `tile` is bound only
+        # on a match: a tile that exists but holds no matching NPC must not be
+        # mistaken for the room the enemy came from.
         if hasattr(player, "universe") and player.universe:
-            tile = player.universe.get_tile(player.location_x, player.location_y)
-            if hasattr(tile, "npcs_here"):
-                for npc in tile.npcs_here:
+            coordinate_tile = player.universe.get_tile(
+                player.location_x, player.location_y
+            )
+            if hasattr(coordinate_tile, "npcs_here"):
+                for npc in coordinate_tile.npcs_here:
                     if str(id(npc)) == enemy_id:
                         enemy = npc
+                        tile = coordinate_tile
                         break
 
         # 2. Try player.current_room (fallback for tests/specific events)
         if not enemy and hasattr(player, "current_room") and player.current_room:
-            if hasattr(player.current_room, "npcs_here"):
-                for npc in player.current_room.npcs_here:
+            staged_room = player.current_room
+            if hasattr(staged_room, "npcs_here"):
+                for npc in staged_room.npcs_here:
                     if str(id(npc)) == enemy_id:
                         enemy = npc
+                        tile = staged_room
                         break
 
         if not enemy:
             return {"error": "Enemy not found"}
 
-        # Ensure player.current_room is set to the resolved tile so that downstream
-        # code (NPC death cleanup, event callbacks) always has a valid room reference.
-        # Fall back to the existing player.current_room when universe.get_tile() returned
-        # None (e.g. out-of-bounds coordinates) — at least one of the two will be valid
-        # because we already found `enemy` through one of those two paths above.
-        if tile is None:
-            tile = getattr(player, "current_room", None)
-        if tile is not None:
-            player.current_room = tile
+        # `tile` is the room the enemy was actually standing in — whichever of the two
+        # lookups produced it — and is never None here, because finding `enemy` at all
+        # means one of them matched and bound it. Pointing player.current_room at that
+        # room keeps downstream code (the bystander roster below, NPC death cleanup,
+        # event callbacks) working against the room the fight is really happening in.
+        # A staged room must survive this even when the player's coordinates address a
+        # different, enemy-less tile.
+        player.current_room = tile
 
         # Mark the attacked enemy as aggro so it is always included in the combat roster.
         # Some enemies may already be aggro from room-entry announcements; the clicked one
@@ -3839,9 +3845,12 @@ class GameService:
         it back up via ``_load_history_from_persistence``.
 
         Skipped while a conversation is active so talking to an NPC never also
-        refills them mid-chat.
+        refills them mid-chat. Legacy entries are migrated before the tick: an old
+        maximum/recovery pair must not receive an old-scale recovery increment.
         """
         try:
+            from src.npc._chat_llm import LOQUACITY_SCALE_PERCENT, scale_loquacity
+
             if player.__dict__.get("_active_chat_npc_id"):
                 return
             hists = getattr(player, "npc_chat_histories", None)
@@ -3852,10 +3861,29 @@ class GameService:
                     continue
                 loq_max = entry.get("loquacity_max", 0)
                 loq_cur = entry.get("loquacity_current", 0)
-                if not loq_max or loq_cur >= loq_max:
+                if not loq_max:
                     continue
                 recovery = entry.get("loquacity_recovery", 2) or 2
-                entry["loquacity_current"] = min(loq_max, loq_cur + recovery)
+                # Entries written by this version carry an explicit scale marker.
+                # Only unmarked rows with an old-scale-sized maximum are migrated;
+                # otherwise a current 15% row would be scaled a second time.
+                if (
+                    entry.get("loquacity_scale") != LOQUACITY_SCALE_PERCENT
+                    and loq_max > scale_loquacity(loq_max)
+                ):
+                    scaled_max = scale_loquacity(loq_max)
+                    scaled_current = (
+                        loq_cur * scaled_max + loq_max // 2
+                    ) // loq_max
+                    loq_cur = min(scaled_max, scaled_current)
+                    loq_max = scaled_max
+                    recovery = scale_loquacity(recovery)
+                    entry["loquacity_current"] = loq_cur
+                    entry["loquacity_max"] = loq_max
+                    entry["loquacity_recovery"] = recovery
+                if loq_cur > 0 and loq_cur < loq_max:
+                    entry["loquacity_current"] = min(loq_max, loq_cur + recovery)
+                entry["loquacity_scale"] = LOQUACITY_SCALE_PERCENT
         except Exception as e:
             import logging as _logging
 

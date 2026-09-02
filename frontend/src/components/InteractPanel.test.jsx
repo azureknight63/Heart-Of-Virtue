@@ -828,6 +828,138 @@ describe('InteractPanel', () => {
     }
   });
 
+  it('closes before showing a Passageway transition event', async () => {
+    const passagewayLocation = {
+      ...mockLocation,
+      npcs: [],
+      objects: [{
+        id: 'passage1',
+        name: 'Stone Arch',
+        description: 'An arch leading to another area.',
+        keywords: ['Enter'],
+      }],
+      items: [],
+    };
+    const transitionEvent = {
+      type: 'PassagewayTransitionEvent',
+      event_id: 'passage-1',
+      name: 'Passage_Stone Arch',
+      needs_input: true,
+    };
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: { success: true, message: '', events_triggered: [transitionEvent] },
+    });
+    const onEventsTriggered = vi.fn();
+    const onRefetch = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    function Harness() {
+      const [open, setOpen] = React.useState(true);
+      return open ? (
+        <InteractPanel
+          location={passagewayLocation}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+          onRefetch={onRefetch}
+          onEventsTriggered={onEventsTriggered}
+        />
+      ) : <div data-testid="interact-panel-closed" />;
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getAllByText(/Stone Arch/i)[0]);
+    fireEvent.click(screen.getByText(/^Enter$/i));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('interact-panel-closed')).toBeInTheDocument();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
+  });
+
+  it('shows the destination room with the interaction panel closed after confirmation', async () => {
+    const sourceLocation = {
+      ...mockLocation,
+      npcs: [],
+      objects: [{ id: 'passage1', name: 'Stone Arch', description: 'An arch to the garden.', keywords: ['Enter'] }],
+      items: [],
+    };
+    const destinationLocation = {
+      name: 'Moonlit Garden',
+      description: 'Silver flowers bloom beneath the moon.',
+      x: 4,
+      y: 2,
+    };
+    const transitionEvent = {
+      type: 'PassagewayTransitionEvent',
+      event_id: 'passage-2',
+      name: 'Passage_Stone Arch',
+      needs_input: true,
+    };
+    const onEventsTriggered = vi.fn();
+    const onRefetch = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    function Harness() {
+      const [location, updateLocation] = React.useState(sourceLocation);
+      const [open, setOpen] = React.useState(true);
+      const [pendingEvent, setPendingEvent] = React.useState(null);
+      return (
+        <>
+          {open && (
+            <InteractPanel
+              location={location}
+              onClose={() => {
+                onClose();
+                setOpen(false);
+              }}
+              onRefetch={onRefetch}
+              onEventsTriggered={(events) => {
+                onEventsTriggered(events);
+                setPendingEvent(events[0]);
+              }}
+            />
+          )}
+          {pendingEvent && (
+            <button
+              onClick={() => {
+                updateLocation(destinationLocation);
+                setPendingEvent(null);
+              }}
+            >
+              Step through
+            </button>
+          )}
+          <div data-testid="left-room-description">{location.description}</div>
+          <div data-testid="right-map-position">{location.x},{location.y}</div>
+        </>
+      );
+    }
+
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: { success: true, message: '', events_triggered: [transitionEvent] },
+    });
+
+    render(<Harness />);
+    fireEvent.click(screen.getAllByText(/Stone Arch/i)[0]);
+    fireEvent.click(screen.getByText(/^Enter$/i));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Step through' })).toBeInTheDocument();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Step through' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('left-room-description')).toHaveTextContent(destinationLocation.description);
+      expect(screen.getByTestId('right-map-position')).toHaveTextContent('4,2');
+    });
+  });
+
   it('updates the selected target locally from the response object_state', async () => {
     const lockableObject = {
       ...mockLocation,
@@ -1225,6 +1357,60 @@ describe('InteractPanel', () => {
   });
 });
 
+
+describe('Jambo opens the LLM conversation dialog (merchant + ConversationalNPCMixin)', () => {
+    // Jambo is a Merchant that must now carry ConversationalNPCMixin so the
+    // frontend's Talk action opens NpcChatPanel instead of the scripted line.
+    // The class key (type) is what /api/npc/chat/open receives as npc_key.
+    // Self-contained fixtures: this describe is a top-level sibling, so the
+    // main suite's `mockLocation`/`mockOnClose` are out of scope here.
+    const mockOnClose = vi.fn();
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+    const jamboLocation = {
+      name: 'Town Square',
+      objects: [],
+      items: [],
+      npcs: [{
+        id: 'jambo1',
+        name: 'Jambo',
+        type: 'JamboHealsU',
+        description: 'A wiry merchant with a massive grin.',
+        keywords: ['Buy', 'Sell', 'Talk'],
+        llm_chat_enabled: true,
+      }],
+    };
+
+    it('opens the chat panel keyed by the merchant class, not its instance id', () => {
+      render(<InteractPanel location={jamboLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Jambo/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+
+      const panel = screen.getByTestId('npc-chat-panel').textContent;
+      // The class key is what /api/npc/chat/open receives as npc_key.
+      expect(panel).toContain('Chatting with Jambo (JamboHealsU)');
+      // Sending the instance id would 404 the chat route.
+      expect(panel).not.toContain('jambo1');
+      expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
+    });
+
+    it('does not open the chat panel when loquacity is unavailable (scripted fallback)', () => {
+      const unavailable = {
+        ...jamboLocation,
+        npcs: [{ ...jamboLocation.npcs[0], loquacity_available: false }],
+      };
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Jambo shrugs.' } });
+      render(<InteractPanel location={unavailable} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Jambo/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+
+      // Falls through to the ordinary scripted talk instead of the LLM panel.
+      expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
+      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('jambo1', 'Talk', null);
+    });
+});
+
 describe('actionKeywords', () => {
   // Asserted against the pure function rather than a rendered button count,
   // because the count cannot say WHICH of the three rules dropped a keyword.
@@ -1244,10 +1430,22 @@ describe('actionKeywords', () => {
       expect(actionKeywords({ keywords: ['chat'], llm_chat_enabled: true })).toEqual(['chat']);
     });
 
-    it('leaves both keywords alone when chat is not LLM-backed', () => {
-      // Without `llm_chat_enabled` the two are separate engine actions with
-      // separate outcomes, so collapsing them would delete a real button.
-      expect(actionKeywords({ keywords: ['Talk', 'chat'] })).toEqual(['Talk', 'chat']);
+    it('collapses Talk/Chat to a single Talk even when chat is not LLM-backed', () => {
+      // The collapse does NOT depend on `llm_chat_enabled`: both verbs
+      // converge on the backend chat fallback (NPC.talk / the mixin's chat(),
+      // which calls talk()), so a duplicate "Chat" button must not survive
+      // just because NPC_CHAT_LLM_ENABLED is off. Regression for the disabled-LLM
+      // case: an NPC serving both keywords must still render one "Talk".
+      expect(actionKeywords({ keywords: ['Talk', 'chat'] })).toEqual(['Talk']);
+    });
+
+    it('prefers Talk when legacy payload order lists Chat first', () => {
+      expect(actionKeywords({ keywords: ['chat', 'Talk'] })).toEqual(['Talk']);
+    });
+
+    it('collapses exact duplicate Talk or Chat entries too', () => {
+      expect(actionKeywords({ keywords: ['Talk', 'Talk', 'Chat'] })).toEqual(['Talk']);
+      expect(actionKeywords({ keywords: ['chat', 'chat'] })).toEqual(['chat']);
     });
   });
 

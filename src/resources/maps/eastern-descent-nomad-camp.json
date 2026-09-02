@@ -1483,9 +1483,7 @@
                         "enter",
                         "go",
                         "leave",
-                        "exit",
-                        "jambo",
-                        "tent"
+                        "exit"
                     ],
                     "action_aliases": [
                         "go",
