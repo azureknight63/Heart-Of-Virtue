@@ -16,6 +16,7 @@ from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
 from src.combatant import move_in_progress
 from src.moves import attacker_accuracy
 from src.moves._base import display_name_of
+import src.terrain as terrain
 
 if TYPE_CHECKING:
     from src.player import Player
@@ -347,6 +348,14 @@ class CombatantSerializer:
             "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
             "distance": distance_to_ref,
             "position": CombatantSerializer._serialize_position(combatant),
+            # What the combatant is standing on (kind/variant/elevation/label),
+            # for the token tooltip and HUD; None when terrain is inactive.
+            "terrain": terrain.standing_on(combatant),
+            # Which sprite sheet draws this combatant: the engine class name,
+            # lower-cased ("jean" for the player). Keys frontend/public/assets/
+            # sprites/manifest.json; a key with no sheet falls back to the
+            # glyph token.
+            "sprite_key": CombatantSerializer.sprite_key(combatant),
             "current_move": active_move,
             "move_in_process": active_move,  # Alias for Strategist
         }
@@ -485,6 +494,20 @@ class CombatantSerializer:
             return 0
         # Handle legacy scalar distance
         return prox
+
+    @staticmethod
+    def sprite_key(combatant: Any) -> str:
+        """Sprite-sheet key for a combatant (see tools/art_prompts.py ROSTER).
+
+        The player is always ``jean``; NPCs use their class name lower-cased
+        (``Slime`` -> ``slime``, ``KingSlime`` -> ``kingslime``), which is what
+        the prompt pack and intake tool file sheets under.
+        """
+        from src.player import Player
+
+        if isinstance(combatant, Player):
+            return "jean"
+        return type(combatant).__name__.lower()
 
     @staticmethod
     def _serialize_position(combatant: Any) -> Optional[Dict[str, Any]]:

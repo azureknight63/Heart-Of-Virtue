@@ -123,6 +123,12 @@ export function makeCombatant(overrides = {}) {
       position: { x: 0, y: 3, facing: 'N' },
       current_move: null,
       move_in_process: null,
+      // src.terrain.standing_on: what the token stands on, or null in a
+      // terrain-free fight.
+      terrain: null,
+      // CombatantSerializer.sprite_key: 'jean' for the player, else the NPC
+      // class name lower-cased. Keys public/assets/sprites/manifest.json.
+      sprite_key: 'jean',
     },
     overrides
   )
@@ -150,6 +156,7 @@ export function makeEnemy(overrides = {}) {
         equipment: { weapon: null, armor: null, resistances: { ...RESISTANCES } },
         distance: 10,
         position: { x: 6, y: 3, facing: 'S' },
+        sprite_key: 'slime',
       },
       overrides
     )
@@ -188,6 +195,9 @@ export function makeBattleState(overrides = {}) {
       // `map_size` rides inside battle_state precisely because the top-level
       // whitelist would have dropped it (drift bug #6).
       map_size: 9,
+      // Battlefield terrain (src/terrain.py TerrainGrid.to_payload), same
+      // routing as map_size. Null in a flat fight; see makeTerrain().
+      terrain: null,
       player_consumables: [],
       suggested_moves: [],
       suggestions_loading: false,
@@ -251,6 +261,80 @@ export function makeTargetOption(overrides = {}) {
       distance: 10,
       health: { current: 20, max: 20 },
       hit_chance: 87,
+      // src.terrain.engagement for this strike, or null when terrain is
+      // inactive. See makeTargetTerrain().
+      terrain: null,
+    },
+    overrides
+  )
+}
+
+/** The per-target cover/elevation block (src.terrain.engagement). */
+export function makeTargetTerrain(overrides = {}) {
+  return merge(
+    {
+      cover: 20,
+      cover_kind: 'boulder',
+      blocked_los: false,
+      elevation: 0,
+      hit_modifier: -20,
+      damage_multiplier: 1.0,
+      labels: ['Boulder cover -20'],
+    },
+    overrides
+  )
+}
+
+/**
+ * battle_state.terrain (src/terrain.py TerrainGrid.to_payload) for a 9x9
+ * Verdette fight: one character per cell, row 0 is y == 0. Every kind the
+ * engine emits appears at least once except cliff.
+ */
+export function makeTerrain(overrides = {}) {
+  return merge(
+    {
+      region: 'verdette_caverns',
+      width: 9,
+      height: 9,
+      codes: { o: 'open', r: 'rough', h: 'hazard', s: 'shelf', b: 'boulder', w: 'wall', c: 'cliff' },
+      rows: [
+        'oooobwooo',
+        'oooooowoo',
+        'oossoooro',
+        'oossooorr',
+        'ooooooooo',
+        'hhooooooo',
+        'hooooooob',
+        'ooooooooo',
+        'wwooooooo',
+      ],
+      elevation: [
+        '000000000',
+        '000000000',
+        '001100000',
+        '001100000',
+        '000000000',
+        '000000000',
+        '000000000',
+        '000000000',
+        '000000000',
+      ],
+      palette: {
+        open: 'cavern_floor', rough: 'shallow_water', hazard: 'slime', shelf: 'rock_shelf',
+        boulder: 'crystal_cluster', wall: 'crystal_wall', cliff: 'chasm',
+      },
+      legend: {
+        open: { label: 'Open ground', passable: true, move_cost: 1, cover: 0, blocks_los: false },
+        rough: { label: 'Rough ground', passable: true, move_cost: 2, cover: 0, blocks_los: false },
+        hazard: { label: 'Hazard', passable: true, move_cost: 2, cover: 0, blocks_los: false },
+        shelf: { label: 'High ground', passable: true, move_cost: 1, cover: 0, blocks_los: false },
+        boulder: { label: 'Boulder', passable: false, move_cost: null, cover: 20, blocks_los: false },
+        wall: { label: 'Wall', passable: false, move_cost: null, cover: 40, blocks_los: true },
+        cliff: { label: 'Drop', passable: false, move_cost: null, cover: 0, blocks_los: false },
+      },
+      cover_min_distance: 6,
+      elevation_hit_bonus: 10,
+      elevation_damage_step: 0.15,
     },
     overrides
   )

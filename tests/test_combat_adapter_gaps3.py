@@ -1870,10 +1870,13 @@ class TestGetAvailableMovesRemainingBranches:
         # `damage_preview`, `in_range` and `shortfall_ft` joined the card with
         # the pre-commitment damage preview: the client shows what a move would
         # do, and how far short of reach a target is, before the player commits.
+        # `terrain` (cover/elevation for this strike, src.terrain.engagement)
+        # is always present -- None in a terrain-free fight like this one.
         assert set(target) == {
             "id", "name", "distance", "is_ally", "health", "hit_chance",
-            "damage_preview", "in_range", "shortfall_ft",
+            "damage_preview", "in_range", "shortfall_ft", "terrain",
         }
+        assert target["terrain"] is None
         assert target["in_range"] is True
         assert target["shortfall_ft"] is None
         assert target["damage_preview"] is move.preview_damage.return_value

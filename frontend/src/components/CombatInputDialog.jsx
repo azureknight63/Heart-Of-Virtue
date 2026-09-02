@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAudio } from '../context/AudioContext';
+import { engagementTone } from '../utils/terrain';
 import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
 import { colors } from '../styles/theme';
@@ -90,6 +91,20 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                                 HauntingPresence modifiers, so the final value can sit
                                                 slightly outside that band. */}
                                             <span style={{ fontWeight: 'bold' }}>{Math.round(target.hit_chance)}%</span>
+                                        </div>
+                                    )}
+                                    {/* Terrain's share of that accuracy (src.terrain.engagement):
+                                        cover on the line of fire and elevation, as the exact flat
+                                        points the dice apply. Labels arrive ready-made from the
+                                        engine so the card can never disagree with the roll. */}
+                                    {Array.isArray(target.terrain?.labels) && target.terrain.labels.length > 0 && (
+                                        <div
+                                            data-testid="target-terrain"
+                                            style={{ fontSize: '11px', color: engagementTone(target.terrain, colors), display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}
+                                        >
+                                            {target.terrain.labels.map((label) => (
+                                                <span key={label}>{label}</span>
+                                            ))}
                                         </div>
                                     )}
                                 </div>

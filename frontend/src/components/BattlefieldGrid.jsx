@@ -17,6 +17,10 @@ import { SFX_DURATIONS } from '../utils/sfxDurations';
 import useDoubleRaf from '../hooks/useDoubleRaf';
 import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
+import {
+  hasTerrain, terrainKindAt, terrainElevationAt, terrainLabel, terrainVariant,
+  terrainKindsPresent, regionLabel, TERRAIN_STYLE,
+} from '../utils/terrain';
 import { isLiving } from '../utils/combatEntities';
 
 // Fragment definitions for the death burst — module-level, never recreated
@@ -773,6 +777,14 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
             {formatCombatMoveStatus(entity.current_move) || 'Idle'}
           </span>
         </div>
+        {/* What the token stands on (src.terrain.standing_on). Only shown
+            for ground that changes something -- open floor says nothing. */}
+        {entity.terrain?.label && entity.terrain.kind !== 'open' && (
+          <div className="text-white/60 text-[9px] font-mono" data-testid="tooltip-terrain">
+            on {entity.terrain.label}
+            {entity.terrain.elevation > 0 ? ` (+${entity.terrain.elevation} high)` : ''}
+          </div>
+        )}
       </div>
       {/* Arrow */}
       <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-l-transparent border-r-transparent border-b-black/90 absolute left-1/2 -translate-x-1/2 bottom-full" />
@@ -1731,6 +1743,109 @@ const GridBackgroundLayer = React.memo(({ cells, gridCols }) => (
 ));
 
 // ---------------------------------------------------------------------------
+// TerrainLayer — per-cell terrain under the tokens
+// ---------------------------------------------------------------------------
+// Same shape and memo discipline as GridBackgroundLayer: a flat cells array
+// precomputed once per (viewport, terrain) pair, one keyed child per cell.
+// Feature cells carry a native `title` so hovering a boulder or a slime pool
+// names it without a bespoke tooltip layer; they take pointer events for that
+// alone -- clicks bubble to the grid's own handler unchanged, and the drag
+// pan listens on the window, so neither gesture is affected. Open cells stay
+// pointer-transparent and paint nothing, keeping the lattice underneath
+// visible.
+//
+// Elevation is drawn as a brighter top-left edge (a lit rim) on raised cells
+// so a shelf reads as "up" even before the tileset art lands.
+const TerrainLayer = React.memo(({ cells, gridCols, isCompact }) => (
+  <div
+    data-testid="terrain-layer"
+    style={{
+      position: 'absolute', inset: 0,
+      display: 'grid', gap: '1px', padding: spacing.sm,
+      gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+      gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
+      pointerEvents: 'none',
+      zIndex: 1,
+    }}
+  >
+    {cells.map((cell, i) => {
+      if (!cell) return <div key={i} />;
+      const style = TERRAIN_STYLE[cell.kind] || TERRAIN_STYLE.open;
+      return (
+        <div
+          key={i}
+          data-terrain={cell.kind}
+          data-variant={cell.variant}
+          title={cell.title}
+          style={{
+            backgroundColor: style.fill,
+            borderRadius: cell.kind === 'boulder' ? '40%' : '2px',
+            boxShadow: cell.elevation > 0
+              ? 'inset 2px 2px 0 rgba(255,255,255,0.25), inset -1px -1px 0 rgba(0,0,0,0.5)'
+              : 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: style.glyphColor,
+            fontSize: isCompact ? '6px' : '11px',
+            lineHeight: 1,
+            userSelect: 'none',
+            pointerEvents: 'auto',
+          }}
+        >
+          {isCompact ? '' : style.glyph}
+        </div>
+      );
+    })}
+  </div>
+));
+
+TerrainLayer.displayName = 'TerrainLayer';
+
+// ---------------------------------------------------------------------------
+// TerrainLegend — which kinds are on this field and what they do
+// ---------------------------------------------------------------------------
+const TerrainLegend = React.memo(({ terrain }) => {
+  const kinds = terrainKindsPresent(terrain);
+  if (kinds.length === 0) return null;
+  return (
+    <div
+      data-testid="terrain-legend"
+      aria-label="Terrain legend"
+      style={{
+        position: 'absolute', top: '6px', left: '8px', zIndex: 140,
+        pointerEvents: 'none', display: 'flex', flexWrap: 'wrap', gap: '6px',
+        fontSize: '9px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)',
+        userSelect: 'none', maxWidth: '70%',
+      }}
+    >
+      <span style={{ color: colors.secondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {regionLabel(terrain.region)}
+      </span>
+      {kinds.map((kind) => {
+        const style = TERRAIN_STYLE[kind];
+        const entry = terrain.legend?.[kind] || {};
+        const notes = [];
+        if (entry.passable === false) notes.push('blocks');
+        if (entry.cover) notes.push(`cover -${entry.cover}`);
+        if (entry.move_cost > 1) notes.push('slow');
+        if (kind === 'shelf') notes.push(`high +${terrain.elevation_hit_bonus ?? 10}`);
+        return (
+          <span key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{
+              display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px',
+              backgroundColor: style.fill === 'transparent' ? 'rgba(255,255,255,0.1)' : style.fill,
+              boxShadow: kind === 'shelf' ? 'inset 1px 1px 0 rgba(255,255,255,0.4)' : 'none',
+            }} />
+            <span>{terrainLabel(terrain, kind)}{notes.length ? ` (${notes.join(', ')})` : ''}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+});
+
+TerrainLegend.displayName = 'TerrainLegend';
+
+// ---------------------------------------------------------------------------
 // BattlefieldGrid — main exported component
 // ---------------------------------------------------------------------------
 function BattlefieldGrid({
@@ -1747,6 +1862,10 @@ function BattlefieldGrid({
   displayedLogCount = 0,
   hoveredTargetId = null,
   mapSize = null,
+  // battle_state.terrain (src/terrain.py TerrainGrid.to_payload), forwarded
+  // by Battlefield exactly like mapSize: the grid is handed a BEAT state,
+  // which never carries it. Null in a terrain-free fight.
+  terrain = null,
   onAnimatingChange = null,
   // Engine-driven combat streaming (issue #436). When `streaming` is true the
   // log-spooler animation path is bypassed: pre-built animations arrive via
@@ -2838,6 +2957,36 @@ function BattlefieldGrid({
     return cells;
   }, [gridCols, leftX, topY, resolvedMapSize]);
 
+  // Terrain cells for the current viewport: same row/col walk as gridBgCells,
+  // resolved through the compact wire rows. Null entries are open ground (or
+  // off the map) and render as empty placeholders so the grid keeps its
+  // cell count.
+  const terrainActive = hasTerrain(terrain);
+  const terrainCells = useMemo(() => {
+    if (!terrainActive) return null;
+    const cells = [];
+    for (let row = 0; row < gridCols; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        const worldX = leftX + col;
+        const worldY = topY - row;
+        const kind = terrainKindAt(terrain, worldX, worldY);
+        if (!kind || kind === 'open') {
+          cells.push(null);
+          continue;
+        }
+        const elevation = terrainElevationAt(terrain, worldX, worldY);
+        const label = terrainLabel(terrain, kind);
+        cells.push({
+          kind,
+          elevation,
+          variant: terrainVariant(terrain, kind),
+          title: elevation > 0 ? `${label} (+${elevation})` : label,
+        });
+      }
+    }
+    return cells;
+  }, [terrainActive, terrain, gridCols, leftX, topY]);
+
   // Living enemies drive the off-screen edge markers.
   const livingEnemies = useMemo(
     () => (combat?.enemies || []).filter(isLiving),
@@ -2902,6 +3051,10 @@ function BattlefieldGrid({
       <div ref={panLayerRef} style={{ position: 'absolute', inset: 0 }}>
       <div ref={contentDivRef} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
         <GridBackgroundLayer cells={gridBgCells} gridCols={gridCols} />
+
+        {terrainCells && (
+          <TerrainLayer cells={terrainCells} gridCols={gridCols} isCompact={isCompact} />
+        )}
 
         {/* Arena extent marker — faint dashed rectangle around the real map,
             drawn whenever the viewport reaches past the world's edge, so the
@@ -2981,6 +3134,11 @@ function BattlefieldGrid({
         topY={topY}
         gridCols={gridCols}
       />
+
+      {/* Terrain legend: region name plus every kind on this field and what
+          it does. Pinned to the viewport like the edge markers so it stays
+          put while the map pans. */}
+      {terrainActive && <TerrainLegend terrain={terrain} />}
       </div>{/* end viewport */}
 
       {/* SelectedEntityPanel and overlays are panel chrome — they sit outside

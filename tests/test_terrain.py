@@ -98,7 +98,7 @@ class TestTerrainGrid:
         assert payload["region"] == terrain.VERDETTE_CAVERNS
         assert payload["width"] == 4 and payload["height"] == 3
         assert payload["rows"] == ["ooos", "oooo", "owoo"]
-        assert payload["elevation"][0] == [0, 0, 0, 1]
+        assert payload["elevation"][0] == "0001"
         assert payload["palette"][terrain.ROUGH] == "shallow_water"
         assert payload["legend"][terrain.BOULDER]["cover"] == 20
         assert payload["codes"]["w"] == terrain.WALL

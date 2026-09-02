@@ -261,6 +261,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
           mapSize={combat?.map_size}
+          terrain={combat?.terrain}
           onAnimatingChange={onAnimatingChange}
           streaming={streaming}
           streamedAnimations={streamedAnimations}

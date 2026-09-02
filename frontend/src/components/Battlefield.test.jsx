@@ -4,7 +4,7 @@ import { act } from 'react';
 import Battlefield from './Battlefield';
 import { setFlag, resetFlags } from '../utils/featureFlags';
 import React from 'react';
-import { makeBattleState, makeCombatant, makeEnemy } from '../test/payloads';
+import { makeBattleState, makeCombatant, makeEnemy, makeTerrain } from '../test/payloads';
 
 // Mock child components. Battlefield also imports the VIEW_SIZE constant for
 // its off-screen-enemy detection and the view-mode constants, so expose them on
@@ -258,6 +258,14 @@ describe('Battlefield', () => {
             expect(lastGridProps().combatId).toBe('fight-A');
             expect(lastGridProps().mapSize).toBe(18);
             expect(lastGridProps().combatActive).toBe(true);
+        });
+
+        it('forwards battle_state.terrain the same way (the beat state never carries it)', () => {
+            const terrain = makeTerrain();
+            render(<Battlefield combat={fight({ terrain })} currentLogIndex={0} />);
+            expect(lastGridProps().terrain).toBe(terrain);
+            render(<Battlefield combat={fight({ terrain: null })} currentLogIndex={0} />);
+            expect(lastGridProps().terrain).toBeNull();
         });
 
         it('does not source them from the per-beat combat prop handed to the grid', () => {

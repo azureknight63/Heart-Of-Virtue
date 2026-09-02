@@ -3244,6 +3244,13 @@ class ApiCombatAdapter:
             "shortfall_ft": (
                 int(distance - range_max) if distance > range_max else None
             ),
+            # Terrain's contribution to this strike (src.terrain.engagement):
+            # cover on the line of fire, elevation delta, and the flat
+            # hit_modifier / damage_multiplier the dice actually use, plus
+            # ready-made labels ("Boulder cover -20"). None when terrain is
+            # inactive. The numbers come from the same function the to-hit
+            # chain calls, so the card can never disagree with the roll.
+            "terrain": terrain.engagement(self.player, combatant),
             # Move.preview_damage (src/moves/_base.py) is the single source of
             # this number for every move, exactly as preview_hit_chance is for
             # the one below it. It reads facing, heat, resistance, protection
@@ -3465,6 +3472,12 @@ class ApiCombatAdapter:
         # dynamically-sized grid rendered at the wrong size and *resized
         # mid-fight* whenever a combatant moved past the previous extent.
         battle_state["map_size"] = self.combat_grid_size[0]
+        # Battlefield terrain rides inside battle_state for the same reason
+        # map_size does (transformCombatData's whitelist drops top-level keys).
+        # Static per fight, so the client caches it by combat_id; None when the
+        # fight has no terrain (a legacy proximity-only combat).
+        grid = self.combat_terrain
+        battle_state["terrain"] = grid.to_payload() if grid is not None else None
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
         # round(), not int(). Binary floats mean 68 of the 951 two-decimal
         # heat values in [0.50, 10.00] land just under their exact product --

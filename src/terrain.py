@@ -479,7 +479,8 @@ class TerrainGrid:
         """Wire shape for ``battle_state["terrain"]``.
 
         ``rows[y]`` is a ``width``-character string of ``KIND_CODES`` (row 0
-        is ``y == 0``); ``elevation`` mirrors it as integer lists; ``palette``
+        is ``y == 0``); ``elevation[y]`` mirrors it as a string of single
+        digits (clamped 0-9); ``palette``
         maps each kind to the art variant for the region; ``legend`` carries
         the human labels and mechanics so the client never hardcodes them.
         """
@@ -490,7 +491,9 @@ class TerrainGrid:
             end = start + self.width
             row_kinds = self._kinds[start:end]
             rows.append("".join(KIND_CODES[k] for k in row_kinds))
-            elevation.append(list(self._elevation[start:end]))
+            elevation.append(
+                "".join(str(max(0, min(9, e))) for e in self._elevation[start:end])
+            )
         legend = {
             kind: {
                 "label": props["label"],

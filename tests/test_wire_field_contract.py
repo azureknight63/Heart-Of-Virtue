@@ -156,6 +156,32 @@ BATTLE_STATE_CONTRACT = {
     # back to deriving the arena from the bounding box of current positions.
     # It now rides in battle_state, which the spread carries.
     "map_size": "Battlefield.jsx passes combat?.map_size -> BattlefieldGrid mapSize prop",
+    # Battlefield terrain (src/terrain.py TerrainGrid.to_payload). Same
+    # routing as map_size: a battle_state field handed to the grid as an
+    # explicit prop. TERRAIN_CONTRACT below pins the payload's own keys.
+    "terrain": "Battlefield.jsx passes combat?.terrain -> BattlefieldGrid terrain prop",
+}
+
+# battle_state.terrain (TerrainGrid.to_payload). TerrainLayer draws `rows` /
+# `elevation` with `codes` + `palette`; the legend strip and cell titles read
+# `legend`.
+TERRAIN_CONTRACT = {
+    "region": "utils/terrain.js regionLabel(terrain.region)",
+    "width": "BattlefieldGrid.jsx TerrainLayer bounds check terrain.width",
+    "height": "BattlefieldGrid.jsx TerrainLayer bounds check terrain.height",
+    "rows": "utils/terrain.js terrainKindAt(terrain, x, y) -> terrain.rows[y][x]",
+    "elevation": "utils/terrain.js terrainElevationAt(terrain, x, y) -> terrain.elevation[y][x]",
+    "codes": "utils/terrain.js terrainKindAt -> terrain.codes[code]",
+    "palette": "utils/terrain.js terrainVariant(terrain, kind) -> terrain.palette[kind]",
+    "legend": "utils/terrain.js terrainLabel(terrain, kind) -> terrain.legend[kind].label",
+}
+
+# Per-target terrain block on target cards (src.terrain.engagement).
+TARGET_TERRAIN_CONTRACT = {
+    "labels": "CombatInputDialog.jsx target.terrain.labels",
+    "hit_modifier": "CombatInputDialog.jsx target.terrain.hit_modifier (sign -> colour)",
+    "cover": "utils/terrain.js engagementTone(info.cover, info.elevation)",
+    "elevation": "utils/terrain.js engagementTone(info.cover, info.elevation)",
 }
 
 
@@ -456,6 +482,12 @@ COMBATANT_CONTRACT = {
     # comment in frontend/src/utils/momentum.js), which is the only reason the
     # duplication is survivable.
     "heat": "LeftPanel.jsx combat?.player?.heat -> MomentumMeter (utils/momentum.js)",
+    # What the combatant stands on (src.terrain.standing_on): kind / variant /
+    # elevation / label. Null in a terrain-free fight; the tooltip reads
+    # `entity.terrain?.label`.
+    "terrain": "BattlefieldGrid.jsx EntityTooltip entity.terrain?.label",
+    # Sprite-sheet key (utils/sprites.js spriteFor(manifest, entity.sprite_key)).
+    "sprite_key": "BattlefieldGrid.jsx CombatantMarker -> SpriteToken via entity.sprite_key",
 }
 
 # The in-progress move hanging off a combatant (CombatantSerializer.
@@ -506,6 +538,9 @@ TARGET_CONTRACT = {
     # instead, that comment (and this contract) goes stale silently unless
     # something asserts the magnitude, which the dedicated test below does.
     "hit_chance": "CombatInputDialog.jsx:83-92 target.hit_chance (used unscaled)",
+    # Cover / elevation for this strike (src.terrain.engagement), or null when
+    # terrain is inactive. TARGET_TERRAIN_CONTRACT pins the inner keys.
+    "terrain": "CombatInputDialog.jsx target.terrain?.labels / hit_modifier",
 }
 
 
@@ -905,6 +940,72 @@ class TestCombatantWireContract:
         _assert_contract(
             targets[0]["health"], {"current": "...", "max": "..."}, "target.health"
         )
+
+    def _terrain_fight(self):
+        """A real fight on a real region map so terrain is generated."""
+        import src.terrain as terrain
+
+        player = Player()
+        player.known_moves = []
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.in_combat = True
+        player.map = {"name": "verdette-caverns"}
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            adapter.initialize_combat([enemy])
+        assert adapter.combat_terrain is not None
+        assert terrain.grid_for(player) is not None, "region fight must have features"
+        return adapter, player, enemy
+
+    def test_terrain_payload_fields(self):
+        adapter, _player, _enemy = self._terrain_fight()
+        adapter.awaiting_input = True
+        adapter.input_type = "move_selection"
+        adapter.available_options = []
+        result = adapter.get_combat_state()
+        payload = result["battle_state"]["terrain"]
+        _assert_contract(payload, TERRAIN_CONTRACT, "battle_state.terrain")
+        assert len(payload["rows"]) == payload["height"]
+        assert all(len(r) == payload["width"] for r in payload["rows"])
+        assert all(len(r) == payload["width"] for r in payload["elevation"])
+        assert set("".join(payload["rows"])) <= set(payload["codes"])
+
+    def test_terrain_is_null_not_missing_in_a_flat_fight(self, real_adapter, real_combat_player):
+        real_adapter.awaiting_input = True
+        real_adapter.input_type = "move_selection"
+        real_adapter.available_options = []
+        result = real_adapter.get_combat_state()
+        assert "terrain" in result["battle_state"]
+
+    def test_target_terrain_block_fields(self):
+        """The per-target cover/elevation block is populated from the same
+        engagement() call the to-hit chain uses, so pin its keys here."""
+        import src.positions as positions
+        import src.terrain as terrain
+
+        adapter, player, enemy = self._terrain_fight()
+        grid = adapter.combat_terrain
+        # Force a boulder onto the line of fire so the block is non-trivial.
+        player.combat_position = positions.CombatPosition(1, 1)
+        enemy.combat_position = positions.CombatPosition(9, 1)
+        for x in range(2, 9):
+            grid.set_cell(x, 1, terrain.OPEN)
+        grid.set_cell(5, 1, terrain.BOULDER)
+        player.combat_proximity = {enemy: 8}
+        enemy.combat_proximity = {player: 8}
+        move = ShootBow(player)
+        targets = adapter._get_available_targets(move)
+        assert targets
+        _assert_contract(targets[0], TARGET_CONTRACT, "target card (terrain fight)")
+        _assert_contract(targets[0]["terrain"], TARGET_TERRAIN_CONTRACT, "target.terrain")
+        assert targets[0]["terrain"]["cover"] == 20
+        assert targets[0]["terrain"]["labels"] == ["Boulder cover -20"]
 
     def test_hit_chance_is_an_integer_percentage_not_a_0_1_fraction(self):
         """Guards bug #4 directly: CombatInputDialog renders hit_chance as-is
