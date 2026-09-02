@@ -109,8 +109,9 @@ class Combatant:
         combatant object (written by ``src.moves._base.publish_outcome``), so
         pickling it drags that enemy's whole object graph into the save. A
         mid-wind-up NPC holds exactly this channel at autosave time. Player
-        overrides this with further API-layer exclusions of its own (see
-        ``Player.__getstate__``) — keep the two strips in agreement.
+        adds further API-layer exclusions of its own on top by delegating to
+        this method (see ``Player.__getstate__``), so a strip added here
+        reaches every combatant structurally.
         """
         state = self.__dict__.copy()
         state.pop("_pending_animation", None)

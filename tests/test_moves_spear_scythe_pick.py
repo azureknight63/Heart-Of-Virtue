@@ -1785,6 +1785,14 @@ class TestChipAway:
         user.combat_exp["Pick"] = 0
         tgt = _make_target(hp=1, finesse=0, protection=0)
         tgt.is_alive = lambda: True
+        # resolve_strike_outcome now applies damage exactly as Move.hit does:
+        # ``hp -= damage`` + ``clamp_hp()`` (the old ``max(0, ...)`` write read
+        # a raw hp). Give the mock the real clamp so hp floors at 0 the way a
+        # real combatant's does.
+        from src.combatant import Combatant
+
+        tgt.maxhp = 1
+        tgt.clamp_hp = lambda: Combatant.clamp_hp(tgt)
         move = ChipAway(user)
         move.target = tgt
         move.power = 50

@@ -105,26 +105,31 @@ def _in_range(move):
     )
 
 
-def _mastery_strike_power(move, weapon_factor, stat_name, stat_factor):
+def _mastery_strike_power(move, default=None):
     """The power expression the three striking masteries score inside
-    ``execute()``: ``int(weapon.damage * a + stat * b)``.
+    ``execute()``: ``int(weapon.damage * a + stat * b)``, with the
+    coefficients read off the move itself — its ``WEAPON_FACTOR``,
+    ``STAT_NAME`` and ``STAT_FACTOR`` class attributes, declared together so
+    a retune is one edit beside the move.
 
     They never set ``self.power`` — the number exists only at strike time —
     so their previews must recompute it from the same live reads, through
-    this one derivation rather than a per-move copy. Returns ``None`` when
+    this one derivation rather than a per-move copy. Returns ``default`` when
     the reads cannot produce a number (no weapon, or garbage on a degraded
-    save): the preview poll must degrade to "no estimate" rather than raise.
+    save): previews leave it ``None`` and degrade to "no estimate", while
+    ``execute()`` passes ``default=0`` to score a null strike rather than
+    raise mid-beat.
     """
     weapon = getattr(move.user, "eq_weapon", None)
     if weapon is None:
-        return None
+        return default
     try:
         return int(
-            float(getattr(weapon, "damage", 0)) * weapon_factor
-            + float(getattr(move.user, stat_name, 0)) * stat_factor
+            float(getattr(weapon, "damage", 0)) * move.WEAPON_FACTOR
+            + float(getattr(move.user, move.STAT_NAME, 0)) * move.STAT_FACTOR
         )
     except (TypeError, ValueError, OverflowError):
-        return None
+        return default
 
 
 class Pulverize(Move):
@@ -137,9 +142,10 @@ class Pulverize(Move):
     #: preview machinery reads the same resistance term the strike applies.
     base_damage_type = "crushing"
     #: Power expression coefficients: ``int(weapon.damage * WEAPON_FACTOR +
-    #: strength * STAT_FACTOR)`` — one derivation, read by execute() and
+    #: STAT_NAME * STAT_FACTOR)`` — one derivation, read by execute() and
     #: preview_damage() both (see _mastery_strike_power).
     WEAPON_FACTOR = 1.8
+    STAT_NAME = "strength"
     STAT_FACTOR = 3.0
 
     def __init__(self, player):
@@ -205,13 +211,13 @@ class Pulverize(Move):
     def preview_damage(self, target=None):
         """Pulverize scores its power at strike time and never sets
         ``self.power``, so the default preview reported None and the player
-        committed a 35-beat cooldown blind. Same power derivation as
+        committed a long cooldown blind. (The same strike-time-power story
+        holds for Killing Precision and Lightning Assault, whose previews
+        point here rather than repeating it.) Same power derivation as
         execute() (see _mastery_strike_power), same ``protection=0``
         armour-ignoring override.
         """
-        power = _mastery_strike_power(
-            self, self.WEAPON_FACTOR, "strength", self.STAT_FACTOR
-        )
+        power = _mastery_strike_power(self)
         if power is None:
             return None
         return self._standard_preview_damage(target, power=power, protection=0)
@@ -237,11 +243,7 @@ class Pulverize(Move):
         roll = random.randint(0, 100)
         # One derivation, shared with preview_damage. A degraded read (no
         # weapon on a crafted save) scores 0 rather than raising mid-beat.
-        power = _mastery_strike_power(
-            self, self.WEAPON_FACTOR, "strength", self.STAT_FACTOR
-        )
-        if power is None:
-            power = 0
+        power = _mastery_strike_power(self, default=0)
         # Facing/angle damage (issue #394). This hand-rolled execute() never
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
@@ -279,6 +281,7 @@ class KillingPrecision(Move):
     base_damage_type = "piercing"
     #: Power expression coefficients — see _mastery_strike_power.
     WEAPON_FACTOR = 1.5
+    STAT_NAME = "finesse"
     STAT_FACTOR = 2.5
     #: Fraction of the target's protection the strike scores.
     PROTECTION_SCALE = 0.2
@@ -346,20 +349,20 @@ class KillingPrecision(Move):
         return 100 if self._viable_for(t) else None
 
     def preview_damage(self, target=None):
-        """Killing Precision scores its power at strike time and never sets
-        ``self.power``, so the default preview reported None -- the player
-        committed a 30-beat cooldown blind. Same power derivation as
-        execute() (see _mastery_strike_power), same fifth-of-protection
-        override, same ``max(1, ...)`` floor: a viable cast always deals at
+        """Same strike-time-power story as ``Pulverize.preview_damage`` (the
+        default preview reported None); same fifth-of-protection override as
+        execute(), same ``max(1, ...)`` floor: a viable cast always deals at
         least 1, and a preview reporting 0-0 for it would promise an absorb
         the engine cannot produce.
         """
-        power = _mastery_strike_power(
-            self, self.WEAPON_FACTOR, "finesse", self.STAT_FACTOR
-        )
+        power = _mastery_strike_power(self)
         if power is None:
             return None
         resolved = target if target is not None else getattr(self, "target", None)
+        if resolved is None or resolved is self.user:
+            # Cheap gates first; the protection read below is only worth
+            # taking for a resolvable target.
+            return None
         gated = self._standard_preview_damage(
             resolved,
             power=power,
@@ -375,11 +378,7 @@ class KillingPrecision(Move):
         target = self.target
         # One derivation, shared with preview_damage. A degraded read (no
         # weapon on a crafted save) scores 0 rather than raising mid-beat.
-        power = _mastery_strike_power(
-            self, self.WEAPON_FACTOR, "finesse", self.STAT_FACTOR
-        )
-        if power is None:
-            power = 0
+        power = _mastery_strike_power(self, default=0)
         # Facing/angle damage (issue #394). The guaranteed hit is an
         # *accuracy* guarantee — there is no roll for the accuracy half of
         # the pair to modify — but the damage half still applies. Exempting
@@ -431,6 +430,7 @@ class LightningAssault(Move):
     base_damage_type = "slashing"
     #: Power expression coefficients (per strike) — see _mastery_strike_power.
     WEAPON_FACTOR = 0.55
+    STAT_NAME = "speed"
     STAT_FACTOR = 0.75
     STRIKES = 3
 
@@ -499,26 +499,40 @@ class LightningAssault(Move):
         return projected_hit_heat_sequence(self.user, self.STRIKES)
 
     def preview_damage(self, target=None):
-        """Lightning Assault scores its per-strike power at strike time and
-        never sets ``self.power``, so the default preview reported None and
-        the player committed a 30-beat cooldown blind. The band is the full
-        flurry with all three strikes landing — each strike ``int()``s its
-        own damage, so the ends are per-strike bounds summed, at the heat
-        each strike really runs at (see ``_flurry_heats``).
+        """Same strike-time-power story as ``Pulverize.preview_damage`` (the
+        default preview reported None). The band is the full flurry with all
+        three strikes landing — each strike ``int()``s its own damage, so the
+        ends are per-strike bounds summed, at the heat each strike really
+        runs at (see ``_flurry_heats``). A strike that lands but is fully
+        absorbed takes ``Move.hit``'s 0.75x heat branch, where this replay
+        assumes the 1.25x landed-hit reward for every strike.
+
+        The gate call IS strike one: ``_standard_preview_damage`` with
+        ``heat`` left None scores at ``_resolve_heat(user, None)``, which is
+        exactly ``_flurry_heats()``'s first entry, so its payload is reused
+        rather than repriced — and the armour read is hoisted once and passed
+        into every bounds call instead of being re-resolved per strike. This
+        preview runs on every combat poll.
         """
-        power = _mastery_strike_power(
-            self, self.WEAPON_FACTOR, "speed", self.STAT_FACTOR
-        )
+        power = _mastery_strike_power(self)
         if power is None:
             return None
         resolved = target if target is not None else getattr(self, "target", None)
-        gate = self._standard_preview_damage(resolved, power=power)
+        protection = target_protection(resolved)
+        gate = self._standard_preview_damage(
+            resolved, power=power, protection=protection
+        )
         if gate is None:
             return None
-        low = high = 0
-        for heat in self._flurry_heats():
+        low, high = gate["min"], gate["max"]
+        for heat in self._flurry_heats()[1:]:
             strike_low, strike_high = damage_bounds(
-                self.user, resolved, power, self.base_damage_type, heat=heat
+                self.user,
+                resolved,
+                power,
+                self.base_damage_type,
+                heat=heat,
+                protection=protection,
             )
             low += strike_low
             high += strike_high
@@ -547,19 +561,16 @@ class LightningAssault(Move):
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)
         hits_landed = 0
+        # One derivation, shared with preview_damage. A degraded read (no
+        # weapon on a crafted save) scores 0 rather than raising mid-beat.
+        # Hoisted above the loop: nothing it reads changes between strikes.
+        base_power = _mastery_strike_power(self, default=0)
         for _ in range(self.STRIKES):
             roll = random.randint(0, 100)
-            # One derivation, shared with preview_damage. A degraded read
-            # scores 0 rather than raising mid-beat.
-            power = _mastery_strike_power(
-                self, self.WEAPON_FACTOR, "speed", self.STAT_FACTOR
-            )
-            if power is None:
-                power = 0
             # Facing/angle damage (issue #394). Inside the loop rather than
-            # hoisted: power is recomputed per strike, and a future strike
-            # that repositions mid-flurry should be scored where it lands.
-            power = apply_facing_damage(player, target, power)
+            # hoisted: a future strike that repositions mid-flurry should be
+            # scored where it lands.
+            power = apply_facing_damage(player, target, base_power)
             damage = int(resolve_damage(player, target, power, "slashing"))
             if hit_chance >= roll:
                 if functions.check_parry(target):

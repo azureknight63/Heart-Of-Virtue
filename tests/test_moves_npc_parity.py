@@ -151,3 +151,49 @@ class TestPendingAnimationNeverPickles:
         # The Player-specific exclusions still apply on top of the base's.
         player._combat_adapter = MagicMock()
         assert "_combat_adapter" not in player.__getstate__()
+
+    def test_base_class_strips_reach_player_through_delegation(self, monkeypatch):
+        """Player.__getstate__ must delegate to Combatant.__getstate__ rather
+        than carry its own copy of the base strip: a new base-class exclusion
+        has to reach Player structurally, not by someone remembering to keep
+        two pop() lists in agreement."""
+        from src.combatant import Combatant
+        from src.player import Player
+
+        original = Combatant.__getstate__
+
+        def stripping(self):
+            state = original(self)
+            state.pop("_sentinel_transient", None)
+            return state
+
+        monkeypatch.setattr(Combatant, "__getstate__", stripping)
+        player = Player()
+        player._sentinel_transient = object()
+        assert "_sentinel_transient" not in player.__getstate__()
+
+
+class TestNpcEvaluateSurvivesADegradedSpeed:
+    """Every hostile evaluate() computes ``int(50 / self.user.speed)`` for
+    prep and recoil. The player path floors the divisor at 1
+    (standard_evaluate_attack); the NPC copies did not, so a zero or NaN
+    speed off a crafted save raised ZeroDivisionError/ValueError mid-beat."""
+
+    @pytest.mark.parametrize("speed", [0, float("nan"), float("inf")])
+    def test_npc_move_evaluate_floors_the_speed_divisor(self, speed):
+        from src.moves._npc import BatBite, SpiderBite, VenomClaw
+
+        for move_cls in (NpcAttack, GorranClub, VenomClaw, SpiderBite, BatBite):
+            user = MagicMock()
+            user.damage = 10
+            user.speed = speed
+            user.endurance = 10
+            user.combat_range = (0, 5)
+            move = move_cls.__new__(move_cls)
+            move.user = user
+            move.stage_beat = [1, 1, 1, 1]
+            move.custom_mvrange = False
+            move.mvrange = (0, 5)
+            move.evaluate()
+            assert move.stage_beat[0] >= 1, (move_cls.__name__, speed)
+            assert move.stage_beat[2] >= 0, (move_cls.__name__, speed)

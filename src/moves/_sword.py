@@ -188,7 +188,9 @@ class WhirlAttack(Move):
         """Each enemy in the spin takes the canonical damage expression on
         ``self.power`` — ``execute`` scores the same line the standard pipeline
         does, per enemy. Only *who* it lands on differs, and that is
-        ``preview_affected`` above.
+        ``preview_affected`` above. ``affected`` is a server-computed
+        ``preview_affected()`` result the adapter passes back in — see
+        ``Move._area_preview_damage``.
         """
         return self._area_preview_damage(target, affected=affected)
 

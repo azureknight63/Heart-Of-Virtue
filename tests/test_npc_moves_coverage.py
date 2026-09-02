@@ -1439,7 +1439,10 @@ class TestNpcAttackEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         attack = moves.NpcAttack(npc)
         assert attack.stage_beat[0] == 1
@@ -1589,7 +1592,10 @@ class TestGorranClubEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         gc = moves.GorranClub(npc)
         assert gc.stage_beat[0] == 1
@@ -1691,7 +1697,10 @@ class TestVenomClawEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         vc = moves.VenomClaw(npc)
         assert vc.stage_beat[0] == 1
@@ -1846,7 +1855,10 @@ class TestSpiderBiteEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         sb = moves.SpiderBite(npc)
         assert sb.stage_beat[0] == 1
@@ -1953,7 +1965,10 @@ class TestBatBiteEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         bb = moves.BatBite(npc)
         assert bb.stage_beat[0] == 1

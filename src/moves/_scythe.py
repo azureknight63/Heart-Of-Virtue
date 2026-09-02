@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    GLANCE_MARGIN,
     weapon_scaled_power,
     apply_facing_damage,
     flat_arc_strike_damage,
@@ -113,6 +114,8 @@ class Reap(Move):
         deals ``max(1, int(swing_power - protection))``, with no resistance,
         no heat scaling and no variance roll — so min and max are the same
         number — then applies ``_damage_multipliers`` in order. See ``execute``.
+        ``affected`` is a server-computed ``preview_affected()`` result the
+        adapter passes back in — see ``Move._area_preview_damage``.
         """
         return self._area_preview_damage(
             target,
@@ -390,7 +393,7 @@ class DeathsHarvest(Move):
         damage = resolve_damage(player, self.target, power, self.base_damage_type)
         # NOT apply_glancing_blow: its int() would land before the two bonus
         # multipliers below, where this move's engine order puts it after.
-        if hit_chance >= roll and hit_chance - roll < 10:
+        if hit_chance >= roll and hit_chance - roll < GLANCE_MARGIN:
             damage /= 2
             glance = True
 

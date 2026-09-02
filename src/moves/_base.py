@@ -3,6 +3,7 @@
 from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
+from types import SimpleNamespace
 import src.states as states  # noqa: F401
 import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
@@ -31,6 +32,46 @@ def _apply_carry_fatigue(user, fatigue_cost):
 def display_name_of(move, default="Unknown"):
     """Return a move's player-facing name with a safe internal-name fallback."""
     return getattr(move, "display_name", None) or getattr(move, "name", default)
+
+
+def safe_isfinite(value):
+    """``math.isfinite`` that cannot itself raise.
+
+    ``math.isfinite`` floats its argument first, so an int too large for a
+    float (``10**400``) raises OverflowError from the very check meant to
+    reject bad numbers -- a crafted save carrying an astronomical stat crashed
+    the guard instead of being caught by it. Such a value is mathematically
+    finite but unusable by every consumer here (they all ``float()`` or
+    ``int()`` it next), so it reads as non-finite, which every caller treats
+    as "degrade to the safe default".
+    """
+    try:
+        return math.isfinite(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _num(value, default=0.0):
+    """Coerce to a *finite* float, or ``default`` for anything else.
+
+    Applied per *term* rather than around a whole expression on purpose:
+    a weapon that carries a real ``damage`` but a missing or unusable
+    ``str_mod`` should still score off its damage, not collapse to the
+    no-weapon fallback. Wrapping the whole sum instead is what made the
+    earlier hand-rolled power lines silently bottom out at 1.
+
+    Non-finite counts as unusable: an inf/nan survives ``float()`` and then
+    detonates on a downstream ``int()``, mid-beat, off a value only a crafted
+    save can supply -- and an int too large to float raises OverflowError from
+    ``float()`` itself, which is why that lands in the except tuple too.
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not math.isfinite(value):
+        return default
+    return value
 
 
 # ── Attack outcome channel ──────────────────────────────────────────────────
@@ -175,29 +216,10 @@ def weapon_scaled_power(user, factor):
     flat-damage ones.  It is deliberately pure — it reads ``user`` and returns
     a number, never writing move state — so repeated ``evaluate()`` calls stay
     idempotent.
+
+    Every term is coerced through the module-level ``_num`` (see its docstring
+    for why per-term rather than around the whole expression).
     """
-
-    def _num(value, default=0.0):
-        """Coerce to a *finite* float, or ``default`` for anything else.
-
-        Applied per *term* rather than around the whole expression on purpose:
-        a weapon that carries a real ``damage`` but a missing or unusable
-        ``str_mod`` should still score off its damage, not collapse to the
-        no-weapon fallback. Wrapping the whole sum instead is what made the
-        earlier hand-rolled versions silently bottom out at 1.
-
-        Non-finite counts as unusable: an inf/nan survives ``float()`` and
-        then detonates on the final ``int()`` below, mid-beat, off a value
-        only a crafted save can supply.
-        """
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            return default
-        if not math.isfinite(value):
-            return default
-        return value
-
     wpn = getattr(user, "eq_weapon", None)
     damage = _num(getattr(wpn, "damage", None), default=None) if wpn else None
     strength = _num(getattr(user, "strength", 0))
@@ -327,15 +349,18 @@ def apply_facing_damage(attacker, defender, power, steepness=1.0):
     what Backstab — for a long time the engine's only facing-aware damage
     path — has always done, so armour keeps its full bite from every angle.
 
-    A non-positive power is returned untouched: a weaponless or fully-nullified
-    attack should stay at zero rather than be floored up to 1 by a flank bonus.
     A non-finite power collapses to 0 -- ``int(inf)``/``int(nan)`` raise from
-    inside the combat loop, and a crafted save can put either on a move.
+    inside the combat loop, and a crafted save can put any of them on a move.
+    Checked BEFORE the sign guard: ``-inf`` satisfies ``power <= 0`` and used
+    to be returned untouched, straight into the bare ``int()`` consumers in
+    ``_npc.py``. A finite non-positive power is then returned untouched: a
+    weaponless or fully-nullified attack should stay at zero rather than be
+    floored up to 1 by a flank bonus.
     """
+    if not safe_isfinite(power):
+        return 0
     if power <= 0:
         return power
-    if not math.isfinite(power):
-        return 0
     multiplier = facing_damage_multiplier(attacker, defender, steepness)
     if multiplier == 1.0:
         return power
@@ -377,10 +402,13 @@ def apply_glancing_blow(damage, hit_chance, roll):
     int path is kept explicit so the equivalence is by construction, not by
     the inputs happening to stay in range.
 
-    Only the sites with exactly that shape route through here. Death's
-    Harvest halves *before* its bonus multipliers with the ``int()`` after
-    them, and Keening Toll/Twin Fangs halve inside their hit branches after
-    the parry check -- different shapes, left inline with a comment each.
+    Only the sites with exactly that shape route through here. A handful of
+    moves put the halving elsewhere in their order of operations and keep it
+    inline, each labelled at the site. This docstring deliberately does not
+    enumerate them -- per the ``to_hit_chance`` precedent, a partial list in
+    the one place people look for authority reads as exhaustive.
+    ``grep -rn "NOT apply_glancing_blow" src/moves/`` is the authority; each
+    label explains its own shape.
     """
     if hit_chance >= roll and hit_chance - roll < GLANCE_MARGIN:
         if isinstance(damage, int):
@@ -400,19 +428,24 @@ def _resolve_heat(attacker, heat=None):
         heat = getattr(attacker, "heat", 1.0)
     try:
         heat = float(heat)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: float(10**400) raises -- an unfloatable int heat is
+        # as unusable as a string one.
         return 1.0
     if not math.isfinite(heat):
         return 1.0
     return heat
 
 
-#: ``Move.hit``'s momentum reward for a landed hit by Jean. The authoritative
-#: call site is the literal inside ``Move.hit`` (the momentum-tooltip contract
-#: counts the literals in this file, so that call must keep its constant);
-#: this name exists so ``projected_hit_heat_sequence`` below can replay the
-#: same reward without a second countable literal.
-#: ``tests/test_moves_base_coverage.py`` pins the two together.
+#: ``Move.hit``'s momentum reward for a landed hit by Jean, stated as a name
+#: so ``projected_hit_heat_sequence`` below can replay the same reward. The
+#: real contract with ``Move.hit``: the momentum-tooltip test
+#: (``tests/test_momentum_rules_contract.py``) AST-counts the *literal*
+#: arguments of every ``change_heat()`` call in this file against the
+#: player-facing rules table, so ``Move.hit`` must keep passing its literal
+#: ``1.25`` -- swapping it for this Name would drop one 1.25 from the counted
+#: multiset and fail that contract. ``tests/test_moves_base_coverage.py``
+#: pins this constant equal to that literal so the two cannot drift.
 HEAT_GAIN_ON_HIT = 1.25
 
 
@@ -424,24 +457,38 @@ def projected_hit_heat_sequence(user, count):
     and ``Move.hit`` multiplies Jean's heat by ``HEAT_GAIN_ON_HIT`` per landed
     blow -- so strike two is scored at the heat strike one earned. Previews of
     such moves (Lightning Assault) need the same sequence, computed with the
-    user's REAL ``change_heat`` (saved and restored, so calling this is
-    side-effect-free) rather than a second copy of its clamp-and-round
-    arithmetic.
+    user's REAL ``change_heat`` rather than a second copy of its
+    clamp-and-round arithmetic.
+
+    The replay runs on a **detached shim**, never on the live combatant. The
+    earlier save-and-restore mutated ``user.heat`` for the duration of every
+    preview poll -- a move resolving mid-window scored at inflated heat and
+    its own write was clobbered by the restore -- and replaying from the raw
+    ``user.heat`` let a crafted non-finite heat raise out of every combat
+    poll. Instead the shim is seeded with the *sanitised* heat
+    (``_resolve_heat``) and the real method is invoked unbound
+    (``type(user).change_heat(shim, ...)``), so the genuine clamp arithmetic
+    still runs with zero live mutation. A replay the method itself cannot
+    survive degrades to a flat sequence.
 
     A combatant without the Jean-gated bookkeeping (an NPC, a degraded user)
     scores every strike at its current heat -- exactly what ``Move.hit`` does
     for it.
     """
+    seed = _resolve_heat(user, None)
     if getattr(user, "name", None) != "Jean" or not hasattr(user, "change_heat"):
-        return [_resolve_heat(user, None)] * count
-    original = user.heat
+        return [seed] * count
+    shim = SimpleNamespace(heat=seed)
     heats = []
     try:
+        change_heat = type(user).change_heat
         for _ in range(count):
-            heats.append(user.heat)
-            user.change_heat(HEAT_GAIN_ON_HIT)
-    finally:
-        user.heat = original
+            heats.append(shim.heat)
+            change_heat(shim, HEAT_GAIN_ON_HIT)
+    except (TypeError, ValueError, AttributeError, OverflowError):
+        # A change_heat the shim cannot satisfy (a mock, an exotic override):
+        # degrade to no-momentum rather than raise out of the poll path.
+        return [seed] * count
     return heats
 
 
@@ -465,12 +512,14 @@ def target_protection(target):
     protection = getattr(target, "protection", 0)
     if not isinstance(protection, (int, float)) or isinstance(protection, bool):
         return 0
-    if not math.isfinite(protection):
+    if not safe_isfinite(protection):
         # NaN/inf reach int() in flat_arc_damage_bounds and in the three flat
         # arc execute()s, which raise ValueError/OverflowError from inside the
         # combat loop -- a preview poll that 500s every time, or a wedged
         # fight. _resolve_heat and combat_resistance both coerce for the same
         # reason (issue #296); this sanitiser stopped one step short of them.
+        # safe_isfinite rather than math.isfinite: an unfloatable int armour
+        # (10**400) made the finiteness check itself raise OverflowError.
         return 0
     return protection
 
@@ -491,15 +540,19 @@ def resolve_damage(
     halving and ``int()`` where the engine does.
 
     Scope, precisely: this is the only copy of the *canonical* line, but the
-    engine deliberately runs three other damage shapes beside it --
+    engine deliberately runs other damage shapes beside it --
     ``flat_resisted_damage`` (Jab: resistance and protection, no heat, no
     variance), the flat arc line in ``flat_arc_damage_bounds`` (Reap, Sweep,
     Halberd Spin: protection only, floored at 1), and ``_npc.py``'s NPC
     family, which rolls its variance into *power* inside ``evaluate()`` and
-    subtracts protection flat. PowerStrike is now on this line; Jab is not
-    and must not be -- see ``flat_resisted_damage`` and ``Jab.execute`` for
-    the design reasoning. None of those is a drifted copy of this expression;
-    a new *canonical* copy is what must never come back.
+    subtracts protection flat. Do not trust that as a count -- per the
+    ``to_hit_chance`` precedent, an enumeration here reads as exhaustive the
+    day after it stops being so; the sibling helpers in this module and
+    ``grep -rn "NOT apply_glancing_blow" src/moves/``'s labelled sites are
+    the authority. PowerStrike is now on this line; Jab is not and must not
+    be -- see ``flat_resisted_damage`` and ``Jab.execute`` for the design
+    reasoning. None of those is a drifted copy of this expression; a new
+    *canonical* copy is what must never come back.
 
     This line used to be written out by hand at roughly two dozen ``execute()``
     sites plus ``damage_bounds``, which is the *prediction* of it the player
@@ -681,11 +734,19 @@ def flat_arc_strike_damage(target, swing):
     the Sweep, Halberd Spin and Reap loops -- and all four had to agree for
     the preview and the executes to agree about the same defender.
     """
-    if not isinstance(swing, (int, float)) or not math.isfinite(swing):
+    if (
+        not isinstance(swing, (int, float))
+        or isinstance(swing, bool)
+        or not safe_isfinite(swing)
+    ):
         # A crafted save can put a non-finite power on a move; int(inf)
         # raises from inside the combat loop, so degrade to the line's own
         # floor instead. Availability-only -- unreachable for well-formed
         # saves (apply_facing_damage already returns its input for these).
+        # Bools are rejected like target_protection rejects them
+        # (isinstance(True, int) is True -- a flag is not one point of
+        # swing), and safe_isfinite keeps an unfloatable int (10**400) from
+        # crashing the check itself with OverflowError.
         return 1
     return max(1, int(swing - target_protection(target)))
 
@@ -881,15 +942,23 @@ def resolve_strike_outcome(
         # Coerce like Move.hit (issue #296): a NaN damage would otherwise
         # make ``hp - damage`` NaN, and ``max(0, nan)`` evaluates to 0 in
         # CPython -- a crafted non-finite damage silently EXECUTED the
-        # target rather than crashing.
+        # target rather than crashing. OverflowError: float(10**400) raises,
+        # so an unfloatable int damage crashed the coercion itself.
         try:
             damage = float(damage)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             damage = 0
         if not math.isfinite(damage):
             damage = 0
         damage = int(damage)
-        target.hp = max(0, target.hp - damage)
+        # Apply exactly as Move.hit does. The previous write was
+        # ``max(0, target.hp - damage)`` with hp read RAW -- ``max(0, nan)``
+        # is 0 (a silent kill via the OTHER operand) and an inf hp was
+        # unkillable forever. clamp_hp owns the bounds and the non-finite-hp
+        # coercion for every real combatant.
+        target.hp -= damage
+        if hasattr(target, "clamp_hp"):
+            target.clamp_hp()
         publish_outcome(
             move.user,
             OUTCOME_ABSORB if damage <= 0 else OUTCOME_HIT,
@@ -1394,6 +1463,13 @@ class Move:  # master class for all moves
         all. Those overrides call ``hostiles_in_arc`` with the gate their own
         ``execute()`` loop runs (see WhirlAttack, Reap, Sweep, HalberdSpin).
 
+        **Pairing rule:** an override that can report a non-empty set must be
+        paired with a ``preview_damage(self, target=None, affected=None)``
+        that forwards ``affected`` into ``_area_preview_damage`` — the
+        adapter prices every affected enemy in one poll by passing the
+        already-computed set back through that kwarg. Contract-tested by
+        ``tests/test_preview_damage.py`` (TestAreaPreviewPairingContract).
+
         Pure — no combat state is written, so it is safe to call on every poll.
         """
         if not getattr(self, "targeted", False) or self.passive:
@@ -1430,16 +1506,20 @@ class Move:  # master class for all moves
         is_alive = getattr(target, "is_alive", None)
         if callable(is_alive) and not is_alive():
             return None
-        if target not in (
+        # ``affected`` is only ever server-computed -- the adapter passes this
+        # move's own ``preview_affected()`` result back in -- and when
+        # supplied it is authoritative for the reach gate: no recompute.
+        affected_targets = (
             affected if affected is not None else self.preview_affected()
-        ):
+        )
+        if target not in affected_targets:
             return None
 
         power = getattr(self, "power", None)
         if (
             not isinstance(power, (int, float))
             or isinstance(power, bool)
-            or not math.isfinite(power)
+            or not safe_isfinite(power)
         ):
             return None
 
@@ -1493,7 +1573,7 @@ class Move:  # master class for all moves
         if (
             not isinstance(power, (int, float))
             or isinstance(power, bool)
-            or not math.isfinite(power)
+            or not safe_isfinite(power)
         ):
             return None
 
@@ -1749,9 +1829,11 @@ class Move:  # master class for all moves
         # execute() paths. Coerce it to a finite, integral value so a NaN/inf
         # (e.g. from an exotic resistance/heat product) can never poison hp, and
         # clamp hp to [0, maxhp] afterward via the shared Combatant guard.
+        # OverflowError: float(10**400) raises, so an unfloatable int damage
+        # crashed the coercion meant to contain it.
         try:
             damage = float(damage)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             damage = 0
         if not math.isfinite(damage):
             damage = 0
@@ -1920,33 +2002,49 @@ class Move:  # master class for all moves
         # Power calculation. The try/except and the isfinite check are
         # crafted-save armour (issue #296 family): a weapon whose
         # damage/str_mod/fin_mod came off a hostile save can be a string
-        # (TypeError in the sum) or inf/nan (ValueError/OverflowError in the
-        # int() below), either of which wedged the beat. Well-formed weapons
-        # take the identical arithmetic path.
+        # (TypeError in the sum), an unfloatable int (OverflowError when a
+        # float term joins the sum), or inf/nan (caught by the finiteness
+        # check before the int() below), any of which wedged the beat. A
+        # missing weapon (AttributeError: eq_weapon is None on a degraded
+        # save) takes the same fallback. Well-formed weapons take the
+        # identical arithmetic path.
+        weapon = getattr(self.user, "eq_weapon", None)
         try:
             power = (
-                self.user.eq_weapon.damage
+                weapon.damage
                 + base_power
-                + self.user.strength * self.user.eq_weapon.str_mod
-                + self.user.finesse * self.user.eq_weapon.fin_mod
+                + self.user.strength * weapon.str_mod
+                + self.user.finesse * weapon.fin_mod
             )
-        except TypeError:
+        except (TypeError, AttributeError, OverflowError):
             power = 0
         if isinstance(mod_power, str) and "%" in mod_power:
             mod_power_val = int(mod_power.replace("%", ""))
             power = (power * mod_power_val) / 100
         else:
             power += int(mod_power)
-        if not isinstance(power, (int, float)) or not math.isfinite(power):
+        if not isinstance(power, (int, float)) or not safe_isfinite(power):
             power = 0
         power = max(0, int(power))
 
         # Prep calculation. The divisor is floored at 1: a zero or degraded
         # speed raised ZeroDivisionError (or fed int() a NaN) mid-beat.
         speed = getattr(self.user, "speed", 1)
-        if not isinstance(speed, (int, float)) or not math.isfinite(speed) or speed < 1:
+        if (
+            not isinstance(speed, (int, float))
+            or not safe_isfinite(speed)
+            or speed < 1
+        ):
             speed = 1
-        prep = int((40 + (self.user.eq_weapon.weight * 3)) / speed)
+        # The divisor floor above closed only half the crafted-save surface:
+        # weapon weight and endurance are raw save-controlled NUMERATORS
+        # feeding the int()s below, so an inf/NaN/str/unfloatable-int weight
+        # still wedged the beat (and eq_weapon=None crashed the read itself).
+        # Sanitise once through the shared _num family; well-formed values
+        # come through arithmetically unchanged.
+        weight = _num(getattr(weapon, "weight", 0))
+        endurance = _num(getattr(self.user, "endurance", 0))
+        prep = int((40 + (weight * 3)) / speed)
         prep += int(mod_prep)
         prep = max(1, prep)
 
@@ -1962,23 +2060,23 @@ class Move:  # master class for all moves
         # the rest of the fight. Measured: a Baselard Slash fired once in 80
         # beats and never came back. prep and recoil already int() their weight
         # terms; this one did not.
-        cooldown = int((3 + self.user.eq_weapon.weight)) - int(self.user.endurance / 10)
+        cooldown = int((3 + weight)) - int(endurance / 10)
         cooldown += int(mod_cd)
         cooldown = max(0, cooldown)
 
         # Recoil calculation
-        recoil = int(1 + (self.user.eq_weapon.weight / 2))
+        recoil = int(1 + (weight / 2))
         recoil += int(mod_recoil)
         recoil = max(1, recoil)
 
         # Fatigue cost calculation — endurance gives modest relief (coeff 2);
         # strength reduces how much weapon weight burdens the fighter;
         # carry weight adds proportional burden on top.
-        wt_mult = max(4, 10 - 0.2 * self.user.strength)
+        wt_mult = max(4, 10 - 0.2 * _num(getattr(self.user, "strength", 0)))
         fatigue_cost = (
             STANDARD_FATIGUE_BASE
-            + int(self.user.eq_weapon.weight * wt_mult)
-            - (2 * self.user.endurance)
+            + int(weight * wt_mult)
+            - (2 * endurance)
         )
         fatigue_cost += int(mod_fatigue)
         fatigue_cost = max(floor_fatigue, int(fatigue_cost))
@@ -1989,13 +2087,17 @@ class Move:  # master class for all moves
             self.user, fatigue_cost, floor_fatigue
         )
 
-        # Range calculation
-        mvrange = (
-            self.user.eq_weapon.wpnrange[0] + int(mod_range_min),
-            self.user.eq_weapon.wpnrange[1] + int(mod_range_max),
-        )
+        # Range calculation. A missing weapon or malformed wpnrange keeps the
+        # band the move already carries rather than raising mid-beat.
+        try:
+            mvrange = (
+                weapon.wpnrange[0] + int(mod_range_min),
+                weapon.wpnrange[1] + int(mod_range_max),
+            )
+        except (TypeError, AttributeError, IndexError):
+            mvrange = self.mvrange
 
-        weapon_name = self.user.eq_weapon.name
+        weapon_name = getattr(weapon, "name", "weapon")
         self.stage_announce[1] = colored(
             f"{self.user.name} strikes with his {weapon_name}!", "green"
         )
@@ -2004,7 +2106,7 @@ class Move:  # master class for all moves
         self.mvrange = mvrange
 
         if base_damage_type == "weapon":
-            base_damage_type = items.get_base_damage_type(self.user.eq_weapon)
+            base_damage_type = items.get_base_damage_type(weapon)
         return power, base_damage_type
 
     def standard_execute_attack(self, player, power, base_damage_type):

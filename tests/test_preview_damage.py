@@ -1403,3 +1403,72 @@ class TestEveryTargetedDamagingMovePreviewsANumber:
             "targeted damaging moves the player would commit to blind:\n  "
             + "\n  ".join(failures)
         )
+
+
+class TestAreaPreviewPairingContract:
+    """``Move.preview_affected``'s pairing rule, made structural: a move that
+    overrides ``preview_affected`` (i.e. can report a non-empty affected set
+    with no committed target) must expose ``preview_damage(target,
+    affected=None)`` -- the adapter prices every affected enemy by passing the
+    already-computed set back in, and an override without the kwarg would
+    raise TypeError on every combat poll the day it ships."""
+
+    @staticmethod
+    def _area_move_classes():
+        return [
+            (module_name, name, cls)
+            for module_name, name, cls in _castable_move_classes()
+            if _defining_class(cls, "preview_affected") is not moves_base.Move
+        ]
+
+    def test_the_derivation_actually_finds_the_area_moves(self):
+        found = {name for _, name, _ in self._area_move_classes()}
+        for anchor in ("Reap", "Sweep", "HalberdSpin", "WhirlAttack"):
+            assert anchor in found, (
+                f"{anchor} no longer overrides preview_affected -- "
+                f"the structural derivation found only {sorted(found)}"
+            )
+
+    def test_every_preview_affected_override_pairs_an_affected_kwarg(self):
+        offenders = []
+        for module_name, name, cls in self._area_move_classes():
+            parameters = inspect.signature(cls.preview_damage).parameters
+            if "affected" not in parameters:
+                offenders.append(f"{module_name}.{name}")
+        assert not offenders, (
+            "these moves override preview_affected but their preview_damage "
+            "does not accept the affected= kwarg the adapter passes: "
+            + ", ".join(offenders)
+        )
+
+
+class TestLightningAssaultPreviewCost:
+    """The flurry preview runs on every combat poll. Its gate call is a full
+    ``damage_bounds`` whose heat equals the first ``_flurry_heats()`` entry,
+    so it IS strike one -- recomputing it (4 bounds for 3 strikes) bought
+    nothing, and each extra call re-resolved facing and protection."""
+
+    def test_preview_prices_at_most_one_bounds_per_strike(self):
+        import src.moves._mastery as moves_mastery
+
+        (
+            player,
+            enemy,
+            move,
+        ) = TestPreviewMatchesRealExecute._lightning_assault()
+        calls = []
+        real = moves_base.damage_bounds
+
+        def counting(*args, **kwargs):
+            calls.append(1)
+            return real(*args, **kwargs)
+
+        with patch.object(moves_base, "damage_bounds", counting), patch.object(
+            moves_mastery, "damage_bounds", counting
+        ):
+            payload = move.preview_damage(enemy)
+        assert payload is not None
+        assert len(calls) <= move.STRIKES, (
+            f"preview_damage ran damage_bounds {len(calls)} times for "
+            f"{move.STRIKES} strikes -- the gate call's payload is strike one"
+        )

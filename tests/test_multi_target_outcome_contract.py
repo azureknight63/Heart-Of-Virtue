@@ -414,3 +414,24 @@ class TestTheWalkerCatchesWhatItExistsToCatch:
             "    enemy.hp -= 5\n"
         )
         assert _branch_offences(loop) == []
+
+
+def test_shared_resolvers_are_named_in_all_three_lists():
+    """The prose above says every shared HP-applying resolver must appear in
+    ``tests/_moves_scan.DAMAGE_SIGNALS`` (so the scan sees the loops that use
+    it) AND in ``_PUBLISH_CALLS`` here (so those loops are not flagged as
+    silent). That agreement was contract-by-comment only; this makes it a
+    test, so the next extracted resolver cannot split the guards."""
+    from tests._moves_scan import DAMAGE_SIGNALS, _HP_APPLYING_CALLS
+
+    for name in _HP_APPLYING_CALLS:
+        assert any(f"{name}(" in signal for signal in DAMAGE_SIGNALS), (
+            f"{name} applies HP per _HP_APPLYING_CALLS but has no "
+            f"'{name}(' spelling in DAMAGE_SIGNALS -- the textual scan is "
+            "blind to the loops that call it"
+        )
+        assert name in _PUBLISH_CALLS, (
+            f"{name} applies HP per _HP_APPLYING_CALLS but is not in "
+            "_PUBLISH_CALLS -- every loop that routes through it would be "
+            "flagged as a silent resolution"
+        )

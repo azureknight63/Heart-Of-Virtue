@@ -1898,3 +1898,285 @@ class TestAreaPreviewAcceptsAPrecomputedAffectedSet:
                 enemy, flat=True, affected=affected
             )
         assert payload is not None
+
+
+# ---------------------------------------------------------------------------
+# Crafted-save availability, round 2: -inf, unfloatable ints, raw HP reads
+# ---------------------------------------------------------------------------
+
+#: An int too large for a float. ``float(HUGE_INT)`` and even
+#: ``math.isfinite(HUGE_INT)`` raise OverflowError, so every guard written as
+#: ``float(x)``/``math.isfinite(x)`` with only TypeError/ValueError caught is
+#: itself the crash a crafted save triggers.
+HUGE_INT = 10**400
+
+
+class _RealClampTarget:
+    """Target with the real Combatant.clamp_hp -- not a mock no-op."""
+
+    def __init__(self, hp=100, maxhp=100):
+        from src.combatant import Combatant
+
+        self.hp = hp
+        self.maxhp = maxhp
+        self.states = []
+        self.name = "Probe Target"
+        self._clamp = Combatant.clamp_hp
+
+    def clamp_hp(self):
+        return self._clamp(self)
+
+
+class TestCraftedSaveAvailabilityRound2:
+    def test_apply_facing_damage_collapses_negative_infinity(self):
+        """-inf slips past ``power <= 0`` (it IS <= 0) and is returned
+        untouched, reaching the bare int() consumers in _npc.py."""
+        from src.moves._base import apply_facing_damage
+
+        attacker, defender = _positioned_pair()
+        assert apply_facing_damage(attacker, defender, float("-inf")) == 0
+
+    def test_apply_facing_damage_treats_an_unfloatable_int_as_unusable(self):
+        from src.moves._base import apply_facing_damage
+
+        attacker, defender = _positioned_pair()
+        assert apply_facing_damage(attacker, defender, HUGE_INT) == 0
+
+    def test_target_protection_reads_an_unfloatable_int_as_zero(self):
+        from src.moves._base import target_protection
+
+        target = MagicMock()
+        target.protection = HUGE_INT
+        assert target_protection(target) == 0
+
+    def test_resolve_heat_degrades_an_unfloatable_heat(self):
+        from src.moves._base import _resolve_heat
+
+        user = MagicMock()
+        user.heat = HUGE_INT
+        assert _resolve_heat(user) == 1.0
+
+    def test_flat_arc_strike_damage_guards_an_unfloatable_swing(self):
+        from src.moves._base import flat_arc_strike_damage
+
+        target = MagicMock()
+        target.protection = 5
+        assert flat_arc_strike_damage(target, HUGE_INT) == 1
+
+    def test_flat_arc_strike_damage_rejects_a_boolean_swing(self):
+        """isinstance(True, int) is True, so a bool flag on the wrong
+        attribute scored as one point of swing -- observable whenever
+        protection is negative. target_protection rejects bools for the
+        same reason."""
+        from src.moves._base import flat_arc_strike_damage
+
+        target = MagicMock()
+        target.protection = -10
+        assert flat_arc_strike_damage(target, True) == 1
+
+    def test_move_hit_absorbs_an_unfloatable_damage(self):
+        """float(10**400) raises OverflowError, which Move.hit's coercion
+        (TypeError/ValueError only) did not catch."""
+        target = MagicMock()
+        target.states = []
+        target.hp = 100
+        target.name = "Dummy"
+        move = _PipelineMove(target)
+        move.user.name = "Probe"
+        move.usercolor = "white"
+        move.targetcolor = "white"
+        move.target = target
+        Move.hit(move, HUGE_INT, False)
+        assert target.hp == 100
+
+    def test_resolve_strike_outcome_absorbs_an_unfloatable_damage(self):
+        from src.moves._base import resolve_strike_outcome
+
+        move = _armed_strike_move()
+        with patch("src.functions.check_parry", return_value=False):
+            resolve_strike_outcome(
+                move,
+                move.target,
+                HUGE_INT,
+                90,
+                hit_line="hit",
+                parry_line="parry",
+                miss_line="miss",
+                roll=0,
+            )
+        assert move.target.hp == 100
+        assert move.user._pending_animation["outcome"] == "absorb"
+
+    def test_resolve_strike_outcome_normalises_a_non_finite_hp(self):
+        """The old write was ``max(0, target.hp - damage)`` with hp read RAW:
+        an inf hp stayed inf forever (unkillable). Writing through
+        ``hp -= damage`` + ``clamp_hp()`` -- exactly what Move.hit does --
+        hands the non-finite coercion to the one place that owns it."""
+        from src.moves._base import resolve_strike_outcome
+
+        target = _RealClampTarget(hp=float("inf"))
+        move = _PipelineMove(target)
+        move.name = "Probe"
+        move.user._pending_animation = {"outcome": None}
+        with patch("src.functions.check_parry", return_value=False):
+            resolve_strike_outcome(
+                move,
+                target,
+                5,
+                90,
+                hit_line="hit",
+                parry_line="parry",
+                miss_line="miss",
+                roll=0,
+            )
+        assert target.hp == 0
+
+    def test_resolve_strike_outcome_still_floors_hp_at_zero(self):
+        """Overkill damage on a real target must not leave negative HP."""
+        from src.moves._base import resolve_strike_outcome
+
+        target = _RealClampTarget(hp=10)
+        move = _PipelineMove(target)
+        move.name = "Probe"
+        move.user._pending_animation = {"outcome": None}
+        with patch("src.functions.check_parry", return_value=False):
+            resolve_strike_outcome(
+                move,
+                target,
+                50,
+                90,
+                hit_line="hit",
+                parry_line="parry",
+                miss_line="miss",
+                roll=0,
+            )
+        assert target.hp == 0
+
+
+def _armed_strike_move():
+    target = MagicMock()
+    target.states = []
+    target.hp = 100
+    move = _PipelineMove(target)
+    move.name = "Probe"
+    move.user._pending_animation = {"outcome": None}
+    return move
+
+
+def _evaluate_probe_user(**overrides):
+    user = MagicMock()
+    user.name = "Probe"
+    user.strength = 10
+    user.finesse = 10
+    user.endurance = 10
+    user.speed = 10
+    user.known_moves = []
+    user.eq_weapon.damage = 20
+    user.eq_weapon.str_mod = 1.0
+    user.eq_weapon.fin_mod = 1.0
+    user.eq_weapon.weight = 2
+    user.eq_weapon.wpnrange = (0, 5)
+    user.eq_weapon.name = "Probe Sword"
+    user.eq_weapon.subtype = "Sword"
+    for key, value in overrides.items():
+        setattr(user, key, value)
+    return user
+
+
+class TestStandardEvaluateAttackDegradedInputs:
+    """standard_evaluate_attack's speed floor closed the divisor; the
+    numerators (weapon weight, endurance) and the weapon itself were still
+    raw crafted-save reads that wedged the beat."""
+
+    def _evaluate(self, user):
+        move = Move.__new__(Move)
+        move.user = user
+        move.stage_announce = ["", "", "", ""]
+        move.mvrange = (0, 5)
+        return move, Move.standard_evaluate_attack(
+            move, base_power=0, base_damage_type="crushing"
+        )
+
+    def test_survives_a_missing_weapon(self):
+        user = _evaluate_probe_user()
+        user.eq_weapon = None
+        move, (power, _) = self._evaluate(user)
+        assert power == 0
+        assert move.stage_beat[0] >= 1
+        assert move.mvrange == (0, 5)  # keeps what the move already had
+
+    def test_survives_a_non_finite_weight(self):
+        for junk in (float("inf"), float("nan"), "heavy", HUGE_INT):
+            user = _evaluate_probe_user()
+            user.eq_weapon.weight = junk
+            move, (power, _) = self._evaluate(user)
+            assert power > 0
+            assert all(
+                isinstance(beat, int) and beat >= 0 for beat in move.stage_beat
+            )
+
+    def test_survives_a_non_finite_endurance(self):
+        for junk in (float("inf"), float("nan"), "tough", HUGE_INT):
+            user = _evaluate_probe_user(endurance=junk)
+            move, (power, _) = self._evaluate(user)
+            assert power > 0
+            assert move.fatigue_cost >= 10
+
+    def test_survives_an_unfloatable_weapon_damage(self):
+        user = _evaluate_probe_user()
+        user.eq_weapon.damage = HUGE_INT
+        user.eq_weapon.str_mod = 0
+        user.eq_weapon.fin_mod = 0
+        _, (power, _) = self._evaluate(user)
+        assert power == 0
+
+
+class TestProjectedHitHeatSequenceIsDetached:
+    """The replay must run on a detached shim: the old save-and-restore
+    mutated Jean's LIVE heat for the duration of every preview poll, and a
+    crafted non-finite heat made the real change_heat raise mid-poll."""
+
+    def test_a_crafted_non_finite_heat_does_not_raise(self):
+        from src.moves._base import projected_hit_heat_sequence
+        from src.player import Player
+
+        jean = Player()
+        jean.name = "Jean"
+        for junk in (float("inf"), float("nan"), HUGE_INT):
+            jean.heat = junk
+            heats = projected_hit_heat_sequence(jean, 3)
+            assert len(heats) == 3
+            # Seeded from the sanitised heat (1.0), then the real momentum
+            # arithmetic replays on top of it.
+            assert heats[0] == 1.0
+            assert heats[1] == 1.25
+            assert jean.heat == junk or jean.heat != jean.heat  # untouched
+
+    def test_the_live_heat_is_never_written(self):
+        from src.moves._base import projected_hit_heat_sequence
+        from src.player import Player
+
+        class _WatchedPlayer(Player):
+            @property
+            def heat(self):
+                return self.__dict__.get("_heat_value", 1.0)
+
+            @heat.setter
+            def heat(self, value):
+                self.__dict__["_heat_writes"] = (
+                    self.__dict__.get("_heat_writes", 0) + 1
+                )
+                self.__dict__["_heat_value"] = value
+
+        jean = _WatchedPlayer()
+        jean.name = "Jean"
+        jean.heat = 2.0
+        writes_before = jean.__dict__["_heat_writes"]
+        heats = projected_hit_heat_sequence(jean, 3)
+        assert heats[0] == 2.0
+        assert heats[1] > heats[0] and heats[2] > heats[1]
+        assert jean.__dict__["_heat_writes"] == writes_before, (
+            "the preview wrote the LIVE heat: a move resolving mid-poll "
+            "would score at inflated momentum and its own write would be "
+            "clobbered by the restore"
+        )

@@ -9,14 +9,29 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (  # noqa: F401
+    GLANCE_MARGIN,
     Move,
     _apply_to_hit_modifiers,
+    _num,
     apply_facing_damage,
     apply_glancing_blow,
     resolve_pipeline_strike,
     target_protection,
     to_hit_chance,
 )
+
+
+def _npc_speed_divisor(user):
+    """``user.speed`` for the ``int(50 / speed)`` prep/recoil lines, floored
+    at 1.
+
+    The player path floors this divisor in ``standard_evaluate_attack``; the
+    NPC evaluate() copies did not, so a zero speed off a crafted save raised
+    ZeroDivisionError -- and a NaN fed the surrounding ``int()`` a ValueError
+    -- mid-beat, on the NPC's own turn. ``_num`` also degrades a string or
+    unfloatable-int speed to the floor instead of crashing the coercion.
+    """
+    return max(1.0, _num(getattr(user, "speed", 1)))
 
 
 def _npc_flat_damage(power, target):
@@ -196,11 +211,12 @@ class NpcAttack(Move):  # basic attack function, NPCs only
             return
 
         power = self.user.damage * random.uniform(0.8, 1.2)
-        prep = int(50 / self.user.speed)
+        speed = _npc_speed_divisor(self.user)
+        prep = int(50 / speed)
         if prep < 1:
             prep = 1
         execute = 1
-        recoil = int(50 / self.user.speed)
+        recoil = int(50 / speed)
         if recoil < 0:
             recoil = 0
         cooldown = 5 - int(self.user.endurance / 10)
@@ -544,11 +560,12 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         self,
     ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(1.5, 3)
-        prep = int(50 / self.user.speed)
+        speed = _npc_speed_divisor(self.user)
+        prep = int(50 / speed)
         if prep < 1:
             prep = 1
         execute = 2
-        recoil = int(50 / self.user.speed)
+        recoil = int(50 / speed)
         if recoil < 0:
             recoil = 0
         recoil += 5
@@ -683,11 +700,12 @@ class VenomClaw(Move):  # Poisonous attack
         self,
     ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(0.6, 1)
-        prep = int(50 / self.user.speed)
+        speed = _npc_speed_divisor(self.user)
+        prep = int(50 / speed)
         if prep < 1:
             prep = 1
         execute = 1
-        recoil = int(50 / self.user.speed)
+        recoil = int(50 / speed)
         if recoil < 0:
             recoil = 0
         cooldown = 5 - int(self.user.endurance / 10)
@@ -832,11 +850,12 @@ class SpiderBite(Move):  # Poisonous attack
         self,
     ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(0.8, 1.2)
-        prep = int(50 / self.user.speed)
+        speed = _npc_speed_divisor(self.user)
+        prep = int(50 / speed)
         if prep < 1:
             prep = 1
         execute = 1
-        recoil = int(50 / self.user.speed)
+        recoil = int(50 / speed)
         if recoil < 0:
             recoil = 0
         cooldown = 5 - int(self.user.endurance / 10)
@@ -979,11 +998,12 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         self,
     ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(0.7, 1.1)
-        prep = int(50 / self.user.speed)
+        speed = _npc_speed_divisor(self.user)
+        prep = int(50 / speed)
         if prep < 1:
             prep = 1
         execute = 1
-        recoil = int(50 / self.user.speed)
+        recoil = int(50 / speed)
         if recoil < 0:
             recoil = 0
         cooldown = 5 - int(self.user.endurance / 10)
@@ -1239,7 +1259,7 @@ class KeeningToll(NpcAttack):
             else:
                 # NOT apply_glancing_blow: this halves a fatigue drain inside
                 # the hit branch, after the parry check -- a different shape.
-                if hit_chance - roll < 10:
+                if hit_chance - roll < GLANCE_MARGIN:
                     drain = drain // 2
                 self.target.fatigue = max(0, self.target.fatigue - drain)
                 narrate(
@@ -1812,7 +1832,7 @@ class TwinFangs(Move):
             else:
                 # NOT apply_glancing_blow: the glance is decided inside the
                 # hit branch, after the parry check -- a different shape.
-                glance = hit_chance - roll < 10
+                glance = hit_chance - roll < GLANCE_MARGIN
                 if glance:
                     damage //= 2
                 self.hit(damage, glance)

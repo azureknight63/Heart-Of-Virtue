@@ -227,7 +227,9 @@ class Sweep(Move):
     def preview_damage(self, target=None, affected=None):
         """Sweep's loop deals ``max(1, int(swing_power - protection))`` — no
         resistance, no heat scaling and no variance roll, so min and max are
-        the same number rather than a band. See ``execute``.
+        the same number rather than a band. See ``execute``. ``affected`` is a
+        server-computed ``preview_affected()`` result the adapter passes back
+        in — see ``Move._area_preview_damage``.
         """
         return self._area_preview_damage(target, flat=True, affected=affected)
 
@@ -428,7 +430,9 @@ class HalberdSpin(Move):
     def preview_damage(self, target=None, affected=None):
         """Halberd Spin's loop deals ``max(1, int(swing_power - protection))``
         — no resistance, no heat scaling and no variance roll, so min and max
-        are the same number rather than a band. See ``execute``.
+        are the same number rather than a band. See ``execute``. ``affected``
+        is a server-computed ``preview_affected()`` result the adapter passes
+        back in — see ``Move._area_preview_damage``.
         """
         return self._area_preview_damage(target, flat=True, affected=affected)
 

@@ -1913,6 +1913,10 @@
       "name": "Universe"
     },
     {
+      "module": "types",
+      "name": "SimpleNamespace"
+    },
+    {
       "module": "typing",
       "name": "Any"
     },
@@ -1921,6 +1925,6 @@
       "name": "UUID"
     }
   ],
-  "count": 480,
+  "count": 481,
   "header_version": 1
 }
