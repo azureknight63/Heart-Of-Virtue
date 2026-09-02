@@ -1,3 +1,10 @@
+> **ARCHIVED — historical snapshot, do not cite these numbers.**
+> This report captured a point in time (2026-05-15) during the backend coverage
+> campaign that took the suite from ~51% toward a 60% target. That effort
+> completed and overshot: backend coverage is now 96% against an 85% CI floor,
+> and the gaps flagged below as "URGENT" or "CRITICAL" have been closed. For
+> current figures see [`docs/coverage/coverage-dashboard.md`](../coverage/coverage-dashboard.md).
+
 # Coverage At a Glance: Quick Reference
 
 **Last Updated:** 2026-05-15 | **Coverage:** 51% | **Target:** 60% | **Gap:** 9 points

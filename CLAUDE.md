@@ -31,7 +31,6 @@ src/
 │   ├── handlers/           # Error/event handlers
 │   ├── middleware/         # Auth middleware
 │   └── schemas/            # Shared schema definitions (combat beat streaming)
-├── combat.py               # Core turn-based combat engine
 ├── combatant.py            # Base class for Player + NPC (shared resistance/state logic)
 ├── moves/                  # Combat abilities/moves — package (was moves.py, ~252KB)
 │   ├── __init__.py         # Re-exports all 73+ classes; callers use `import moves` unchanged
@@ -48,19 +47,39 @@ src/
 │   ├── _polearm.py         # OverheadSmash, Sweep, BracePosition, HalberdSpin; passive: ReachMastery
 │   └── _npc.py             # NpcAttack, NpcRest, TelegraphedSurge, SlimeVolley, TidalSurge, …
 ├── states.py               # Status effects (buffs/debuffs)
-├── player.py               # Player class (~90KB), inherits Combatant
-├── npc.py                  # NPC class (~49KB), inherits Combatant
-├── items.py                # Item definitions (~98KB)
-├── game.py                 # Main game loop (CLI)
+├── player/                 # Player class — package, inherits Combatant
+│   ├── __init__.py         # Re-exports Player; callers use `from src.player import Player`
+│   ├── _combat.py          # Combat state, damage application
+│   ├── _inventory.py       # Equip/use/drop, weight
+│   ├── _leveling.py        # gain_exp, attribute allocation, skill unlocks
+│   ├── _movement.py        # Position and tile transitions
+│   ├── _exploration.py     # Look/search/interact helpers
+│   ├── _world.py           # Universe and tile access
+│   └── _debug.py           # Debug-endpoint operations
+├── npc/                    # NPC class — package, inherits Combatant
+│   ├── __init__.py         # Re-exports NPC and all concrete NPCs
+│   ├── _base.py            # NPC base class
+│   ├── _combat.py          # NPC combat AI
+│   ├── _enemies.py         # Hostile NPCs
+│   ├── _friends.py         # Allies (Gorran, …)
+│   ├── _adjutant.py        # TheAdjutant — debug/test-arena operations
+│   ├── _merchants.py       # Merchant + pricing (buy/sell modifiers, shop_name)
+│   ├── _shop.py            # Shop inventory logic
+│   ├── _loot.py            # Drop tables
+│   ├── _progression.py     # NPC scaling
+│   ├── _chat_llm.py        # NPC chat via LLM
+│   ├── _llm.py             # Mynx ambient LLM behavior
+│   └── _eastern_descent.py # Chapter-specific NPCs
+├── items.py                # Item definitions (~152KB)
 ├── universe.py             # World/map system
-└── interface.py            # Terminal UI/display
+└── interface.py            # Thin shim: get_gold/transfer_gold/transfer_item
 
 frontend/src/
-├── pages/                  # LoginPage, MainMenuPage, GamePage
+├── pages/                  # LandingPage, LoginPage, MainMenuPage, GamePage
 ├── components/             # Battlefield, WorldMap, CombatLog, PlayerStatus, MobileTabBar, CollapsibleRoomDescription, ...
 ├── hooks/                  # useApi, useCombat, useFetchCombatStatus, useMobile, ...
 ├── api/                    # Axios client + endpoint definitions
-└── context/                # AudioContext
+└── context/                # AuthContext, AudioContext, ToastContext, CapabilitiesContext
 ```
 
 Root:
@@ -140,8 +159,8 @@ The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded fro
 | Layer | Current | Target | CI Minimum |
 |-------|---------|--------|-----------|
 | Backend (Python) | 96% | 85% | 85% |
-| Frontend (React) | 95%+ | 95% | 95% |
-| Total Tests | 11,285 (9,056 backend + 2,229 frontend) | - | - |
+| Frontend (React) | 99% | 95% | 95% |
+| Total Tests | 13,083 (10,419 backend + 2,664 frontend) | - | - |
 
 ### Backend Coverage Enforcement
 
@@ -160,10 +179,14 @@ python -m pytest \
   -q
 ```
 
-(Measured 2026-08-20: `python -m pytest --cov=src --cov=ai` reports 96% over 23,545 statements;
-**9,056 backend tests plus 2,229 frontend, and zero skips**. The backend suite runs in ~20s
-because pytest.ini sets `-n auto --dist loadfile`; use `-n0` when debugging a single test.
-Re-measure before quoting these — earlier recorded figures were repeatedly stale.
+(Measured 2026-09-02: `python -m pytest --cov=src --cov=ai` reports 96% over 24,448 statements
+(866 missed); **10,419 backend tests passed, 1 xfailed, 0 failed, plus 2,664 frontend across 116
+files, and zero skips**. Frontend is 99.46% lines / ~95.3% branches (95.27-95.29 across runs — thin margin over the 95% floor). The backend suite runs in
+~100s here because pytest.ini sets `-n auto --dist loadfile`; use `-n0` when debugging a single
+test. Re-measure before quoting these — earlier recorded figures were repeatedly stale.
+A partial dependency install is the usual cause of phantom failures: without `pytest-asyncio`
+alone, ~95 tests fail that CI passes, so run `pip install -r requirements-dev.txt` first.
+Per-module figures: `docs/coverage/coverage-dashboard.md`.
 
 The suite previously carried **565 skips**, ~517 of them whole-file or whole-class
 `pytestmark = pytest.mark.skip` with reasons like "coverage requirements already met" and
@@ -172,16 +195,17 @@ stale API signatures, mislabelled story flags, an unrestored class attribute, an
 infinite loop. Do not add a blanket skip to make the suite green — it hides defects for
 years and the count only ever grows.)
 
-**High-coverage areas** (>70%):
-- `src/api/routes/` — REST endpoints well-tested
-- `src/api/services/` — Core game logic
-- `src/universe.py` — World/map system
+Coverage is now high across the board — the old "low-coverage areas" list (story/ at 18%,
+states.py at 40%, npc at 54%) is obsolete: `src/story/` is 95%, `src/states.py` 99%,
+`src/npc/` 96%, and `ai/` 99%. **Do not cite "narrative is intentionally sparse" as a
+reason to skip story tests.**
 
-**Low-coverage areas** (<50%):
-- `src/story/` — Narrative intentionally sparse (hard to test story paths)
-- `ai/` — LLM integration, fallback behavior
-- `src/states.py` — Status effects (needs 20+ new tests)
-- `src/npc.py` — NPC AI behavior (needs edge case tests)
+Remaining gaps, all still above the 85% floor in aggregate:
+- `src/tilesets/grondelith_mineral_pools.py` — 53%
+- `src/api/routes/combat.py` — 74%; `src/api/routes/player.py` — 78%
+- `src/genericng.py` — 80%; `src/api/utils/log_cleanup.py` — 81%
+- `src/story/ch03.py` — 84%; `src/objects.py` and `src/events.py` — 87%
+- Frontend: `src/api/socketClient.js` — 71% (reconnect/error paths are hard to hit in jsdom)
 
 ### Frontend Coverage Enforcement
 
@@ -423,7 +447,7 @@ only on `console_errors` and `network_failures` (the significant ones).
 | `(0, 1)` | Ally Courtyard | Gorran (ally) + Slime | Ally AI, co-op mechanics, friend=True |
 | `(1, 1)` | Status Chamber | Pell (StatusDummy) | Status effects — all resistances stripped to 0 |
 
-### Key NPCs added in `npc.py`
+### Key NPCs added in `src/npc/`
 
 - **`TheAdjutant`** — friendly NPC at `(0, 0)`. `talk` narrates flavor only; runtime configuration (Jean's HP/level/attributes/heat/skills and the per-tile NPC roster) is driven by the **test-only debug endpoint** (`/api/debug/*`, `src/api/routes/debug.py`), which calls the Adjutant's parametrized operation methods. The endpoint is registered only when `app.config["TESTING"]` is true, so it is never reachable in production. Changes take effect immediately — no restart needed.
 - **`StatusDummy` / "Pell"** — test target at `(1, 1)`. Every status resistance is 0.0 and every damage resistance is 1.0 so effects land reliably. High HP (500), very low damage (3).
