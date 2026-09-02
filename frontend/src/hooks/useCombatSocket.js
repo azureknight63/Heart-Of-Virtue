@@ -34,6 +34,7 @@ export function useCombatSocket({
   // Latest callbacks in a ref so the socket is wired once (not re-subscribed)
   // and a new function identity on re-render can't tear it down mid-stream.
   const cbs = useRef({});
+  // eslint-disable-next-line react-hooks/refs -- the latest-callbacks ref must already be current when the subscribe effect below reads it on the same commit; assigning it from its own effect would let the first beat land on mount-time handlers.
   cbs.current = {
     onBeat,
     onResolved,

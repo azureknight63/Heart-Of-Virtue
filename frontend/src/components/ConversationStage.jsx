@@ -231,6 +231,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
     // — otherwise the stage resumes at a stale index and onComplete (gated by
     // completedRef) never fires again for the new conversation.
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset above is the whole point: EventDialog reuses one mounted ConversationStage across stages, so a new `segments` array must rewind beatIndex/completedRef or onComplete never fires again (soft-lock).
         setBeatIndex(0)
         completedRef.current = false
     }, [segments])

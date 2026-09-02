@@ -20,6 +20,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
             const timer = setTimeout(() => setIsVisible(true), 500)
             return () => clearTimeout(timer)
         } else {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- hiding must be synchronous with the turn flipping, or the panel stays clickable during the enemy turn; only the 500ms reveal above can afford to be deferred.
             setIsVisible(false)
         }
     }, [isPlayerTurn]) // eslint-disable-line react-hooks/exhaustive-deps

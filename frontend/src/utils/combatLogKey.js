@@ -37,6 +37,7 @@
  */
 export const LOG_KEY_SEP = '\u001F';
 
+// eslint-disable-next-line no-control-regex -- matching control characters is the point: LOG_KEY_SEP is \u001F, so a control char left in a field could forge a separator and collide two distinct log entries onto one key.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 const cleanField = (value) => String(value ?? '').replace(CONTROL_CHARS, '');
 

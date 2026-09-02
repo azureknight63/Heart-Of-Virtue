@@ -22,6 +22,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
 
   // Synchronize local inventory with props
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the truthiness ladder is load-bearing: when a refetch momentarily yields no items the last good list is retained, whereas deriving this during render would flash an empty inventory.
     if (items) setLocalInventory(items)
     else if (player?.inventory) setLocalInventory(player.inventory)
   }, [items, player?.inventory])

@@ -97,6 +97,7 @@ function InteractPanel({
 
             // Filter out hidden entities if the API sends them
             const allTargets = [...npcs, ...objects, ...items].filter(t => !t.hidden)
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the server-authoritative `location` payload and reconciles selectedTarget against it in the same pass; deriving targets at render time would split that reconciliation from the isSyncingTarget guard this effect sets.
             setTargets(allTargets)
 
             // Update selected target if it's still in the room (to get updated count/desc)
