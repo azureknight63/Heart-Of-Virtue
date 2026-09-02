@@ -8,6 +8,7 @@ import src.states as states  # noqa: F401
 import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
+import src.terrain as terrain  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from src.combatant import MOVE_STAGE_EXECUTE, MOVE_STAGE_PREP
 
@@ -362,6 +363,11 @@ def apply_facing_damage(attacker, defender, power, steepness=1.0):
     if power <= 0:
         return power
     multiplier = facing_damage_multiplier(attacker, defender, steepness)
+    # Elevation is the other positional damage term (``src.terrain``): high
+    # ground hits harder, uphill swings land softer. Folded into the same
+    # funnel so every attack path that already respects facing respects
+    # terrain too, and so the preview's damage bounds match the roll.
+    multiplier = round(multiplier * terrain.damage_multiplier(attacker, defender), 9)
     if multiplier == 1.0:
         return power
     return max(1, int(power * multiplier))
@@ -1038,7 +1044,8 @@ def _apply_haunting_presence(attacker, defender, hit_chance):
 
 def _apply_to_hit_modifiers(attacker, defender, hit_chance):
     """Apply the shared universal to-hit modifiers, in order: facing/angle
-    accuracy (#394), then HauntingPresence (#421).
+    accuracy (#394), then battlefield terrain (cover and elevation, see
+    ``src.terrain``), then HauntingPresence (#421).
 
     Every attack in the moves package funnels through this single call
     instead of each hand-rolling the same two-call sequence — the exact
@@ -1059,6 +1066,10 @@ def _apply_to_hit_modifiers(attacker, defender, hit_chance):
         # chance. No modifier and no clamp may touch it — see clamp_hit_chance.
         return hit_chance
     hit_chance = _apply_facing_accuracy(attacker, defender, hit_chance)
+    # Battlefield terrain: cover on the line of fire (ranged only) and
+    # elevation advantage, as flat points. Runs after facing (a multiplier)
+    # so the "+10 high ground" the client shows is the +10 the dice see.
+    hit_chance = terrain.apply_accuracy(attacker, defender, hit_chance)
     hit_chance = _apply_haunting_presence(attacker, defender, hit_chance)
     return clamp_hit_chance(hit_chance)
 

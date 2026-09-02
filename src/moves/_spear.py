@@ -7,6 +7,7 @@ import src.states as states  # noqa: F401
 import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
+import src.terrain as terrain  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     apply_glancing_blow,
@@ -176,7 +177,11 @@ class KeepAway(Move):
                     ):
                         occupied.append(c.combat_position)
                 new_pos = positions.move_away_constrained(
-                    self.target.combat_position, player.combat_position, 4, occupied
+                    self.target.combat_position,
+                    player.combat_position,
+                    4,
+                    occupied,
+                    terrain=terrain.grid_for(self.target),
                 )
                 self.target.combat_position = new_pos
                 new_dist = positions.distance_from_coords(
@@ -298,7 +303,11 @@ class Lunge(Move):
                         and c.combat_position
                     ]
                     new_pos = positions.move_toward_constrained(
-                        player.combat_position, self.target.combat_position, 3, occupied
+                        player.combat_position,
+                        self.target.combat_position,
+                        3,
+                        occupied,
+                        terrain=terrain.grid_for(player),
                     )
                     player.combat_position = new_pos
                     player.combat_position.facing = positions.turn_toward(

@@ -186,6 +186,9 @@ class Player(
             self
         ]  # friendly NPCs in combat that either help the player or just stand
         # there looking pretty
+        # Battlefield terrain for the current fight (src.terrain.TerrainGrid),
+        # shared with every combatant by ApiCombatAdapter.initialize_combat.
+        self.combat_terrain = None
         self.combat_proximity = (
             {}
         )  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5,

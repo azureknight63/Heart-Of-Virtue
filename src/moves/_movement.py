@@ -7,8 +7,25 @@ import src.states as states  # noqa: F401
 import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
+import src.terrain as terrain  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import Move, PassiveMove  # noqa: F401
+
+
+def _occupied_positions(user):
+    """Every other combatant's ``combat_position`` -- the squares a
+    terrain-aware mover must route around. Reads the same two rosters the
+    movers' inline ``occupied`` loops read (``combat_list`` and
+    ``combat_list_allies``), minus the mover itself."""
+    occupied = []
+    for roster in ("combat_list", "combat_list_allies"):
+        for unit in getattr(user, roster, None) or []:
+            if unit is user:
+                continue
+            pos = getattr(unit, "combat_position", None)
+            if pos is not None:
+                occupied.append(pos)
+    return occupied
 
 
 def _apply_sentinels_vigil(advancer, defender):
@@ -287,6 +304,7 @@ class Advance(Move):
             self.target.combat_position,
             distance_moved,
             occupied,
+            terrain=terrain.grid_for(user),
         )
         user.combat_position = new_pos
 
@@ -432,6 +450,8 @@ class Withdraw(Move):
             user.combat_position,
             nearest_threat.combat_position,
             distance_moved,
+            terrain=terrain.grid_for(user),
+            occupied=_occupied_positions(user),
         )
         user.combat_position = new_pos
 
@@ -551,6 +571,7 @@ class BullCharge(Move):
             self.target.combat_position,
             distance_moved,
             occupied,
+            terrain=terrain.grid_for(user),
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
@@ -652,6 +673,8 @@ class TacticalRetreat(Move):
             user.combat_position,
             nearest_threat.combat_position,
             distance_moved,
+            terrain=terrain.grid_for(user),
+            occupied=_occupied_positions(user),
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
@@ -777,6 +800,8 @@ class FlankingManeuver(Move):
             self.target.combat_position,
             distance_moved,
             flank_angle=flank_angle,
+            terrain=terrain.grid_for(user),
+            occupied=_occupied_positions(user),
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
@@ -924,16 +949,22 @@ class TacticalPositioning(Move):
         # Move at most 2 squares per beat
         move_amount = min(abs(diff), 2)
 
+        grid = terrain.grid_for(user)
         if diff > 0:  # Need to move closer
             new_pos = positions.move_toward_constrained(
                 user.combat_position,
                 self.target.combat_position,
                 move_amount,
                 [],
+                terrain=grid,
             )
         else:  # Need to move further away
             new_pos = positions.move_away_from(
-                user.combat_position, self.target.combat_position, move_amount
+                user.combat_position,
+                self.target.combat_position,
+                move_amount,
+                terrain=grid,
+                occupied=_occupied_positions(user),
             )
 
         user.combat_position = new_pos

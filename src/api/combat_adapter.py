@@ -17,6 +17,8 @@ from types import SimpleNamespace
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 import src.positions as positions  # type: ignore
+import src.terrain as terrain  # type: ignore
+from src.narration import cprint
 import src.moves as moves  # type: ignore
 from src.api.serializers.combat import (
     CombatStateSerializer,
@@ -583,6 +585,38 @@ class ApiCombatAdapter:
         self.player.combat_adapter_state["combat_grid_size"] = value
 
     @property
+    def combat_terrain(self):
+        """The fight's ``TerrainGrid`` (or None). Lives on the player like the
+        rest of the per-fight state so a replacement adapter sees it."""
+        grid = getattr(self.player, "combat_terrain", None)
+        return grid if isinstance(grid, terrain.TerrainGrid) else None
+
+    def _fight_terrain(self, reinit, grid_w, grid_h, scenario_type):
+        """Return the terrain for this fight, generating it on a fresh start.
+
+        Generation is keyed on the region of the player's current map and
+        seeded so the same fight can be reproduced from its log. Spawn zones
+        from the scenario are passed as ``keep_clear`` so both sides always
+        have open ground to stand on. On a reinit the existing grid is kept
+        when its size still matches; otherwise it is regenerated for the new
+        grid (a scripted grid override mid-fight).
+        """
+        existing = self.combat_terrain
+        if reinit and existing is not None and (existing.width, existing.height) == (grid_w, grid_h):
+            return existing
+        region = terrain.region_for_player(self.player)
+        try:
+            scenario = positions.get_combat_scenario(scenario_type, grid_w, grid_h)
+            zones = list(scenario.ally_spawn_zones or [scenario.ally_spawn_zone])
+            zones += list(scenario.enemy_spawn_zones)
+        except Exception:
+            zones = []
+        seed = random.randrange(1 << 30)
+        grid = terrain.generate(region, grid_w, grid_h, seed=seed, keep_clear=zones)
+        self.player.combat_terrain = grid
+        return grid
+
+    @property
     def awaiting_input(self):
         return self.player.combat_adapter_state.get("awaiting_input", False)
 
@@ -1043,12 +1077,25 @@ class ApiCombatAdapter:
                     )
                 self.combat_grid_size = (grid_w, grid_h)
 
+                # Battlefield terrain: generated once per fight from the
+                # region the player is standing in, then shared with every
+                # combatant (src.terrain.attach). A reinit -- wave
+                # transition, reinforcements -- keeps the fight's grid; the
+                # positions are re-rolled onto it, never onto fresh terrain.
+                grid = self._fight_terrain(
+                    reinit, grid_w, grid_h, scenario_type
+                )
+                terrain.attach(
+                    grid, self.player.combat_list_allies + self.player.combat_list
+                )
+
                 positions.initialize_combat_positions(
                     allies=self.player.combat_list_allies,
                     enemies=self.player.combat_list,
                     scenario_type=scenario_type,
                     grid_width=grid_w,
                     grid_height=grid_h,
+                    terrain=grid,
                 )
             except Exception as e:
                 print(f"Warning: Position initialization failed: {e}")
@@ -1713,6 +1760,19 @@ class ApiCombatAdapter:
                     unit, all_combatants
                 )
 
+        # Terrain hazards fire on entry, once per cell change, checked here
+        # because this runs at the top of every beat after all movers have
+        # settled. Narrated so the log explains the new status effect.
+        try:
+            for unit, state_name in terrain.apply_entry_effects(all_combatants):
+                cprint(
+                    f"{unit.name} stumbles into {terrain.KIND_PROPS[terrain.HAZARD]['label'].lower()}"
+                    f" and is {state_name.lower()}!",
+                    "magenta",
+                )
+        except Exception:
+            logger.debug("terrain entry effects failed", exc_info=True)
+
         # Original proximity synchronization logic for backward compatibility/fallback
         # Logic adapted from combat.py
         for each_ally in player.combat_list_allies:
@@ -2096,6 +2156,13 @@ class ApiCombatAdapter:
                     )
                     coord_config = CoordinateSystemConfig(self.player)
                     grid_w, grid_h = coord_config.get_dynamic_grid_size(total)
+                    grid = self.combat_terrain
+                    if grid is not None:
+                        # The terrain was laid for the fight's original grid;
+                        # reinforcements spawn onto it, so its dimensions win
+                        # over a recomputed (possibly smaller) size.
+                        grid_w, grid_h = grid.width, grid.height
+                        terrain.attach(grid, new_enemies_without_position)
                     self.combat_grid_size = (grid_w, grid_h)
                     positions.initialize_combat_positions(
                         allies=[],
@@ -2103,6 +2170,7 @@ class ApiCombatAdapter:
                         scenario_type="standard",
                         grid_width=grid_w,
                         grid_height=grid_h,
+                        terrain=grid,
                     )
                 except Exception as e:
                     logger.warning("Position init for reinforcements failed: %s", e)

@@ -7,6 +7,7 @@ import src.states as states  # noqa: F401
 import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
+import src.terrain as terrain  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     apply_glancing_blow,
@@ -439,6 +440,21 @@ class FeintAndPivot(Move):
                     self.target.combat_position.facing,
                     current_position,
                 )
+
+                # The pivot is a straight-line hop; with terrain active it
+                # must still land on open ground and not inside another unit.
+                grid = terrain.grid_for(user)
+                if grid is not None:
+                    occupied = terrain.occupied_cells(
+                        list(getattr(user, "combat_list", None) or [])
+                        + list(getattr(user, "combat_list_allies", None) or []),
+                        exclude=user,
+                    )
+                    landing = grid.nearest_passable((new_pos.x, new_pos.y), occupied)
+                    if landing is not None:
+                        new_pos = positions.CombatPosition(
+                            x=landing[0], y=landing[1], facing=new_pos.facing
+                        )
 
                 # Update user position
                 user.combat_position = new_pos

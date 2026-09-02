@@ -93,7 +93,7 @@ LEGACY_BARE_MODULES = frozenset({
     "loot_tables", "map_placeholders", "moves", "narration", "npc",
     "npc_ai_config", "objects", "positions", "save_format",
     "secure_pickle", "shop_conditions", "skilltree", "states", "story",
-    "tiles", "tilesets", "universe", "player",
+    "terrain", "tiles", "tilesets", "universe", "player",
 })
 
 

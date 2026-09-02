@@ -7,6 +7,7 @@ Provides decision framework that integrates with combat.py AI decision-making.
 from typing import Tuple, Optional, List
 
 from src import positions
+import src.terrain as terrain
 
 
 class NPCAIConfig:
@@ -198,6 +199,13 @@ class NPCAIConfig:
             return None
 
         try:
+            grid = terrain.grid_for(attacker)
+            if grid is not None:
+                # With terrain the nearer blind side may be a wall; score both
+                # landing cells (reachability, cover, elevation) instead.
+                bearing = terrain.best_flank_bearing(grid, attacker, target)
+                if bearing is not None:
+                    return bearing
             return positions.nearest_flank_bearing(a_pos, t_pos)
         except (AttributeError, TypeError):
             return None
@@ -293,6 +301,8 @@ class NPCAIConfig:
             if move_l in ["withdraw", "dodge", "parry", "npc_rest"]:
                 bonus += 3
 
+        bonus += self.get_terrain_move_bonus(npc, move_name)
+
         # Bonus for flanking moves when conditions are right
         if self.is_flanking_enabled() and getattr(npc, "target", None):
             target = npc.target
@@ -327,6 +337,50 @@ class NPCAIConfig:
                         if min_range <= distance <= max_range:
                             bonus += 2
 
+        return bonus
+
+    #: Movement moves an NPC reaches for when the ground it stands on, or the
+    #: ground its target holds, is working against it.
+    _REPOSITION_MOVES = ("advance", "flanking maneuver", "tactical positioning")
+    _RETREAT_MOVES = ("withdraw", "tactical retreat")
+
+    def get_terrain_move_bonus(self, npc, move_name: str) -> int:
+        """Terrain-awareness half of ``get_weighted_move_bonus``.
+
+        Reads the fight's ``TerrainGrid`` through ``terrain.grid_for`` and
+        returns 0 whenever terrain is inactive, so legacy proximity-only
+        fights and test doubles are untouched. Rules, all cheap and local:
+
+        * standing in a hazard -- get off it (movement moves +3)
+        * target holds higher ground -- close or flank rather than trade
+          blows uphill (+2 movement, -1 offensive)
+        * we hold higher ground -- press it (+2 offensive)
+        * target sits behind cover and we are past melee reach -- reposition
+          for a clean line (+2 movement) rather than shoot into a boulder
+        """
+        grid = terrain.grid_for(npc)
+        target = getattr(npc, "target", None)
+        if grid is None or target is None:
+            return 0
+        move_l = move_name.lower()
+        bonus = 0
+        here = terrain.standing_on(npc)
+        if here and here["kind"] == terrain.HAZARD:
+            if move_l in self._REPOSITION_MOVES or move_l in self._RETREAT_MOVES:
+                bonus += 3
+        info = terrain.engagement(npc, target)
+        if not info:
+            return bonus
+        offensive = self._move_is_offensive(npc, move_name)
+        if info["elevation"] < 0:
+            if move_l in self._REPOSITION_MOVES:
+                bonus += 2
+            elif offensive:
+                bonus -= 1
+        elif info["elevation"] > 0 and offensive:
+            bonus += 2
+        if info["cover"] and move_l in self._REPOSITION_MOVES:
+            bonus += 2
         return bonus
 
     def get_ai_config_summary(self) -> str:

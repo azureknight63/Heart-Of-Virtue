@@ -1829,6 +1829,10 @@
       "name": "WhisperingStatue"
     },
     {
+      "module": "src.terrain",
+      "name": "TerrainGrid"
+    },
+    {
       "module": "src.tiles",
       "name": "MapTile"
     },
@@ -1925,6 +1929,6 @@
       "name": "UUID"
     }
   ],
-  "count": 481,
+  "count": 482,
   "header_version": 1
 }
