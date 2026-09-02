@@ -1,3 +1,10 @@
-[tool.black]
-line-length = 88
-target-version = ["py311"]
+# Heart of Virtue — Python tooling configuration.
+#
+# There is no autoformatter. `black` was configured here but never installed
+# (absent from every requirements file) and never enforced in CI, while 69 of
+# 119 files under src/ did not conform to it. Issue #501 resolved this by
+# dropping black rather than reformatting the tree, so nothing should re-add a
+# [tool.black] section here.
+#
+# flake8 is the only Python lint gate:
+#     python -m flake8 --extend-ignore=E501 src/

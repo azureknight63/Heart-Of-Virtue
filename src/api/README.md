@@ -336,18 +336,14 @@ See `docs/IMPLEMENTATION_PLAN.md` for full details.
 
 ## Code Quality Standards
 
-- **Format**: Black (100 char line length)
-- **Lint**: flake8 (max 100 chars, ignore E501)
+- **Lint**: flake8 (`python -m flake8 --extend-ignore=E501 src/`) — the only Python style gate; there is no autoformatter
 - **Type Hints**: Required for all public methods
 - **Docstrings**: Google-style
 - **Test Coverage**: >85% for API layer
 
 ```bash
-# Format code
-black src/api tests/api
-
 # Check lint
-flake8 src/api tests/api --max-line-length=100 --ignore=E501
+python -m flake8 --extend-ignore=E501 src/api
 
 # Type check (with mypy when set up)
 # mypy src/api
