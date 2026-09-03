@@ -32,9 +32,26 @@ export default function GamePage() {
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combatSocketStreaming } = useCapabilities()
-  const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat(combatSocketStreaming)
   const { playBGM, playSFX, playSting, combatSpeed } = useAudio()
   const { error: showError } = useToast()
+
+  // The server answers an in-game refusal (not enough fatigue, move on
+  // cooldown, an event still open) with HTTP 200 + `success:false` and no
+  // state payload — see src/api/routes/combat.py. Nothing used to read that:
+  // the click played its pre-flight sound, no state changed, and no message
+  // appeared, so every button looked dead and the player had no way out but a
+  // refresh (issue #505). Surface it, and remember an "Event pending" refusal
+  // so the recovery poll below can go re-fetch the event the client lost.
+  const pendingEventRefusalRef = useRef(false)
+  const handleCombatActionRefused = useCallback((refusal) => {
+    if (refusal?.error === 'Event pending') pendingEventRefusalRef.current = true
+    showError(refusal?.message || refusal?.error || 'That action is not available right now.')
+  }, [showError])
+
+  const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat(
+    combatSocketStreaming,
+    { onActionRefused: handleCombatActionRefused }
+  )
   const { triggerTick } = useAutosave({
     onSaveError: () => showError('Failed to save your progress. Check your connection.')
   })
@@ -229,20 +246,42 @@ export default function GamePage() {
   }, [isMobile, combat?.awaiting_input, combat?.log?.length, combat?.end_state, isEventDialogActive])
 
   /**
-   * Poll for combat status when suggestions are loading (fallback for missing socket events)
+   * Re-sync combat status while a fight is live.
+   *
+   * Combat state used to be push-only: it changed when the player acted or a
+   * socket beat arrived, and nothing ever asked the server "what do you think
+   * the state is?". Any desync was therefore permanent, and the only escape a
+   * page refresh (issues #505/#508). GameService.get_combat_status already
+   * carries a self-heal for exactly this class of desync — in_combat with no
+   * awaiting_input and no blocking event resets the adapter to move_selection
+   * — but with the poll gated on `suggestions_loading` it was unreachable in
+   * ordinary play. Polling whenever we are in combat makes it reachable.
+   *
+   * Two cadences, deliberately: suggestions are a short-lived async fetch the
+   * player is actively waiting on, so that keeps the 3s tick; the rest of the
+   * fight only needs a slow safety net, and putting a whole fight on a 3s poll
+   * would multiply request volume for no gain.
    */
   useEffect(() => {
-    let pollInterval
-    if (inCombat && combat?.suggestions_loading) {
-      const pollIntervalMs = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 50 : 3000
-      pollInterval = setInterval(() => {
-        fetchCombatStatus()
-      }, pollIntervalMs) // Poll every 3 seconds (50ms in tests)
-    }
-    return () => {
-      if (pollInterval) clearInterval(pollInterval)
-    }
-  }, [inCombat, combat?.suggestions_loading, fetchCombatStatus])
+    if (!inCombat) return undefined
+    const isTestEnv = typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)
+    const awaitingSuggestions = !!combat?.suggestions_loading
+    const pollIntervalMs = isTestEnv
+      ? (awaitingSuggestions ? 50 : 100)
+      : (awaitingSuggestions ? 3000 : 8000)
+    const pollInterval = setInterval(() => {
+      fetchCombatStatus()
+      // A move refused with "Event pending" means the server is still holding
+      // an event the client no longer has (useEventManager's processedEventIds
+      // dedup can drop it, and the server keeps it forever). Re-fetch it so the
+      // dialog can be answered instead of blocking combat for good.
+      if (pendingEventRefusalRef.current) {
+        pendingEventRefusalRef.current = false
+        checkPendingEvents()
+      }
+    }, pollIntervalMs)
+    return () => clearInterval(pollInterval)
+  }, [inCombat, combat?.suggestions_loading, fetchCombatStatus, checkPendingEvents])
 
   /**
    * Handle events triggered from combat

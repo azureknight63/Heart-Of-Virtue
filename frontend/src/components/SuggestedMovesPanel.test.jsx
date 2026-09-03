@@ -414,4 +414,65 @@ describe('SuggestedMovesPanel', () => {
             expect(onSuggestClick).toHaveBeenCalledWith(mockSuggestions[0]);
         });
     });
+
+    describe('moves the server would refuse (issue #505)', () => {
+        // The advisor and `available_options` are independent server-side
+        // derivations and they do disagree — with fatigue drained the strategist
+        // still suggested `Attack` while the move list reported it unavailable.
+        // Clicking that card POSTed an action the server answered with HTTP 200
+        // and `success:false`: no state change, no error, nothing but the
+        // pre-flight "can't do that" sound. That is what a player experiences as
+        // a dead UI.
+        const blockedReasonFor = (moveName) =>
+            (moveName === 'Slash' ? 'Not enough fatigue' : null);
+
+        it('does not fire onSuggestClick for a blocked suggestion', () => {
+            const onSuggestClick = vi.fn();
+            render(
+                <SuggestedMovesPanel
+                    isPlayerTurn={true}
+                    suggestions={mockSuggestions}
+                    onSuggestClick={onSuggestClick}
+                    blockedReasonFor={blockedReasonFor}
+                />
+            );
+
+            fireEvent.click(screen.getByText('Slash').closest('div[title]'));
+            expect(onSuggestClick).not.toHaveBeenCalled();
+
+            // The unblocked one still works.
+            fireEvent.click(screen.getByText('Dodge').closest('div'));
+            expect(onSuggestClick).toHaveBeenCalledWith(mockSuggestions[1]);
+        });
+
+        it('greys the blocked card and states the reason', () => {
+            render(
+                <SuggestedMovesPanel
+                    isPlayerTurn={true}
+                    suggestions={mockSuggestions}
+                    blockedReasonFor={blockedReasonFor}
+                />
+            );
+
+            const blocked = screen.getByText('Slash').closest('div[title]');
+            expect(blocked.style.opacity).toBe('0.45');
+            expect(blocked.style.cursor).toBe('not-allowed');
+            expect(blocked.getAttribute('aria-disabled')).toBe('true');
+            expect(screen.getByText(/UNAVAILABLE — Not enough fatigue/)).toBeDefined();
+        });
+
+        it('leaves every card clickable when no gate is supplied', () => {
+            const onSuggestClick = vi.fn();
+            render(
+                <SuggestedMovesPanel
+                    isPlayerTurn={true}
+                    suggestions={mockSuggestions}
+                    onSuggestClick={onSuggestClick}
+                />
+            );
+
+            fireEvent.click(screen.getByText('Slash').closest('div'));
+            expect(onSuggestClick).toHaveBeenCalledWith(mockSuggestions[0]);
+        });
+    });
 });

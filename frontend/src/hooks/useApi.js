@@ -120,11 +120,26 @@ export const usePlayer = () => {
   return { player, loading, error, refetch: fetchPlayer, allocateLevelUpPoints }
 }
 
-export const useCombat = (streamingEnabled = false) => {
+/**
+ * useCombat - combat state + action dispatch.
+ *
+ * @param {boolean} [streamingEnabled] Socket.IO beat streaming is on.
+ * @param {Object} [options]
+ * @param {(refusal: Object) => void} [options.onActionRefused] called with the
+ *   response body when the server refuses an action in-game — HTTP 200 with
+ *   `success:false` (see src/api/routes/combat.py). Without it the refusal is
+ *   swallowed: no state is applied and nothing is shown, so every button looks
+ *   dead and the player is soft-locked with no way to learn why (issue #505).
+ */
+export const useCombat = (streamingEnabled = false, { onActionRefused } = {}) => {
   const [combat, setCombat] = useState(null)
   const [loading, setLoading] = useState(false)
   const [inCombat, setInCombat] = useState(false)
   const fetchInFlight = useRef(false)
+  // Held in a ref so an inline callback from the caller doesn't rebuild
+  // performAction (and every memo downstream of it) on every render.
+  const onActionRefusedRef = useRef(onActionRefused)
+  onActionRefusedRef.current = onActionRefused
 
   const fetchCombatStatus = useCallback(async () => {
     if (fetchInFlight.current) return
@@ -173,7 +188,10 @@ export const useCombat = (streamingEnabled = false) => {
       const data = response.data
       // Game-logic errors (e.g. "no viable targets") return success:false with no
       // combat state payload — don't overwrite current state or drop out of combat.
+      // The refusal still has to reach the player: reporting nothing is what made
+      // a desynced client look like a dead UI (issue #505).
       if (data.success === false) {
+        onActionRefusedRef.current?.(data)
         return data
       }
       // Streaming normally delivers beat/resolution payloads over Socket.IO. The
