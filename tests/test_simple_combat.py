@@ -236,6 +236,26 @@ class TestCombatIdLifecycle:
 
         assert _alert_count(player, "Test Slime") == 0
 
+    def test_a_reinforcement_is_announced_after_an_earlier_fighter_died(
+        self, adapter, player, slime
+    ):
+        """The skip list must not swallow genuine arrivals.
+
+        Tracking "already announced" by ``id()`` would: the dead combatant is
+        dropped from the roster and can be freed, and CPython is free to hand
+        the reinforcement the same address, whereupon its arrival is silently
+        skipped. The adapter holds the combatants themselves for this reason.
+        """
+        player.combat_list.remove(slime)
+        del slime
+        player.combat_log.clear()
+
+        reinforcement = make_npc(Slime, name="Reinforcement", hp=20, maxhp=20)
+        player.combat_list.append(reinforcement)
+        adapter.initialize_combat([reinforcement], reinit=True)
+
+        assert _alert_count(player, "Reinforcement") == 1
+
     def test_a_new_fight_announces_the_roster_again(self, adapter, player, slime):
         """Who has been announced is per-fight state, like combat_id."""
         player.combat_log.clear()

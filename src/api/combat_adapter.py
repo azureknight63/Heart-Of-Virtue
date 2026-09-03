@@ -397,10 +397,14 @@ class ApiCombatAdapter:
         # Prevent concurrent status polls or duplicate cleanup paths from
         # emitting the terminal SocketIO event more than once per combat.
         self._terminal_event_emitted = False
-        # Object ids of the combatants whose arrival has already been announced
-        # in the current fight. Per-fight, in-memory only (object identity does
-        # not survive a save), reset with combat_id in initialize_combat.
-        self._announced_enemy_ids = set()
+        # The combatants whose arrival has already been announced in the
+        # current fight. Holds the objects themselves, not their id()s: a
+        # combatant that dies mid-fight can be freed and a later reinforcement
+        # allocated at the same address, which would silently swallow that
+        # reinforcement's announcement. Per-fight, in-memory only (object
+        # identity does not survive a save), reset with combat_id in
+        # initialize_combat.
+        self._announced_enemies = set()
 
         self._reset_log_index_state()
 
@@ -1005,7 +1009,7 @@ class ApiCombatAdapter:
                 # per-fight identity, like combat_id — see _emit_animation_log).
                 self._reset_animation_seq()
                 # Who has been announced is per-fight state too.
-                self._announced_enemy_ids = set()
+                self._announced_enemies = set()
                 # Defence in depth for issue #506: a combat-effect event armed
                 # in another room must not get a chance to fire in this fight.
                 purge_orphaned_combat_events(self.player)
@@ -1166,9 +1170,9 @@ class ApiCombatAdapter:
             # `_trim_combat_log` dropped the round-1 entries it compares
             # against — a long fight got the duplicates anyway (issue #506).
             for enemy in enemies:
-                if id(enemy) in self._announced_enemy_ids:
+                if enemy in self._announced_enemies:
                     continue
-                self._announced_enemy_ids.add(id(enemy))
+                self._announced_enemies.add(enemy)
                 name = getattr(enemy, "name", "Enemy")
                 alert = getattr(enemy, "alert_message", "appears!")
                 self._add_log_entry(1, f"{name} {alert}", "system")
