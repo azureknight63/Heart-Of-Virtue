@@ -21,6 +21,12 @@ export function socketUrl() {
 export function createCombatSocket({ url } = {}) {
   return io(url ?? socketUrl(), {
     autoConnect: true,
+    // The handshake is what authenticates this socket: the server reads the
+    // HttpOnly session cookie off it (issue #493). Same-origin polling would
+    // send the cookie anyway; this is explicit so a cross-origin dev setup
+    // (VITE_API_URL pointed straight at the API port) does not silently
+    // connect as nobody.
+    withCredentials: true,
     // The API runs Flask-SocketIO on Werkzeug's threaded development server.
     // That server can log a spurious 500 ("write() before start_response")
     // when a browser closes a WebSocket. Polling keeps Socket.IO real-time

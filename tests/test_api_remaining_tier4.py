@@ -390,7 +390,7 @@ class TestAPIRouteWiring:
         assert response.status_code == 401
         assert response.get_json() == {
             "success": False,
-            "error": "Missing or invalid Authorization header",
+            "error": "Missing or invalid session credentials",
         }
 
     def test_debug_blueprint_is_registered_only_in_testing(self, make_api_app):
