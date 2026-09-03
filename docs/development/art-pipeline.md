@@ -13,7 +13,7 @@ procedural terrain fills, so the pipeline can be filled in piecemeal.
 |---|---|
 | `tools/art_prompts.py` | Source of truth for the spec (frame size, clips, facings, roster, region tile lists) and generator of the prompt pack |
 | `docs/development/art-prompts/` | Generated prompts: `sprite-<slug>.md`, `tileset-<region>.md`, `pack.json`, `README.md` |
-| `tools/sprite_intake.py` | Slices delivered PNGs into strips/tiles, keys out the magenta background, writes the manifest |
+| `tools/sprite_intake.py` | Locates the cells in delivered sheets, keys out the magenta by hue, slices strips/tiles, writes the manifest |
 | `frontend/public/assets/sprites/manifest.json` | What exists: `sprites[slug].clips[clip] = {file, frames, rows}` and `terrain[region].tiles[variant]` |
 | `frontend/public/assets/sprites/<slug>/<clip>.png` | 64 px strips: rows south/west/north, columns = frames |
 | `frontend/public/assets/terrain/<region>/<variant>.png` | 64 px tiles |
@@ -32,16 +32,29 @@ client side, plus clip names the renderer knows).
 ## Sheet spec
 
 * Frame: 64 x 64 px after intake. Deliveries can be any size up to 4096 px a
-  side: cells are found by dividing the image evenly, the magenta gaps and
-  background are keyed to transparency, then the whole sheet is cropped by
-  one box (the union of every cell's content) and scaled by one factor, so
-  relative size and the shared feet baseline survive intake and frames do
-  not pulse. Delivered file names must name a roster slug and a known clip;
-  anything else is refused.
+  side, PNG/JPEG/WebP: the magenta is keyed to transparency **by hue** (JPEG
+  exports drift it to about (229, 64, 244) and models draw dark-magenta
+  gridlines the prompt forbids; both go), the cells are then **located from
+  the content** (`find_cells`: runs of non-empty rows/columns, so margins,
+  gridlines and an off grid all slice; `--grid even` divides blindly instead),
+  and the whole sheet is cropped by one box (the union of every cell's
+  content) and scaled by one factor, so relative size and the shared feet
+  baseline survive intake and frames do not pulse. A wrong number of frames
+  per row is resampled to the spec's count with a warning (the manifest never
+  drifts from the spec); a wrong number of facing rows is refused. Delivered
+  file names must name a roster slug and a known clip; anything else is
+  refused.
+* Known model behaviour (Nano Banana 2, first cave bat run): given the whole
+  prompt doc it returned one JPEG composite of all seven clips, five columns
+  each, with gridlines. The prompts now name every frame's pose, ask for one
+  image containing only that clip, and forbid gridlines; run one prompt per
+  conversation and redo any composite -- the intake cannot tell which clump
+  is which clip.
 * Facings: three rows, **south, west, north**. East is the west row mirrored.
 * Clips and frame counts: idle 4, walk 6, attack 6, cast 6, defend 4, hurt 3,
   death 6. One image per clip (`<slug>__<clip>.png`), rows = facings,
-  columns = frames, hairline magenta (#FF00FF) gaps and background.
+  columns = frames, flat magenta (#FF00FF) margins and background, no
+  gridlines.
 * Clip selection in play (`spriteClipFor`): dying -> death; hit landing ->
   hurt; source of a defend animation -> defend, of a buff/debuff/drain/heal/
   pulse/shockwave -> cast, of a dash (every movement move) -> walk, of any
@@ -68,7 +81,8 @@ included); before that, only feature cells are drawn, procedurally.
 ```bash
 python tools/art_prompts.py                    # regenerate prompts after editing the spec
 # ... generate images from docs/development/art-prompts/*.md ...
-python tools/sprite_intake.py sheet   deliveries/jean__idle.png deliveries/jean__walk.png
+python tools/sprite_intake.py sheet   deliveries/jean__idle.png deliveries/jean__walk.jpg
+python tools/sprite_intake.py sheet   deliveries/jean__idle.png --grid even   # blind rows x cols split
 python tools/sprite_intake.py tileset deliveries/tileset__verdette_caverns.png
 python tools/sprite_intake.py validate         # complete / placeholder / missing / broken
 python tools/sprite_intake.py placeholders --only slime   # procedural stand-in strips

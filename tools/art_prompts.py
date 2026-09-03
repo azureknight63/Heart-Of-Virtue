@@ -37,6 +37,19 @@ CHROMA_HEX = "#%02X%02X%02X" % CHROMA_RGB
 SHEET_SEPARATOR = "__"
 TILESET_PREFIX = "tileset"
 
+#: Delivery formats the intake accepts. PNG is asked for; image tools often
+#: export JPEG/WebP, which the hue key copes with.
+DELIVERY_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def _delivery_stem(name: str) -> str:
+    lower = name.lower()
+    for ext in DELIVERY_EXTENSIONS:
+        if lower.endswith(ext):
+            return name[: -len(ext)]
+    return name
+
+
 #: Facings drawn. East is mirrored from west at render time, so three rows.
 FACINGS = ("south", "west", "north")
 
@@ -75,24 +88,92 @@ tone: worn, practical, grounded. Read clearly at 48 px on a dark #0a0a0a field. 
 No text, no labels, no watermark, no drop shadow (the game draws its own)."""
 
 LAYOUT_BLOCK = """\
-LAYOUT: a single PNG containing a strict {rows} x {cols} grid of equal square cells \
-({rows} rows, {cols} columns), every cell the same size, with hairline gaps of \
-solid magenta ({chroma}) between cells and a solid magenta background behind \
-every cell. One sprite per cell, centred, feet on the same baseline in every cell, \
-identical scale in every cell. Row 1 = facing SOUTH (toward the viewer), \
-row 2 = facing WEST (left), row 3 = facing NORTH (away). Columns are the \
-animation frames in order, left to right. Do not draw anything outside the cells."""
+LAYOUT: exactly one image, containing ONLY this clip: a strict {rows} x {cols} grid \
+of equal square cells ({rows} rows, {cols} columns, {cells} cells in total) on a flat, \
+uniform magenta ({chroma}) background. Nothing else in the image: no extra cells, \
+no second grid, no other animation, no title strip. No gridlines, borders, boxes or \
+frames around the cells -- cells are separated only by clear magenta margins. The \
+magenta is one flat colour everywhere: no gradient, vignette, texture or shading. One \
+sprite per cell, centred, feet on the same baseline in every cell, identical scale in \
+every cell. Row 1 = facing SOUTH (toward the viewer), row 2 = facing WEST (left), \
+row 3 = facing NORTH (away). Columns are the animation frames in order, left to \
+right. Do not draw anything outside the cells."""
+
+#: Clips that loop; the rest play once, start to end.
+LOOPING_CLIPS = ("idle", "walk")
+
+#: Key poses per clip, spread evenly across the frame count so every frame
+#: has a stated job: image models keep the column count when each column is
+#: described, and drift to their own count when only a number is given.
+CLIP_PHASES = {
+    "idle": ["rest pose", "slight rise", "top of the breath", "settling back"],
+    "walk": [
+        "contact",
+        "push-off",
+        "mid-stride",
+        "opposite contact",
+        "push-off",
+        "mid-stride",
+    ],
+    "attack": [
+        "wind-up begins",
+        "fully wound",
+        "swing",
+        "impact",
+        "follow-through",
+        "recoil back to rest",
+    ],
+    "cast": [
+        "focus",
+        "raise",
+        "gather energy",
+        "peak, energy released",
+        "release fades",
+        "lower back to rest",
+    ],
+    "defend": ["guard comes up", "guard held", "guard braced", "guard relaxes"],
+    "hurt": ["recoil from the hit", "hold, off balance", "recover"],
+    "death": [
+        "struck",
+        "staggers",
+        "falls",
+        "hits the ground",
+        "settles",
+        "resting corpse (held)",
+    ],
+}
+
+
+def frame_phases(clip: str, frames: int) -> list[str]:
+    """``frames`` phase labels for ``clip``, resampled from ``CLIP_PHASES``."""
+    phases = CLIP_PHASES[clip]
+    if frames <= 1:
+        return phases[:1]
+    return [phases[round(i * (len(phases) - 1) / (frames - 1))] for i in range(frames)]
 
 
 def _sheet_prompt(subject: str, clip: str, frames: int, accent: str) -> str:
+    motion = (
+        "a seamless loop (the last frame leads back into the first)"
+        if clip in LOOPING_CLIPS
+        else "a clean start-to-end sequence"
+    )
+    frame_list = ", ".join(
+        f"{i + 1} = {phase}" for i, phase in enumerate(frame_phases(clip, frames))
+    )
     return "\n\n".join(
         [
             f"SUBJECT: {subject} Accent colour: {accent}.",
-            f"ANIMATION: '{clip}' -- {CLIP_NOTES[clip]}. Exactly {frames} frames per row, "
-            f"a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end "
-            f"sequence otherwise. The pose must be recognisably the same character in all "
+            f"ANIMATION: '{clip}' -- {CLIP_NOTES[clip]}. Exactly {frames} frames per "
+            f"row, {motion}. The pose must be recognisably the same character in all "
             f"{frames * len(FACINGS)} cells.",
-            LAYOUT_BLOCK.format(rows=len(FACINGS), cols=frames, chroma=CHROMA_HEX),
+            f"FRAMES (left to right, the same {frames} in every row): {frame_list}.",
+            LAYOUT_BLOCK.format(
+                rows=len(FACINGS),
+                cols=frames,
+                cells=frames * len(FACINGS),
+                chroma=CHROMA_HEX,
+            ),
             STYLE_BLOCK,
         ]
     )
@@ -457,7 +538,7 @@ def parse_sheet_filename(name: str):
     """``jean__idle.png`` -> ``("jean", "idle")``; raises ``ValueError`` for an
     unknown slug or clip so a mis-named delivery cannot create a stray sprite
     (or, via ``..``, a file outside the sprites directory)."""
-    stem = name[:-4] if name.lower().endswith(".png") else name
+    stem = _delivery_stem(name)
     if SHEET_SEPARATOR not in stem:
         raise ValueError(f"{name}: expected '<slug>{SHEET_SEPARATOR}<clip>.png'")
     slug, clip = stem.split(SHEET_SEPARATOR, 1)
@@ -470,7 +551,7 @@ def parse_sheet_filename(name: str):
 
 def parse_tileset_filename(name: str) -> str:
     """``tileset__verdette_caverns.png`` -> ``"verdette_caverns"``."""
-    stem = name[:-4] if name.lower().endswith(".png") else name
+    stem = _delivery_stem(name)
     prefix = f"{TILESET_PREFIX}{SHEET_SEPARATOR}"
     if not stem.startswith(prefix):
         raise ValueError(f"{name}: expected '{prefix}<region>.png'")
@@ -529,9 +610,12 @@ def _sprite_doc(entry: dict, sheets: list[dict]) -> str:
         f"Slug: `{entry['slug']}`  ",
         f"Side: {entry['side']}",
         "",
-        "One image per clip. Deliver each as the file name shown; the intake tool "
-        "slices it by the stated grid and normalises frames to "
-        f"{FRAME_SIZE}x{FRAME_SIZE}.",
+        "One image per clip: run each prompt below on its own, in a fresh "
+        "conversation, and keep only an image that shows that single clip (a "
+        "composite of several clips, or a second grid, is a redo). Deliver each "
+        "as the file name shown -- PNG preferred, JPEG/WebP accepted -- and the "
+        "intake tool locates the cells, keys the magenta by hue, and normalises "
+        f"frames to {FRAME_SIZE}x{FRAME_SIZE}.",
         "",
     ]
     for sheet in sheets:

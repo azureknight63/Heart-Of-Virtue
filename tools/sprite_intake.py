@@ -13,9 +13,13 @@ frontend actually loads:
   ``frontend/src/utils/sprites.js``
 
 Every step is tolerant of the usual model failures: the magenta background is
-keyed to transparency with a tolerance, cells are found by dividing the image
-evenly (so a slightly-off grid still slices), and each cell is resampled with
-nearest-neighbour so pixels stay crisp. A sheet is normalised as one unit --
+keyed by *hue* (JPEG exports and "creative" magentas drift far from #FF00FF,
+and models draw dark magenta gridlines the prompt never asked for), cells are
+found from the content itself (``find_cells``: runs of non-empty rows and
+columns, so margins, gridlines and a slightly-off grid all slice cleanly; an
+even split remains available as ``grid="even"``), a wrong frame count is
+resampled to the spec's so the manifest never drifts from it, and each cell
+is resampled with nearest-neighbour so pixels stay crisp. A sheet is normalised as one unit --
 one crop box and one scale for every cell -- so the model's "identical scale,
 feet on the same baseline" survives intake and frames do not pulse.
 
@@ -23,7 +27,7 @@ Deliveries are untrusted input: file names are validated against the roster
 before they become paths, output paths are containment-checked, and decoded
 images are size-capped.
 
-    python tools/sprite_intake.py sheet   jean__idle.png [more.png ...]
+    python tools/sprite_intake.py sheet   jean__idle.png [more.png ...] [--grid even]
     python tools/sprite_intake.py tileset tileset__verdette_caverns.png
     python tools/sprite_intake.py placeholders [--only jean slime] [--force]
     python tools/sprite_intake.py validate
@@ -38,7 +42,7 @@ import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -63,6 +67,32 @@ MANIFEST = SPRITES_DIR / "manifest.json"
 
 CHROMA_TOLERANCE = 48
 
+#: Hue key. Pillow's HSV hue runs 0-255, so magenta (300 degrees) is 213;
+#: anything within ``CHROMA_HUE_TOLERANCE`` of it that is saturated and not
+#: near-black is background. The saturation floor keeps dusky purples and
+#: greys in a sprite; the value floor keeps true black outlines.
+CHROMA_HUE = round(300 / 360 * 255)
+CHROMA_HUE_TOLERANCE = 10
+CHROMA_MIN_SATURATION = 140
+CHROMA_MIN_VALUE = 40
+
+#: Despill: JPEG blends the background into the sprite's outline, leaving a
+#: halo of dull magenta. Pixels within ``DESPILL_REACH`` px of the keyed
+#: background are keyed under this looser hue/saturation window too.
+DESPILL_REACH = 2
+DESPILL_HUE_TOLERANCE = 14
+DESPILL_MIN_SATURATION = 70
+
+#: ``find_cells``: a row/column of the keyed sheet counts as empty when its
+#: mean alpha is below this (JPEG noise on the magenta and ringing along a
+#: keyed gridline leave a few stray pixels); content runs closer together
+#: than this fraction of the widest run are one cell (a detached spark, a
+#: gap between legs; a keyed gridline with wings touching it on both sides
+#: is wider than that); runs narrower than this fraction of it are specks.
+GRID_EMPTY_ALPHA = 10
+GRID_MERGE_GAP = 0.06
+GRID_SPECK = 0.1
+
 #: Largest delivery accepted, in pixels per side and in total. A 4096-square
 #: sheet is already far more than any 3 x 6 grid needs.
 MAX_IMAGE_SIDE = 4096
@@ -71,6 +101,7 @@ Image.MAX_IMAGE_PIXELS = MAX_IMAGE_SIDE * MAX_IMAGE_SIDE
 #: Manifest file paths the frontend will accept (mirrors sprites.js).
 SAFE_FILE = re.compile(r"^(?:sprites|terrain)/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+\.png$")
 MAX_FRAMES = 64
+GRID_MODES = ("auto", "even")
 
 
 # ---------------------------------------------------------------------------
@@ -89,24 +120,129 @@ def open_delivery(path: Path) -> Image.Image:
         return image.convert("RGBA")
 
 
+def _hsv_mask(hsv_bands, hue_tolerance: int, min_saturation: int) -> Image.Image:
+    """255 where the pixel is magenta-hued, at least ``min_saturation``
+    saturated and not near-black."""
+    h, sat, val = hsv_bands
+    lo, hi = CHROMA_HUE - hue_tolerance, CHROMA_HUE + hue_tolerance
+    hue_ok = h.point(lambda v: 255 if lo <= v <= hi else 0)
+    sat_ok = sat.point(lambda v: 255 if v >= min_saturation else 0)
+    val_ok = val.point(lambda v: 255 if v >= CHROMA_MIN_VALUE else 0)
+    return ImageChops.multiply(ImageChops.multiply(hue_ok, sat_ok), val_ok)
+
+
 def key_out_background(
     image: Image.Image, tolerance: int = CHROMA_TOLERANCE
 ) -> Image.Image:
-    """Return an RGBA copy with every near-magenta pixel made transparent.
+    """Return an RGBA copy with every magenta-ish pixel made transparent.
 
-    A pixel is keyed when every channel is within ``tolerance`` of the chroma
-    (a box, not a sphere, around ``CHROMA_RGB``). Done with Pillow channel
-    ops rather than a Python pixel loop: a 1024-square delivery is a million
-    pixels.
+    A pixel is keyed when it is within ``tolerance`` of ``CHROMA_RGB`` on
+    every channel *or* when its hue is magenta and it is saturated and not
+    near-black (see ``CHROMA_HUE``): deliveries arrive as JPEG with the
+    background drifted to (229, 64, 244), and models draw dark-magenta
+    gridlines between cells. A second, looser pass (``DESPILL_*``) then
+    keys the dull-magenta halo JPEG leaves along the outline, but only
+    within ``DESPILL_REACH`` px of already-keyed background so a genuinely
+    purple sprite keeps its interior. Done with Pillow channel ops rather
+    than a Python pixel loop: a 1024-square delivery is a million pixels.
     """
     rgba = image.convert("RGBA")
+    rgb = rgba.convert("RGB")
     chroma = Image.new("RGB", rgba.size, CHROMA_RGB)
-    diff = ImageChops.difference(rgba.convert("RGB"), chroma)
-    r, g, b = diff.split()
+    r, g, b = ImageChops.difference(rgb, chroma).split()
     farthest = ImageChops.lighter(ImageChops.lighter(r, g), b)
-    keep = farthest.point(lambda v: 255 if v > tolerance else 0)
+    near_box = farthest.point(lambda v: 255 if v <= tolerance else 0)
+
+    hsv = rgb.convert("HSV").split()
+    background = ImageChops.lighter(
+        near_box, _hsv_mask(hsv, CHROMA_HUE_TOLERANCE, CHROMA_MIN_SATURATION)
+    )
+    spill = _hsv_mask(hsv, DESPILL_HUE_TOLERANCE, DESPILL_MIN_SATURATION)
+    for _ in range(DESPILL_REACH):
+        halo = background.filter(ImageFilter.MaxFilter(3))
+        background = ImageChops.lighter(background, ImageChops.multiply(halo, spill))
+
     transparent = Image.new("RGBA", rgba.size, (0, 0, 0, 0))
-    return Image.composite(rgba, transparent, keep)
+    return Image.composite(transparent, rgba, background)
+
+
+def _content_runs(profile: Sequence[int]) -> list[tuple[int, int]]:
+    """Inclusive ``(start, end)`` runs of non-empty entries in a mean-alpha
+    profile. Runs closer together than ``GRID_MERGE_GAP`` of the widest run
+    are joined (a spark beside a hand, the gap between two legs) and runs
+    narrower than ``GRID_SPECK`` of it are dropped (JPEG ringing along a
+    keyed gridline, a stray pixel)."""
+    runs: list[list[int]] = []
+    for i, value in enumerate(profile):
+        if value < GRID_EMPTY_ALPHA:
+            continue
+        if runs and i == runs[-1][1] + 1:
+            runs[-1][1] = i
+        else:
+            runs.append([i, i])
+    if not runs:
+        return []
+    widest = max(end - start + 1 for start, end in runs)
+    speck = max(1, widest * GRID_SPECK)
+    solid = [run for run in runs if run[1] - run[0] + 1 >= speck]
+    merged: list[list[int]] = [solid[0]]
+    for start, end in solid[1:]:
+        if start - merged[-1][1] - 1 < widest * GRID_MERGE_GAP:
+            merged[-1][1] = end
+        else:
+            merged.append([start, end])
+    return [(start, end) for start, end in merged]
+
+
+def _profile(alpha: Image.Image, axis: int) -> list[int]:
+    """Mean alpha per column (``axis`` 0) or row (``axis`` 1), via a box
+    resize so the whole image is reduced in C."""
+    width, height = alpha.size
+    size = (width, 1) if axis == 0 else (1, height)
+    return list(alpha.resize(size, Image.BOX).tobytes())
+
+
+def find_cells(image: Image.Image) -> list[list[Image.Image]]:
+    """Locate the sheet's cells from its content instead of trusting the grid.
+
+    ``image`` is a keyed sheet. Columns are runs of non-empty image columns,
+    rows are runs of non-empty image rows; every cell is cut to the same
+    width (centred on its column) and the same height (bottom-aligned on its
+    row, so the feet baseline is kept), which is what ``normalise_sheet``
+    expects. Returns ``[]`` for an empty sheet.
+    """
+    alpha = image.convert("RGBA").getchannel("A")
+    col_runs = _content_runs(_profile(alpha, 0))
+    row_runs = _content_runs(_profile(alpha, 1))
+    if not col_runs or not row_runs:
+        return []
+    width, height = image.size
+    cell_w = max(end - start + 1 for start, end in col_runs)
+    cell_h = max(end - start + 1 for start, end in row_runs)
+    cells = []
+    for top, bottom in row_runs:
+        y1 = min(height, bottom + 1)
+        y0 = max(0, y1 - cell_h)
+        row = []
+        for left, right in col_runs:
+            centre = (left + right + 1) // 2
+            x0 = max(0, min(width - cell_w, centre - cell_w // 2))
+            row.append(image.crop((x0, y0, x0 + cell_w, y0 + cell_h)))
+        cells.append(row)
+    return cells
+
+
+def resample_columns(cells: Sequence[Sequence[Image.Image]], count: int):
+    """Stretch or squeeze a sheet to ``count`` frames per row by repeating or
+    dropping evenly spaced columns, so a delivery with the wrong frame count
+    still registers as the spec's clip length."""
+    found = len(cells[0])
+    if found == count:
+        return [list(row) for row in cells]
+    picks = [
+        round(i * (found - 1) / (count - 1)) if count > 1 else 0 for i in range(count)
+    ]
+    return [[row[i] for i in picks] for row in cells]
 
 
 def split_grid(image: Image.Image, rows: int, cols: int) -> list[list[Image.Image]]:
@@ -338,24 +474,49 @@ def intake_sheet(
     slug: str | None = None,
     clip: str | None = None,
     manifest: dict | None = None,
+    grid: str = "auto",
 ) -> Path:
     """Slice one delivered clip sheet into a normalised strip and register it.
 
     ``slug``/``clip`` default to the file name's; each may be overridden on
-    its own. ``rows``/``cols`` default to the spec's grid for the clip. Pass
-    ``manifest`` to batch several intakes under one load/save.
+    its own. ``rows``/``cols`` default to the spec's grid for the clip. With
+    ``grid="auto"`` the cells are located from the content (``find_cells``):
+    a wrong number of facing rows is an error, a wrong number of frames is
+    resampled to ``cols`` with a warning. ``grid="even"`` divides the image
+    by ``rows`` x ``cols`` blindly. Pass ``manifest`` to batch several
+    intakes under one load/save.
     """
     parsed_slug, parsed_clip = parse_sheet_filename(path.name)
     slug = slug or parsed_slug
     clip = clip or parsed_clip
     if clip not in CLIPS:
         raise ValueError(f"unknown clip {clip!r}; known: {sorted(CLIPS)}")
+    if grid not in GRID_MODES:
+        raise ValueError(f"grid must be one of {GRID_MODES}, not {grid!r}")
     rows = rows or len(FACINGS)
     cols = cols or CLIPS[clip]
     if rows < 1 or cols < 1 or rows > MAX_FRAMES or cols > MAX_FRAMES:
         raise ValueError(f"grid {rows}x{cols} is out of range")
     image = key_out_background(open_delivery(path))
-    strip = normalise_sheet(split_grid(image, rows, cols), FRAME_SIZE)
+    if grid == "auto":
+        cells = find_cells(image)
+        if not cells:
+            raise ValueError(f"{path.name}: no sprite content found after keying")
+        if len(cells) != rows:
+            raise ValueError(
+                f"{path.name}: found {len(cells)} facing rows, expected {rows}; "
+                "regenerate the sheet or pass grid='even' (--grid even)"
+            )
+        if len(cells[0]) != cols:
+            print(
+                f"warning: {path.name} has {len(cells[0])} frames per row, "
+                f"expected {cols}; resampled to {cols}",
+                file=sys.stderr,
+            )
+            cells = resample_columns(cells, cols)
+    else:
+        cells = split_grid(image, rows, cols)
+    strip = normalise_sheet(cells, FRAME_SIZE)
     out, file = _clip_paths(sprites_dir, slug, clip)
     out.parent.mkdir(parents=True, exist_ok=True)
     strip.save(out)
@@ -639,6 +800,12 @@ def main(argv=None):
     sheet.add_argument(
         "--cols", type=int, help="override frame column count (single file only)"
     )
+    sheet.add_argument(
+        "--grid",
+        choices=GRID_MODES,
+        default="auto",
+        help="auto: locate cells from the content (default); even: divide by rows x cols",
+    )
 
     tileset = sub.add_parser(
         "tileset", help="intake one or more 'tileset__<region>.png' rows"
@@ -663,7 +830,9 @@ def main(argv=None):
             parser.error("--rows/--cols apply to one sheet at a time")
         manifest = load_manifest()
         written = [
-            intake_sheet(path, rows=args.rows, cols=args.cols, manifest=manifest)
+            intake_sheet(
+                path, rows=args.rows, cols=args.cols, manifest=manifest, grid=args.grid
+            )
             for path in args.paths
         ]
         save_manifest(manifest)

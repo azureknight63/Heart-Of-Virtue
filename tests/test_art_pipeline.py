@@ -45,6 +45,19 @@ class TestPromptPack:
         assert art_prompts.SLUGS == frozenset(slugs)
         assert all(key.replace("_", "").isalnum() for key in art_prompts.REGIONS)
 
+    def test_delivery_extensions_are_stripped(self):
+        assert art_prompts.parse_sheet_filename("cavebat__idle.JPG") == ("cavebat", "idle")
+        assert art_prompts.parse_sheet_filename("cavebat__idle.webp") == ("cavebat", "idle")
+        assert art_prompts.parse_tileset_filename("tileset__arena.jpeg") == "arena"
+
+    def test_prompt_names_every_frame_and_forbids_composites(self):
+        prompt = art_prompts._sheet_prompt("A thing.", "attack", 6, "red")
+        assert "1 = wind-up begins" in prompt and "6 = recoil back to rest" in prompt
+        assert "containing ONLY this clip" in prompt and "No gridlines" in prompt
+        assert "seamless loop" in art_prompts._sheet_prompt("A thing.", "idle", 4, "red")
+        assert art_prompts.frame_phases("hurt", 1) == ["recoil from the hit"]
+        assert len(art_prompts.frame_phases("death", 9)) == 9
+
     def test_filename_round_trip(self):
         assert art_prompts.parse_sheet_filename(art_prompts.sheet_filename("jean", "idle")) == ("jean", "idle")
         assert art_prompts.parse_tileset_filename(art_prompts.tileset_filename("grondia")) == "grondia"
@@ -73,6 +86,11 @@ class TestPromptPack:
         assert pack["sprites"][0]["prompt"] in doc
 
 
+def si_pixels(image):
+    data = image.convert("RGBA").tobytes()
+    return [tuple(data[i:i + 4]) for i in range(0, len(data), 4)]
+
+
 def _fake_sheet(rows, cols, cell=40, gap=2, heights=None):
     """A delivered-looking sheet: magenta background, one coloured blob per
     cell. ``heights`` (per column) varies blob height so per-frame scale can
@@ -90,7 +108,90 @@ def _fake_sheet(rows, cols, cell=40, gap=2, heights=None):
     return img
 
 
+def _model_sheet(rows, cols, cell=68, border=2, margin=14, chroma=(229, 64, 244)):
+    """What image models actually deliver: a drifted magenta, dark magenta
+    gridlines between cells, a wide outer margin, one blob per cell."""
+    w = margin * 2 + cols * cell
+    h = margin * 2 + rows * cell
+    img = Image.new("RGB", (w, h), chroma)
+    draw = ImageDraw.Draw(img)
+    for r in range(rows):
+        for c in range(cols):
+            x0, y0 = margin + c * cell, margin + r * cell
+            draw.rectangle([x0, y0, x0 + cell, y0 + cell], outline=(97, 0, 90), width=border)
+            draw.rectangle([x0 + 20, y0 + 16, x0 + cell - 20, y0 + cell - 8], fill=(40, 30, 20))
+            draw.point((x0 + 30, y0 + 24), fill=(255, 190, 40))  # amber eye
+    return img
+
+
 class TestIntake:
+    def test_hue_key_takes_drifted_magenta_and_gridlines_but_not_the_sprite(self):
+        img = Image.new("RGB", (7, 1), art_prompts.CHROMA_RGB)
+        img.putpixel((1, 0), (229, 64, 244))  # JPEG-drifted background
+        img.putpixel((2, 0), (97, 0, 90))  # dark magenta gridline
+        img.putpixel((3, 0), (194, 69, 199))  # ringing beside the line
+        img.putpixel((4, 0), (40, 30, 20))  # bat fur
+        img.putpixel((5, 0), (120, 80, 140))  # dusky purple: a sprite colour
+        img.putpixel((6, 0), (140, 0, 255))  # violet, off-hue
+        alpha = [px[3] for px in si_pixels(sprite_intake.key_out_background(img))]
+        assert alpha == [0, 0, 0, 0, 255, 255, 255]
+
+    def test_despill_keys_the_halo_only_next_to_background(self):
+        halo = (150, 90, 150)  # dull magenta: too unsaturated for the main key
+        img = Image.new("RGB", (9, 1), (40, 30, 20))
+        img.putpixel((0, 0), art_prompts.CHROMA_RGB)
+        img.putpixel((1, 0), halo)  # 1 px from background: spill
+        img.putpixel((2, 0), halo)  # 2 px: still spill
+        img.putpixel((3, 0), halo)  # 3 px: the sprite's own purple
+        img.putpixel((7, 0), halo)  # interior: kept
+        alpha = [px[3] for px in si_pixels(sprite_intake.key_out_background(img))]
+        assert alpha == [0, 0, 0, 255, 255, 255, 255, 255, 255]
+
+    def test_find_cells_locates_the_grid_through_margins_and_gridlines(self):
+        keyed = sprite_intake.key_out_background(_model_sheet(ROWS, 5))
+        cells = sprite_intake.find_cells(keyed)
+        assert (len(cells), len(cells[0])) == (ROWS, 5)
+        sizes = {cell.size for row in cells for cell in row}
+        assert len(sizes) == 1  # one width, one height, for every cell
+        for row in cells:
+            for cell in row:
+                assert cell.getbbox() is not None
+        assert sprite_intake.find_cells(Image.new("RGBA", (8, 8), (0, 0, 0, 0))) == []
+
+    def test_content_runs_merge_near_gaps_and_drop_specks(self):
+        # 1-px internal gap merges; a lone 40-alpha spike (gridline ringing)
+        # is a speck; a 12-px gap is a real cell boundary.
+        profile = [0] * 3 + [200] * 20 + [0] + [200] * 20 + [0] * 12 + [40] + [0] * 5 + [200] * 20
+        assert sprite_intake._content_runs(profile) == [(3, 43), (62, 81)]
+        assert sprite_intake._content_runs([0, 0, 0]) == []
+
+    def test_auto_intake_resamples_wrong_frame_count_and_accepts_jpeg(self, tmp_path, capsys):
+        sheet = tmp_path / "cavebat__walk.jpg"
+        _model_sheet(ROWS, 5).save(sheet, quality=90)  # spec wants 6
+        out = sprite_intake.intake_sheet(sheet, sprites_dir=tmp_path / "s", manifest_path=tmp_path / "m.json")
+        strip = Image.open(out)
+        assert strip.size == (art_prompts.CLIPS["walk"] * FRAME, ROWS * FRAME)
+        assert "5 frames per row, expected 6" in capsys.readouterr().err
+        data = json.loads((tmp_path / "m.json").read_text())
+        assert data["sprites"]["cavebat"]["clips"]["walk"]["frames"] == art_prompts.CLIPS["walk"]
+        assert sprite_intake.resample_columns([[1, 2, 3, 4, 5]], 6) == [[1, 2, 3, 3, 4, 5]]
+        assert sprite_intake.resample_columns([[1, 2, 3, 4, 5]], 4) == [[1, 2, 4, 5]]
+        assert sprite_intake.resample_columns([[1, 2]], 1) == [[1]]
+
+    def test_auto_intake_rejects_wrong_row_count_and_empty_sheets(self, tmp_path):
+        sheet = tmp_path / "cavebat__hurt.png"
+        _model_sheet(2, 3).save(sheet)
+        with pytest.raises(ValueError, match="found 2 facing rows, expected 3"):
+            sprite_intake.intake_sheet(sheet, sprites_dir=tmp_path / "s", manifest_path=tmp_path / "m.json")
+        # the even split is the escape hatch
+        sprite_intake.intake_sheet(sheet, rows=2, sprites_dir=tmp_path / "s", manifest_path=tmp_path / "m.json", grid="even")
+        blank = tmp_path / "cavebat__idle.png"
+        Image.new("RGB", (64, 64), art_prompts.CHROMA_RGB).save(blank)
+        with pytest.raises(ValueError, match="no sprite content"):
+            sprite_intake.intake_sheet(blank, sprites_dir=tmp_path / "s", manifest_path=tmp_path / "m.json")
+        with pytest.raises(ValueError, match="grid must be"):
+            sprite_intake.intake_sheet(sheet, sprites_dir=tmp_path / "s", manifest_path=tmp_path / "m.json", grid="magic")
+
     def test_key_out_background(self):
         img = Image.new("RGB", (4, 1), art_prompts.CHROMA_RGB)
         img.putpixel((0, 0), (250, 10, 245))  # near-magenta fringe
