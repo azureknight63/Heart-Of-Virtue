@@ -1747,6 +1747,9 @@ function BattlefieldGrid({
   displayedLogCount = 0,
   hoveredTargetId = null,
   mapSize = null,
+  // True when this grid mounted into a fight that was already under way — a page
+  // refresh mid-combat. Supplied by GamePage; see replayedLogIdsRef below.
+  isReloadRecovery = false,
   onAnimatingChange = null,
   // Engine-driven combat streaming (issue #436). When `streaming` is true the
   // log-spooler animation path is bypassed: pre-built animations arrive via
@@ -1799,6 +1802,36 @@ function BattlefieldGrid({
   const killedTargetsRef = useRef(new Set());
   // Early-out signature for the log-enqueue walk (see that effect).
   const logSignatureRef = useRef(null);
+  // Carrier ids that were ALREADY in the log when this grid mounted mid-fight —
+  // i.e. a page reload during combat. They are history, not news, and must never
+  // animate or sound again (issue #508). LeftPanel has long had the equivalent
+  // (isPageReloadRecovery: it replays the log text instantly and silently); the
+  // grid had nothing, so a mid-fight mount read as a brand-new fight and
+  // re-enqueued every animation-carrying entry, with SFX, as the reveal caught
+  // up — the player watched the whole fight happen again.
+  //
+  // Kept apart from processedLogIdsRef because that set is pruned to the revealed
+  // window on every pass, and the entries this has to cover are precisely the ones
+  // the reveal has not reached yet.
+  //
+  // Seeded on the first render rather than in an effect: the log-enqueue effect
+  // can run in the same commit as the grid's first paint, and a set filled one
+  // effect later would already have let the first swing through. Only entries
+  // present at that first render are covered; everything appended afterwards is
+  // genuinely new and animates normally.
+  const replayedLogIdsRef = useRef(null);
+  if (replayedLogIdsRef.current === null) {
+    const seed = new Set();
+    if (isReloadRecovery) {
+      for (const { entry, id } of revealedLogEntries(combatLog || combat?.log || [], Infinity)) {
+        if (entry?.animation) seed.add(id);
+      }
+    }
+    replayedLogIdsRef.current = seed;
+  }
+  // Whether the per-fight reset effect has already run once — i.e. whether the
+  // NEXT boundary it sees is a real one rather than this grid's own mount.
+  const fightBoundarySeenRef = useRef(false);
   const [dyingEntities, setDyingEntities] = useState([]);
   // Guard ref: set to true on unmount to prevent stale setTimeout callbacks
   const animationCancelRef = useRef(false);
@@ -2094,6 +2127,14 @@ function BattlefieldGrid({
     // Force the next log-enqueue pass to walk the (possibly identical-looking)
     // new fight's log.
     logSignatureRef.current = null;
+    // The mount-time replay set (see replayedLogIdsRef) belongs to the fight that
+    // was in progress when the grid mounted. Any LATER fight boundary invalidates
+    // it — a new fight's opening entries can carry ids identical to the previous
+    // fight's, and suppressing those would silently eat real animations. This
+    // effect's own mount run must not clear it, though: that run IS the boundary
+    // the set was built for.
+    if (fightBoundarySeenRef.current) replayedLogIdsRef.current = new Set();
+    fightBoundarySeenRef.current = true;
     // In-flight layers are per-fight too. Clearing only the queue left the
     // previous fight's stagger timeouts (up to MAX_LAYER_LEAD_MS) and phase
     // chains running: they fired into the new arena, and because
@@ -2246,6 +2287,9 @@ function BattlefieldGrid({
       // for the whole fight.
       if (!entry.animation) return;
       windowIds.add(id);
+      // Already on screen before this grid existed — a reload mid-fight. Tracked
+      // in windowIds above so pruning still behaves, but never animated or sounded.
+      if (replayedLogIdsRef.current.has(id)) return;
       if (processed.has(id)) return;
       processed.add(id);
       // The batch predicate needs a per-swing key (see takeAnimationBatch).

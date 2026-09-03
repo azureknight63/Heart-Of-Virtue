@@ -386,5 +386,57 @@ describe('GamePage', () => {
             );
         });
 
+        it('does not re-introduce a fight already in progress after a reload', () => {
+            // `combatDialogShown` is client-only, so a refresh mid-combat used to
+            // re-synthesize the "Enemy Encounter" dialog out of every `system` log
+            // line of the whole fight — naming enemies killed rounds ago, which are
+            // correctly absent from battle_state.enemies and the battlefield.
+            useCombat.mockReturnValue({
+                combat: {
+                    ...mockCombat,
+                    combat_active: true,
+                    round: 1,
+                    enemies: [{ id: 'enemy_2', name: 'Cave Bat' }],
+                    log: [
+                        { type: 'system', message: 'A Slime glares sharply at Jean!' },
+                        { type: 'system', message: 'A Cave Bat glares sharply at Jean!' },
+                        { type: 'combat', message: 'Jean strikes the Slime.' },
+                        { type: 'system', message: 'Victory! Gained exp: 40' }
+                    ]
+                },
+                inCombat: true,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
+
+            renderGamePage();
+
+            expect(screen.queryByTestId('event-dialog')).toBeNull();
+            expect(screen.queryByText(/glares sharply/i)).toBeNull();
+            expect(screen.queryByText(/Slime/i)).toBeNull();
+            expect(screen.queryByText(/Gained exp/i)).toBeNull();
+            // ...and the player still lands in combat rather than stranded in
+            // exploration with a live fight on the server.
+            expect(screen.getByText(/Mode: combat/i)).toBeDefined();
+        });
+
+        it('still introduces a fight whose log holds only system alerts', () => {
+            useCombat.mockReturnValue({
+                combat: {
+                    ...mockCombat,
+                    combat_active: true,
+                    log: [{ type: 'system', message: 'A Slime glares sharply at Jean!' }]
+                },
+                inCombat: true,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
+
+            renderGamePage();
+
+            expect(screen.getByText('A Slime glares sharply at Jean!')).toBeDefined();
+        });
     });
 });

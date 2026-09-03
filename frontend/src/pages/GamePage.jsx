@@ -220,6 +220,31 @@ export default function GamePage() {
   }, [location, setExploredTiles])
 
   /**
+   * Did this page load land in the middle of a fight?
+   *
+   * Combat progress lives on the server; the client's view of what it has
+   * already shown the player does not survive a refresh. LeftPanel has always
+   * detected this for itself and replayed the log text instantly and silently
+   * (isPageReloadRecovery), but the battlefield had no equivalent: a fresh mount
+   * looked like a brand-new fight, so it re-animated and re-sounded every blow of
+   * the fight so far as the log caught up (issue #508). Decided once per page
+   * load, from the first combat payload we see: any non-`system` log entry means
+   * blows have already been traded. Cleared when the fight ends so the next
+   * fight in the same session mounts the battlefield with a clean slate.
+   */
+  const [isCombatReloadRecovery, setIsCombatReloadRecovery] = useState(false)
+  const reloadRecoveryDecidedRef = useRef(false)
+  useEffect(() => {
+    if (!inCombat) {
+      setIsCombatReloadRecovery(false)
+      return
+    }
+    if (reloadRecoveryDecidedRef.current || !combat) return
+    reloadRecoveryDecidedRef.current = true
+    setIsCombatReloadRecovery((combat.log || []).some(entry => entry.type !== 'system'))
+  }, [inCombat, combat])
+
+  /**
    * Synchronize mode with combat state
    */
   useEffect(() => {
@@ -379,10 +404,23 @@ export default function GamePage() {
    */
   useEffect(() => {
     if (inCombat) {
-      // Only show the "Enemy Encounter" dialog if we aren't currently showing a story event
-      if (!combatDialogShown && eventQueue.length === 0 && !currentEvent && !showVictoryDialog && !showDefeatDialog) {
-        const logEntries = combat?.log || []
+      // A fight already in progress must never be re-introduced. `combatDialogShown`
+      // is client-only state, so a page refresh mid-combat lost it and this effect
+      // re-synthesized the opening dialog out of EVERY `system` log line of the whole
+      // fight — per-enemy "glares sharply" alerts, "Victory! Gained exp", ally
+      // level-ups, "breaks off" — announcing enemies that had been dead for ten
+      // rounds and are (correctly) absent from `battle_state.enemies` and the
+      // battlefield (issue #508). Any non-`system` entry means blows have already
+      // been traded, so the encounter is old news: treat the introduction as done
+      // and drop straight into combat mode.
+      const logEntries = combat?.log || []
+      const fightAlreadyUnderway = logEntries.some(entry => entry.type !== 'system')
 
+      // Only show the "Enemy Encounter" dialog if we aren't currently showing a story event
+      if (!combatDialogShown && fightAlreadyUnderway) {
+        setCombatDialogShown(true)
+        setMode('combat')
+      } else if (!combatDialogShown && eventQueue.length === 0 && !currentEvent && !showVictoryDialog && !showDefeatDialog) {
         const alertMessages = logEntries
           .filter(entry => entry.type === 'system')
           .map(e => e.message)
@@ -689,6 +727,7 @@ export default function GamePage() {
           showDescription={isMobile}
           onDescriptionInteract={isMobile ? () => setActiveMobileTab(TAB_KEYS.left) : undefined}
           onAnimatingChange={setIsBattlefieldAnimating}
+          isReloadRecovery={isCombatReloadRecovery}
           streaming={combatSocketStreaming}
           streamedAnimations={streamedAnimations}
           combatSpeed={combatSpeed}

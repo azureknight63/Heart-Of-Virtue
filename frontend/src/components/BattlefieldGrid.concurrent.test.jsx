@@ -507,6 +507,56 @@ describe('BattlefieldGrid — animation cursor', () => {
     act(() => vi.advanceTimersByTime(2000));
     expect(countCue('attack_hit')).toBe(0);
   });
+
+  it('replays nothing when the grid mounts into a fight already in progress', () => {
+    // Issue #508. A refresh mid-combat loses only CLIENT state; the server's log
+    // is intact and comes back in full. LeftPanel has always re-shown that log
+    // instantly and silently; the grid had no equivalent, so its fresh mount read
+    // as a brand-new fight and re-animated — with SFX — every blow of the fight
+    // so far. Thirty entries of history must be absorbed in silence.
+    const log = [];
+    for (let round = 1; round <= 15; round++) {
+      log.push(...resolution(round, `Jean strikes A (round ${round}).`, sweepAt('foe_a')));
+    }
+    expect(log).toHaveLength(30);
+
+    const { rerender } = render(
+      <BattlefieldGrid
+        combat={{ ...combat, log }} tab="overview" zoom={1}
+        combatId="fight-1" combatActive isReloadRecovery
+        displayedLogCount={log.length}
+      />
+    );
+    for (let i = 0; i < 4; i++) act(() => vi.advanceTimersByTime(2000));
+    expect(countCue('attack_hit')).toBe(0);
+
+    // But the fight is still live: the next blow, which the player has NOT seen,
+    // animates and sounds normally.
+    const next = resolution(16, 'Jean strikes A (round 16).', sweepAt('foe_a'));
+    rerender(
+      <BattlefieldGrid
+        combat={{ ...combat, log: [...log, ...next] }} tab="overview" zoom={1}
+        combatId="fight-1" combatActive isReloadRecovery
+        displayedLogCount={log.length + next.length}
+      />
+    );
+    for (let i = 0; i < 4; i++) act(() => vi.advanceTimersByTime(2000));
+    expect(countCue('attack_hit')).toBe(1);
+  });
+
+  it('animates a mid-fight mount normally when it is not a reload recovery', () => {
+    // The suppression is opt-in: an ordinary mount (a fight that started while
+    // this page was open) keeps animating exactly as before.
+    const log = resolution(1, 'Jean strikes A.', sweepAt('foe_a'));
+    render(
+      <BattlefieldGrid
+        combat={{ ...combat, log }} tab="overview" zoom={1}
+        combatId="fight-1" combatActive displayedLogCount={2}
+      />
+    );
+    act(() => vi.advanceTimersByTime(2000));
+    expect(countCue('attack_hit')).toBe(1);
+  });
 });
 
 describe('revealedLogEntries', () => {
