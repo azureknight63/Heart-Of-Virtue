@@ -3,6 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--
+      Content-Security-Policy (issue #492) is deliberately NOT a <meta> tag here.
+      The rollout is report-only, and browsers ignore a report-only policy
+      delivered in markup (and log a console error for trying). The policy is a
+      response header instead, emitted from three places that all read the same
+      directive data in src/resources/csp-policy.json:
+        * vite.config.js  — dev server + `vite preview` (this document)
+        * src/api/security_headers.py — the Flask API's own responses
+        * the production web server — snippet in docs/development/csp-rollout.md
+      A <meta> tag becomes the right fallback only once the policy is enforcing;
+      that flip is checklisted in the same doc.
+    -->
     <title>Heart of Virtue - Web UI</title>
     <link rel="icon" type="image/png" href="/hero-heart.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">

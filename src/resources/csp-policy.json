@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Single source of truth for the app's Content-Security-Policy (issue #492).",
+    "Read by BOTH src/api/security_headers.py (Flask response header) and",
+    "frontend/vite.config.js (dev-server / preview response header). Keeping the",
+    "directive data in one file is deliberate: a policy that drifts between the",
+    "dev server and the API is a policy nobody trusts, and this repo's dominant",
+    "bug class is exactly that kind of two-sided name drift.",
+    "Rationale for every entry lives in docs/development/csp-rollout.md."
+  ],
+  "base": {
+    "default-src": ["'self'"],
+    "base-uri": ["'self'"],
+    "object-src": ["'none'"],
+    "frame-src": ["'none'"],
+    "frame-ancestors": ["'self'"],
+    "form-action": ["'self'"],
+    "script-src": ["'self'"],
+    "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+    "img-src": ["'self'", "data:"],
+    "font-src": ["'self'", "https://fonts.gstatic.com"],
+    "media-src": ["'self'"],
+    "connect-src": ["'self'"]
+  },
+  "dev_additions": {
+    "script-src": ["'unsafe-inline'"],
+    "connect-src": [
+      "ws:",
+      "wss:",
+      "http://localhost:5000",
+      "http://127.0.0.1:5000"
+    ]
+  }
+}
