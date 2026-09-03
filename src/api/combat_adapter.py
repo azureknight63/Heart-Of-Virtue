@@ -2595,6 +2595,24 @@ class ApiCombatAdapter:
                             and m.get("name") in ("Dodge", "Parry", "Withdraw")
                             and m.get("cooldown_remaining", 0) > 0
                         },
+                        # Moves Jean cannot pay for at this fatigue. The
+                        # strategist needs the *reason* offense is missing:
+                        # priced out (only Rest changes that) reads very
+                        # differently from out of range (Advance does). The
+                        # test is affordability, not the `reason` string —
+                        # a move that is both on cooldown and unaffordable
+                        # is reported by `reason` as the cooldown only.
+                        "fatigue_locked_moves": [
+                            {
+                                "name": m.get("name"),
+                                "category": m.get("category"),
+                                "fatigue_cost": m.get("fatigue_cost", 0),
+                            }
+                            for m in all_moves
+                            if isinstance(m, dict)
+                            and not m.get("available", True)
+                            and (m.get("fatigue_cost") or 0) > self.player.fatigue
+                        ],
                     }
 
                     logger.debug(f"Combat context keys: {list(ctx.keys())}")
