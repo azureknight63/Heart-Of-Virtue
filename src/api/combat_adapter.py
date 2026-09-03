@@ -37,6 +37,7 @@ from src.combatant import (
     REPORTED_BEAT_KEY,
 )
 from src.moves._base import select_weighted_target, display_name_of
+from src.events import purge_orphaned_combat_events
 from src.story import gorran_flavor
 
 if TYPE_CHECKING:
@@ -396,6 +397,10 @@ class ApiCombatAdapter:
         # Prevent concurrent status polls or duplicate cleanup paths from
         # emitting the terminal SocketIO event more than once per combat.
         self._terminal_event_emitted = False
+        # Object ids of the combatants whose arrival has already been announced
+        # in the current fight. Per-fight, in-memory only (object identity does
+        # not survive a save), reset with combat_id in initialize_combat.
+        self._announced_enemy_ids = set()
 
         self._reset_log_index_state()
 
@@ -999,6 +1004,11 @@ class ApiCombatAdapter:
                 # Animation carrier seq restarts with the fight (it is
                 # per-fight identity, like combat_id — see _emit_animation_log).
                 self._reset_animation_seq()
+                # Who has been announced is per-fight state too.
+                self._announced_enemy_ids = set()
+                # Defence in depth for issue #506: a combat-effect event armed
+                # in another room must not get a chance to fire in this fight.
+                purge_orphaned_combat_events(self.player)
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
                 self.player.combat_drops = []
@@ -1146,8 +1156,19 @@ class ApiCombatAdapter:
                 enemy.combat_list = self.player.combat_list_allies
                 enemy.combat_list_allies = self.player.combat_list
 
-            # Add initial log entry for each enemy
+            # Add initial log entry for each enemy that has not been announced
+            # in THIS fight. A reinit re-enters here with a roster that can
+            # include combatants already on the battlefield (GameService's
+            # reinit path assigns the whole new roster, not just the arrivals),
+            # and re-announcing them told the player that enemies they were
+            # already fighting had just shown up. `_add_log_entry`'s
+            # (message, round, source_id) dedup masked it only until
+            # `_trim_combat_log` dropped the round-1 entries it compares
+            # against — a long fight got the duplicates anyway (issue #506).
             for enemy in enemies:
+                if id(enemy) in self._announced_enemy_ids:
+                    continue
+                self._announced_enemy_ids.add(id(enemy))
                 name = getattr(enemy, "name", "Enemy")
                 alert = getattr(enemy, "alert_message", "appears!")
                 self._add_log_entry(1, f"{name} {alert}", "system")
@@ -2895,6 +2916,13 @@ class ApiCombatAdapter:
         Invariant: combat_list_allies[0] is always the player.
         """
         self._discard_pending_animations()
+
+        # Drop combat-effect events armed in rooms the player has since left.
+        # player.combat_events is process-wide and no teardown path cleared it,
+        # so a story chain armed in one fight stayed armed and fired in the
+        # next one (issue #506). Scoped by origin room rather than blanket
+        # cleared, so an event legitimately mid-chain in THIS room survives.
+        purge_orphaned_combat_events(self.player)
 
         self.player.combat_list = []
         existing_allies = [
