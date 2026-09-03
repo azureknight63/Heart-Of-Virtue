@@ -1,32 +1,50 @@
 import { useEffect, useState } from 'react';
-import { CLIP_FPS, LOOPING_CLIPS, facingRow, spriteAssetUrl } from '../utils/sprites';
+import {
+  CLIP_FPS, DEFAULT_CLIP_FPS, DEFAULT_FACINGS, LOOPING_CLIPS, SPRITE_CLIPS,
+  facingRow, spriteAssetUrl,
+} from '../utils/sprites';
+
+const MAX_FRAMES = 64;
+const MIN_TICK_MS = 40;
+
+const clipFps = (clip) => (
+  Object.prototype.hasOwnProperty.call(CLIP_FPS, clip) ? CLIP_FPS[clip] : DEFAULT_CLIP_FPS
+);
 
 /**
- * Advance a frame counter for `clip` at its frame rate. Loops wrap; one-shot
- * clips (attack, hurt, death, ...) hold their last frame. The counter resets
- * whenever the clip changes so an attack always starts from its wind-up.
+ * Advance a frame counter for `clip` at its frame rate, scaled by `speed`
+ * (the player's combat-speed multiplier, so a 2x fight plays its swing
+ * frames before the animation phase ends). Loops wrap; one-shot clips
+ * (attack, hurt, death, ...) hold their last frame and stop their timer.
+ * The counter is stored with the clip it belongs to, so a clip change reads
+ * as frame 0 immediately (derived during render).
  */
-export function useSpriteFrame(clip, frames, running = true) {
-  // The counter is stored with the clip it belongs to, so a clip change reads
-  // as frame 0 immediately (derived during render) instead of needing a
-  // reset-in-effect that would render one stale frame first.
+export function useSpriteFrame(clip, frames, running = true, speed = 1) {
   const [tick, setTick] = useState({ clip, frame: 0 });
   const frame = tick.clip === clip ? tick.frame : 0;
   useEffect(() => {
     if (!running || !frames || frames <= 1) return undefined;
-    const fps = CLIP_FPS[clip] || 6;
+    const rate = clipFps(clip) * (Number(speed) > 0 ? Number(speed) : 1);
     const loop = LOOPING_CLIPS.has(clip);
     const id = setInterval(() => {
       setTick((t) => {
         const current = t.clip === clip ? t.frame : 0;
         if (current + 1 < frames) return { clip, frame: current + 1 };
-        return loop ? { clip, frame: 0 } : (t.clip === clip ? t : { clip, frame: current });
+        if (loop) return { clip, frame: 0 };
+        // Held on the last frame: nothing more to draw, stop ticking.
+        clearInterval(id);
+        return t.clip === clip ? t : { clip, frame: current };
       });
-    }, 1000 / fps);
+    }, Math.max(MIN_TICK_MS, 1000 / rate));
     return () => clearInterval(id);
-  }, [clip, frames, running]);
+  }, [clip, frames, running, speed]);
   return frame;
 }
+
+const boundedCount = (value, fallback) => {
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) && n >= 1 ? Math.min(MAX_FRAMES, n) : fallback;
+};
 
 /**
  * One animated sprite drawn from a manifest sheet set.
@@ -37,13 +55,25 @@ export function useSpriteFrame(clip, frames, running = true) {
  * When the requested clip has no sheet the idle strip stands in, so a partial
  * delivery never blanks a token.
  */
-export default function SpriteToken({ sprite, clip = 'idle', facing = 'S', rows = ['south', 'west', 'north'], running = true, className = '', style = {} }) {
-  const clipEntry = sprite?.clips?.[clip] || sprite?.clips?.idle;
-  const activeClip = sprite?.clips?.[clip] ? clip : 'idle';
-  const frames = Math.max(1, Number(clipEntry?.frames) || 1);
-  const sheetRows = Math.max(1, Number(clipEntry?.rows) || rows.length);
-  const frame = useSpriteFrame(activeClip, frames, running);
-  if (!clipEntry?.file) return null;
+export default function SpriteToken({
+  sprite,
+  clip = 'idle',
+  facing = 'S',
+  rows = DEFAULT_FACINGS,
+  running = true,
+  speed = 1,
+  className = '',
+  style = {},
+}) {
+  const wanted = SPRITE_CLIPS.includes(clip) ? clip : 'idle';
+  const requested = sprite?.clips?.[wanted];
+  const clipEntry = requested || sprite?.clips?.idle;
+  const activeClip = requested ? wanted : 'idle';
+  const frames = boundedCount(clipEntry?.frames, 1);
+  const sheetRows = boundedCount(clipEntry?.rows, rows.length);
+  const frame = useSpriteFrame(activeClip, frames, running, speed);
+  const url = spriteAssetUrl(clipEntry?.file);
+  if (!url) return null;
   const { row, mirror } = facingRow(facing, rows);
   const x = frames > 1 ? (frame / (frames - 1)) * 100 : 0;
   const y = sheetRows > 1 ? (Math.min(row, sheetRows - 1) / (sheetRows - 1)) * 100 : 0;
@@ -58,7 +88,7 @@ export default function SpriteToken({ sprite, clip = 'idle', facing = 'S', rows 
       style={{
         width: '100%',
         height: '100%',
-        backgroundImage: `url("${spriteAssetUrl(clipEntry.file)}")`,
+        backgroundImage: `url("${url}")`,
         backgroundRepeat: 'no-repeat',
         backgroundSize: `${frames * 100}% ${sheetRows * 100}%`,
         backgroundPosition: `${x}% ${y}%`,

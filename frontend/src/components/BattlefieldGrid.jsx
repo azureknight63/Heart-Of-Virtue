@@ -18,10 +18,10 @@ import useDoubleRaf from '../hooks/useDoubleRaf';
 import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
 import {
-  hasTerrain, terrainKindAt, terrainElevationAt, terrainLabel, terrainVariant,
-  terrainKindsPresent, regionLabel, TERRAIN_STYLE,
+  hasTerrain, terrainReader, terrainLabel, terrainVariant, terrainKindsPresent,
+  regionLabel, legendNotes, TERRAIN_STYLE, RAISED_KINDS, ELEVATION_RIM_SHADOW,
 } from '../utils/terrain';
-import { spriteFor, spriteClipFor, terrainTileUrl } from '../utils/sprites';
+import { spriteFor, spriteClipFor, terrainTileUrl, facingDegrees } from '../utils/sprites';
 import { useSpriteManifest } from '../hooks/useSpriteManifest';
 import SpriteToken from './SpriteToken';
 import { isLiving } from '../utils/combatEntities';
@@ -418,7 +418,6 @@ function resolveEntityStats(entity) {
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
 // ---------------------------------------------------------------------------
-const FACING_MAP = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 
 const CombatantMarker = React.memo(({
   entity,
@@ -437,6 +436,8 @@ const CombatantMarker = React.memo(({
   // to play; null sprite = draw the glyph token.
   sprite = null,
   spriteClip = 'idle',
+  spriteRows = undefined,
+  combatSpeed = 1,
 }) => {
   const move = entity.current_move;
   // Only an unresolved move is intent. A combatant in recoil/cooldown must not
@@ -452,15 +453,9 @@ const CombatantMarker = React.memo(({
   // move is set, its category color takes precedence on the border.
   const alignmentBorder = isFriendly ? colors.primary : colors.danger;
 
-  // Facing — API may send degrees (int) or a cardinal string
-  let facing = 0;
-  if (entity.position?.facing !== undefined) {
-    if (typeof entity.position.facing === 'number') {
-      facing = entity.position.facing;
-    } else {
-      facing = FACING_MAP[entity.position.facing] || 0;
-    }
-  }
+  // Facing — API sends a cardinal string (pos.facing.name); degrees are
+  // accepted defensively. One normalisation, shared with the sprite row pick.
+  const facing = facingDegrees(entity.position?.facing);
 
   // HP / Fatigue stats
   const { hpPct, fatPct } = resolveEntityStats(entity);
@@ -524,8 +519,10 @@ const CombatantMarker = React.memo(({
           <SpriteToken
             sprite={sprite}
             clip={spriteClip}
-            facing={entity.position?.facing}
+            facing={facing}
+            rows={spriteRows}
             running={!isCompact}
+            speed={combatSpeed}
           />
         </div>
       )}
@@ -806,7 +803,6 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
         {entity.terrain?.label && entity.terrain.kind !== 'open' && (
           <div className="text-white/60 text-[9px] font-mono" data-testid="tooltip-terrain">
             on {entity.terrain.label}
-            {entity.terrain.elevation > 0 ? ` (+${entity.terrain.elevation} high)` : ''}
           </div>
         )}
       </div>
@@ -830,11 +826,19 @@ const EntityLayer = React.memo(({
   onClearHover,
   onSelectEntity,
   spriteManifest = null,
+  combatSpeed = 1,
 }) => (
   <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
     {entitiesToRender.map((item, idx) => {
       const entityId = item.entity.id;
       const sprite = spriteFor(spriteManifest, item.entity.sprite_key);
+      const spriteClip = sprite
+        ? spriteClipFor({
+          animationStates: collectAnimationStates(activeAnimations, entityId),
+          isDying: item.isDying,
+          currentMove: item.entity.current_move,
+        })
+        : 'idle';
       const isEntityHovered = hoveredEntity != null && (
         entityId != null ? hoveredEntity.id === entityId : hoveredEntity === item.entity
       );
@@ -949,11 +953,9 @@ const EntityLayer = React.memo(({
               animationStates={animStates}
               displaySymbol={item.displaySymbol}
               sprite={sprite}
-              spriteClip={sprite ? spriteClipFor({
-                animationStates: animStates,
-                isDying: item.isDying,
-                currentMove: item.entity.current_move,
-              }) : 'idle'}
+              spriteClip={spriteClip}
+              spriteRows={spriteManifest?.facings}
+              combatSpeed={combatSpeed}
             />
           </div>
 
@@ -1754,14 +1756,18 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
 // Keep it a component rather than a memoized array: reconcileChildrenArray
 // still walks and clones every child fiber even when each one bails.
 // ---------------------------------------------------------------------------
+// The lattice every cell-aligned layer shares: one CSS grid of gridCols^2
+// equal cells over the viewport box.
+const latticeGridStyle = (gridCols) => ({
+  position: 'absolute', inset: 0,
+  display: 'grid', gap: '1px', padding: spacing.sm,
+  gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+  gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
+  pointerEvents: 'none',
+});
+
 const GridBackgroundLayer = React.memo(({ cells, gridCols }) => (
-  <div style={{
-    position: 'absolute', inset: 0,
-    display: 'grid', gap: '1px', padding: spacing.sm,
-    gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-    gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
-    pointerEvents: 'none'
-  }}>
+  <div style={latticeGridStyle(gridCols)}>
     {cells.map((onMap, i) => (
       <div
         key={i}
@@ -1777,73 +1783,64 @@ const GridBackgroundLayer = React.memo(({ cells, gridCols }) => (
 // ---------------------------------------------------------------------------
 // TerrainLayer — per-cell terrain under the tokens
 // ---------------------------------------------------------------------------
-// Same shape and memo discipline as GridBackgroundLayer: a flat cells array
-// precomputed once per (viewport, terrain) pair, one keyed child per cell.
-// Feature cells carry a native `title` so hovering a boulder or a slime pool
-// names it without a bespoke tooltip layer; they take pointer events for that
-// alone -- clicks bubble to the grid's own handler unchanged, and the drag
-// pan listens on the window, so neither gesture is affected. Open cells stay
-// pointer-transparent and paint nothing, keeping the lattice underneath
-// visible.
+// Same memo discipline as GridBackgroundLayer, but only feature cells are
+// rendered, each placed explicitly on the lattice (open ground paints
+// nothing until a floor tile exists), so the node count follows the number
+// of features rather than gridCols^2. Feature cells carry a native `title`
+// so hovering a boulder or a slime pool names it; they take pointer events
+// for that alone -- clicks bubble to the grid's own handler unchanged, and
+// the drag pan listens on the window, so neither gesture is affected.
 //
-// Elevation is drawn as a brighter top-left edge (a lit rim) on raised cells
-// so a shelf reads as "up" even before the tileset art lands.
+// Elevation is drawn as a lit top-left rim on raised cells so a shelf reads
+// as "up" even before the tileset art lands. Delivered tile art replaces the
+// procedural fill; the rim stays either way.
+const terrainCellStyle = (cell, isCompact) => {
+  const style = TERRAIN_STYLE[cell.kind];
+  const tiled = Boolean(cell.tile);
+  return {
+    gridColumnStart: cell.col + 1,
+    gridRowStart: cell.row + 1,
+    backgroundColor: tiled ? 'transparent' : style.fill,
+    backgroundImage: tiled ? `url("${cell.tile}")` : undefined,
+    backgroundSize: tiled ? 'cover' : undefined,
+    imageRendering: tiled ? 'pixelated' : undefined,
+    borderRadius: tiled ? '2px' : style.radius,
+    boxShadow: cell.elevation > 0 ? ELEVATION_RIM_SHADOW : 'none',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: style.glyphColor,
+    fontSize: isCompact ? '6px' : '11px',
+    lineHeight: 1,
+    userSelect: 'none',
+    pointerEvents: cell.kind === 'open' ? 'none' : 'auto',
+  };
+};
+
 const TerrainLayer = React.memo(({ cells, gridCols, isCompact }) => (
-  <div
-    data-testid="terrain-layer"
-    style={{
-      position: 'absolute', inset: 0,
-      display: 'grid', gap: '1px', padding: spacing.sm,
-      gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-      gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
-      pointerEvents: 'none',
-      zIndex: 1,
-    }}
-  >
-    {cells.map((cell, i) => {
-      if (!cell) return <div key={i} />;
-      const style = TERRAIN_STYLE[cell.kind] || TERRAIN_STYLE.open;
-      // Delivered tile art wins over the procedural fill; the raised-cell rim
-      // stays either way so elevation reads even on a busy tile.
-      const tiled = Boolean(cell.tile);
-      return (
-        <div
-          key={i}
-          data-terrain={cell.kind}
-          data-variant={cell.variant}
-          data-tiled={tiled ? '1' : undefined}
-          title={cell.title}
-          style={{
-            backgroundColor: tiled ? 'transparent' : style.fill,
-            backgroundImage: tiled ? `url("${cell.tile}")` : undefined,
-            backgroundSize: tiled ? 'cover' : undefined,
-            imageRendering: tiled ? 'pixelated' : undefined,
-            borderRadius: !tiled && cell.kind === 'boulder' ? '40%' : '2px',
-            boxShadow: cell.elevation > 0
-              ? 'inset 2px 2px 0 rgba(255,255,255,0.25), inset -1px -1px 0 rgba(0,0,0,0.5)'
-              : 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: style.glyphColor,
-            fontSize: isCompact ? '6px' : '11px',
-            lineHeight: 1,
-            userSelect: 'none',
-            pointerEvents: cell.kind === 'open' ? 'none' : 'auto',
-          }}
-        >
-          {isCompact || tiled ? '' : style.glyph}
-        </div>
-      );
-    })}
+  <div data-testid="terrain-layer" style={{ ...latticeGridStyle(gridCols), zIndex: 1 }}>
+    {cells.map((cell) => (
+      <div
+        key={cell.index}
+        data-terrain={cell.kind}
+        data-variant={cell.variant}
+        data-tiled={cell.tile ? '1' : undefined}
+        title={cell.title}
+        style={terrainCellStyle(cell, isCompact)}
+      >
+        {(isCompact || cell.tile) ? '' : TERRAIN_STYLE[cell.kind].glyph}
+      </div>
+    ))}
   </div>
 ));
-
 TerrainLayer.displayName = 'TerrainLayer';
 
 // ---------------------------------------------------------------------------
 // TerrainLegend — which kinds are on this field and what they do
 // ---------------------------------------------------------------------------
+// Pinned top-left on a translucent plate (the off-screen banner sits centred
+// above it and the edge markers can reach this corner) and kept narrow so
+// neither overdraws it for long.
 const TerrainLegend = React.memo(({ terrain }) => {
-  const kinds = terrainKindsPresent(terrain);
+  const kinds = useMemo(() => terrainKindsPresent(terrain), [terrain]);
   if (kinds.length === 0) return null;
   return (
     <div
@@ -1851,28 +1848,24 @@ const TerrainLegend = React.memo(({ terrain }) => {
       aria-label="Terrain legend"
       style={{
         position: 'absolute', top: '6px', left: '8px', zIndex: 140,
-        pointerEvents: 'none', display: 'flex', flexWrap: 'wrap', gap: '6px',
-        fontSize: '9px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)',
-        userSelect: 'none', maxWidth: '70%',
+        pointerEvents: 'none', display: 'flex', flexWrap: 'wrap', gap: '4px 8px',
+        fontSize: '9px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.65)',
+        userSelect: 'none', maxWidth: '45%', padding: '3px 6px', borderRadius: '3px',
+        backgroundColor: 'rgba(0,0,0,0.55)',
       }}
     >
       <span style={{ color: colors.secondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-        {regionLabel(terrain.region)}
+        {regionLabel(terrain)}
       </span>
       {kinds.map((kind) => {
         const style = TERRAIN_STYLE[kind];
-        const entry = terrain.legend?.[kind] || {};
-        const notes = [];
-        if (entry.passable === false) notes.push('blocks');
-        if (entry.cover) notes.push(`cover -${entry.cover}`);
-        if (entry.move_cost > 1) notes.push('slow');
-        if (kind === 'shelf') notes.push(`high +${terrain.elevation_hit_bonus ?? 10}`);
+        const notes = legendNotes(terrain, kind);
         return (
           <span key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
             <span style={{
               display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px',
-              backgroundColor: style.fill === 'transparent' ? 'rgba(255,255,255,0.1)' : style.fill,
-              boxShadow: kind === 'shelf' ? 'inset 1px 1px 0 rgba(255,255,255,0.4)' : 'none',
+              backgroundColor: style.fill,
+              boxShadow: RAISED_KINDS.includes(kind) ? ELEVATION_RIM_SHADOW : 'none',
             }} />
             <span>{terrainLabel(terrain, kind)}{notes.length ? ` (${notes.join(', ')})` : ''}</span>
           </span>
@@ -1881,7 +1874,6 @@ const TerrainLegend = React.memo(({ terrain }) => {
     </div>
   );
 });
-
 TerrainLegend.displayName = 'TerrainLegend';
 
 // ---------------------------------------------------------------------------
@@ -3000,41 +2992,53 @@ function BattlefieldGrid({
     return cells;
   }, [gridCols, leftX, topY, resolvedMapSize]);
 
-  // Terrain cells for the current viewport: same row/col walk as gridBgCells,
-  // resolved through the compact wire rows. Null entries are open ground (or
-  // off the map) and render as empty placeholders so the grid keeps its
-  // cell count.
+  // Terrain cells for the current viewport: the same row/col walk as
+  // gridBgCells, resolved through a bound reader (validated once) and a
+  // per-kind cache for labels/variants/tiles (seven kinds, thousands of
+  // cells). Only feature cells -- and, once a floor tile exists, open cells
+  // -- are emitted; each carries its lattice row/col for explicit placement.
+  // `terrain` is held stable per fight by Battlefield (useStableTerrain), so
+  // this recomputes on viewport moves, not on every poll.
   const terrainActive = hasTerrain(terrain);
   const terrainCells = useMemo(() => {
-    if (!terrainActive) return null;
+    const reader = terrainReader(terrain);
+    if (!reader) return null;
     const region = terrain.region;
-    const floorTile = terrainTileUrl(spriteManifest, region, terrainVariant(terrain, 'open'));
+    const perKind = new Map();
+    const describe = (kind) => {
+      let entry = perKind.get(kind);
+      if (!entry) {
+        const variant = terrainVariant(terrain, kind);
+        entry = {
+          label: terrainLabel(terrain, kind),
+          variant,
+          tile: terrainTileUrl(spriteManifest, region, variant),
+        };
+        perKind.set(kind, entry);
+      }
+      return entry;
+    };
     const cells = [];
     for (let row = 0; row < gridCols; row++) {
       for (let col = 0; col < gridCols; col++) {
-        const worldX = leftX + col;
-        const worldY = topY - row;
-        const kind = terrainKindAt(terrain, worldX, worldY);
-        // Open ground paints nothing procedurally, but takes the region's
-        // floor tile once a tileset has been delivered.
-        if (!kind || (kind === 'open' && !floorTile)) {
-          cells.push(null);
-          continue;
-        }
-        const elevation = terrainElevationAt(terrain, worldX, worldY);
-        const label = terrainLabel(terrain, kind);
-        const variant = terrainVariant(terrain, kind);
+        const kind = reader.kindAt(leftX + col, topY - row);
+        if (!kind) continue;
+        const info = describe(kind);
+        if (kind === 'open' && !info.tile) continue;
         cells.push({
+          index: row * gridCols + col,
+          row,
+          col,
           kind,
-          elevation,
-          variant,
-          tile: kind === 'open' ? floorTile : terrainTileUrl(spriteManifest, region, variant),
-          title: kind === 'open' ? undefined : (elevation > 0 ? `${label} (+${elevation})` : label),
+          elevation: reader.elevationAt(leftX + col, topY - row),
+          variant: info.variant,
+          tile: info.tile,
+          title: kind === 'open' ? undefined : info.label,
         });
       }
     }
     return cells;
-  }, [terrainActive, terrain, gridCols, leftX, topY, spriteManifest]);
+  }, [terrain, gridCols, leftX, topY, spriteManifest]);
 
   // Living enemies drive the off-screen edge markers.
   const livingEnemies = useMemo(
@@ -3155,6 +3159,7 @@ function BattlefieldGrid({
           onClearHover={handleClearHover}
           onSelectEntity={setSelectedEntity}
           spriteManifest={spriteManifest}
+          combatSpeed={combatSpeed}
         />
 
         <EffectsLayer

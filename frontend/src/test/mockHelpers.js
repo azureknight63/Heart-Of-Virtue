@@ -5,3 +5,10 @@ export const capabilitiesDisabled = Object.freeze({
   combatSocketStreaming: false,
   capabilitiesLoading: false,
 })
+
+
+/** `#rrggbb` -> `rgb(r, g, b)`, the form jsdom reports for inline colours. */
+export function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
+}

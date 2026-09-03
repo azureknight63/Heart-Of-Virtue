@@ -3,11 +3,13 @@ region generation, and the engine hooks (to-hit, damage, movers, NPC AI,
 adapter) that consume it.
 """
 
-import random
+import json
+import pickle
 from unittest.mock import MagicMock
 
 import pytest
 
+import src.moves as moves
 import src.positions as positions
 import src.terrain as terrain
 from src.moves._base import (
@@ -17,12 +19,49 @@ from src.moves._base import (
 )
 from src.npc import Slime
 from src.npc_ai_config import NPCAIConfig
-from src.player import Player
-from tests._combat_fixtures import make_adapter, make_npc, make_player, place
+from tests._combat_fixtures import engage, make_adapter, make_npc, make_player, place
+
+BOULDER_COVER = terrain.KIND_PROPS[terrain.BOULDER]["cover"]
+WALL_COVER = terrain.KIND_PROPS[terrain.WALL]["cover"]
 
 
-def _grid(width=11, height=11, region=terrain.ARENA):
-    return terrain.TerrainGrid(width, height, region=region)
+def _grid(width=11, height=11, region=terrain.ARENA, cells=None):
+    """A grid with ``cells`` ({(x, y): kind}) stamped on it."""
+    grid = terrain.TerrainGrid(width, height, region=region)
+    for (x, y), kind in (cells or {}).items():
+        grid.set_cell(x, y, kind)
+    return grid
+
+
+def _nontrivial_flat_grid():
+    """Terrain active (one wall in a far corner) but nothing on any line."""
+    return _grid(cells={(9, 9): terrain.WALL})
+
+
+def _walled_grid():
+    """A wall across x == 5 with a single gap at y == 0."""
+    return _grid(cells={(5, y): terrain.WALL for y in range(1, 11)})
+
+
+def _east_walled_grid():
+    """Everything east of x == 5 is solid wall."""
+    return _grid(cells={(x, y): terrain.WALL for x in range(6, 11) for y in range(11)})
+
+
+def _duel(npc_cls=Slime, **player_kwargs):
+    """A real player and NPC wired into one fight with no positions yet."""
+    player = make_player(**player_kwargs)
+    npc = make_npc(cls=npc_cls)
+    engage(player, [npc], with_positions=False)
+    npc.target = player
+    npc.player_ref = player
+    return player, npc
+
+
+def _player_on_map(name, metadata=None):
+    player = make_player()
+    player.map = {"name": name, **({"metadata": metadata} if metadata is not None else {})}
+    return player
 
 
 def _unit(x, y, grid, facing=positions.Direction.N):
@@ -76,6 +115,45 @@ class TestTerrainGrid:
     def test_invalid_dimensions(self):
         with pytest.raises(ValueError):
             terrain.TerrainGrid(0, 5)
+        with pytest.raises(ValueError):
+            terrain.TerrainGrid(5, -1)
+
+    def test_dimensions_are_clamped(self):
+        grid = terrain.TerrainGrid(500, 7)
+        assert (grid.width, grid.height) == (terrain.MAX_GRID_DIM, 7)
+
+    def test_pickle_round_trip_and_malformed_state(self):
+        grid = _grid(4, 3, region=terrain.EASTERN_DESCENT, cells={(1, 1): terrain.SHELF, (2, 2): terrain.WALL})
+        clone = pickle.loads(pickle.dumps(grid))
+        assert clone.to_payload() == grid.to_payload()
+        assert not clone.is_trivial
+        for state in (
+            {"width": 4, "height": 3, "region": "moon", "_kinds": ["open"] * 5, "_elevation": [0] * 5},
+            {"width": 4, "height": 3, "region": terrain.GRONDIA, "_kinds": ["lava"] * 12, "_elevation": [0] * 12},
+            {"width": 4, "height": 3, "region": terrain.GRONDIA, "_kinds": ["open"] * 12, "_elevation": ["x"] * 12},
+            {"width": "wide", "height": None},
+        ):
+            restored = terrain.TerrainGrid.__new__(terrain.TerrainGrid)
+            restored.__setstate__(state)
+            assert restored.is_trivial
+            assert restored.region in terrain.REGION_PALETTES
+            assert 1 <= restored.width <= terrain.MAX_GRID_DIM
+            assert restored.to_payload()["width"] == restored.width
+        huge = terrain.TerrainGrid.__new__(terrain.TerrainGrid)
+        huge.__setstate__({"width": 5000, "height": 5000, "region": terrain.ARENA})
+        assert (huge.width, huge.height) == (terrain.MAX_GRID_DIM, terrain.MAX_GRID_DIM)
+
+    def test_caches_are_invalidated_by_set_cell(self):
+        grid = _grid()
+        assert grid.cover_between((0, 0), (8, 0)) == (0, False, None)
+        first = grid.to_payload()
+        assert grid.to_payload() is first
+        grid.set_cell(4, 0, terrain.WALL)
+        assert grid.cover_between((0, 0), (8, 0)) == (WALL_COVER, True, terrain.WALL)
+        assert grid.to_payload() is not first
+        assert grid.to_payload()["rows"][0][4] == "w"
+        grid.set_cell(4, 0, terrain.OPEN)
+        assert grid.cover_between((0, 0), (8, 0)) == (0, False, None)
 
     def test_unknown_region_falls_back_to_arena(self):
         assert terrain.TerrainGrid(5, 5, region="moon").region == terrain.ARENA
@@ -101,6 +179,9 @@ class TestTerrainGrid:
         assert payload["elevation"][0] == "0001"
         assert payload["palette"][terrain.ROUGH] == "shallow_water"
         assert payload["legend"][terrain.BOULDER]["cover"] == 20
+        assert payload["legend"][terrain.HAZARD]["effect"] is True
+        assert payload["legend"][terrain.OPEN]["effect"] is False
+        assert payload["region_label"] == "Verdette Caverns"
         assert payload["codes"]["w"] == terrain.WALL
         assert payload["cover_min_distance"] == terrain.COVER_MIN_DISTANCE_FT
 
@@ -127,14 +208,14 @@ class TestLineOfSight:
     def test_boulder_gives_partial_cover(self):
         grid = _grid()
         grid.set_cell(4, 0, terrain.BOULDER)
-        assert grid.cover_between((0, 0), (8, 0)) == (20, False, terrain.BOULDER)
+        assert grid.cover_between((0, 0), (8, 0)) == (BOULDER_COVER, False, terrain.BOULDER)
 
     def test_wall_blocks_line_of_sight(self):
         grid = _grid()
         grid.set_cell(2, 0, terrain.BOULDER)
         grid.set_cell(5, 0, terrain.WALL)
         penalty, blocked, kind = grid.cover_between((0, 0), (8, 0))
-        assert (penalty, blocked, kind) == (40, True, terrain.WALL)
+        assert (penalty, blocked, kind) == (WALL_COVER, True, terrain.WALL)
 
     def test_shelf_between_low_fighters_is_a_ridge(self):
         grid = _grid()
@@ -161,11 +242,7 @@ class TestLineOfSight:
 
 class TestPathing:
     def _walled(self):
-        """A wall across x == 5 with a single gap at y == 0."""
-        grid = _grid()
-        for y in range(1, 11):
-            grid.set_cell(5, y, terrain.WALL)
-        return grid
+        return _walled_grid()
 
     def test_find_path_routes_through_gap(self):
         grid = self._walled()
@@ -211,6 +288,36 @@ class TestPathing:
         reach = terrain.reachable_cells(grid, (0, 0), 3)
         assert reach == {(0, 0): 0, (1, 0): 2, (2, 0): 3}
 
+    def test_reachable_cells_first_step_floor(self):
+        grid = _grid(5, 1)
+        grid.set_cell(1, 0, terrain.ROUGH)
+        assert terrain.reachable_cells(grid, (0, 0), 1) == {(0, 0): 0}
+        assert terrain.reachable_cells(grid, (0, 0), 1, first_step=True) == {(0, 0): 0, (1, 0): 2}
+        # The floor never opens a blocked cell, and never adds when a move exists.
+        assert terrain.reachable_cells(grid, (0, 0), 1, blocked={(1, 0)}, first_step=True) == {(0, 0): 0}
+        assert terrain.reachable_cells(grid, (0, 0), 2, first_step=True) == terrain.reachable_cells(grid, (0, 0), 2)
+
+    def test_retreat_from_is_never_pinned_by_rough_ground(self):
+        grid = _grid(5, 1)
+        for x in range(5):
+            grid.set_cell(x, 0, terrain.ROUGH)
+        me = positions.CombatPosition(2, 0)
+        threat = positions.CombatPosition(0, 0)
+        moved = terrain.retreat_from(grid, me, threat, 1)
+        assert (moved.x, moved.y) == (3, 0)
+
+    def test_best_ground_prefers_cover_and_height_within_reach(self):
+        grid = _grid()
+        grid.set_cell(3, 3, terrain.SHELF)
+        me = positions.CombatPosition(2, 2)
+        threat = (8, 2)
+        assert terrain.best_ground(grid, me, [threat], 3) == (3, 3)
+        # Nothing worth walking to on a flat field, or when it is out of reach.
+        assert terrain.best_ground(_grid(), me, [threat], 3) is None
+        assert terrain.best_ground(grid, positions.CombatPosition(0, 9), [threat], 2) is None
+        # An occupied shelf is not a destination.
+        assert terrain.best_ground(grid, me, [threat], 3, blocked={(3, 3)}) is None
+
     def test_advance_toward_routes_around_wall(self):
         grid = self._walled()
         me = positions.CombatPosition(x=4, y=5)
@@ -240,23 +347,23 @@ class TestPathing:
         moved = terrain.advance_toward(grid, me, positions.CombatPosition(x=5, y=5), 2)
         assert moved.facing == positions.Direction.SW
 
-    def test_retreat_from_gains_distance(self):
+    def test_retreat_from_gains_the_most_distance(self):
         grid = _grid()
         me = positions.CombatPosition(x=5, y=5)
         threat = positions.CombatPosition(x=3, y=5)
         moved = terrain.retreat_from(grid, me, threat, 2)
-        assert positions.distance_from_coords(moved, threat) > 2
+        assert positions.distance_from_coords(moved, threat) == 4
 
     def test_retreat_from_prefers_cover_when_distance_ties(self):
-        grid = _grid(11, 11)
-        # Boulder at (7, 6) shields (8, 6) from a threat at (5, 5)... only (8,6)
-        # and (8,4) tie on distance; the shielded one wins.
-        grid.set_cell(7, 6, terrain.BOULDER)
+        # From (7,5) fleeing (1,5) with one point, (8,4) and (8,6) tie on
+        # distance. A boulder on the threat's line to (8,4) makes it cover
+        # (the threat is past melee reach), so it wins; without the boulder
+        # the coordinate tie-break picks (8,6).
         me = positions.CombatPosition(x=7, y=5)
-        threat = positions.CombatPosition(x=5, y=5)
-        moved = terrain.retreat_from(grid, me, threat, 1)
-        assert grid.is_passable(moved.x, moved.y)
-        assert positions.distance_from_coords(moved, threat) > positions.distance_from_coords(me, threat)
+        threat = positions.CombatPosition(x=1, y=5)
+        shielded = _grid(cells={(7, 4): terrain.BOULDER})
+        assert positions.as_cell(terrain.retreat_from(shielded, me, threat, 1)) == (8, 4)
+        assert positions.as_cell(terrain.retreat_from(_grid(), me, threat, 1)) == (8, 6)
 
     def test_retreat_from_stays_put_when_cornered(self):
         grid = _grid(3, 1)
@@ -287,17 +394,36 @@ class TestPathing:
         assert grid.nearest_passable((0, 0)) in {(1, 0), (0, 1)}
         assert grid.nearest_passable((0, 0), blocked={(1, 0), (0, 1)}) == (1, 1)
         assert grid.nearest_passable((99, 99)) == (3, 3)
+        assert grid.nearest_passable((2, 2)) == (2, 2)
+
+    def test_nearest_passable_ring_search_prefers_the_euclidean_nearest(self):
+        # Everything within ring 3 of (5,5) is wall except a ring-3 corner
+        # (8,8, d=18); a ring-4 axial cell (9,5, d=16) is open and nearer.
+        walls = {(x, y): terrain.WALL for x in range(2, 9) for y in range(2, 9)}
+        walls.pop((8, 8))
+        grid = _grid(cells=walls)
+        for y in range(11):
+            for x in range(11):
+                if not (2 <= x <= 8 and 2 <= y <= 8) and (x, y) != (9, 5):
+                    grid.set_cell(x, y, terrain.WALL)
+        assert grid.nearest_passable((5, 5)) == (9, 5)
+        sealed = _grid(3, 3, cells={(x, y): terrain.WALL for x in range(3) for y in range(3)})
+        assert sealed.nearest_passable((1, 1)) is None
 
     def test_best_flank_bearing_avoids_walled_side(self):
-        grid = _grid()
+        # Target faces north: blind sides are east (90) and west (270).
+        grid = _east_walled_grid()
         target = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
-        # Target faces north: blind sides are east (90) and west (270). Wall
-        # off the east.
-        for y in range(11):
-            for x in range(6, 11):
-                grid.set_cell(x, y, terrain.WALL)
         attacker = positions.CombatPosition(x=5, y=0)
         assert terrain.best_flank_bearing(grid, attacker, target) == 270
+
+    def test_best_flank_bearing_none_when_landings_are_walled_off(self):
+        # Both landing cells are open ground, but a ring of wall keeps the
+        # attacker from ever reaching them.
+        grid = _grid(cells={(x, y): terrain.WALL for x in range(11) for y in (2, 8)})
+        target = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        attacker = positions.CombatPosition(x=5, y=0)
+        assert terrain.best_flank_bearing(grid, attacker, target) is None
 
     def test_best_flank_bearing_none_when_both_unreachable(self):
         grid = _grid(3, 3)
@@ -336,18 +462,19 @@ class TestCombatantHelpers:
         assert terrain.grid_for(unit) is grid
         assert terrain.grid_for(object()) is None
 
-    def test_attach_and_occupied_cells(self):
+    def test_attach_resets_hazard_memory_and_occupied_cells(self):
         grid = _grid()
         a, b = MagicMock(), MagicMock()
         a.combat_position = positions.CombatPosition(1, 1)
         b.combat_position = positions.CombatPosition(2, 2)
+        a._terrain_last_cell = (0, 0)
         terrain.attach(grid, [a, b, None])
         assert a.combat_terrain is grid and b.combat_terrain is grid
+        assert a._terrain_last_cell is None
         assert terrain.occupied_cells([a, b], exclude=a) == {(2, 2)}
 
     def test_engagement_none_without_terrain_or_positions(self):
-        grid = _grid()
-        grid.set_cell(9, 9, terrain.WALL)
+        grid = _nontrivial_flat_grid()
         a, d = _unit(0, 0, grid), _unit(3, 0, grid)
         d.combat_position = None
         assert terrain.engagement(a, d) is None
@@ -359,16 +486,37 @@ class TestCombatantHelpers:
         close = terrain.engagement(_unit(0, 0, grid), _unit(4, 0, grid))
         assert close["cover"] == 0 and close["hit_modifier"] == 0 and close["labels"] == []
         far = terrain.engagement(_unit(0, 0, grid), _unit(8, 0, grid))
-        assert far["cover"] == 20 and far["cover_kind"] == terrain.BOULDER
-        assert far["hit_modifier"] == -20
-        assert far["labels"] == ["Boulder cover -20"]
+        assert far["cover"] == BOULDER_COVER and far["cover_kind"] == terrain.BOULDER
+        assert far["hit_modifier"] == -BOULDER_COVER
+        assert far["labels"] == [f"Boulder cover -{BOULDER_COVER}"]
 
-    def test_engagement_wall_label(self):
+    def test_engagement_lists_cover_before_elevation(self):
+        grid = _grid(cells={(4, 0): terrain.BOULDER, (0, 0): terrain.SHELF})
+        info = terrain.engagement(_unit(0, 0, grid), _unit(8, 0, grid), ranged=True)
+        assert info["labels"] == [f"Boulder cover -{BOULDER_COVER}", f"High ground +{terrain.ELEVATION_HIT_BONUS}"]
+
+    def test_engagement_wall_blocks_the_shot(self):
         grid = _grid()
         grid.set_cell(4, 0, terrain.WALL)
         info = terrain.engagement(_unit(0, 0, grid), _unit(8, 0, grid))
         assert info["blocked_los"] is True
-        assert info["labels"] == ["No line of sight -40"]
+        assert info["hit_modifier"] == terrain.NO_LINE_OF_SIGHT
+        assert info["labels"] == ["No line of sight"]
+        assert terrain.apply_accuracy(_unit(0, 0, grid), _unit(8, 0, grid), 90) == terrain.NO_LINE_OF_SIGHT
+        # A swing past the same wall is unaffected: cover is a ranged mechanic.
+        swing = terrain.engagement(_unit(0, 0, grid), _unit(8, 0, grid), ranged=False)
+        assert swing["blocked_los"] is False and swing["hit_modifier"] == 0 and swing["labels"] == []
+        assert terrain.apply_accuracy(_unit(0, 0, grid), _unit(8, 0, grid), 90, ranged=False) == 90
+
+    def test_engagement_ranged_flag_beats_the_distance_proxy(self):
+        grid = _grid()
+        grid.set_cell(2, 0, terrain.BOULDER)
+        near, far = _unit(0, 0, grid), _unit(4, 0, grid)
+        # A shot at 4 ft takes cover; a swing at 10 ft does not.
+        assert terrain.engagement(near, far, ranged=True)["cover"] == BOULDER_COVER
+        assert terrain.engagement(_unit(0, 0, grid), _unit(10, 0, grid), ranged=False)["cover"] == 0
+        assert terrain.apply_accuracy(near, far, 60, ranged=True) == 60 - BOULDER_COVER
+        assert terrain.apply_accuracy(_unit(0, 0, grid), _unit(10, 0, grid), 60, ranged=False) == 60
 
     def test_engagement_elevation(self):
         grid = _grid()
@@ -376,21 +524,21 @@ class TestCombatantHelpers:
         high = terrain.engagement(_unit(0, 0, grid), _unit(2, 0, grid))
         assert high["elevation"] == 1
         assert high["hit_modifier"] == terrain.ELEVATION_HIT_BONUS
-        assert high["damage_multiplier"] == pytest.approx(1.15)
-        assert high["labels"] == ["High ground +10"]
+        assert high["damage_multiplier"] == pytest.approx(1 + terrain.ELEVATION_DAMAGE_STEP)
+        assert high["labels"] == [f"High ground +{terrain.ELEVATION_HIT_BONUS}"]
         low = terrain.engagement(_unit(2, 0, grid), _unit(0, 0, grid))
         assert low["hit_modifier"] == -terrain.ELEVATION_HIT_BONUS
-        assert low["damage_multiplier"] == pytest.approx(0.85)
-        assert low["labels"] == ["Uphill -10"]
+        assert low["damage_multiplier"] == pytest.approx(1 - terrain.ELEVATION_DAMAGE_STEP)
+        assert low["labels"] == [f"Uphill -{terrain.ELEVATION_HIT_BONUS}"]
 
     def test_apply_accuracy_and_damage_multiplier(self):
         grid = _grid()
         grid.set_cell(0, 0, terrain.SHELF)
         a, d = _unit(0, 0, grid), _unit(2, 0, grid)
-        assert terrain.apply_accuracy(a, d, 50) == 60
-        assert terrain.apply_accuracy(a, d, -1) == -1  # sentinel untouched
+        assert terrain.apply_accuracy(a, d, 50) == 50 + terrain.ELEVATION_HIT_BONUS
+        assert terrain.apply_accuracy(a, d, -5) == -5  # any non-positive input passes through
         assert terrain.apply_accuracy(a, d, 0) == 0
-        assert terrain.damage_multiplier(a, d) == pytest.approx(1.15)
+        assert terrain.damage_multiplier(a, d) == pytest.approx(1 + terrain.ELEVATION_DAMAGE_STEP)
         assert terrain.damage_multiplier(_unit(0, 0, _grid()), d) == 1.0
 
     def test_standing_on(self):
@@ -474,6 +622,9 @@ class TestRegionResolution:
             ("testing-map", terrain.ARENA),
             ("shop-testing", terrain.ARENA),
             ("somewhere-new", terrain.ARENA),
+            ("milos-shop", terrain.GRONDIA),
+            ("eastern-descent-jambos-tent", terrain.GRONDIA),
+            ("wailing-badlands", terrain.WAILING_BADLANDS),
         ],
     )
     def test_name_hints(self, name, region):
@@ -506,8 +657,14 @@ class TestGeneration:
         assert len(comps) == 1
         main = comps[0]
         for zone in self.ZONES:
-            open_cells = [c for c in terrain._cells_in_zone(grid, zone) if c in main]
-            assert len(open_cells) >= 4, (region, size, zone)
+            cells = terrain._cells_in_zone(grid, zone)
+            if not cells:
+                # The second zone lies entirely off a 9-wide grid; a zone
+                # with no in-bounds cells is skipped, never carved.
+                assert size == 9 and zone == self.ZONES[1]
+                continue
+            open_cells = [c for c in cells if c in main]
+            assert len(open_cells) >= min(len(cells), 4), (region, size, zone)
 
     @pytest.mark.parametrize("region", sorted(set(terrain.REGION_PALETTES) - {terrain.ARENA}))
     def test_regions_have_features(self, region):
@@ -550,9 +707,11 @@ class TestGeneration:
             grid.set_cell(3, y, terrain.WALL)
         terrain._enforce_connectivity(grid)
         assert len(terrain._components(grid)) == 1
-        # The smaller half (equal here: leftmost wins by stable sort) was filled.
+        # Equal halves: the first component in row-major order (the left one)
+        # survives and the right half is filled.
         filled = sum(1 for x in range(7) for y in range(3) if grid.kind_at(x, y) == terrain.WALL)
         assert filled == 3 + 9
+        assert grid.is_passable(0, 0) and not grid.is_passable(6, 0)
 
     def test_clear_zones_carves_into_main_component(self):
         grid = _grid(9, 9, region=terrain.EASTERN_DESCENT)
@@ -605,8 +764,11 @@ class TestPositionsIntegration:
         threat = positions.CombatPosition(4, 5)
         moved = positions.move_away_from(me, threat, 2, terrain=grid)
         assert positions.distance_from_coords(moved, threat) > 1
-        moved2 = positions.move_away_constrained(me, threat, 2, [positions.CombatPosition(7, 5)], terrain=grid)
-        assert (moved2.x, moved2.y) != (7, 5)
+        # Occupy the cell the unconstrained retreat picked: the constrained
+        # call must land somewhere else and never on the occupant.
+        moved2 = positions.move_away_constrained(me, threat, 2, [moved], terrain=grid)
+        assert positions.as_cell(moved2) != positions.as_cell(moved)
+        assert positions.distance_from_coords(moved2, threat) > 1
 
     def test_move_to_flank_walks_with_terrain(self):
         grid = _grid()
@@ -664,16 +826,8 @@ class TestToHitAndDamageHooks:
 
 class TestNpcAi:
     def _setup(self):
-        player = make_player()
-        npc = make_npc(cls=Slime)
-        npc.player_ref = player
-        npc.target = player
-        npc.combat_list = [player]
-        npc.combat_list_allies = [npc]
-        player.combat_list = [npc]
-        player.combat_list_allies = [player]
-        config = NPCAIConfig(player)
-        return player, npc, config
+        player, npc = _duel()
+        return player, npc, NPCAIConfig(player)
 
     def test_no_terrain_no_bonus(self):
         _player, npc, config = self._setup()
@@ -694,11 +848,28 @@ class TestNpcAi:
         player, npc, config = self._setup()
         grid = _grid()
         grid.set_cell(4, 0, terrain.SHELF)
-        place(npc, 2, 0)
+        place(npc, 1, 0)
         place(player, 4, 0)
         terrain.attach(grid, [player, npc])
+        # Advance is viable at range 3, so the Slime has a way to close.
+        npc.combat_proximity = {player: 3}
+        player.combat_proximity = {npc: 3}
         assert config.get_terrain_move_bonus(npc, "Flanking Maneuver") == 2
         assert config.get_terrain_move_bonus(npc, "NPC_Attack") == -1
+
+    def test_uphill_tax_needs_a_way_to_reposition(self):
+        """With nothing viable to close the gap, taxing attacks would only push
+        the NPC toward resting; the penalty is skipped."""
+        player, npc, config = self._setup()
+        grid = _grid()
+        grid.set_cell(2, 0, terrain.SHELF)
+        place(npc, 1, 0)
+        place(player, 2, 0)
+        terrain.attach(grid, [player, npc])
+        npc.combat_proximity = {player: 1}  # adjacent: Advance is not viable
+        player.combat_proximity = {npc: 1}
+        assert config.get_terrain_move_bonus(npc, "NPC_Attack") == 0
+        assert config.get_terrain_move_bonus(npc, "Advance") == 0
 
     def test_high_ground_rewards_attacking(self):
         player, npc, config = self._setup()
@@ -719,6 +890,35 @@ class TestNpcAi:
         assert config.get_terrain_move_bonus(npc, "Tactical Positioning") == 2
         assert config.get_weighted_move_bonus(npc, "Tactical Positioning") >= 2
 
+    def test_blocked_line_of_sight_taxes_ranged_and_rewards_repositioning(self):
+        player, npc, config = self._setup()
+        grid = _grid()
+        grid.set_cell(4, 0, terrain.WALL)
+        place(npc, 0, 0)
+        place(player, 8, 0)
+        terrain.attach(grid, [player, npc])
+        volley = moves.NpcAttack(npc)
+        volley.name = "Volley"
+        volley.ranged = True  # a shot, by declaration
+        npc.known_moves.append(volley)
+        assert config.get_terrain_move_bonus(npc, "Volley") == -4
+        assert config.get_terrain_move_bonus(npc, "Advance") == 2
+        assert config.get_terrain_move_bonus(npc, "NPC_Attack") == 0
+
+    def test_take_ground_is_rewarded_when_pressured(self):
+        player, npc, config = self._setup()
+        grid = _grid()
+        grid.set_cell(3, 1, terrain.SHELF)
+        grid.set_cell(8, 0, terrain.SHELF)  # the target holds high ground
+        place(npc, 2, 0)
+        place(player, 8, 0)
+        terrain.attach(grid, [player, npc])
+        assert any(m.name == "Take Ground" for m in npc.known_moves)
+        assert config.get_terrain_move_bonus(npc, "Take Ground") == 3
+        # Flat, unpressured: nothing to gain, nothing rewarded.
+        terrain.attach(_grid(), [player, npc])
+        assert config.get_terrain_move_bonus(npc, "Take Ground") == 0
+
     def test_flank_bearing_prefers_open_side(self):
         player, npc, config = self._setup()
         grid = _grid()
@@ -729,6 +929,90 @@ class TestNpcAi:
         place(npc, 5, 0)
         terrain.attach(grid, [player, npc])
         assert config.get_flank_position_angle(npc, player) == 270
+
+
+class TestTakeGroundMove:
+    def _fight(self, cells=None):
+        player, npc = _duel()
+        grid = _grid(cells={(3, 1): terrain.SHELF} if cells is None else cells)
+        place(npc, 2, 0, positions.Direction.E)
+        place(player, 8, 0, positions.Direction.W)
+        terrain.attach(grid, [player, npc])
+        move = moves.TakeGround(npc)
+        move.target = player
+        return npc, player, grid, move
+
+    def test_viable_only_with_better_ground(self):
+        npc, player, grid, move = self._fight()
+        assert move.viable() is True
+        assert move.destination == (3, 1)
+        terrain.attach(_grid(), [player, npc])
+        assert move.viable() is False
+
+    def test_not_viable_when_better_ground_is_out_of_reach(self):
+        npc, player, grid, move = self._fight(cells={(10, 10): terrain.SHELF})
+        assert move.viable() is False
+        assert move.destination is None
+
+    def test_walks_to_the_chosen_cell_and_faces_the_target(self):
+        npc, player, grid, move = self._fight()
+        move.cast()
+        move.current_stage = 1
+        move.beat_update(npc)
+        assert positions.as_cell(npc.combat_position) == (3, 1)
+        assert npc.combat_position.facing in (positions.Direction.E, positions.Direction.SE)
+
+    def test_is_a_maneuver_with_a_dash_animation(self):
+        npc, player, grid, move = self._fight()
+        assert move.category == "Maneuver"
+        assert move.web_animation == "dash"
+        assert move.is_ranged is False
+        assert move.preview_hit_chance(player) is None
+
+
+class TestRangedGateThroughTheToHitChain:
+    def test_wall_makes_a_shot_impossible_but_not_a_swing(self):
+        ShootBow, Lunge = moves.ShootBow, moves.Lunge
+        player = make_player(weapon="Bow")
+        enemy = make_npc()
+        grid = _grid()
+        grid.set_cell(4, 0, terrain.WALL)
+        place(player, 0, 0, positions.Direction.E)
+        place(enemy, 8, 0, positions.Direction.W)
+        terrain.attach(grid, [player, enemy])
+        player.combat_proximity = {enemy: 8}
+        enemy.combat_proximity = {player: 8}
+        assert _apply_to_hit_modifiers(player, enemy, 80, move=ShootBow(player)) == terrain.NO_LINE_OF_SIGHT
+        swing = _apply_to_hit_modifiers(player, enemy, 80, move=Lunge(player))
+        terrain.attach(None, [player, enemy])
+        assert swing == _apply_to_hit_modifiers(player, enemy, 80, move=Lunge(player))
+        terrain.attach(grid, [player, enemy])
+        # The in-flight move stands in when the caller has none in hand.
+        player.current_move = ShootBow(player)
+        assert _apply_to_hit_modifiers(player, enemy, 80) == terrain.NO_LINE_OF_SIGHT
+        player.current_move = None
+
+    def test_target_card_marks_a_walled_target_unselectable(self):
+        ShootBow = moves.ShootBow
+        player = make_player(weapon="Bow")
+        player.map = {"name": "verdette-caverns"}
+        enemy = make_npc(cls=Slime)
+        adapter = make_adapter(player, [enemy])
+        grid = adapter.combat_terrain
+        player.combat_position = positions.CombatPosition(1, 1)
+        enemy.combat_position = positions.CombatPosition(8, 1)
+        for x in range(2, 8):
+            grid.set_cell(x, 1, terrain.OPEN)
+        grid.set_cell(5, 1, terrain.WALL)
+        player.combat_proximity = {enemy: 7}
+        enemy.combat_proximity = {player: 7}
+        move = ShootBow(player)
+        previews = adapter._get_target_previews(move)
+        card = next(c for c in previews if c["id"].startswith("enemy_"))
+        assert card["in_range"] is False
+        assert card["terrain"]["blocked_los"] is True
+        assert card["terrain"]["labels"] == ["No line of sight"]
+        assert adapter._get_available_targets(move) == []
 
 
 class TestAdapterIntegration:
@@ -756,13 +1040,22 @@ class TestAdapterIntegration:
         assert adapter.combat_terrain.is_trivial
         assert terrain.grid_for(player) is None
 
-    def test_reinit_keeps_the_same_grid(self):
+    def test_reinit_keeps_the_same_grid_even_when_the_roster_grows(self):
         player = self._player_in("eastern-descent")
         enemies = [make_npc(cls=Slime), make_npc(cls=Slime)]
         adapter = make_adapter(player, enemies)
         first = adapter.combat_terrain
         adapter.initialize_combat(enemies, reinit=True)
         assert adapter.combat_terrain is first
+        # A wave that triples the roster would ask for a bigger dynamic grid;
+        # the fight's terrain (and its dimensions) still win.
+        for _ in range(3):
+            extra = make_npc(cls=Slime)
+            extra.combat_list = [player]
+            player.combat_list.append(extra)
+        adapter.initialize_combat(player.combat_list, reinit=True)
+        assert adapter.combat_terrain is first
+        assert tuple(adapter.combat_grid_size) == (first.width, first.height)
 
     def test_new_fight_regenerates(self):
         player = self._player_in("eastern-descent")
@@ -781,34 +1074,45 @@ class TestAdapterIntegration:
         newcomer.combat_list = [player]
         newcomer.combat_list_allies = enemies + [newcomer]
         player.combat_list.append(newcomer)
-        # Drive the same path _execute_move_inner takes for unpositioned enemies.
-        terrain.attach(grid, [newcomer])
-        positions.initialize_combat_positions(
-            allies=[], enemies=[newcomer], scenario_type="standard",
-            grid_width=grid.width, grid_height=grid.height, terrain=grid,
-        )
-        assert grid.is_passable(newcomer.combat_position.x, newcomer.combat_position.y)
+        # The adapter's shared spawn helper is what the reinforcement path runs.
+        adapter._spawn_on_terrain(grid, [], [newcomer], "standard", grid.width, grid.height)
+        cell = positions.as_cell(newcomer.combat_position)
+        assert grid.is_passable(*cell)
+        assert cell not in terrain.occupied_cells([player] + enemies)
         assert newcomer.combat_terrain is grid
 
-    def test_state_payload_carries_no_terrain_yet_but_grid_serialises(self):
-        # Phase 2 wires ``battle_state["terrain"]``; here we only assert the
-        # payload the adapter will publish is JSON-friendly.
-        import json
-
+    def test_battle_state_publishes_the_grid_payload(self):
         player = self._player_in("grondelith-mineral-pools")
         adapter = make_adapter(player, [make_npc(cls=Slime)])
         payload = adapter.combat_terrain.to_payload()
         assert json.dumps(payload)
         assert len(payload["rows"]) == payload["height"]
         assert all(len(row) == payload["width"] for row in payload["rows"])
+        adapter.awaiting_input = True
+        adapter.input_type = "move_selection"
+        adapter.available_options = []
+        assert adapter.get_combat_state()["battle_state"]["terrain"] == payload
+
+    def test_end_of_combat_and_new_fight_drop_the_grid(self):
+        player = self._player_in("verdette-caverns")
+        adapter = make_adapter(player, [make_npc(cls=Slime)])
+        assert player.combat_terrain is not None
+        adapter._teardown_combat_roster()
+        assert player.combat_terrain is None
 
 
-def test_terrain_grid_pickles_through_secure_pickle():
+def test_terrain_grid_survives_secure_pickle_but_is_stripped_from_saves():
+    import io
+
+    from src.functions import _safe_pickle_load
     from src.secure_pickle import serialize_for_save
-    from src.functions import _safe_pickle_load  # noqa: F401  (re-export contract)
 
     grid = terrain.generate(terrain.EASTERN_DESCENT, 13, 13, seed=2)
+    restored = _safe_pickle_load(io.BytesIO(serialize_for_save(grid)))
+    assert isinstance(restored, terrain.TerrainGrid)
+    assert restored.to_payload() == grid.to_payload()
     player = make_player()
     player.combat_terrain = grid
-    blob = serialize_for_save(player)
-    assert blob
+    player._terrain_last_cell = (1, 1)
+    state = player.__getstate__()
+    assert "combat_terrain" not in state and "_terrain_last_cell" not in state

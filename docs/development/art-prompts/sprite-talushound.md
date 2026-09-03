@@ -34,7 +34,7 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ```text
 SUBJECT: A Talus Hound: a lean shaggy quadruped the size of a large dog, layered mottled grey-brown hide that reads as rock camouflage, heavily muscled legs, a broad low-set head, pale amber eyes. A pack hunter: idle is a low prowl, walk is a loping run, attack is a leaping bite, death is a sprawl. Accent colour: pale amber eyes.
 
-ANIMATION: 'attack' -- one committed strike: wind-up (frames 1-2), swing/impact (3-4), recoil (5-6). Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
+ANIMATION: 'attack' -- one committed strike: wind-up (first third of the frames), swing/impact (middle third), recoil (last third). Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
 
 LAYOUT: a single PNG containing a strict 3 x 6 grid of equal square cells (3 rows, 6 columns), every cell the same size, with hairline gaps of solid magenta (#FF00FF) between cells and a solid magenta background behind every cell. One sprite per cell, centred, feet on the same baseline in every cell, identical scale in every cell. Row 1 = facing SOUTH (toward the viewer), row 2 = facing WEST (left), row 3 = facing NORTH (away). Columns are the animation frames in order, left to right. Do not draw anything outside the cells.
 

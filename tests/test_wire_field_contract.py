@@ -166,22 +166,38 @@ BATTLE_STATE_CONTRACT = {
 # `elevation` with `codes` + `palette`; the legend strip and cell titles read
 # `legend`.
 TERRAIN_CONTRACT = {
-    "region": "utils/terrain.js regionLabel(terrain.region)",
-    "width": "BattlefieldGrid.jsx TerrainLayer bounds check terrain.width",
-    "height": "BattlefieldGrid.jsx TerrainLayer bounds check terrain.height",
+    "region": "BattlefieldGrid.jsx terrainCells -> terrainTileUrl(manifest, terrain.region, variant)",
+    "region_label": "utils/terrain.js regionLabel(terrain) -> terrain.region_label",
+    "elevation_hit_bonus": "utils/terrain.js legendNotes(terrain, 'shelf') -> terrain.elevation_hit_bonus",
+    "width": "utils/terrain.js hasTerrain / cellChar bounds terrain.width",
+    "height": "utils/terrain.js hasTerrain / cellChar bounds terrain.height",
     "rows": "utils/terrain.js terrainKindAt(terrain, x, y) -> terrain.rows[y][x]",
     "elevation": "utils/terrain.js terrainElevationAt(terrain, x, y) -> terrain.elevation[y][x]",
     "codes": "utils/terrain.js terrainKindAt -> terrain.codes[code]",
     "palette": "utils/terrain.js terrainVariant(terrain, kind) -> terrain.palette[kind]",
-    "legend": "utils/terrain.js terrainLabel(terrain, kind) -> terrain.legend[kind].label",
+    "legend": "utils/terrain.js terrainLabel / legendNotes -> terrain.legend[kind]",
+}
+
+# One entry of battle_state.terrain.legend (src/terrain.py LEGEND_KEYS).
+TERRAIN_LEGEND_ENTRY_CONTRACT = {
+    "label": "utils/terrain.js terrainLabel(terrain, kind)",
+    "passable": "utils/terrain.js legendNotes -> 'blocks'",
+    "move_cost": "utils/terrain.js legendNotes -> 'slow'",
+    "cover": "utils/terrain.js legendNotes -> 'cover -N'",
+    "blocks_los": "utils/terrain.js legendNotes -> 'no line of sight'",
+    "effect": "utils/terrain.js legendNotes -> 'hurts'",
+}
+
+# combatant.terrain (src.terrain.standing_on), read by the token tooltip.
+STANDING_ON_CONTRACT = {
+    "kind": "BattlefieldGrid.jsx EntityTooltip entity.terrain.kind !== 'open'",
+    "label": "BattlefieldGrid.jsx EntityTooltip entity.terrain.label",
 }
 
 # Per-target terrain block on target cards (src.terrain.engagement).
 TARGET_TERRAIN_CONTRACT = {
     "labels": "CombatInputDialog.jsx target.terrain.labels",
     "hit_modifier": "CombatInputDialog.jsx target.terrain.hit_modifier (sign -> colour)",
-    "cover": "utils/terrain.js engagementTone(info.cover, info.elevation)",
-    "elevation": "utils/terrain.js engagementTone(info.cover, info.elevation)",
 }
 
 
@@ -495,6 +511,7 @@ COMBATANT_CONTRACT = {
 # of enemy intent on the map, so a rename here silently blanks the telegraph.
 ACTIVE_MOVE_CONTRACT = {
     "display_name": "combatMoveStatus.js displayNameOf(move)",
+    "name": "utils/sprites.js spriteClipFor -> currentMove.name (display_name is the fallback)",
     "category": "BattlefieldGrid.jsx MOVE_CATEGORY_GLOW/_COLOR[move.category]",
     # isMovePending() suppresses the telegraph for stages 2/3 so a spent
     # combatant stops looking like one winding up; beatsUntilResolve() renders
@@ -964,7 +981,7 @@ class TestCombatantWireContract:
         return adapter, player, enemy
 
     def test_terrain_payload_fields(self):
-        adapter, _player, _enemy = self._terrain_fight()
+        adapter, player, _enemy = self._terrain_fight()
         adapter.awaiting_input = True
         adapter.input_type = "move_selection"
         adapter.available_options = []
@@ -975,13 +992,33 @@ class TestCombatantWireContract:
         assert all(len(r) == payload["width"] for r in payload["rows"])
         assert all(len(r) == payload["width"] for r in payload["elevation"])
         assert set("".join(payload["rows"])) <= set(payload["codes"])
+        # The legend, palette and codes all describe the same kinds, and every
+        # legend entry carries what utils/terrain.js legendNotes reads.
+        kinds = set(payload["codes"].values())
+        assert set(payload["legend"]) == kinds == set(payload["palette"])
+        for kind, entry in payload["legend"].items():
+            _assert_contract(entry, TERRAIN_LEGEND_ENTRY_CONTRACT, f"legend[{kind}]")
+        # What a combatant stands on, as the tooltip reads it.
+        standing = CombatantSerializer.serialize_combatant(player)["terrain"]
+        _assert_contract(standing, STANDING_ON_CONTRACT, "combatant.terrain")
 
-    def test_terrain_is_null_not_missing_in_a_flat_fight(self, real_adapter, real_combat_player):
+    def test_flat_fight_still_ships_a_featureless_grid(self, real_adapter, real_combat_player):
+        """The adapter publishes the raw grid even when it is trivial (the
+        client needs its dimensions); a fight with no grid at all ships None."""
         real_adapter.awaiting_input = True
         real_adapter.input_type = "move_selection"
         real_adapter.available_options = []
         result = real_adapter.get_combat_state()
-        assert "terrain" in result["battle_state"]
+        assert result["battle_state"]["terrain"] is None
+        enemy = Slime()
+        real_combat_player.combat_list = [enemy]
+        real_adapter.initialize_combat([enemy])
+        real_adapter.awaiting_input = True
+        real_adapter.input_type = "move_selection"
+        real_adapter.available_options = []
+        payload = real_adapter.get_combat_state()["battle_state"]["terrain"]
+        assert payload["region"] == "arena"
+        assert set("".join(payload["rows"])) == {"o"}
 
     def test_target_terrain_block_fields(self):
         """The per-target cover/elevation block is populated from the same
@@ -992,20 +1029,25 @@ class TestCombatantWireContract:
         adapter, player, enemy = self._terrain_fight()
         grid = adapter.combat_terrain
         # Force a boulder onto the line of fire so the block is non-trivial.
+        # A two-combatant fight is a 9x9 grid (cells 0-8); stand at both ends
+        # on ground made flat and open, so nothing the (unseeded) generator
+        # put there -- a shelf under the archer, a wall under the target --
+        # can change the numbers.
         player.combat_position = positions.CombatPosition(1, 1)
-        enemy.combat_position = positions.CombatPosition(9, 1)
-        for x in range(2, 9):
+        enemy.combat_position = positions.CombatPosition(8, 1)
+        for x in range(1, 9):
             grid.set_cell(x, 1, terrain.OPEN)
         grid.set_cell(5, 1, terrain.BOULDER)
-        player.combat_proximity = {enemy: 8}
-        enemy.combat_proximity = {player: 8}
+        player.combat_proximity = {enemy: 7}
+        enemy.combat_proximity = {player: 7}
         move = ShootBow(player)
         targets = adapter._get_available_targets(move)
         assert targets
         _assert_contract(targets[0], TARGET_CONTRACT, "target card (terrain fight)")
         _assert_contract(targets[0]["terrain"], TARGET_TERRAIN_CONTRACT, "target.terrain")
-        assert targets[0]["terrain"]["cover"] == 20
-        assert targets[0]["terrain"]["labels"] == ["Boulder cover -20"]
+        cover = terrain.KIND_PROPS[terrain.BOULDER]["cover"]
+        assert targets[0]["terrain"]["cover"] == cover
+        assert targets[0]["terrain"]["labels"] == [f"Boulder cover -{cover}"]
 
     def test_hit_chance_is_an_integer_percentage_not_a_0_1_fraction(self):
         """Guards bug #4 directly: CombatInputDialog renders hit_chance as-is

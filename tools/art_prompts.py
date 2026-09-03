@@ -25,13 +25,26 @@ OUT_DIR = ROOT / "docs" / "development" / "art-prompts"
 
 FRAME_SIZE = 64  # px, square, after intake normalisation
 
+#: Chroma key the prompts ask for behind every cell and the intake keys to
+#: transparency. One definition; ``sprite_intake`` imports it.
+CHROMA_RGB = (255, 0, 255)
+CHROMA_HEX = "#%02X%02X%02X" % CHROMA_RGB
+
+#: Delivery file-name convention: ``<slug>__<clip>.png`` and
+#: ``tileset__<region>.png``. ``sheet_filename``/``tileset_filename`` build
+#: them and ``parse_sheet_filename``/``parse_tileset_filename`` invert them,
+#: so the two directions cannot drift apart.
+SHEET_SEPARATOR = "__"
+TILESET_PREFIX = "tileset"
+
 #: Facings drawn. East is mirrored from west at render time, so three rows.
 FACINGS = ("south", "west", "north")
 
-#: Animation clips and their frame counts. Order is the row order inside a
-#: delivered sheet is NOT relied upon -- each clip is requested as its own
-#: image (one sheet per clip: rows = facings, columns = frames) because image
-#: models keep a 3x6 grid coherent far more reliably than a 21x6 one.
+#: Animation clips and their frame counts. Dict order is only the order the
+#: docs list them in: each clip is requested as its own image (one sheet per
+#: clip: rows = facings, columns = frames) because image models keep a 3x6
+#: grid coherent far more reliably than a 21x6 one, so no row order across
+#: clips is ever relied upon.
 CLIPS = {
     "idle": 4,
     "walk": 6,
@@ -46,7 +59,7 @@ CLIPS = {
 CLIP_NOTES = {
     "idle": "breathing / weight-shift loop used whenever the combatant is waiting",
     "walk": "movement loop used while advancing, withdrawing or flanking",
-    "attack": "one committed strike: wind-up (frames 1-2), swing/impact (3-4), recoil (5-6)",
+    "attack": "one committed strike: wind-up (first third of the frames), swing/impact (middle third), recoil (last third)",
     "cast": "a focused non-weapon action: raising a hand, gathering energy, bracing a shout; used for buffs, specials and supernatural moves",
     "defend": "guard raised: parry / dodge stance held, then relaxed",
     "hurt": "flinch from a hit: recoil, hold, recover",
@@ -64,7 +77,7 @@ No text, no labels, no watermark, no drop shadow (the game draws its own)."""
 LAYOUT_BLOCK = """\
 LAYOUT: a single PNG containing a strict {rows} x {cols} grid of equal square cells \
 ({rows} rows, {cols} columns), every cell the same size, with hairline gaps of \
-solid magenta (#FF00FF) between cells and a solid magenta background behind \
+solid magenta ({chroma}) between cells and a solid magenta background behind \
 every cell. One sprite per cell, centred, feet on the same baseline in every cell, \
 identical scale in every cell. Row 1 = facing SOUTH (toward the viewer), \
 row 2 = facing WEST (left), row 3 = facing NORTH (away). Columns are the \
@@ -79,15 +92,18 @@ def _sheet_prompt(subject: str, clip: str, frames: int, accent: str) -> str:
             f"a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end "
             f"sequence otherwise. The pose must be recognisably the same character in all "
             f"{frames * len(FACINGS)} cells.",
-            LAYOUT_BLOCK.format(rows=len(FACINGS), cols=frames),
+            LAYOUT_BLOCK.format(rows=len(FACINGS), cols=frames, chroma=CHROMA_HEX),
             STYLE_BLOCK,
         ]
     )
 
 
 # ---------------------------------------------------------------------------
-# Roster (slugs match CombatantSerializer.stream_id's underlying class names,
-# lower-cased; the frontend resolves a sprite by `sprite_key`).
+# Roster. A slug is what ``CombatantSerializer.sprite_key`` emits for the
+# combatant: ``jean`` for the player, otherwise the NPC class name lower-cased
+# (or the class's own ``sprite_key`` attribute). Non-combat NPCs (Mynx, the
+# nomads, Grondites) and debug-only fighters (Testexp, TheAdjutant) are left
+# out deliberately: they keep the glyph token.
 # ---------------------------------------------------------------------------
 
 ROSTER = [
@@ -122,12 +138,13 @@ ROSTER = [
         "slug": "mara",
         "name": "Mara (nomad ally)",
         "side": "ally",
-        "accent": "rust red sash",
+        "accent": "blue-grey scarf",
         "subject": (
-            "Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound "
-            "back under a dust-coloured head-wrap, layered travel-stained linen and a hide "
-            "vest, a rust-red sash, tall laced boots. Fights with a short spear held low. "
-            "Competent, unhurried."
+            "Mara, a lean nomad woman in her late twenties, below average height, dark "
+            "auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. "
+            "Layered olive and brown travel gear, a blue-grey scarf, pack straps across the "
+            "chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with "
+            "a dagger in hand and a short bow slung across her back. Watchful, unhurried."
         ),
     },
     {
@@ -383,8 +400,8 @@ REGIONS = {
 TILE_LAYOUT = """\
 LAYOUT: a single PNG containing a strict 1 x {cols} row of equal square tiles \
 ({cols} tiles, left to right, in the order listed), hairline gaps of solid magenta \
-(#FF00FF) between tiles and a solid magenta background wherever a tile is \
-transparent (the drop / chasm tiles are fully opaque). Each tile must be seamless \
+({chroma}) between tiles and a solid magenta background wherever a tile is \
+transparent (the "{opaque}" tile is fully opaque). Each tile must be seamless \
 with its own copies on all four sides (the floor tiles especially). Top-down 3/4 \
 view matching the sprite sheets: the ground is seen from above at about 60 degrees, \
 raised features show a lit top face and a short shaded front face."""
@@ -397,16 +414,17 @@ stay legible under a 75%-size character sprite standing on it -- keep floor tile
 low-contrast and features high-contrast."""
 
 
-def _tileset_prompt(region_key: str, region: dict) -> str:
+def _tileset_prompt(region: dict) -> str:
     variants = region["variants"]
     order = ", ".join(
         f"{i + 1}. {desc} [{key}]" for i, (key, desc) in enumerate(variants.items())
     )
+    opaque = list(variants)[-1]  # the CLIFF variant is always listed last
     return "\n\n".join(
         [
             f"SUBJECT: terrain tileset for {region['name']}: {region['mood']}.",
             f"TILES, in this order: {order}.",
-            TILE_LAYOUT.format(cols=len(variants)),
+            TILE_LAYOUT.format(cols=len(variants), chroma=CHROMA_HEX, opaque=opaque),
             TILE_STYLE,
         ]
     )
@@ -417,12 +435,59 @@ def _tileset_prompt(region_key: str, region: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Every slug the roster defines; the intake refuses anything else.
+SLUGS = frozenset(entry["slug"] for entry in ROSTER)
+
+#: Tiles per region tileset: every region mirrors the engine's kinds exactly.
+TILES_PER_REGION = len(next(iter(REGIONS.values()))["variants"])
+assert all(
+    len(region["variants"]) == TILES_PER_REGION for region in REGIONS.values()
+), "every region tileset must have the same tile count"
+
+
 def sheet_filename(slug: str, clip: str) -> str:
-    return f"{slug}__{clip}.png"
+    return f"{slug}{SHEET_SEPARATOR}{clip}.png"
 
 
 def tileset_filename(region_key: str) -> str:
-    return f"tileset__{region_key}.png"
+    return f"{TILESET_PREFIX}{SHEET_SEPARATOR}{region_key}.png"
+
+
+def parse_sheet_filename(name: str):
+    """``jean__idle.png`` -> ``("jean", "idle")``; raises ``ValueError`` for an
+    unknown slug or clip so a mis-named delivery cannot create a stray sprite
+    (or, via ``..``, a file outside the sprites directory)."""
+    stem = name[:-4] if name.lower().endswith(".png") else name
+    if SHEET_SEPARATOR not in stem:
+        raise ValueError(f"{name}: expected '<slug>{SHEET_SEPARATOR}<clip>.png'")
+    slug, clip = stem.split(SHEET_SEPARATOR, 1)
+    if slug not in SLUGS:
+        raise ValueError(f"{name}: unknown slug {slug!r}; known: {sorted(SLUGS)}")
+    if clip not in CLIPS:
+        raise ValueError(f"{name}: unknown clip {clip!r}; known: {sorted(CLIPS)}")
+    return slug, clip
+
+
+def parse_tileset_filename(name: str) -> str:
+    """``tileset__verdette_caverns.png`` -> ``"verdette_caverns"``."""
+    stem = name[:-4] if name.lower().endswith(".png") else name
+    prefix = f"{TILESET_PREFIX}{SHEET_SEPARATOR}"
+    if not stem.startswith(prefix):
+        raise ValueError(f"{name}: expected '{prefix}<region>.png'")
+    region = stem.removeprefix(prefix)
+    if region not in REGIONS:
+        raise ValueError(f"{name}: unknown region {region!r}; known: {sorted(REGIONS)}")
+    return region
+
+
+def spec_header() -> dict:
+    """The spec fields the prompt pack and the manifest both carry."""
+    return {
+        "frame_size": FRAME_SIZE,
+        "tile_size": TILE_SIZE,
+        "facings": list(FACINGS),
+        "clips": dict(CLIPS),
+    }
 
 
 def build_pack() -> dict:
@@ -449,21 +514,64 @@ def build_pack() -> dict:
             "name": region["name"],
             "variants": list(region["variants"].keys()),
             "deliver_as": tileset_filename(key),
-            "prompt": _tileset_prompt(key, region),
+            "prompt": _tileset_prompt(region),
         }
         for key, region in REGIONS.items()
     ]
-    return {
-        "frame_size": FRAME_SIZE,
-        "tile_size": TILE_SIZE,
-        "facings": list(FACINGS),
-        "clips": dict(CLIPS),
-        "sprites": sprites,
-        "tilesets": tilesets,
-    }
+    return {**spec_header(), "sprites": sprites, "tilesets": tilesets}
+
+
+def _sprite_doc(entry: dict, sheets: list[dict]) -> str:
+    """Markdown for one combatant: one fenced prompt per clip."""
+    lines = [
+        f"# Sprite sheets: {entry['name']}",
+        "",
+        f"Slug: `{entry['slug']}`  ",
+        f"Side: {entry['side']}",
+        "",
+        "One image per clip. Deliver each as the file name shown; the intake tool "
+        "slices it by the stated grid and normalises frames to "
+        f"{FRAME_SIZE}x{FRAME_SIZE}.",
+        "",
+    ]
+    for sheet in sheets:
+        lines.extend(
+            [
+                f"## {sheet['clip']} -- deliver as `{sheet['deliver_as']}` "
+                f"({sheet['rows']} rows x {sheet['frames']} cols)",
+                "",
+                "```text",
+                sheet["prompt"],
+                "```",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _tileset_doc(tileset: dict) -> str:
+    """Markdown for one region tileset: tile order plus the fenced prompt."""
+    region = REGIONS[tileset["region"]]
+    lines = [
+        f"# Tileset: {tileset['name']}",
+        "",
+        f"Region key: `{tileset['region']}`  ",
+        f"Deliver as `{tileset['deliver_as']}` (1 row x {len(tileset['variants'])} tiles).",
+        "",
+        "Tile order and the variant key each one becomes:",
+        "",
+    ]
+    for i, (vkey, desc) in enumerate(region["variants"].items()):
+        lines.append(f"{i + 1}. `{vkey}` -- {desc}")
+    lines.extend(["", "```text", tileset["prompt"], "```", ""])
+    return "\n".join(lines)
 
 
 def write_pack(out_dir: Path = OUT_DIR) -> list[Path]:
+    """Write README, one sprite doc per combatant, one tileset doc per region
+    and ``pack.json`` -- all rendered from one ``build_pack()`` so the markdown
+    and the JSON can never disagree. Stale docs from a renamed slug or region
+    are removed so the directory always equals the pack."""
     out_dir.mkdir(parents=True, exist_ok=True)
     pack = build_pack()
     written = []
@@ -473,52 +581,26 @@ def write_pack(out_dir: Path = OUT_DIR) -> list[Path]:
     written.append(readme)
 
     for entry in ROSTER:
+        sheets = [sheet for sheet in pack["sprites"] if sheet["slug"] == entry["slug"]]
         path = out_dir / f"sprite-{entry['slug']}.md"
-        lines = [
-            f"# Sprite sheets: {entry['name']}",
-            "",
-            f"Slug: `{entry['slug']}`  ",
-            f"Side: {entry['side']}",
-            "",
-        ]
-        lines.append(
-            "One image per clip. Deliver each as the file name shown; the intake tool "
-            "slices it by the stated grid and normalises frames to "
-            f"{FRAME_SIZE}x{FRAME_SIZE}."
-        )
-        lines.append("")
-        for clip, frames in CLIPS.items():
-            lines += [
-                f"## {clip} -- deliver as `{sheet_filename(entry['slug'], clip)}` ({len(FACINGS)} rows x {frames} cols)",
-                "",
-                "```text",
-                _sheet_prompt(entry["subject"], clip, frames, entry["accent"]),
-                "```",
-                "",
-            ]
-        path.write_text("\n".join(lines), encoding="utf-8")
+        path.write_text(_sprite_doc(entry, sheets), encoding="utf-8")
         written.append(path)
 
-    for key, region in REGIONS.items():
-        path = out_dir / f"tileset-{key}.md"
-        lines = [
-            f"# Tileset: {region['name']}",
-            "",
-            f"Region key: `{key}`  ",
-            f"Deliver as `{tileset_filename(key)}` (1 row x {len(region['variants'])} tiles).",
-            "",
-            "Tile order and the variant key each one becomes:",
-            "",
-        ]
-        for i, (vkey, desc) in enumerate(region["variants"].items()):
-            lines.append(f"{i + 1}. `{vkey}` -- {desc}")
-        lines += ["", "```text", _tileset_prompt(key, region), "```", ""]
-        path.write_text("\n".join(lines), encoding="utf-8")
+    for tileset in pack["tilesets"]:
+        path = out_dir / f"tileset-{tileset['region']}.md"
+        path.write_text(_tileset_doc(tileset), encoding="utf-8")
         written.append(path)
 
     manifest = out_dir / "pack.json"
     manifest.write_text(json.dumps(pack, indent=2), encoding="utf-8")
     written.append(manifest)
+
+    keep = {p.name for p in written}
+    for stale in out_dir.glob("*.md"):
+        if stale.name not in keep and (
+            stale.name.startswith("sprite-") or stale.name.startswith("tileset-")
+        ):
+            stale.unlink()
     return written
 
 
@@ -534,7 +616,7 @@ Generated by `python tools/art_prompts.py` -- edit that file, not these.
   (`sprite-<slug>.md`). Each sheet is one image: {len(FACINGS)} rows (south, west,
   north facing) x N frames. East is mirrored from west by the game.
 * **{len(REGIONS)} tilesets**: one image per region (`tileset-<region>.md`), one row
-  of {len(next(iter(REGIONS.values()))["variants"])} tiles in a fixed order.
+  of {TILES_PER_REGION} tiles in a fixed order.
 
 Paste each fenced prompt into Gemini / Nano Banana 2 as-is. Where the model
 supports a reference image, attach the character's portrait
@@ -552,7 +634,7 @@ python tools/sprite_intake.py tileset path/to/tileset__verdette_caverns.png
 python tools/sprite_intake.py validate                                # what is still missing
 ```
 
-The intake tool keys the magenta (#FF00FF) background to transparency, splits
+The intake tool keys the magenta ({CHROMA_HEX}) background to transparency, splits
 the image into the expected grid, resamples every cell to
 {pack["frame_size"]}x{pack["frame_size"]} with nearest-neighbour sampling (pixels stay
 crisp), writes one strip per clip under `frontend/public/assets/sprites/<slug>/`
@@ -571,7 +653,7 @@ expected grid when a model returns a different but consistent layout.
 - [ ] Same character, same scale, same baseline in every cell
 - [ ] Row order south / west / north
 - [ ] Frame count matches the heading
-- [ ] Solid #FF00FF background, no anti-aliased fringe against it
+- [ ] Solid {CHROMA_HEX} background, no anti-aliased fringe against it
 - [ ] Nothing drawn across cell gaps
 """
 
@@ -581,7 +663,8 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, default=OUT_DIR)
     args = parser.parse_args(argv)
     for path in write_pack(args.out):
-        print(f"wrote {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+        shown = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        print(f"wrote {shown}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Move base class, PassiveMove base, and shared combat helpers."""
 
 from src.narration import colored, cprint, narrate  # noqa: F401
+import logging
 import random  # noqa: F401
 import math  # noqa: F401
 from types import SimpleNamespace
@@ -11,6 +12,26 @@ import src.positions as positions  # noqa: F401
 import src.terrain as terrain  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from src.combatant import MOVE_STAGE_EXECUTE, MOVE_STAGE_PREP
+
+logger = logging.getLogger(__name__)
+
+
+def occupied_positions(user, exclude=None):
+    """Every other combatant's ``combat_position`` -- the squares a mover must
+    route around. Reads both rosters the fight keeps (``combat_list`` and
+    ``combat_list_allies``), skipping ``exclude`` (default: the mover itself).
+    The one definition behind every mover's collision list; do not rebuild it
+    inline."""
+    exclude = user if exclude is None else exclude
+    occupied = []
+    for roster in ("combat_list", "combat_list_allies"):
+        for unit in getattr(user, roster, None) or []:
+            if unit is exclude:
+                continue
+            pos = getattr(unit, "combat_position", None)
+            if pos is not None:
+                occupied.append(pos)
+    return occupied
 
 
 def _apply_carry_fatigue(user, fatigue_cost):
@@ -343,7 +364,9 @@ def facing_damage_multiplier(attacker, defender, steepness=1.0):
 
 
 def apply_facing_damage(attacker, defender, power, steepness=1.0):
-    """Scale an attack's ``power`` by the facing/angle damage curve (issue #394).
+    """Scale an attack's ``power`` by the two positional damage terms: the
+    facing/angle curve (issue #394) and battlefield elevation
+    (``src.terrain``: high ground hits harder, uphill swings land softer).
 
     Companion to ``_apply_facing_accuracy``: flanks and backs are both easier
     to *hit* and harder to *absorb*. Applied to power (pre-protection), matching
@@ -363,11 +386,15 @@ def apply_facing_damage(attacker, defender, power, steepness=1.0):
     if power <= 0:
         return power
     multiplier = facing_damage_multiplier(attacker, defender, steepness)
-    # Elevation is the other positional damage term (``src.terrain``): high
-    # ground hits harder, uphill swings land softer. Folded into the same
-    # funnel so every attack path that already respects facing respects
-    # terrain too, and so the preview's damage bounds match the roll.
-    multiplier = round(multiplier * terrain.damage_multiplier(attacker, defender), 9)
+    # Elevation is folded into the same funnel so every attack path that
+    # already respects facing respects terrain too, and so the preview's
+    # damage bounds match the roll. Fail-soft like the accuracy hook.
+    try:
+        elevation = terrain.damage_multiplier(attacker, defender)
+    except Exception:
+        logger.debug("terrain damage hook failed", exc_info=True)
+        elevation = 1.0
+    multiplier = round(multiplier * elevation, terrain.MULTIPLIER_PRECISION)
     if multiplier == 1.0:
         return power
     return max(1, int(power * multiplier))
@@ -1042,13 +1069,24 @@ def _apply_haunting_presence(attacker, defender, hit_chance):
     return hit_chance
 
 
-def _apply_to_hit_modifiers(attacker, defender, hit_chance):
+def _move_is_ranged(attacker, move):
+    """Whether the strike being resolved is a shot. Prefers the move the
+    caller hands over; otherwise the attacker's in-flight ``current_move``
+    (set by the adapter for the whole execute stage). None when neither is a
+    Move, which lets terrain fall back to its distance proxy."""
+    candidate = move if move is not None else getattr(attacker, "current_move", None)
+    if isinstance(candidate, Move):
+        return candidate.is_ranged
+    return None
+
+
+def _apply_to_hit_modifiers(attacker, defender, hit_chance, move=None):
     """Apply the shared universal to-hit modifiers, in order: facing/angle
     accuracy (#394), then battlefield terrain (cover and elevation, see
     ``src.terrain``), then HauntingPresence (#421).
 
     Every attack in the moves package funnels through this single call
-    instead of each hand-rolling the same two-call sequence — the exact
+    instead of each hand-rolling the same three-call sequence — the exact
     duplication #464 was filed over. Adding a future universal to-hit
     modifier is a one-file change here instead of another sweep across every
     attack path.
@@ -1066,10 +1104,22 @@ def _apply_to_hit_modifiers(attacker, defender, hit_chance):
         # chance. No modifier and no clamp may touch it — see clamp_hit_chance.
         return hit_chance
     hit_chance = _apply_facing_accuracy(attacker, defender, hit_chance)
-    # Battlefield terrain: cover on the line of fire (ranged only) and
-    # elevation advantage, as flat points. Runs after facing (a multiplier)
-    # so the "+10 high ground" the client shows is the +10 the dice see.
-    hit_chance = terrain.apply_accuracy(attacker, defender, hit_chance)
+    # Battlefield terrain: cover on a ranged line of fire and elevation
+    # advantage, as flat points. Runs after facing (a multiplier) so the
+    # "+10 high ground" the client shows is the +10 the dice see. A wall on
+    # a ranged line returns the no-line-of-sight sentinel, which must leave
+    # here untouched -- the clamp's floor would turn it back into a chance.
+    # Fail-soft: terrain can never take a swing down with it.
+    try:
+        hit_chance = terrain.apply_accuracy(
+            attacker, defender, hit_chance, ranged=_move_is_ranged(attacker, move)
+        )
+    except Exception:
+        logger.debug("terrain accuracy hook failed", exc_info=True)
+    if hit_chance == terrain.NO_LINE_OF_SIGHT:
+        # Only the sentinel escapes: a chance the facing multiplier truncated
+        # to 0 must still reach the clamp, whose floor exists for exactly it.
+        return hit_chance
     hit_chance = _apply_haunting_presence(attacker, defender, hit_chance)
     return clamp_hit_chance(hit_chance)
 
@@ -1185,6 +1235,20 @@ default_animations = {
 
 
 class Move:  # master class for all moves
+    #: Set ``ranged = True``/``False`` on a subclass to say outright whether
+    #: the move is a shot (terrain cover applies) or a swing (cover ignored).
+    #: Left None, ``is_ranged`` infers it from the animation: every move that
+    #: fires a projectile is ranged; everything else is a swing, however long
+    #: its reach.
+    ranged = None
+
+    @property
+    def is_ranged(self):
+        """Whether terrain cover applies to this move (see ``ranged``)."""
+        if self.ranged is not None:
+            return bool(self.ranged)
+        return getattr(self, "web_animation", None) == "projectile"
+
     # Animation type the web client plays for this move ("attack", "pulse",
     # "pierce", "projectile", ...). Subclasses declare their type as a class
     # attribute; None lets the combat adapter auto-determine a fallback
@@ -1366,7 +1430,7 @@ class Move:  # master class for all moves
         if not self._viable_for(target):
             return None
         hit_chance = to_hit_chance(self.user, target, base=base, floor=floor)
-        return _apply_to_hit_modifiers(self.user, target, hit_chance)
+        return _apply_to_hit_modifiers(self.user, target, hit_chance, move=self)
 
     def _unconditional_preview_hit_chance(
         self, target, base=HIT_CHANCE_BASE, floor=None

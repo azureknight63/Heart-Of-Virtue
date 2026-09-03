@@ -23,12 +23,24 @@ Distance Conversion:
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, Dict, List, TYPE_CHECKING, Any
+from typing import Optional, Tuple, Dict, List, Set, Iterable, TYPE_CHECKING, Any
 import math
 import random
 
 if TYPE_CHECKING:
     from src.npc import NPC  # noqa: F401
+    from src.terrain import TerrainGrid  # noqa: F401
+
+#: Movement points a flanking unit spends per beat when terrain forces it to
+#: walk to the blind side instead of stepping straight onto it.
+FLANK_STEP_BUDGET = 3
+
+#: Default stand-off from the target for a flank landing cell; the same number
+#: ``best_flank_bearing`` and ``move_to_flank`` use so the side the AI scores
+#: is the cell the mover walks to.
+FLANK_OFFSET = 3
+
+Cell = Tuple[int, int]
 
 
 class Direction(Enum):
@@ -614,15 +626,37 @@ def move_toward(
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
 
+_terrain_mod = None
+
+
 def _terrain_module():
-    """Lazy import: ``src.terrain`` imports this module at load time."""
-    import src.terrain as terrain_mod
+    """Lazy import of ``src.terrain``.
 
-    return terrain_mod
+    ``terrain`` imports this module at load time (it builds on
+    ``CombatPosition``), so the terrain-aware movers below reach back through
+    this function instead of a top-level import. The cycle is deliberate; a
+    top-level ``import src.terrain`` here would be an ImportError.
+    """
+    global _terrain_mod
+    if _terrain_mod is None:
+        import src.terrain as terrain_mod
+
+        _terrain_mod = terrain_mod
+    return _terrain_mod
 
 
-def _occupied_cells(occupied: Optional[List[CombatPosition]]) -> set:
-    return {(int(p.x), int(p.y)) for p in (occupied or []) if p is not None}
+def as_cell(pos: CombatPosition) -> Cell:
+    """The grid cell a position occupies (coordinates truncated to int)."""
+    return (int(pos.x), int(pos.y))
+
+
+def cells_of(occupied: Optional[Iterable[Optional[CombatPosition]]]) -> Set[Cell]:
+    """The cells held by a collection of positions (``None`` entries skipped)."""
+    return {as_cell(p) for p in (occupied or []) if p is not None}
+
+
+# Retained name for callers that predate ``cells_of``.
+_occupied_cells = cells_of
 
 
 def move_toward_constrained(
@@ -632,7 +666,7 @@ def move_toward_constrained(
     occupied: List[CombatPosition],
     max_w: int = 50,
     max_h: int = 50,
-    terrain=None,
+    terrain: Optional["TerrainGrid"] = None,
 ) -> CombatPosition:
     """Move toward target but ensure destination is not occupied.
 
@@ -656,7 +690,7 @@ def move_toward_constrained(
     """
     if terrain is not None:
         return _terrain_module().advance_toward(
-            terrain, current, target, distance, _occupied_cells(occupied)
+            terrain, current, target, distance, cells_of(occupied)
         )
     if not occupied:
         return move_toward(current, target, distance, max_w, max_h)
@@ -689,7 +723,7 @@ def move_away_from(
     distance: int,
     max_w: int = 50,
     max_h: int = 50,
-    terrain=None,
+    terrain: Optional["TerrainGrid"] = None,
     occupied: Optional[List[CombatPosition]] = None,
 ) -> CombatPosition:
     """Move from current position away from a threat by specified distance.
@@ -716,7 +750,7 @@ def move_away_from(
     """
     if terrain is not None:
         return _terrain_module().retreat_from(
-            terrain, current, threat, distance, _occupied_cells(occupied)
+            terrain, current, threat, distance, cells_of(occupied)
         )
     if current.x == threat.x and current.y == threat.y:
         # Can't move away from same position; pick random direction
@@ -742,7 +776,7 @@ def move_away_constrained(
     occupied: List[CombatPosition],
     max_w: int = 50,
     max_h: int = 50,
-    terrain=None,
+    terrain: Optional["TerrainGrid"] = None,
 ) -> CombatPosition:
     """Move away from threat but ensure destination is not occupied.
 
@@ -796,10 +830,13 @@ def _acute_angle(a: float, b: float) -> float:
     return diff if diff <= 180 else 360 - diff
 
 
-def _flank_blind_sides(target: CombatPosition) -> Tuple[float, float]:
+def flank_blind_sides(target: CombatPosition) -> Tuple[float, float]:
     """The target's two blind-side bearings, perpendicular to its facing."""
     facing = target.facing.value
     return (facing + 90) % 360, (facing - 90) % 360
+
+
+_flank_blind_sides = flank_blind_sides
 
 
 def nearest_flank_bearing(current: CombatPosition, target: CombatPosition) -> float:
@@ -817,7 +854,7 @@ def nearest_flank_bearing(current: CombatPosition, target: CombatPosition) -> fl
         The approach bearing in degrees (same convention as ``angle_to_target``).
     """
     current_bearing = angle_to_target(target, current)
-    left, right = _flank_blind_sides(target)
+    left, right = flank_blind_sides(target)
 
     return float(
         left
@@ -826,9 +863,9 @@ def nearest_flank_bearing(current: CombatPosition, target: CombatPosition) -> fl
     )
 
 
-def _offset_from_bearing(
+def offset_from_bearing(
     origin: CombatPosition, bearing: float, distance: int, max_w: int, max_h: int
-) -> Tuple[int, int]:
+) -> Cell:
     """Clamp-and-return the grid square ``distance`` from ``origin`` at ``bearing``.
 
     Uses the same convention as ``angle_to_target`` (0°=North/+y, 90°=East/+x),
@@ -840,9 +877,20 @@ def _offset_from_bearing(
     return new_x, new_y
 
 
-#: Movement points a flanking unit spends per beat when terrain forces it to
-#: walk to the blind side instead of stepping straight onto it.
-FLANK_STEP_BUDGET = 3
+_offset_from_bearing = offset_from_bearing
+
+
+def flank_landing_cell(
+    terrain: "TerrainGrid", target: CombatPosition, bearing: float, distance: int
+) -> Cell:
+    """The cell a flanker aims for: ``distance`` squares from ``target`` along
+    ``bearing``, clamped to the terrain grid. The one definition shared by
+    ``move_to_flank`` (which walks there) and ``terrain.best_flank_bearing``
+    (which scores it), so the side chosen is the cell reached.
+    """
+    return offset_from_bearing(
+        target, bearing, distance, terrain.width - 1, terrain.height - 1
+    )
 
 
 def move_to_flank(
@@ -852,7 +900,7 @@ def move_to_flank(
     max_w: int = 50,
     max_h: int = 50,
     flank_angle: Optional[float] = None,
-    terrain=None,
+    terrain: Optional["TerrainGrid"] = None,
     occupied: Optional[List[CombatPosition]] = None,
 ) -> CombatPosition:
     """Move to a flanking position perpendicular to the target's facing.
@@ -880,11 +928,9 @@ def move_to_flank(
         flank_angle = nearest_flank_bearing(current, target)
 
     if terrain is not None:
-        dest = _offset_from_bearing(
-            target, flank_angle, distance, terrain.width - 1, terrain.height - 1
-        )
+        dest = flank_landing_cell(terrain, target, flank_angle, distance)
         return _terrain_module().approach_point(
-            terrain, current, dest, FLANK_STEP_BUDGET, _occupied_cells(occupied)
+            terrain, current, dest, FLANK_STEP_BUDGET, cells_of(occupied)
         )
 
     new_x, new_y = _offset_from_bearing(target, flank_angle, distance, max_w, max_h)
@@ -899,7 +945,7 @@ def move_to_flank_constrained(
     max_w: int = 50,
     max_h: int = 50,
     flank_angle: Optional[float] = None,
-    terrain=None,
+    terrain: Optional["TerrainGrid"] = None,
 ) -> CombatPosition:
     """Move to flank but avoid occupied squares.
 
@@ -910,8 +956,14 @@ def move_to_flank_constrained(
     """
     if terrain is not None:
         return move_to_flank(
-            current, target, distance, max_w, max_h, flank_angle,
-            terrain=terrain, occupied=occupied,
+            current,
+            target,
+            distance,
+            max_w,
+            max_h,
+            flank_angle,
+            terrain=terrain,
+            occupied=occupied,
         )
     if not occupied:
         return move_to_flank(current, target, distance, max_w, max_h, flank_angle)
@@ -1012,7 +1064,8 @@ def initialize_combat_positions(
     grid_width: int = 50,
     grid_height: int = 50,
     seed: Optional[int] = None,
-    terrain=None,
+    terrain: Optional["TerrainGrid"] = None,
+    occupied: Optional[List[CombatPosition]] = None,
 ) -> None:
     """Initialize combat positions for all combatants based on scenario.
 
@@ -1026,8 +1079,11 @@ def initialize_combat_positions(
         grid_width: Width of the battlefield
         grid_height: Height of the battlefield
         seed: Optional random seed
-        terrain: Optional ``src.terrain.TerrainGrid``; when given, no unit is
-            ever spawned on an impassable cell (the nearest open cell is used)
+        terrain: Optional ``src.terrain.TerrainGrid``; when given, a spawn
+            that lands on an impassable or taken cell is moved to the nearest
+            open one (left alone only when the grid has no open cell at all)
+        occupied: Positions of units already standing on the field (a
+            reinforcement spawn) that new spawns must not share
     """
     # Honor the active dynamic grid size when validating coordinates: large
     # fights scale the grid beyond the legacy 50×50, and units spawned past 50
@@ -1056,6 +1112,7 @@ def initialize_combat_positions(
             grid_height=grid_height,
             seed=scenario.seed,
             terrain=terrain,
+            occupied=occupied,
         )
 
     # Spawn enemies in their zones
@@ -1076,6 +1133,7 @@ def initialize_combat_positions(
             grid_height=grid_height,
             seed=scenario.seed,
             terrain=terrain,
+            occupied=occupied,
         )
 
     # Set initial facing directions
@@ -1109,7 +1167,8 @@ def _spawn_units_in_zone(
     grid_width: int = 50,
     grid_height: int = 50,
     seed: Optional[int] = None,
-    terrain=None,
+    terrain: Optional["TerrainGrid"] = None,
+    occupied: Optional[List[CombatPosition]] = None,
 ) -> None:
     """Spawn units within a zone using the specified formation.
 
@@ -1145,23 +1204,22 @@ def _spawn_units_in_zone(
             position = _find_random_position(zone, spawned, min_spacing)
 
         if terrain is not None:
-            position = _terrain_adjust_spawn(position, spawned, terrain)
+            position = _terrain_adjust_spawn(position, spawned, terrain, occupied)
         unit.combat_position = position
         spawned.append(position)
 
 
 def _terrain_adjust_spawn(
-    position: CombatPosition, spawned: List[CombatPosition], terrain
+    position: CombatPosition,
+    spawned: List[CombatPosition],
+    terrain: "TerrainGrid",
+    occupied: Optional[List[CombatPosition]] = None,
 ) -> CombatPosition:
-    """Keep a spawn off boulders, walls, drops and other units' squares."""
-    taken = _occupied_cells(spawned)
-    cell = (int(position.x), int(position.y))
-    if terrain.is_passable(*cell) and cell not in taken:
-        return position
-    nearest = terrain.nearest_passable(cell, taken)
-    if nearest is None:
-        return position
-    return CombatPosition(x=nearest[0], y=nearest[1], facing=position.facing)
+    """Keep a spawn off boulders, walls, drops and the squares of units already
+    placed (this batch plus ``occupied``). When no open cell exists at all the
+    original position is returned unchanged."""
+    taken = cells_of(spawned) | cells_of(occupied)
+    return terrain.snap_position(position, taken)
 
 
 def _find_spaced_position(

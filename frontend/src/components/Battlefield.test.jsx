@@ -268,6 +268,21 @@ describe('Battlefield', () => {
             expect(lastGridProps().terrain).toBeNull();
         });
 
+        it('keeps one terrain reference per fight across polls', () => {
+            const first = makeTerrain();
+            const { rerender } = render(
+                <Battlefield combat={fight({ combat_id: 'fight-A', terrain: first })} currentLogIndex={0} />
+            );
+            expect(lastGridProps().terrain).toBe(first);
+            // Same fight, same grid re-sent as a fresh object: the grid must
+            // still see the first reference so its memos hold.
+            rerender(<Battlefield combat={fight({ combat_id: 'fight-A', terrain: makeTerrain() })} currentLogIndex={0} />);
+            expect(lastGridProps().terrain).toBe(first);
+            const next = makeTerrain();
+            rerender(<Battlefield combat={fight({ combat_id: 'fight-B', terrain: next })} currentLogIndex={0} />);
+            expect(lastGridProps().terrain).toBe(next);
+        });
+
         it('does not source them from the per-beat combat prop handed to the grid', () => {
             // The beat state deliberately carries CONTRADICTORY values. If
             // Battlefield ever regressed to reading `displayState.combat_id`,

@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 #: Every melee swing reaches about 5 ft, so a ring at that distance is drawn on
 #: essentially every move and tells the player nothing; only a move that
 #: genuinely outreaches a sword (spear, polearm, bow) gets one.
-MELEE_REACH_FT = 6
+MELEE_REACH_FT = terrain.COVER_MIN_DISTANCE_FT
 
 # Compiled once at module level for performance
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
@@ -586,23 +586,34 @@ class ApiCombatAdapter:
 
     @property
     def combat_terrain(self):
-        """The fight's ``TerrainGrid`` (or None). Lives on the player like the
-        rest of the per-fight state so a replacement adapter sees it."""
+        """The fight's ``TerrainGrid`` (or None), flat arena grids included.
+
+        Stored as a bare ``player.combat_terrain`` attribute rather than in
+        ``combat_adapter_state`` like the siblings above, because the player
+        is a combatant too: ``terrain.grid_for(player)`` reads that exact
+        attribute on every unit. Unlike ``grid_for`` this does not hide a
+        trivial grid -- the payload and ``map_size`` need its dimensions even
+        when the field is featureless.
+        """
         grid = getattr(self.player, "combat_terrain", None)
         return grid if isinstance(grid, terrain.TerrainGrid) else None
 
     def _fight_terrain(self, reinit, grid_w, grid_h, scenario_type):
         """Return the terrain for this fight, generating it on a fresh start.
 
-        Generation is keyed on the region of the player's current map and
-        seeded so the same fight can be reproduced from its log. Spawn zones
-        from the scenario are passed as ``keep_clear`` so both sides always
-        have open ground to stand on. On a reinit the existing grid is kept
-        when its size still matches; otherwise it is regenerated for the new
-        grid (a scripted grid override mid-fight).
+        Generation is keyed on the region of the player's current map; the
+        grid's seed is logged so a fight can be regenerated for a bug report.
+        Spawn zones from the scenario are passed as ``keep_clear`` so both
+        sides always have open ground to stand on. On a reinit the existing
+        grid is kept when its size still matches; only a scripted grid
+        override mid-fight regenerates it.
         """
         existing = self.combat_terrain
-        if reinit and existing is not None and (existing.width, existing.height) == (grid_w, grid_h):
+        if (
+            reinit
+            and existing is not None
+            and (existing.width, existing.height) == (grid_w, grid_h)
+        ):
             return existing
         region = terrain.region_for_player(self.player)
         try:
@@ -610,11 +621,46 @@ class ApiCombatAdapter:
             zones = list(scenario.ally_spawn_zones or [scenario.ally_spawn_zone])
             zones += list(scenario.enemy_spawn_zones)
         except Exception:
+            logger.debug(
+                "spawn zones unavailable for %r; terrain keep_clear skipped",
+                scenario_type,
+                exc_info=True,
+            )
             zones = []
-        seed = random.randrange(1 << 30)
-        grid = terrain.generate(region, grid_w, grid_h, seed=seed, keep_clear=zones)
+        grid = terrain.generate(region, grid_w, grid_h, keep_clear=zones)
         self.player.combat_terrain = grid
+        logger.info(
+            "combat terrain region=%s size=%dx%d seed=%s combat_id=%s",
+            region,
+            grid.width,
+            grid.height,
+            grid.seed,
+            self.combat_id,
+        )
         return grid
+
+    def _spawn_on_terrain(self, grid, allies, enemies, scenario_type, grid_w, grid_h):
+        """Attach ``grid`` to the units being placed, record the grid size and
+        run the real spawn. Shared by the fresh-fight path and the
+        reinforcement path so the two cannot drift apart."""
+        terrain.attach(grid, list(allies) + list(enemies))
+        self.combat_grid_size = (grid_w, grid_h)
+        placed = [
+            u
+            for u in self.player.combat_list_allies + self.player.combat_list
+            if u not in allies
+            and u not in enemies
+            and getattr(u, "combat_position", None) is not None
+        ]
+        positions.initialize_combat_positions(
+            allies=list(allies),
+            enemies=list(enemies),
+            scenario_type=scenario_type,
+            grid_width=grid_w,
+            grid_height=grid_h,
+            terrain=grid,
+            occupied=[u.combat_position for u in placed],
+        )
 
     @property
     def awaiting_input(self):
@@ -1020,6 +1066,9 @@ class ApiCombatAdapter:
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
                 self.player.combat_drops = []
+                # The previous fight's terrain must never be published for
+                # (or steer the dice of) this one; _fight_terrain regenerates.
+                self.player.combat_terrain = None
                 self.output_capture.clear()  # Clear captured output
                 self.current_beat_state_index = 0  # Reset beat state tracking
 
@@ -1075,27 +1124,38 @@ class ApiCombatAdapter:
                     grid_w, grid_h = coord_config.get_dynamic_grid_size(
                         total_combatants
                     )
-                self.combat_grid_size = (grid_w, grid_h)
+                    existing = self.combat_terrain if reinit else None
+                    if existing is not None:
+                        # A wave transition or reinforcement wave re-rolls the
+                        # positions onto the fight's existing terrain, so the
+                        # grid keeps its size even when the roster changed.
+                        grid_w, grid_h = existing.width, existing.height
+                # Whatever the source, the size a scripted override or a save
+                # can carry is bounded to what the engine and client draw.
+                grid_w = max(1, min(terrain.MAX_GRID_DIM, int(grid_w)))
+                grid_h = max(1, min(terrain.MAX_GRID_DIM, int(grid_h)))
 
                 # Battlefield terrain: generated once per fight from the
                 # region the player is standing in, then shared with every
                 # combatant (src.terrain.attach). A reinit -- wave
                 # transition, reinforcements -- keeps the fight's grid; the
                 # positions are re-rolled onto it, never onto fresh terrain.
-                grid = self._fight_terrain(
-                    reinit, grid_w, grid_h, scenario_type
-                )
-                terrain.attach(
-                    grid, self.player.combat_list_allies + self.player.combat_list
-                )
+                # Its own guard: a terrain failure costs the fight its
+                # terrain, never its coordinate system.
+                try:
+                    grid = self._fight_terrain(reinit, grid_w, grid_h, scenario_type)
+                except Exception:
+                    logger.warning("terrain generation failed; flat field", exc_info=True)
+                    grid = None
+                    self.player.combat_terrain = None
 
-                positions.initialize_combat_positions(
-                    allies=self.player.combat_list_allies,
-                    enemies=self.player.combat_list,
-                    scenario_type=scenario_type,
-                    grid_width=grid_w,
-                    grid_height=grid_h,
-                    terrain=grid,
+                self._spawn_on_terrain(
+                    grid,
+                    self.player.combat_list_allies,
+                    self.player.combat_list,
+                    scenario_type,
+                    grid_w,
+                    grid_h,
                 )
             except Exception as e:
                 print(f"Warning: Position initialization failed: {e}")
@@ -1760,18 +1820,7 @@ class ApiCombatAdapter:
                     unit, all_combatants
                 )
 
-        # Terrain hazards fire on entry, once per cell change, checked here
-        # because this runs at the top of every beat after all movers have
-        # settled. Narrated so the log explains the new status effect.
-        try:
-            for unit, state_name in terrain.apply_entry_effects(all_combatants):
-                cprint(
-                    f"{unit.name} stumbles into {terrain.KIND_PROPS[terrain.HAZARD]['label'].lower()}"
-                    f" and is {state_name.lower()}!",
-                    "magenta",
-                )
-        except Exception:
-            logger.debug("terrain entry effects failed", exc_info=True)
+        self._apply_terrain_hazards(all_combatants)
 
         # Original proximity synchronization logic for backward compatibility/fallback
         # Logic adapted from combat.py
@@ -1819,6 +1868,26 @@ class ApiCombatAdapter:
                         each_enemy.combat_proximity[each_ally] = (
                             each_ally.combat_proximity[each_enemy]
                         )
+
+    def _apply_terrain_hazards(self, all_combatants):
+        """Roll hazard entry effects for units that moved onto a hazard cell.
+
+        Runs from ``_synchronize_distances`` because that is the top-of-beat
+        point where every mover has settled. Narrated with the region's own
+        flavour ("thornbrush", "corrupted slime") so the log explains the
+        status effect the player is about to see.
+        """
+        try:
+            for unit, state_name in terrain.apply_entry_effects(all_combatants):
+                grid = terrain.grid_for(unit)
+                variant = grid.variant_of(terrain.HAZARD) if grid else terrain.HAZARD
+                hazard = variant.replace("_", " ")
+                cprint(
+                    f"{unit.name} stumbles into {hazard} and is {state_name.lower()}!",
+                    "magenta",
+                )
+        except Exception:
+            logger.debug("terrain entry effects failed", exc_info=True)
 
     def _move_deals_damage(self, move) -> bool:
         """Check if a move deals damage (for animation fallback logic).
@@ -2151,26 +2220,20 @@ class ApiCombatAdapter:
                     # Only pass the new (unpositioned) enemies — initialize_combat_positions
                     # unconditionally overwrites combat_position on every unit it receives,
                     # so passing the full combat_list would teleport already-placed combatants.
-                    total = len(self.player.combat_list_allies) + len(
-                        new_enemies_without_position
-                    )
-                    coord_config = CoordinateSystemConfig(self.player)
-                    grid_w, grid_h = coord_config.get_dynamic_grid_size(total)
                     grid = self.combat_terrain
                     if grid is not None:
                         # The terrain was laid for the fight's original grid;
                         # reinforcements spawn onto it, so its dimensions win
                         # over a recomputed (possibly smaller) size.
                         grid_w, grid_h = grid.width, grid.height
-                        terrain.attach(grid, new_enemies_without_position)
-                    self.combat_grid_size = (grid_w, grid_h)
-                    positions.initialize_combat_positions(
-                        allies=[],
-                        enemies=new_enemies_without_position,
-                        scenario_type="standard",
-                        grid_width=grid_w,
-                        grid_height=grid_h,
-                        terrain=grid,
+                    else:
+                        total = len(self.player.combat_list_allies) + len(
+                            new_enemies_without_position
+                        )
+                        coord_config = CoordinateSystemConfig(self.player)
+                        grid_w, grid_h = coord_config.get_dynamic_grid_size(total)
+                    self._spawn_on_terrain(
+                        grid, [], new_enemies_without_position, "standard", grid_w, grid_h
                     )
                 except Exception as e:
                     logger.warning("Position init for reinforcements failed: %s", e)
@@ -2954,6 +3017,8 @@ class ApiCombatAdapter:
         for ally in existing_allies:
             ally.in_combat = False
         self.player.combat_list_allies = [self.player] + existing_allies
+        # Terrain is per fight; the next combat regenerates its own.
+        terrain.attach(None, self.player.combat_list_allies)
 
     def _abortable_move(self):
         """The in-flight move the player may bail out of, or None.
@@ -3228,7 +3293,14 @@ class ApiCombatAdapter:
                               behaviour on this card
         """
         distance = self.player.combat_proximity.get(combatant, 0)
-        in_range = range_min <= distance <= range_max
+        # Terrain's contribution to this strike (src.terrain.engagement),
+        # scored for this move's kind: a wall on a ranged line of fire makes
+        # the target unselectable, not merely harder to hit.
+        engagement = terrain.engagement(
+            self.player, combatant, ranged=getattr(move, "is_ranged", None)
+        )
+        los_blocked = bool(engagement and engagement["blocked_los"])
+        in_range = range_min <= distance <= range_max and not los_blocked
         entry = {
             "id": CombatantSerializer.stream_id(combatant),
             "name": combatant.name,
@@ -3244,13 +3316,13 @@ class ApiCombatAdapter:
             "shortfall_ft": (
                 int(distance - range_max) if distance > range_max else None
             ),
-            # Terrain's contribution to this strike (src.terrain.engagement):
-            # cover on the line of fire, elevation delta, and the flat
+            # Cover on the line of fire, elevation delta, and the flat
             # hit_modifier / damage_multiplier the dice actually use, plus
-            # ready-made labels ("Boulder cover -20"). None when terrain is
-            # inactive. The numbers come from the same function the to-hit
-            # chain calls, so the card can never disagree with the roll.
-            "terrain": terrain.engagement(self.player, combatant),
+            # ready-made labels ("Boulder cover -20", "No line of sight").
+            # None when terrain is inactive. The numbers come from the same
+            # function the to-hit chain calls, so the card can never disagree
+            # with the roll.
+            "terrain": engagement,
             # Move.preview_damage (src/moves/_base.py) is the single source of
             # this number for every move, exactly as preview_hit_chance is for
             # the one below it. It reads facing, heat, resistance, protection

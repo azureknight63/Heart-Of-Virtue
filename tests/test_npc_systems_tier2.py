@@ -1003,15 +1003,16 @@ class TestEdgeCases:
             aggro=True,
             exp_award=50,
         )
-        # A bare NPC knows exactly one move: NpcRest. Selection must land on
-        # it rather than leaving current_move unset (which would stall the
-        # combat beat). The old body asserted nothing at all.
-        assert [m.name for m in npc.known_moves] == ["Rest"]
+        # A bare NPC knows only the baseline moves every combat NPC carries:
+        # NpcRest plus the terrain seek TakeGround. Selection must land on one
+        # of them rather than leaving current_move unset (which would stall
+        # the combat beat). The old body asserted nothing at all.
+        assert [m.name for m in npc.known_moves] == ["Rest", "Take Ground"]
 
         npc.select_move()
 
         assert npc.current_move is not None
-        assert npc.current_move.name == "Rest"
+        assert npc.current_move.name in {"Rest", "Take Ground"}
 
 
 class TestTalusHoundPackMechanics:

@@ -13,6 +13,26 @@ describe('useSpriteManifest', () => {
     const n = normalizeManifest({ frame_size: '32', facings: ['a'], sprites: 'bad', terrain: null });
     expect(n).toEqual({ frame_size: 32, facings: ['south', 'west', 'north'], sprites: {}, terrain: {} });
     expect(normalizeManifest({}).frame_size).toBe(64);
+    expect(normalizeManifest({ facings: ['s', 'w', 'n'] }).facings).toEqual(['s', 'w', 'n']);
+  });
+
+  it('drops unsafe file paths, unbounded counts and empty entries', () => {
+    const n = normalizeManifest({
+      sprites: {
+        jean: { clips: { idle: { file: 'sprites/jean/idle.png', frames: '4', rows: 3, placeholder: true }, walk: { file: '../x.png' } } },
+        ghost: { clips: { idle: { file: 'a"),url(x.png' } } },
+        weird: { clips: { idle: { file: 'sprites/w/idle.png', frames: 1e9, rows: 'x' } } },
+      },
+      terrain: {
+        verdette_caverns: { tiles: { crystal_wall: 'terrain/v/crystal_wall.png', bad: '//evil/x.png' } },
+        empty: { tiles: { bad: 'javascript:x' } },
+        broken: 'nope',
+      },
+    });
+    expect(n.sprites.jean.clips).toEqual({ idle: { file: 'sprites/jean/idle.png', frames: 4, rows: 3, placeholder: true } });
+    expect(n.sprites.ghost).toBeUndefined();
+    expect(n.sprites.weird.clips.idle).toEqual({ file: 'sprites/w/idle.png', frames: 1, rows: 3 });
+    expect(n.terrain).toEqual({ verdette_caverns: { tiles: { crystal_wall: 'terrain/v/crystal_wall.png' } } });
   });
 
   it('loads once, shares the result, and exposes it through the hook', async () => {
@@ -27,14 +47,24 @@ describe('useSpriteManifest', () => {
     await expect(loadSpriteManifest()).resolves.toBe(result.current);
   });
 
-  it('yields null on a missing manifest, a bad status, or no fetch at all', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+  it('settles on a missing manifest and never refetches it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false });
+    vi.stubGlobal('fetch', fetchMock);
     await expect(loadSpriteManifest()).resolves.toBeNull();
-    resetSpriteManifestCache();
+    renderHook(() => useSpriteManifest());
+    renderHook(() => useSpriteManifest());
+    await expect(loadSpriteManifest()).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('yields null on a rejected fetch', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
     await expect(loadSpriteManifest()).resolves.toBeNull();
-    resetSpriteManifestCache();
-    await expect(loadSpriteManifest(undefined)).resolves.toBeNull();
+  });
+
+  it('yields null when there is no fetch at all', async () => {
+    vi.stubGlobal('fetch', undefined);
+    await expect(loadSpriteManifest()).resolves.toBeNull();
     const { result } = renderHook(() => useSpriteManifest());
     expect(result.current).toBeNull();
   });

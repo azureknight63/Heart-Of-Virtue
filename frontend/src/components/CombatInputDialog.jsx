@@ -100,7 +100,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                     {Array.isArray(target.terrain?.labels) && target.terrain.labels.length > 0 && (
                                         <div
                                             data-testid="target-terrain"
-                                            style={{ fontSize: '11px', color: engagementTone(target.terrain, colors), display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}
+                                            style={{ fontSize: '11px', color: engagementTone(target.terrain), display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}
                                         >
                                             {target.terrain.labels.map((label) => (
                                                 <span key={label}>{label}</span>

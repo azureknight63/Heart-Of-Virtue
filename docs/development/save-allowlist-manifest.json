@@ -906,6 +906,10 @@
     },
     {
       "module": "src.moves._movement",
+      "name": "TakeGround"
+    },
+    {
+      "module": "src.moves._movement",
       "name": "Turn"
     },
     {
@@ -1830,6 +1834,10 @@
     },
     {
       "module": "src.terrain",
+      "name": "Cover"
+    },
+    {
+      "module": "src.terrain",
       "name": "TerrainGrid"
     },
     {
@@ -1929,6 +1937,6 @@
       "name": "UUID"
     }
   ],
-  "count": 482,
+  "count": 484,
   "header_version": 1
 }

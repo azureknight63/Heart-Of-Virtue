@@ -13,6 +13,7 @@ from ._base import (
     apply_glancing_blow,
     resolve_pipeline_strike,
     weapon_scaled_power,
+    occupied_positions,
     Move,
     STANDARD_FATIGUE_BASE,
     PassiveMove,
@@ -209,6 +210,10 @@ class FeintAndPivot(Move):
     """
     display_name = 'Feint & Pivot'
 
+    #: Squares the pivot may walk when terrain blocks its straight-line hop
+    #: (the hop itself repositions 2-3 squares from the target).
+    PIVOT_REACH = 3
+
     web_animation = "quick_attack"
 
     def __init__(self, user):
@@ -293,6 +298,24 @@ class FeintAndPivot(Move):
         """
         t = target if target is not None else self.target
         return self._unconditional_preview_hit_chance(t, base=90)
+
+    def _terrain_landing(self, user, new_pos):
+        """Keep the pivot's straight-line hop honest under terrain: land on
+        the nearest open, unoccupied cell, and only if that cell can actually
+        be reached from where the user stands (a hop through a wall is walked
+        toward instead, up to the pivot's own reach)."""
+        grid = terrain.grid_for(user)
+        if grid is None:
+            return new_pos
+        blocked = positions.cells_of(occupied_positions(user))
+        landing = grid.snap_position(new_pos, blocked)
+        start = positions.as_cell(user.combat_position)
+        goal = positions.as_cell(landing)
+        if goal == start or terrain.find_path(grid, start, goal, blocked) is not None:
+            return landing
+        return terrain.approach_point(
+            grid, user.combat_position, goal, self.PIVOT_REACH, blocked
+        )
 
     def _get_relative_position(self, user_pos, target_pos, target_facing):
         """Determine user's position relative to target's facing.
@@ -441,20 +464,7 @@ class FeintAndPivot(Move):
                     current_position,
                 )
 
-                # The pivot is a straight-line hop; with terrain active it
-                # must still land on open ground and not inside another unit.
-                grid = terrain.grid_for(user)
-                if grid is not None:
-                    occupied = terrain.occupied_cells(
-                        list(getattr(user, "combat_list", None) or [])
-                        + list(getattr(user, "combat_list_allies", None) or []),
-                        exclude=user,
-                    )
-                    landing = grid.nearest_passable((new_pos.x, new_pos.y), occupied)
-                    if landing is not None:
-                        new_pos = positions.CombatPosition(
-                            x=landing[0], y=landing[1], facing=new_pos.facing
-                        )
+                new_pos = self._terrain_landing(user, new_pos)
 
                 # Update user position
                 user.combat_position = new_pos

@@ -123,8 +123,8 @@ export function makeCombatant(overrides = {}) {
       position: { x: 0, y: 3, facing: 'N' },
       current_move: null,
       move_in_process: null,
-      // src.terrain.standing_on: what the token stands on, or null in a
-      // terrain-free fight.
+      // src.terrain.standing_on: what the token stands on, or null when
+      // terrain is inactive (a flat arena grid, or none at all).
       terrain: null,
       // CombatantSerializer.sprite_key: 'jean' for the player, else the NPC
       // class name lower-cased. Keys public/assets/sprites/manifest.json.
@@ -196,7 +196,8 @@ export function makeBattleState(overrides = {}) {
       // whitelist would have dropped it (drift bug #6).
       map_size: 9,
       // Battlefield terrain (src/terrain.py TerrainGrid.to_payload), same
-      // routing as map_size. Null in a flat fight; see makeTerrain().
+      // routing as map_size. Null only when the fight has no grid at all (a
+      // flat arena still ships an all-open payload); see makeTerrain().
       terrain: null,
       player_consumables: [],
       suggested_moves: [],
@@ -306,7 +307,10 @@ export function makeSpriteManifest(overrides = {}) {
       tile_size: 64,
       facings: ['south', 'west', 'north'],
       clips: { idle: 4, walk: 6, attack: 6, cast: 6, defend: 4, hurt: 3, death: 6 },
-      sprites: { jean: { clips: clips('jean') }, slime: { clips: clips('slime') } },
+      sprites: {
+        jean: { clips: clips('jean') },
+        slime: { clips: { ...clips('slime'), idle: { ...clips('slime').idle, placeholder: true } } },
+      },
       terrain: {
         verdette_caverns: {
           tiles: {
@@ -326,6 +330,44 @@ export function makeSpriteManifest(overrides = {}) {
 }
 
 /**
+ * combatant.current_move (CombatantSerializer._serialize_active_move): the
+ * in-flight move the grid turns into a telegraph and a sprite clip.
+ */
+export function makeActiveMove(overrides = {}) {
+  return merge(
+    {
+      name: 'Advance',
+      display_name: 'Advance',
+      category: 'Maneuver',
+      description: 'Get closer to a target (enemy or ally).',
+      current_stage: 1,
+      beats_left: 2,
+      total_beats: 4,
+      beats_until_resolve: 2,
+      target_id: 'enemy_1',
+      mvrange: [1, 9999],
+      falloff: null,
+    },
+    overrides
+  )
+}
+
+/** Feature (non-open) cells in makeTerrain()'s default rows. */
+export const TERRAIN_FIXTURE_FEATURES = 16
+
+/**
+ * A fight whose 13-cell follow viewport (Jean at 4,4 -> leftX -2, topY 10)
+ * covers the whole 9x9 makeTerrain() grid.
+ */
+export function makeNineByNineFight(overrides = {}) {
+  return makeBattleState({
+    player: makeCombatant({ position: { x: 4, y: 4, facing: 'N' } }),
+    enemies: [makeEnemy({ position: { x: 7, y: 4, facing: 'W' } })],
+    ...overrides,
+  })
+}
+
+/**
  * battle_state.terrain (src/terrain.py TerrainGrid.to_payload) for a 9x9
  * Verdette fight: one character per cell, row 0 is y == 0. Every kind the
  * engine emits appears at least once except cliff.
@@ -334,6 +376,7 @@ export function makeTerrain(overrides = {}) {
   return merge(
     {
       region: 'verdette_caverns',
+      region_label: 'Verdette Caverns',
       width: 9,
       height: 9,
       codes: { o: 'open', r: 'rough', h: 'hazard', s: 'shelf', b: 'boulder', w: 'wall', c: 'cliff' },
@@ -364,13 +407,13 @@ export function makeTerrain(overrides = {}) {
         boulder: 'crystal_cluster', wall: 'crystal_wall', cliff: 'chasm',
       },
       legend: {
-        open: { label: 'Open ground', passable: true, move_cost: 1, cover: 0, blocks_los: false },
-        rough: { label: 'Rough ground', passable: true, move_cost: 2, cover: 0, blocks_los: false },
-        hazard: { label: 'Hazard', passable: true, move_cost: 2, cover: 0, blocks_los: false },
-        shelf: { label: 'High ground', passable: true, move_cost: 1, cover: 0, blocks_los: false },
-        boulder: { label: 'Boulder', passable: false, move_cost: null, cover: 20, blocks_los: false },
-        wall: { label: 'Wall', passable: false, move_cost: null, cover: 40, blocks_los: true },
-        cliff: { label: 'Drop', passable: false, move_cost: null, cover: 0, blocks_los: false },
+        open: { label: 'Open ground', passable: true, move_cost: 1, cover: 0, blocks_los: false, effect: false },
+        rough: { label: 'Rough ground', passable: true, move_cost: 2, cover: 0, blocks_los: false, effect: false },
+        hazard: { label: 'Hazard', passable: true, move_cost: 2, cover: 0, blocks_los: false, effect: true },
+        shelf: { label: 'High ground', passable: true, move_cost: 1, cover: 0, blocks_los: false, effect: false },
+        boulder: { label: 'Boulder', passable: false, move_cost: null, cover: 20, blocks_los: false, effect: false },
+        wall: { label: 'Wall', passable: false, move_cost: null, cover: 40, blocks_los: true, effect: false },
+        cliff: { label: 'Drop', passable: false, move_cost: null, cover: 0, blocks_los: false, effect: false },
       },
       cover_min_distance: 6,
       elevation_hit_bonus: 10,

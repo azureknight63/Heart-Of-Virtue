@@ -5,6 +5,7 @@ import BeatTimeline from './BeatTimeline'
 import { colors, spacing } from '../styles/theme'
 import { isLiving } from '../utils/combatEntities'
 import { useFeatureFlag } from '../utils/featureFlags'
+import { useStableTerrain } from '../hooks/useStableTerrain'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const MAX_BEAT_STATES = 200;
@@ -45,6 +46,9 @@ function anyEnemyOffScreen(state) {
 
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1 }) {
   const beatTimelineEnabled = useFeatureFlag('beatTimeline')
+  // One terrain object per fight: the poll re-sends the same grid every time
+  // and the grid's memos key on its identity.
+  const stableTerrain = useStableTerrain(combat?.terrain, combat?.combat_id)
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(VIEW_MODE_FOLLOW)
   // Transient banner shown once per "enemy goes off-screen" transition, auto-
@@ -261,7 +265,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
           mapSize={combat?.map_size}
-          terrain={combat?.terrain}
+          terrain={stableTerrain}
           onAnimatingChange={onAnimatingChange}
           streaming={streaming}
           streamedAnimations={streamedAnimations}

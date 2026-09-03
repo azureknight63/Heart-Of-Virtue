@@ -8,7 +8,7 @@ One image per clip. Deliver each as the file name shown; the intake tool slices 
 ## idle -- deliver as `mara__idle.png` (3 rows x 4 cols)
 
 ```text
-SUBJECT: Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound back under a dust-coloured head-wrap, layered travel-stained linen and a hide vest, a rust-red sash, tall laced boots. Fights with a short spear held low. Competent, unhurried. Accent colour: rust red sash.
+SUBJECT: Mara, a lean nomad woman in her late twenties, below average height, dark auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. Layered olive and brown travel gear, a blue-grey scarf, pack straps across the chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with a dagger in hand and a short bow slung across her back. Watchful, unhurried. Accent colour: blue-grey scarf.
 
 ANIMATION: 'idle' -- breathing / weight-shift loop used whenever the combatant is waiting. Exactly 4 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 12 cells.
 
@@ -20,7 +20,7 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ## walk -- deliver as `mara__walk.png` (3 rows x 6 cols)
 
 ```text
-SUBJECT: Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound back under a dust-coloured head-wrap, layered travel-stained linen and a hide vest, a rust-red sash, tall laced boots. Fights with a short spear held low. Competent, unhurried. Accent colour: rust red sash.
+SUBJECT: Mara, a lean nomad woman in her late twenties, below average height, dark auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. Layered olive and brown travel gear, a blue-grey scarf, pack straps across the chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with a dagger in hand and a short bow slung across her back. Watchful, unhurried. Accent colour: blue-grey scarf.
 
 ANIMATION: 'walk' -- movement loop used while advancing, withdrawing or flanking. Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
 
@@ -32,9 +32,9 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ## attack -- deliver as `mara__attack.png` (3 rows x 6 cols)
 
 ```text
-SUBJECT: Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound back under a dust-coloured head-wrap, layered travel-stained linen and a hide vest, a rust-red sash, tall laced boots. Fights with a short spear held low. Competent, unhurried. Accent colour: rust red sash.
+SUBJECT: Mara, a lean nomad woman in her late twenties, below average height, dark auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. Layered olive and brown travel gear, a blue-grey scarf, pack straps across the chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with a dagger in hand and a short bow slung across her back. Watchful, unhurried. Accent colour: blue-grey scarf.
 
-ANIMATION: 'attack' -- one committed strike: wind-up (frames 1-2), swing/impact (3-4), recoil (5-6). Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
+ANIMATION: 'attack' -- one committed strike: wind-up (first third of the frames), swing/impact (middle third), recoil (last third). Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
 
 LAYOUT: a single PNG containing a strict 3 x 6 grid of equal square cells (3 rows, 6 columns), every cell the same size, with hairline gaps of solid magenta (#FF00FF) between cells and a solid magenta background behind every cell. One sprite per cell, centred, feet on the same baseline in every cell, identical scale in every cell. Row 1 = facing SOUTH (toward the viewer), row 2 = facing WEST (left), row 3 = facing NORTH (away). Columns are the animation frames in order, left to right. Do not draw anything outside the cells.
 
@@ -44,7 +44,7 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ## cast -- deliver as `mara__cast.png` (3 rows x 6 cols)
 
 ```text
-SUBJECT: Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound back under a dust-coloured head-wrap, layered travel-stained linen and a hide vest, a rust-red sash, tall laced boots. Fights with a short spear held low. Competent, unhurried. Accent colour: rust red sash.
+SUBJECT: Mara, a lean nomad woman in her late twenties, below average height, dark auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. Layered olive and brown travel gear, a blue-grey scarf, pack straps across the chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with a dagger in hand and a short bow slung across her back. Watchful, unhurried. Accent colour: blue-grey scarf.
 
 ANIMATION: 'cast' -- a focused non-weapon action: raising a hand, gathering energy, bracing a shout; used for buffs, specials and supernatural moves. Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
 
@@ -56,7 +56,7 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ## defend -- deliver as `mara__defend.png` (3 rows x 4 cols)
 
 ```text
-SUBJECT: Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound back under a dust-coloured head-wrap, layered travel-stained linen and a hide vest, a rust-red sash, tall laced boots. Fights with a short spear held low. Competent, unhurried. Accent colour: rust red sash.
+SUBJECT: Mara, a lean nomad woman in her late twenties, below average height, dark auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. Layered olive and brown travel gear, a blue-grey scarf, pack straps across the chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with a dagger in hand and a short bow slung across her back. Watchful, unhurried. Accent colour: blue-grey scarf.
 
 ANIMATION: 'defend' -- guard raised: parry / dodge stance held, then relaxed. Exactly 4 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 12 cells.
 
@@ -68,7 +68,7 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ## hurt -- deliver as `mara__hurt.png` (3 rows x 3 cols)
 
 ```text
-SUBJECT: Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound back under a dust-coloured head-wrap, layered travel-stained linen and a hide vest, a rust-red sash, tall laced boots. Fights with a short spear held low. Competent, unhurried. Accent colour: rust red sash.
+SUBJECT: Mara, a lean nomad woman in her late twenties, below average height, dark auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. Layered olive and brown travel gear, a blue-grey scarf, pack straps across the chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with a dagger in hand and a short bow slung across her back. Watchful, unhurried. Accent colour: blue-grey scarf.
 
 ANIMATION: 'hurt' -- flinch from a hit: recoil, hold, recover. Exactly 3 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 9 cells.
 
@@ -80,7 +80,7 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ## death -- deliver as `mara__death.png` (3 rows x 6 cols)
 
 ```text
-SUBJECT: Mara, a weathered nomad woman in her forties, sun-lined face, dark hair bound back under a dust-coloured head-wrap, layered travel-stained linen and a hide vest, a rust-red sash, tall laced boots. Fights with a short spear held low. Competent, unhurried. Accent colour: rust red sash.
+SUBJECT: Mara, a lean nomad woman in her late twenties, below average height, dark auburn curly hair cut to the shoulder and tied back loosely, sharp green eyes. Layered olive and brown travel gear, a blue-grey scarf, pack straps across the chest, laced boots; a worn crucifix on a knotted cord at her neck. Fights with a dagger in hand and a short bow slung across her back. Watchful, unhurried. Accent colour: blue-grey scarf.
 
 ANIMATION: 'death' -- collapse to the ground; final frame is the resting corpse (it is held on screen). Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
 

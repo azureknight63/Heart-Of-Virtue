@@ -1,16 +1,13 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import CombatInputDialog from './CombatInputDialog';
 import { makeTargetOption, makeTargetTerrain } from '../test/payloads';
-import { useAudio } from '../context/AudioContext';
 import { colors } from '../styles/theme';
+import { hexToRgb } from '../test/mockHelpers';
 
-vi.mock('../context/AudioContext', () => ({ useAudio: vi.fn() }));
+vi.mock('../context/AudioContext', () => ({ useAudio: () => ({ playSFX: vi.fn() }) }));
 
 describe('CombatInputDialog terrain labels', () => {
-  beforeEach(() => {
-    useAudio.mockReturnValue({ playSFX: vi.fn() });
-  });
 
   const renderTargets = (options) => render(
     <CombatInputDialog inputType="target_selection" options={options} onSelect={vi.fn()} onCancel={vi.fn()} />
@@ -40,8 +37,3 @@ describe('CombatInputDialog terrain labels', () => {
     expect(screen.queryByTestId('target-terrain')).toBeNull();
   });
 });
-
-function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
-}

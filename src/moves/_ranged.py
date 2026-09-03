@@ -179,7 +179,7 @@ class ShootBow(
             if hit_chance > 100:  # Maximum hit chance
                 hit_chance = 100
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-        hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
+        hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance, move=self)
         return hit_chance
 
     def viable(self):
@@ -632,7 +632,7 @@ class ShootCrossbow(Move):
         if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
             hit_chance = int(hit_chance * 0.5)
         hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
-        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance, move=self)
 
     def execute(self, player):
         self.prep_colors()
@@ -770,7 +770,7 @@ class BroadheadBolt(Move):
             return None
         hit_chance = to_hit_chance(self.user, t, floor=5)
         hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
-        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance, move=self)
 
     def execute(self, player):
         self.prep_colors()
@@ -910,7 +910,7 @@ class AimedShot(Move):
         if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
             hit_chance = int(hit_chance * 0.5)
         hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
-        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance, move=self)
 
     def execute(self, player):
         self.prep_colors()
@@ -1046,7 +1046,7 @@ class PinningBolt(Move):
         if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
             hit_chance = int(hit_chance * 0.5)
         hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
-        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance, move=self)
 
     def execute(self, player):
         self.prep_colors()

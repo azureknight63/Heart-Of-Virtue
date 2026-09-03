@@ -3568,6 +3568,9 @@ class GameService:
                     del player._combat_deferred_enemies
                 if hasattr(player, "combat_end_summary"):
                     del player.combat_end_summary
+                # Battlefield terrain is per fight; a loaded save never
+                # resumes into one, so no grid may outlive the wipe above.
+                player.combat_terrain = None
 
             return player
         except Exception as e:
@@ -3795,6 +3798,7 @@ class GameService:
             del player.combat_adapter_state
         if hasattr(player, "_combat_deferred_enemies"):
             del player._combat_deferred_enemies
+        player.combat_terrain = None
         if hasattr(player, "combat_end_summary"):
             del player.combat_end_summary
 

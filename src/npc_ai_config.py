@@ -4,7 +4,7 @@ Manages tactical behavior flags for NPCs, including flanking, retreat, and posit
 Provides decision framework that integrates with combat.py AI decision-making.
 """
 
-from typing import Tuple, Optional, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from src import positions
 import src.terrain as terrain
@@ -12,6 +12,14 @@ import src.terrain as terrain
 
 class NPCAIConfig:
     """Manages NPC AI behavior configuration from GameConfig."""
+
+    #: Moves that reposition toward or around the target; rewarded when the
+    #: ground favours moving (terrain rules) or a flank is worth taking.
+    _REPOSITION_MOVES = ("advance", "flanking maneuver", "tactical positioning")
+    #: Moves that open distance; rewarded when standing in a hazard.
+    _RETREAT_MOVES = ("withdraw", "tactical retreat")
+    #: Defensive fallbacks preferred when health is low.
+    _LOW_HEALTH_MOVES = ("withdraw", "dodge", "parry", "npc_rest")
 
     def __init__(self, player):
         """Initialize with player reference for accessing config.
@@ -168,7 +176,11 @@ class NPCAIConfig:
             return None
 
     def get_flank_position_angle(
-        self, attacker, target, ignore_unit: Optional[object] = None
+        self,
+        attacker,
+        target,
+        ignore_unit: Optional[object] = None,
+        distance: Optional[int] = None,
     ) -> Optional[float]:
         """Calculate the bearing the attacker should approach from to flank target.
 
@@ -182,6 +194,9 @@ class NPCAIConfig:
             attacker: The NPC attempting to flank
             target: The enemy being targeted
             ignore_unit: Optional unit to ignore in calculations (e.g., self)
+            distance: Stand-off from the target the maneuver will use this
+                beat (terrain scoring lands on that cell); defaults to
+                ``positions.FLANK_OFFSET``
 
         Returns:
             The approach bearing in degrees, or None if flanking is disabled or
@@ -202,8 +217,14 @@ class NPCAIConfig:
             grid = terrain.grid_for(attacker)
             if grid is not None:
                 # With terrain the nearer blind side may be a wall; score both
-                # landing cells (reachability, cover, elevation) instead.
-                bearing = terrain.best_flank_bearing(grid, attacker, target)
+                # landing cells (reachability, cover, elevation) at the same
+                # stand-off the maneuver will walk to.
+                bearing = terrain.best_flank_bearing(
+                    grid,
+                    a_pos,
+                    t_pos,
+                    distance if distance is not None else positions.FLANK_OFFSET,
+                )
                 if bearing is not None:
                     return bearing
             return positions.nearest_flank_bearing(a_pos, t_pos)
@@ -298,7 +319,7 @@ class NPCAIConfig:
 
         # Bonus for retreat moves when health is low
         if self.should_attempt_retreat(npc):
-            if move_l in ["withdraw", "dodge", "parry", "npc_rest"]:
+            if move_l in self._LOW_HEALTH_MOVES:
                 bonus += 3
 
         bonus += self.get_terrain_move_bonus(npc, move_name)
@@ -322,7 +343,7 @@ class NPCAIConfig:
                     if self.should_attempt_flank(npc, allies, enemies):
                         if move_l == "flanking maneuver":
                             bonus += 3
-                        elif move_l in ["advance", "tactical positioning"]:
+                        elif move_l in self._REPOSITION_MOVES:
                             bonus += 2
             else:
                 # No coordinate data (legacy proximity-only combat): fall back to
@@ -339,49 +360,110 @@ class NPCAIConfig:
 
         return bonus
 
-    #: Movement moves an NPC reaches for when the ground it stands on, or the
-    #: ground its target holds, is working against it.
-    _REPOSITION_MOVES = ("advance", "flanking maneuver", "tactical positioning")
-    _RETREAT_MOVES = ("withdraw", "tactical retreat")
+    def _terrain_context(self, npc) -> Optional[Dict[str, Any]]:
+        """Everything the terrain rules need, computed once per move selection.
 
-    def get_terrain_move_bonus(self, npc, move_name: str) -> int:
-        """Terrain-awareness half of ``get_weighted_move_bonus``.
-
-        Reads the fight's ``TerrainGrid`` through ``terrain.grid_for`` and
-        returns 0 whenever terrain is inactive, so legacy proximity-only
-        fights and test doubles are untouched. Rules, all cheap and local:
-
-        * standing in a hazard -- get off it (movement moves +3)
-        * target holds higher ground -- close or flank rather than trade
-          blows uphill (+2 movement, -1 offensive)
-        * we hold higher ground -- press it (+2 offensive)
-        * target sits behind cover and we are past melee reach -- reposition
-          for a clean line (+2 movement) rather than shoot into a boulder
+        ``select_move`` weights every known move in a loop; the ground under
+        the NPC and its line to the target do not change between iterations,
+        so the lookups (``standing_on`` and ``engagement``, a line-of-sight
+        walk) are cached on the NPC keyed by the two cells. None when terrain
+        is inactive or the NPC has no target.
         """
         grid = terrain.grid_for(npc)
         target = getattr(npc, "target", None)
         if grid is None or target is None:
+            return None
+        npc_pos = getattr(npc, "combat_position", None)
+        target_pos = getattr(target, "combat_position", None)
+        if npc_pos is None or target_pos is None:
+            return None
+        key = (id(grid), positions.as_cell(npc_pos), positions.as_cell(target_pos))
+        cached = getattr(npc, "_terrain_ai_context", None)
+        if isinstance(cached, tuple) and cached[0] == key:
+            return cached[1]
+        here = terrain.standing_on(npc)
+        # Scored as a shot: the cover/LOS numbers only matter to ranged moves,
+        # and the per-move branch checks the move's own kind.
+        info = terrain.engagement(npc, target, ranged=True)
+        known = getattr(npc, "known_moves", None) or []
+        take_ground = next(
+            (m for m in known if getattr(m, "name", "").lower() == "take ground"), None
+        )
+        context = {
+            "on_hazard": bool(here and here["kind"] == terrain.HAZARD),
+            "elevation": info["elevation"] if info else 0,
+            "cover": info["cover"] if info else 0,
+            "blocked_los": bool(info and info["blocked_los"]),
+            "can_reposition": any(
+                getattr(m, "name", "").lower() in self._REPOSITION_MOVES
+                and self._move_viable(m)
+                for m in known
+            ),
+            "better_ground": take_ground is not None and self._move_viable(take_ground),
+        }
+        try:
+            npc._terrain_ai_context = (key, context)
+        except AttributeError:
+            pass
+        return context
+
+    @staticmethod
+    def _move_viable(move) -> bool:
+        try:
+            return bool(move.viable())
+        except Exception:
+            return False
+
+    def get_terrain_move_bonus(self, npc, move_name: str) -> int:
+        """Terrain-awareness half of ``get_weighted_move_bonus``.
+
+        Returns 0 whenever terrain is inactive, so legacy proximity-only
+        fights and test doubles are untouched. Rules, all cheap and local:
+
+        * standing in a hazard -- get off it (movement moves +3)
+        * target holds higher ground and a reposition move is viable --
+          close or flank rather than trade blows uphill (+2 movement,
+          -1 offensive); with nothing to reposition with, no penalty
+        * we hold higher ground -- press it (+2 offensive)
+        * target sits behind cover -- a ranged move is worth less (-2, or -4
+          with no line of sight at all); reposition instead (+2 movement)
+        * better ground is within reach (``Take Ground`` viable) and the
+          field is working against us -- take it (+3)
+        """
+        context = self._terrain_context(npc)
+        if context is None:
             return 0
         move_l = move_name.lower()
+        reposition = move_l in self._REPOSITION_MOVES
         bonus = 0
-        here = terrain.standing_on(npc)
-        if here and here["kind"] == terrain.HAZARD:
-            if move_l in self._REPOSITION_MOVES or move_l in self._RETREAT_MOVES:
-                bonus += 3
-        info = terrain.engagement(npc, target)
-        if not info:
-            return bonus
+        if context["on_hazard"] and (reposition or move_l in self._RETREAT_MOVES):
+            bonus += 3
         offensive = self._move_is_offensive(npc, move_name)
-        if info["elevation"] < 0:
-            if move_l in self._REPOSITION_MOVES:
+        if context["elevation"] < 0 and context["can_reposition"]:
+            if reposition:
                 bonus += 2
             elif offensive:
                 bonus -= 1
-        elif info["elevation"] > 0 and offensive:
+        elif context["elevation"] > 0 and offensive:
             bonus += 2
-        if info["cover"] and move_l in self._REPOSITION_MOVES:
+        ranged = self._move_is_ranged(npc, move_name)
+        if context["cover"] and reposition:
             bonus += 2
+        if context["cover"] and ranged:
+            bonus -= 4 if context["blocked_los"] else 2
+        pressured = context["on_hazard"] or context["elevation"] < 0 or context["cover"]
+        if move_l == "take ground" and context["better_ground"] and pressured:
+            bonus += 3
         return bonus
+
+    @staticmethod
+    def _move_is_ranged(npc, move_name: str) -> bool:
+        """Whether the named move is a shot (``Move.is_ranged``), by roster."""
+        move_l = move_name.lower()
+        for move in getattr(npc, "known_moves", None) or []:
+            if getattr(move, "name", "").lower() == move_l:
+                return bool(getattr(move, "is_ranged", False))
+        return False
 
     def get_ai_config_summary(self) -> str:
         """Get human-readable summary of current AI configuration.

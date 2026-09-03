@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
-import { makeBattleState, makeCombatant, makeEnemy, makeSpriteManifest, makeTerrain } from '../test/payloads';
+import { makeBattleState, makeCombatant, makeEnemy, makeSpriteManifest, makeTerrain, TERRAIN_FIXTURE_FEATURES } from '../test/payloads';
 import { useSpriteManifest } from '../hooks/useSpriteManifest';
 
 vi.mock('../context/AudioContext', () => ({ useAudio: () => ({ playSFX: vi.fn() }) }));
@@ -15,18 +15,22 @@ const combat = makeBattleState({
   ],
 });
 
+const renderGrid = (props = {}) => render(
+  <BattlefieldGrid combat={combat} tab="overview" zoom={1} {...props} />
+);
+
 describe('BattlefieldGrid sprites', () => {
   beforeEach(() => useSpriteManifest.mockReturnValue(null));
 
   it('draws glyph tokens when no manifest has loaded', () => {
-    render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+    renderGrid();
     expect(screen.queryAllByTestId('sprite-token')).toHaveLength(0);
     expect(screen.getByText('J')).toBeDefined();
   });
 
   it('draws a sprite for every combatant with a sheet set and a glyph for the rest', () => {
     useSpriteManifest.mockReturnValue(makeSpriteManifest());
-    render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+    renderGrid();
     const tokens = screen.getAllByTestId('sprite-token');
     expect(tokens).toHaveLength(2);
     // Jean is advancing and facing east: walk clip, west row mirrored.
@@ -40,19 +44,20 @@ describe('BattlefieldGrid sprites', () => {
 
   it('paints delivered terrain tiles, floor included, instead of procedural fills', () => {
     useSpriteManifest.mockReturnValue(makeSpriteManifest());
-    render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} terrain={makeTerrain()} mapSize={9} />);
+    renderGrid({ terrain: makeTerrain(), mapSize: 9 });
     const layer = screen.getByTestId('terrain-layer');
     const floor = layer.querySelectorAll('[data-terrain="open"]');
-    expect(floor.length).toBe(81 - 16);
+    expect(floor.length).toBe(81 - TERRAIN_FIXTURE_FEATURES);
     const wall = layer.querySelector('[data-terrain="wall"]');
     expect(wall.dataset.tiled).toBe('1');
     expect(wall.style.backgroundImage).toContain('terrain/verdette_caverns/crystal_wall.png');
-    expect(wall.textContent).toBe('');
+    // Tile art replaces the procedural glyph (a boulder would otherwise show one).
+    expect(layer.querySelector('[data-terrain="boulder"]').textContent).toBe('');
   });
 
   it('keeps procedural terrain when the manifest has no tileset for the region', () => {
     useSpriteManifest.mockReturnValue(makeSpriteManifest({ terrain: {} }));
-    render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} terrain={makeTerrain()} mapSize={9} />);
+    renderGrid({ terrain: makeTerrain(), mapSize: 9 });
     const layer = screen.getByTestId('terrain-layer');
     expect(layer.querySelectorAll('[data-terrain="open"]').length).toBe(0);
     expect(layer.querySelector('[data-terrain="boulder"]').dataset.tiled).toBeUndefined();

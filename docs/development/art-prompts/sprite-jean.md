@@ -34,7 +34,7 @@ STYLE: 16-bit pixel art sprite sheet, crisp hand-placed pixels, no anti-aliasing
 ```text
 SUBJECT: Jean Claire, a lean man of 32, slightly taller than average, short dark-brown shaggy hair, several days' stubble, heavy brow, blue-grey eyes. Wears a layered brown leather and oilcloth travelling coat with a raised collar, a grey-green wrapped neck scarf, crossed leather chest straps with brass buckles, dark trousers, worn boots. Carries a plain one-handed sword; a rosary hangs at his belt. Practical, not knightly -- a traveller who has learned to fight. Accent colour: grey-green scarf teal.
 
-ANIMATION: 'attack' -- one committed strike: wind-up (frames 1-2), swing/impact (3-4), recoil (5-6). Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
+ANIMATION: 'attack' -- one committed strike: wind-up (first third of the frames), swing/impact (middle third), recoil (last third). Exactly 6 frames per row, a smooth loop where the clip is a loop (idle, walk) and a clean start-to-end sequence otherwise. The pose must be recognisably the same character in all 18 cells.
 
 LAYOUT: a single PNG containing a strict 3 x 6 grid of equal square cells (3 rows, 6 columns), every cell the same size, with hairline gaps of solid magenta (#FF00FF) between cells and a solid magenta background behind every cell. One sprite per cell, centred, feet on the same baseline in every cell, identical scale in every cell. Row 1 = facing SOUTH (toward the viewer), row 2 = facing WEST (left), row 3 = facing NORTH (away). Columns are the animation frames in order, left to right. Do not draw anything outside the cells.
 

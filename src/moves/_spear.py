@@ -13,6 +13,7 @@ from ._base import (
     apply_glancing_blow,
     resolve_pipeline_strike,
     apply_facing_damage,
+    occupied_positions,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
@@ -166,21 +167,12 @@ class KeepAway(Move):
                 and hasattr(self.target, "combat_position")
                 and self.target.combat_position is not None
             ):
-                occupied = []
-                for c in getattr(player, "combat_list", []) + getattr(
-                    player, "combat_list_allies", []
-                ):
-                    if (
-                        c is not self.target
-                        and hasattr(c, "combat_position")
-                        and c.combat_position
-                    ):
-                        occupied.append(c.combat_position)
+                # The target is the mover here, so it is the one excluded.
                 new_pos = positions.move_away_constrained(
                     self.target.combat_position,
                     player.combat_position,
                     4,
-                    occupied,
+                    occupied_positions(player, exclude=self.target),
                     terrain=terrain.grid_for(self.target),
                 )
                 self.target.combat_position = new_pos
@@ -294,19 +286,11 @@ class Lunge(Move):
                     and hasattr(self.target, "combat_position")
                     and self.target.combat_position is not None
                 ):
-                    occupied = [
-                        c.combat_position
-                        for c in getattr(player, "combat_list", [])
-                        + getattr(player, "combat_list_allies", [])
-                        if c is not player
-                        and hasattr(c, "combat_position")
-                        and c.combat_position
-                    ]
                     new_pos = positions.move_toward_constrained(
                         player.combat_position,
                         self.target.combat_position,
                         3,
-                        occupied,
+                        occupied_positions(player),
                         terrain=terrain.grid_for(player),
                     )
                     player.combat_position = new_pos

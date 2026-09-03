@@ -135,6 +135,10 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         self.fatigue = self.maxfatigue
         self.target = target
         self.known_moves = [moves.NpcRest(self)]
+        # Terrain awareness: every combat NPC can walk to cover or high
+        # ground; the move is viable only when terrain is active and a better
+        # cell is within reach (src.terrain.best_ground).
+        self.add_move(moves.TakeGround(self), 2)
         self.current_move = None
         self.states = []
         self.in_combat = False

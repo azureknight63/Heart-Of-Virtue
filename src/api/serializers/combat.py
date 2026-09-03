@@ -18,6 +18,15 @@ from src.moves import attacker_accuracy
 from src.moves._base import display_name_of
 import src.terrain as terrain
 
+
+def _is_player(combatant: Any) -> bool:
+    """True for the Player. ``src.player`` imports this package's neighbours,
+    so the import is deferred to call time (one lookup, cached by Python)."""
+    from src.player import Player
+
+    return isinstance(combatant, Player)
+
+
 if TYPE_CHECKING:
     from src.player import Player
     from src.npc import NPC
@@ -295,9 +304,7 @@ class CombatantSerializer:
         Returns:
             Dict with combatant state
         """
-        from src.player import Player
-
-        is_player = isinstance(combatant, Player)
+        is_player = _is_player(combatant)
         # Derive in_range from distance to the reference (player). Allies within 5 ft
         # are targetable with healing items; enemies within range are attackable.
         distance_to_ref = CombatantSerializer._get_distance(combatant, reference)
@@ -499,14 +506,17 @@ class CombatantSerializer:
     def sprite_key(combatant: Any) -> str:
         """Sprite-sheet key for a combatant (see tools/art_prompts.py ROSTER).
 
-        The player is always ``jean``; NPCs use their class name lower-cased
-        (``Slime`` -> ``slime``, ``KingSlime`` -> ``kingslime``), which is what
-        the prompt pack and intake tool file sheets under.
+        The player is always ``jean``. An NPC class may declare its own
+        ``sprite_key`` (a story-gated identity, or several classes sharing one
+        sheet); otherwise the class name lower-cased is used (``Slime`` ->
+        ``slime``, ``KingSlime`` -> ``kingslime``), which is what the prompt
+        pack and intake tool file sheets under.
         """
-        from src.player import Player
-
-        if isinstance(combatant, Player):
+        if _is_player(combatant):
             return "jean"
+        declared = getattr(type(combatant), "sprite_key", None)
+        if isinstance(declared, str) and declared:
+            return declared
         return type(combatant).__name__.lower()
 
     @staticmethod

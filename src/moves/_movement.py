@@ -9,23 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 import src.terrain as terrain  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove  # noqa: F401
-
-
-def _occupied_positions(user):
-    """Every other combatant's ``combat_position`` -- the squares a
-    terrain-aware mover must route around. Reads the same two rosters the
-    movers' inline ``occupied`` loops read (``combat_list`` and
-    ``combat_list_allies``), minus the mover itself."""
-    occupied = []
-    for roster in ("combat_list", "combat_list_allies"):
-        for unit in getattr(user, roster, None) or []:
-            if unit is user:
-                continue
-            pos = getattr(unit, "combat_position", None)
-            if pos is not None:
-                occupied.append(pos)
-    return occupied
+from ._base import Move, PassiveMove, occupied_positions  # noqa: F401
 
 
 def _apply_sentinels_vigil(advancer, defender):
@@ -288,22 +272,11 @@ class Advance(Move):
         if current_distance <= 1:
             return
 
-        # Collect occupied positions
-        occupied = []
-        if hasattr(user, "combat_list"):
-            for u in user.combat_list:
-                if hasattr(u, "combat_position") and u.combat_position:
-                    occupied.append(u.combat_position)
-        if hasattr(user, "combat_list_allies"):
-            for u in user.combat_list_allies:
-                if hasattr(u, "combat_position") and u.combat_position and u != user:
-                    occupied.append(u.combat_position)
-
         new_pos = positions.move_toward_constrained(
             user.combat_position,
             self.target.combat_position,
             distance_moved,
-            occupied,
+            occupied_positions(user),
             terrain=terrain.grid_for(user),
         )
         user.combat_position = new_pos
@@ -352,6 +325,111 @@ class Advance(Move):
                 "{} finished advancing on {}.".format(user.name, self.target.name),
                 "green" if user.name == "Jean" else "red",
             )
+
+
+class TakeGround(Move):
+    """Walk to better ground: cover from the target, higher ground, or off a
+    hazard. The proactive half of terrain-aware AI -- every other mover only
+    happens to cross good ground on its way somewhere else. Viable only
+    while terrain is active and ``terrain.best_ground`` finds a reachable
+    cell worth holding; NPCs carry it by default (``NPC.__init__``).
+    """
+
+    display_name = "Take Ground"
+    web_animation = "dash"
+
+    #: Movement points spent per beat toward the chosen cell.
+    STEP_BUDGET = 3
+    #: How far (in movement points) a unit will consider walking for ground.
+    SEARCH_BUDGET = 6
+
+    def __init__(self, user):
+        super().__init__(
+            name="Take Ground",
+            description="Move to cover or higher ground against the current target.",
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 2, 0, 4],
+            targeted=True,
+            mvrange=(0, 9999),
+            stage_announce=[f"{user.name} looks for better ground...", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Maneuver",
+        )
+        self.fatigue_per_beat = 1
+        self.destination = None
+
+    def refresh_announcements(self, user):
+        self.stage_announce = [f"{user.name} looks for better ground...", "", "", ""]
+
+    def _threat_cells(self, user):
+        cells = []
+        target = self.target if self.target is not user else None
+        for unit in [target] + list(getattr(user, "combat_list", None) or []):
+            pos = getattr(unit, "combat_position", None)
+            if unit is not None and pos is not None and unit.is_alive():
+                cell = positions.as_cell(pos)
+                if cell not in cells:
+                    cells.append(cell)
+        return cells
+
+    def choose_destination(self, user):
+        """The cell worth walking to right now, or None. Cached for the
+        beat by ``viable``; recomputed when the walk starts."""
+        grid = terrain.grid_for(user)
+        pos = getattr(user, "combat_position", None)
+        if grid is None or pos is None:
+            return None
+        threats = self._threat_cells(user)
+        if not threats:
+            return None
+        blocked = positions.cells_of(occupied_positions(user))
+        return terrain.best_ground(grid, pos, threats, self.SEARCH_BUDGET, blocked)
+
+    def viable(self):
+        self.destination = self.choose_destination(self.user)
+        return self.destination is not None
+
+    def preview_hit_chance(self, target=None):
+        return None
+
+    def prep(self, user):
+        self.destination = self.choose_destination(user)
+
+    def beat_update(self, user):
+        if self.current_stage != 1 or not self.can_use_coordinates(user):
+            return
+        grid = terrain.grid_for(user)
+        if grid is None:
+            return
+        if self.destination is None:
+            # Cast without a preceding viable()/prep() pass (a scripted cast):
+            # pick the ground now rather than standing still for the stage.
+            self.destination = self.choose_destination(user)
+            if self.destination is None:
+                return
+        blocked = positions.cells_of(occupied_positions(user))
+        user.combat_position = terrain.approach_point(
+            grid, user.combat_position, self.destination, self.STEP_BUDGET, blocked
+        )
+        if self.target is not None and self.target is not user:
+            target_pos = getattr(self.target, "combat_position", None)
+            if target_pos is not None:
+                user.combat_position.facing = positions.turn_toward(
+                    user.combat_position, target_pos
+                )
+        user.fatigue -= self.fatigue_per_beat
+
+    def execute(self, user):
+        standing = terrain.standing_on(user)
+        where = standing["label"].lower() if standing else "new ground"
+        cprint(
+            f"{user.name} takes up position on {where}.",
+            "green" if user.name == "Jean" else "red",
+        )
 
 
 class Withdraw(Move):
@@ -451,19 +529,16 @@ class Withdraw(Move):
             nearest_threat.combat_position,
             distance_moved,
             terrain=terrain.grid_for(user),
-            occupied=_occupied_positions(user),
+            occupied=occupied_positions(user),
         )
         user.combat_position = new_pos
 
-        # Face away from threat while retreating
-        direction_away_x = new_pos.x - nearest_threat.combat_position.x
-        direction_away_y = new_pos.y - nearest_threat.combat_position.y
-        retreat_target = positions.CombatPosition(
-            x=min(50, max(0, new_pos.x + direction_away_x)),
-            y=min(50, max(0, new_pos.y + direction_away_y)),
-            facing=user.combat_position.facing,
+        # Face away from the threat while retreating: the bearing from the
+        # threat to the new position is exactly "away", with no grid clamp to
+        # flip it on fields wider than the legacy 50 squares.
+        user.combat_position.facing = positions.turn_toward(
+            nearest_threat.combat_position, new_pos
         )
-        user.combat_position.facing = positions.turn_toward(new_pos, retreat_target)
 
     def _beat_legacy(self, user):
         """Fallback in legacy system."""
@@ -556,21 +631,11 @@ class BullCharge(Move):
         """Move one beat's worth of charge."""
         distance_moved = random.randint(2, 3)  # Faster than static Advance
 
-        occupied = []
-        if hasattr(user, "combat_list"):
-            for u in user.combat_list:
-                if hasattr(u, "combat_position") and u.combat_position:
-                    occupied.append(u.combat_position)
-        if hasattr(user, "combat_list_allies"):
-            for u in user.combat_list_allies:
-                if hasattr(u, "combat_position") and u.combat_position and u != user:
-                    occupied.append(u.combat_position)
-
         new_pos = positions.move_toward_constrained(
             user.combat_position,
             self.target.combat_position,
             distance_moved,
-            occupied,
+            occupied_positions(user),
             terrain=terrain.grid_for(user),
         )
         user.combat_position = new_pos
@@ -674,7 +739,7 @@ class TacticalRetreat(Move):
             nearest_threat.combat_position,
             distance_moved,
             terrain=terrain.grid_for(user),
-            occupied=_occupied_positions(user),
+            occupied=occupied_positions(user),
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
@@ -791,17 +856,21 @@ class FlankingManeuver(Move):
         distance_moved = random.randint(1, 2)
         # Let the NPC's tactical AI pick which blind side to approach; falls back
         # to move_to_flank's own nearest-side default for units without a config.
+        # The stand-off distance is passed through so the cell the AI scores
+        # is the cell the maneuver walks to.
         ai_config = getattr(user, "ai_config", None)
         flank_angle = None
         if ai_config is not None:
-            flank_angle = ai_config.get_flank_position_angle(user, self.target)
+            flank_angle = ai_config.get_flank_position_angle(
+                user, self.target, distance=distance_moved
+            )
         new_pos = positions.move_to_flank(
             user.combat_position,
             self.target.combat_position,
             distance_moved,
             flank_angle=flank_angle,
             terrain=terrain.grid_for(user),
-            occupied=_occupied_positions(user),
+            occupied=occupied_positions(user),
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
@@ -950,12 +1019,15 @@ class TacticalPositioning(Move):
         move_amount = min(abs(diff), 2)
 
         grid = terrain.grid_for(user)
+        # Legacy (no terrain) keeps its historical no-collision approach; the
+        # routed walk must not path through or stop on another combatant.
+        occupied = occupied_positions(user) if grid is not None else []
         if diff > 0:  # Need to move closer
             new_pos = positions.move_toward_constrained(
                 user.combat_position,
                 self.target.combat_position,
                 move_amount,
-                [],
+                occupied,
                 terrain=grid,
             )
         else:  # Need to move further away
@@ -964,7 +1036,7 @@ class TacticalPositioning(Move):
                 self.target.combat_position,
                 move_amount,
                 terrain=grid,
-                occupied=_occupied_positions(user),
+                occupied=occupied,
             )
 
         user.combat_position = new_pos
