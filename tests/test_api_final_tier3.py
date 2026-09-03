@@ -186,7 +186,7 @@ class TestAuthRouteRequireAuth:
         assert response.status_code == 401
         assert response.get_json() == {
             "success": False,
-            "error": "Missing or invalid Authorization header",
+            "error": "Missing or invalid session credentials",
         }
 
     @pytest.mark.parametrize(
@@ -200,7 +200,7 @@ class TestAuthRouteRequireAuth:
         assert response.status_code == 401
         assert (
             response.get_json()["error"]
-            == "Missing or invalid Authorization header"
+            == "Missing or invalid session credentials"
         )
 
     def test_require_auth_rejects_a_well_formed_but_unknown_token(self, client):
@@ -1151,7 +1151,7 @@ class TestRouteErrorResponses:
         assert response.status_code == 401
         assert response.get_json() == {
             "success": False,
-            "error": "Missing or invalid Authorization header",
+            "error": "Missing or invalid session credentials",
         }
 
 

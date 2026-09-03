@@ -23,6 +23,7 @@ import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 import { TAB_KEYS } from '../utils/mobileTabs'
+import { clearLocalSession } from '../utils/session'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -47,7 +48,6 @@ export default function GamePage() {
   combatRef.current = combat
 
   useCombatSocket({
-    sessionId: localStorage.getItem('authToken'),
     enabled: combatSocketStreaming && inCombat,
     // Accumulate cumulatively via a functional updater: BattlefieldGrid consumes
     // this buffer through an absolute-index cursor, and appending to `prev`
@@ -63,8 +63,9 @@ export default function GamePage() {
     onEnded: applyCombatState,
     onUpdate: applyCombatState,
     onSessionInvalid: () => {
-      localStorage.removeItem('authToken')
-      localStorage.removeItem('username')
+      // Same teardown as the axios 401 path and logout, through the one shared
+      // key list rather than a third hand-written copy of it.
+      clearLocalSession()
       const baseUrl = import.meta.env.BASE_URL || '/'
       window.location.href = `${baseUrl}login`
     },

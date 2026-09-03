@@ -20,7 +20,6 @@ import {
 } from '../utils/combatBeatSchema';
 
 export function useCombatSocket({
-  sessionId,
   enabled = true,
   onBeat,
   onResolved,
@@ -55,7 +54,7 @@ export function useCombatSocket({
   const lastStateSeqRef = useRef(null);
 
   useEffect(() => {
-    if (!enabled || !sessionId) return undefined;
+    if (!enabled) return undefined;
 
     const resync = async () => {
       // A gap/reconnect means we can't trust incremental beats; drop seq
@@ -86,7 +85,12 @@ export function useCombatSocket({
     };
 
     const socket = cbs.current.createSocket({});
-    const join = () => socket.emit('join_combat', { session_id: sessionId });
+    // No session id in the payload: since issue #493 the page cannot read one.
+    // The server resolves the combat room from the HttpOnly cookie the
+    // handshake carried (see `_session_id` in src/api/sockets.py), which is
+    // also the only way it could be trusted — a client-supplied session id was
+    // never authenticated, it was merely believed.
+    const join = () => socket.emit('join_combat', {});
     // Initial connect is the same situation as a reconnect: beats emitted before
     // join_combat completed went to a room we weren't in, and lastSeqRef starts
     // null so classifySeq can't detect that gap. Re-seed from status either way.
@@ -148,6 +152,6 @@ export function useCombatSocket({
       }
     };
     // Callbacks are read through cbs.current, so they intentionally stay out of
-    // the dep array — the socket wires up once per [enabled, sessionId].
-  }, [enabled, sessionId]);
+    // the dep array — the socket wires up once per [enabled].
+  }, [enabled]);
 }

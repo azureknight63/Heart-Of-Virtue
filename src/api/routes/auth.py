@@ -2,8 +2,9 @@
 
 import logging
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from src.api.middleware.auth import resolve_session
+from src.api.session_cookie import clear_session_cookie, set_session_cookie
 from src.api.rate_limiter import RateLimiter
 from src.api.services.auth_service import auth_service
 from functools import wraps
@@ -250,17 +251,24 @@ async def register():
             session_manager, username, user
         )
 
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "data": {
-                        "session_id": session_id,
-                        "message": "Account created successfully. Welcome!",
-                    },
-                }
+        # The session id also travels in an HttpOnly cookie (issue #493) — that
+        # is what the browser actually authenticates with from here on. It stays
+        # in the body as well for the non-browser callers documented on
+        # `middleware.auth.session_token`; the SPA no longer reads it.
+        return set_session_cookie(
+            make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "data": {
+                            "session_id": session_id,
+                            "message": "Account created successfully. Welcome!",
+                        },
+                    }
+                ),
+                201,
             ),
-            201,
+            session_id,
         )
 
     except Exception:
@@ -370,17 +378,21 @@ async def login():
             session_manager, username, user
         )
 
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "data": {
-                        "session_id": session_id,
-                        "message": "Welcome back!",
-                    },
-                }
+        # See register() — the browser authenticates with the HttpOnly cookie.
+        return set_session_cookie(
+            make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "data": {
+                            "session_id": session_id,
+                            "message": "Welcome back!",
+                        },
+                    }
+                ),
+                200,
             ),
-            200,
+            session_id,
         )
 
     except Exception as e:
@@ -415,8 +427,9 @@ async def login():
 def logout():
     """End a player session.
 
-    Headers:
-        Authorization: Bearer <session_id>
+    Authenticated by the HttpOnly session cookie (or, for non-browser callers,
+    an ``Authorization: Bearer <session_id>`` header). Clears the cookie on the
+    way out.
 
     Returns:
         {
@@ -432,19 +445,29 @@ def logout():
         success = session_manager.expire_session(session_id)
 
         if success:
-            return (
-                jsonify({"success": True, "message": "Logged out successfully"}),
-                200,
+            # Expire the cookie as well as the server-side session. Leaving it
+            # set would send a dead credential on every later request, and the
+            # client can no longer clear it itself — that is what HttpOnly
+            # means.
+            return clear_session_cookie(
+                make_response(
+                    jsonify({"success": True, "message": "Logged out successfully"}),
+                    200,
+                )
             )
         else:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Session not found or already expired",
-                    }
-                ),
-                404,
+            # Already gone server-side, so the cookie names nothing. Clear it
+            # here too, or the browser keeps replaying a dead credential.
+            return clear_session_cookie(
+                make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Session not found or already expired",
+                        }
+                    ),
+                    404,
+                )
             )
 
     except Exception:

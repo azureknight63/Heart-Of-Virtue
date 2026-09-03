@@ -63,14 +63,16 @@ describe('useAuth', () => {
     localStorage.clear();
   });
 
-  it('initializes with token from localStorage', () => {
-    localStorage.setItem('authToken', 'test-token');
+  it('initializes as signed in from the stored username', () => {
+    // Since #493 there is no readable credential to initialize from — the
+    // session is an HttpOnly cookie. The stored username is the marker.
+    localStorage.setItem('username', 'jean');
     const { result } = renderHook(() => useAuth(), { wrapper });
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.loading).toBe(false);
   });
 
-  it('logs in successfully', async () => {
+  it('logs in successfully without storing the session id', async () => {
     const mockResponse = { data: { data: { session_id: 'new-token' } } };
     apiEndpoints.auth.login.mockResolvedValue(mockResponse);
 
@@ -80,12 +82,15 @@ describe('useAuth', () => {
       await result.current.login('user', 'pass');
     });
 
-    expect(localStorage.getItem('authToken')).toBe('new-token');
+    // The id is still in the body for non-browser callers; writing it to
+    // localStorage would restore exactly the script-readable copy #493 removed.
+    expect(localStorage.getItem('authToken')).toBeNull();
+    expect(localStorage.getItem('username')).toBe('user');
     expect(result.current.isAuthenticated).toBe(true);
   });
 
   it('logs out successfully', async () => {
-    localStorage.setItem('authToken', 'test-token');
+    localStorage.setItem('username', 'jean');
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     // Mock window.location

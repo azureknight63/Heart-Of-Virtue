@@ -31,6 +31,17 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
 
+    # The HttpOnly session cookie that replaced the localStorage auth token
+    # (issue #493). It reuses the four cookie-policy keys above rather than
+    # restating them; only the name and path are its own. The name is separate
+    # from Flask's SESSION_COOKIE_NAME on purpose — that key renames Flask's own
+    # signed-session cookie, which this app does not use today but might.
+    AUTH_COOKIE_NAME = "hov_session"
+    # Path=/ because the Socket.IO handshake is served from the app root, not
+    # from under the SPA's base path, and it authenticates by reading this
+    # cookie. See src/api/session_cookie.py.
+    AUTH_COOKIE_PATH = "/"
+
     # CORS settings
     CORS_ORIGINS = [
         "http://localhost:3000",

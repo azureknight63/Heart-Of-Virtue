@@ -369,13 +369,24 @@ def create_app(config_class=None):
 
         @app.route("/api/test/session", methods=["POST"])
         def test_create_session():
-            from flask import jsonify, request as _req
+            from flask import jsonify, make_response, request as _req
+            from src.api.session_cookie import set_session_cookie
 
-            username = (_req.get_json() or {}).get("username", "inquisitor_test")
+            # silent=True: harnesses POST this with no body and no JSON content
+            # type, which would otherwise raise 415 before the route ran.
+            username = (_req.get_json(silent=True) or {}).get(
+                "username", "inquisitor_test"
+            )
             session_id, _ = app.session_manager.create_session(username)
-            return (
-                jsonify({"session_id": session_id, "username": username}),
-                201,
+            # Set the same HttpOnly cookie a real login sets (issue #493), so a
+            # browser-driven QA run authenticates exactly the way a player does.
+            # The id stays in the body for the in-process harnesses, which send
+            # it back as a Bearer header instead of keeping a cookie jar.
+            return set_session_cookie(
+                make_response(
+                    jsonify({"session_id": session_id, "username": username}), 201
+                ),
+                session_id,
             )
 
         @app.route("/api/test/heal", methods=["POST"])

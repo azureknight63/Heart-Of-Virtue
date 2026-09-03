@@ -43,7 +43,6 @@ function setup(overrides = {}) {
   };
   const hook = renderHook(() =>
     useCombatSocket({
-      sessionId: 'sess-1',
       enabled: true,
       createSocket: () => socket,
       ...calls,
@@ -59,9 +58,10 @@ describe('useCombatSocket', () => {
   it('joins the combat room on connect', () => {
     const { socket } = setup();
     act(() => socket.fire('connect'));
-    expect(socket.emit).toHaveBeenCalledWith('join_combat', {
-      session_id: 'sess-1',
-    });
+    // No session id in the payload: since #493 the page holds no readable
+    // session, and the server resolves the room from the handshake's HttpOnly
+    // cookie instead of trusting whatever the client claims to be.
+    expect(socket.emit).toHaveBeenCalledWith('join_combat', {});
   });
 
   it('stops reconnect churn when the server rejects a stale session', () => {
@@ -141,9 +141,10 @@ describe('useCombatSocket', () => {
       socket.io.fire('reconnect');
       await Promise.resolve();
     });
-    expect(socket.emit).toHaveBeenCalledWith('join_combat', {
-      session_id: 'sess-1',
-    });
+    // No session id in the payload: since #493 the page holds no readable
+    // session, and the server resolves the room from the handshake's HttpOnly
+    // cookie instead of trusting whatever the client claims to be.
+    expect(socket.emit).toHaveBeenCalledWith('join_combat', {});
     // Rejoining alone is not enough — beats missed while disconnected mean the
     // client must also re-seed from the authoritative snapshot.
     expect(calls.fetchStatus).toHaveBeenCalledTimes(2);
@@ -234,24 +235,27 @@ describe('useCombatSocket', () => {
     const onBeat = vi.fn();
     const sockets = [socketA, socketB];
 
+    // Driven by `enabled` rather than a session id: since #493 the hook takes
+    // no sessionId, so combat ending and starting again is what tears the
+    // socket down and builds a new one.
     const hook = renderHook(
-      ({ sessionId }) =>
+      ({ enabled }) =>
         useCombatSocket({
-          sessionId,
-          enabled: true,
+          enabled,
           createSocket: () => sockets.shift(),
           onBeat,
           fetchStatus,
         }),
-      { initialProps: { sessionId: 'sess-1' } }
+      { initialProps: { enabled: true } }
     );
 
     act(() => socketA.fire('combat:beat', beat(7)));
     expect(onBeat).toHaveBeenCalledTimes(1);
     expect(fetchStatus).not.toHaveBeenCalled();
 
-    hook.rerender({ sessionId: 'sess-2' });
+    hook.rerender({ enabled: false });
     expect(socketA.disconnect).toHaveBeenCalledTimes(1);
+    hook.rerender({ enabled: true });
 
     // seq 9 against a surviving high-water mark of 7 classifies as a GAP
     // (9 > 7 + 1) and would fire a resync instead of delivering the beat. With
@@ -267,7 +271,6 @@ describe('useCombatSocket', () => {
     const socket = makeFakeSocket();
     renderHook(() =>
       useCombatSocket({
-        sessionId: 'sess-1',
         enabled: false,
         createSocket: () => socket,
       })
