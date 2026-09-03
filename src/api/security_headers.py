@@ -136,9 +136,17 @@ def register_security_headers(app):
     def _set_csp(response):
         # Don't clobber a policy a nearer layer already chose (e.g. a route that
         # deliberately relaxes it) — set only when absent.
-        if ENFORCING_HEADER not in response.headers:
-            if REPORT_ONLY_HEADER not in response.headers:
-                response.headers[header_name] = header_value
+        if (
+            ENFORCING_HEADER not in response.headers
+            and REPORT_ONLY_HEADER not in response.headers
+        ):
+            response.headers[header_name] = header_value
+        # These enforce immediately, unlike the report-only CSP above, so they
+        # are the only active protection for the whole rollout window.
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
         return response
 
     return True

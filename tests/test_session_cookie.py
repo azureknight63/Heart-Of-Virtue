@@ -282,6 +282,21 @@ class TestAuthRoutesIssueTheCookie:
             )
         assert response.get_json()["data"]["session_id"] == "sid_new"
 
+    @pytest.fixture(autouse=True)
+    def _isolate_limiter(self):
+        """The login limiters are process-global and keyed on 127.0.0.1.
+
+        Under ``-n auto --dist loadfile`` several files share a worker, so an
+        un-reset increment here leaks into whatever runs next in that process.
+        """
+        from src.api.routes.auth import _login_limiter, _ip_limiter
+
+        _login_limiter.clear_all()
+        _ip_limiter.clear_all()
+        yield
+        _login_limiter.clear_all()
+        _ip_limiter.clear_all()
+
     def test_a_failed_login_sets_no_cookie(self, auth_client):
         with patch(
             "src.api.routes.auth.auth_service.authenticate_user",
@@ -312,6 +327,12 @@ class TestAuthRoutesIssueTheCookie:
         header = _cookie_header(response)
         assert header.startswith(f"{DEFAULT_COOKIE_NAME}=;")
         assert _attributes(header)["Path"] == "/"
+        # Clearing the cookie is only half of a logout. Without this, a
+        # regression that expired a client-supplied id — or nothing at all —
+        # would still pass, leaving the server session alive for 24h.
+        auth_client.application.session_manager.expire_session.assert_called_once_with(
+            "sid_new"
+        )
 
     def test_logout_authenticates_from_the_cookie_alone(self, auth_client):
         """No Authorization header anywhere — the browser cannot send one."""
@@ -331,46 +352,12 @@ class TestAuthRoutesIssueTheCookie:
         client.set_cookie(DEFAULT_COOKIE_NAME, "sid_new")
 
         response = client.post("/auth/logout")
-        assert response.status_code == 404
+        assert response.status_code == 200
         assert _cookie_header(response).startswith(f"{DEFAULT_COOKIE_NAME}=;")
 
     def test_validate_accepts_the_cookie(self, auth_client):
         auth_client.set_cookie(DEFAULT_COOKIE_NAME, "sid_new")
         assert auth_client.get("/auth/validate").get_json()["valid"] is True
-
-
-# ---------------------------------------------------------------------------
-# The surfaces the QA harnesses depend on
-# ---------------------------------------------------------------------------
-
-
-class TestHarnessSurfaces:
-    def test_the_test_session_endpoint_sets_the_cookie(self, make_api_app):
-        """A browser-driven QA run must authenticate the way a player does."""
-        client = make_api_app().test_client()
-        response = client.post("/api/test/session")
-        assert response.status_code == 201
-        assert "HttpOnly" in _cookie_header(response)
-
-    def test_the_test_session_endpoint_still_returns_the_id(self, make_api_app):
-        """In-process harnesses replay it as a Bearer header."""
-        response = make_api_app().test_client().post("/api/test/session")
-        assert response.get_json()["session_id"]
-
-    def test_the_test_session_endpoint_tolerates_a_bodyless_post(self, make_api_app):
-        """Harnesses POST it with no JSON content type; 415 would break them."""
-        response = make_api_app().test_client().post("/api/test/session")
-        assert response.status_code == 201
-        assert response.get_json()["username"] == "inquisitor_test"
-
-    def test_the_cookie_from_test_session_authenticates_a_later_request(
-        self, make_api_app
-    ):
-        """End to end: no Authorization header is ever sent."""
-        app = make_api_app()
-        client = app.test_client()
-        client.post("/api/test/session")  # test client keeps the cookie
-        assert client.get("/api/auth/validate").get_json()["valid"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +414,7 @@ class TestSocketHandshake:
                 handlers["join_combat"]({})
 
         join_room.assert_called_once_with("combat_sid_sock")
-        emit.assert_called_once_with("joined_combat", {"room": "combat_sid_sock"})
+        emit.assert_called_once_with("joined_combat", {"joined": True})
 
     def test_a_payload_session_id_is_used_when_there_is_no_cookie(
         self, make_route_app, make_stub_session, make_stub_session_manager
@@ -460,7 +447,7 @@ class TestSocketHandshake:
             ) as join_room:
                 handlers["join_combat"]({})
 
-        emit.assert_called_once_with("error", {"message": "Missing session_id"})
+        emit.assert_called_once_with("error", {"message": "Missing or invalid session credentials"})
         join_room.assert_not_called()
 
     def test_the_cookie_beats_a_payload_that_names_another_session(

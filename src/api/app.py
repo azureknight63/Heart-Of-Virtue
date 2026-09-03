@@ -79,6 +79,28 @@ def create_app(config_class=None):
     # header rather than a <meta> tag, and which other servers also emit it.
     register_security_headers(app)
 
+    @app.after_request
+    def _slide_session_cookie(response):
+        """Keep the cookie's lifetime in step with the sliding server session.
+
+        ``Session.update_access_time`` pushes ``expires_at`` out on every
+        authenticated request, but the cookie's ``Max-Age`` was fixed when it
+        was issued — so an active player's browser dropped the credential at
+        the 24h mark while the server session was still live. ``resolve_session``
+        records what it resolved on ``g``; this re-issues at most hourly.
+        """
+        from flask import g as _g
+        from src.api.session_cookie import refresh_session_cookie
+
+        session = getattr(_g, "hov_session", None)
+        if session is None or not getattr(_g, "hov_session_from_cookie", False):
+            return response
+        try:
+            return refresh_session_cookie(response, session, app=app)
+        except Exception:  # never let cookie upkeep break a response
+            app.logger.exception("Failed to refresh the session cookie")
+            return response
+
     # Initialize CORS - with explicit support for all methods
     CORS(
         app,
@@ -337,6 +359,12 @@ def create_app(config_class=None):
             origin = request.headers.get("Origin")
             if origin and origin in allowed:
                 response.headers["Access-Control-Allow-Origin"] = origin
+                # Since #493 the credential is a cookie, so the browser only
+                # sends it cross-origin when the preflight allows credentials.
+                # Flask-CORS's after_request short-circuits once ACAO is set,
+                # so it will not add this for us — without it every request
+                # fails in the cross-origin dev setup client.js supports.
+                response.headers["Access-Control-Allow-Credentials"] = "true"
                 response.headers["Access-Control-Allow-Methods"] = (
                     "GET, POST, PUT, DELETE, OPTIONS, PATCH"
                 )

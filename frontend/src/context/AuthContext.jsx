@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import apiEndpoints from '../api/endpoints';
-import { USERNAME_KEY, clearLocalSession } from '../utils/session';
+import { USERNAME_KEY, clearLocalSession, redirectToLogin } from '../utils/session';
 
 const AuthContext = createContext();
 
@@ -102,12 +102,10 @@ export const AuthProvider = ({ children }) => {
             // The credential itself is not here to clear: the logout request
             // above is what expires the HttpOnly cookie, which is why it runs
             // first and its failure does not skip this cleanup.
-            clearLocalSession();
             setIsAuthenticated(false);
             setUser(null);
-            // Force reload to clear state and redirect to login, respecting subpath deployment
-            const baseUrl = import.meta.env.BASE_URL || '/';
-            window.location.href = baseUrl + 'login';
+            // Clears the markers and redirects, respecting subpath deployment.
+            redirectToLogin();
         }
     };
 

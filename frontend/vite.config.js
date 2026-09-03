@@ -68,6 +68,15 @@ const apiProxy = {
   '/api': {
     target: 'http://localhost:5000',
     changeOrigin: true
+  },
+  // Socket.IO is served from the app root, outside the SPA base path, so it
+  // needs its own entry. Without it the cookie-authenticated handshake cannot
+  // be exercised locally at all — the socket 404s against Vite — which is
+  // exactly why a credential leak in the join ack went unnoticed.
+  '/socket.io': {
+    target: 'http://localhost:5000',
+    changeOrigin: true,
+    ws: true
   }
 }
 

@@ -372,6 +372,16 @@ def receive_csp_report():
             )
 
         _write_log_entries(entries, CSP_LOG_SESSION)
+
+        # The sibling /browser route does this too. CSP reports arrive in every
+        # environment while the browser logger is DEV-gated, so this route can
+        # be a deployment's only writer — without it nothing ever reclaims the
+        # bounded logs/browser budget.
+        try:
+            cleanup_manager.cleanup()
+        except Exception:
+            pass
+
         return "", 204
 
     except Exception as e:

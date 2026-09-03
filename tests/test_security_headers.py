@@ -327,3 +327,22 @@ def test_the_vite_report_uri_matches_the_production_report_uri():
     assert ProductionConfig.CSP_REPORT_URI in _vite_config_source().replace(
         "${BASE}api", "/games/HeartOfVirtue/api"
     )
+
+
+def test_the_real_app_factory_serves_the_policy(make_api_app):
+    """Every other delivery test builds a bare Flask app and registers the hook
+    by hand, so deleting ``register_security_headers(app)`` from the factory
+    left this whole file green. This is the only test that would catch that.
+
+    ``/health`` is deliberate: it needs no session, so this cannot drag a real
+    Universe into the default suite.
+    """
+    response = make_api_app().test_client().get("/health")
+    assert REPORT_ONLY_HEADER in response.headers
+
+
+def test_the_report_uri_resolves_to_a_real_route(make_api_app):
+    """A re-prefixed blueprint would send every violation into a 404."""
+    app = make_api_app()
+    report_path = app.config["CSP_REPORT_URI"]
+    assert any(str(rule) == report_path for rule in app.url_map.iter_rules())

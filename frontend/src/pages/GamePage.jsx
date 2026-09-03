@@ -23,7 +23,7 @@ import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 import { TAB_KEYS } from '../utils/mobileTabs'
-import { clearLocalSession } from '../utils/session'
+import { redirectToLogin } from '../utils/session'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -80,11 +80,9 @@ export default function GamePage() {
     onEnded: applyCombatState,
     onUpdate: applyCombatState,
     onSessionInvalid: () => {
-      // Same teardown as the axios 401 path and logout, through the one shared
-      // key list rather than a third hand-written copy of it.
-      clearLocalSession()
-      const baseUrl = import.meta.env.BASE_URL || '/'
-      window.location.href = `${baseUrl}login`
+      // Same teardown as the axios 401 path and logout, through the one
+      // shared helper rather than a third hand-written copy of it.
+      redirectToLogin()
     },
     fetchStatus: fetchCombatStatus,
   })

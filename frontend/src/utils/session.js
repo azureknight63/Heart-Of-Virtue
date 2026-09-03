@@ -46,3 +46,19 @@ export function clearLocalSession(storage = localStorage) {
         }
     }
 }
+
+/**
+ * Clear the local session markers and send the browser to the login page.
+ *
+ * The three callers — the axios 401 interceptor, `AuthContext.logout()` and
+ * GamePage's `onSessionInvalid` — each hand-wrote this pair, and they had
+ * already drifted: two used `BASE_URL || '/'` while the third omitted the
+ * fallback, so a build with an empty `BASE_URL` redirected to a bare `login`
+ * relative to the current path instead of the site root. `clearLocalSession`
+ * alone was not enough; the redirect belongs with it.
+ */
+export function redirectToLogin(storage = localStorage) {
+    clearLocalSession(storage)
+    const baseUrl = import.meta.env.BASE_URL || '/'
+    window.location.href = `${baseUrl}login`
+}

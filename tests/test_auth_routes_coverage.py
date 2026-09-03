@@ -474,31 +474,40 @@ class TestLogout:
         assert data["success"] is True
 
     def test_logout_session_not_found(self, app):
+        """A session that is already gone still logs you out.
+
+        Since #493 the credential is an HttpOnly cookie the page cannot clear,
+        so refusing here left the browser pinned to a dead session forever.
+        """
         app.stub_session_manager.expire_session.return_value = False
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=AUTH)
-        assert rv.status_code == 404
+        assert rv.status_code == 200
 
     def test_logout_no_auth(self, app):
+        """No credential at all: nothing to expire, but still a clean logout."""
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=NO_AUTH)
-        assert rv.status_code == 401
+        assert rv.status_code == 200
+        app.stub_session_manager.expire_session.assert_not_called()
 
     def test_logout_bad_auth(self, app):
+        """An unparseable credential must not strand the caller either."""
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=BAD_AUTH)
-        assert rv.status_code == 401
+        assert rv.status_code == 200
 
-    def test_logout_invalid_session_in_require_auth(self, app):
+    def test_logout_expired_session_still_clears(self, app):
+        """The expired-cookie case: the one that used to be an inescapable 401."""
         app.stub_session_manager.get_session.return_value = None
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=AUTH)
-        assert rv.status_code == 401
+        assert rv.status_code == 200
 
     def test_logout_session_manager_not_initialized(self, app):
-        # Issue #408: require_auth now routes through the shared resolve_session
-        # helper; a falsy session_manager must still yield the 500 "not
-        # initialized" response at every call site.
+        # Issue #408: a falsy session_manager must still yield the 500 "not
+        # initialized" response. Logout tolerates a dead *credential* but not a
+        # dead *server* — it cannot expire anything, so it must not claim to.
         app.session_manager = None
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=AUTH)

@@ -1,6 +1,6 @@
 """Shared session/auth resolution for API routes."""
 
-from flask import current_app, jsonify, request
+from flask import current_app, g, jsonify, request
 from src.api.session_cookie import session_id_from_cookie
 
 
@@ -9,11 +9,16 @@ def _bearer_token():
 
     Returns the raw token string, or None if the header is missing or not a
     well-formed ``Bearer <token>`` value.
+
+    A bare ``Bearer `` with nothing after it yields None rather than "": the
+    callers gate on ``is None``, so an empty string would sail past the guard
+    and reach ``get_session("")``. This mirrors ``session_id_from_cookie``,
+    which normalises an empty cookie to None for the same reason.
     """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
-    return auth_header[7:]
+    return auth_header[7:] or None
 
 
 def session_token():
@@ -78,6 +83,15 @@ def resolve_session():
             None,
             (jsonify({"success": False, "error": "Session not found or already expired"}), 401),
         )
+
+    # Record what we resolved so the sliding-cookie hook in create_app can
+    # re-issue the cookie without doing a second session lookup. Only the
+    # cookie path is marked: a Bearer caller has no cookie jar to refresh.
+    try:
+        g.hov_session = session
+        g.hov_session_from_cookie = session_id_from_cookie() is not None
+    except RuntimeError:  # outside an app context (direct unit calls)
+        pass
 
     return session_manager, session, None
 

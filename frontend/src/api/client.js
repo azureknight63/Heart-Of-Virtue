@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { clearLocalSession } from '../utils/session'
+import { redirectToLogin } from '../utils/session'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -37,8 +37,7 @@ apiClient.interceptors.response.use(
       // `authToken` left over from before #493). The credential itself is the
       // HttpOnly cookie, which only the server can expire — logout does that;
       // a 401 means it is already dead.
-      clearLocalSession()
-      window.location.href = `${import.meta.env.BASE_URL}login`
+      redirectToLogin()
     }
     return Promise.reject(error)
   }

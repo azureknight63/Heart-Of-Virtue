@@ -34,7 +34,7 @@ own signed-session cookie. This app does not use ``flask.session`` today, but
 claiming Flask's key would silently collide with the first code that does.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from flask import current_app, request
 
@@ -128,3 +128,35 @@ def session_id_from_cookie(app=None):
         return request.cookies.get(cookie_name(app)) or None
     except RuntimeError:  # working outside of request/app context
         return None
+
+
+#: How stale an issued cookie may get before it is re-issued.
+#:
+#: ``Session.update_access_time`` slides ``expires_at`` to now+24h on every
+#: authenticated request, but the cookie's ``Max-Age`` was fixed at issue time
+#: and never renewed — so a player active past the 24h mark was signed out in
+#: the browser while the server session was still perfectly alive. Re-issuing
+#: keeps the two windows in lockstep. Hourly rather than per-request so a busy
+#: session does not pay a ``Set-Cookie`` on every single response.
+COOKIE_REFRESH_INTERVAL = timedelta(hours=1)
+
+
+def refresh_session_cookie(response, session, app=None):
+    """Re-issue the session cookie if its window has drifted behind the session.
+
+    No-op unless at least ``COOKIE_REFRESH_INTERVAL`` has passed since the last
+    issue. The bookkeeping lives on ``session.data`` because the server is the
+    only side that can know when the cookie was written — the browser never
+    tells us, and the value itself carries no timestamp.
+    """
+    data = getattr(session, "data", None)
+    if data is None:
+        return response
+
+    now = datetime.now()
+    issued_at = data.get("_cookie_issued_at")
+    if issued_at is not None and now - issued_at < COOKIE_REFRESH_INTERVAL:
+        return response
+
+    data["_cookie_issued_at"] = now
+    return set_session_cookie(response, session.session_id, app=app)
