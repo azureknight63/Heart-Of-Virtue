@@ -439,6 +439,69 @@ describe('useCombat', () => {
     expect(result.current.combat.turn).toBe(1); // unchanged
   });
 
+  it('reports a success:false refusal to onActionRefused without touching combat state', async () => {
+    // The route answers an in-game refusal with HTTP 200 + success:false and no
+    // state payload (src/api/routes/combat.py). Swallowing it silently is what
+    // made every combat button look dead with nothing on screen to explain why
+    // (issue #505): the state must stay put AND the refusal must be reported.
+    apiEndpoints.combat.getStatus.mockResolvedValue({ data: { battle_state: { turn: 1 }, combat_active: true } });
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: { success: false, error: 'Not enough fatigue' },
+    });
+
+    const onActionRefused = vi.fn();
+    const { result } = renderHook(() => useCombat(false, { onActionRefused }));
+    await act(async () => { await result.current.fetchCombatStatus(); });
+
+    await act(async () => {
+      await result.current.performAction('move', { move_id: '0' });
+    });
+
+    expect(onActionRefused).toHaveBeenCalledTimes(1);
+    expect(onActionRefused).toHaveBeenCalledWith({ success: false, error: 'Not enough fatigue' });
+    expect(result.current.combat.turn).toBe(1); // unchanged
+    expect(result.current.inCombat).toBe(true); // not dropped out of combat
+  });
+
+  it('does not report a successful action as a refusal', async () => {
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: { success: true, combat_active: true, battle_state: { turn: 2 }, log: [] },
+    });
+
+    const onActionRefused = vi.fn();
+    const { result } = renderHook(() => useCombat(false, { onActionRefused }));
+    await act(async () => {
+      await result.current.performAction('move', { move_id: '0' });
+    });
+
+    expect(onActionRefused).not.toHaveBeenCalled();
+    expect(result.current.combat.turn).toBe(2);
+  });
+
+  it('uses the latest onActionRefused without rebuilding performAction', async () => {
+    // The callback is held in a ref precisely so an inline arrow from the caller
+    // does not change performAction's identity on every render — which would
+    // invalidate every memo downstream of it.
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: { success: false, error: 'Event pending' },
+    });
+
+    const first = vi.fn();
+    const second = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ cb }) => useCombat(false, { onActionRefused: cb }),
+      { initialProps: { cb: first } }
+    );
+    const performActionBefore = result.current.performAction;
+
+    rerender({ cb: second });
+    expect(result.current.performAction).toBe(performActionBefore);
+
+    await act(async () => { await result.current.performAction('move', {}); });
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledWith({ success: false, error: 'Event pending' });
+  });
+
   it('logs and rethrows when performAction fails', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     apiEndpoints.combat.performAction.mockRejectedValue(new Error('server error'));

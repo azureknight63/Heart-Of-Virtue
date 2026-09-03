@@ -43,7 +43,7 @@ function anyEnemyOffScreen(state) {
   return false;
 }
 
-export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1 }) {
+export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1, isReloadRecovery = false }) {
   const beatTimelineEnabled = useFeatureFlag('beatTimeline')
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(VIEW_MODE_FOLLOW)
@@ -262,6 +262,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
           mapSize={combat?.map_size}
+          isReloadRecovery={isReloadRecovery}
           onAnimatingChange={onAnimatingChange}
           streaming={streaming}
           streamedAnimations={streamedAnimations}

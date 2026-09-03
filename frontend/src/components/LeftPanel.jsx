@@ -485,6 +485,36 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     }
   }, [combat?.check_data])
 
+  /**
+   * Why a suggested move cannot be used right now, or null when it can.
+   *
+   * The advisor and the move list are two independent server-side derivations,
+   * and they disagree: with fatigue drained the strategist still suggested
+   * `Attack` while `available_options` reported it `available:false` ("Not
+   * enough fatigue"). The suggestion card had no availability check at all, so
+   * clicking it POSTed a move the server refused — HTTP 200, `success:false`,
+   * no state change — which is what a player experiences as "every option does
+   * nothing" (issue #505). The availability is already on the wire; this is the
+   * same test `lastMoveViable` above applies to the DO IT AGAIN button.
+   *
+   * When `available_options` is missing or empty there is nothing to check
+   * against, so nothing is blocked: a card that cannot be proven unusable stays
+   * clickable rather than greying out the whole panel on a partial payload.
+   */
+  const suggestionBlockedReason = useMemo(() => {
+    const options = combat?.available_options
+    if (!Array.isArray(options) || options.length === 0) return () => null
+    const byName = new Map(options.map(opt => [opt.name, opt]))
+    return (moveName) => {
+      // 'repeat_last' is not a move name — it resolves to combat.last_move_name
+      // and is already gated by `lastMoveViable`, which runs this same check.
+      if (!moveName || moveName === 'repeat_last') return null
+      const option = byName.get(moveName)
+      if (option && option.available) return null
+      return option?.reason || 'Not available right now'
+    }
+  }, [combat?.available_options])
+
   const handleCombatMoveClick = (category) => {
     if (showCombatMoves && combatMovesCategory === category) {
       setShowCombatMoves(false)
@@ -866,7 +896,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onTargetHover={onTargetHover}
             onPause={onAdvisorPause}
             onRequestSuggestions={onAdvisorRequestSuggestions}
+            blockedReasonFor={suggestionBlockedReason}
             onSuggestClick={(s) => {
+              // Belt and braces with the panel's own greying: a card the server
+              // would refuse must not fire an action from any path.
+              if (suggestionBlockedReason(s.move_name)) return
               if (s.move_name === 'repeat_last') {
                 // Use explicit tracking fields from backend
                 const moveName = combat?.last_move_name
@@ -877,8 +911,12 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
                   onCombatAction('select_move_and_target', { move_name: moveName, target_id: targetId })
                 } else {
                   // Fallback to the first recommended suggestion if no last move found
-                  if (combat?.suggested_moves?.length > 0) {
-                    const firstSug = combat.suggested_moves[0];
+                  // — the first the server will actually accept, not simply the
+                  // first in the list.
+                  const firstSug = (combat?.suggested_moves || []).find(
+                    sug => !suggestionBlockedReason(sug.move_name)
+                  )
+                  if (firstSug) {
                     if (!KEEP_TAB_MOVES.has(firstSug.move_name)) notifyMoveSubmitted()
                     onCombatAction('select_move_and_target', { move_name: firstSug.move_name, target_id: firstSug.target_id })
                   }
