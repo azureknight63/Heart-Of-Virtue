@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
+from src.events import purge_orphaned_combat_events
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
@@ -3797,6 +3798,13 @@ class GameService:
             del player._combat_deferred_enemies
         if hasattr(player, "combat_end_summary"):
             del player.combat_end_summary
+
+        # Fleeing tore down everything about the fight EXCEPT player.combat_events,
+        # which is process-wide and outlives every combat — it was the exit door
+        # that left a story chain armed to fire in whatever unrelated fight came
+        # next (issue #506). Purge by origin room, not blanket: an event armed in
+        # this room is still legitimately waiting for the player here.
+        purge_orphaned_combat_events(player)
 
         return {
             "success": True,

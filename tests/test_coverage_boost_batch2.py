@@ -261,10 +261,10 @@ class TestCh01BridgeWallWithTileDescription:
 
 
 class TestCh01PostRumblerStage2And3:
-    """Lines 360-444: Ch01PostRumbler stages 2 and 3."""
+    """Ch01PostRumbler stages 2 (announce) and 3 (spawn)."""
 
-    def test_stage_2_spawns_enemies_and_sets_follow_up(self):
-        """Stage 2 spawns rumblers and queues Ch01PostRumblerRep/Ch01PostRumbler2."""
+    def test_stage_2_announces_without_spawning(self):
+        """The ambush warning must precede the ambush (issue #506)."""
         from src.story.ch01 import Ch01PostRumbler
 
         p = _player()
@@ -275,30 +275,47 @@ class TestCh01PostRumblerStage2And3:
 
         event = Ch01PostRumbler(player=p, tile=tile)
         event._stage = 2  # Force to stage 2
+        event.delay_mode = "combat"  # inherited from stage 1
 
         with (
             patch("src.story.ch01.cprint"),
-            patch("src.functions.add_enemies_to_combat"),
+            patch("src.functions.add_enemies_to_combat") as mock_add,
         ):
             event.process()
 
         assert event._stage == 3
         assert event.needs_input is True
-        assert len(p.combat_events) >= 2
+        # Nothing on the battlefield yet, and no delay holding the dialog
+        # behind the render of enemies the player has not been warned about.
+        tile.spawn_npc.assert_not_called()
+        mock_add.assert_not_called()
+        assert event.delay_mode is None
+        assert p.combat_events == []
 
-    def test_stage_3_completes_event(self):
-        """Stage 3 marks event as completed and removes it from combat_events."""
+    def test_stage_3_spawns_queues_follow_ups_and_completes(self):
+        """Stage 3 spawns the wave, arms the chain and retires this event."""
         from src.story.ch01 import Ch01PostRumbler
 
         p = _player()
         tile = _mock_tile()
+        tile.spawn_npc = MagicMock(return_value=MagicMock())
+        p.current_room = tile
 
         event = Ch01PostRumbler(player=p, tile=tile)
         event._stage = 3
         p.combat_events = [event]
 
-        event.process()
+        with (
+            patch("src.story.ch01.cprint"),
+            patch("src.functions.add_enemies_to_combat") as mock_add,
+        ):
+            event.process()
 
+        assert tile.spawn_npc.call_count == 2
+        mock_add.assert_called_once()
+        queued = [e.name for e in p.combat_events]
+        assert "Ch01_PostRumbler_Rep" in queued
+        assert "Ch01_PostRumbler2" in queued
         assert event.completed is True
         assert event.needs_input is False
         assert event not in p.combat_events
@@ -440,24 +457,31 @@ class TestCh01PostRumbler3Stages:
 class TestCh01PostRumblerRepStage2:
     """Lines 510-515: Ch01PostRumblerRep stage 2 resets for next trigger."""
 
-    def test_stage_2_resets_announcement_stage(self):
-        """Stage 2 acknowledges, resets for re-triggering."""
+    def test_stage_2_spawns_then_resets_announcement_stage(self):
+        """Stage 2 spawns the announced wave, then re-arms for the next one."""
         from src.story.ch01 import Ch01PostRumblerRep
 
         p = _player()
         tile = _mock_tile()
+        tile.spawn_npc = MagicMock(return_value=MagicMock())
+        p.current_room = tile
 
         event = Ch01PostRumblerRep(player=p, tile=tile)
         event._announcement_stage = 2
+        event.iteration = 2
         event.needs_input = True
 
-        event.process()  # Should reset
+        with patch("src.functions.add_enemies_to_combat") as mock_add:
+            event.process()
 
+        assert tile.spawn_npc.call_count == 2
+        mock_add.assert_called_once()
+        assert event.iteration == 3  # Incremented
         assert event._announcement_stage == 1
         assert event.needs_input is False
 
-    def test_stage_1_spawns_enemies(self):
-        """Stage 1 spawns enemies and sets up announcement dialog."""
+    def test_stage_1_announces_without_spawning(self):
+        """Stage 1 is the warning only — the wave arrives in stage 2 (#506)."""
         from src.story.ch01 import Ch01PostRumblerRep
 
         p = _player()
@@ -469,9 +493,12 @@ class TestCh01PostRumblerRepStage2:
         event._announcement_stage = 1
         event.iteration = 2
 
-        with (patch("src.functions.add_enemies_to_combat"),):
+        with patch("src.functions.add_enemies_to_combat") as mock_add:
             event.process()
 
         assert event.needs_input is True
         assert event._announcement_stage == 2
-        assert event.iteration == 3  # Incremented
+        assert event.delay_mode is None
+        tile.spawn_npc.assert_not_called()
+        mock_add.assert_not_called()
+        assert event.iteration == 2  # Not yet incremented

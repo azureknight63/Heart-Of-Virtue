@@ -20,6 +20,15 @@ from src.npc import Slime
 from tests._combat_fixtures import engage, make_npc, make_player
 
 
+def _alert_count(player, name):
+    """How many "<name> appears!"-style roster alerts the log carries."""
+    return sum(
+        1
+        for entry in player.combat_log
+        if entry.get("type") == "system" and name in entry.get("message", "")
+    )
+
+
 @pytest.fixture
 def player():
     return make_player()
@@ -197,6 +206,64 @@ class TestCombatIdLifecycle:
             "a reinforcement spawn is the same fight; changing combat_id here "
             "makes the client tear down and rebuild the battlefield"
         )
+
+    def test_reinit_does_not_re_announce_combatants_already_fighting(
+        self, adapter, player, slime
+    ):
+        """Issue #506: "X appears!" is for arrivals, not for the roster.
+
+        GameService's reinit path assigns the whole new roster rather than
+        just the arrivals, so every combatant already on the battlefield came
+        back through the alert loop and was announced again mid-fight.
+        """
+        reinforcement = make_npc(Slime, name="Reinforcement", hp=20, maxhp=20)
+        player.combat_list.append(reinforcement)
+
+        adapter.initialize_combat([slime, reinforcement], reinit=True)
+
+        assert _alert_count(player, "Test Slime") == 1
+        assert _alert_count(player, "Reinforcement") == 1
+
+    def test_re_announcement_is_blocked_even_once_the_log_has_been_trimmed(
+        self, adapter, player, slime
+    ):
+        """_add_log_entry's (message, round, source_id) dedup masked the
+        duplicate only while the round-1 entries it compares against were
+        still in the log; _trim_combat_log drops them in a long fight."""
+        player.combat_log.clear()
+
+        adapter.initialize_combat([slime], reinit=True)
+
+        assert _alert_count(player, "Test Slime") == 0
+
+    def test_a_reinforcement_is_announced_after_an_earlier_fighter_died(
+        self, adapter, player, slime
+    ):
+        """The skip list must not swallow genuine arrivals.
+
+        Tracking "already announced" by ``id()`` would: the dead combatant is
+        dropped from the roster and can be freed, and CPython is free to hand
+        the reinforcement the same address, whereupon its arrival is silently
+        skipped. The adapter holds the combatants themselves for this reason.
+        """
+        player.combat_list.remove(slime)
+        del slime
+        player.combat_log.clear()
+
+        reinforcement = make_npc(Slime, name="Reinforcement", hp=20, maxhp=20)
+        player.combat_list.append(reinforcement)
+        adapter.initialize_combat([reinforcement], reinit=True)
+
+        assert _alert_count(player, "Reinforcement") == 1
+
+    def test_a_new_fight_announces_the_roster_again(self, adapter, player, slime):
+        """Who has been announced is per-fight state, like combat_id."""
+        player.combat_log.clear()
+        engage(player, [slime])
+
+        adapter.initialize_combat([slime])
+
+        assert _alert_count(player, "Test Slime") == 1
 
     def test_reinit_does_not_reset_the_beat(self, adapter, player, slime):
         player.combat_beat = 6
