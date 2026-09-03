@@ -1697,6 +1697,10 @@
       "name": "Ch01_Memory_Amelia"
     },
     {
+      "module": "src.story.ch01",
+      "name": "RumblerChainEvent"
+    },
+    {
       "module": "src.story.ch02",
       "name": "AfterDefeatingKingSlime"
     },
@@ -1925,6 +1929,6 @@
       "name": "UUID"
     }
   ],
-  "count": 481,
+  "count": 482,
   "header_version": 1
 }

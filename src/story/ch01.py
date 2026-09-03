@@ -15,7 +15,7 @@ from src.narration import (
 import time
 import random
 
-from src.events import Event
+from src.events import Event, tile_identity
 import src.objects as objects
 from src.functions import await_input
 from src.story.effects import MemoryFlash
@@ -395,8 +395,59 @@ class Ch01ChestRumblerBattle(Event):
             self.tile.events_here.remove(self)
 
 
+# Story flag marking the rock-rumbler ambush chain as live. Set when the chain
+# is armed, cleared ("0") when Gorran's rescue resolves it. Absent means
+# "unknown" -- saves made before issue #506 have no flag and must not have the
+# chain silently disabled mid-playthrough.
+RUMBLER_FIGHT_FLAG = "ch01_rumbler_fight"
+
+
+class RumblerChainEvent(Event):
+    """Base for the Chapter 1 rock-rumbler ambush chain.
+
+    Every event in this chain is a ``combat_effect`` event living on
+    ``player.combat_events``, which is process-wide, is never cleared by any
+    combat teardown, and persists into saves. Their gates are pure global
+    predicates -- "no enemies left", "HP below 30%" -- with nothing tying them
+    to the fight that armed them, so once the player left that fight by any
+    exit other than finishing the chain (fleeing, most obviously), they fired
+    in whatever unrelated fight came next: spawning rumblers in a different
+    room and narrating Gorran's rescue over a fight he has nothing to do with
+    (issue #506).
+
+    Subclasses call :meth:`in_arming_fight` at the top of
+    ``check_combat_conditions`` and return without firing when it is False.
+    """
+
+    def in_arming_fight(self) -> bool:
+        """True when the player is still in the fight this event was armed for.
+
+        Two independent gates, both deliberately permissive when they cannot
+        tell (an unknown room or a pre-#506 save must not disable the rescue
+        mid-playthrough):
+
+        * the chain flag has not been explicitly cleared, and
+        * the player is in the room the event was armed in.
+        """
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if isinstance(story, dict) and story.get(RUMBLER_FIGHT_FLAG) == "0":
+            return False
+
+        origin = getattr(self, "origin_tile_key", None)
+        here = tile_identity(getattr(self.player, "current_room", None))
+        if origin is not None and here is not None and origin != here:
+            return False
+        return True
+
+    def set_chain_flag(self, value: str) -> None:
+        """Mark the chain live ("1") or resolved ("0"), if a story dict exists."""
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if isinstance(story, dict):
+            story[RUMBLER_FIGHT_FLAG] = value
+
+
 class Ch01PostRumbler(
-    Event
+    RumblerChainEvent
 ):  # Occurs when Jean beats the first rumbler after opening the chest
     def __init__(
         self, player, tile, params=None, repeat=False, name="Ch01_PostRumbler"
@@ -411,6 +462,8 @@ class Ch01PostRumbler(
         )
 
     def check_combat_conditions(self):
+        if not self.in_arming_fight():
+            return
         if not self.player.combat_list:
             self.pass_conditions_to_process()
 
@@ -439,7 +492,26 @@ class Ch01PostRumbler(
             return
 
         elif self._stage == 2:
-            # Stage 2: Spawn enemies and show announcement dialog
+            # Stage 2: Announce the ambush -- BEFORE anything is enrolled.
+            # The spawn used to happen here, so the client rendered the new
+            # rumblers on the battlefield while this dialog was still held back
+            # by the combat delay and the combat-log gate, and the player read
+            # "more creatures appear!" about enemies they had been staring at
+            # for seconds (issue #506). Clear the delay inherited from stage 1
+            # too: the announcement is the thing the player must see first.
+            self.delay_mode = None
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = (
+                "The ground quivers slightly as more rock creatures appear!"
+            )
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self.description = "Low rumbles vibrate through the stone floor!"
+            self._stage = 3
+            return
+
+        elif self._stage == 3:
+            # Stage 3: The player has read the announcement -- now spawn.
             # Ensure we use the current tile instance to avoid stale refs
             target_tile = self.tile
             if hasattr(self.player, "current_room"):
@@ -461,16 +533,10 @@ class Ch01PostRumbler(
 
             add_enemies_to_combat(self.player, new_enemies)
 
-            # Set up event dialog to announce the new enemies
-            self.needs_input = True
-            self.input_type = "choice"
-            self.input_prompt = (
-                "The ground quivers slightly as more rock creatures appear!"
-            )
-            self.input_options = [{"value": "continue", "label": "Continue"}]
-            self.description = (
-                f"{len(new_enemies)} Rock Rumblers emerge from the shadows!"
-            )
+            # The chain is live from here until Gorran's rescue resolves it.
+            # Its follow-ups are scoped to this room and this flag so they
+            # cannot fire in an unrelated fight (issue #506).
+            self.set_chain_flag("1")
 
             # Add follow-up events
             self.player.combat_events.append(
@@ -490,11 +556,6 @@ class Ch01PostRumbler(
                 )
             )
 
-            self._stage = 3
-            return
-
-        elif self._stage == 3:
-            # Stage 3: User acknowledged the announcement, complete the event
             self.completed = True
             self.needs_input = False
 
@@ -503,7 +564,7 @@ class Ch01PostRumbler(
                 self.player.combat_events.remove(self)
 
 
-class Ch01PostRumblerRep(Event):
+class Ch01PostRumblerRep(RumblerChainEvent):
     def __init__(
         self,
         player,
@@ -523,6 +584,8 @@ class Ch01PostRumblerRep(Event):
         self.iteration = 2
 
     def check_combat_conditions(self):
+        if not self.in_arming_fight():
+            return
         if not self.player.combat_list:
             self.pass_conditions_to_process()
 
@@ -532,7 +595,24 @@ class Ch01PostRumblerRep(Event):
             self._announcement_stage = 1
 
         if self._announcement_stage == 1:
-            # Stage 1: Spawn enemies and show announcement dialog
+            # Stage 1: Announce the next wave -- BEFORE it is enrolled, so the
+            # player is not told about creatures already on the battlefield
+            # (issue #506). No delay: this dialog is the beat.
+            self.delay_mode = None
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = "Continue"
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self.description = (
+                f"{self.iteration} additional Rock Rumblers claw their way up "
+                "through the rubble!"
+            )
+
+            self._announcement_stage = 2
+            return
+
+        elif self._announcement_stage == 2:
+            # Stage 2: The player has read the announcement -- now spawn.
             # Ensure we use the current tile instance to avoid stale refs
             target_tile = self.tile
             if hasattr(self.player, "current_room"):
@@ -553,28 +633,14 @@ class Ch01PostRumblerRep(Event):
                 f"The ground shudders violently as {len(new_enemies)} more rock creatures rise!",
             )
 
-            # Set up event dialog to announce the new enemies
-            self.needs_input = True
-            self.input_type = "choice"
-            self.input_prompt = "Continue"
-            self.input_options = [{"value": "continue", "label": "Continue"}]
-            self.description = (
-                f"{len(new_enemies)} additional Rock Rumblers join the fray!"
-            )
-
             self.iteration += 1
-            self._announcement_stage = 2
-            return
-
-        elif self._announcement_stage == 2:
-            # Stage 2: User acknowledged the announcement, reset for next trigger
             self.needs_input = False
             self._announcement_stage = (
                 1  # Reset for next time this repeating event triggers
             )
 
 
-class Ch01PostRumbler2(Event):
+class Ch01PostRumbler2(RumblerChainEvent):
     def __init__(
         self, player, tile, params=None, repeat=False, name="Ch01_PostRumbler2"
     ):
@@ -588,6 +654,8 @@ class Ch01PostRumbler2(Event):
         )
 
     def check_combat_conditions(self):
+        if not self.in_arming_fight():
+            return
         if self.player.get_hp_pcnt() < 0.3:
             self.pass_conditions_to_process()
 
@@ -664,7 +732,7 @@ class Ch01PostRumbler2(Event):
         )
 
 
-class Ch01PostRumbler3(Event):
+class Ch01PostRumbler3(RumblerChainEvent):
     def __init__(
         self, player, tile, params=None, repeat=False, name="Ch01_PostRumbler3"
     ):
@@ -689,6 +757,8 @@ class Ch01PostRumbler3(Event):
         self._stage = 1
 
     def check_combat_conditions(self):
+        if not self.in_arming_fight():
+            return
         # Fire only after Jean has defeated all enemies (combat_list empty)
         if not self.completed and not self.player.combat_list:
             self.pass_conditions_to_process()
@@ -763,6 +833,10 @@ class Ch01PostRumbler3(Event):
         add_enemies_to_combat(self.player, new_enemies)
 
         self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
+        # The ambush chain is resolved: nothing in it may fire again, even if a
+        # stale copy of one of its events survives on player.combat_events
+        # (issue #506).
+        self.set_chain_flag("0")
         self.needs_input = False
         self.completed = True
         # non-repeating: remove manually since this is a combat_effect event, not a tile event

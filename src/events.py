@@ -6,6 +6,68 @@ Combat states to be used within combat module. May also spill over to the standa
 from typing import Optional
 
 
+def tile_identity(tile):
+    """Stable ``(map name, x, y)`` identity for a tile, or ``None`` if unknown.
+
+    Used to scope combat-effect events to the fight/room they were armed in
+    (issue #506). Object identity is useless here — events outlive their tile
+    objects across a save/load — and ``Event.tile`` is not usable either:
+    ``GameService.trigger_combat_events`` rebinds it to the player's *current*
+    room before every evaluation, so an event that leaked into another fight
+    reports that fight's tile as its own.
+
+    Returns ``None`` for anything that is not a real positioned tile (a missing
+    tile, or a test double whose coordinates are not integers). Callers must
+    read ``None`` as *unknown* and fall back to their permissive behaviour
+    rather than guessing that two tiles differ.
+    """
+    x = getattr(tile, "x", None)
+    y = getattr(tile, "y", None)
+    if not isinstance(x, int) or not isinstance(y, int):
+        return None
+    tile_map = getattr(tile, "map", None)
+    map_name = tile_map.get("name") if isinstance(tile_map, dict) else None
+    return (map_name, x, y)
+
+
+def purge_orphaned_combat_events(player, current_tile=None):
+    """Drop combat-effect events armed in a room the player is no longer in.
+
+    ``player.combat_events`` is process-wide and was never cleared by any
+    teardown path, so a chain armed in one fight stayed armed forever and its
+    gates — pure global predicates like "combat_list is empty" — fired in
+    whatever unrelated fight came next (issue #506).
+
+    Purging is by *origin room mismatch*, never blanket-clearing: an event
+    legitimately mid-fight must survive a wave transition, which reaches
+    teardown-adjacent code with ``reinit=True``. Events whose origin or the
+    current room cannot be identified are left alone.
+
+    Returns the list of events removed.
+    """
+    events = getattr(player, "combat_events", None)
+    if not events:
+        return []
+    if current_tile is None:
+        current_tile = getattr(player, "current_room", None)
+    here = tile_identity(current_tile)
+    if here is None:
+        return []
+    removed = []
+    for event in list(events):
+        if not getattr(event, "combat_effect", False):
+            continue
+        origin = getattr(event, "origin_tile_key", None)
+        if origin is None or origin == here:
+            continue
+        try:
+            events.remove(event)
+        except ValueError:  # pragma: no cover - concurrent removal
+            continue
+        removed.append(event)
+    return removed
+
+
 class Event:  # master class for all events
     """
     Events are added to tiles much like NPCs and items. These are evaluated each game loop to see if the conditions
@@ -57,6 +119,10 @@ class Event:  # master class for all events
         self.completed = False
         self.api_event_id = None
         self.needs_input = False
+        # Room this event was armed in, captured before anything can rebind
+        # `self.tile` (issue #506). See tile_identity() for why the raw tile
+        # reference cannot serve this purpose.
+        self.origin_tile_key = tile_identity(tile)
 
     def pass_conditions_to_process(self):
         self.process()
