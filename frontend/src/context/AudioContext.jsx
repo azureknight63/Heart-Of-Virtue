@@ -73,7 +73,8 @@ const BGM_MAP = {
     'memory_flash': getAssetPath('/assets/sounds/memory_flash.mp3'),
     'mineral_pools': getAssetPath('/assets/sounds/bgm_mineral_pools.wav'),
     'nomad_camp': getAssetPath('/assets/sounds/bgm_nomad_camp.mp3'),
-    'jambos_tent': getAssetPath('/assets/sounds/bgm_jambos_tent.mp3'),
+    'jambos_tent': getAssetPath('/assets/sounds/bgm/Jambo Heals U.mp3'),
+    'iron_and_oath': getAssetPath('/assets/sounds/bgm/We Got The Gear.mp3'),
     'dream_space': getAssetPath('/assets/sounds/bgm_dream_space.wav'),
 };
 

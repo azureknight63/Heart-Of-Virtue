@@ -3967,6 +3967,7 @@
         "id": "tile_4_3",
         "title": "Tradepost",
         "description": "A wooden scaffold holds up tent canvas in what must be the most architecturally abundant section of the camp. Lines of racks lean against the large wooden poles staked into the ground, holding a variety of armaments and protective gear.\nWide furrows of dirt cut through patches of grass - evidence of frequent traffic. People walk back and forth through this area, examining wares in casual conversation.",
+        "bgm": "iron_and_oath",
         "exits": [
             "north",
             "west",

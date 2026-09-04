@@ -88,6 +88,20 @@ describe('AudioContext', () => {
         expect(bgmElement.play).toHaveBeenCalledTimes(2);
     });
 
+    it.each([
+        ['jambos_tent', 'Jambo Heals U.mp3'],
+        ['iron_and_oath', 'We Got The Gear.mp3'],
+    ])('loads the titled asset for the %s location track', (trackName, filename) => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playBGM(trackName); });
+
+        const bgmElement = global.__audioInstances[0];
+        expect(bgmElement.src).toContain(`sounds/bgm/${filename}`);
+        expect(bgmElement.play).toHaveBeenCalledTimes(1);
+    });
+
     it('ignores a request to play the track that is already playing', () => {
         // The early-return guard is what stops a re-render from restarting the
         // map theme from the top on every poll.
