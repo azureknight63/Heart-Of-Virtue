@@ -137,10 +137,16 @@ cd frontend && npm test
 # Frontend with coverage
 cd frontend && npm test -- --run --coverage
 # View at frontend/coverage/index.html
+
+# Lint (the only Python style gate — same command CI runs)
+python -m flake8 --extend-ignore=E501 src/
 ```
 
 Use `python -m pytest` rather than bare `pytest` — the virtualenv may not expose the
 `pytest` binary on PATH, causing silent import failures.
+
+There is no Python autoformatter. flake8 is the whole Python lint gate; `src/` is not
+kept in any formatter's style (see Coding Conventions → Python).
 
 Known Windows-environment failures (present on clean master — not regressions):
 `test_secure_pickle.py::test_allowlist_manifest_matches_code`,
@@ -261,7 +267,7 @@ See `docs/coverage/coverage-dashboard.md` for:
 - Docstrings on public methods (existing style — don't strip them)
 - Conventional Commits format: `refactor(backend):`, `feat(frontend):`, `fix(states):`, etc.
 - Debug statements marked `###DEBUG###` — don't leave new ones in
-- black formats `src/` (plus explicitly named files) only — never run `black tests/`; the test tree is not kept black-formatted and a blanket run churns ~250 files
+- **No autoformatter.** flake8 (`python -m flake8 --extend-ignore=E501 src/`) is the only Python style gate; match the surrounding file's formatting by hand. black was configured but never installed or enforced, and 69 of 119 files in `src/` did not conform — issue #501 dropped it rather than reformat the tree. Don't reintroduce it (or any formatter) without a maintainer decision, and don't run a formatter over `src/` or `tests/` as a side effect of another change.
 - Error handling: try/except with logging; prefer silent recovery over crashing the game loop
 - Do not add type annotations to files that don't already use them heavily
 - **All local imports use the canonical `src.` path** (`from src.items import Item`, `import src.functions as functions`) — including dynamic ones (`importlib.import_module("src.tiles")`) and `patch()` target strings. Never import an engine module by bare name: bare imports create a *duplicate module object* (separate classes, separate module-level state) whenever `src/` lands on `sys.path`, silently breaking `isinstance` checks and registries across the API/engine boundary. Enforced by `tests/test_no_bare_local_imports.py` (static AST scan) and `tests/test_import_sync_production.py` (production-entry subprocess). Persisted data is the one exception: map JSON `__module__` fields and legacy pickles store bare names by contract — resolve them through `functions.canonical_module_name()` (used by `Universe._deserialize_saved_instance` and `SafeUnpickler`).

@@ -48,7 +48,7 @@ def test_on_join_missing_session_id_emits_error():
     handlers = _register_and_capture_handlers()
     with patch("src.api.sockets.emit") as mock_emit:
         handlers["join_combat"]({})
-    mock_emit.assert_called_once_with("error", {"message": "Missing session_id"})
+    mock_emit.assert_called_once_with("error", {"message": "Missing or invalid session credentials"})
 
 
 def test_on_join_invalid_session_emits_error():
@@ -78,8 +78,10 @@ def test_on_join_valid_session_joins_room_and_emits(caplog):
             handlers["join_combat"]({"session_id": "abc"})
 
     mock_join_room.assert_called_once_with("combat_abc")
-    mock_emit.assert_called_once_with("joined_combat", {"room": "combat_abc"})
-    assert "joined room combat_abc" in caplog.text
+    mock_emit.assert_called_once_with("joined_combat", {"joined": True})
+    # The room name embeds the session id, so it must NOT be logged.
+    assert "combat_abc" not in caplog.text
+    assert "joined its combat room" in caplog.text
 
 
 def test_on_leave_with_session_id_leaves_room_and_emits(caplog):
@@ -94,8 +96,10 @@ def test_on_leave_with_session_id_leaves_room_and_emits(caplog):
             handlers["leave_combat"]({"session_id": "abc"})
 
     mock_leave_room.assert_called_once_with("combat_abc")
-    mock_emit.assert_called_once_with("left_combat", {"room": "combat_abc"})
-    assert "left room combat_abc" in caplog.text
+    mock_emit.assert_called_once_with("left_combat", {"left": True})
+    # See on_join: the credential must not reach the log file.
+    assert "combat_abc" not in caplog.text
+    assert "left its combat room" in caplog.text
 
 
 def test_on_leave_without_session_id_is_a_noop():

@@ -31,6 +31,17 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
 
+    # The HttpOnly session cookie that replaced the localStorage auth token
+    # (issue #493). It reuses the four cookie-policy keys above rather than
+    # restating them; only the name and path are its own. The name is separate
+    # from Flask's SESSION_COOKIE_NAME on purpose — that key renames Flask's own
+    # signed-session cookie, which this app does not use today but might.
+    AUTH_COOKIE_NAME = "hov_session"
+    # Path=/ because the Socket.IO handshake is served from the app root, not
+    # from under the SPA's base path, and it authenticates by reading this
+    # cookie. See src/api/session_cookie.py.
+    AUTH_COOKIE_PATH = "/"
+
     # CORS settings
     CORS_ORIGINS = [
         "http://localhost:3000",
@@ -38,6 +49,20 @@ class Config:
         "http://localhost:3001",
         "http://127.0.0.1:3001",
     ]
+
+    # Content-Security-Policy (issue #492). Delivered as a response header by
+    # src/api/security_headers.py. Report-only during the rollout: browsers
+    # report what *would* have been blocked without blocking anything, so a
+    # missed source can't take the game down. See
+    # docs/development/csp-rollout.md for the checklist that gates the flip to
+    # enforcing.
+    CSP_ENABLED = True
+    CSP_REPORT_ONLY = True
+    CSP_REPORT_URI = "/api/logs/csp-report"
+    # Relaxations the Vite dev server needs (an inline React-Refresh preamble it
+    # injects into the document, plus the dev client's websocket). Default off
+    # so a config that forgets to opt out never ships 'unsafe-inline' scripts.
+    CSP_DEV_RELAXATIONS = False
 
     # API settings
     JSON_SORT_KEYS = False
@@ -60,6 +85,7 @@ class DevelopmentConfig(Config):
 
     DEBUG = True
     TESTING = False
+    CSP_DEV_RELAXATIONS = True
 
 
 class TestingConfig(Config):
@@ -68,6 +94,7 @@ class TestingConfig(Config):
     DEBUG = True
     TESTING = True
     WTF_CSRF_ENABLED = False
+    CSP_DEV_RELAXATIONS = True
 
 
 class ProductionConfig(Config):
@@ -75,6 +102,12 @@ class ProductionConfig(Config):
 
     DEBUG = False
     SESSION_COOKIE_SECURE = True
+    # Never relax script-src in production — the built SPA has no inline scripts.
+    CSP_DEV_RELAXATIONS = False
+    # The deployed API lives under the SPA's base path, so the report URI the
+    # browser resolves has to carry that prefix. The base-class default is the
+    # bare `/api/...` a local server answers on.
+    CSP_REPORT_URI = "/games/HeartOfVirtue/api/logs/csp-report"
     CORS_ORIGINS = ["https://nexusfidei.dev"]
     # Keep SocketIO CORS in lockstep with the HTTP CORS origins. The base class
     # binds SOCKETIO_CORS_ALLOWED_ORIGINS to the (localhost) CORS_ORIGINS at

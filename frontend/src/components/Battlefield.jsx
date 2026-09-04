@@ -43,7 +43,7 @@ function anyEnemyOffScreen(state) {
   return false;
 }
 
-export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1 }) {
+export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1, isReloadRecovery = false }) {
   const beatTimelineEnabled = useFeatureFlag('beatTimeline')
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(VIEW_MODE_FOLLOW)
@@ -254,6 +254,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           combatId={combat?.combat_id}
           combatActive={combat?.combat_active}
           allBeatStates={accBeatStates}
+          /* eslint-disable-next-line react-hooks/refs -- baseOffsetRef is written by the same setAccBeatStates updater that produces accBeatStates, so offset and window are one value; promoting it to state would render one frame pairing a new window with the old offset, jumping the grid to the wrong beat. */
           currentBeatIndex={baseOffsetRef.current + (currentLogIndex ?? 0)}
           combatLog={combat?.log || []}
           tab={selectedTab}
@@ -261,6 +262,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
           mapSize={combat?.map_size}
+          isReloadRecovery={isReloadRecovery}
           onAnimatingChange={onAnimatingChange}
           streaming={streaming}
           streamedAnimations={streamedAnimations}

@@ -186,7 +186,7 @@ class TestAuthRouteRequireAuth:
         assert response.status_code == 401
         assert response.get_json() == {
             "success": False,
-            "error": "Missing or invalid Authorization header",
+            "error": "Missing or invalid session credentials",
         }
 
     @pytest.mark.parametrize(
@@ -200,7 +200,7 @@ class TestAuthRouteRequireAuth:
         assert response.status_code == 401
         assert (
             response.get_json()["error"]
-            == "Missing or invalid Authorization header"
+            == "Missing or invalid session credentials"
         )
 
     def test_require_auth_rejects_a_well_formed_but_unknown_token(self, client):
@@ -522,11 +522,16 @@ class TestAuthRoutes:
         # The reply must not disclose which half was wrong, nor echo the secret.
         assert "badpass" not in response.get_data(as_text=True)
 
-    def test_logout_endpoint_unauthorized(self, client):
-        """Test logout without auth token."""
+    def test_logout_without_credentials_still_succeeds(self, client):
+        """Logout deliberately does not require auth.
+
+        Since #493 the credential is an HttpOnly cookie the page cannot clear
+        itself, so a 401 here left an expired browser permanently stranded.
+        Logout now always clears and returns 200; there is nothing to protect,
+        because the only effect is ending a session the caller already holds.
+        """
         response = client.post('/api/auth/logout')
-        # Should require authorization
-        assert response.status_code in [401, 403]
+        assert response.status_code == 200
 
     def test_register_endpoint_missing_fields(self, client):
         """Test register without required fields."""
@@ -1151,7 +1156,7 @@ class TestRouteErrorResponses:
         assert response.status_code == 401
         assert response.get_json() == {
             "success": False,
-            "error": "Missing or invalid Authorization header",
+            "error": "Missing or invalid session credentials",
         }
 
 

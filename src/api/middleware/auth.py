@@ -1,6 +1,7 @@
 """Shared session/auth resolution for API routes."""
 
-from flask import current_app, jsonify, request
+from flask import current_app, g, jsonify, request
+from src.api.session_cookie import session_id_from_cookie
 
 
 def _bearer_token():
@@ -8,11 +9,41 @@ def _bearer_token():
 
     Returns the raw token string, or None if the header is missing or not a
     well-formed ``Bearer <token>`` value.
+
+    A bare ``Bearer `` with nothing after it yields None rather than "": the
+    callers gate on ``is None``, so an empty string would sail past the guard
+    and reach ``get_session("")``. This mirrors ``session_id_from_cookie``,
+    which normalises an empty cookie to None for the same reason.
     """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
-    return auth_header[7:]
+    return auth_header[7:] or None
+
+
+def session_token():
+    """The session id for this request: ``HttpOnly`` cookie first, header second.
+
+    Browsers stopped sending ``Authorization`` when the session moved into a
+    cookie (issue #493), so the cookie is the real path. The Bearer header is
+    kept as a deliberate fallback rather than deleted, for the clients that
+    have no cookie jar and no browser to put one in:
+
+    * the bug-hunt harness and the API-only Inquisitor mode, which hold a
+      session id returned by ``/api/test/session`` and replay it explicitly;
+    * the several hundred route tests that build a header by hand;
+    * any future non-browser consumer of this API.
+
+    Keeping it costs nothing in the threat model this issue is about: the point
+    of #493 is that *the browser* no longer keeps a credential where script can
+    read it. A caller that already holds the session id and chooses to send it
+    in a header is not the attacker this defends against.
+
+    The cookie wins when both are present. A stale ``Authorization`` header left
+    over from a previous sign-in must never override the cookie the browser was
+    just issued.
+    """
+    return session_id_from_cookie() or _bearer_token()
 
 
 def resolve_session():
@@ -20,7 +51,8 @@ def resolve_session():
 
     Session-only counterpart to :func:`get_session_and_player`: does NOT
     require (or fetch) a player, so it suits session-scoped routes such as
-    logout and validate. Reads the Bearer token from the Authorization header.
+    logout and validate. Reads the session id via :func:`session_token`
+    (``HttpOnly`` cookie, then Authorization header).
 
     Returns:
         Tuple of (session_manager, session, error) on success, where error is
@@ -28,12 +60,12 @@ def resolve_session():
         (response, status_code) tuple the caller should return immediately
         (e.g. ``if error: return error``).
     """
-    token = _bearer_token()
+    token = session_token()
     if token is None:
         return (
             None,
             None,
-            (jsonify({"success": False, "error": "Missing or invalid Authorization header"}), 401),
+            (jsonify({"success": False, "error": "Missing or invalid session credentials"}), 401),
         )
 
     session_manager = current_app.session_manager
@@ -52,13 +84,23 @@ def resolve_session():
             (jsonify({"success": False, "error": "Session not found or already expired"}), 401),
         )
 
+    # Record what we resolved so the sliding-cookie hook in create_app can
+    # re-issue the cookie without doing a second session lookup. Only the
+    # cookie path is marked: a Bearer caller has no cookie jar to refresh.
+    try:
+        g.hov_session = session
+        g.hov_session_from_cookie = session_id_from_cookie() is not None
+    except RuntimeError:  # outside an app context (direct unit calls)
+        pass
+
     return session_manager, session, None
 
 
 def get_session_and_player():
     """Resolve the session manager, session, and player for the current request.
 
-    Reads the Bearer token from the request's Authorization header.
+    Reads the session id via :func:`session_token` (``HttpOnly`` cookie, then
+    Authorization header).
 
     Returns:
         Tuple of (session_manager, session, player, error) on success, where
@@ -66,13 +108,13 @@ def get_session_and_player():
         error is a (response, status_code) tuple the caller should return
         immediately (e.g. ``if error: return error``).
     """
-    session_id = _bearer_token()
+    session_id = session_token()
     if session_id is None:
         return (
             None,
             None,
             None,
-            (jsonify({"success": False, "error": "Missing or invalid Authorization header"}), 401),
+            (jsonify({"success": False, "error": "Missing or invalid session credentials"}), 401),
         )
 
     session_manager = current_app.session_manager

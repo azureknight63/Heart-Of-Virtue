@@ -51,22 +51,28 @@ describe('AuthContext', () => {
     consoleSpy.mockRestore()
   })
 
-  it('starts unauthenticated when there is no stored token', () => {
+  it('starts unauthenticated when there is no stored session marker', () => {
     render(<AuthProvider><AuthConsumer /></AuthProvider>)
     expect(screen.getByTestId('authed').textContent).toBe('false')
     expect(screen.getByTestId('loading').textContent).toBe('false')
     expect(screen.getByTestId('username').textContent).toBe('none')
   })
 
-  it('hydrates as authenticated when a token is already stored', () => {
-    localStorage.setItem('authToken', 'tok-1')
+  it('hydrates as authenticated from the stored username', () => {
+    // Since #493 the credential is an HttpOnly cookie the page cannot read, so
+    // the stored username is what hydration keys on.
     localStorage.setItem('username', 'gorran')
     render(<AuthProvider><AuthConsumer /></AuthProvider>)
     expect(screen.getByTestId('authed').textContent).toBe('true')
     expect(screen.getByTestId('username').textContent).toBe('gorran')
   })
 
-  it('logs in successfully, storing the session and marking authenticated', async () => {
+  it('logs in without ever storing the session id', async () => {
+    // The response still carries session_id for non-browser callers. Writing it
+    // to localStorage is exactly what #493 removed, so this asserts its
+    // absence rather than its value — the cookie set on the same response is
+    // the credential.
+    localStorage.setItem('authToken', 'pre-493-leftover')
     apiEndpoints.auth.login.mockResolvedValue({ data: { data: { session_id: 'sess-1' }, success: true } })
     render(<AuthProvider><AuthConsumer /></AuthProvider>)
 
@@ -75,14 +81,13 @@ describe('AuthContext', () => {
     })
 
     expect(apiEndpoints.auth.login).toHaveBeenCalledWith('jean', 'pw')
-    expect(localStorage.getItem('authToken')).toBe('sess-1')
+    expect(localStorage.getItem('authToken')).toBeNull()
     expect(localStorage.getItem('username')).toBe('jean')
     expect(screen.getByTestId('authed').textContent).toBe('true')
     expect(screen.getByTestId('username').textContent).toBe('jean')
   })
 
   it('clears auth state and rethrows when login fails', async () => {
-    localStorage.setItem('authToken', 'stale')
     localStorage.setItem('username', 'stale-user')
     apiEndpoints.auth.login.mockRejectedValue(new Error('bad credentials'))
 
@@ -112,7 +117,7 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('username').textContent).toBe('none')
   })
 
-  it('registers successfully, storing the session and marking authenticated', async () => {
+  it('registers without ever storing the session id', async () => {
     apiEndpoints.auth.register.mockResolvedValue({ data: { data: { session_id: 'sess-2' } } })
     render(<AuthProvider><AuthConsumer /></AuthProvider>)
 
@@ -121,7 +126,8 @@ describe('AuthContext', () => {
     })
 
     expect(apiEndpoints.auth.register).toHaveBeenCalledWith('jean', 'pw', 'jean@example.com')
-    expect(localStorage.getItem('authToken')).toBe('sess-2')
+    expect(localStorage.getItem('authToken')).toBeNull()
+    expect(localStorage.getItem('username')).toBe('jean')
     expect(screen.getByTestId('authed').textContent).toBe('true')
   })
 
@@ -137,7 +143,9 @@ describe('AuthContext', () => {
   })
 
   it('logs out, clears storage, and redirects to the login page', async () => {
-    localStorage.setItem('authToken', 'tok-1')
+    // A pre-#493 token may still be sitting in storage on an upgrading browser;
+    // logout has to take it with everything else.
+    localStorage.setItem('authToken', 'pre-493-leftover')
     localStorage.setItem('username', 'jean')
     apiEndpoints.auth.logout.mockResolvedValue()
 
@@ -149,8 +157,9 @@ describe('AuthContext', () => {
       fireEvent.click(screen.getByText('logout'))
     })
 
-    // Exactly one server-side logout, and it takes no arguments — the token
-    // travels on the axios auth header, not in the body.
+    // Exactly one server-side logout, and it takes no arguments — the session
+    // travels as the HttpOnly cookie, not in the body. That request is also the
+    // only thing that can expire the cookie, which is why it is not optional.
     expect(apiEndpoints.auth.logout).toHaveBeenCalledTimes(1)
     expect(apiEndpoints.auth.logout).toHaveBeenCalledWith()
     expect(screen.getByTestId('authed').textContent).toBe('false')
@@ -161,7 +170,7 @@ describe('AuthContext', () => {
 
   it('falls back to a root base path when BASE_URL is unset', async () => {
     vi.stubEnv('BASE_URL', '')
-    localStorage.setItem('authToken', 'tok-1')
+    localStorage.setItem('username', 'jean')
     apiEndpoints.auth.logout.mockResolvedValue()
 
     delete window.location
@@ -176,7 +185,8 @@ describe('AuthContext', () => {
   })
 
   it('still clears state and redirects when the logout request fails', async () => {
-    localStorage.setItem('authToken', 'tok-1')
+    localStorage.setItem('username', 'jean')
+    localStorage.setItem('authToken', 'pre-493-leftover')
     apiEndpoints.auth.logout.mockRejectedValue(new Error('network error'))
 
     delete window.location
@@ -196,7 +206,6 @@ describe('AuthContext', () => {
     render(<AuthProvider><AuthConsumer /></AuthProvider>)
     expect(screen.getByTestId('authed').textContent).toBe('false')
 
-    localStorage.setItem('authToken', 'tok-later')
     localStorage.setItem('username', 'later-user')
 
     await act(async () => {

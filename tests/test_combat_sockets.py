@@ -7,6 +7,8 @@ docs/development/combat-streaming-plan.md.
 
 from unittest.mock import MagicMock
 
+import json
+
 import pytest
 
 from src.api.app import create_app
@@ -57,7 +59,10 @@ def test_join_combat_valid_session_joins_room(socket_app):
 
     assert "joined_combat" in _event_names(received)
     joined = next(m for m in received if m["name"] == "joined_combat")
-    assert joined["args"][0]["room"] == "combat_good-session"
+    # The room name embeds the session id, which IS the credential. The ack
+    # must confirm the join without handing that value back to page script.
+    assert joined["args"][0] == {"joined": True}
+    assert "good-session" not in json.dumps(joined)
 
 
 def test_join_combat_invalid_session_emits_error(socket_app):

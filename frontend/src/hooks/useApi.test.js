@@ -63,14 +63,16 @@ describe('useAuth', () => {
     localStorage.clear();
   });
 
-  it('initializes with token from localStorage', () => {
-    localStorage.setItem('authToken', 'test-token');
+  it('initializes as signed in from the stored username', () => {
+    // Since #493 there is no readable credential to initialize from — the
+    // session is an HttpOnly cookie. The stored username is the marker.
+    localStorage.setItem('username', 'jean');
     const { result } = renderHook(() => useAuth(), { wrapper });
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.loading).toBe(false);
   });
 
-  it('logs in successfully', async () => {
+  it('logs in successfully without storing the session id', async () => {
     const mockResponse = { data: { data: { session_id: 'new-token' } } };
     apiEndpoints.auth.login.mockResolvedValue(mockResponse);
 
@@ -80,12 +82,15 @@ describe('useAuth', () => {
       await result.current.login('user', 'pass');
     });
 
-    expect(localStorage.getItem('authToken')).toBe('new-token');
+    // The id is still in the body for non-browser callers; writing it to
+    // localStorage would restore exactly the script-readable copy #493 removed.
+    expect(localStorage.getItem('authToken')).toBeNull();
+    expect(localStorage.getItem('username')).toBe('user');
     expect(result.current.isAuthenticated).toBe(true);
   });
 
   it('logs out successfully', async () => {
-    localStorage.setItem('authToken', 'test-token');
+    localStorage.setItem('username', 'jean');
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     // Mock window.location
@@ -437,6 +442,69 @@ describe('useCombat', () => {
 
     expect(response).toEqual({ success: false, error: 'no viable targets' });
     expect(result.current.combat.turn).toBe(1); // unchanged
+  });
+
+  it('reports a success:false refusal to onActionRefused without touching combat state', async () => {
+    // The route answers an in-game refusal with HTTP 200 + success:false and no
+    // state payload (src/api/routes/combat.py). Swallowing it silently is what
+    // made every combat button look dead with nothing on screen to explain why
+    // (issue #505): the state must stay put AND the refusal must be reported.
+    apiEndpoints.combat.getStatus.mockResolvedValue({ data: { battle_state: { turn: 1 }, combat_active: true } });
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: { success: false, error: 'Not enough fatigue' },
+    });
+
+    const onActionRefused = vi.fn();
+    const { result } = renderHook(() => useCombat(false, { onActionRefused }));
+    await act(async () => { await result.current.fetchCombatStatus(); });
+
+    await act(async () => {
+      await result.current.performAction('move', { move_id: '0' });
+    });
+
+    expect(onActionRefused).toHaveBeenCalledTimes(1);
+    expect(onActionRefused).toHaveBeenCalledWith({ success: false, error: 'Not enough fatigue' });
+    expect(result.current.combat.turn).toBe(1); // unchanged
+    expect(result.current.inCombat).toBe(true); // not dropped out of combat
+  });
+
+  it('does not report a successful action as a refusal', async () => {
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: { success: true, combat_active: true, battle_state: { turn: 2 }, log: [] },
+    });
+
+    const onActionRefused = vi.fn();
+    const { result } = renderHook(() => useCombat(false, { onActionRefused }));
+    await act(async () => {
+      await result.current.performAction('move', { move_id: '0' });
+    });
+
+    expect(onActionRefused).not.toHaveBeenCalled();
+    expect(result.current.combat.turn).toBe(2);
+  });
+
+  it('uses the latest onActionRefused without rebuilding performAction', async () => {
+    // The callback is held in a ref precisely so an inline arrow from the caller
+    // does not change performAction's identity on every render — which would
+    // invalidate every memo downstream of it.
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: { success: false, error: 'Event pending' },
+    });
+
+    const first = vi.fn();
+    const second = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ cb }) => useCombat(false, { onActionRefused: cb }),
+      { initialProps: { cb: first } }
+    );
+    const performActionBefore = result.current.performAction;
+
+    rerender({ cb: second });
+    expect(result.current.performAction).toBe(performActionBefore);
+
+    await act(async () => { await result.current.performAction('move', {}); });
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledWith({ success: false, error: 'Event pending' });
   });
 
   it('logs and rethrows when performAction fails', async () => {

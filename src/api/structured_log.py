@@ -39,6 +39,7 @@ from pathlib import Path
 
 from flask import g, request
 
+from src.api.middleware.auth import session_token
 from src.api.utils.log_cleanup import LogCleanupManager
 
 # Marker attribute stamped on handlers this module installs, so reconfiguring
@@ -247,11 +248,15 @@ def log_event(event, *, level=logging.INFO, logger="hov", **data):
     logger.log(level, event, extra={"event": event, "data": data})
 
 
-def _session_fingerprint(auth_header):
-    """Short, stable, non-reversible id for a Bearer token (never the token)."""
-    if not auth_header.startswith("Bearer "):
-        return None
-    token = auth_header[7:]
+def _session_fingerprint(token):
+    """Short, stable, non-reversible id for a session id (never the id).
+
+    Takes the bare session id, not an ``Authorization`` header: since #493 the
+    browser authenticates with an HttpOnly cookie and sends no header at all,
+    so the caller resolves the credential via ``session_token()`` first. The
+    hash is unchanged — it was always computed over the bare token — so
+    fingerprints stay comparable with previously written log lines.
+    """
     if not token:
         return None
     return f"{zlib.crc32(token.encode('utf-8')) & 0xFFFF:04x}"
@@ -284,7 +289,11 @@ def _request_data(status):
         ),
         "request_id": getattr(g, "hov_request_id", None),
     }
-    session = _session_fingerprint(request.headers.get("Authorization", ""))
+    # Resolve through session_token(), not the raw header: since #493 the
+    # browser sends an HttpOnly cookie and no Authorization header at all, so
+    # reading the header directly silently drops the session field from every
+    # real player's request line and breaks `logcat --session`.
+    session = _session_fingerprint(session_token() or "")
     if session:
         data["session"] = session
     return data

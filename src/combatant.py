@@ -8,6 +8,9 @@ Provides:
     identical across Player and NPC.
   - exp_needed_for_level(): the single leveling curve shared by the Player and
     ally NPC progression.
+  - the ``_pending_animation`` channel's attribute and key names, single-sourced
+    for the engine (src/moves/_base.py) and the API (src/api/combat_adapter.py)
+    that share the channel — see the comment block below.
 
 Usage (in each subclass __init__):
     self._init_resistances()
@@ -22,6 +25,34 @@ MOVE_STAGE_PREP = 0
 MOVE_STAGE_EXECUTE = 1
 MOVE_STAGE_RECOIL = 2
 MOVE_STAGE_COOLDOWN = 3
+
+#: ── The ``_pending_animation`` channel's names, single-sourced ──────────────
+#:
+#: ``entity._pending_animation`` is the per-combatant animation channel: a dict
+#: the API adapter arms at cast time, the engine publishes resolutions into,
+#: and ``Combatant.__getstate__`` below strips at pickle time. Its attribute
+#: name and its two engine-written keys are therefore MIRRORED across the
+#: engine/API boundary -- ``src.moves._base.publish_outcome`` writes ``outcome``
+#: and ``outcome_target``; ``src.api.combat_adapter`` arms, snapshots, emits and
+#: deletes the dict. Spelled as bare literals on both sides, a rename or a typo
+#: on either one is silent: the channel simply stops resolving, with no error
+#: and no failing test. Naming them once here removes that failure mode.
+#:
+#: This module is the home rather than ``src/moves/_base.py`` because
+#: ``moves/_base`` already imports this module -- defining them there and
+#: importing them back would be an import cycle. Both sides of the boundary
+#: already import ``src.combatant``, and ``Combatant`` is what the attribute
+#: actually hangs off.
+#:
+#: The channel's full lifecycle -- every writer, all three deletion points, and
+#: what each key means -- is documented in one block in
+#: ``src/api/combat_adapter.py``. Nothing in the engine reads
+#: ``REPORTED_BEAT_KEY`` (it is adapter bookkeeping), but it is minted here too
+#: so the channel's whole key vocabulary has a single home.
+PENDING_ANIMATION_ATTR = "_pending_animation"
+OUTCOME_KEY = "outcome"
+OUTCOME_TARGET_KEY = "outcome_target"
+REPORTED_BEAT_KEY = "_reported_beat"
 
 
 def move_in_progress(combatant):
@@ -114,7 +145,7 @@ class Combatant:
         reaches every combatant structurally.
         """
         state = self.__dict__.copy()
-        state.pop("_pending_animation", None)
+        state.pop(PENDING_ANIMATION_ATTR, None)
         return state
 
     def _init_resistances(self):

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { AUTH_TOKEN_KEY, clearLocalSession } from '../utils/session'
+import { redirectToLogin } from '../utils/session'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -8,16 +8,22 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // The session credential is an HttpOnly cookie the API issues at login
+  // (issue #493), not a token this code can read, so every request has to opt
+  // into sending cookies. Same-origin requests would carry it anyway; this
+  // matters for a dev setup that points VITE_API_URL straight at the API port,
+  // which is cross-origin and drops cookies without it. The server side of the
+  // same contract is Flask-CORS `supports_credentials=True` against a concrete
+  // origin list — a credentialed request is refused outright against `*`.
+  withCredentials: true,
 })
 
-// Add auth token to requests
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY)
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
+// No request interceptor attaches a credential any more. The session used to
+// live in localStorage under `authToken` and be replayed as
+// `Authorization: Bearer <session_id>`, which made it readable by any script on
+// the origin; it is now a cookie the browser attaches and JavaScript cannot
+// touch. The API still accepts the Bearer form for non-browser callers (the QA
+// harnesses) — see `session_token` in src/api/middleware/auth.py.
 
 // Handle auth errors
 apiClient.interceptors.response.use(
@@ -27,11 +33,11 @@ apiClient.interceptors.response.use(
     // This allows the login page to handle its own 401s (bad credentials)
     // without triggering a circular redirect/reload.
     if (error.response?.status === 401 && !window.location.pathname.includes('/login')) {
-      // Shared with logout() rather than restated: the key list is the
-      // invariant, and a comment saying "match logout()" was the only thing
-      // keeping the two in step.
-      clearLocalSession()
-      window.location.href = `${import.meta.env.BASE_URL}login`
+      // Clears the client-side *markers* of a session (and any legacy
+      // `authToken` left over from before #493). The credential itself is the
+      // HttpOnly cookie, which only the server can expire — logout does that;
+      // a 401 means it is already dead.
+      redirectToLogin()
     }
     return Promise.reject(error)
   }

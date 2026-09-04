@@ -8,6 +8,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 from src.api.config import DevelopmentConfig, combat_socket_streaming_enabled
 from src.api.services import SessionManager, GameService
+from src.api.security_headers import register_security_headers
 from src.api.structured_log import configure_logging, init_request_logging
 import src.universe as universe_module
 
@@ -72,6 +73,33 @@ def create_app(config_class=None):
 
     # One canonical http.request log line per request (structured_log.py)
     init_request_logging(app)
+
+    # Content-Security-Policy response header (issue #492). Report-only during
+    # the rollout — see src/api/security_headers.py for why the policy is a
+    # header rather than a <meta> tag, and which other servers also emit it.
+    register_security_headers(app)
+
+    @app.after_request
+    def _slide_session_cookie(response):
+        """Keep the cookie's lifetime in step with the sliding server session.
+
+        ``Session.update_access_time`` pushes ``expires_at`` out on every
+        authenticated request, but the cookie's ``Max-Age`` was fixed when it
+        was issued — so an active player's browser dropped the credential at
+        the 24h mark while the server session was still live. ``resolve_session``
+        records what it resolved on ``g``; this re-issues at most hourly.
+        """
+        from flask import g as _g
+        from src.api.session_cookie import refresh_session_cookie
+
+        session = getattr(_g, "hov_session", None)
+        if session is None or not getattr(_g, "hov_session_from_cookie", False):
+            return response
+        try:
+            return refresh_session_cookie(response, session, app=app)
+        except Exception:  # never let cookie upkeep break a response
+            app.logger.exception("Failed to refresh the session cookie")
+            return response
 
     # Initialize CORS - with explicit support for all methods
     CORS(
@@ -331,6 +359,12 @@ def create_app(config_class=None):
             origin = request.headers.get("Origin")
             if origin and origin in allowed:
                 response.headers["Access-Control-Allow-Origin"] = origin
+                # Since #493 the credential is a cookie, so the browser only
+                # sends it cross-origin when the preflight allows credentials.
+                # Flask-CORS's after_request short-circuits once ACAO is set,
+                # so it will not add this for us — without it every request
+                # fails in the cross-origin dev setup client.js supports.
+                response.headers["Access-Control-Allow-Credentials"] = "true"
                 response.headers["Access-Control-Allow-Methods"] = (
                     "GET, POST, PUT, DELETE, OPTIONS, PATCH"
                 )
@@ -363,13 +397,24 @@ def create_app(config_class=None):
 
         @app.route("/api/test/session", methods=["POST"])
         def test_create_session():
-            from flask import jsonify, request as _req
+            from flask import jsonify, make_response, request as _req
+            from src.api.session_cookie import set_session_cookie
 
-            username = (_req.get_json() or {}).get("username", "inquisitor_test")
+            # silent=True: harnesses POST this with no body and no JSON content
+            # type, which would otherwise raise 415 before the route ran.
+            username = (_req.get_json(silent=True) or {}).get(
+                "username", "inquisitor_test"
+            )
             session_id, _ = app.session_manager.create_session(username)
-            return (
-                jsonify({"session_id": session_id, "username": username}),
-                201,
+            # Set the same HttpOnly cookie a real login sets (issue #493), so a
+            # browser-driven QA run authenticates exactly the way a player does.
+            # The id stays in the body for the in-process harnesses, which send
+            # it back as a Bearer header instead of keeping a cookie jar.
+            return set_session_cookie(
+                make_response(
+                    jsonify({"session_id": session_id, "username": username}), 201
+                ),
+                session_id,
             )
 
         @app.route("/api/test/heal", methods=["POST"])

@@ -4,7 +4,17 @@ import { displayNameOf } from '../utils/combatMoveStatus'
 
 const STORAGE_KEY = 'hov_tactical_advisor_collapsed'
 
-export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false, onPause, onRequestSuggestions }) {
+/**
+ * @param {(moveName: string) => (string|null)} [blockedReasonFor] why the
+ *   server would refuse this suggestion right now, or null when it would
+ *   accept it. The advisor and `available_options` are independent server
+ *   derivations that do disagree (a suggested move with no fatigue left, for
+ *   one), and an ungated card POSTs an action the server answers with
+ *   `success:false` and no state change — indistinguishable from a dead UI
+ *   (issue #505). A blocked card is greyed and inert rather than hidden, so
+ *   the player can read why the move they wanted is unavailable.
+ */
+export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false, onPause, onRequestSuggestions, blockedReasonFor }) {
     const [isVisible, setIsVisible] = useState(false)
     const [isCollapsed, setIsCollapsed] = useState(() => {
         try { return localStorage.getItem(STORAGE_KEY) === 'true' } catch { return false }
@@ -20,6 +30,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
             const timer = setTimeout(() => setIsVisible(true), 500)
             return () => clearTimeout(timer)
         } else {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- hiding must be synchronous with the turn flipping, or the panel stays clickable during the enemy turn; only the 500ms reveal above can afford to be deferred.
             setIsVisible(false)
         }
     }, [isPlayerTurn]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -226,11 +237,15 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 ) : (
                     suggestions.map((s) => {
                         const suggestionKey = s.move_name || s.move_display_name;
-                        const isHovered = hoveredSuggestionName === suggestionKey;
+                        const blockedReason = blockedReasonFor?.(s.move_name) || null;
+                        const isHovered = !blockedReason && hoveredSuggestionName === suggestionKey;
                         return (
                         <div
                             key={suggestionKey}
+                            title={blockedReason || undefined}
+                            aria-disabled={blockedReason ? true : undefined}
                             onClick={() => {
+                                if (blockedReason) return;
                                 if (onTargetHover) onTargetHover(null);
                                 onSuggestClick?.(s);
                             }}
@@ -239,13 +254,15 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                                 backgroundColor: isHovered ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
                                 border: `1px solid ${isHovered ? colors.primary : 'rgba(0, 255, 136, 0.15)'}`,
                                 borderRadius: '4px',
-                                cursor: 'pointer',
+                                cursor: blockedReason ? 'not-allowed' : 'pointer',
+                                opacity: blockedReason ? 0.45 : 1,
                                 transition: 'all 0.2s ease',
                                 position: 'relative',
                                 overflow: 'hidden',
                                 boxShadow: isHovered ? `0 0 10px ${colors.primary}33` : 'none'
                             }}
                             onMouseEnter={() => {
+                                if (blockedReason) return;
                                 setHoveredSuggestionName(suggestionKey)
                                 if (s.target_id?.startsWith('enemy_') && onTargetHover) {
                                     onTargetHover(s.target_id);
@@ -277,6 +294,12 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                             <div style={{ fontSize: '11px', color: colors.text.muted, lineHeight: '1.4' }}>
                                 {s.reasoning}
                             </div>
+
+                            {blockedReason && (
+                                <div style={{ fontSize: '10px', color: colors.danger, marginTop: '6px', fontWeight: 'bold' }}>
+                                    UNAVAILABLE — {blockedReason}
+                                </div>
+                            )}
 
                             {/* Selection highlight bar */}
                             <div style={{

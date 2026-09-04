@@ -2,8 +2,13 @@
 
 import logging
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from src.api.middleware.auth import resolve_session
+from src.api.session_cookie import (
+    clear_session_cookie,
+    session_id_from_cookie,
+    set_session_cookie,
+)
 from src.api.rate_limiter import RateLimiter
 from src.api.services.auth_service import auth_service
 from functools import wraps
@@ -140,6 +145,25 @@ def require_auth(f):
     return sync_decorated
 
 
+def _is_browser_caller():
+    """True when the request looks like it came from a page, not a harness.
+
+    Login and register still return ``session_id`` in the body for the callers
+    that have no cookie jar — the bug-hunt harness, API-only Inquisitor mode
+    and the route tests. Browsers must not receive it: a script that lands an
+    XSS at sign-in would otherwise capture a portable 24h credential, which is
+    exactly the exposure the HttpOnly cookie exists to close. A page always
+    sends ``Origin`` on a same-origin POST, or already carries our cookie;
+    neither is true of the harnesses.
+    """
+    return bool(request.headers.get("Origin")) or session_id_from_cookie() is not None
+
+
+def _session_id_for_body(session_id):
+    """``session_id`` for non-browser callers, omitted for browsers."""
+    return {} if _is_browser_caller() else {"session_id": session_id}
+
+
 @auth_bp.route("/auth/register", methods=["POST"])
 async def register():
     """Create a new player account and session.
@@ -250,17 +274,24 @@ async def register():
             session_manager, username, user
         )
 
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "data": {
-                        "session_id": session_id,
-                        "message": "Account created successfully. Welcome!",
-                    },
-                }
+        # The session id also travels in an HttpOnly cookie (issue #493) — that
+        # is what the browser actually authenticates with from here on. It stays
+        # in the body as well for the non-browser callers documented on
+        # `middleware.auth.session_token`; the SPA no longer reads it.
+        return set_session_cookie(
+            make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "data": {
+                            **_session_id_for_body(session_id),
+                            "message": "Account created successfully. Welcome!",
+                        },
+                    }
+                ),
+                201,
             ),
-            201,
+            session_id,
         )
 
     except Exception:
@@ -370,17 +401,21 @@ async def login():
             session_manager, username, user
         )
 
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "data": {
-                        "session_id": session_id,
-                        "message": "Welcome back!",
-                    },
-                }
+        # See register() — the browser authenticates with the HttpOnly cookie.
+        return set_session_cookie(
+            make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "data": {
+                            **_session_id_for_body(session_id),
+                            "message": "Welcome back!",
+                        },
+                    }
+                ),
+                200,
             ),
-            200,
+            session_id,
         )
 
     except Exception as e:
@@ -411,12 +446,12 @@ async def login():
 
 
 @auth_bp.route("/auth/logout", methods=["POST"])
-@require_auth
 def logout():
     """End a player session.
 
-    Headers:
-        Authorization: Bearer <session_id>
+    Authenticated by the HttpOnly session cookie (or, for non-browser callers,
+    an ``Authorization: Bearer <session_id>`` header). Clears the cookie on the
+    way out.
 
     Returns:
         {
@@ -425,27 +460,35 @@ def logout():
         }
     """
     try:
-        session_id = request.session_obj.session_id
-        session_manager = request.session_manager
+        # Deliberately NOT @require_auth. That decorator 401s before the body
+        # runs whenever the cookie names an expired or unknown session — so the
+        # cookie was never cleared, and since #493 the page cannot clear it
+        # itself. The browser was left pinned to a dead credential with no way
+        # out. Logout must therefore always clear, whether or not the session
+        # still resolves.
+        #
+        # The trade-off, accepted knowingly: an unauthenticated cross-site POST
+        # can force a logout. That is a nuisance, not a disclosure — nothing is
+        # read or written — and SameSite=Lax already withholds the cookie on
+        # cross-site POST.
+        session_manager, session, error = resolve_session()
 
-        # Expire session
-        success = session_manager.expire_session(session_id)
+        # A dead or missing credential is not a reason to refuse: that is the
+        # case this route exists to clean up. A *server* fault is different —
+        # we genuinely cannot expire the session, so say so rather than
+        # reporting a logout that did not happen.
+        if session is None and error is not None and error[1] >= 500:
+            return error
 
-        if success:
-            return (
+        if session is not None:
+            session_manager.expire_session(session.session_id)
+
+        return clear_session_cookie(
+            make_response(
                 jsonify({"success": True, "message": "Logged out successfully"}),
                 200,
             )
-        else:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Session not found or already expired",
-                    }
-                ),
-                404,
-            )
+        )
 
     except Exception:
         logger.exception("Unhandled error in logout")

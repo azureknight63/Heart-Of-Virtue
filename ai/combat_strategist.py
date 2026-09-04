@@ -132,6 +132,11 @@ class CombatStrategist:
 
             "SITUATIONAL PRIORITIES — apply these before all else:\n"
             "1. FATIGUE CRITICAL (< 25% remaining): Prefer Rest if available. Avoid high-cost offensive moves.\n"
+            "1b. OFFENSE PRICED OUT: When the alerts say no attack is affordable, the 'Available Moves' list "
+            "is showing only what Jean can still pay for — every attack he knows costs more fatigue than he has. "
+            "Rest is the only move that restores fatigue; zero-cost maneuvers (Advance, Withdraw, Turn, Check) "
+            "will not, so recommending one leaves Jean in exactly the same position next beat. "
+            "Prefer Rest unless an incoming hit must be answered this beat.\n"
             "2. ENEMY TELEGRAPHING: Dodge and Parry each take 2 beats to become active (1 prep + 1 execute). "
             "They must be cast NOW to be effective. 'beats_until_impact' is the window available: "
             "≤ 2 beats → strongly prefer Dodge/Parry (90+); 1 beat → last chance. "
@@ -235,6 +240,11 @@ class CombatStrategist:
         fatigue_critical = fatigue / max_fatigue < 0.25
         fatigue_low = fatigue / max_fatigue < 0.50
 
+        # Fatigue as a fraction of max is not the signal that matters — what
+        # matters is whether Jean can still pay for an attack. See
+        # _offense_priced_out for why the two diverge.
+        offense_priced_out = self._offense_priced_out(combat_context)
+
         player_stats = player.get("stats", {})
         player_evasion = player_stats.get("evasion", 0)
         player_defense = player_stats.get("defense", 0)
@@ -330,9 +340,15 @@ class CombatStrategist:
                         f"{name} is advisable but Jean's defenses may absorb it."
                     )
 
-            elif fatigue_critical and name == "Rest":
+            elif (fatigue_critical or offense_priced_out) and name == "Rest":
                 base_score = 90
-                reasoning = "Fatigue critically low; Rest is essential to maintain move availability."
+                if fatigue_critical:
+                    reasoning = "Fatigue critically low; Rest is essential to maintain move availability."
+                else:
+                    reasoning = (
+                        "No attack is affordable at this fatigue; Rest is the only move "
+                        "that restores it — maneuvering costs nothing and changes nothing."
+                    )
 
             elif hp_critical and name == "UseItem":
                 base_score = 88
@@ -572,6 +588,16 @@ class CombatStrategist:
             alerts.append("⚠ HP CRITICAL: Prioritize healing or defensive moves.")
         if fatigue_pct < 0.25:
             alerts.append("⚠ FATIGUE CRITICAL: Prefer Rest or zero-cost moves.")
+        if self._offense_priced_out(ctx):
+            # A locked attack is guaranteed here, but its cost is only quoted
+            # when the context actually carried one — a hand-built context
+            # without fatigue_cost would otherwise read "costs 0 fatigue".
+            cheapest = self._cheapest_locked_offense(ctx)
+            cost_note = f" (cheapest attack costs {cheapest} fatigue)" if cheapest else ""
+            alerts.append(
+                f"⚠ OFFENSE PRICED OUT: no attack is affordable at {fatigue} fatigue{cost_note}. "
+                "Rest is the only move that restores fatigue — zero-cost maneuvers will not."
+            )
         if heat >= 2.0:
             alerts.append(f"⚠ BLAZING HEAT ({heat:.2f}×): Maximize offense now — missing or being hit collapses the combo.")
         elif heat < 0.8:
@@ -594,6 +620,52 @@ class CombatStrategist:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _offense_priced_out(ctx: Dict[str, Any]) -> bool:
+        """True when Jean can afford no attack but fatigue is the only thing stopping him.
+
+        Nothing restores fatigue passively — Rest and Second Wind are the only
+        writers that add it — so in this state every zero-cost move on offer
+        (Advance, Withdraw, Turn, Check) leaves the situation exactly as it was
+        and the same advice repeats forever. Rest is the only move that ends
+        the loop.
+
+        The condition deliberately is *not* "no Offensive move available":
+        offense also disappears when the enemy is out of range or the move is
+        on cooldown, and there Advance (or waiting out the cooldown) is the
+        right call rather than Rest. ``fatigue_locked_moves`` — supplied by
+        ApiCombatAdapter alongside ``available_moves`` — carries the moves
+        priced out by fatigue specifically, which keeps the pure range/cooldown
+        case out of this branch entirely. Absent that key (older or hand-built
+        contexts) this is False and scoring behaves as it did before.
+
+        The mixed case — one attack out of reach but affordable, another
+        affordable only after resting — resolves to Rest by design. Advising
+        Rest there is at worst a beat spent early rather than late, and it
+        cannot loop: the moment fatigue clears the cheapest attack this returns
+        False again. Under-firing would leave the reported soft-lock in place,
+        so the tie breaks toward the move that always makes progress.
+        """
+        usable = [
+            m for m in ctx.get("available_moves", []) if m.get("available", True)
+        ]
+        if any(m.get("category") == "Offensive" for m in usable):
+            return False
+        return any(
+            m.get("category") == "Offensive"
+            for m in ctx.get("fatigue_locked_moves", [])
+        )
+
+    @staticmethod
+    def _cheapest_locked_offense(ctx: Dict[str, Any]) -> Optional[int]:
+        """Fatigue cost of the cheapest attack Jean currently cannot pay for."""
+        costs = [
+            m.get("fatigue_cost") or 0
+            for m in ctx.get("fatigue_locked_moves", [])
+            if m.get("category") == "Offensive"
+        ]
+        return min(costs) if costs else None
 
     @staticmethod
     def _format_status_effects(
