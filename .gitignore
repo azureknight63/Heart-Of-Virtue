@@ -94,3 +94,6 @@ tools/inquisitor_screenshots/
 .gstack/
 .agent/instructions.md
 .claude/settings.json
+
+# Raw image-model deliveries (sprite sheets / tilesets) before intake
+deliveries/
