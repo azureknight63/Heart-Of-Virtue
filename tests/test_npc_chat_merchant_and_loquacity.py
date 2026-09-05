@@ -658,7 +658,10 @@ class TestMerchantRegexFragmentsAreSpelledOnce:
         "text",
         [
             "What is it worth?",
-            "Which is it worth?",
+            # "Which is it worth?" was here and is not English. The `which`
+            # alternative of _MERCHANT_WORTH_QUESTION only ever fired on the
+            # `what` form, so the pattern was carrying a spelling nobody says
+            # and this row asserted a non-sentence is commerce.
             "Does it cost more to reinforce?",
         ],
     )
@@ -1144,6 +1147,26 @@ COMMERCE_CORPUS = [
     "Would you take fifty coin for it?",
     "What else have you got behind the counter?",
     "Any chance of a discount?",
+    # ROUND 13 -- the fifth swing. Every row below was found by a reviewer
+    # testing sentences OUTSIDE this corpus, and several are one word from a
+    # row above them. That is the failure this file keeps re-learning: a probe
+    # list drawn from the last bug report is correct on the last bug report.
+    #
+    # typographic apostrophe. Models emit U+2019 about half the time and every
+    # row above uses U+0027, which is what hid it.
+    "I\u2019ll take the shortsword.",
+    "I\u2019m in the market for a blade.",
+    # the ambiguous frame still hard-gated on a finite noun list, so the floor's
+    # `swords?` could not match inside "longsword"
+    "Do you have any longswords?",
+    "Do you have any maces?",
+    "Do you have any chainmail?",
+    "What have you got today?",
+    "What can you offer me?",
+    "What do you have for the road west?",
+    # over-vetoed by a trailing participle that qualified the goods themselves
+    "Do you sell anything enchanted?",
+    "Do you have any of your best leather?",
 ]
 
 #: Sentences that MUST survive. Most are the substitute topics
@@ -1182,6 +1205,36 @@ LORE_CORPUS = [
     "Do you remember the siege?",
     "Do you have family in the valley?",
     "How long does leather last in this damp?",
+    # ROUND 13 -- the same swing, the other direction.
+    #
+    # `can|could|may I have` was a self-sufficient commerce frame; the third of
+    # these is literally a fit question, one of the five substitutes the TRADE
+    # block asks the model to raise instead of commerce.
+    "Can I have a word?",
+    "May I have your name?",
+    "Could I have a look at that harness?",
+    # the declarative "take" frame had an unbounded object
+    "I'll take the risk.",
+    "I'll take the west road.",
+    "I'll take that as a yes.",
+    # ordinary character and provenance questions wearing the stock frame
+    "Do you have a name for that sword?",
+    "Did you have armor at the siege?",
+    # self-sufficient frames over-reaching on ambient prose
+    "The road west was paid for in blood.",
+    "How much is left of the garrison?",
+    "How long has this shop been in your family?",
+]
+
+#: Documented as ambiguous rather than silently decided.
+#:
+#: "Do you have a favourite blade?" and "Do you have a lighter blade?" are the
+#: same shape, and only intent separates them -- a human reading the transcript
+#: could not reliably call it either. It currently classifies as commerce. The
+#: limitation is written down here so the next reviewer finds a decision rather
+#: than a bug.
+KNOWN_AMBIGUOUS = [
+    "Do you have a favourite blade?",
 ]
 
 

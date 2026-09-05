@@ -721,7 +721,11 @@ _MERCHANT_ITEM_PATTERN = re.compile(
 # not. One shared fragment would have to pick one of those two behaviours
 # for both, and either choice is a bug that has already shipped once.
 _MERCHANT_EXPLICIT_PATTERN = re.compile(
-    r"\b(?:inventory|stock\w*|wares|merchandise|shop|for\s+sale|"
+    # "shop" is NOT here. "How long has this shop been in your family?" is
+    # provenance — an advertised substitute — and "shop" is absent from
+    # MERCHANT_FORBIDDEN_TOPICS too, so suppressing it spent a revision round
+    # trip on a sentence the prompt never told the model to avoid.
+    r"\b(?:inventory|stock(?:s|ed|ing)?|wares|merchandise|for\s+sale|"
     r"budget|discount\w*|bargain\w*|cheaper)\b",
     re.IGNORECASE,
 )
@@ -731,15 +735,24 @@ _MERCHANT_EXPLICIT_PATTERN = re.compile(
 # written out twice in two different spellings, one admitting "which" and
 # the other not, which is how a filter comes to answer the same question
 # two ways depending on which branch reached it.
-_MERCHANT_WORTH_QUESTION = r"(?:what|which)\s+(?:is|are)\s+it\s+worth"
+# "which is it worth" is not English; the alternative only ever fired on the
+# "what" form, and a test had been written asserting a non-sentence is commerce.
+_MERCHANT_WORTH_QUESTION = r"what\s+(?:is|are)\s+it\s+worth"
 
+# Deliberately NOT ``^...$`` anchored any more. It was, and so "What have you
+# got?" was commerce while "What have you got today?" was not -- one word, and
+# the corpus happened to contain only the first.
 _MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
-    r"^\s*(?:what\s+have\s+you\s+got|what\s+can\s+you\s+offer|"
-    r"what\s+do\s+you\s+carry|what\s+do\s+you\s+have|"
-    r"is\s+anything\s+available|are\s+any(?:\s+.+)?\s+available|"
-    r"would\s+you\s+trade|"
-    + _MERCHANT_WORTH_QUESTION
-    + r")\s*[?.!]*\s*$",
+    # Deliberately NOT whole-string anchored any more. It was, so
+    # "What have you got?" was commerce and "What have you got today?" was
+    # not — one word, and the corpus happened to hold only the first.
+    r"\bwhat\s+have\s+you\s+got\b|"
+    r"\bwhat\s+can\s+you\s+offer\b|"
+    r"\bwhat\s+do\s+you\s+(?:carry|have|sell|stock)\b|"
+    r"\bis\s+anything\s+available\b|"
+    r"\bare\s+any(?:\s+.+)?\s+available\b|"
+    r"\bwould\s+you\s+trade\b|"
+    + _MERCHANT_WORTH_QUESTION,
     re.IGNORECASE,
 )
 # Verbs a stock request is built from. They only mean "is this on your counter"
@@ -748,6 +761,14 @@ _MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
 # ("where did you GET that leather") and maintenance ("how do you KEEP the
 # chain from rusting") — so the classifier suppressed the substitutes and let
 # the price question through.
+# Straight or typographic. Models emit U+2019 about half the time, and every
+# row of the committed corpus used U+0027 -- which is exactly what hid
+# "I\u2019ll take the shortsword." matching nothing at any counter while its
+# straight-quoted twin passed green. ``_chat_guard`` has carried its own copy of
+# this for the same reason; spelled once here so this module cannot drift into
+# a fourth variant the way the category tables one file over did.
+_APO = r"['\u2019]"
+
 _MERCHANT_STOCK_VERB = r"have|carry|keep|stock|offer|sell|got"
 _MERCHANT_ITEM_REQUEST_PATTERN = re.compile(
     # "do you have", "have you got any", "would you carry a lighter mail"
@@ -802,8 +823,15 @@ _MERCHANT_LORE_LEAD_PATTERN = re.compile(
 #    dry?"
 _MERCHANT_TRAILING_PREDICATION = re.compile(
     r"\b(?:for|from|against)\s+\w+ing\b"
-    r"|\b\w+ed\s*[?.!]*\s*$"
-    r"|\b(?:your|his|her|their|my)\s+\w+\s+\w+"
+    # A trailing participle, but NOT when it qualifies an explicit goods
+    # reference: "Do you sell anything enchanted?" is a stock request whose
+    # object happens to carry an adjective, and the bare `\w+ed$` form vetoed
+    # it. The negative lookbehind keeps "Do you keep the leather oiled?".
+    r"|(?<!\bany)(?<!\banything)\s\w+ed\s*[?.!]*\s*$"
+    # Third-person possessors only. "your best leather" addressed to the
+    # merchant is his stock, not somebody else's history, and vetoing it lost
+    # "Do you have any of your best leather?".
+    r"|\b(?:his|her|their)\s+\w+\s+\w+"
     r"|\ba\s+(?:trick|knack|way|method|secret)\b"
     r"|\bsame\b",
     re.IGNORECASE,
@@ -814,6 +842,21 @@ _MERCHANT_TRAILING_PREDICATION = re.compile(
 # never as a gate on a price question. "Do you have family in the valley?" and
 # "Do you have any spears?" are the same frame, and only the object separates
 # them.
+# A quantifier with a noun after it IS a goods reference, whatever the noun.
+# This is the class fix. The ambiguous frame used to return False unless a
+# finite vocabulary matched, so "Do you have any longswords?" failed at the
+# weaponsmith -- the floor's `\bswords?\b` cannot match inside "longsword" and
+# no per-host list contained it. Four rounds widened that list; this stops
+# consulting it for the one thing a quantifier already settles.
+#
+# "Do you have family in the valley?" is unaffected: no quantifier, and the
+# locative phrase is what a stock request does not have.
+_MERCHANT_QUANTIFIED_GOODS = re.compile(
+    r"\b(?:any|anything|some|something|a\s+few|several|more)"
+    r"\s+(?:of\s+\w+\s+)?\w{3,}",
+    re.IGNORECASE,
+)
+
 _MERCHANT_GENERIC_GOODS = re.compile(
     r"\banything\s+(?:else|cheaper|better)\b"
     r"|\banything\b\s*[?.!]*\s*$"
@@ -851,7 +894,10 @@ _MERCHANT_PRICE_PATTERN = re.compile(
     # counter walked straight through, one word away from the row the
     # regression test asserts. That is what a probe list drawn from a bug
     # report buys you: the sentence in the report, and nothing beside it.
-    r"\bhow\s+much\s+(?:is|are|was|were|would|will|could)\b|"
+    # "How much is left of the garrison?" is a quantity question, not a price
+    # one, and the price reading has no other marker to key on.
+    r"\bhow\s+much\s+(?:is|are|was|were|would|will|could)\b"
+    r"(?!\s+(?:left|further|farther|longer|remains?|remaining))|"
     + _MERCHANT_IT_COST
     + r"|"
     r"\b(?:does|do|would|will|can)\s+(?:it|the|this|that|these|those|any)\s+cost\s+(?:more|less|extra)\b",
@@ -899,7 +945,9 @@ _MERCHANT_ITEMLESS_TRADE_PATTERN = re.compile(
     + r"|"
     + _MERCHANT_COIN_FOR
     + r"|"
-    r"\b(?:pay|paid|paying)\s+(?:for|in)\b",
+    # "The road west was paid for in blood." is ambient prose in this game's
+    # register. Require the money word.
+    r"\b(?:pay|paid|paying)\s+(?:\w+\s+){0,2}(?:coin|gold|silver|pieces?)\b",
     re.IGNORECASE,
 )
 
@@ -925,7 +973,7 @@ _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
     # was tuned only on the rows from a bug report, which is why each fix was
     # correct on those rows and wrong one word away.
     r"\bwhat\s+would\s+you\s+(?:want|take|charge)\s+for\b|"
-    r"\b(?:can|could|may)\s+i\s+(?:buy|have|purchase)\b|"
+    r"\b(?:can|could|may)\s+i\s+(?:buy|purchase)\b|"
     r"\bwould\s+you\s+take\s+\w+\s+(?:gold|coin|silver|pieces?)\b|"
     r"\bwould\s+you\s+(?:buy|sell|trade)\s+me\b|"
     r"\bany\s+chance\s+of\s+a\s+(?:discount|deal|bargain)\b|"
@@ -933,7 +981,13 @@ _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
     # an interrogative prefix, which made every one of these unreachable —
     # including the three alternations directly above, since a purchase is
     # more often announced than asked.
-    r"\b(?:i'?ll|i\s+will)\s+take\s+(?:the|a|an|that|this|these|those)\b|"
+    # NOTE: `can I have X` and `I'll take X` are NOT here. Both are commerce
+    # only when X is the goods -- "Can I have a word?", "May I have your name?",
+    # "Could I have a look at that harness?" (a fit question, one of the five
+    # substitutes) and "I'll take the risk." are not purchases. They are
+    # handled in the item-anchored tier, where the object is the evidence.
+    # This is the same distinction the nominal price frame draws: a frame whose
+    # meaning turns on its object cannot be self-sufficient.
     r"\b(?:yours|mine)\s+for\s+\w+\s+(?:gold|coin|silver|pieces?)\b",
     re.IGNORECASE,
 )
@@ -956,6 +1010,35 @@ _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
 # classifier catches it. Numeric price quotes do not depend on this pattern
 # either way -- ``_chat_guard``'s ``coin`` state-claim tripwire is the net
 # under those.
+# Commerce ONLY when the object is the goods, which is why these are not in
+# the self-sufficient tier. "Can I have a word?", "May I have your name?",
+# "Could I have a look at that harness?" and "I'll take the risk." share these
+# frames exactly and are not purchases -- and the third is a fit question, one
+# of the five substitutes the TRADE block asks the model to raise.
+_MERCHANT_OBJECT_GATED_TRADE_PATTERN = re.compile(
+    r"\b(?:can|could|may)\s+i\s+have\b"
+    r"|\b(?:i" + _APO + r"?ll|i\s+will)\s+take\b",
+    re.IGNORECASE,
+)
+
+# The objects that make "I'll take X" / "Can I have X" NOT a purchase.
+#
+# Note which half is enumerated. "What could a merchant sell" is an OPEN set
+# and listing it has failed four times. "What you can idiomatically take or
+# have that is not goods" is CLOSED — a word, a look, a moment, a risk, a road.
+# Enumerating the closed half is the only kind of list that stays right, and it
+# is the same asymmetry the nominal price frame already uses.
+_MERCHANT_NON_GOODS_OBJECT = re.compile(
+    r"\b(?:word|look|moment|minute|guess|turn|seat|rest|breath)\b"
+    r"|\b(?:risk|blame|lead|chance|credit|hint|point)\b"
+    r"|\b(?:your|his|her|their|my)\s+(?:name|word|leave|meaning|advice)\b"
+    r"|\b(?:road|path|trail|route|pass|way)\b"
+    r"|\bname\s+for\b"
+    r"|\bas\s+a\b"
+    r"|\bat\s+the\s+(?:siege|war|battle|crossing)\b",
+    re.IGNORECASE,
+)
+
 _MERCHANT_TRANSACTION_PATTERN = re.compile(
     r"\b(?:buy\w*|sell\w*|purchas\w*|pay\w*)\b|"
     r"\b(?:would|will|can|could|do|are)\s+you\s+(?:\w+\s+){0,2}?trad(?:e|ing)\b|"
@@ -2520,12 +2603,46 @@ class ConversationalNPCMixin:
             # because both are metaphorical or idle without it:
             #   "What is the price of freedom?"   nominal price, abstract
             #   "Did you learn the leather trade?" transaction word, no offer
-            if self._names_merchandise(sentence):
+            if self._names_goods(sentence):
                 if _MERCHANT_NOMINAL_PRICE_PATTERN.search(sentence):
                     return True
                 if _MERCHANT_TRANSACTION_PATTERN.search(sentence):
                     return True
+            # "I'll take X" / "Can I have X" are purchases unless X is one of
+            # the idioms. Checked OUTSIDE the goods tier deliberately: the
+            # object is usually a noun no vocabulary lists ("I'll take the
+            # shortsword."), which is exactly the gate that has failed four
+            # times. The closed set of non-goods objects is what decides it.
+            if _MERCHANT_OBJECT_GATED_TRADE_PATTERN.search(
+                sentence
+            ) and not _MERCHANT_NON_GOODS_OBJECT.search(sentence):
+                return True
         return False
+
+    def _names_goods(self, sentence: str) -> bool:
+        """Does this sentence's object read as the merchant's goods?
+
+        Three kinds of evidence, in the order they are cheap:
+
+        * the shared floor plus this host's derived vocabulary
+          (:meth:`_names_merchandise`);
+        * a QUANTIFIED noun -- "any longswords", "some mail" -- which is a
+          goods reference whatever the noun is. This is the one that stops the
+          vocabulary being a gate: the floor's ``swords?`` cannot match inside
+          "longsword", no per-host list contained it, and four rounds of
+          widening lists never would have;
+        * a generic stand-in: "anything else", "behind the counter".
+
+        Deliberately still evidence rather than proof. "Do you have a favourite
+        blade?" satisfies it and is really a character question -- see
+        ``KNOWN_AMBIGUOUS`` in the merchant tests, where that limitation is
+        stated rather than left to be discovered.
+        """
+        return bool(
+            self._names_merchandise(sentence)
+            or _MERCHANT_QUANTIFIED_GOODS.search(sentence)
+            or _MERCHANT_GENERIC_GOODS.search(sentence)
+        )
 
     def _is_stock_request(self, sentence: str) -> bool:
         """True when this sentence asks whether something is on the counter.
@@ -2561,10 +2678,19 @@ class ConversationalNPCMixin:
             return False
         if _MERCHANT_TRAILING_PREDICATION.search(sentence):
             return False
-        if not (
-            self._names_merchandise(sentence)
-            or _MERCHANT_GENERIC_GOODS.search(sentence)
-        ):
+        # The same closed set the object-gated frames use. "Did you have armor
+        # at the siege?" and "Do you have a name for that sword?" are the stock
+        # frame with a non-goods object, and both are character questions the
+        # TRADE block wants kept.
+        if _MERCHANT_NON_GOODS_OBJECT.search(sentence):
+            return False
+        # `_is_lore_frame` already knows the history/biography vocabulary and
+        # had become an orphan in the redesign — defined, referenced nowhere.
+        # This is the veto it was written to be: "Do you have any memories of
+        # the old siege?" is the stock frame wrapped round a war story.
+        if self._is_lore_frame(sentence):
+            return False
+        if not self._names_goods(sentence):
             return False
         return True
 
