@@ -32,10 +32,45 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Silence Mynx LLM calls during harness runs.
-os.environ.setdefault("MYNX_LLM_ENABLED", "0")
-os.environ.setdefault("MYNX_FALLBACK_DELAY", "0")
-os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
+# Never let the harness reach a real LLM provider.
+#
+# This used to be three ``setdefault``s on MYNX_* and nothing else, which was
+# the third instance of one recurring mistake: a hand-listed credential set in
+# this file falling behind the derived one in tests/llm_doubles.py. The first
+# two cost real GitHub issues and real rows in the production database. This
+# one cost provider spend and shipped harness-authored dialogue off-box —
+# ``NpcChatLLMAdapter._ENABLED_ENV_VARS`` is ``("NPC_CHAT_LLM_ENABLED",)``
+# alone, this branch's working configuration sets it to 1 in .env, and the
+# npc_chat scenario POSTs a real npc_id to /api/npc/chat/open. Pinning MYNX_*
+# never touched it.
+#
+# So derive the vocabulary instead of restating it. tests/llm_doubles.py owns
+# the gate/setting/credential sets and both conftests already read them; a
+# provider added to the registry is covered here the day it lands.
+#
+# ORDERING: this import pulls in ai.llm_client, whose module body calls
+# load_project_env() — so .env is fully loaded by the time the blanking below
+# runs. That is deliberate and is what makes assignment work: db.py's later
+# load_dotenv(override=False) skips keys already *present*, so an assigned
+# empty value survives while a popped one would be silently refilled.
+from tests.llm_doubles import (  # noqa: E402
+    CREDENTIAL_ENVS,
+    LLM_SETTING_ENVS,
+    llm_gate_envs,
+)
+
+for _llm_env in (
+    CREDENTIAL_ENVS + llm_gate_envs(os.environ) + LLM_SETTING_ENVS
+):
+    os.environ[_llm_env] = ""
+
+# The explicit pins, applied after the sweep so it cannot blank them. "none" is
+# PROVIDER_DISABLED and is stronger than empty: empty falls through to
+# DEFAULT_PROVIDER ("ollama"), leaving a local Ollama to be probed.
+os.environ["MYNX_LLM_ENABLED"] = "0"
+os.environ["MYNX_LLM_PROVIDER"] = "none"
+os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
+os.environ["MYNX_FALLBACK_DELAY"] = "0"
 
 # Never let the harness file real GitHub issues. src/api/routes/feedback.py's
 # _create_github_issue() only checks os.environ["GITHUB_TOKEN"] directly (no
@@ -48,6 +83,8 @@ os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
 # default override=False only skips keys already *present* in os.environ
 # regardless of value, so popping here would just let load_dotenv() refill it
 # moments later during the create_app() import chain, silently undoing this.
+# (Also covered by CREDENTIAL_ENVS above; kept explicit because this one
+# has a documented incident behind it.)
 os.environ["GITHUB_TOKEN"] = ""
 
 # Never let the harness transact against the real database. Same shape as the
@@ -141,7 +178,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # Create the Flask app (TestingConfig: no real DB, no external calls).
+    # Create the Flask app. TestingConfig is NOT what makes this safe -- it
+    # gates the background services and the analytics digest, but auth_service
+    # and feedback.py have no TESTING guard by design, and NpcChatLLMAdapter
+    # reads its own env gate. The blanking at the top of this file is the
+    # control; TestingConfig is the second layer.
     try:
         app, _ = create_app(TestingConfig)
     except Exception as exc:

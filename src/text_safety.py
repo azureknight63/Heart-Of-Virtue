@@ -80,9 +80,28 @@ _INLINE_SPEAKER_PREFIX_PATTERN = re.compile(
 # copies of this pattern allowed it only after the slash.
 _PLAYER_INPUT_TAG_PATTERN = re.compile(r"<\s*/?\s*player_input\s*>", re.IGNORECASE)
 
-# C0 controls and DEL, plus every Unicode family that is invisible in a
-# transcript and not invisible to a tokenizer. A bare ``\x08`` is nobody's idea
-# of player input, and the rest are worse than noise:
+# Every code point that is invisible in a transcript and not invisible to a
+# tokenizer. A bare ``\x08`` is nobody's idea of player input, and the rest are
+# worse than noise.
+#
+# DERIVED, NOT ENUMERATED, and that distinction is the whole point. This was a
+# hand-written list of the families someone thought of, described by the very
+# sentence above as covering "every Unicode family that is invisible in a
+# transcript" -- and it did not. It missed 89 code points, including U+00AD
+# SOFT HYPHEN, U+061C ARABIC LETTER MARK and the entire C1 block
+# U+0080-U+009F, so a player could type ``<\u00ad/player_input>`` and close
+# the prompt fence through both neutralisation layers untouched. The guard that
+# was supposed to catch that parametrised over fifteen characters drawn from
+# the same list it was testing, so it could not have failed.
+#
+# The set below is now the Unicode general categories Cc, Cf, Zl and Zp --
+# "control", "format", "line separator", "paragraph separator" -- which is the
+# standard's own answer to "is this invisible", plus one deliberate addition
+# noted below. ``tests/test_text_safety.py`` regenerates it from
+# ``unicodedata.category`` across the whole code space and fails if the two
+# disagree, so a new Unicode release cannot silently reopen the hole.
+#
+# The families worth naming, because each is a live attack rather than noise:
 #
 # * U+2028/2029, the line and paragraph separators. ``str`` whitespace
 #   splitting knows about them in some contexts and not others, and ``re``'s
@@ -104,9 +123,21 @@ _PLAYER_INPUT_TAG_PATTERN = re.compile(r"<\s*/?\s*player_input\s*>", re.IGNORECA
 # real cost is U+200D, the emoji zero-width joiner — a family emoji arrives as
 # its separate members. Cheap next to leaving a hole shaped like precisely the
 # character an attacker would reach for.
+#: Categories Cc/Cf/Zl/Zp, plus the whole of the tag block. The tag block's
+#: unassigned tail (U+E0000, U+E0002-U+E001F) is category Cn, not Cf, so
+#: deriving from category alone would have dropped 31 code points out of the
+#: middle of an ASCII-smuggling range -- an unassigned code point still round
+#: trips through a tokenizer that decodes the block. Kept as a union for that
+#: reason, and the test asserts both halves.
+_CONTROL_CHAR_TAG_BLOCK = (0xE0000, 0xE0080)
 _CONTROL_CHAR_PATTERN = re.compile(
-    "[\x00-\x1f\x7f\u200b-\u200f\u2028\u2029\u202a-\u202e"
-    "\u2060\u2066-\u2069\ufeff\U000e0000-\U000e007f]+"
+    "["
+    "\x00-\x1f\x7f-\x9f\xad\u0600-\u0605\u061c\u06dd\u070f"
+    "\u0890-\u0891\u08e2\u180e\u200b-\u200f\u2028-\u202e"
+    "\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000110bd"
+    "\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3"
+    "\U0001d173-\U0001d17a\U000e0000-\U000e007f"
+    "]+"
 )
 
 _WS_RUN_PATTERN = re.compile(r"\s+")
