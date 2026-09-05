@@ -53,9 +53,41 @@ class TestChestRumblerBattleIntegration:
         4. Submit user input to continue
         5. Verify combat starts with Rock Rumbler
         """
-        # Step 1: Find and open the Wooden Chest
+        # Step 1: Find the Wooden Chest
         chest = next((obj for obj in self.target_tile.objects_here if obj.name == 'Wooden Chest'), None)
         assert chest is not None, "Wooden Chest not found on tile (7, 1)"
+
+        # The chest is authored locked, and Container.open() no-ops on a locked
+        # container. Model the real player flow: fetch the Iron Key (hidden on
+        # tile (2, 2), lock_nickname "wooden chest"), carry it back, unlock.
+        if chest.locked:
+            key_tile = self.universe.get_tile(2, 2)
+            assert key_tile is not None, "Tile (2, 2) not found"
+            key = next((i for i in key_tile.items_here if i.name == 'Iron Key'), None)
+            assert key is not None, "Iron Key not found on tile (2, 2)"
+
+            self.player.location_x, self.player.location_y = 2, 2
+            self.player.current_room = key_tile
+            result = self.service.interact_with_target(
+                self.player,
+                str(id(key)),
+                "take",
+                session_data=self.session_data
+            )
+            assert result["success"] is True, "Failed to take the Iron Key"
+            assert any(i.name == 'Iron Key' for i in self.player.inventory), \
+                "Iron Key should be in Jean's inventory"
+
+            self.player.location_x, self.player.location_y = 7, 1
+            self.player.current_room = self.target_tile
+            result = self.service.interact_with_target(
+                self.player,
+                str(id(chest)),
+                "unlock",
+                session_data=self.session_data
+            )
+            assert result["success"] is True, "Failed to unlock chest"
+            assert chest.locked is False, "Iron Key should have unlocked the Wooden Chest"
 
         # Open the chest if closed
         if chest.state == "closed":
@@ -189,6 +221,10 @@ class TestChestRumblerBattleIntegration:
         chest = next((obj for obj in self.target_tile.objects_here if obj.name == 'Wooden Chest'), None)
         assert chest is not None
 
+        # The authored chest is locked and Container.open() no-ops while it is.
+        # This test is about event queueing, not the lock, so clear it directly
+        # rather than dragging the whole key hunt in.
+        chest.locked = False
         if chest.state == "closed":
             chest.open()
 
@@ -243,6 +279,9 @@ class TestChestRumblerBattleIntegration:
         """
         # Empty the chest and trigger the event
         chest = next((obj for obj in self.target_tile.objects_here if obj.name == 'Wooden Chest'), None)
+        # See test_event_does_not_retrigger: unlock directly, the lock is not
+        # what this test is exercising.
+        chest.locked = False
         if chest.state == "closed":
             chest.open()
         chest.inventory = []
