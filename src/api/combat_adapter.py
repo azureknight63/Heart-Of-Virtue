@@ -2871,11 +2871,14 @@ class ApiCombatAdapter:
         threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
 
     def _handle_defeat(self, beat_states):
-        """Handle combat defeat — the mirror of ``_handle_victory``.
+        """End the fight in defeat, publish the terminal stream, and return it.
 
-        Extracted verbatim from ``_execute_move_inner``. Like the victory tail
-        it publishes the terminal state before ``_teardown_combat_roster``, and
-        returns the result the caller hands straight back.
+        The COMPLETE defeat path: it writes ``combat_end_summary``, calls
+        ``_stream_combat_result(..., ended=True)`` and returns the result the
+        caller hands straight back. Its mirror is therefore
+        :meth:`settle_victory`, NOT :meth:`_handle_victory` — that one is only
+        the exp/summary half and publishes nothing. (This docstring used to
+        name ``_handle_victory``, which reads as a licence to pair the two.)
         """
         self.player.in_combat = False
         self.awaiting_input = False
@@ -2906,7 +2909,21 @@ class ApiCombatAdapter:
         return result
 
     def _handle_victory(self):
-        """Handle combat victory."""
+        """Award exp and write ``combat_end_summary``. Publishes NOTHING.
+
+        HALF of ending a fight in victory. It settles engine state — fatigue,
+        equip-state recharge, exp/level-ups, the drops and the summary — but it
+        does not emit the seq-guarded ``combat:ended`` stream and it returns
+        None. A caller that stops here leaves the client showing victory state
+        it was never told to end on.
+
+        Only the move loop may call this directly, because it does the stream
+        inline immediately afterwards. **Every other exit path must call
+        :meth:`settle_victory`**, which is this plus the stream and exists for
+        exactly that reason. Note the asymmetry with :meth:`_handle_defeat`,
+        which IS complete on its own: the two names look like a pair and are
+        not one.
+        """
         self.player.in_combat = False
         self.awaiting_input = False
         self.player.fatigue = self.player.maxfatigue
