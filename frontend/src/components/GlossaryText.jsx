@@ -31,34 +31,33 @@ export default function GlossaryText({ text, style, className, ...rest }) {
   const rootRef = useRef(null)
   const baseId = useId()
 
-  // `{ index, placement }` — index into `segments`, so the same word appearing
-  // twice in one string gets its own independently-openable explainer.
-  const [active, setActive] = useState(null)
+  // `{ index, placement, text }` — index into `segments`, so the same word
+  // appearing twice in one string gets its own independently-openable
+  // explainer, and `text` so an explainer opened against one string is not
+  // still showing over the next one (the ConversationStage trap in CLAUDE.md,
+  // in miniature). Recorded on the state rather than cleared by an effect:
+  // resetting state from an effect costs an extra render pass, and a stale
+  // explainer would be visible for that frame.
+  const [openTerm, setOpenTerm] = useState(null)
+  const active = openTerm?.text === text ? openTerm : null
 
   const segments = useMemo(() => splitTextByGlossaryTerms(text), [text])
 
-  // A new string is a new set of terms; without this the open explainer would
-  // survive into text it no longer belongs to (the ConversationStage trap in
-  // CLAUDE.md, in miniature).
-  useEffect(() => {
-    setActive(null)
-  }, [segments])
-
-  const dismiss = useCallback(() => setActive(null), [])
+  const dismiss = useCallback(() => setOpenTerm(null), [])
 
   const activate = useCallback((index, element) => {
     const top = element?.getBoundingClientRect?.().top ?? 0
-    setActive({ index, placement: top > TOOLTIP_CLEARANCE_PX ? 'top' : 'bottom' })
-  }, [])
+    setOpenTerm({ index, text, placement: top > TOOLTIP_CLEARANCE_PX ? 'top' : 'bottom' })
+  }, [text])
 
   // Tapping (or clicking) anywhere else dismisses, as does Escape.
   useEffect(() => {
     if (!active) return undefined
     const onPointerDown = (event) => {
-      if (!rootRef.current?.contains(event.target)) setActive(null)
+      if (!rootRef.current?.contains(event.target)) setOpenTerm(null)
     }
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setActive(null)
+      if (event.key === 'Escape') setOpenTerm(null)
     }
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('touchstart', onPointerDown)
@@ -73,7 +72,7 @@ export default function GlossaryText({ text, style, className, ...rest }) {
   const activeEntry = active ? getGlossaryEntry(segments[active.index]?.entryId) : null
 
   const handOff = useCallback((entryId) => {
-    setActive(null)
+    setOpenTerm(null)
     openGlossary(entryId)
   }, [openGlossary])
 
@@ -82,7 +81,8 @@ export default function GlossaryText({ text, style, className, ...rest }) {
       {segments.map((segment, index) => {
         const entry = segment.entryId ? getGlossaryEntry(segment.entryId) : null
         if (!entry) {
-          // eslint-disable-next-line react/no-array-index-key -- segments are positional runs of one immutable string; there is no other stable identity, and the list is rebuilt whenever the string changes.
+          // Positional runs of one immutable string: the index IS the identity,
+          // and the list is rebuilt whenever the string changes.
           return <span key={index}>{segment.text}</span>
         }
 
@@ -94,12 +94,11 @@ export default function GlossaryText({ text, style, className, ...rest }) {
           onBlur: (event) => {
             // Tabbing from the term into the tooltip's own "Open glossary"
             // button must not close the thing being tabbed into.
-            if (!event.currentTarget.contains(event.relatedTarget)) setActive(null)
+            if (!event.currentTarget.contains(event.relatedTarget)) setOpenTerm(null)
           },
         }
 
         return (
-          // eslint-disable-next-line react/no-array-index-key -- see above.
           <span key={index} style={{ position: 'relative', display: 'inline-block' }} {...hoverProps}>
             <button
               type="button"

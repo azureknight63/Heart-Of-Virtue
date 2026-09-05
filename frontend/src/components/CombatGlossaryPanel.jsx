@@ -59,7 +59,7 @@ function GlossaryEntryRow({ entry, highlighted, rowRef }) {
       </div>
 
       {entry.body.split('\n').map((line, index) => (
-        // eslint-disable-next-line react/no-array-index-key -- positional lines of one immutable string; no other stable identity exists.
+        // Positional lines of one immutable string: the index IS the identity.
         <p key={index} style={{
           fontSize: '0.75rem',
           color: colors.text.main,
