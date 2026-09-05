@@ -31,16 +31,27 @@ def socket_app(monkeypatch):
     return app, socketio
 
 
+def _fake_session_manager(app):
+    """Attach a session store where only ``"good-session"`` resolves.
+
+    Both connect helpers below need it, and they must agree on which id is
+    live: the cookie tests assert that a *known* id joins and an unknown one is
+    rejected, so a second copy of this that drifted would quietly turn one of
+    those into a test of nothing.
+    """
+    app.session_manager = MagicMock()
+    app.session_manager.get_session.side_effect = (
+        lambda sid: object() if sid == "good-session" else None
+    )
+
+
 def _connected_client(app, socketio):
     """Attach a fake session_manager and return a connected socket test client.
 
     ``"good-session"`` resolves to a truthy session; anything else is unknown.
     This avoids building a real universe just to exercise the room handlers.
     """
-    app.session_manager = MagicMock()
-    app.session_manager.get_session.side_effect = (
-        lambda sid: object() if sid == "good-session" else None
-    )
+    _fake_session_manager(app)
     client = socketio.test_client(app)
     assert client.is_connected()
     return client
@@ -58,10 +69,7 @@ def _cookie_client(app, socketio, cookie=None):
     handshake environ, which is the same path ``session_id_from_cookie`` reads
     in production.
     """
-    app.session_manager = MagicMock()
-    app.session_manager.get_session.side_effect = (
-        lambda sid: object() if sid == "good-session" else None
-    )
+    _fake_session_manager(app)
     flask_client = app.test_client()
     if cookie is not None:
         flask_client.set_cookie(cookie_name(app), cookie)
@@ -199,13 +207,22 @@ def test_cookie_naming_an_unknown_session_reports_invalid(socket_app):
 
 
 def test_error_payloads_keep_a_human_readable_message(socket_app):
-    """The code is the contract; the message is still there for humans."""
+    """The code is the contract; the message is still there for humans.
+
+    Both payloads, not just the reworded one: a future edit that drops the
+    message from either leaves logs and QA with a bare code.
+    """
     app, socketio = socket_app
     client = _cookie_client(app, socketio, cookie=None)
     client.emit("join_combat", {})
     missing = [m for m in client.get_received() if m["name"] == "error"][0]
 
+    invalid_client = _cookie_client(app, socketio, cookie="expired-session")
+    invalid_client.emit("join_combat", {})
+    invalid = [m for m in invalid_client.get_received() if m["name"] == "error"][0]
+
     assert missing["args"][0]["message"]
+    assert invalid["args"][0]["message"]
     # ...and no longer says "invalid session" for a condition that is nothing
     # of the sort. The old wording, "Missing or invalid session credentials",
     # contained that substring and is exactly how the two conditions got

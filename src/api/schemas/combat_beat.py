@@ -34,11 +34,12 @@ ERROR_EVENT = "error"
 # * ``ERROR_SESSION_INVALID`` — a credential arrived and names no live session
 #   (expired, or dropped by a server restart). The player really is signed out.
 #
-# The two old messages were "Missing or invalid session credentials" and
-# "Invalid session"; note that the FIRST one contains the substring "invalid
-# session", so the client's test matched it through the wrong clause. Keep any
-# future message wording free of that kind of accident — but the codes, not the
-# wording, are the contract.
+# Before the codes existed, the two messages were "Missing or invalid session
+# credentials" (since reworded) and "Invalid session" (still the wording for
+# ERROR_SESSION_INVALID). Note that the FIRST contains the substring "invalid
+# session", so the client's prose test matched it through the wrong clause.
+# Keep any future wording free of that kind of accident — but the codes, not
+# the wording, are the contract.
 ERROR_SESSION_MISSING = "session_missing"
 ERROR_SESSION_INVALID = "session_invalid"
 
