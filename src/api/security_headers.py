@@ -78,7 +78,7 @@ _API_CSP = (
 #   style-src 'unsafe-inline'  A measured cost, not a necessity. Three
 #       components render a literal <style> element (GameOverScreen:61,
 #       HeroPanel:241, ToastContext:172) plus
-#       InteractPanel:768, which builds one via
+#       InteractPanel.jsx, which builds one via
 #       ``document.createElement('style')`` -- all of them for ``@keyframes``.
 #       Those four are the whole of what forces the concession today, and the
 #       count is falling: TypewriterOutput's ``blink``, NpcChatPanel's

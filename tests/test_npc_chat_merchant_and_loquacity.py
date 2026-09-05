@@ -272,6 +272,19 @@ class TestWeaponMerchantCommerceQuestions:
             "Do you have any helmets?",
             # The string this feature's own module docstring names first.
             "What are you looking to buy?",
+            # The phrasings the FIRST fix missed, because its rows were copied
+            # out of the bug report instead of being asked of the language.
+            # "How much does" was covered and "how much is" was not, so the
+            # commonest spelling of the commonest question at a counter sat one
+            # word away from a green test for a whole round.
+            "How much is the sword?",
+            "What's the price of that dagger?",
+            # Commerce with no item in it anywhere -- the shopkeeper's own
+            # opening lines, invisible to every item-anchored branch.
+            "Are you buying or selling today?",
+            "Care to make a purchase?",
+            "What can I get for you?",
+            "What are you in the market for?",
         ],
     )
     def test_commerce_at_the_arms_stall_is_suppressed(self, text):
@@ -291,6 +304,11 @@ class TestWeaponMerchantCommerceQuestions:
             "How long have you worked the forge?",
             "Where do you keep the good steel?",
             "How do you carry a blade that long?",
+            # Widening the price and item-less patterns must not start eating
+            # ordinary questions that merely contain "how much" or "what is".
+            "How much do you know about the nomads?",
+            "What is the story of this forge?",
+            "How much snow falls up on the pass?",
         ],
     )
     def test_craft_and_provenance_questions_survive(self, text):
@@ -312,8 +330,17 @@ class TestMerchantVocabularyHasOneSpelling:
     @pytest.mark.parametrize(
         "noun", ["sword", "spear", "dagger", "leather", "chain", "helmet", "cuirass"]
     )
-    def test_both_readers_of_the_vocabulary_agree(self, noun):
-        """A noun a merchant sells is a noun the guard calls a possession."""
+    def test_both_readers_of_the_shared_floor_agree(self, noun):
+        """A floor noun is a noun the possession tripwire also calls a thing.
+
+        Deliberately hand-listed, and deliberately NOT the coverage guard.
+        Every noun here was already in ``MERCHANDISE`` when it was written, so
+        it cannot discover a merchant whose goods nobody thought of -- which is
+        exactly what it failed to do: it was green for a full round while
+        Jambo's entire stock was invisible. The coverage question is answered
+        against the live roster by
+        :class:`TestEveryConversationalMerchantSellsWordsTheClassifierKnows`.
+        """
         import re
 
         from src.npc import _chat_guard, _chat_llm
@@ -672,3 +699,117 @@ class TestProviderPromptReinforcement:
         user = captured[0]["user"].lower()
         assert "third person" in user
         assert "genuine self-introduction" in user
+
+
+def _conversational_merchants():
+    """Every merchant the game can actually hold a conversation with.
+
+    Derived by walking ``src.npc``'s exports for ``ConversationalNPCMixin``
+    subclasses rather than naming three classes, so a fourth merchant is
+    covered on the day it is written instead of the round after someone
+    notices. That ordering is the whole point: the defect this guards against
+    shipped because a merchant was made conversational in the same change that
+    "unified" the vocabulary, and nothing connected the two facts.
+    """
+    import inspect
+
+    import src.npc as npc_pkg
+    from src.npc._chat_llm import ConversationalNPCMixin
+    from src.npc._merchants import Merchant
+
+    found = []
+    for _name, obj in vars(npc_pkg).items():
+        if (
+            inspect.isclass(obj)
+            and issubclass(obj, ConversationalNPCMixin)
+            and issubclass(obj, Merchant)
+        ):
+            found.append(obj)
+    return sorted(set(found), key=lambda c: c.__name__)
+
+
+class TestEveryConversationalMerchantSellsWordsTheClassifierKnows:
+    """The coverage guard, derived from the roster instead of a noun list.
+
+    A merchant whose own goods are invisible to the commerce classifier is the
+    defect in its purest form: the shop rule exists to keep buying and selling
+    out of conversation, and at that counter it does nothing. It shipped once
+    already -- ``MERCHANDISE`` covered arms and armour, and the same change
+    made an apothecary conversational.
+
+    A hand-written probe list cannot catch the next one, because whoever writes
+    the list is the person who already forgot. So ask the roster.
+    """
+
+    def test_the_roster_is_not_empty(self):
+        """Non-vacuity. A discovery walk that finds nothing passes everything."""
+        merchants = _conversational_merchants()
+        assert len(merchants) >= 3, [m.__name__ for m in merchants]
+
+    def test_every_stocked_item_is_recognised_as_merchandise(self):
+        """Every item a conversational merchant stocks must read as a good.
+
+        Checks the item's own declared name and subtype, which is what a player
+        types when they point at it. Fails today for any merchant whose wares
+        are absent from both the shared floor and its own derived vocabulary.
+        """
+        misses = []
+        for cls in _conversational_merchants():
+            merchant = cls()
+            for item in list(getattr(merchant, "always_stock", None) or []):
+                for attr in ("name", "subtype"):
+                    word = getattr(item, attr, None)
+                    if not isinstance(word, str) or not word.strip():
+                        continue
+                    if not merchant._names_merchandise(word):
+                        misses.append(
+                            "%s stocks %s (%s=%r) but the classifier does not "
+                            "read it as merchandise"
+                            % (cls.__name__, type(item).__name__, attr, word)
+                        )
+        assert misses == [], "\n".join(misses)
+
+    def test_the_canonical_price_question_is_commerce_at_every_counter(self):
+        """"How much for the X?" is the question the shop rule exists for.
+
+        Asked with each merchant's own goods. This is the functional half: the
+        vocabulary test above proves the noun is known, this proves knowing it
+        actually suppresses the sale.
+        """
+        misses = []
+        for cls in _conversational_merchants():
+            merchant = cls()
+            for item in list(getattr(merchant, "always_stock", None) or []):
+                noun = (getattr(item, "name", "") or "").lower()
+                if not noun:
+                    continue
+                question = "How much for the %s?" % noun
+                if not merchant._is_merchant_commerce_question(question):
+                    misses.append("%s: %r not suppressed" % (cls.__name__, question))
+        assert misses == [], "\n".join(misses)
+
+    def test_the_derived_half_is_actually_doing_work(self):
+        """Guard-the-guard: the floor alone must NOT satisfy the tests above.
+
+        Without this, the two tests could pass because the shared floor happens
+        to cover everything, and the per-host derivation could be deleted with
+        the suite still green -- which is how the last version of this rule
+        rotted. At least one stocked item must be known ONLY because its
+        merchant declares it.
+        """
+        from src.npc import _chat_llm
+
+        derived_only = []
+        for cls in _conversational_merchants():
+            merchant = cls()
+            for item in list(getattr(merchant, "always_stock", None) or []):
+                word = getattr(item, "name", None)
+                if not isinstance(word, str) or not word.strip():
+                    continue
+                floor = _chat_llm._MERCHANT_ITEM_PATTERN.search(word)
+                if not floor and merchant._names_merchandise(word):
+                    derived_only.append("%s: %s" % (cls.__name__, word))
+        assert derived_only, (
+            "no stocked item is recognised only via the per-host vocabulary, so "
+            "these tests would still pass with _host_merchandise_pattern deleted"
+        )

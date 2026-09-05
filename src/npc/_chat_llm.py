@@ -681,6 +681,23 @@ _JEAN_SELF_INTRO_PATTERN = re.compile(
 # possession tripwire reads. Spelled here independently it enumerated armour
 # nouns and no weapon nouns, so at Kaelen's arms stall (Shortsword, Spear,
 # Dagger) the canonical "How much for the sword?" was not commerce at all.
+#
+# This constant is a FLOOR, not the whole vocabulary, and the distinction is
+# the fix for a defect that outlived being "fixed" once. Sharing one hand-
+# written noun list closed the reported instance (weapons) and left the class
+# wide open: the list covers arms and armour, and the very same change made
+# JamboHealsU conversational, whose entire stock is Restorative, Draught and
+# Antidote. Not one of those words was in it. A public constant, a comment
+# claiming "the ONE spelling", and a green test named
+# TestMerchantVocabularyHasOneSpelling then told every reader the rule was
+# unified while an apothecary sold potions no classifier could see — which is
+# worse than the duplication it replaced, because the duplication was visible.
+#
+# So the per-host half is DERIVED from what the merchant actually sells, at
+# call time off ``self`` (see ``_host_merchandise_pattern``). No import cycle:
+# the roster is an attribute, not an import. A merchant added to the game is
+# covered the day it is added, and ``tests/test_npc_chat_merchant_and_loquacity``
+# asserts exactly that against the live roster rather than a copied noun list.
 _MERCHANT_ITEM_PATTERN = re.compile(
     r"\b(?:" + _chat_guard.MERCHANDISE + r")\b",
     re.IGNORECASE,
@@ -736,7 +753,14 @@ _MERCHANT_LORE_LEAD_PATTERN = re.compile(
 )
 _MERCHANT_PRICE_PATTERN = re.compile(
     r"\bhow\s+much\s+for\b|"
-    r"\b(?:what\s+(?:is|are|does|do)|how\s+much\s+(?:does|do|would|will|can))\b"
+    # "How much IS the sword?" -- the copula was missing while "how much does"
+    # was present, so the commonest spelling of the commonest question at a
+    # counter walked straight through, one word away from the row the
+    # regression test asserts. That is what a probe list drawn from a bug
+    # report buys you: the sentence in the report, and nothing beside it.
+    r"\bhow\s+much\s+(?:is|are|was|were)\b|"
+    r"\b(?:what(?:['’]s)?\s+(?:is|are|does|do)?|"
+    r"how\s+much\s+(?:does|do|would|will|can))\b"
     r".{0,80}\b(?:price|cost|worth|value)\b|"
     r"\b(?:does|do|would|will|can)\s+it\s+cost\b|"
     r"\b(?:does|do|would|will|can)\s+(?:it|the|this|that|these|those|any)\s+cost\s+(?:more|less|extra)\b",
@@ -770,10 +794,19 @@ _MERCHANT_ITEMLESS_TRADE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Every alternative here names the transaction outright, so none needs a noun
+# to confirm it. The second group is the shopkeeper's own opening line -- "What
+# can I get for you?", "Are you buying or selling today?" -- which is commerce
+# with no item in it anywhere, and which the item-anchored branches therefore
+# could not see at all.
 _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
     r"\b(?:looking|want|need)\s+to\s+(?:buy|sell)\b|"
     r"\b(?:your|the)\s+(?:selection|variety|assortment)\s+of\b|"
-    r"\b(?:haggling?|haggle)\s+(?:over|for|about)\b",
+    r"\b(?:haggling?|haggle)\s+(?:over|for|about)\b|"
+    r"\b(?:are|is)\s+you\b.{0,20}\b(?:buying|selling|trading)\b|"
+    r"\bmake\s+a\s+purchase\b|"
+    r"\bwhat\s+can\s+i\s+(?:get|do)\s+for\s+you\b|"
+    r"\bin\s+the\s+market\s+for\b",
     re.IGNORECASE,
 )
 _MERCHANT_TRANSACTION_PATTERN = re.compile(
@@ -2201,6 +2234,79 @@ class ConversationalNPCMixin:
             )
         return FilterResult(text, None, removed)
 
+    #: Per-instance cache for :meth:`_host_merchandise_pattern`. Keyed on the
+    #: id of the stock list so a merchant restocked at runtime rebuilds.
+    _host_merchandise_cache = None
+
+    def _host_merchandise_pattern(self):
+        """The nouns THIS merchant's own stock puts on the counter.
+
+        Derived from ``always_stock`` (each item's name, subtype and declared
+        aliases) and ``specialties`` (the item classes), because those are what
+        the game already says the merchant sells. ``Restorative`` alone
+        contributes "restorative", "potion", "vial" and "vials" -- every one of
+        which a player would actually type at an apothecary, and none of which
+        any hand-written list in this module contained.
+
+        Returns ``None`` for a host with no declared stock, so the caller falls
+        back to the shared floor vocabulary alone.
+        """
+        stock = list(getattr(self, "always_stock", None) or [])
+        specialties = list(getattr(self, "specialties", None) or [])
+        cache_key = (
+            tuple(type(item).__name__ for item in stock),
+            tuple(getattr(cls, "__name__", str(cls)) for cls in specialties),
+        )
+        cached = self._host_merchandise_cache
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        words = set()
+        for item in stock:
+            for raw in (
+                getattr(item, "name", None),
+                getattr(item, "subtype", None),
+            ):
+                if isinstance(raw, str) and raw.strip():
+                    words.add(raw.strip().lower())
+            for alias in getattr(item, "aliases", None) or []:
+                if isinstance(alias, str) and alias.strip():
+                    words.add(alias.strip().lower())
+        for cls in specialties:
+            name = getattr(cls, "__name__", None)
+            if isinstance(name, str) and name.strip():
+                words.add(name.strip().lower())
+
+        # A multi-word name ("Leather Armor", "small glass vial") is worth
+        # matching whole, and its head noun is already carried by the floor
+        # vocabulary or by the subtype, so no splitting is needed here.
+        # Trailing "s?" so a plural question ("Do you have any restoratives?")
+        # matches the singular the item declares.
+        alternatives = sorted(
+            (re.escape(word) for word in words if len(word) > 2),
+            key=len,
+            reverse=True,
+        )
+        pattern = None
+        if alternatives:
+            pattern = re.compile(
+                r"\b(?:" + "|".join(alternatives) + r")s?\b",
+                re.IGNORECASE,
+            )
+        self._host_merchandise_cache = (cache_key, pattern)
+        return pattern
+
+    def _names_merchandise(self, text: str) -> bool:
+        """Does ``text`` name a thing this merchant trades in?
+
+        The shared floor plus whatever this host actually stocks. Split in two
+        so neither half can quietly become the whole answer again.
+        """
+        if _MERCHANT_ITEM_PATTERN.search(text):
+            return True
+        host = self._host_merchandise_pattern()
+        return bool(host and host.search(text))
+
     def _is_merchant_commerce_question(self, text: str) -> bool:
         """True when a merchant line asks about shop transactions or stock."""
         if not self._is_merchant_chat():
@@ -2208,7 +2314,7 @@ class ConversationalNPCMixin:
         if "?" not in text and not _MERCHANT_QUESTION_PREFIX_PATTERN.search(text):
             return False
 
-        has_item = bool(_MERCHANT_ITEM_PATTERN.search(text))
+        has_item = self._names_merchandise(text)
         lore_frame = self._is_lore_frame(text)
         stock_request = self._is_stock_request(text)
 
