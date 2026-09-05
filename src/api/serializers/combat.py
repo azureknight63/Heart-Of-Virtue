@@ -464,12 +464,12 @@ class CombatantSerializer:
         range_min, range_max = mvrange
 
         # Every Move has get_effective_range_max (the base returns None — see
-        # src/moves/_base.py), so this is a plain call, matching how
-        # combat_adapter._get_available_targets already invokes it. It is
-        # deliberately not wrapped in try/except: an override that raises is a
-        # real engine bug, and swallowing it here would ship a silently wrong
-        # threat radius instead — the exact silent-failure mode this payload's
-        # contract test exists to prevent.
+        # src/moves/_base.py), matching how combat_adapter.
+        # _get_available_targets already invokes it. Reached via _move_method,
+        # which resolves *absence* only — there is still no try/except here:
+        # an override that raises is a real engine bug, and swallowing it
+        # would ship a silently wrong threat radius instead, the exact
+        # silent-failure mode this payload's contract test exists to prevent.
         get_effective_range_max = CombatantSerializer._move_method(
             move, "get_effective_range_max"
         )
