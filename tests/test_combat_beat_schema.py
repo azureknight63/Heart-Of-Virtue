@@ -50,6 +50,19 @@ _PY_ONLY_CONSTANTS = {
     # by tests/test_move_web_animations.py instead.
     "DEFAULT_ANIMATION",
     "DEFAULT_DAMAGE_ANIMATION",
+    # Server-only event names: nothing in frontend/src emits or listens for any
+    # of these, so a JS mirror would be an export with no consumer -- exactly
+    # the client-only accumulation the reverse test below exists to prevent.
+    # They are defined Python-side anyway so combat_beat.py holds the WHOLE
+    # socket vocabulary; a subset would imply this guard covers more than it
+    # does. Mirror one and drop it from here the moment a client consumes it.
+    "STARTED_EVENT",   # emitted at combat start; the client re-fetches instead
+    "LOG_EVENT",       # legacy per-entry log push
+    "TURN_EVENT",      # legacy awaiting-input notification
+    "LEAVE_EVENT",     # handler; the client just disconnects
+    "LEFT_EVENT",      # ack for the above
+    "PING_EVENT",      # test-only liveness probe
+    "PONG_EVENT",      # ack for the above
 }
 
 #: The same exemption in the other direction: names the JS mirror exports that

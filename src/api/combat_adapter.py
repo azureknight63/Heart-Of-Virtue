@@ -26,7 +26,11 @@ from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
 from src.api.schemas.combat_beat import (
     DEFAULT_ANIMATION,
     DEFAULT_DAMAGE_ANIMATION,
+    LOG_EVENT,
+    STARTED_EVENT,
     SUGGESTIONS_EVENT,
+    TURN_EVENT,
+    UPDATE_EVENT,
 )
 from src.api.combat_beat_stream import CombatBeatStreamer
 from ai.combat_strategist import CombatStrategist
@@ -886,7 +890,7 @@ class ApiCombatAdapter:
 
                     if hasattr(current_app, "socketio"):
                         room = f"combat_{self.session_id}"
-                        current_app.socketio.emit("combat:log", entry, room=room)
+                        current_app.socketio.emit(LOG_EVENT, entry, room=room)
                 except Exception as e:
                     print(f"[SOCKET ERROR] Failed to emit log: {e}")
 
@@ -1347,7 +1351,7 @@ class ApiCombatAdapter:
                     serialized_state = result
                     if hasattr(current_app, "socketio"):
                         current_app.socketio.emit(
-                            "combat:started",
+                            STARTED_EVENT,
                             {"battle_state": serialized_state},
                             room=f"combat_{self.session_id}",
                         )
@@ -2304,12 +2308,12 @@ class ApiCombatAdapter:
                     # authoritative and the duplicate unsequenced update could
                     # arrive late and clobber terminal state.
                     if self._beat_streamer is None:
-                        current_app.socketio.emit("combat:update", result, room=room)
+                        current_app.socketio.emit(UPDATE_EVENT, result, room=room)
 
                     # If awaiting input, also emit turn notification
                     if self.awaiting_input:
                         current_app.socketio.emit(
-                            "combat:turn",
+                            TURN_EVENT,
                             {
                                 "input_type": self.input_type,
                                 "available_options_count": len(self.available_options),

@@ -14,11 +14,33 @@
  * See docs/development/combat-streaming-plan.md.
  */
 
+/** The ordered beat stream (server -> client). */
 export const BEAT_EVENT = 'combat:beat';
 export const RESOLVED_EVENT = 'combat:resolved';
 export const ENDED_EVENT = 'combat:ended';
 export const SUGGESTIONS_EVENT = 'combat:suggestions';
 export const ERROR_EVENT = 'error';
+
+/**
+ * Room membership handshake. `JOINED_EVENT` is what resets the re-handshake
+ * budget in useCombatSocket.js, so a server-side rename does not fail loudly:
+ * the ack never arrives, the three retries burn down and the fight silently
+ * falls back to the 8s HTTP poll for the rest of the session.
+ *
+ * The server-only names (combat:started, combat:log, combat:turn,
+ * leave_combat/left_combat, ping_combat/pong_combat) deliberately have no
+ * mirror here -- nothing in this app listens for or emits them. They live in
+ * combat_beat.py's _PY_ONLY_CONSTANTS; mirror one here the moment a client
+ * consumer appears.
+ */
+export const JOIN_EVENT = 'join_combat';
+export const JOINED_EVENT = 'joined_combat';
+
+/**
+ * Legacy recovery channel: a full serialized battle state, emitted only when
+ * the server has no beat streamer attached.
+ */
+export const UPDATE_EVENT = 'combat:update';
 
 /**
  * Codes on the socket `error` payload. Rationale for the split lives with the

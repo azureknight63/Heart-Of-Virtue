@@ -17,6 +17,9 @@ import {
   RESOLVED_EVENT,
   ENDED_EVENT,
   SUGGESTIONS_EVENT,
+  UPDATE_EVENT,
+  JOIN_EVENT,
+  JOINED_EVENT,
   ERROR_EVENT,
   ERROR_SESSION_MISSING,
   ERROR_SESSION_INVALID,
@@ -118,7 +121,7 @@ export function useCombatSocket({
     // handshake carried (see `_session_id` in src/api/sockets.py), which is
     // also the only way it could be trusted — a client-supplied session id was
     // never authenticated, it was merely believed.
-    const join = () => socket.emit('join_combat', {});
+    const join = () => socket.emit(JOIN_EVENT, {});
     // Initial connect is the same situation as a reconnect: beats emitted before
     // join_combat completed went to a room we weren't in, and lastSeqRef starts
     // null so classifySeq can't detect that gap. Re-seed from status either way.
@@ -135,7 +138,7 @@ export function useCombatSocket({
     // full budget rather than inheriting an exhausted one.
     let rehandshakes = 0;
     let rehandshakeTimer = null;
-    socket.on('joined_combat', () => {
+    socket.on(JOINED_EVENT, () => {
       rehandshakes = 0;
     });
 
@@ -215,7 +218,7 @@ export function useCombatSocket({
     // Legacy/compatibility state updates are not authoritative beat events,
     // but they are still useful as a recovery path when the backend streaming
     // flag is off or a beat event was missed.
-    socket.on('combat:update', (state) => {
+    socket.on(UPDATE_EVENT, (state) => {
       const seq = state?.seq;
       if (seq != null && lastStateSeqRef.current != null && seq < lastStateSeqRef.current) return;
       if (seq != null) lastStateSeqRef.current = seq;
