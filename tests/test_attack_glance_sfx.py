@@ -50,16 +50,25 @@ RENDER_SEED = 4242
 #: glance/parry ratio over 100 disjoint blocks of 12 spans 1.58-1.74, where the
 #: same statistic from single draws spans 1.40-1.99 (and 1.12 when the glance
 #: and parry draws are independent, which is what used to fail).
-SAMPLE_SEEDS = tuple(range(RENDER_SEED, RENDER_SEED + 12))
+#:
+#: Deliberately disjoint from ``RENDER_SEED``: the clipping sweep and
+#: ``test_does_not_clip`` would otherwise cover overlapping draws, and the
+#: latter could never fail on its own.
+SAMPLE_SEEDS = tuple(range(RENDER_SEED + 1, RENDER_SEED + 13))
 
 
 @contextmanager
 def _seeded(seed):
     """Run a render against a pinned global RNG, restoring the state after.
 
-    Mirrors ``tests/_combat_fixtures.seeded``. Restoring matters as much as
-    seeding: the suite runs under ``pytest-randomly``, which reseeds per test,
-    and a leaked seed would silently pin whatever ran next.
+    Restoring matters as much as seeding: the suite runs under
+    ``pytest-randomly``, which reseeds per test, and a leaked seed would
+    silently pin whatever ran next.
+
+    This mirrors ``tests/_combat_fixtures.seeded`` rather than importing it on
+    purpose — that module pulls in ``src.items``/``src.npc``/``src.player``,
+    and instantiating those mutates module-level registries (see CLAUDE.md).
+    An audio test has no business dragging the engine in for six lines.
     """
     state = random.getstate()
     random.seed(seed)
