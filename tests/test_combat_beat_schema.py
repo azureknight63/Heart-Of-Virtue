@@ -98,9 +98,66 @@ def _js_int_const(name):
 
 
 def _js_exported_constants():
-    """Every ``export const NAME`` in the JS mirror, as a set of names."""
+    """Every ``export const NAME`` in the JS mirror, as a set of names.
+
+    Whitespace-tolerant on purpose. This scan fails OPEN -- a name it does not
+    see is simply absent from the reverse-direction check, with nothing to say
+    so -- and the previous pattern required the exact byte sequence
+    ``export const NAME = ``. Two spaces, a line-wrapped assignment or a
+    Prettier pass would each have silently dropped an export out of the guard.
+    """
     source = _MIRROR_JS.read_text(encoding="utf-8")
-    return set(re.findall(r"^export const ([A-Za-z_$][\w$]*) =", source, re.M))
+    return set(
+        re.findall(r"^export\s+const\s+([A-Za-z_$][\w$]*)\s*=", source, re.M)
+    )
+
+
+#: Statement types that open a new scope. A binding inside one of these is a
+#: local, not a module constant, so the scan below stops at their boundary --
+#: everything else at module level does bind a module attribute, however deeply
+#: it is nested in ``if`` / ``try`` / ``with`` blocks.
+_SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+
+def _bound_names(target):
+    """Yield every ``ast.Name`` an assignment target binds, unpacking included."""
+    if isinstance(target, ast.Name):
+        yield target
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for element in target.elts:
+            yield from _bound_names(element)
+    elif isinstance(target, ast.Starred):
+        yield from _bound_names(target.value)
+
+
+def _module_level_constant_names(node):
+    """Recursively collect UPPERCASE names bound at module level.
+
+    This scan fails OPEN, which is why it is written to be exhaustive rather
+    than convenient: a constant it does not see is simply not required to have
+    a JS mirror, and nothing reports the omission. The previous version walked
+    ``tree.body`` alone and matched only ``ast.Name`` targets, so BOTH
+    ``BEAT_EVENT, RESOLVED_EVENT = "combat:beat", "combat:resolved"`` and a
+    constant defined inside a module-level ``if`` / ``try`` / ``with`` block
+    escaped it silently -- while the guard's own docstring claimed to cover
+    "every module-level UPPERCASE constant".
+    """
+    names = []
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, _SCOPE_NODES):
+            continue
+        if isinstance(child, ast.Assign):
+            targets = child.targets
+        elif isinstance(child, ast.AnnAssign):
+            targets = [child.target]
+        else:
+            names.extend(_module_level_constant_names(child))
+            continue
+        for target in targets:
+            for name in _bound_names(target):
+                if re.fullmatch(r"[A-Z][A-Z0-9_]*", name.id):
+                    names.append(name.id)
+    return names
 
 
 def _python_constants():
@@ -110,20 +167,9 @@ def _python_constants():
     merely *imports* can never be mistaken for constants it defines.
     """
     tree = ast.parse(_SOURCE_PY.read_text(encoding="utf-8"))
-    names = []
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            targets = node.targets
-        elif isinstance(node, ast.AnnAssign):
-            targets = [node.target]
-        else:
-            continue
-        for target in targets:
-            if isinstance(target, ast.Name) and re.fullmatch(
-                r"[A-Z][A-Z0-9_]*", target.id
-            ):
-                names.append(target.id)
-    return {name: getattr(cb, name) for name in names}
+    return {
+        name: getattr(cb, name) for name in _module_level_constant_names(tree)
+    }
 
 
 def test_python_constants_are_all_mirrored_in_js():
