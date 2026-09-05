@@ -591,3 +591,117 @@ class TestTheWiderPredicateCannotStrandAFight:
 
         assert player.in_combat is False
         assert player.combat_end_summary["status"] == "victory"
+
+
+class TestAnAbandonedDeferralIsRescuedByThePoll:
+    """A deferral the player walks away from (issue #519).
+
+    ``process_event_input`` is the only backstop that can reach a live
+    deferral: the poll's resume block is gated on ``not awaiting_input``, and a
+    deferral leaves ``awaiting_input`` True because the dialog holding the beat
+    has not been dismissed. In normal play the dialog is always resolved through
+    that path, so the gap never shows. A session dropped mid-dialog -- browser
+    closed, container recycled -- resolves nothing: the pending event is gone
+    from the store while ``in_combat`` and ``awaiting_input`` ride back in on
+    the pickled player, and the fight is stranded with an empty battlefield and
+    nothing to dismiss.
+
+    The rescue keys on the deferral itself (``victory_deferred``), the empty
+    roster, and an empty pending-event store. The resume gate below it is
+    untouched, so the interrupted-move resume of issue #344 cannot be caught by
+    the widening.
+    """
+
+    def _defer(self, adapter, player, wave=None):
+        """Drive a real chain event to the deferred beat and return the session."""
+        event = FirstWaveChainEvent(wave=wave or [])
+        session_data = wire_real_callback(adapter, player, event)
+        wipe_roster(player)
+        adapter._execute_move(_wait_move(player))
+        assert player.in_combat is True, "precondition: victory was deferred"
+        assert adapter.victory_deferred is True, "precondition: deferral recorded"
+        assert (
+            adapter.awaiting_input is True
+        ), "precondition: the dialog still holds the beat"
+        assert session_data["pending_events"], "precondition: the dialog is stored"
+        return event, session_data
+
+    def test_the_poll_settles_a_deferral_whose_event_was_abandoned(
+        self, adapter, player
+    ):
+        self._defer(adapter, player)
+
+        # The player never dismisses the dialog. The rehydrated session has no
+        # pending event left to resolve, so nothing but the poll can end this.
+        player.combat_events.clear()
+        GameService().get_combat_status(player, session_data={"pending_events": {}})
+
+        assert player.in_combat is False
+        assert player.combat_end_summary["status"] == "victory"
+        assert adapter.victory_deferred is False
+
+    def test_the_rescue_publishes_the_terminal_stream(self, adapter, player):
+        self._defer(adapter, player)
+        player.combat_events.clear()
+        streamed = []
+        adapter._stream_combat_result = (
+            lambda state, beats, ended=False: streamed.append(ended)
+        )
+
+        GameService().get_combat_status(player, session_data={"pending_events": {}})
+
+        # Both halves or neither: a victory the client is never told to end on
+        # leaves the battlefield rendered over a finished fight.
+        assert streamed == [True]
+
+    def test_the_poll_leaves_a_deferral_that_still_has_its_dialog(
+        self, adapter, player
+    ):
+        # The ordinary mid-ambush poll: the announcement is still pending, the
+        # wave has not arrived. Ending the fight here is the very bug #514
+        # fixed, so the rescue must require an empty pending-event store.
+        _event, session_data = self._defer(
+            adapter, player, wave=[make_npc(Slime, name="Wave1", hp=20)]
+        )
+
+        GameService().get_combat_status(player, session_data=session_data)
+
+        assert player.in_combat is True, "the poll ended a fight mid-ambush"
+        assert player.combat_end_summary is None
+        assert adapter.victory_deferred is True
+
+    def test_a_landed_wave_clears_the_deferral(self, adapter, player):
+        event, session_data = self._defer(
+            adapter, player, wave=[make_npc(Slime, name="Wave1", hp=20)]
+        )
+
+        GameService().process_event_input(
+            player, event.api_event_id, "continue", session_data
+        )
+
+        # The reinit that carries the wave resolves the deferral. A flag left
+        # standing would let a later empty-roster poll settle a fight that is
+        # merely between waves.
+        assert player.in_combat is True
+        assert adapter.victory_deferred is False
+
+    def test_the_interrupted_move_resume_is_untouched(self, adapter, player):
+        # Issue #344's path: awaiting_input False with a live roster and a move
+        # left mid-execution. The rescue is a separate branch gated on
+        # awaiting_input True, so it cannot reach this even with a deferral flag
+        # standing. NEGATIVE CONTROL -- this passes with or without the rescue.
+        adapter.awaiting_input = False
+        adapter.victory_deferred = True
+        move = _wait_move(player)
+        player.current_move = move
+        resumed = []
+        adapter._execute_move = lambda m, **kw: (resumed.append(m), {"resumed": True})[
+            1
+        ]
+
+        result = GameService().get_combat_status(
+            player, session_data={"pending_events": {}}
+        )
+
+        assert resumed == [move]
+        assert result == {"resumed": True}

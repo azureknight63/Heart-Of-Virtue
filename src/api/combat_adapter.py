@@ -659,6 +659,26 @@ class ApiCombatAdapter:
         self.player.combat_adapter_state["awaiting_input"] = value
 
     @property
+    def victory_deferred(self):
+        """True while a wave transition is holding an emptied roster open.
+
+        Set on the beat the move loop declines to end the fight (issue #514)
+        and cleared by whatever resolves that beat: the wave landing (a reinit)
+        or the fight actually ending. It lives on the player, like every other
+        adapter flag, so it outlives the adapter object -- and so a fight
+        abandoned mid-dialog still says, on the next poll of a rehydrated
+        session, that its empty battlefield is an unfinished deferral rather
+        than a fight still waiting on the player (issue #519). The consumed
+        ``combat_wave_pending`` signal cannot say that: it is gone by the time
+        the next request arrives.
+        """
+        return self.player.combat_adapter_state.get("victory_deferred", False)
+
+    @victory_deferred.setter
+    def victory_deferred(self, value):
+        self.player.combat_adapter_state["victory_deferred"] = value
+
+    @property
     def input_type(self):
         return self.player.combat_adapter_state.get("input_type", None)
 
@@ -1087,8 +1107,10 @@ class ApiCombatAdapter:
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
                 self.player.combat_drops = []
-                # Waves are per-fight state as well (issue #514).
+                # Waves are per-fight state as well (issue #514), and so is an
+                # outstanding deferral of the victory they hold open (#519).
                 self.player.combat_wave_pending = False
+                self.victory_deferred = False
                 self.output_capture.clear()  # Clear captured output
                 self.current_beat_state_index = 0  # Reset beat state tracking
             else:
@@ -1099,6 +1121,9 @@ class ApiCombatAdapter:
                 # True, so the staleness is latent — but it must not survive the
                 # transition (issue #514).
                 self.player.combat_end_summary = None
+                # The wave this reinit carries is what the deferral was held
+                # open for, so the deferral is resolved (issue #519).
+                self.victory_deferred = False
 
             # Initialize combat_proximity if it doesn't exist
             if not hasattr(self.player, "combat_proximity"):
@@ -2190,6 +2215,10 @@ class ApiCombatAdapter:
         )
         if wave_transition:
             self.player.combat_wave_pending = False
+            # Record that this fight is holding an emptied roster open, so the
+            # status poll can tell an abandoned deferral from a fight that is
+            # merely waiting on the player (issue #519).
+            self.victory_deferred = True
 
         # Otherwise ALWAYS handle victory when all enemies are defeated
         # (even if post-combat events like Ch01PostRumbler3 are firing).
@@ -2886,6 +2915,7 @@ class ApiCombatAdapter:
         """
         self.player.in_combat = False
         self.awaiting_input = False
+        self.victory_deferred = False
         self._add_log_entry(
             self.player.combat_beat, "You have been defeated!", "system"
         )
@@ -2930,6 +2960,7 @@ class ApiCombatAdapter:
         """
         self.player.in_combat = False
         self.awaiting_input = False
+        self.victory_deferred = False
         self.player.fatigue = self.player.maxfatigue
         # Recharge single-use equip states (e.g. PhoenixRevive) consumed this battle
         self.player.recharge_equip_states()

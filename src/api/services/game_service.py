@@ -2829,6 +2829,30 @@ class GameService:
                 }
             adapter = player._combat_adapter
 
+            # An abandoned deferral has no other rescue (issue #519). The move
+            # loop declines to end a fight whose roster emptied mid-ambush and
+            # leaves awaiting_input True -- the dialog holding that beat has not
+            # been dismissed -- so the resume block below, which fires only when
+            # nothing is outstanding, can never reach it. Normal play always
+            # resolves that dialog through process_event_input, which settles
+            # the victory itself. A session dropped mid-dialog does not: the
+            # player comes back to an empty battlefield with nothing to dismiss.
+            #
+            # Settle it here when all three say the fight is over: a deferral is
+            # outstanding, the roster is empty, and no pending event survives in
+            # the session store to enroll a wave. This is deliberately a
+            # separate branch rather than a widening of the resume gate below --
+            # that gate gets to keep its exact predicate, so the interrupted
+            # current_move resume (issue #344) is untouched.
+            if (
+                player.in_combat
+                and adapter.awaiting_input
+                and getattr(adapter, "victory_deferred", False)
+                and not getattr(player, "combat_list", None)
+                and not (session_data.get("pending_events") if session_data else None)
+            ):
+                adapter.settle_victory()
+
             # Resume logic: If battle is active but not awaiting input, check why
             # This handles cases where combat was paused for narrative events
             if player.in_combat and not adapter.awaiting_input:
