@@ -522,19 +522,22 @@ class GameService:
     #: ``test_the_two_helpers_agree_on_the_staged_keys`` guards the pair.
     _STAGED_PAYLOAD_KEYS = ("output_text", "segments", "conversation")
 
-    @staticmethod
-    def _apply_staged_payload(target, clean_output, segments, conversation):
+    @classmethod
+    def _apply_staged_payload(cls, target, clean_output, segments, conversation):
         """Copy a :meth:`_capture_conversation` result onto a response/event dict.
 
         Empty parts are skipped so an unstaged event's payload keeps the exact
         shape it had before staged conversations existed.
+
+        The key names are READ from :attr:`_STAGED_PAYLOAD_KEYS` rather than
+        spelled out again, so the tuple is the authority both helpers answer to
+        instead of a third copy that happens to agree with them today.
         """
-        if clean_output:
-            target["output_text"] = clean_output
-        if segments:
-            target["segments"] = segments
-        if conversation:
-            target["conversation"] = conversation
+        for key, value in zip(
+            cls._STAGED_PAYLOAD_KEYS, (clean_output, segments, conversation)
+        ):
+            if value:
+                target[key] = value
         return target
 
     @classmethod
@@ -566,6 +569,27 @@ class GameService:
             if key in prior_data and key not in event_data:
                 event_data[key] = prior_data[key]
 
+    @staticmethod
+    def _pending_payload(event, event_data, tile_x=None, tile_y=None):
+        """Build a ``session_data["pending_events"]`` entry.
+
+        The one place the entry's shape is spelled. Every reader of the store
+        goes looking for ``event``, ``event_data`` and the optional
+        ``tile_x``/``tile_y`` that :meth:`process_event_input` resolves
+        ``event.tile`` from (issue #327); a writer that forgets the coordinates
+        silently falls back to ``player.current_room``, which is usually None in
+        the API, and the event loses the tile it was queued on.
+
+        The coordinates are omitted rather than stored as ``None`` when absent —
+        every reader uses ``pending.get(...)``, so the two are equivalent, and
+        omitting keeps a coordinate-less entry visibly coordinate-less.
+        """
+        payload = {"event": event, "event_data": event_data}
+        if tile_x is not None and tile_y is not None:
+            payload["tile_x"] = tile_x
+            payload["tile_y"] = tile_y
+        return payload
+
     def _store_pending_event(
         self,
         event,
@@ -595,14 +619,12 @@ class GameService:
         if session_data is not None:
             pending = session_data.setdefault("pending_events", {})
             self._carry_staged_payload(pending.get(event_id), event, event_data)
-            payload = {
-                "event": event,
-                "event_data": event_data,
-            }
-            if tile is not None and hasattr(tile, "x") and hasattr(tile, "y"):
-                payload["tile_x"] = tile.x
-                payload["tile_y"] = tile.y
-            pending[event_id] = payload
+            pending[event_id] = self._pending_payload(
+                event,
+                event_data,
+                getattr(tile, "x", None),
+                getattr(tile, "y", None),
+            )
 
         return event_data
 
@@ -1430,14 +1452,11 @@ class GameService:
                     result["event"] = EventSerializer.serialize_with_input(event)
                     # Preserve ID
                     result["event"]["event_id"] = event_id
-                    # Update session data
-                    if (
-                        "pending_events" in session_data
-                        and event_id in session_data["pending_events"]
-                    ):
-                        session_data["pending_events"][event_id]["event_data"] = result[
-                            "event"
-                        ]
+                    # No session write here: every path out of this method
+                    # re-stores the event under a fresh UUID or drops it, so
+                    # anything written under `event_id` is discarded a few lines
+                    # below. It read as the update that keeps the store current
+                    # and never was one.
 
         except Exception as e:
             result["success"] = False
@@ -1487,12 +1506,12 @@ class GameService:
             # Move the session entry from the old id to the new id
             if "pending_events" in session_data:
                 session_data["pending_events"].pop(old_event_id, None)
-                session_data["pending_events"][new_event_id] = {
-                    "event": event,
-                    "event_data": updated_event_data,
-                    "tile_x": carry_tile_x,
-                    "tile_y": carry_tile_y,
-                }
+                # Deliberately NOT _store_pending_event: its dedupe-by-name rule
+                # would rehome this stage onto an existing id, and a fresh id is
+                # the entire reason this branch exists.
+                session_data["pending_events"][new_event_id] = self._pending_payload(
+                    event, updated_event_data, carry_tile_x, carry_tile_y
+                )
             result["event"] = updated_event_data
             result["needs_input"] = True
         else:
@@ -1823,7 +1842,6 @@ class GameService:
         from unittest.mock import patch
         import inspect
         import re
-        import uuid
         from src.api.serializers.event_serializer import EventSerializer
 
         # Find target
@@ -1964,17 +1982,14 @@ class GameService:
                         event_data = EventSerializer.serialize_with_input(loot_event)
 
                         if session_data is not None:
-                            event_id = str(uuid.uuid4())
-                            event_data["event_id"] = event_id
-
-                            if "pending_events" not in session_data:
-                                session_data["pending_events"] = {}
-                            session_data["pending_events"][event_id] = {
-                                "event": loot_event,
-                                "tile_x": tile.x,
-                                "tile_y": tile.y,
-                                "event_data": event_data,
-                            }
+                            # Dedupe-by-name is right here: the name is
+                            # "Looting <container>", so a collision is the same
+                            # container's dialog re-opened. Left to itself this
+                            # site minted a second UUID for it, and the first
+                            # entry stayed pending forever, blocking input.
+                            event_data = self._store_pending_event(
+                                loot_event, event_data, session_data, tile=tile
+                            )
 
                         events_triggered.append(event_data)
                 elif (
@@ -2017,16 +2032,12 @@ class GameService:
                         passageway=target,
                     )
                     event_data = EventSerializer.serialize_with_input(trans_event)
-                    event_id = str(uuid.uuid4())
-                    event_data["event_id"] = event_id
-                    if "pending_events" not in session_data:
-                        session_data["pending_events"] = {}
-                    session_data["pending_events"][event_id] = {
-                        "event": trans_event,
-                        "tile_x": tile.x,
-                        "tile_y": tile.y,
-                        "event_data": event_data,
-                    }
+                    # Dedupe-by-name is right here too: the name is
+                    # "Passage_<passageway>", so a collision is the same
+                    # passageway's confirmation re-armed.
+                    event_data = self._store_pending_event(
+                        trans_event, event_data, session_data, tile=tile
+                    )
                     events_triggered.append(event_data)
                 else:
                     method = getattr(target, action)
@@ -2356,18 +2367,14 @@ class GameService:
                 clean_output, segments, conversation = self._capture_conversation(
                     _msgs, player
                 )
-                triggered = False
-                if clean_output:
-                    event_data["output_text"] = clean_output
-                    triggered = True
-                if segments:
-                    event_data["segments"] = segments
-                if conversation:
-                    event_data["conversation"] = conversation
+                self._apply_staged_payload(
+                    event_data, clean_output, segments, conversation
+                )
 
-                # Mark as triggered if input required
-                if getattr(event, "needs_input", False):
-                    triggered = True
+                # Worth reporting if it said something or if it wants an answer.
+                triggered = bool(clean_output) or bool(
+                    getattr(event, "needs_input", False)
+                )
 
                 # Only add to results if it actually did something
                 if triggered:
