@@ -183,7 +183,19 @@ export default function useCombatLogPlayback(combat, {
         // keyword matcher below (which would double-fire the sound).
         const hasAnimation = entry.type === 'animation' || !!entry.animation
 
-        const msg = entry.message.toLowerCase()
+        // Coerced, not trusted. An entry with no `message` would throw
+        // here, and there is no ErrorBoundary anywhere in frontend/src: for
+        // the FIRST entry of a batch processNextLine is called synchronously
+        // from the effect body, so the throw unmounts the whole SPA; for a
+        // later entry it kills the timer chain with `isProcessingLog` stuck
+        // true, and the next 8s poll re-enters and throws again. No live
+        // producer omits `message` today — this is the house rule the sibling
+        // consumers already follow (`entry?.message ?? ''` in
+        // utils/combatLogKey.js, and the same reasoning spelled out in
+        // StatusEffectsIconPanel.jsx), and `combat_log` is pickled into saves,
+        // so entries outlive the build that wrote them. Byte-identical for a
+        // well-formed entry.
+        const msg = String(entry.message ?? '').toLowerCase()
 
 
         // Add this line to displayed log
