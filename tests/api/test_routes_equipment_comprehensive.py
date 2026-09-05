@@ -8,19 +8,14 @@ from datetime import datetime, timedelta
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-import pytest
-
-pytestmark = pytest.mark.skip(reason="Routes not fully implemented - incomplete test infrastructure")
-
-
 class TestEquipmentGetRoute:
-    """Test GET /equipment endpoint."""
+    """Test the GET /api/equipment endpoint."""
 
     def test_get_equipment_success(self, client, authenticated_session):
         """Test successful equipment retrieval."""
         session_id, _, _ = authenticated_session
         response = client.get(
-            "/equipment/",
+            "/api/equipment",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -29,20 +24,30 @@ class TestEquipmentGetRoute:
         assert data["success"] is True
         assert "equipment" in data
         equipment = data["equipment"]
-        # Check for expected equipment slots
-        expected_slots = ["head", "body", "hands", "feet", "back", "neck"]
-        for slot in expected_slots:
-            assert slot in equipment or "error" not in data
+        # EquipmentSerializer emits a fixed envelope; `equipped` only carries
+        # slots that actually hold an item (see _collect_equipped_items), so
+        # assert the envelope and that every emitted slot is a known one.
+        assert set(equipment) == {
+            "equipped",
+            "unequipped_equippable_count",
+            "total_stat_bonuses",
+            "equipment_value",
+        }
+        known_slots = {"weapon", "body", "head", "hands", "feet"}
+        for slot in equipment["equipped"]:
+            assert slot in known_slots or slot.startswith("accessory_")
+        assert isinstance(equipment["unequipped_equippable_count"], int)
+        assert isinstance(equipment["total_stat_bonuses"], dict)
 
     def test_get_equipment_no_auth(self, client):
         """Test equipment endpoint without authentication."""
-        response = client.get("/equipment/")
+        response = client.get("/api/equipment")
         assert response.status_code == 401
 
     def test_get_equipment_invalid_session(self, client):
         """Test equipment with invalid session."""
         response = client.get(
-            "/equipment/",
+            "/api/equipment",
             headers={"Authorization": "Bearer invalid_session_id"},
         )
         assert response.status_code == 401
@@ -56,7 +61,7 @@ class TestEquipmentGetRoute:
             session.expires_at = datetime.now() - timedelta(hours=1)
 
         response = client.get(
-            "/equipment/",
+            "/api/equipment",
             headers={"Authorization": f"Bearer {session_id}"},
         )
         # Session expiration may result in 401 or 500 depending on error handling
@@ -68,8 +73,7 @@ class TestEquipmentErrorCases:
 
     def test_get_equipment_returns_json(self, client):
         """Test that equipment endpoint returns JSON on error."""
-        response = client.get("/equipment/")
+        response = client.get("/api/equipment")
         assert response.content_type == "application/json"
         data = json.loads(response.data)
         assert isinstance(data, dict)
-
