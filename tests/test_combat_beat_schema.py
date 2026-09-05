@@ -5,6 +5,7 @@ Covers the pure Python builders/validators and asserts the frontend JS mirror
 of truth (src/api/schemas/combat_beat.py).
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -12,9 +13,52 @@ from src.api.schemas import combat_beat as cb
 
 _ROOT = Path(__file__).resolve().parents[1]
 _MIRROR_JS = _ROOT / "frontend" / "src" / "utils" / "combatBeatSchema.js"
+_SOURCE_PY = _ROOT / "src" / "api" / "schemas" / "combat_beat.py"
 
 
 # ── JS-mirror parity ────────────────────────────────────────────────────────
+#
+# Parity is DERIVED, not enumerated (issue #521). The previous version of this
+# file called the parsers below from a hand-maintained list of names, which
+# caught *value* drift but not *addition* drift: a constant added on the Python
+# side and forgotten in the JS mirror failed nothing unless someone also
+# remembered to edit this test. That hole was already real --
+# ``MAX_BEAT_RESOLUTIONS`` shipped mirrored in the JS with a "Keep the two
+# values identical" comment and no test asserting it.
+#
+# So instead: walk every module-level UPPERCASE constant in combat_beat.py and
+# require a matching ``export const`` in the mirror. A name that is genuinely
+# Python-only must be listed in ``_PY_ONLY_CONSTANTS`` below, which makes the
+# omission a deliberate, reviewed act rather than an accident.
+#
+# Drift here is not cosmetic. The error codes are the sharpest case: if the JS
+# constant stops matching what the server emits, ``ERROR_SESSION_INVALID`` stops
+# being recognised and a genuinely dead session leaves the socket retrying
+# forever, while ``ERROR_SESSION_MISSING`` stops being recognised and a
+# handshake that simply lost its cookie falls through to "unknown code" and
+# never retries. CLAUDE.md names mirrored-literal drift across this boundary as
+# a recurring failure mode of this codebase.
+
+#: Module-level constants that deliberately do NOT appear in the JS mirror,
+#: each with the reason it stays Python-side. Anything not listed here MUST be
+#: mirrored.
+_PY_ONLY_CONSTANTS = {
+    # Server-side substitutions: the API layer picks these when a move declares
+    # no ``web_animation`` of its own, so the client only ever receives the
+    # resulting concrete value on the wire and never needs the name. Their
+    # values are contract-checked against the frontend's ANIMATION_CONFIGS keys
+    # by tests/test_move_web_animations.py instead.
+    "DEFAULT_ANIMATION",
+    "DEFAULT_DAMAGE_ANIMATION",
+}
+
+#: The same exemption in the other direction: names the JS mirror exports that
+#: ``combat_beat.py`` does not define. Empty on purpose -- a constant in the
+#: mirror with no Python counterpart is the exact shape of CLAUDE.md's dominant
+#: bug class (the client keying off a name the server never emits), so it has to
+#: be argued for here rather than merely appearing.
+_JS_ONLY_CONSTANTS = set()
+
 
 def _js_string_array(name):
     """Parse `export const NAME = [ 'a', 'b', ... ];` out of the JS mirror."""
@@ -33,41 +77,116 @@ def _js_string_const(name):
     return match.group(1)
 
 
-def test_beat_fields_parity():
-    assert _js_string_array("BEAT_FIELDS") == cb.BEAT_FIELDS
+def _js_int_const(name):
+    source = _MIRROR_JS.read_text(encoding="utf-8")
+    match = re.search(rf"export const {name} = (-?\d+);", source)
+    assert match, f"{name} const not found in combatBeatSchema.js"
+    return int(match.group(1))
 
 
-def test_outcomes_parity():
-    assert _js_string_array("OUTCOMES") == cb.OUTCOMES
+def _js_exported_constants():
+    """Every ``export const NAME`` in the JS mirror, as a set of names."""
+    source = _MIRROR_JS.read_text(encoding="utf-8")
+    return set(re.findall(r"^export const ([A-Za-z_$][\w$]*) =", source, re.M))
 
 
-def test_sfx_kinds_parity():
-    assert _js_string_array("SFX_KINDS") == cb.SFX_KINDS
+def _python_constants():
+    """Every module-level UPPERCASE constant in combat_beat.py, name -> value.
 
-
-def test_departure_reasons_parity():
-    assert _js_string_array("DEPARTURE_REASONS") == cb.DEPARTURE_REASONS
-
-
-def test_event_name_parity():
-    assert _js_string_const("BEAT_EVENT") == cb.BEAT_EVENT
-    assert _js_string_const("RESOLVED_EVENT") == cb.RESOLVED_EVENT
-    assert _js_string_const("ENDED_EVENT") == cb.ENDED_EVENT
-    assert _js_string_const("SUGGESTIONS_EVENT") == cb.SUGGESTIONS_EVENT
-    assert _js_string_const("ERROR_EVENT") == cb.ERROR_EVENT
-
-
-def test_error_code_parity():
-    """The client keys its sign-out decision off these codes.
-
-    A drift here is not a cosmetic mismatch: if the JS constant stops matching
-    what the server emits, ``ERROR_SESSION_INVALID`` stops being recognised and
-    a genuinely dead session leaves the socket retrying forever, while
-    ``ERROR_SESSION_MISSING`` stops being recognised and a handshake that
-    simply lost the cookie falls through to "unknown code" and never retries.
+    AST-parsed rather than read off ``vars(cb)`` so that names the module
+    merely *imports* can never be mistaken for constants it defines.
     """
-    assert _js_string_const("ERROR_SESSION_MISSING") == cb.ERROR_SESSION_MISSING
-    assert _js_string_const("ERROR_SESSION_INVALID") == cb.ERROR_SESSION_INVALID
+    tree = ast.parse(_SOURCE_PY.read_text(encoding="utf-8"))
+    names = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name) and re.fullmatch(
+                r"[A-Z][A-Z0-9_]*", target.id
+            ):
+                names.append(target.id)
+    return {name: getattr(cb, name) for name in names}
+
+
+def test_python_constants_are_all_mirrored_in_js():
+    """Every constant combat_beat.py defines exists, with the same value, in JS.
+
+    This is the addition-drift guard: adding a constant to the Python schema
+    without mirroring it fails HERE, with no edit to this test required.
+    """
+    constants = _python_constants()
+    # Sanity-check the scan itself: a parser that silently found nothing would
+    # make this whole test vacuously green.
+    assert len(constants) >= 10, (
+        f"only found {sorted(constants)} -- the AST scan is broken"
+    )
+
+    for name, value in sorted(constants.items()):
+        if name in _PY_ONLY_CONSTANTS:
+            continue
+        if isinstance(value, tuple):
+            assert _js_string_array(name) == value, f"{name} drifted"
+        elif isinstance(value, str):
+            assert _js_string_const(name) == value, f"{name} drifted"
+        elif isinstance(value, int) and not isinstance(value, bool):
+            assert _js_int_const(name) == value, f"{name} drifted"
+        else:
+            raise AssertionError(
+                f"{name} is a {type(value).__name__}, which this parity guard "
+                "cannot compare across the boundary. Teach the _js_* parsers "
+                "to read it, or add it to _PY_ONLY_CONSTANTS with a reason."
+            )
+
+
+def test_js_constants_all_exist_on_the_python_side():
+    """Nothing is exported from the mirror that the Python schema never defines.
+
+    The companion to the test above, and not redundant with it: that one walks
+    Python -> JS, so a name invented (or left behind) on the JS side alone is
+    invisible to it. A client constant with no server counterpart is precisely
+    the failure CLAUDE.md calls this codebase's dominant bug class -- reads sit
+    behind ``??``/``||`` chains, so the miss is swallowed and the feature just
+    quietly does nothing.
+    """
+    exported = _js_exported_constants()
+    # Same vacuity guard as above: a regex that matched nothing would make this
+    # trivially green.
+    assert len(exported) >= 10, (
+        f"only found {sorted(exported)} -- the JS export scan is broken"
+    )
+    orphans = sorted(
+        exported - set(_python_constants()) - _JS_ONLY_CONSTANTS
+    )
+    assert not orphans, (
+        f"{orphans} are exported by combatBeatSchema.js but combat_beat.py "
+        "defines no such constant. Define them Python-side, delete them, or "
+        "add them to _JS_ONLY_CONSTANTS with the reason they are client-only"
+    )
+
+
+def test_python_only_exclusions_are_still_accurate():
+    """``_PY_ONLY_CONSTANTS`` may not go stale in either direction."""
+    constants = _python_constants()
+    stale = sorted(set(_PY_ONLY_CONSTANTS) - set(constants))
+    assert not stale, (
+        f"{stale} listed as Python-only but combat_beat.py no longer defines "
+        "them -- drop them from _PY_ONLY_CONSTANTS"
+    )
+
+    source = _MIRROR_JS.read_text(encoding="utf-8")
+    now_mirrored = sorted(
+        name for name in _PY_ONLY_CONSTANTS
+        if re.search(rf"export const {name}\b", source)
+    )
+    assert not now_mirrored, (
+        f"{now_mirrored} are excluded as Python-only but the JS mirror now "
+        "exports them -- drop them from _PY_ONLY_CONSTANTS so parity is checked"
+    )
 
 
 def test_error_codes_are_distinct():
