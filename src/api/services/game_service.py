@@ -516,6 +516,12 @@ class GameService:
             return output_text, [], None
         return output_text, segments, conversation
 
+    #: The keys :meth:`_apply_staged_payload` writes and
+    #: :meth:`_carry_staged_payload` preserves. A fourth staged part means
+    #: updating this tuple and both helpers together --
+    #: ``test_the_two_helpers_agree_on_the_staged_keys`` guards the pair.
+    _STAGED_PAYLOAD_KEYS = ("output_text", "segments", "conversation")
+
     @staticmethod
     def _apply_staged_payload(target, clean_output, segments, conversation):
         """Copy a :meth:`_capture_conversation` result onto a response/event dict.
@@ -530,6 +536,35 @@ class GameService:
         if conversation:
             target["conversation"] = conversation
         return target
+
+    @classmethod
+    def _carry_staged_payload(cls, previous, event, event_data: Dict[str, Any]) -> None:
+        """Re-attach a pending event's captured prose to a freshly serialized copy.
+
+        ``EventSerializer.serialize_with_input`` carries none of the narration
+        the event emitted -- ``output_text``/``segments``/``conversation`` are
+        attached afterwards by :meth:`_apply_staged_payload`, and only on the
+        path that actually ran the event. Every later tile/combat event trigger
+        re-serializes an already-pending event from scratch and stores that
+        bare dict, which used to overwrite the stored prose. The client then
+        served the stripped copy from ``GET /world/events/pending`` on reload,
+        so a player who reconnected mid-event saw one fallback line -- or, for
+        an event that never sets ``self.description``, an empty dialog.
+
+        Only the *same event instance* under the *same* id is topped up. A
+        multi-stage event is re-keyed to a fresh UUID on every stage transition
+        (see :meth:`process_event_input`), so there is no id under which an
+        earlier stage's prose could survive onto a later one; and
+        :meth:`_store_pending_event`'s dedupe-by-name branch deliberately hands
+        a *different* instance the old id, whose prose is not this event's to
+        inherit.
+        """
+        if not previous or previous.get("event") is not event:
+            return
+        prior_data = previous.get("event_data") or {}
+        for key in cls._STAGED_PAYLOAD_KEYS:
+            if key in prior_data and key not in event_data:
+                event_data[key] = prior_data[key]
 
     def _store_pending_event(
         self,
@@ -559,6 +594,7 @@ class GameService:
 
         if session_data is not None:
             pending = session_data.setdefault("pending_events", {})
+            self._carry_staged_payload(pending.get(event_id), event, event_data)
             payload = {
                 "event": event,
                 "event_data": event_data,

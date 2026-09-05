@@ -108,6 +108,11 @@ def test_ch01_event_flow_api(app, client, authenticated_session):
         chest = Container(name="Wooden Chest", inventory=[])
         chest.tile = tile
         chest.player = player
+        # Ch01ChestRumblerBattle.check_conditions only fires once the chest has
+        # actually been opened (state == "opened" or revealed). A freshly built
+        # Container defaults to closed/unrevealed, so open it here — otherwise
+        # the event never asks for input and the search below runs dry.
+        chest.open()
         tile.objects_here.append(chest)
         tile.events_here.append(Ch01ChestRumblerBattle(player, tile, repeat=True))
         events = _trigger_tile_events(client, session_id)
