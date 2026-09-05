@@ -106,13 +106,20 @@ jobs:
           status=0
           failed=""
           count=0
-          while IFS= read -r -d '' f; do
+          # The list is read on fd 3, NOT on stdin. A `while read` loop that
+          # owns stdin hands it to every command inside the body, so anything
+          # pytest (or a test) read from stdin would consume the rest of the
+          # file list and the remaining files would be skipped in silence --
+          # the exact class of miss this job exists to close, reintroduced by
+          # the loop that fixed the word-splitting one. `for f in $files` did
+          # not have this hazard; fd 3 keeps pytest's stdin as it was.
+          while IFS= read -r -d '' f <&3; do
             count=$((count + 1))
             echo "::group::$f"
             python -m pytest "$f" -q -p no:randomly -n0 --timeout=300 \
               || { status=1; failed="$failed $f"; }
             echo "::endgroup::"
-          done < "$files_list"
+          done 3< "$files_list"
           echo "ran $count file(s)"
           if [ "$status" -ne 0 ]; then
             echo "::error::tests/api failures in:$failed"

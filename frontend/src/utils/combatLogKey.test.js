@@ -93,9 +93,12 @@ describe('no module keeps a private copy', () => {
   const sourceFiles = walk(SRC).map((f) => path.relative(SRC, f).split(path.sep).join('/'));
 
   it('scans a src/ tree it actually found', () => {
-    // A walk that silently returned nothing would make the scan below
-    // vacuously green -- the exact failure mode this describe block exists to
-    // prevent, one level up.
+    // A walk that silently returned nothing -- or that lost most of the tree
+    // to a bad recursion -- would make the scan below vacuously green, which
+    // is the failure mode this describe block exists to prevent, one level up.
+    // 126 non-test .js/.jsx files under src/ at the time of writing; the floor
+    // is set well below that so ordinary deletions do not trip it, and it is a
+    // liveness check on the walk, not a census.
     expect(sourceFiles.length).toBeGreaterThan(50);
     expect(sourceFiles).toContain(OWNER);
   });

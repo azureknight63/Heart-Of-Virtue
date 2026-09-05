@@ -141,6 +141,11 @@ def _module_level_constant_names(node):
     constant defined inside a module-level ``if`` / ``try`` / ``with`` block
     escaped it silently -- while the guard's own docstring claimed to cover
     "every module-level UPPERCASE constant".
+
+    "Bound" means bound, not merely assigned: ``for`` targets and ``with ... as``
+    targets are collected too. They are far-fetched shapes for a constant, but
+    an exhaustiveness claim that quietly excludes some binding forms is the
+    same overclaim this function was written to remove.
     """
     names = []
     for child in ast.iter_child_nodes(node):
@@ -150,6 +155,14 @@ def _module_level_constant_names(node):
             targets = child.targets
         elif isinstance(child, ast.AnnAssign):
             targets = [child.target]
+        elif isinstance(child, (ast.For, ast.AsyncFor)):
+            # The loop variable binds too, and then the body still needs
+            # walking -- so this branch does both rather than `continue`.
+            targets = [child.target]
+            names.extend(_module_level_constant_names(child))
+        elif isinstance(child, (ast.With, ast.AsyncWith)):
+            targets = [i.optional_vars for i in child.items if i.optional_vars]
+            names.extend(_module_level_constant_names(child))
         else:
             names.extend(_module_level_constant_names(child))
             continue
