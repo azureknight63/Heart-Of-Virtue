@@ -7,6 +7,7 @@ import GamePage from './pages/GamePage'
 import LandingPage from './pages/LandingPage'
 import LoadingScreen from './components/LoadingScreen'
 import { AudioProvider } from './context/AudioContext'
+import { GlossaryProvider } from './context/GlossaryContext'
 
 function App() {
   const { isAuthenticated, loading } = useAuth()
@@ -36,7 +37,10 @@ function App() {
           <Route path="/landing" element={<LandingPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/game" /> : <LoginPage />} />
           <Route path="/menu" element={isAuthenticated ? <MainMenuPage /> : <Navigate to="/" />} />
-          <Route path="/game" element={isAuthenticated ? <GamePage /> : <Navigate to="/" />} />
+          {/* The combat glossary (#507) is scoped to the game surface: it owns a
+              "?" keyboard shortcut, which has no business being live on the
+              landing or login pages. */}
+          <Route path="/game" element={isAuthenticated ? <GlossaryProvider><GamePage /></GlossaryProvider> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to={isAuthenticated ? '/game' : '/'} />} />
         </Routes>
       </BrowserRouter>

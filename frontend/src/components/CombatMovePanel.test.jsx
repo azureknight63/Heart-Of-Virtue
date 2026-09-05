@@ -238,16 +238,20 @@ describe('CombatMovePanel', () => {
     );
 
     const moveBtn = screen.getByText('Slash').closest('button');
-    
+    // The card's chrome lives on the wrapper, not the button: an unavailable
+    // move's reason line sits outside the (disabled) button so its glossary
+    // terms stay interactive.
+    const card = moveBtn.parentElement;
+
     // Test initial state (non-hover)
-    expect(moveBtn.style.backgroundColor).toBe('rgba(255, 255, 255, 0.03)');
+    expect(card.style.backgroundColor).toBe('rgba(255, 255, 255, 0.03)');
     
     // Test hover state
     act(() => {
       fireEvent.mouseEnter(moveBtn);
     });
-    expect(moveBtn.style.backgroundColor).toBe('rgba(255, 170, 0, 0.1)');
-    expect(moveBtn.style.borderColor).toBe('rgb(255, 170, 0)');
+    expect(card.style.backgroundColor).toBe('rgba(255, 170, 0, 0.1)');
+    expect(card.style.borderColor).toBe('rgb(255, 170, 0)');
   });
 
   describe('move commitment bar', () => {
