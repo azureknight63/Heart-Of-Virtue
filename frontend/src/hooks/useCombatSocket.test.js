@@ -157,6 +157,20 @@ describe('useCombatSocket', () => {
       expect(socket.connect).toHaveBeenCalledTimes(1);
     });
 
+    it('never leaves a second rejection\'s timer un-cancellable', () => {
+      // Two rejections before the first retry fires. Each schedules a timer,
+      // and only one handle is kept — so without cancelling the first, unmount
+      // can only clear the newest and the orphan still fires a handshake at a
+      // socket the hook has already torn down.
+      vi.useFakeTimers();
+      const { socket, hook } = setup();
+      fireMissing(socket);
+      fireMissing(socket);
+      hook.unmount();
+      act(() => vi.advanceTimersByTime(60000));
+      expect(socket.connect).not.toHaveBeenCalled();
+    });
+
     it('drops a pending re-handshake when the hook unmounts', () => {
       vi.useFakeTimers();
       const { socket, hook } = setup();

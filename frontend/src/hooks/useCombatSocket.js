@@ -183,6 +183,10 @@ export function useCombatSocket({
         return;
       }
       rehandshakes += 1;
+      // Never orphan a pending timer: a second rejection arriving before the
+      // first retry fires would otherwise leave a setTimeout nothing holds a
+      // handle to, and the unmount cleanup could only cancel the newest one.
+      if (rehandshakeTimer) clearTimeout(rehandshakeTimer);
       rehandshakeTimer = setTimeout(() => {
         rehandshakeTimer = null;
         try {
