@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 import pytest
+from src.combatant import wire_handle
 try:
     from src.api.services.game_service import GameService
     from src.api.config import TestingConfig
@@ -156,7 +157,7 @@ class TestGameServiceInventory:
         assert ground_items, "the starting tile should have something to pick up"
         target = ground_items[0]
 
-        result = game_service.interact_with_target(player, str(id(target)), "take")
+        result = game_service.interact_with_target(player, wire_handle(target), "take")
 
         assert result.get("success") is True
         assert target not in tile.items_here

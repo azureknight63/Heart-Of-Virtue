@@ -16,6 +16,7 @@ from src.npc._merchants import JamboHealsU, Merchant, MiloCurioDealer
 from src.player import Player
 
 from tests._gs_fixtures import get_player_gold, live_world, set_player_gold
+from src.combatant import wire_handle
 
 
 def _base_merchant():
@@ -162,7 +163,7 @@ class TestShopGoldArithmetic:
         assert (stock.value, merchant.buy_modifier) == (100, 1.0)
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(stock)), quantity=2
+            player, wire_handle(merchant), wire_handle(stock), quantity=2
         )
 
         assert result["success"] is True
@@ -182,7 +183,7 @@ class TestShopGoldArithmetic:
         merchant.buy_modifier = 1.5
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(stock)), quantity=1
+            player, wire_handle(merchant), wire_handle(stock), quantity=1
         )
 
         assert result["gold_spent"] == 150          # int(100 * 1.5)
@@ -194,7 +195,7 @@ class TestShopGoldArithmetic:
         merchant.buy_modifier = 0.0
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(stock)), quantity=3
+            player, wire_handle(merchant), wire_handle(stock), quantity=3
         )
 
         assert result["gold_spent"] == 3            # 3 x max(1, 0)
@@ -207,7 +208,7 @@ class TestShopGoldArithmetic:
         set_player_gold(player, 50)
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(stock)), quantity=1
+            player, wire_handle(merchant), wire_handle(stock), quantity=1
         )
 
         assert result["success"] is False
@@ -222,7 +223,7 @@ class TestShopGoldArithmetic:
         player, merchant, stock = shop_world
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(stock)), quantity=99
+            player, wire_handle(merchant), wire_handle(stock), quantity=99
         )
 
         assert result["gold_spent"] == 300          # clamped to the 3 in stock
@@ -239,7 +240,7 @@ class TestShopGoldArithmetic:
         set_player_gold(merchant, 1000)
 
         result = game_service.shop_sell(
-            player, str(id(merchant)), str(id(goods)), quantity=2
+            player, wire_handle(merchant), wire_handle(goods), quantity=2
         )
 
         assert result["success"] is True
@@ -261,7 +262,7 @@ class TestShopGoldArithmetic:
         set_player_gold(merchant, 50)   # payout would be 100
 
         result = game_service.shop_sell(
-            player, str(id(merchant)), str(id(goods)), quantity=2
+            player, wire_handle(merchant), wire_handle(goods), quantity=2
         )
 
         assert result["success"] is False
@@ -279,7 +280,7 @@ class TestShopGoldArithmetic:
         player.reputation = {"Tester": 100}
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(stock)), quantity=1
+            player, wire_handle(merchant), wire_handle(stock), quantity=1
         )
 
         assert result["gold_spent"] == 85           # int(100 * 0.85)
@@ -289,7 +290,7 @@ class TestShopGoldArithmetic:
         player, merchant, stock = shop_world
 
         result = game_service.shop_buy(
-            player, "not-a-real-npc-id", str(id(stock)), quantity=1
+            player, "not-a-real-npc-id", wire_handle(stock), quantity=1
         )
 
         assert result["success"] is False
@@ -300,7 +301,7 @@ class TestShopGoldArithmetic:
         player, merchant, _ = shop_world
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), "not-a-real-item-id", quantity=1
+            player, wire_handle(merchant), "not-a-real-item-id", quantity=1
         )
 
         assert result["success"] is False
@@ -312,11 +313,11 @@ class TestShopGoldArithmetic:
     ):
         """The merchant's own Gold stack must never be listed as stock."""
         player, merchant, stock = shop_world
-        game_service.shop_buy(player, str(id(merchant)), str(id(stock)), quantity=1)
+        game_service.shop_buy(player, wire_handle(merchant), wire_handle(stock), quantity=1)
         till = next(i for i in merchant.inventory if i.name == "Gold")
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(till)), quantity=1
+            player, wire_handle(merchant), wire_handle(till), quantity=1
         )
 
         assert result["success"] is False

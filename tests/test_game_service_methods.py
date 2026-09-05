@@ -26,6 +26,7 @@ import pytest
 from src.items import Gold, Restorative, RustedDagger
 from src.npc import NPC
 from tests._gs_fixtures import GRID_3X3, get_player_gold, live_world
+from src.combatant import wire_handle
 
 
 @pytest.fixture
@@ -203,7 +204,7 @@ class TestSearch:
 
         assert lurker.hidden is False
         assert result["found"] == [
-            {"type": "npc", "name": "Lurker", "id": str(id(lurker))}
+            {"type": "npc", "name": "Lurker", "id": wire_handle(lurker)}
         ]
         assert any("something lurking" in m for m in result["messages"])
 

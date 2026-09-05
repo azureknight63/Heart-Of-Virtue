@@ -12,6 +12,7 @@ names a move that would earn one.
 import json
 
 import pytest
+from src.combatant import wire_handle
 
 
 def _post_json(client, url, payload, session_id):
@@ -33,7 +34,7 @@ def _start_combat(client, session_id, player, enemy):
     player.current_room = tile
     tile.npcs_here = [enemy]
     response = _post_json(
-        client, "/api/combat/start", {"enemy_id": str(id(enemy))}, session_id
+        client, "/api/combat/start", {"enemy_id": wire_handle(enemy)}, session_id
     )
     assert response.status_code == 201
     data = json.loads(response.data)

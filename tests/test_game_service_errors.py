@@ -14,6 +14,7 @@ import pytest
 from unittest.mock import MagicMock, Mock, patch
 
 from src.items import Consumable
+from src.combatant import wire_handle
 
 
 @pytest.fixture
@@ -209,7 +210,7 @@ class TestStartCombatErrors:
         mock_tile.npcs_here = []
         elsewhere = MagicMock(name="Enemy")
 
-        result = game_service.start_combat(mock_player, str(id(elsewhere)))
+        result = game_service.start_combat(mock_player, wire_handle(elsewhere))
 
         assert result == {"error": "Enemy not found"}
         assert mock_player.in_combat is False
@@ -223,7 +224,7 @@ class TestStartCombatErrors:
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
         mock_tile.npcs_here = []
 
-        result = game_service.start_combat(mock_player, str(id(MagicMock())))
+        result = game_service.start_combat(mock_player, wire_handle(MagicMock()))
 
         assert result == {"error": "Enemy not found"}
         assert mock_player.in_combat is True
@@ -315,7 +316,7 @@ class TestShopBuyErrors:
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
         result = game_service.shop_buy(
-            mock_player, str(id(merchant)), "invalid_item", 1
+            mock_player, wire_handle(merchant), "invalid_item", 1
         )
         assert result["success"] is False
         assert "Item not found" in result["error"]
@@ -342,7 +343,7 @@ class TestShopBuyErrors:
         with patch('src.interface.get_gold', return_value=100):
             with patch.object(mock_player, 'refresh_weight'):
                 result = game_service.shop_buy(
-                    mock_player, str(id(merchant)), str(id(item)), 1
+                    mock_player, wire_handle(merchant), wire_handle(item), 1
                 )
 
         assert result["success"] is False
@@ -372,7 +373,7 @@ class TestShopBuyErrors:
         with patch('src.api.services.game_service.get_gold', return_value=1000):
             with patch.object(mock_player, 'refresh_weight'):
                 result = game_service.shop_buy(
-                    mock_player, str(id(merchant)), str(id(item)), 1
+                    mock_player, wire_handle(merchant), wire_handle(item), 1
                 )
 
         assert result["success"] is False
@@ -401,7 +402,7 @@ class TestShopSellErrors:
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
         result = game_service.shop_sell(
-            mock_player, str(id(merchant)), "invalid_item", 1
+            mock_player, wire_handle(merchant), "invalid_item", 1
         )
         assert result["success"] is False
         assert "Item not found" in result["error"]
@@ -623,7 +624,7 @@ class TestBoundaryConditions:
         player.universe.get_tile = MagicMock(return_value=mock_tile)
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), str(id(item)), 1
+            player, wire_handle(merchant), wire_handle(item), 1
         )
 
         assert result["success"] is True
@@ -665,7 +666,7 @@ class TestTypeValidation:
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
         result = game_service.shop_buy(
-            mock_player, str(id(merchant)), "id", quantity
+            mock_player, wire_handle(merchant), "id", quantity
         )
 
         assert result == {"success": False, "error": "Invalid quantity"}

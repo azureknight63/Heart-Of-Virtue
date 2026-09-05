@@ -12,6 +12,7 @@ Target: 60-80 tests covering multi-step sequences, state transitions, and invari
 
 import pytest
 from unittest.mock import MagicMock, patch
+from src.combatant import wire_handle
 
 
 # =============================================================================
@@ -166,7 +167,7 @@ class TestCombatWorkflows:
             }
 
             result = game_service.start_combat(
-                player_with_universe, str(id(mock_enemy))
+                player_with_universe, wire_handle(mock_enemy)
             )
 
             assert result.get("success") or "error" not in result
@@ -185,7 +186,7 @@ class TestCombatWorkflows:
             mock_init.return_value = None  # Idempotency check
 
             result = game_service.start_combat(
-                player_with_universe, str(id(mock_enemy))
+                player_with_universe, wire_handle(mock_enemy)
             )
 
             assert "error" in result or result.get("error") is not None
@@ -372,7 +373,7 @@ class TestNPCWorkflows:
         ) as mock_init:
             mock_init.return_value = {"success": True}
 
-            game_service.start_combat(player_with_universe, str(id(mock_npc)))
+            game_service.start_combat(player_with_universe, wire_handle(mock_npc))
 
             mock_init.assert_called_once()
 

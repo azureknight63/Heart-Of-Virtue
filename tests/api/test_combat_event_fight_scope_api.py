@@ -11,6 +11,7 @@ already fighting, then narrating Gorran's rescue over an unrelated encounter.
 import json
 
 import pytest
+from src.combatant import wire_handle
 
 
 def _post_json(client, url, payload, session_id):
@@ -76,7 +77,7 @@ def test_a_fled_rumbler_chain_does_not_follow_jean_into_another_fight(
 
         # Jean picks a fight somewhere else entirely.
         start = _post_json(
-            client, "/api/combat/start", {"enemy_id": str(id(bat))}, session_id
+            client, "/api/combat/start", {"enemy_id": wire_handle(bat)}, session_id
         )
         assert start.status_code == 201, start.data
         assert json.loads(start.data).get("combat_active") is True

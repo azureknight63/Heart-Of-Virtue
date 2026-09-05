@@ -3,6 +3,8 @@
 import math
 from typing import Any, Dict, List
 
+from src.combatant import wire_handle
+
 
 def _effective_modifier(merchant: Any, player: Any, attr: str, base_default: float,
                         sign: int) -> float:
@@ -55,7 +57,7 @@ def _serialize_shop_item(item: Any, price_modifier: float) -> Dict:
     price = max(1, int(base_value * price_modifier))
 
     return {
-        "id": str(id(item)),
+        "id": wire_handle(item),
         "name": getattr(item, "name", "Unknown"),
         "type": type(item).__name__,
         "subtype": getattr(item, "subtype", ""),
@@ -114,16 +116,67 @@ class ShopSerializer:
         return _effective_modifier(merchant, player, "sell_modifier", 0.5, sign=1)
 
     @staticmethod
+    def repoint_stale_buyback_ids(merchant: Any) -> None:
+        """Re-point ledger ``item_id``s that no longer name a stocked item.
+
+        The buyback ledger is the ONE place a wire id is persisted rather than
+        minted fresh per response: it lives on the merchant and is pickled into
+        saves. So a save written before issue #518 carries ledger entries whose
+        ``item_id`` is a decimal heap address, and every id in the shop payload
+        is now a handle — the two can never match again.
+
+        The consequence is not a crash but a double listing: ``serialize_state``
+        subtracts ``buyback_ids`` from the stock list, that subtraction misses,
+        and the item the player just sold appears in the BUY tab twice — once at
+        full price as stock and once at the buyback price. (``shop_buyback``
+        itself already survived, via its search-by-name fallback.)
+
+        Re-pointing is the same name fallback ``shop_sell`` and ``shop_buyback``
+        already use, hoisted to the one place every ledger read passes through,
+        so the stock subtraction and the buyback lookup agree on which stock
+        item an entry names. It also covers the non-migration case that has the
+        identical symptom: an entry whose item was merged away by
+        ``stack_inv_items`` between the sale and the next request.
+
+        An entry naming an item the merchant no longer stocks at all is left
+        untouched: it matches no stock item, so it subtracts nothing, and
+        ``shop_buyback`` already reports and drops it.
+        """
+        ledger: List[Dict] = getattr(merchant, "_buyback_ledger", None)
+        if not ledger:
+            return
+        inventory = getattr(merchant, "inventory", [])
+        live_handles = {wire_handle(item) for item in inventory}
+        for entry in ledger:
+            if entry.get("item_id") in live_handles:
+                continue
+            replacement = next(
+                (
+                    wire_handle(item)
+                    for item in inventory
+                    if getattr(item, "name", None) == entry.get("item_name")
+                ),
+                None,
+            )
+            if replacement is not None:
+                entry["item_id"] = replacement
+
+    @staticmethod
     def flush_stale_buyback(merchant: Any, current_game_tick: int) -> None:
         """Remove buyback ledger entries that were acquired before the current game tick.
 
         Separated from serialize_state so callers can flush before performing
         ledger lookups (e.g. shop_buyback) without coupling flush to serialization.
+
+        Doubles as the chokepoint for :meth:`repoint_stale_buyback_ids` — every
+        ledger read (serialize, buyback lookup) flushes first, so migrating the
+        ids here means no caller has to remember to.
         """
         ledger: List[Dict] = getattr(merchant, "_buyback_ledger", [])
         merchant._buyback_ledger = [
             e for e in ledger if e["beat_acquired"] >= current_game_tick
         ]
+        ShopSerializer.repoint_stale_buyback_ids(merchant)
 
     @staticmethod
     def serialize_state(
@@ -158,7 +211,7 @@ class ShopSerializer:
             _serialize_shop_item(item, buy_mod)
             for item in merchant_inv
             if getattr(item, "name", None) != "Gold"
-            and str(id(item)) not in buyback_ids
+            and wire_handle(item) not in buyback_ids
             and getattr(item, "merchandise", False)
         ]
 
@@ -169,7 +222,7 @@ class ShopSerializer:
         player.refresh_weight()
 
         return {
-            "npc_id": str(id(merchant)),
+            "npc_id": wire_handle(merchant),
             "npc_name": getattr(merchant, "name", "Merchant"),
             "shop_name": shop_name,
             "buy_modifier": buy_mod,
@@ -211,7 +264,7 @@ class ShopSerializer:
             offer = max(1, int(base_value * sell_modifier))
             count = getattr(item, "count", getattr(item, "quantity", 1))
             result.append({
-                "id": str(id(item)),
+                "id": wire_handle(item),
                 "name": getattr(item, "name", "Unknown"),
                 "type": type(item).__name__,
                 "subtype": getattr(item, "subtype", ""),

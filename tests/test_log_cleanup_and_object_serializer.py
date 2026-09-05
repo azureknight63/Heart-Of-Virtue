@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 from src.api.utils.log_cleanup import LogCleanupManager
 from src.api.serializers.object_serializer import ObjectSerializer
+from src.combatant import wire_handle
 
 # ---------------------------------------------------------------------------
 # LogCleanupManager
@@ -318,10 +319,13 @@ class TestObjectSerializerBase:
         assert data["name"] == "Gate"
         assert data["type"] == "dict"
 
-    def test_id_defaults_to_python_id_for_objects(self):
+    def test_id_defaults_to_the_objects_wire_handle(self):
+        """Was ``test_id_defaults_to_python_id_for_objects`` until #518: the
+        default is now the object's opaque handle, not its heap address."""
         obj = _SimpleObj(name="X", description="", aliases=[], action_aliases=[])
         data = ObjectSerializer._serialize_base(obj)
-        assert str(id(obj)) == data["id"]
+        assert wire_handle(obj) == data["id"]
+        assert str(id(obj)) != data["id"]
 
     def test_custom_id_used_when_present(self):
         obj = _SimpleObj(

@@ -137,6 +137,9 @@ def wire_handle(entity):
         # branches below would remint on every call -- an id that changes
         # between two polls is worse than the address it replaced. Mint into
         # the mapping itself instead; ``setdefault`` is atomic here too.
+        existing = entity.get(COMBAT_HANDLE_ATTR)
+        if isinstance(existing, str) and existing:
+            return existing
         return entity.setdefault(COMBAT_HANDLE_ATTR, uuid.uuid4().hex)
     existing = getattr(entity, COMBAT_HANDLE_ATTR, None)
     if isinstance(existing, str) and existing:
@@ -165,6 +168,33 @@ def wire_handle(entity):
 #: introduced and the combat serializer/adapter import. It is an alias, not a
 #: parallel scheme: one entity has exactly one handle whichever name mints it.
 combatant_handle = wire_handle
+
+
+def find_by_handle(entities, handle):
+    """Return the first entity in ``entities`` whose wire handle is ``handle``.
+
+    The inverse of :func:`wire_handle`, and the way the API turns a
+    client-supplied id back into an object. Written once here rather than
+    re-inlined at each of the dozen lookups (room NPCs, floor items, container
+    contents, world objects, merchants, shop stock, inventory) because the
+    lookup is the half of the scheme that silently breaks: a site left
+    comparing ``id(entity)`` after the mint moved to handles does not raise,
+    it just answers "not found" -- which is how the serializer half of this
+    change, applied on its own, broke every room interaction.
+
+    Scanning mints a handle for each candidate it passes. That is deliberate
+    and harmless: the mint is idempotent, and every entity reachable from a
+    lookup is one the matching serializer would have minted for anyway.
+
+    A falsy ``handle`` matches nothing -- an absent id must not resolve to the
+    first entity in the room.
+    """
+    if not handle:
+        return None
+    for entity in entities or ():
+        if wire_handle(entity) == handle:
+            return entity
+    return None
 
 
 def move_in_progress(combatant):

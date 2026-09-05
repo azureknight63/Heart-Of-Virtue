@@ -13,6 +13,7 @@ Targets:
 import pytest
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
+from src.combatant import wire_handle
 
 # ---------------------------------------------------------------------------
 # Helpers — real engine objects wherever affordable
@@ -877,7 +878,7 @@ class TestNPCSerializer:
         slime = self._slime()
         result = self.NPCSerializer.serialize(slime)
 
-        assert result["id"] == str(id(slime))
+        assert result["id"] == wire_handle(slime)
         assert result["name"] == slime.name
         assert result["type"] == "Slime"
         assert result["description"] == slime.description
@@ -1208,8 +1209,8 @@ class TestItemSerializer:
         result = self.ItemSerializer.serialize_list([sword, armor])
 
         assert [r["name"] for r in result] == ["Longsword", "Iron Cuirass"]
-        assert result[0]["id"] == str(id(sword))
-        assert result[1]["id"] == str(id(armor))
+        assert result[0]["id"] == wire_handle(sword)
+        assert result[1]["id"] == wire_handle(armor)
 
 
 # ===========================================================================
@@ -1910,7 +1911,7 @@ class TestEventSerializer:
         event = self._event()
         result = self.EventSerializer.serialize(event)
 
-        assert result["id"] == str(id(event))
+        assert result["id"] == wire_handle(event)
         assert result["type"] == "Event"
         assert result["name"] == "TestEvent"
         assert result["repeat"] is False
@@ -2210,7 +2211,7 @@ class TestObjectSerializer:
         passage = Passageway(player=None, tile=None)
         result = self.ObjectSerializer.serialize(passage)
 
-        assert result["id"] == str(id(passage))
+        assert result["id"] == wire_handle(passage)
         assert result["name"] == "Passageway"
         assert result["type"] == "Passageway"
         assert result["description"] == passage.description

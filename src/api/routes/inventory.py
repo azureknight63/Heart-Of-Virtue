@@ -24,7 +24,7 @@ from src.api.serializers.inventory import (
 )
 from src.api.middleware.auth import get_session_and_player
 from src.api.utils.inventory import get_inventory_list
-from src.combatant import combatant_handle
+from src.combatant import combatant_handle, wire_handle
 
 # Create blueprint
 inventory_bp = Blueprint("inventory", __name__)
@@ -38,7 +38,9 @@ def get_item_and_index(player, item_id=None, item_index=None):
 
     Args:
         player: Player object
-        item_id: String ID of the item (Python id())
+        item_id: The item's opaque wire handle — the ``id`` the inventory and
+            room serializers emit (``src.combatant.wire_handle``), not a Python
+            ``id()`` (issue #518)
         item_index: Numeric index in inventory
 
     Returns:
@@ -46,10 +48,14 @@ def get_item_and_index(player, item_id=None, item_index=None):
     """
     inventory_list = get_inventory_list(player)
 
-    # Try finding by ID first
+    # Try finding by ID first. Enumerated rather than delegated to
+    # find_by_handle because this caller needs the index too, and recovering it
+    # afterwards with list.index() would compare by equality rather than
+    # identity — fine today (no Item defines __eq__) but a silent way to return
+    # the wrong row for a stacked duplicate the day one does.
     if item_id:
         for idx, item in enumerate(inventory_list):
-            if str(id(item)) == item_id:
+            if wire_handle(item) == item_id:
                 return item, idx
         return None, None
 

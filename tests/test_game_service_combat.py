@@ -6,7 +6,7 @@ Every one of this file's 23 tests was ineffective, and most called the service
 with the *wrong signature* — which is exactly why nobody noticed:
 
 * ``start_combat(player, [enemy])`` — the real parameter is ``enemy_id``, the
-  ``str(id(npc))`` of an NPC on the tile. A list never matches, so all four
+  ``wire_handle(npc)`` of an NPC on the tile. A list never matches, so all four
   "start combat" tests were asserting ``isinstance`` on ``{"error": "Enemy not
   found"}``.
 * ``trigger_combat_events(player, tile)`` — the second parameter is
@@ -32,6 +32,7 @@ from src.events import Event
 from src.npc import NPC, Slime
 from src.api.serializers.combat import CombatantSerializer
 from tests._gs_fixtures import GRID_3X3, live_world
+from src.combatant import wire_handle
 
 
 @pytest.fixture
@@ -60,7 +61,7 @@ def slime(player, tile):
 
 def enemy_id(npc):
     """The id string ``start_combat`` matches against."""
-    return str(id(npc))
+    return wire_handle(npc)
 
 
 def _move_index(player, move_name):

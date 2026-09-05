@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
+from src.combatant import find_by_handle, wire_handle
 from src.events import purge_orphaned_combat_events
 from src.functions import check_for_combat, signal_combat_wave_pending
 from src.inventory_utils import get_gold
@@ -1719,7 +1720,7 @@ class GameService:
                             {
                                 "type": "npc",
                                 "name": getattr(npc, "name", "Unknown"),
-                                "id": str(id(npc)),
+                                "id": wire_handle(npc),
                             }
                         )
 
@@ -1740,7 +1741,7 @@ class GameService:
                         found_entry = {
                             "type": "item",
                             "name": getattr(item, "name", "Unknown"),
-                            "id": str(id(item)),
+                            "id": wire_handle(item),
                         }
 
                         # Auto-take items with hide_factor == 0 (intentionally findable)
@@ -1795,7 +1796,7 @@ class GameService:
                             {
                                 "type": "object",
                                 "name": getattr(obj, "name", "Unknown"),
-                                "id": str(id(obj)),
+                                "id": wire_handle(obj),
                             }
                         )
 
@@ -1856,26 +1857,18 @@ class GameService:
         self.apply_tile_modifications(tile, session_data)
         target = None
 
-        # Check NPCs
+        # Check NPCs, then objects, then floor items. Ids are the opaque
+        # wire handles the room serializers minted (issue #518) — resolved
+        # through the one lookup helper so this side cannot drift back to
+        # comparing heap addresses while the serializers ship handles.
         if hasattr(tile, "npcs_here"):
-            for npc in tile.npcs_here:
-                if str(id(npc)) == target_id:
-                    target = npc
-                    break
+            target = find_by_handle(tile.npcs_here, target_id)
 
-        # Check Objects
         if not target and hasattr(tile, "objects_here"):
-            for obj in tile.objects_here:
-                if str(id(obj)) == target_id:
-                    target = obj
-                    break
+            target = find_by_handle(tile.objects_here, target_id)
 
-        # Check Items
         if not target and hasattr(tile, "items_here"):
-            for item in tile.items_here:
-                if str(id(item)) == target_id:
-                    target = item
-                    break
+            target = find_by_handle(tile.items_here, target_id)
 
         # Try to find target in items inside open containers
         if not target:
@@ -1887,11 +1880,9 @@ class GameService:
                     and getattr(obj, "state", "") == "opened"
                     and hasattr(obj, "inventory")
                 ):
-                    for item in obj.inventory:
-                        if str(id(item)) == target_id:
-                            target = item
-                            target._parent_container = obj
-                            break
+                    target = find_by_handle(obj.inventory, target_id)
+                    if target is not None:
+                        target._parent_container = obj
                 if target:
                     break
 
@@ -2416,18 +2407,12 @@ class GameService:
         if hasattr(player, "universe") and player.universe:
             tile = player.universe.get_tile(player.location_x, player.location_y)
             if hasattr(tile, "npcs_here"):
-                for npc in tile.npcs_here:
-                    if str(id(npc)) == enemy_id:
-                        enemy = npc
-                        break
+                enemy = find_by_handle(tile.npcs_here, enemy_id)
 
         # 2. Try player.current_room (fallback for tests/specific events)
         if not enemy and hasattr(player, "current_room") and player.current_room:
             if hasattr(player.current_room, "npcs_here"):
-                for npc in player.current_room.npcs_here:
-                    if str(id(npc)) == enemy_id:
-                        enemy = npc
-                        break
+                enemy = find_by_handle(player.current_room.npcs_here, enemy_id)
 
         if not enemy:
             return {"error": "Enemy not found"}
@@ -4275,9 +4260,9 @@ class GameService:
     def _find_merchant(self, player: Any, npc_id: str):
         """Return the merchant NPC on the player's current tile, or None."""
         tile = player.universe.get_tile(player.location_x, player.location_y)
-        for npc in getattr(tile, "npcs_here", []):
-            if str(id(npc)) == npc_id and hasattr(npc, "buy_modifier"):
-                return npc
+        merchant = find_by_handle(getattr(tile, "npcs_here", []), npc_id)
+        if merchant is not None and hasattr(merchant, "buy_modifier"):
+            return merchant
         return None
 
     def _validate_shop_transaction(
@@ -4321,7 +4306,7 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the target merchant.
+            npc_id: opaque wire handle (``wire_handle``) of the target merchant.
 
         Returns:
             Dict with success, shop_state, and sell_inventory.
@@ -4397,8 +4382,8 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the merchant.
-            item_id: str(id(item)) of the item in merchant inventory.
+            npc_id: opaque wire handle of the merchant.
+            item_id: opaque wire handle of the item in merchant inventory.
             quantity: Number of units to purchase (≥ 1).
 
         Returns:
@@ -4418,7 +4403,7 @@ class GameService:
         # Locate item in merchant inventory
         target_item = None
         for item in getattr(merchant, "inventory", []):
-            if getattr(item, "name", None) != "Gold" and str(id(item)) == item_id:
+            if getattr(item, "name", None) != "Gold" and wire_handle(item) == item_id:
                 target_item = item
                 break
 
@@ -4477,8 +4462,8 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the merchant.
-            item_id: str(id(item)) of the item in player inventory.
+            npc_id: opaque wire handle of the merchant.
+            item_id: opaque wire handle of the item in player inventory.
             quantity: Number of units to sell (≥ 1).
 
         Returns:
@@ -4498,7 +4483,7 @@ class GameService:
         # Locate item in player inventory
         target_item = None
         for item in getattr(player, "inventory", []):
-            if getattr(item, "name", None) != "Gold" and str(id(item)) == item_id:
+            if getattr(item, "name", None) != "Gold" and wire_handle(item) == item_id:
                 target_item = item
                 break
 
@@ -4543,12 +4528,12 @@ class GameService:
         # splits, a new object is created and appended, but stack_inv_items may
         # immediately merge it into an existing same-name item. In that case the
         # original id is gone — fall back to the first name-matching merchant item.
-        if any(str(id(i)) == item_id for i in getattr(merchant, "inventory", [])):
+        if find_by_handle(getattr(merchant, "inventory", []), item_id) is not None:
             buyback_item_id = item_id
         else:
             buyback_item_id = next(
                 (
-                    str(id(i))
+                    wire_handle(i)
                     for i in getattr(merchant, "inventory", [])
                     if getattr(i, "name", None) == item_name
                 ),
@@ -4598,7 +4583,7 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the merchant.
+            npc_id: opaque wire handle of the merchant.
             item_id: The item_id from the buyback ledger entry.
 
         Returns:
@@ -4647,11 +4632,7 @@ class GameService:
             return {"success": False, "error": "Exceeds carry limit"}
 
         # Find the actual item object in merchant inventory
-        target_item = None
-        for item in getattr(merchant, "inventory", []):
-            if str(id(item)) == item_id:
-                target_item = item
-                break
+        target_item = find_by_handle(getattr(merchant, "inventory", []), item_id)
 
         if target_item is None:
             # Item may have been re-stacked; search by name as fallback

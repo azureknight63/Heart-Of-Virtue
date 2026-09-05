@@ -24,6 +24,7 @@ from src.objects import Container
 from src.events import LootEvent
 from src.items import Restorative, Antidote, Draught
 from src.api.services.game_service import GameService
+from src.combatant import wire_handle
 
 LOOT_VERBS = ["loot", "check", "view", "examine", "inspect", "peruse"]
 
@@ -132,7 +133,7 @@ class TestLootVerbRouting:
         session_data = {}
 
         result = service.interact_with_target(
-            player, str(id(container)), verb, session_data=session_data
+            player, wire_handle(container), verb, session_data=session_data
         )
 
         assert result["success"] is True, f"{verb} should succeed"
@@ -155,7 +156,7 @@ class TestLootVerbRouting:
         session_data = {}
 
         result = service.interact_with_target(
-            player, str(id(container)), verb, session_data=session_data
+            player, wire_handle(container), verb, session_data=session_data
         )
 
         assert result["success"] is True
@@ -172,7 +173,7 @@ class TestLootVerbRouting:
         session_data = {}
 
         service.interact_with_target(
-            player, str(id(container)), verb, session_data=session_data
+            player, wire_handle(container), verb, session_data=session_data
         )
 
         (entry,) = session_data["pending_events"].values()
@@ -192,7 +193,7 @@ class TestLootRoundTrip:
         session_data = {}
 
         service.interact_with_target(
-            player, str(id(container)), "view", session_data=session_data
+            player, wire_handle(container), "view", session_data=session_data
         )
         event_id = next(iter(session_data["pending_events"]))
 

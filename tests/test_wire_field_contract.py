@@ -81,6 +81,7 @@ from src.player import Player
 import src.states as states
 from tests._gs_fixtures import GRID_3X3
 from src.narration import capture_narration
+from src.combatant import wire_handle
 
 
 def _assert_contract(payload: dict, contract: dict, label: str):
@@ -1179,7 +1180,7 @@ class TestShopWireContract:
         gs = GameService()
         gs._find_merchant = lambda p, nid: merchant
 
-        result = gs.shop_sell(player, "npc1", str(id(item)), 1)
+        result = gs.shop_sell(player, "npc1", wire_handle(item), 1)
 
         assert result["success"], result.get("error")
         buyback_items = result["shop_state"]["buyback_items"]

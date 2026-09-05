@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from src.moves import Move
 from src.narration import narrate
+from src.combatant import wire_handle
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -40,7 +41,7 @@ def _start_combat(client, session_id, player, enemy):
     start_response = _post_json(
         client,
         "/api/combat/start",
-        {"enemy_id": str(id(enemy))},
+        {"enemy_id": wire_handle(enemy)},
         session_id,
     )
     assert start_response.status_code == 201
