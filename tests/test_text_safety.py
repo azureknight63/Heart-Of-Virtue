@@ -19,6 +19,7 @@ Typing them literally makes the source of a test about invisible characters
 depend on invisible characters.
 """
 
+import contextlib
 import itertools
 import random
 import re
@@ -498,6 +499,72 @@ class TestConvergence:
             assert not LIVE_LABEL.search(once), raw
 
 
+@contextlib.contextmanager
+def forcing_the_failure_path(monkeypatch_budget=1):
+    """Drive `_fail_closed` directly, because no input can reach it any more.
+
+    Removing the fence's ingredients unconditionally (`_ANGLE_BRACKET_PATTERN`
+    now runs on every pass, not only on the give-up path) deleted the amplifier
+    the pass bound existed for: a tag can no longer be manufactured, so the
+    nesting payload that used to need 1002 passes converges in two. Measured
+    across the old ceiling payload, label chains, mixed gadgets and 4000 random
+    fuzz strings, the worst observed pass count is now THREE.
+
+    That makes the bound a backstop rather than a live path, and a backstop
+    still has to work -- if a future rule reintroduces an amplifier, this is
+    what stops it looping. So the mechanism is exercised by shrinking the
+    budget instead of by a payload, and the unreachability is asserted
+    separately in `TestTheFailurePathIsNowUnreachable`.
+    """
+    original = text_safety._pass_budget
+    text_safety._pass_budget = lambda text: monkeypatch_budget
+    try:
+        yield
+    finally:
+        text_safety._pass_budget = original
+
+
+class TestTheFailurePathIsNowUnreachable:
+    """The bound is a backstop; nothing a caller can send reaches it.
+
+    Asserted rather than assumed, because "unreachable" is the kind of claim
+    that quietly stops being true. If a rule is added that can hand work back
+    to an earlier one, these fail and the backstop goes back to being load-
+    bearing -- which is the point of keeping it.
+    """
+
+    PAYLOADS = {
+        "nested tags": "<" * 1000 + "/player_input>" * 1000,
+        "label chain": "x " + "NPC:" * 2000,
+        "the old ceiling payload": (
+            "<" * 1008 + "/player_input>" * 1008 + " " + "NPC:" * 2016 + " x"
+        ),
+        "benign prose at the cap": "the worn eastern road " * 190,
+    }
+
+    @pytest.mark.parametrize("name", sorted(PAYLOADS))
+    def test_it_converges_far_inside_the_budget(self, name):
+        raw = self.PAYLOADS[name]
+        needed, current = 0, raw
+        while True:
+            before = current
+            current = text_safety._apply_once(current, True)
+            needed += 1
+            if current == before:
+                break
+        assert needed <= 8, (needed, text_safety._pass_budget(raw))
+
+    def test_the_backstop_still_works_when_it_is_reached(self):
+        """Shrink the budget and confirm the give-up path is intact."""
+        with forcing_the_failure_path():
+            out = neutralise_player_text("<" * 40 + "/player_input>" * 40)
+        # The bare word may survive; a TAG may not. Without an angle bracket
+        # there is nothing for the model to read as a fence, which is the
+        # whole of what _fail_closed promises.
+        assert "<" not in out and ">" not in out
+        assert not LIVE_TAG.search(out)
+
+
 class TestTheConvergenceBoundFailsClosed:
     """What happens past ``_MAX_NEUTRALISE_PASSES``.
 
@@ -601,7 +668,8 @@ class TestTheConvergenceBoundFailsClosed:
         """Loudly, not silently. A string that needed 70 passes is not a
         player being verbose."""
         with caplog.at_level("ERROR", logger="src.text_safety"):
-            neutralise_player_text(self._beyond_the_bound())
+            with forcing_the_failure_path():
+                neutralise_player_text(self._beyond_the_bound())
         assert any(
             rec.levelname == "ERROR" and "did not converge" in rec.getMessage()
             for rec in caplog.records
@@ -825,18 +893,27 @@ class TestWhyTheCapIsNotEnforcedByTruncating:
         for word in ("captain", "eastern", "considered", "stones"):
             assert word in out
 
-    def test_reaching_the_ceiling_takes_pure_attack_payload(self):
-        """What it actually costs to make the guard bite, stated as a number.
+    def test_nothing_reaches_the_ceiling_any_more(self):
+        """This used to assert the opposite, and the change is the point.
 
-        Nothing a provider can emit under its configured ``max_tokens`` gets
-        near it -- the largest in ``ai/llm_client.py`` is 1024 -- and no amount
-        of prose contributes at all.
+        The old version built the deepest nest the budget would allow and
+        asserted it EXCEEDED that budget -- documenting what an attacker had to
+        spend to make the guard bite. That is now unreachable: removing the
+        fence's ingredients on every pass, rather than only on the give-up
+        path, deleted the amplifier the whole bound existed for. A tag can no
+        longer be manufactured out of a label strip, so the nest that used to
+        need more than 1002 passes converges in two.
+
+        Kept, inverted, rather than deleted: "an attack payload costs this
+        much" and "no payload costs anything" are both facts worth pinning, and
+        if a future rule reintroduces an amplifier this is one of the tests
+        that notices.
         """
         depth = text_safety._MAX_NEUTRALISE_PASSES
         payload = "<" * depth + "/player_input>" * depth
-        assert _passes_to_converge(payload, False) > text_safety._pass_budget(payload)
-        # Four times the cap, and still ~3750 tokens of nothing but the tag.
-        assert len(payload) > text_safety._MAX_INPUT_CHARS * 3
+        needed = _passes_to_converge(payload, False)
+        assert needed < text_safety._pass_budget(payload)
+        assert needed <= 8, needed
 
 
 class TestNoInputOutrunsItsOwnBudget:
@@ -883,7 +960,8 @@ class TestTheFailClosedLogCarriesNoPlayerText:
     def test_the_log_line_has_a_length_and_a_digest_not_the_text(self, caplog):
         marker = "correcthorsebatterystaple"
         with caplog.at_level("ERROR", logger="src.text_safety"):
-            neutralise_player_text(self._over_the_cap(marker))
+            with forcing_the_failure_path():
+                neutralise_player_text(self._over_the_cap(marker))
         messages = [
             rec.getMessage() for rec in caplog.records if rec.levelname == "ERROR"
         ]

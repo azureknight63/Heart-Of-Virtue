@@ -3408,9 +3408,16 @@ class ConversationalNPCMixin:
         loquacity_delta = max(
             low, min(high, _coerce_int(loquacity_delta, LOQUACITY_DELTA_DEFAULT))
         )
+        before = self.loquacity_current
         self.loquacity_current = max(
             0, min(self.loquacity_max, self.loquacity_current + loquacity_delta)
         )
+        # What the clamp ACTUALLY moved, which is not what was asked for
+        # whenever the NPC was already at the ceiling. Recorded here because
+        # the retraction on a tripped turn has to undo the change that
+        # happened, and undoing the requested one charged the NPC for a gain
+        # it never received. See _retract_guarded_loquacity_gain.
+        self._last_applied_loquacity = self.loquacity_current - before
         return loquacity_delta, self.loquacity_current < self.loquacity_threshold
 
     def _resolve_fallback_response(
@@ -3477,13 +3484,30 @@ class ConversationalNPCMixin:
         round, and a retraction can only lower loquacity, so the worst case is
         that the conversation ends one turn later than the strict number says —
         the same slack any drain landing on the threshold has.
+
+        THE AMOUNT RETRACTED IS THE ONE THAT LANDED, not the one the model
+        asked for, and the difference is the whole correctness of this method.
+        ``_apply_loquacity_delta`` clamps the addition to ``loquacity_max``, and
+        a real merchant opens a conversation at the ceiling —
+        ``scale_loquacity(80)`` is 12, so ``current == max == 12`` on turn one.
+        Subtracting the requested delta there charged the NPC for a gain it had
+        never received: a tripped turn carrying the prompt's own suggested +8
+        moved 12 -> 12 -> 4, and the +15 clamp ceiling ended the conversation on
+        the first turn. The docstring above used to promise the error ran the
+        other way, "ends one turn later than the strict number says".
+
+        The tests could not see it: the fixture opened at current=80 against
+        max=100, twenty points of headroom, so the saturating case the shipped
+        NPCs are always in was structurally unreachable.
         """
-        if loquacity_delta <= 0:
+        applied = getattr(self, "_last_applied_loquacity", loquacity_delta)
+        if applied <= 0:
             return
-        self.loquacity_current = max(0, self.loquacity_current - loquacity_delta)
+        self.loquacity_current = max(0, self.loquacity_current - applied)
         logger.info(
-            "chat_respond retracting loquacity_delta=+%s: the state guard "
-            "tripped on this turn. npc=%s current=%s",
+            "chat_respond retracting loquacity applied=+%s (model asked +%s): "
+            "the state guard tripped on this turn. npc=%s current=%s",
+            applied,
             loquacity_delta,
             self.name,
             self.loquacity_current,

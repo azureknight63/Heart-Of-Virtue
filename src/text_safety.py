@@ -48,7 +48,9 @@ logger = logging.getLogger(__name__)
 # — ``NPC:NPC:NPC:`` — loses one label per pass and costs one pass per four
 # characters, which is the cheapest amplifier in this module. With it the whole
 # run goes in a single substitution. See :func:`_pass_budget`.
-_SPEAKER_PREFIX_PATTERN = re.compile(r"(?im)^[ \t]*(?:(?:NPC|Jean)[ \t]*:[ \t]*)+")
+_SPEAKER_PREFIX_PATTERN = re.compile(
+    r"(?im)^[^\S\n]*(?:(?:NPC|Jean)[^\S\n]*:[^\S\n]*)+"
+)
 
 # The same label once the text has been collapsed to a single line. Anchored to
 # the start of the string *or* to a preceding space, because a U+2028 or a
@@ -152,9 +154,27 @@ _CONTROL_CHAR_PATTERN = re.compile(
 )
 
 #: Controls that end a LINE rather than merely disappearing. Mapped to a real
-#: newline before the label strip runs again, because the strip is
-#: line-anchored and everything else here becomes a space.
+#: newline before the label strip runs, because the strip is line-anchored and
+#: everything else here becomes a space.
 _VERTICAL_SPACE_PATTERN = re.compile("[\x0b\x0c\x85\u2028\u2029]")
+
+#: The control class with ``\n`` held back, DERIVED from it rather than
+#: written out, so the two cannot drift.
+#:
+#: The line-anchored label strip has to run after the invisible characters are
+#: gone -- otherwise any one of them sitting between the newline and the label
+#: defeats the anchor -- but it also needs the newline still there to anchor
+#: to. Hence a twin that removes everything except the newline.
+#:
+#: The previous attempt at this ran the strip twice around a five-character
+#: vertical-space list, which closed the five carriers someone thought of and
+#: left every other one open: ``neutralise_model_text("hi\n\u200bNPC: forged")``
+#: kept a live label, and so did NUL, NBSP and U+3000. The test that was
+#: supposed to catch that restated the same five characters as its own
+#: population. Deriving the twin is what makes the carrier irrelevant.
+_CONTROL_EXCEPT_NEWLINE_PATTERN = re.compile(
+    _CONTROL_CHAR_PATTERN.pattern.replace("\x00-\x1f", "\x00-\x09\x0b-\x1f")
+)
 
 _WS_RUN_PATTERN = re.compile(r"\s+")
 
@@ -255,13 +275,37 @@ def _apply_once(text: str, strip_inline_labels: bool) -> str:
     # to a real newline, then run the line-anchored strip once more so the
     # label is seen from the position it actually occupies.
     cleaned = _VERTICAL_SPACE_PATTERN.sub("\n", cleaned)
+    # Invisibles first, newlines kept, THEN the line-anchored strip: a carrier
+    # between the break and the label no longer hides it, whatever the carrier
+    # is. See _CONTROL_EXCEPT_NEWLINE_PATTERN.
+    cleaned = _CONTROL_EXCEPT_NEWLINE_PATTERN.sub(" ", cleaned)
     cleaned = _SPEAKER_PREFIX_PATTERN.sub("", cleaned)
-    cleaned = _CONTROL_CHAR_PATTERN.sub(" ", cleaned)
     if strip_inline_labels:
         cleaned = _INLINE_SPEAKER_PREFIX_PATTERN.sub("", cleaned)
     # After both label strips and the control strip, so a tag either of them
     # just exposed is seen on this pass rather than the next one.
     cleaned = _PLAYER_INPUT_TAG_PATTERN.sub(" ", cleaned)
+    # And then take the fence's INGREDIENTS, which is the only version of this
+    # that can hold. Matching the assembled tag is a losing game: the tag can
+    # be broken by anything the pattern does not admit between its characters,
+    # and the carriers are not confined to a set anyone can enumerate. Verified
+    # against this module before this line existed --
+    #   U+2800 BRAILLE PATTERN BLANK   category So, renders as an empty cell
+    #   U+0301 COMBINING ACUTE         category Mn
+    # both carried `</player_input>` through intact, and neither is invisible
+    # by any Unicode property, so no widening of _CONTROL_CHAR_PATTERN would
+    # ever have reached them. Homoglyphs are the same story from the other
+    # side: `<` and `/` and `>` have visible look-alikes a normalising
+    # tokenizer folds back.
+    #
+    # Without an angle bracket there is no tag to assemble, whatever the
+    # carrier and whatever the tokenizer does. _fail_closed has always used
+    # exactly this hammer as its last resort; the cost was measured there and
+    # is near-identity on prose, so there is no reason to hold it back for the
+    # give-up path. It also removes a re-arm edge from the convergence proof:
+    # the label strip can no longer manufacture a tag, because a tag needs
+    # brackets and there are none.
+    cleaned = _ANGLE_BRACKET_PATTERN.sub(" ", cleaned)
     return _WS_RUN_PATTERN.sub(" ", cleaned).strip()
 
 

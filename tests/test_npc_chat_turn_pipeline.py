@@ -298,6 +298,77 @@ class _GainAdapter:
         )
 
 
+class TestRetractionUsesWhatLandedNotWhatWasAsked:
+    """A tripped turn must not charge for a gain the clamp threw away.
+
+    ``_apply_loquacity_delta`` clamps the addition to ``loquacity_max``, and a
+    shipped merchant opens at the ceiling: ``scale_loquacity(80)`` is 12, so
+    ``current == max == 12`` on turn one. Retracting the REQUESTED delta there
+    took points the NPC had never been given -- the prompt's own suggested +8
+    moved 12 -> 12 -> 4, and +15 (the clamp ceiling) ended the conversation on
+    the first turn. The method's docstring promised the error ran the other
+    way, that a conversation would end one turn LATE.
+
+    It survived because the fixture opened at current=80 against max=100.
+    Twenty points of headroom means the clamp never bites, so the case every
+    real NPC is in on turn one could not occur in the suite. These numbers are
+    therefore deliberately post-scale: a test for a clamp has to start at the
+    ceiling.
+    """
+
+    THRESHOLD = 3
+
+    def _npc(self, current, maximum=12):
+        from src.npc._merchants import Kaelen
+
+        npc = Kaelen()
+        npc.loquacity_max = maximum
+        npc.loquacity_threshold = self.THRESHOLD
+        npc.loquacity_current = current
+        return npc
+
+    def _round_trip(self, npc, delta):
+        applied, _ended = npc._apply_loquacity_delta(delta, "positive")
+        npc._retract_guarded_loquacity_gain(applied)
+        return npc.loquacity_current
+
+    @pytest.mark.parametrize("delta", [3, 8, 15])
+    def test_a_gain_the_clamp_discarded_costs_nothing(self, delta):
+        """The shipped case: already at the ceiling when the guard trips."""
+        npc = self._npc(current=12)
+        assert self._round_trip(npc, delta) == 12
+
+    @pytest.mark.parametrize("delta", [3, 8, 15])
+    def test_a_gain_that_landed_is_fully_retracted(self, delta):
+        """The other direction, so this cannot pass by never retracting."""
+        npc = self._npc(current=2)
+        assert self._round_trip(npc, delta) == 2
+
+    def test_a_partially_clamped_gain_retracts_only_the_landed_part(self):
+        """8 requested from 8/12: 4 land, 4 must come back off."""
+        npc = self._npc(current=8)
+        assert self._round_trip(npc, 8) == 8
+
+    def test_a_drain_still_sticks(self):
+        """Retraction is for gains only -- cancelling drains would let a
+        conversation that trips every turn run forever."""
+        npc = self._npc(current=10)
+        applied, _ = npc._apply_loquacity_delta(-4, "negative")
+        assert npc.loquacity_current == 6
+        npc._retract_guarded_loquacity_gain(applied)
+        assert npc.loquacity_current == 6
+
+    def test_the_ceiling_is_what_a_real_merchant_actually_opens_at(self):
+        """Pins the premise, so this class cannot quietly stop testing a clamp.
+
+        If scaling ever leaves merchants with headroom on turn one, the cases
+        above stop exercising the saturating path and someone should know.
+        """
+        from src.npc._chat_llm import scale_loquacity
+
+        assert scale_loquacity(80) == 12
+
+
 class TestTrippedTurnLoquacityGain:
     def test_a_gain_is_retracted_when_the_guard_trips(self):
         npc = wired_chat_npc(_GainAdapter("Here, take this blade.", 15))
