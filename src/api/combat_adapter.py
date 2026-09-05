@@ -415,7 +415,39 @@ class ApiCombatAdapter:
         # arrives from inside a beat (an enemy move or a combat event that
         # calls functions.add_enemies_to_combat) must not resume the player's
         # in-flight move a second time — see initialize_combat.
+        #
+        # It is a CALL-STACK marker, not a mutex: it is saved and restored, so
+        # two threads interleaving its write and its restore can leave it
+        # stuck True forever, after which every initialize_combat(reinit=True)
+        # early-returns — silently skipping the issue-#344 resume and losing
+        # the combat:started emit, which is not gated on reinit. _beat_lock
+        # below is what makes that interleaving impossible.
         self._executing_move = False
+
+        # Serializes the two entry points that drive combat state on this
+        # adapter: _execute_move and initialize_combat. app.py builds SocketIO
+        # with async_mode="threading", so an in-flight POST /api/combat/move
+        # really can overlap the next scheduled GET /api/combat/status —
+        # game_service's status poll calls adapter._execute_move(
+        # player.current_move) on the resume branch, against the same Move
+        # object the first request is mid-advance() on.
+        #
+        # REENTRANT on purpose: the legitimate same-thread nesting is real and
+        # load-bearing (_execute_move -> Move.advance -> functions.
+        # add_enemies_to_combat -> initialize_combat(reinit=True)), and a plain
+        # Lock would deadlock the request thread on it.
+        #
+        # A threading.local() flag was considered and rejected: it would let
+        # the second thread fall through to _execute_move(current_move,
+        # resume=True) on the move the first thread is still advancing, two
+        # threads mutating one move's current_stage/beats_left — the state
+        # corruption behind the livelock this branch fixed.
+        #
+        # Not pickled: game_service.save_game pops _combat_adapter off the
+        # player before serializing (the adapter already held a threading.Lock
+        # for the suggestion generation counter), so a lock attribute here
+        # cannot break saves.
+        self._beat_lock = threading.RLock()
 
         self._reset_log_index_state()
 
@@ -1019,6 +1051,18 @@ class ApiCombatAdapter:
         Side effect: on a non-reinit call this is the sole minting site for
         `combat_id` (see the property), alongside the beat and log reset.
         """
+        # Serialized against a concurrent _execute_move on this adapter — see
+        # _beat_lock for the race and why the lock is reentrant. The wrapper
+        # exists so the body below keeps its indentation and stays reviewable
+        # against its history.
+        with self._beat_lock:
+            return self._initialize_combat_locked(enemies, reinit=reinit)
+
+    def _initialize_combat_locked(
+        self, enemies: List[Any], reinit: bool = False
+    ) -> Dict[str, Any]:
+        """Body of :meth:`initialize_combat`. Call only with ``_beat_lock``
+        held — go through ``initialize_combat``."""
         try:
             # Import here to avoid circular dependencies
 
@@ -1945,30 +1989,35 @@ class ApiCombatAdapter:
         already-in-progress move continues from its stored stage instead of
         being restarted (used by the reinit/reinforcement path).
         """
-        # Mark the beat loop as running so a mid-beat reinforcement spawn
-        # (functions.add_enemies_to_combat -> initialize_combat(reinit=True))
-        # does not recursively resume this same move. Saved/restored rather
-        # than simply cleared so the guard survives legitimate nesting.
-        was_executing = self._executing_move
-        self._executing_move = True
-        try:
-            return self._execute_move_inner(move, resume=resume)
-        except Exception as e:
-            logger.exception(
-                "Unhandled exception in _execute_move for move '%s'",
-                getattr(move, "name", "?"),
-            )
-            # Reset to a consistent baseline so subsequent moves are not blocked
-            self.input_type = "move_selection"
-            self.pending_move_index = None
-            self.awaiting_input = True
+        # Held for the WHOLE body: a concurrent status poll can re-enter here
+        # on the same Move (see _beat_lock). Reentrant, so the mid-beat
+        # reinforcement path still nests on this thread.
+        with self._beat_lock:
+            # Mark the beat loop as running so a mid-beat reinforcement spawn
+            # (functions.add_enemies_to_combat -> initialize_combat(reinit=True))
+            # does not recursively resume this same move. Saved/restored rather
+            # than simply cleared so the guard survives legitimate nesting; the
+            # lock is what keeps that save/restore pair atomic.
+            was_executing = self._executing_move
+            self._executing_move = True
             try:
-                self.available_options = self._get_available_moves()
-            except Exception:
-                self.available_options = []
-            return {"error": f"Move execution failed: {e}"}
-        finally:
-            self._executing_move = was_executing
+                return self._execute_move_inner(move, resume=resume)
+            except Exception as e:
+                logger.exception(
+                    "Unhandled exception in _execute_move for move '%s'",
+                    getattr(move, "name", "?"),
+                )
+                # Reset to a consistent baseline so subsequent moves are not blocked
+                self.input_type = "move_selection"
+                self.pending_move_index = None
+                self.awaiting_input = True
+                try:
+                    self.available_options = self._get_available_moves()
+                except Exception:
+                    self.available_options = []
+                return {"error": f"Move execution failed: {e}"}
+            finally:
+                self._executing_move = was_executing
 
     def _execute_move_inner(self, move, resume: bool = False) -> Dict[str, Any]:
         """Inner move execution — called only via _execute_move which handles state recovery.
