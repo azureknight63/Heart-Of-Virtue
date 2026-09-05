@@ -199,16 +199,17 @@ class TestCreateSaveRoute:
         assert data["save_id"]
         assert "My Test Save" in data["message"]
 
-    def test_create_save_empty_name(self, client, cloud_session):
-        """An empty save name is accepted -- the route validates presence only.
+    def test_create_save_autosave_without_name_uses_default(self, client, cloud_session):
+        """An autosave POSTed as just {"is_autosave": true} still succeeds.
 
-        `create_save` gates on `"name" in data`, not on truthiness, so `""`
-        reaches `save_game` and is stored verbatim.
+        The name is then internally generated (DEFAULT_SAVE_NAME), so
+        validate_save_name is never reached -- issue #523's validation must not
+        be able to reject a save whose name the server chose itself.
         """
         with patch("src.api.db.db", _db_stub(rows=[[0]])):
             response = client.post(
                 "/api/saves",
-                data=json.dumps({"name": ""}),
+                data=json.dumps({"is_autosave": True}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {cloud_session}"},
             )
@@ -216,6 +217,203 @@ class TestCreateSaveRoute:
         assert response.status_code == 201
         data = json.loads(response.data)
         assert data["success"] is True
+
+    def test_create_save_autosave_literal_name_accepted(self, client, cloud_session):
+        """The name useAutosave actually sends ("Autosave") passes validation.
+
+        frontend/src/hooks/useApi.js posts `{"name": "Autosave",
+        "is_autosave": true}`. Guards against a validation rule that would
+        silently break the only save written during active play.
+        """
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": "Autosave", "is_autosave": True}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 201
+        assert json.loads(response.data)["success"] is True
+
+
+class TestCreateSaveNameValidation:
+    """POST /saves save-name validation (issue #523).
+
+    These tests replace three that deliberately pinned the *unvalidated*
+    behaviour ("", a 1000-char name and `None` were all stored verbatim, and
+    list_saves rendered `None` as the literal string "None"). Their docstrings
+    said a future cap should make them fail so they could be updated
+    deliberately -- this is that update. They now assert the new contract
+    explicitly rather than whatever the route happens to do.
+
+    The rules are deliberately conservative and are all sourced from
+    `src.api.routes.saves`: reject rather than repair, so a mistake is
+    reported instead of being silently rewritten.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_name, reason",
+        [
+            ("", "empty string"),
+            ("   ", "whitespace only"),
+            ("\t\n ", "whitespace-only control characters"),
+            ("\x00", "NUL, which str.strip() does not remove"),
+            ("\u200b", "ZERO WIDTH SPACE, which str.strip() does not remove"),
+            ("\ufeff", "BOM, which str.strip() does not remove"),
+            ("  \x00\u200b  ", "padding around invisible codepoints"),
+        ],
+    )
+    def test_blank_name_rejected(self, client, cloud_session, bad_name, reason):
+        """Blank names 400 rather than being auto-named.
+
+        Auto-naming would hide a player mistake; a blank row in the load list
+        is exactly the symptom issue #523 reports.
+
+        "Blank" means "renders as nothing", not "is whitespace-only": the last
+        four cases survive ``.strip()`` intact but still display as an empty
+        row, so validate_string_field's rule is visibility-based (see
+        ``has_visible_characters``).
+        """
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": bad_name}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 400, reason
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert data["error"] == "Save name is required"
+
+    @pytest.mark.parametrize("bad_name", [None, 42, 3.5, True, ["a"], {"a": 1}])
+    def test_non_string_name_rejected(self, client, cloud_session, bad_name):
+        """Non-string names 400 -- no coercion.
+
+        `None` in particular used to be stored verbatim and rendered by
+        list_saves as the literal string "None".
+        """
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": bad_name}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert data["error"] == "Save name must be a string"
+
+    def test_name_at_max_length_accepted(self, client, cloud_session):
+        """Exactly MAX_SAVE_NAME_LENGTH characters is allowed (boundary)."""
+        from src.api.routes.saves import MAX_SAVE_NAME_LENGTH
+
+        name = "a" * MAX_SAVE_NAME_LENGTH
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": name}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 201
+        assert json.loads(response.data)["success"] is True
+
+    def test_name_one_over_max_length_rejected(self, client, cloud_session):
+        """One character past the cap is refused (boundary)."""
+        from src.api.routes.saves import MAX_SAVE_NAME_LENGTH
+
+        name = "a" * (MAX_SAVE_NAME_LENGTH + 1)
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": name}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert str(MAX_SAVE_NAME_LENGTH) in data["error"]
+
+    def test_very_long_name_rejected_not_truncated(self, client, cloud_session):
+        """A 1000-character name 400s instead of being silently truncated.
+
+        Truncation would discard the player's intent without telling them.
+        The 201 this used to return is the defect in issue #523.
+        """
+        long_name = "a" * 1000
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": long_name}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+        # The rejection names the offending length so the player can see how
+        # far over the cap they were.
+        assert "1000" in data["error"]
+
+    def test_name_is_stripped_before_storing(self, client, cloud_session):
+        """Surrounding whitespace is removed before validating and storing.
+
+        The echoed message carries the stored name, so it is the observable
+        proof that the padded form was not persisted.
+        """
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": "   Padded Save   "}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 201
+        data = json.loads(response.data)
+        assert data["message"] == "Game saved: Padded Save"
+
+    def test_stripping_can_bring_a_name_under_the_cap(self, client, cloud_session):
+        """Length is measured after stripping, not before."""
+        from src.api.routes.saves import MAX_SAVE_NAME_LENGTH
+
+        name = " " * 50 + "a" * MAX_SAVE_NAME_LENGTH + " " * 50
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": name}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 201
+        assert json.loads(response.data)["success"] is True
+
+    def test_blank_name_is_rejected_even_for_an_autosave(self, client, cloud_session):
+        """A caller-supplied blank name is refused regardless of is_autosave.
+
+        Validation applies to what the *caller* sent; only a name the server
+        generates itself (no "name" key at all) skips it.
+        """
+        with patch("src.api.db.db", _db_stub(rows=[[0]])):
+            response = client.post(
+                "/api/saves",
+                data=json.dumps({"name": "  ", "is_autosave": True}),
+                content_type="application/json",
+                headers={"Authorization": f"Bearer {cloud_session}"},
+            )
+
+        assert response.status_code == 400
+        assert json.loads(response.data)["success"] is False
 
 
 class TestLoadSaveRoute:
@@ -438,26 +636,6 @@ class TestSavesErrorCases:
         assert response.status_code == 404
         data = json.loads(response.data)
         assert data["success"] is False
-
-    def test_create_save_very_long_name(self, client, cloud_session):
-        """A 1000-character save name is accepted -- there is no length cap.
-
-        Documenting the real behaviour rather than the old `>= 400 or == 201`,
-        which no status outside 200/2xx-below-201 could fail. If a cap is ever
-        added this test should fail and be updated deliberately.
-        """
-        long_name = "a" * 1000
-        with patch("src.api.db.db", _db_stub(rows=[[0]])):
-            response = client.post(
-                "/api/saves",
-                data=json.dumps({"name": long_name}),
-                content_type="application/json",
-                headers={"Authorization": f"Bearer {cloud_session}"},
-            )
-
-        assert response.status_code == 201
-        data = json.loads(response.data)
-        assert data["success"] is True
 
 
 class TestAutosaveDuringCombat:

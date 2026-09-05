@@ -1,6 +1,35 @@
 """Input validation helpers for API routes."""
 
+import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
+
+# Unicode categories whose codepoints render as nothing: control and format
+# characters (Cc/Cf -- NUL, U+200B ZERO WIDTH SPACE, U+FEFF BOM), surrogates,
+# private-use and unassigned codepoints, and every separator category.
+#
+# ``str.strip()`` removes only the whitespace subset of these, so a value built
+# entirely from the rest survives stripping yet still displays as blank. That is
+# how a save name of "\x00" reached the load list as an empty row (issue #523),
+# and the same hole applied to every field guarded by validate_string_field.
+_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Cn", "Co", "Cs", "Zl", "Zp", "Zs"})
+
+
+def has_visible_characters(value: str) -> bool:
+    """Return True when ``value`` contains at least one codepoint that renders.
+
+    This is the project's definition of "not blank" for user-supplied text:
+    stricter than ``bool(value.strip())``, which accepts invisible non-whitespace
+    codepoints. ``any()`` short-circuits on the first visible character, so the
+    common case costs one lookup.
+
+    Args:
+        value: The string to inspect.
+
+    Returns:
+        True if at least one character is visible, False for an empty string or
+        one made entirely of invisible codepoints.
+    """
+    return any(unicodedata.category(ch) not in _INVISIBLE_CATEGORIES for ch in value)
 
 
 def validate_required_fields(
@@ -118,14 +147,16 @@ def validate_string_field(
         value: The raw value pulled from the request body/query.
         field_name: Human-readable name used in the error message.
         max_length: Optional maximum length (characters).
-        allow_empty: When False, a blank/whitespace-only string is rejected.
+        allow_empty: When False, a blank string is rejected -- meaning one with
+            no visible characters, not merely one that is whitespace-only (see
+            has_visible_characters).
 
     Returns:
         Tuple of (is_valid, error_message).
     """
     if not isinstance(value, str):
         return False, f"{field_name} must be a string"
-    if not allow_empty and not value.strip():
+    if not allow_empty and not has_visible_characters(value):
         return False, f"{field_name} is required"
     if max_length is not None and len(value) > max_length:
         return False, f"{field_name} must be {max_length} characters or less"
