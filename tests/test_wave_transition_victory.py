@@ -9,10 +9,18 @@ the player got a victory dialog mid-ambush. ``add_enemies_to_combat`` then
 reinitialized the *same* fight (``reinit=True``), restoring ``in_combat`` and
 leaving the victory summary behind, stale.
 
-The fix is a signal from the engine: ``add_enemies_to_combat`` records that this
-fight produces waves, so the next roster wipe that happens while a queued combat
-event is holding the beat is recognised as a wave transition **before** the
-terminal path is entered.
+The fix is a single signal from the engine, ``player.combat_wave_pending``, armed
+through ``functions.signal_combat_wave_pending`` from two places so that ONE flag
+with ONE consumption rule covers the whole chain:
+
+* ``add_enemies_to_combat`` arms it once a wave has actually joined the roster --
+  that is waves 2 and later.
+* ``GameService.trigger_combat_events`` arms it as soon as a ``combat_effect``
+  event passes ``check_combat_conditions`` asking for input -- that is the FIRST
+  roster wipe, the one the issue was filed about, which no enrolment precedes.
+
+Either way the roster wipe is recognised as a wave transition **before** the
+terminal path is entered, so nothing has to be retracted afterwards.
 
 Everything here drives a real ``Player``, real ``NPC``s and a real
 ``ApiCombatAdapter`` — a mocked combatant cannot catch a regression in which
@@ -25,9 +33,24 @@ import pytest
 
 import src.functions as functions
 from src.api.combat_adapter import ApiCombatAdapter
+from src.api.services.game_service import GameService
 from src.events import Event
+from src.narration import narrate
 from src.npc import Slime
 from tests._combat_fixtures import engage, make_npc, make_player
+
+
+def make_room(name="TestRoom"):
+    """A minimal positioned room: enough for tile_identity and event removal."""
+    return types.SimpleNamespace(
+        events_here=[],
+        npcs_here=[],
+        items_here=[],
+        objects_here=[],
+        x=0,
+        y=0,
+        map={"name": name},
+    )
 
 
 class StagedWaveEvent(Event):
@@ -60,6 +83,40 @@ class StagedWaveEvent(Event):
         self.completed = True
 
 
+class PostFightNarrationEvent(Event):
+    """A queued combat event shaped like a genuine *post*-fight beat.
+
+    It fires on the empty roster, narrates, and completes in one pass without
+    ever asking for input — so it is not a chain holding the beat and must not
+    buy the fight a victory deferral. ``Ch01PostRumbler2`` has this shape
+    (``check_combat_conditions`` fires on the killing blow, ``process`` never
+    sets ``needs_input``), which is why the arming predicate requires
+    ``needs_input`` rather than "a combat_effect event fired".
+    """
+
+    def __init__(self, player=None, tile=None):
+        # A real room, not None: Event.pass_conditions_to_process removes a
+        # completed non-repeating event from its tile, and a tile-less double
+        # would blow up there instead of exercising the path under test.
+        super().__init__(
+            name="PostFightNarration",
+            player=player,
+            tile=tile if tile is not None else make_room(),
+            combat_effect=True,
+        )
+        self.fired = False
+
+    def check_combat_conditions(self):
+        if not self.fired and not self.player.combat_list:
+            self.fired = True
+            self.pass_conditions_to_process()
+
+    def process(self, user_input=None):
+        narrate("The dust settles over the empty chamber.")
+        self.needs_input = False
+        self.completed = True
+
+
 def _wait_move(player):
     return next(m for m in player.known_moves if m.name == "Wait")
 
@@ -80,12 +137,24 @@ def adapter(player):
 
 
 def arm_event(adapter, event):
-    """Wire ``event`` in as the adapter's combat-event callback."""
+    """Wire ``event`` in as the adapter's combat-event callback.
+
+    A hand-rolled stand-in for ``GameService.trigger_combat_events`` that keeps
+    the unit tests below independent of the service layer. The end-to-end tests
+    in :class:`TestTheFirstWipeOfAChainIsCoveredToo` wire the *real*
+    ``trigger_combat_events`` instead, because the new arming site lives there
+    and a hand-rolled callback would never reach it.
+
+    ``event`` must expose a ``fired`` flag it sets when its gate passes: that is
+    what stands in for the service layer's "did this event do anything" test.
+    """
+
+    event.player = adapter.player
 
     def callback(_player):
         event.check_combat_conditions()
-        if event.needs_input:
-            return [{"name": "StagedWave", "needs_input": True}]
+        if event.fired:
+            return [{"name": event.name, "needs_input": bool(event.needs_input)}]
         return []
 
     adapter.on_event_callback = callback
@@ -182,17 +251,28 @@ class TestVictoryStillFires:
         assert player.in_combat is False
         assert player.combat_end_summary["status"] == "victory"
 
-    def test_victory_fires_before_any_wave_has_landed(self, adapter, player):
-        # No add_enemies_to_combat has run in this fight, so a post-combat
-        # event pending on the beat does not suppress victory — the frontend
-        # needs combat_end_summary to know the fight ended.
-        arm_event(adapter, StagedWaveEvent())
+    def test_victory_fires_for_an_event_that_does_not_hold_the_beat(
+        self, adapter, player
+    ):
+        # A post-combat event that fires on the empty roster and completes
+        # without asking for input is not a chain holding the beat: it narrates
+        # over a fight that really is finished. Victory must still fire — the
+        # frontend needs combat_end_summary to know combat ended.
+        #
+        # This test used to assert the opposite of the fix, under the name
+        # test_victory_fires_before_any_wave_has_landed: it armed a *staged*
+        # (needs_input) event on the first roster wipe and required victory to
+        # fire anyway, which is precisely the bug issue #514 was filed about.
+        # Only the half of its intent that is still true survives here.
+        arm_event(adapter, PostFightNarrationEvent())
         wipe_roster(player)
 
-        adapter._execute_move(_wait_move(player))
+        result = adapter._execute_move(_wait_move(player))
 
         assert player.in_combat is False
         assert player.combat_end_summary["status"] == "victory"
+        # The narration still reaches the client alongside the terminal state.
+        assert result.get("events_triggered")
 
     def test_the_signal_covers_exactly_one_transition(self, adapter, player):
         player.combat_wave_pending = True
@@ -278,8 +358,6 @@ class TestDeferredVictoryIsSettledWhenTheEventResolves:
     def test_an_event_that_resolves_without_a_wave_settles_the_victory(
         self, adapter, player
     ):
-        from src.api.services.game_service import GameService
-
         player.combat_wave_pending = True
         event = arm_event(adapter, StagedWaveEvent())
         wipe_roster(player)
@@ -296,6 +374,220 @@ class TestDeferredVictoryIsSettledWhenTheEventResolves:
         }
 
         GameService().process_event_input(player, "evt-1", "continue", session_data)
+
+        assert player.in_combat is False
+        assert player.combat_end_summary["status"] == "victory"
+
+
+class FirstWaveChainEvent(Event):
+    """A ``Ch01PostRumbler``-shaped chain event: announce first, enroll later.
+
+    Stage 1 fires on ``not combat_list`` and asks for input; stage 2 runs on the
+    player's dismissal, a separate request later, and only then enrolls the
+    wave. Nothing has been enrolled into the fight before stage 1, so this is
+    exactly the first-roster-wipe case ``add_enemies_to_combat``'s signal cannot
+    reach.
+    """
+
+    def __init__(self, player=None, tile=None, wave=None):
+        super().__init__(
+            name="FirstWaveChain", player=player, tile=tile, combat_effect=True
+        )
+        self.wave = list(wave or [])
+        self.input_type = "choice"
+        self.input_options = [{"value": "continue", "label": "Continue"}]
+        self._stage = 1
+
+    def check_combat_conditions(self):
+        if not self.completed and not self.player.combat_list:
+            self.pass_conditions_to_process()
+
+    def process(self, user_input=None):
+        if self._stage == 1:
+            self.needs_input = True
+            self.input_prompt = "The ground quivers as more creatures appear!"
+            self.description = "Low rumbles vibrate through the stone floor!"
+            self._stage = 2
+            return
+        # Stage 2: the player dismissed the announcement -- enroll the wave.
+        if self.wave:
+            functions.add_enemies_to_combat(self.player, self.wave)
+        self.needs_input = False
+        self.completed = True
+
+
+def wire_real_callback(adapter, player, event, session_data=None):
+    """Drive the adapter through the **real** ``trigger_combat_events``.
+
+    The new arming site lives inside that method, so a hand-rolled callback (see
+    :func:`arm_event`) cannot reach it -- these tests would pass against the
+    unfixed engine if they used one.
+    """
+    if session_data is None:
+        session_data = {"pending_events": {}}
+    room = make_room()
+    player.current_room = room
+    player.universe = types.SimpleNamespace(get_tile=lambda x, y: room)
+    event.player = player
+    event.tile = room
+    player.combat_events.append(event)
+    service = GameService()
+    adapter.on_event_callback = lambda p: service.trigger_combat_events(
+        p, session_data=session_data
+    )
+    return session_data
+
+
+class TestTheFirstWipeOfAChainIsCoveredToo:
+    """The reported scenario: no wave has landed, and victory still must not fire.
+
+    ``add_enemies_to_combat`` can only speak for a fight that has *already*
+    produced a wave, so on its own it protected waves 2+ and left wave 1 -- the
+    case issue #514 describes -- firing victory, banking exp and streaming a
+    terminal state that the wave then landed on top of. These tests run the real
+    ``GameService.trigger_combat_events``, because that is where the first wipe
+    is now armed.
+    """
+
+    def test_the_first_roster_wipe_of_a_chain_does_not_fire_victory(
+        self, adapter, player
+    ):
+        assert player.combat_wave_pending is False, "precondition: no wave has landed"
+        wire_real_callback(
+            adapter, player, FirstWaveChainEvent(wave=[make_npc(Slime, name="Wave1")])
+        )
+        wipe_roster(player, exp=10)
+        streamed = []
+        adapter._stream_combat_result = (
+            lambda state, beats, ended=False: streamed.append(ended)
+        )
+
+        adapter._execute_move(_wait_move(player))
+
+        assert player.in_combat is True, "the fight was ended before its first wave"
+        assert player.combat_end_summary is None
+        # Exp banked here could not be taken back: the player would bank the
+        # ambush's opening half twice.
+        assert player.combat_exp["Sword"] == 10
+        assert True not in streamed, "streamed combat:ended in the middle of a fight"
+
+    def test_the_announcement_still_reaches_the_client(self, adapter, player):
+        wire_real_callback(adapter, player, FirstWaveChainEvent())
+        wipe_roster(player)
+
+        result = adapter._execute_move(_wait_move(player))
+
+        # Deferring victory must not swallow the dialog that explains why the
+        # battlefield is empty -- that would soft-lock the player.
+        assert result.get("events_triggered")
+
+    def test_the_first_wave_lands_in_the_same_fight(self, adapter, player):
+        combat_id_before = adapter.combat_id
+        event = FirstWaveChainEvent(wave=[make_npc(Slime, name="Wave1", hp=20)])
+        session_data = wire_real_callback(adapter, player, event)
+        wipe_roster(player, exp=10)
+        streamed = []
+        adapter._stream_combat_result = (
+            lambda state, beats, ended=False: streamed.append(ended)
+        )
+        adapter._execute_move(_wait_move(player))
+        beat_before = player.combat_beat
+        log_before = list(player.combat_log)
+
+        # The player dismisses the announcement; stage 2 enrolls the wave.
+        GameService().process_event_input(
+            player, event.api_event_id, "continue", session_data
+        )
+
+        assert player.in_combat is True
+        assert adapter.combat_id == combat_id_before, "the wave started a new fight"
+        assert player.combat_beat == beat_before, "the wave reset the beat"
+        assert player.combat_end_summary is None
+        assert [e.name for e in player.combat_list] == ["Wave1"]
+        assert player.combat_log[: len(log_before)] == log_before, "the log was wiped"
+        # The reinit tidies combat_end_summary away afterwards, so the summary
+        # assertion above passes with or without the fix. These two do not: exp
+        # banked and a combat:ended already on the wire cannot be retracted, and
+        # they are what the player actually saw in issue #514.
+        assert player.combat_exp["Sword"] == 10, "the fight's exp was banked mid-ambush"
+        assert True not in streamed, "streamed combat:ended before the wave landed"
+
+    def test_the_signal_is_consumed_by_the_transition_it_covers(self, adapter, player):
+        wire_real_callback(adapter, player, FirstWaveChainEvent())
+        wipe_roster(player)
+
+        adapter._execute_move(_wait_move(player))
+
+        # One arming, one deferral. A signal left standing is how a fight gets
+        # stranded with nothing to fight (cf. issue #506's uncleared
+        # player.combat_events).
+        assert player.combat_wave_pending is False
+
+    def test_an_event_that_never_asks_for_input_does_not_arm_the_signal(
+        self, adapter, player
+    ):
+        # Ch01PostRumbler2's shape: it fires on the killing blow and repopulates
+        # inline, so it needs no deferral. needs_input is the conjunct that
+        # excludes it -- without it the predicate would suppress victory for
+        # every combat_effect event that ever fires on an empty roster.
+        wire_real_callback(adapter, player, PostFightNarrationEvent())
+        wipe_roster(player)
+
+        adapter._execute_move(_wait_move(player))
+
+        assert player.combat_wave_pending is False
+        assert player.in_combat is False
+        assert player.combat_end_summary["status"] == "victory"
+
+
+class TestTheWiderPredicateCannotStrandAFight:
+    """The one regression a wider arming predicate introduces, pinned down.
+
+    Arming on ``needs_input`` rather than on enrolment means a future
+    ``combat_effect`` event could arm the signal and then resolve without ever
+    calling ``add_enemies_to_combat``. Nothing in the adapter would end that
+    fight: the deferral is bounded only by ``settle_victory``. These tests hold
+    both of its call sites -- the event-resolution path and the status poll --
+    to that job.
+    """
+
+    def test_a_chain_event_that_arms_and_never_enrolls_still_ends_the_fight(
+        self, adapter, player
+    ):
+        # No wave: stage 2 completes the event with an empty roster.
+        event = FirstWaveChainEvent(wave=[])
+        session_data = wire_real_callback(adapter, player, event)
+        wipe_roster(player)
+        adapter._execute_move(_wait_move(player))
+        assert player.in_combat is True, "precondition: victory was deferred"
+        assert player.combat_wave_pending is False
+
+        GameService().process_event_input(
+            player, event.api_event_id, "continue", session_data
+        )
+
+        assert player.in_combat is False
+        assert player.combat_end_summary["status"] == "victory"
+
+    def test_the_status_poll_settles_a_deferral_left_by_a_vanished_event(
+        self, adapter, player
+    ):
+        event = FirstWaveChainEvent(wave=[])
+        wire_real_callback(adapter, player, event)
+        wipe_roster(player)
+        adapter._execute_move(_wait_move(player))
+        assert player.in_combat is True, "precondition: victory was deferred"
+
+        # Now reach the *other* backstop. get_combat_status only resumes a
+        # fight that has no adapter turn outstanding, which a deferral normally
+        # does have — so this is the rebuilt-adapter shape (server restart or
+        # session rehydrate drops combat_adapter_state's awaiting_input) with
+        # the event no longer around to resolve itself. It is a guard on
+        # settle_victory's second call site, not a second reproduction of the
+        # reported bug.
+        adapter.awaiting_input = False
+        player.combat_events.clear()
+        GameService().get_combat_status(player, session_data={"pending_events": {}})
 
         assert player.in_combat is False
         assert player.combat_end_summary["status"] == "victory"
