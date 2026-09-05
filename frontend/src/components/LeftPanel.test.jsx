@@ -79,12 +79,12 @@ vi.mock('./CombatMovePanel', () => ({
 }));
 vi.mock('./FeedbackDialog', () => ({ default: ({ onClose }) => <div data-testid="feedback-dialog"><button onClick={onClose}>Close Feedback</button></div> }));
 vi.mock('./CooldownTray', () => ({ default: ({ moves }) => <div data-testid="cooldown-tray">{moves.length} on cooldown</div> }));
-// The meter's own behaviour is covered in MomentumMeter.test.jsx; here we only
+// The meter's own behaviour is covered in HeatMeter.test.jsx; here we only
 // prove LeftPanel hands it the three battle_state fields it needs, since a
 // silently-undefined prop is this repo's dominant bug class.
-vi.mock('./MomentumMeter', () => ({
+vi.mock('./HeatMeter', () => ({
     default: ({ heat, beat, combatId }) => (
-        <div data-testid="momentum-meter">{`${heat}|${beat}|${combatId}`}</div>
+        <div data-testid="heat-meter">{`${heat}|${beat}|${combatId}`}</div>
     )
 }));
 vi.mock('./FleeButton', () => ({ default: ({ onFlee }) => <button data-testid="flee-button" onClick={onFlee}>Flee</button> }));
@@ -361,7 +361,7 @@ describe('LeftPanel', () => {
         expect(screen.getByTestId('cooldown-tray')).toHaveTextContent('1 on cooldown');
     });
 
-    it('feeds the momentum meter the player heat, beat and fight id from battle_state', () => {
+    it('feeds the heat meter the player heat, beat and fight id from battle_state', () => {
         // These are the exact keys the serializer emits: `player.heat` is the
         // raw float multiplier (CombatantSerializer), NOT battle_state's own
         // `heat` (which is int(heat*100) and absent from beat states).
@@ -373,12 +373,12 @@ describe('LeftPanel', () => {
             beat_states: [{ enemies: [] }],
         };
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
-        expect(screen.getByTestId('momentum-meter')).toHaveTextContent('1.62|7|fight-0001');
+        expect(screen.getByTestId('heat-meter')).toHaveTextContent('1.62|7|fight-0001');
     });
 
-    it('hides the momentum meter outside combat', () => {
+    it('hides the heat meter outside combat', () => {
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" combat={{ log: [], beat_states: [{ enemies: [] }] }} />);
-        expect(screen.queryByTestId('momentum-meter')).toBeNull();
+        expect(screen.queryByTestId('heat-meter')).toBeNull();
     });
 
     it('shows the flee button once enemies are all 20ft or further away', () => {

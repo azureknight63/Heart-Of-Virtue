@@ -20,7 +20,7 @@ import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
-import MomentumMeter from './MomentumMeter'
+import HeatMeter from './HeatMeter'
 import ShopDialog from './ShopDialog'
 import useCombatLogPlayback from '../hooks/useCombatLogPlayback'
 import useHeroAutoScale from '../hooks/useHeroAutoScale'
@@ -526,13 +526,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           </div>
         </div>
 
-        {/* Momentum (heat) — the damage multiplier the engine has always applied
+        {/* Heat — the damage multiplier the engine has always applied
             silently. `combat.player.heat` is the raw float from
             CombatantSerializer; battle_state's own `heat` key is the same
             quantity as int(heat*100) and is NOT emitted for beat states, so
-            there is one reader and one field here (see utils/momentum.js). */}
+            there is one reader and one field here (see utils/heat.js). */}
         {mode === 'combat' && (
-          <MomentumMeter
+          <HeatMeter
             heat={combat?.player?.heat}
             beat={combat?.beat}
             combatId={combat?.combat_id}

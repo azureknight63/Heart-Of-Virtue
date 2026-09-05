@@ -443,10 +443,10 @@ def _resolve_heat(attacker, heat=None):
     return heat
 
 
-#: ``Move.hit``'s momentum reward for a landed hit by Jean, stated as a name
+#: ``Move.hit``'s heat reward for a landed hit by Jean, stated as a name
 #: so ``projected_hit_heat_sequence`` below can replay the same reward. The
-#: real contract with ``Move.hit``: the momentum-tooltip test
-#: (``tests/test_momentum_rules_contract.py``) AST-counts the *literal*
+#: real contract with ``Move.hit``: the heat-tooltip test
+#: (``tests/test_heat_rules_contract.py``) AST-counts the *literal*
 #: arguments of every ``change_heat()`` call in this file against the
 #: player-facing rules table, so ``Move.hit`` must keep passing its literal
 #: ``1.25`` -- swapping it for this Name would drop one 1.25 from the counted
