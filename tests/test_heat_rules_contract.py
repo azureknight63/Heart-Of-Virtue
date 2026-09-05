@@ -1,7 +1,7 @@
-"""Contract: the momentum tooltip must agree with the engine's heat rules.
+"""Contract: the heat tooltip must agree with the engine's heat rules.
 
-`frontend/src/utils/momentum.js` shows the player a table of what raises and
-lowers combat momentum -- "Land a hit x1.25", "Parry an attack x1.40" and so
+`frontend/src/utils/heat.js` shows the player a table of what raises and
+lowers combat heat -- "Land a hit x1.25", "Parry an attack x1.40" and so
 on. Those numbers are a hand-copied mirror of the `change_heat()` call sites in
 `src/moves/_base.py`, written in a different language, and nothing linked them.
 
@@ -33,7 +33,7 @@ import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 ENGINE_SOURCE = REPO_ROOT / "src" / "moves" / "_base.py"
-TOOLTIP_SOURCE = REPO_ROOT / "frontend" / "src" / "utils" / "momentum.js"
+TOOLTIP_SOURCE = REPO_ROOT / "frontend" / "src" / "utils" / "heat.js"
 
 #: A tooltip row whose effect is a formula rather than a constant -- taking a
 #: hit scales heat by `1 - damage/maxhp`, rendered as "x(1 - dmg / max HP)".
@@ -74,7 +74,7 @@ def _tooltip_multipliers():
     """The numeric multipliers the player-facing rules table advertises."""
     source = TOOLTIP_SOURCE.read_text()
     found = []
-    for table in ("MOMENTUM_GAINS", "MOMENTUM_LOSSES"):
+    for table in ("HEAT_GAINS", "HEAT_LOSSES"):
         match = re.search(rf"{table}\s*=\s*\[(.*?)\n\]", source, re.S)
         assert match, f"could not locate {table} in {TOOLTIP_SOURCE.name}"
         for effect in re.findall(r"effect:\s*'([^']*)'", match.group(1)):
@@ -103,7 +103,7 @@ def test_the_engine_is_the_only_place_heat_multipliers_live():
     assert not strays, (
         "change_heat() is called outside src/moves/_base.py:\n  "
         + "\n  ".join(strays)
-        + "\nThe momentum tooltip's rules table only mirrors _base.py, so these "
+        + "\nThe heat tooltip's rules table only mirrors _base.py, so these "
         "multipliers are not covered by the contract below. Extend "
         "_engine_heat_multipliers() to include them."
     )
@@ -116,9 +116,9 @@ def test_tooltip_multipliers_match_the_engine():
     assert engine, "found no change_heat literals -- the AST scan is broken"
     assert tooltip, "found no tooltip multipliers -- the JS regex is broken"
     assert tooltip == engine, (
-        "the momentum tooltip and the engine disagree about heat.\n"
+        "the heat tooltip and the engine disagree about heat.\n"
         f"  engine  (src/moves/_base.py):            {engine}\n"
-        f"  tooltip (frontend/src/utils/momentum.js): {tooltip}\n"
+        f"  tooltip (frontend/src/utils/heat.js):     {tooltip}\n"
         "Whichever moved, the other has to follow -- a mismatch means the "
         "in-game tooltip is teaching the player a rule the engine does not use."
     )

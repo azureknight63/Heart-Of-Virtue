@@ -138,12 +138,11 @@ export const GLOSSARY_ENTRIES = [
     patterns: ['heat'],
     short: 'A multiplier on every point of damage Jean deals. Landing hits pushes it up, getting hit pulls it down, and it drifts back toward neutral every beat.',
     body: `A multiplier on every point of damage Jean deals — shown as 1.62×. Landing hits, parrying, and making enemies miss push it up; missing, being parried, and taking hits pull it down. It closes ${ENGINE_CONSTANTS.heatDriftPercentPerBeat}% of the gap back to 1.00× every beat, so it is a lease, not a bank. It never leaves the range ${ENGINE_CONSTANTS.heatMin.toFixed(2)}×–${ENGINE_CONSTANTS.heatMax.toFixed(2)}×, and only Jean has one.`,
-    // Deliberately does not quote the meter's on-screen heading. The engine
-    // stat is `heat` and the maintainer's ruling for #507 is that the player
-    // sees Heat too, but the meter is still captioned "Momentum" in
-    // MomentumMeter.jsx — that rename is outstanding, and naming the band
-    // labels instead is true both before and after it lands.
-    tell: 'The meter under the hero on the left panel names the band you are in — STEADY, FERVENT, RIGHTEOUS — and lists exactly what raises and lowers it.',
+    // Quotes the meter's on-screen heading, which reads HEAT since the
+    // Momentum -> Heat rename: the engine stat, the wire field, this entry and
+    // the caption are now one word. If the caption in HeatMeter.jsx ever moves
+    // again, this line moves with it.
+    tell: 'The HEAT meter under the hero on the left panel shows the live multiplier and names the band you are in — STEADY, FERVENT, RIGHTEOUS — and, expanded, lists exactly what raises and lowers it.',
   },
   {
     id: 'distance',

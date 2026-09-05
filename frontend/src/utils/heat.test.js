@@ -5,17 +5,17 @@ import {
   HEAT_NEUTRAL,
   METER_MAX,
   METER_MIN,
-  MOMENTUM_BANDS,
-  MOMENTUM_GAINS,
-  MOMENTUM_LOSSES,
+  HEAT_BANDS,
+  HEAT_GAINS,
+  HEAT_LOSSES,
   NEUTRAL_MARK_RATIO,
-  formatMomentumDelta,
+  formatHeatDelta,
   formatMultiplier,
   isRenderableHeat,
-  momentumBand,
-  momentumDelta,
-  momentumFillRatio,
-} from './momentum'
+  heatBand,
+  heatDelta,
+  heatFillRatio,
+} from './heat'
 
 /**
  * These tests pin the band/threshold arithmetic, not React. The values below
@@ -29,19 +29,19 @@ import {
  *     landing a hit every single beat, which no shippable move set sustains.
  */
 
-const label = (heat) => momentumBand(heat).label
+const label = (heat) => heatBand(heat).label
 
-describe('momentum bands', () => {
+describe('heat bands', () => {
   it('is ordered ascending and starts at the engine floor', () => {
-    const mins = MOMENTUM_BANDS.map(b => b.min)
+    const mins = HEAT_BANDS.map(b => b.min)
     expect(mins).toEqual([...mins].sort((a, b) => a - b))
     expect(mins[0]).toBe(HEAT_FLOOR)
-    expect(new Set(MOMENTUM_BANDS.map(b => b.key)).size).toBe(MOMENTUM_BANDS.length)
-    expect(new Set(MOMENTUM_BANDS.map(b => b.label)).size).toBe(MOMENTUM_BANDS.length)
+    expect(new Set(HEAT_BANDS.map(b => b.key)).size).toBe(HEAT_BANDS.length)
+    expect(new Set(HEAT_BANDS.map(b => b.label)).size).toBe(HEAT_BANDS.length)
   })
 
   it('gives every band a colour and a note so the meter never renders blank', () => {
-    for (const band of MOMENTUM_BANDS) {
+    for (const band of HEAT_BANDS) {
       expect(band.color).toMatch(/^#|^rgb/)
       expect(band.note.length).toBeGreaterThan(0)
     }
@@ -88,20 +88,20 @@ describe('momentum bands', () => {
   })
 })
 
-describe('momentumFillRatio', () => {
+describe('heatFillRatio', () => {
   it('spans exactly 0..1 across the meter band', () => {
-    expect(momentumFillRatio(METER_MIN)).toBe(0)
-    expect(momentumFillRatio(METER_MAX)).toBeCloseTo(1, 10)
+    expect(heatFillRatio(METER_MIN)).toBe(0)
+    expect(heatFillRatio(METER_MAX)).toBeCloseTo(1, 10)
   })
 
   it('pins rather than overflows outside the meter band', () => {
-    expect(momentumFillRatio(0.2)).toBe(0)
-    expect(momentumFillRatio(HEAT_CEILING)).toBeCloseTo(1, 10)
+    expect(heatFillRatio(0.2)).toBe(0)
+    expect(heatFillRatio(HEAT_CEILING)).toBeCloseTo(1, 10)
   })
 
   it('is strictly increasing across the band', () => {
     const samples = [0.5, 0.6, 0.85, 1.0, 1.15, 1.6, 1.75, 2.5, 3.0, 3.5]
-    const ratios = samples.map(momentumFillRatio)
+    const ratios = samples.map(heatFillRatio)
     for (let i = 1; i < ratios.length; i += 1) {
       expect(ratios[i]).toBeGreaterThan(ratios[i - 1])
     }
@@ -111,13 +111,13 @@ describe('momentumFillRatio', () => {
     // This is the property the log scale buys, and the reason a linear scale
     // was rejected — on a linear bar the low-heat step would be a third the
     // width of the high-heat one.
-    const step = (from) => momentumFillRatio(from * 1.25) - momentumFillRatio(from)
+    const step = (from) => heatFillRatio(from * 1.25) - heatFillRatio(from)
     expect(step(0.8)).toBeCloseTo(step(2.0), 10)
     expect(step(1.0)).toBeCloseTo(step(2.4), 10)
   })
 
   it('puts the neutral tick inside the bar, off-centre toward the low end', () => {
-    expect(NEUTRAL_MARK_RATIO).toBe(momentumFillRatio(HEAT_NEUTRAL))
+    expect(NEUTRAL_MARK_RATIO).toBe(heatFillRatio(HEAT_NEUTRAL))
     expect(NEUTRAL_MARK_RATIO).toBeGreaterThan(0)
     expect(NEUTRAL_MARK_RATIO).toBeLessThan(0.5)
   })
@@ -125,9 +125,9 @@ describe('momentumFillRatio', () => {
   it('returns 0 for unusable input instead of NaN%', () => {
     // A NaN here would reach the DOM as width:"NaN%" — the exact class of bug
     // HeroPanel's divide-by-zero guard exists for.
-    expect(momentumFillRatio(undefined)).toBe(0)
-    expect(momentumFillRatio(NaN)).toBe(0)
-    expect(momentumFillRatio(null)).toBe(0)
+    expect(heatFillRatio(undefined)).toBe(0)
+    expect(heatFillRatio(NaN)).toBe(0)
+    expect(heatFillRatio(null)).toBe(0)
   })
 })
 
@@ -148,28 +148,28 @@ describe('formatMultiplier', () => {
   })
 })
 
-describe('momentumDelta / formatMomentumDelta', () => {
+describe('heatDelta / formatHeatDelta', () => {
   it('rounds to the wire precision so float noise is not a "change"', () => {
-    expect(momentumDelta(1.25, 1.0)).toBe(0.25)
-    expect(momentumDelta(1.0000001, 1.0)).toBe(0)
-    expect(momentumDelta(0.85, 1.0)).toBe(-0.15)
+    expect(heatDelta(1.25, 1.0)).toBe(0.25)
+    expect(heatDelta(1.0000001, 1.0)).toBe(0)
+    expect(heatDelta(0.85, 1.0)).toBe(-0.15)
   })
 
   it('returns 0 when either reading is unusable', () => {
-    expect(momentumDelta(undefined, 1.0)).toBe(0)
-    expect(momentumDelta(1.0, undefined)).toBe(0)
+    expect(heatDelta(undefined, 1.0)).toBe(0)
+    expect(heatDelta(1.0, undefined)).toBe(0)
   })
 
   it('signs the text and uses a real minus sign', () => {
-    expect(formatMomentumDelta(0.31)).toBe('+0.31')
-    expect(formatMomentumDelta(-0.22)).toBe('−0.22')
-    expect(formatMomentumDelta(-0.22).startsWith('-')).toBe(false)
+    expect(formatHeatDelta(0.31)).toBe('+0.31')
+    expect(formatHeatDelta(-0.22)).toBe('−0.22')
+    expect(formatHeatDelta(-0.22).startsWith('-')).toBe(false)
   })
 
   it('renders nothing for no change, so callers can skip the chip', () => {
-    expect(formatMomentumDelta(0)).toBe('')
-    expect(formatMomentumDelta(0.001)).toBe('')
-    expect(formatMomentumDelta(undefined)).toBe('')
+    expect(formatHeatDelta(0)).toBe('')
+    expect(formatHeatDelta(0.001)).toBe('')
+    expect(formatHeatDelta(undefined)).toBe('')
   })
 })
 
@@ -189,13 +189,13 @@ describe('isRenderableHeat', () => {
 
 describe('rules table', () => {
   it('carries the real change_heat multipliers from src/moves/_base.py', () => {
-    const gains = Object.fromEntries(MOMENTUM_GAINS.map(r => [r.label, r.effect]))
+    const gains = Object.fromEntries(HEAT_GAINS.map(r => [r.label, r.effect]))
     expect(gains['Land a hit']).toBe('×1.25')
     expect(gains['Parry an attack']).toBe('×1.40')
     expect(gains['Absorb an attack']).toBe('×1.25')
     expect(gains['He misses you']).toBe('×1.10')
 
-    const losses = Object.fromEntries(MOMENTUM_LOSSES.map(r => [r.label, r.effect]))
+    const losses = Object.fromEntries(HEAT_LOSSES.map(r => [r.label, r.effect]))
     expect(losses['Your attack misses']).toBe('×0.85')
     expect(losses['Your attack is parried']).toBe('×0.75')
     expect(losses['Your attack is absorbed']).toBe('×0.75')
@@ -204,10 +204,10 @@ describe('rules table', () => {
   it('marks gains above 1 and losses below 1', () => {
     // A rule listed under the wrong heading would teach the player backwards.
     const numeric = (effect) => Number(effect.replace('×', '').replace(' more', ''))
-    for (const rule of MOMENTUM_GAINS) {
+    for (const rule of HEAT_GAINS) {
       expect(numeric(rule.effect)).toBeGreaterThan(1)
     }
-    for (const rule of MOMENTUM_LOSSES.filter(r => !r.effect.includes('('))) {
+    for (const rule of HEAT_LOSSES.filter(r => !r.effect.includes('('))) {
       expect(numeric(rule.effect)).toBeLessThan(1)
     }
   })
