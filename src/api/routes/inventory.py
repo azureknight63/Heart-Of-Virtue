@@ -303,7 +303,7 @@ def use_item():
     JSON body:
         item_id: Unique ID of the item (preferred)
         item_index: Item index in inventory (fallback)
-        target_id: Optional ally ID (e.g. "ally_<python-id>"). When provided
+        target_id: Optional ally ID (e.g. "ally_<handle>"). When provided
                    the item's effect is applied to that ally instead of self.
                    In combat the target must be within 5 ft.
 
