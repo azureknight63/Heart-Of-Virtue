@@ -1,22 +1,29 @@
 """Error handling middleware.
 
-Only 404/405 (raised by Flask's own routing), 413 (raised by Werkzeug when a
-body exceeds ``MAX_CONTENT_LENGTH``) and 500/generic exceptions (raised by
-unhandled errors) are ever reached through Flask's error-handler dispatch.
-Every other error status (400/401/403/422/429/503) is produced by routes and
-middleware building their own JSON response inline — see
+Only 404/405 (raised by Flask's own routing) and 500/generic exceptions
+(raised by unhandled errors) are ever reached through Flask's error-handler
+dispatch. Every other error status (400/401/403/413/422/429/503) is produced
+by routes and middleware building their own JSON response inline — see
 `src/api/middleware/auth.py` for the 401 convention — so no handler is
 registered for those; a registered-but-unreachable handler is worse than no
 handler, since it invites drift between two response shapes for the same
 status code.
 
-The 413 handler is the *second* half of the body bound, not the first: a
-declared ``Content-Length`` over the cap is refused by
-``src/api/app.py::_register_request_limits`` before the view runs, because a
-``RequestEntityTooLarge`` raised inside a view is caught by that view's own
-``except Exception`` and reported as a 500. This handler covers what that hook
-cannot see — a chunked body, whose size is unknown until it is read — and only
-where the reading route lets the exception escape.
+413 used to be the exception, and it was that rule's own counterexample. The
+handler was registered for a ``RequestEntityTooLarge`` said to escape a route
+that read a chunked body. No such exception exists on this stack: Werkzeug's
+``LimitedStream.readall`` stops at ``MAX_CONTENT_LENGTH`` and *returns* the
+truncated bytes — only a further read raises, and ``get_data`` never makes one
+(verified against Werkzeug 3.1.8). The handler could not be reached by any
+request, and the test covering it dispatched the exception by hand, so it
+could not fail either. Both are gone;
+``src/api/app.py::_register_request_limits`` now bounds the streamed case too
+and answers it inline, which is the single 413 shape this API emits. If a
+``RequestEntityTooLarge`` ever does escape a view — Werkzeug also raises it
+for ``max_form_memory_size`` and ``max_form_parts``, neither of which this API
+can hit today because no route reads ``request.form`` or ``request.files`` —
+it lands in ``generic_error`` below as a 500, exactly as it did while the 413
+handler was registered.
 """
 
 import logging
@@ -83,20 +90,6 @@ def register_error_handlers(app):
                 }
             ),
             405,
-        )
-
-    @app.errorhandler(413)
-    def payload_too_large(error):
-        """Handle 413 Payload Too Large (see this module's docstring)."""
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "payload_too_large",
-                    "message": "Request body is too large.",
-                }
-            ),
-            413,
         )
 
     @app.errorhandler(500)

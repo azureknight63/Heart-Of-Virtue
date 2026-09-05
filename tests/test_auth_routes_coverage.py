@@ -7,9 +7,12 @@ Strategy: minimal Flask app with mocked session_manager and auth_service,
 async routes need AsyncMock for auth_service calls.
 """
 
+import logging
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from flask import Flask
+from werkzeug.wrappers import Request
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -744,17 +747,137 @@ class TestRegisterThrottle:
                 rv = self._register(c, "198.51.100.22")
         assert rv.status_code == 201
 
-    def test_a_malformed_payload_does_not_spend_the_budget(self, app):
-        """Throttled after shape validation: a request that never reaches
-        ``create_user`` costs nothing and should not count against anyone."""
+    def test_a_malformed_payload_spends_the_budget_too(self, app):
+        """The throttle now runs *before* the body is parsed, so it counts.
+
+        This used to assert the opposite -- that a request rejected at shape
+        validation cost nobody anything -- on the argument that a malformed
+        payload is free. It is not free: `/auth/register` takes no credentials,
+        so parsing up to MAX_CONTENT_LENGTH of attacker-chosen JSON was the one
+        piece of work on this route that no throttle gated. And the budget the
+        old ordering protected was never protectable: an attacker exhausting a
+        shared NAT's register budget sends well-formed payloads, which are
+        cheaper to produce and were always counted.
+        """
         from src.api.routes import auth as auth_module
 
+        limit = auth_module._register_limiter.limit
         with app.test_client() as c:
-            for _ in range(auth_module._register_limiter.limit + 5):
+            for i in range(limit):
                 rv = c.post(
                     "/auth/register",
                     json={"username": "Jean"},
                     environ_base={"REMOTE_ADDR": "198.51.100.23"},
                 )
-                assert rv.status_code == 400
-        assert auth_module._register_limiter.is_limited("198.51.100.23") is False
+                assert rv.status_code == 400, i
+            rv = c.post(
+                "/auth/register",
+                json={"username": "Jean"},
+                environ_base={"REMOTE_ADDR": "198.51.100.23"},
+            )
+        assert rv.status_code == 429
+        assert auth_module._register_limiter.is_limited("198.51.100.23") is True
+
+    def test_the_throttle_answers_before_the_body_is_parsed(self, app):
+        """The property the ordering exists for, asserted at the parse itself.
+
+        A 429 that still parsed the body would satisfy the test above while
+        leaving the work ungated, so this watches ``request.get_json`` rather
+        than the status code alone. The over-budget request must not reach it.
+        """
+        from src.api.routes import auth as auth_module
+
+        parses = []
+        real_get_json = Request.get_json
+
+        def _counting_get_json(self, *args, **kwargs):
+            parses.append(self.path)
+            return real_get_json(self, *args, **kwargs)
+
+        limit = auth_module._register_limiter.limit
+        with app.test_client() as c:
+            for _ in range(limit):
+                self._register(c, "198.51.100.24")
+            with patch.object(Request, "get_json", _counting_get_json):
+                rv = self._register(c, "198.51.100.24")
+        assert rv.status_code == 429
+        assert parses == []
+
+
+class TestAHostileBodyWritesNoTraceback:
+    """`/auth/register` is unauthenticated, so anything it logs per request is
+    logged at whatever rate an attacker chooses. With LOG_FILE set (5 MiB x 3
+    rotation, `src/api/app.py`) a flood of tracebacks evicts the audit trail.
+
+    The route's `except Exception: logger.exception(...)` is nonetheless the
+    right thing there, because no *client-controlled* input reaches it. That
+    is the claim under test, and it is not obvious -- it rests on
+    `get_json(silent=True)` returning None rather than raising for every
+    malformed shape, and on the body cap being enforced before the view. Both
+    are somebody else's code, so this asserts the outcome instead of trusting
+    them: a traceback here means a new input path found its way to the
+    catch-all, and the fix is a 4xx at that path, not a quieter log call.
+    """
+
+    @pytest.fixture
+    def app(self, auth_app):
+        return auth_app()
+
+    @pytest.fixture(autouse=True)
+    def _clear_limiter(self):
+        from src.api.routes import auth as auth_module
+
+        auth_module._register_limiter.clear_all()
+        yield
+        auth_module._register_limiter.clear_all()
+
+    #: Every shape a client can put in a body that this route does not want.
+    HOSTILE_BODIES = {
+        "not json at all": (b"<<< not json >>>", "application/json"),
+        "truncated json": (b'{"username": "a", ', "application/json"),
+        "wrong content type": (b"username=a&password=b", "text/plain"),
+        "json null": (b"null", "application/json"),
+        "json scalar": (b"12345", "application/json"),
+        "json list": (b'["username", "password"]', "application/json"),
+        "nulls for strings": (
+            b'{"username": null, "password": null, "email": null}',
+            "application/json",
+        ),
+        "nested objects for strings": (
+            b'{"username": {}, "password": [], "email": 7}',
+            "application/json",
+        ),
+        "empty body": (b"", "application/json"),
+    }
+
+    @pytest.mark.parametrize("label", sorted(HOSTILE_BODIES))
+    def test_no_traceback_is_logged(self, app, caplog, label):
+        body, content_type = self.HOSTILE_BODIES[label]
+        with caplog.at_level(logging.DEBUG):
+            with app.test_client() as c:
+                rv = c.post("/auth/register", data=body, content_type=content_type)
+        assert rv.status_code == 400, rv.get_json()
+        with_tracebacks = [r for r in caplog.records if r.exc_info]
+        assert with_tracebacks == [], [r.getMessage() for r in with_tracebacks]
+
+    def test_a_real_server_fault_still_logs_one(self, app, caplog):
+        """The control. Every assertion above holds for a route that logs
+        nothing at all -- a worse bug than the one they guard against -- so the
+        traceback the catch-all exists for has to still arrive."""
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("the database fell over"),
+        ):
+            with caplog.at_level(logging.DEBUG):
+                with app.test_client() as c:
+                    rv = c.post(
+                        "/auth/register",
+                        json={
+                            "username": "Jean",
+                            "password": "secret",
+                            "email": "j@test.com",
+                        },
+                    )
+        assert rv.status_code == 500
+        assert [r for r in caplog.records if r.exc_info]

@@ -1,12 +1,8 @@
 """Derived cross-file citations, so a comment cannot cite a line that moved.
 
-Hand-written ``File.jsx:123`` references are the dominant defect class in this
-repo's review history. They are wrong on arrival or wrong a round later, and
-nothing catches either: the number is prose, and prose is not executed. Five
-separate reviewers reached the same conclusion independently -- one of them
-after watching a *correct* docstring fix break the count on the line above it,
-and another after finding ``InteractPanel:768`` written by hand two files away
-from a scanner that derives the same fact properly.
+A hand-written ``File.jsx:123`` is prose, and prose is not executed: it is
+wrong on arrival or wrong a round later, and nothing catches either. That is
+what makes stale citations this repo's dominant defect class.
 
 The cure is not a better-maintained number. It is not writing the number.
 
@@ -16,6 +12,8 @@ always current, and the anchor is asserted to exist, which catches the drift a
 line number silently hides. An entry with no literal anchor says so out loud
 via ``note=``, and :func:`unverifiable` makes that set countable, so "we could
 not check this one" is a number a test can hold rather than a gap nobody sees.
+Either way the FILE is resolved: a citation naming something that no longer
+exists fails whether or not it carries an anchor.
 
 Usage::
 
@@ -45,6 +43,25 @@ _SEARCH_ROOTS = ("frontend/src", "src", "ai", "tools", "tests")
 _SKIP_DIRS = {"node_modules", "__pycache__", ".git", "dist", "build", "coverage"}
 
 _index_cache: Optional[Dict[str, List[str]]] = None
+
+
+def _under_a_search_root(path: str) -> bool:
+    """Whether an absolute path sits inside one of :data:`_SEARCH_ROOTS`.
+
+    Applied to the repo-relative spelling as well as to the basename lookup,
+    so the two resolution paths honour the same boundary. Without this a
+    citation naming ``frontend/node_modules/...`` resolved perfectly well,
+    which the comment above says it must not.
+    """
+    relative = os.path.relpath(path, _REPO_ROOT)
+    if relative.startswith(os.pardir):
+        return False
+    parts = relative.split(os.sep)
+    if any(part in _SKIP_DIRS for part in parts):
+        return False
+    return any(
+        parts[: len(root.split("/"))] == root.split("/") for root in _SEARCH_ROOTS
+    )
 
 
 def _index() -> Dict[str, List[str]]:
@@ -88,7 +105,7 @@ class Read(NamedTuple):
     def path(self) -> str:
         """The one file this citation names, or raise."""
         direct = os.path.join(_REPO_ROOT, self.file.replace("/", os.sep))
-        if os.path.isfile(direct):
+        if os.path.isfile(direct) and _under_a_search_root(direct):
             return direct
         candidates = _index().get(os.path.basename(self.file), [])
         if self.file != os.path.basename(self.file):
@@ -109,10 +126,16 @@ class Read(NamedTuple):
         )
 
     def lines(self) -> Sequence[int]:
-        """1-based lines where ``anchor`` appears. Empty when it does not."""
+        """1-based lines where ``anchor`` appears. Empty when it does not.
+
+        Resolves the file first even when there is no anchor to look for: a
+        note-only citation still claims the file exists, and that claim is the
+        half a note cannot otherwise be held to.
+        """
+        path = self.path()
         if not self.anchor:
             return ()
-        with io.open(self.path(), encoding="utf-8", errors="replace") as handle:
+        with io.open(path, encoding="utf-8", errors="replace") as handle:
             return tuple(
                 n for n, text in enumerate(handle, 1) if self.anchor in text
             )
@@ -148,7 +171,11 @@ def verify(reads) -> List[str]:
     """
     broken = []
     for read in reads:
-        if read.anchor and not read.lines():
+        # Called for every citation, anchored or not: `lines` resolves the
+        # path first, so a note-only entry naming a deleted file raises here
+        # instead of passing forever.
+        hits = read.lines()
+        if read.anchor and not hits:
             broken.append(
                 "%s: anchor %r not found in that file" % (read.file, read.anchor)
             )
@@ -161,5 +188,11 @@ def unverifiable(reads) -> List["Read"]:
     Exposed so a suite can assert the size of its own blind spot. An unchecked
     citation is acceptable; an unchecked citation nobody counts is how the
     class this module exists to close got started.
+
+    The file is still resolved, so "unverifiable" means "no literal to anchor
+    to", never "nobody looked".
     """
-    return [r for r in reads if not r.anchor]
+    loose = [r for r in reads if not r.anchor]
+    for read in loose:
+        read.path()
+    return loose

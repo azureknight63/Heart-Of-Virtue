@@ -42,7 +42,7 @@ describe('apiErrorMessage', () => {
   });
 
   describe('accepted shapes', () => {
-    // Thirteen call sites read a 200-with-success:false body rather than a
+    // Many call sites read a 200-with-success:false body rather than a
     // rejection, so the same rule has to apply to a bare body.
     it('reads a response body handed over directly', () => {
       expect(apiErrorMessage(THROTTLED, 'fallback')).toBe('Slow down — too many messages.');

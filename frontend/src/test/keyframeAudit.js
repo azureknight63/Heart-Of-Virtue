@@ -19,10 +19,7 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
  *   `blink`   TypewriterOutput declared it locally; it shadowed index.css's
  *             copy app-wide for as long as any typewriter was mid-line.
  *   `pulse`   NpcChatPanel declared it locally; it replaced the animation
- *             BattlefieldGrid's targeting reticle was using. (HeroPanel is
- *             not a victim here and used to be listed as one: it animates
- *             with `hero-heartbeat`, which it declares itself. It was the
- *             other DECLARER of `pulse`, which is a different hazard.)
+ *             BattlefieldGrid's targeting reticle was using.
  *   `fadeIn`  Declared only inside ItemDetailDialog and USED by ActionsPanel,
  *             whose message therefore animated only while an item dialog
  *             happened to be open.
@@ -278,9 +275,9 @@ export function readSourceFiles(root = SRC_DIR) {
  * hand-built inputs with a known-missing keyframe, so "the scan passes" is
  * evidence rather than an assumption.
  *
- * A name resolves if it is declared in a global stylesheet (anything under
- * `src/styles/*.css`, all of which are imported into the bundle and so are
- * document-global) or in the same file that uses it.
+ * A name resolves if it is declared in a global stylesheet — as
+ * `isGlobalStylesheet` defines that, deliberately permissively; see its
+ * docstring — or in the same file that uses it.
  *
  * `shadowed` is the other half — see SHADOWING in the module header. It is
  * every name with more than one declaration where at least one of them is a

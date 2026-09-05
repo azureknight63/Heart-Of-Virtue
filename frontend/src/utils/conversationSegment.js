@@ -30,22 +30,13 @@
  * TWO IMPORT PATHS, ONE OF WHICH NOBODY USES
  * ------------------------------------------
  * `npcCast` and `JEAN_ID` are also re-exported by hooks/useNpcChat.js, so
- * there are two spellings of the same import. This block used to state a rule
- * about which spelling to use where. Its LIVE CHAT half was true — the
- * panel and the hook's own suite do import through the barrel. Its
- * "everything else" half was not: it named the stage, the transcript and
- * this module's own tests as importing from here, and all three import
- * `DEFAULT_EMOTION` only. Nobody imports directly. The barrel is the sole
- * path in use.
+ * there are two spellings of the same import. Only the barrel is in use: the
+ * chat panel and the hook's own suite import through it, and nothing imports
+ * these two names from here directly.
  *
- * That is worth writing down rather than tidying away, because a rule with
- * three phantom members and zero real ones is worse than no rule: it tells a
- * reader the codebase is organised around a distinction it does not make, and
- * the next person to add a consumer follows an instruction nobody has ever
- * followed. `conversationSegment.consumers.test.js` now DERIVES the real
- * population by scanning source, so this paragraph cannot drift again — if
- * you add a direct importer, that test tells you, and this text is what needs
- * updating.
+ * That is a population, not a rule — `conversationSegment.consumers.test.js`
+ * DERIVES it by scanning source. Add a direct importer and that test fails,
+ * at which point this paragraph is what needs updating.
  *
  * @typedef {Object} ConversationSegment
  * @property {string}  text            The spoken (or narrated) line.

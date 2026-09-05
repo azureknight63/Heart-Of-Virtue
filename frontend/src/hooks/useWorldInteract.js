@@ -116,9 +116,18 @@ export function useWorldInteract({
         setTakingAllItems(false)
     }, [isLocked, takingAllItems, onRefetch, onInteractionComplete, onTypingChange])
 
-    // Single-item take (e.g. an individual container-contents row). Simpler
-    // than takeAll/interact: no locking logic, no events chain — matches the
-    // narrower inline handler this replaces.
+    /**
+     * Single-item take (e.g. an individual container-contents row). Simpler
+     * than takeAll/interact: no locking logic, no events chain — matches the
+     * narrower inline handler this replaces.
+     *
+     * @param {string|number} itemId - The serialized row's id.
+     * @param {string} itemName - Used only for the default success message.
+     * @returns {Promise<void>} Resolves once the take (and any refetch) has
+     *   settled. A failure — server-side or transport — is reported through
+     *   `error`, never thrown, so awaiting this tells you the attempt is over,
+     *   not that it worked.
+     */
     const takeOne = useCallback(async (itemId, itemName) => {
         setLoading(true)
         try {
@@ -136,10 +145,98 @@ export function useWorldInteract({
         }
     }, [onRefetch])
 
-    // Main interact flow: performs the action, then (on success) applies
-    // local object-state patches, locking, a refetch, any directly-returned
-    // events, and finally a background events check chained after — each
-    // step preserved in its original order.
+    /**
+     * A passageway transition owns the rest of the interaction it arrived in.
+     *
+     * The source-room panel closes BEFORE the confirmation event is shown;
+     * otherwise its location prop follows the later refetch and the same panel
+     * reappears with the destination room selected.
+     *
+     * @param {Array} triggeredEvents - The events the interact call returned.
+     * @returns {Promise<void>}
+     */
+    const handlePassagewayTransition = useCallback(async (triggeredEvents) => {
+        if (onClose) onClose()
+        // The transition confirmation must still be queued if the refresh
+        // fails, so a transient error cannot strand the player behind a closed
+        // interaction panel.
+        if (onRefetch) {
+            try {
+                await onRefetch()
+            } catch (refetchError) {
+                console.error('Failed to refetch after passageway transition:', refetchError)
+            }
+        }
+        if (onEventsTriggered) onEventsTriggered(triggeredEvents)
+        if (onInteractionComplete) onInteractionComplete()
+    }, [onClose, onRefetch, onEventsTriggered, onInteractionComplete])
+
+    /**
+     * Locks the panel when an action moved the target out from under it.
+     *
+     * Taking PART of a stack leaves the rest selectable, so that case unlocks
+     * instead; any other locking action means the row the panel is showing no
+     * longer describes anything. A non-locking action leaves the lock alone.
+     *
+     * @param {string} action - The action keyword that was sent.
+     * @param {Object} target - The row the action was sent against.
+     * @param {?number|string} qty - Requested quantity, when the action took one.
+     */
+    const applyPanelLock = useCallback((action, target, qty) => {
+        const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']
+        if (!lockingActions.some(a => action.toLowerCase().includes(a))) return
+        const currentCount = parseInt(target.count) || 1
+        const requestedQty = parseInt(qty) || 0
+        const tookOnlyPartOfTheStack = requestedQty > 0 && requestedQty < currentCount
+        setIsLocked(!tookOnlyPartOfTheStack)
+    }, [])
+
+    /**
+     * The background-events check chained after a successful interaction.
+     *
+     * Events with neither output text nor an input prompt have nothing to
+     * render, so they are filtered out rather than opening an empty dialog. A
+     * failure here is logged and swallowed: the interaction itself succeeded,
+     * and the events check is a follow-up, not part of its result.
+     *
+     * @returns {Promise<void>}
+     */
+    const pollBackgroundEvents = useCallback(async () => {
+        try {
+            const eventsResponse = await apiEndpoints.world.getEvents()
+            const eventsData = eventsResponse.data
+            if (eventsData.success && eventsData.events && eventsData.events.length > 0) {
+                const eventsWithOutput = eventsData.events.filter(
+                    event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
+                )
+                if (eventsWithOutput.length > 0 && onEventsTriggered) {
+                    onEventsTriggered(eventsWithOutput)
+                }
+                if (onRefetch) await onRefetch()
+            }
+        } catch (eventsErr) {
+            console.error('Failed to trigger events:', eventsErr)
+        }
+    }, [onEventsTriggered, onRefetch])
+
+    /**
+     * Main interact flow: performs the action, then (on success) applies local
+     * object-state patches, locking, a refetch, any directly-returned events,
+     * and finally a background events check chained after.
+     *
+     * Two of those steps end the flow early and are extracted above so the
+     * order of the rest stays readable: a passageway transition
+     * (`handlePassagewayTransition`) and a teleport.
+     *
+     * @param {Object} target - The selected room target.
+     * @param {string} action - The action keyword to send.
+     * @param {?number} qty - Quantity, for the actions that take one.
+     * @returns {Promise<Object|undefined>} The response body — including a
+     *   `success: false` one, which is reported through `error` and still
+     *   returned. Resolves to `undefined` when the request never completed
+     *   (transport failure); callers reading `data.success` off the result
+     *   must therefore optional-chain it.
+     */
     const interact = useCallback(async (target, action, qty = null) => {
         setInteractionOutput(null)
         setError(null)
@@ -149,99 +246,54 @@ export function useWorldInteract({
             const response = await apiEndpoints.world.interact(target.id, action, qty)
             const data = response.data
 
-            if (data.success) {
-                // When events are pending (e.g. a passageway transition), keep
-                // the spinner showing instead of flashing "Action completed."
-                // The event UI will take over when it renders.
-                const triggeredEvents = Array.isArray(data.events_triggered) ? data.events_triggered : []
-                const hasPendingEvents = triggeredEvents.length > 0
-                const isPassagewayTransition = triggeredEvents.some(
-                    event => event?.type === PASSAGEWAY_TRANSITION_EVENT_TYPE
-                )
-
-                // A passageway transition owns the rest of this interaction.
-                // Close the source-room panel before the confirmation event is
-                // shown; otherwise its location prop follows the later refetch
-                // and the same panel reappears with the destination room selected.
-                if (isPassagewayTransition) {
-                    if (onClose) onClose()
-                    // The transition confirmation must still be queued if the
-                    // refresh below fails, so a transient error cannot strand
-                    // the player behind a closed interaction panel.
-                    if (onRefetch) {
-                        try {
-                            await onRefetch()
-                        } catch (refetchError) {
-                            console.error('Failed to refetch after passageway transition:', refetchError)
-                        }
-                    }
-                    if (onEventsTriggered) onEventsTriggered(triggeredEvents)
-                    if (onInteractionComplete) onInteractionComplete()
-                    return data
-                }
-
-                const message = hasPendingEvents ? '' : (data.message || 'Action completed.')
-                setInteractionOutput(message)
-                if (message && onTypingChange) onTypingChange(true)
-                if (message) setInteractionHistory(prev => [...prev, message])
-
-                // If a teleport occurred, close the dialog immediately
-                if (data.teleported) {
-                    if (onRefetch) await onRefetch()
-                    if (onInteractionComplete) onInteractionComplete()
-                    // Close the dialog after a brief delay to show the message
-                    setTimeout(() => {
-                        if (onClose) onClose()
-                    }, 800)
-                    setLoading(false)
-                    return data
-                }
-
-                // Update local object state immediately from the response so action
-                // buttons (e.g. "open" after "unlock") appear without requiring a
-                // back-and-re-select round trip.
-                if (data.object_state && onObjectStateUpdate) {
-                    onObjectStateUpdate(data.object_state)
-                }
-
-                // Check if this action should lock the panel (e.g. item moved)
-                const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']
-                if (lockingActions.some(a => action.toLowerCase().includes(a))) {
-                    const currentCount = parseInt(target.count) || 1
-                    const requestedQty = parseInt(qty) || 0
-                    if (requestedQty > 0 && requestedQty < currentCount) {
-                        setIsLocked(false)
-                    } else {
-                        setIsLocked(true)
-                    }
-                }
-
-                if (onRefetch) await onRefetch()
-                if (hasPendingEvents && onEventsTriggered) {
-                    onEventsTriggered(triggeredEvents)
-                }
-
-                // Check for background events
-                try {
-                    const eventsResponse = await apiEndpoints.world.getEvents()
-                    const eventsData = eventsResponse.data
-                    if (eventsData.success && eventsData.events && eventsData.events.length > 0) {
-                        const eventsWithOutput = eventsData.events.filter(
-                            event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
-                        )
-                        if (eventsWithOutput.length > 0 && onEventsTriggered) {
-                            onEventsTriggered(eventsWithOutput)
-                        }
-                        if (onRefetch) await onRefetch()
-                    }
-                } catch (eventsErr) {
-                    console.error('Failed to trigger events:', eventsErr)
-                }
-
-                if (onInteractionComplete) onInteractionComplete()
-            } else {
+            if (!data.success) {
                 setError(apiErrorMessage(data, 'Interaction failed'))
+                return data
             }
+
+            const triggeredEvents = Array.isArray(data.events_triggered) ? data.events_triggered : []
+            const isPassagewayTransition = triggeredEvents.some(
+                event => event?.type === PASSAGEWAY_TRANSITION_EVENT_TYPE
+            )
+            if (isPassagewayTransition) {
+                await handlePassagewayTransition(triggeredEvents)
+                return data
+            }
+
+            // When events are pending, keep the spinner showing instead of
+            // flashing "Action completed." The event UI takes over when it
+            // renders.
+            const hasPendingEvents = triggeredEvents.length > 0
+            const message = hasPendingEvents ? '' : (data.message || 'Action completed.')
+            setInteractionOutput(message)
+            if (message && onTypingChange) onTypingChange(true)
+            if (message) setInteractionHistory(prev => [...prev, message])
+
+            // A teleport also ends the flow: no locking, no events chain —
+            // close the dialog after a beat so the message is readable first.
+            if (data.teleported) {
+                if (onRefetch) await onRefetch()
+                if (onInteractionComplete) onInteractionComplete()
+                setTimeout(() => {
+                    if (onClose) onClose()
+                }, 800)
+                return data
+            }
+
+            // Update local object state immediately from the response so action
+            // buttons (e.g. "open" after "unlock") appear without requiring a
+            // back-and-re-select round trip.
+            if (data.object_state && onObjectStateUpdate) {
+                onObjectStateUpdate(data.object_state)
+            }
+            applyPanelLock(action, target, qty)
+
+            if (onRefetch) await onRefetch()
+            if (hasPendingEvents && onEventsTriggered) {
+                onEventsTriggered(triggeredEvents)
+            }
+            await pollBackgroundEvents()
+            if (onInteractionComplete) onInteractionComplete()
             return data
         } catch (err) {
             console.error('Interaction error:', err)
@@ -249,7 +301,17 @@ export function useWorldInteract({
         } finally {
             setLoading(false)
         }
-    }, [onRefetch, onEventsTriggered, onInteractionComplete, onTypingChange, onClose, onObjectStateUpdate])
+    }, [
+        onRefetch,
+        onEventsTriggered,
+        onInteractionComplete,
+        onTypingChange,
+        onClose,
+        onObjectStateUpdate,
+        handlePassagewayTransition,
+        applyPanelLock,
+        pollBackgroundEvents,
+    ])
 
     return {
         loading,

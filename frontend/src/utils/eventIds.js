@@ -9,10 +9,9 @@
  * suite that wants to drive GamePage's own handlers to do. A constant exported
  * from the hook resolves to `undefined` in any such suite, which silently
  * breaks the consumer under test rather than failing where the mock is
- * declared. Nothing mocks this file. (Named rather than counted: the previous
- * wording said "several suites" when there was one, and a count here rots
- * every time a suite is added or deleted — `grep -rn "vi.mock(.*useEventManager"
- * src/` answers it exactly.)
+ * declared. Nothing mocks this file. Named rather than counted, because a
+ * count here rots every time a suite is added or deleted —
+ * `grep -rn "vi.mock(.*useEventManager" src/` answers it exactly.
  */
 
 /**
@@ -22,10 +21,9 @@
  * a falsy submit result means "the dialog unmounted", not "the submit failed".
  * A rename reaching only some of the call sites would silently restore an
  * unrecoverable soft-lock, which is why the string is spelled exactly once and
- * imported everywhere else — the three suites that used to hard-code it
- * (EventDialog, useEventManager, GamePage.handlers) now import it too, so a
- * rename that reached the production sites and not the fixtures fails loudly
- * instead of testing the old id against the new code.
+ * imported everywhere else, fixtures included: a rename that reached the
+ * production sites and not the suites would test the old id against the new
+ * code and pass.
  */
 export const COMBAT_INIT_EVENT_ID = 'combat_init'
 
@@ -37,8 +35,7 @@ export const COMBAT_INIT_EVENT_ID = 'combat_init'
  * client compares against it to decide that this interaction owns the rest of
  * the flow — close the source-room panel before the confirmation renders, or
  * the panel reappears with the destination room selected. Defined once for the
- * same reason as the id above: it was spelled at five sites across the hook
- * and two suites, and a rename that reached only some of them would leave the
- * comparison quietly false and the player looking at the wrong room.
+ * same reason as the id above: a rename reaching only some of its sites leaves
+ * the comparison quietly false and the player looking at the wrong room.
  */
 export const PASSAGEWAY_TRANSITION_EVENT_TYPE = 'PassagewayTransitionEvent'

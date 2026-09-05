@@ -198,16 +198,24 @@ _RULE_SIGNATURES = {
 }
 
 
+#: An ``if (...) return false`` guard, in either spelling Prettier may leave
+#: behind. ``DOTALL`` and the optional brace are load-bearing: without them a
+#: condition wrapped across lines, or a braced ``{ return false }`` body,
+#: matched NOTHING, and the parse quietly returned only the rules it could
+#: still see -- a green mirror test beside a frontend applying one more.
+_DROP_RULE_RE = re.compile(r"if\s*\((.*?)\)\s*\{?\s*return false", re.DOTALL)
+
+
 def _javascript_drop_rules():
     """Every ``if (...) return false`` in ``actionKeywords``, as a rule id.
 
-    Returns ``(ids, unrecognised, raw clauses)``. A clause matching no
+    Returns ``(ids, unrecognised, raw clauses, body)``. A clause matching no
     signature -- or more than one -- is reported rather than dropped: a parse
     that silently skipped the rule it could not classify would pass on exactly
     the change this test exists to catch.
     """
     body = _action_keywords_body()
-    clauses = re.findall(r"if\s*\((.*?)\)\s*return false", body)
+    clauses = _DROP_RULE_RE.findall(body)
     rules = set()
     unrecognised = []
     for clause in clauses:
@@ -220,7 +228,16 @@ def _javascript_drop_rules():
             rules.add(matched[0])
         else:
             unrecognised.append((clause.strip(), matched))
-    return rules, unrecognised, clauses
+    return rules, unrecognised, clauses, body
+
+
+def _action_keywords_docstring():
+    """The JSDoc block immediately above ``actionKeywords``."""
+    text = _interact_panel_source()
+    end = text.index(_ACTION_KEYWORDS_JS.anchor)
+    start = text.rfind("/**", 0, end)
+    assert start != -1, "actionKeywords has no JSDoc block above it"
+    return text[start:end]
 
 
 def _javascript_chat_keywords():
@@ -255,13 +272,19 @@ class TestTheMirrorTracksTheFrontend:
         )
 
     def test_the_python_mirror_implements_every_javascript_rule(self):
-        rules, unrecognised, clauses = _javascript_drop_rules()
-        # Guard-the-guard: a regex that matched nothing would make the
-        # comparisons below vacuous in the permissive direction, which is how
-        # the JEAN_TONES version of this test was made falsifiable.
-        assert len(clauses) > 1, (
-            "parsed no drop rules out of actionKeywords -- the parse is "
-            f"broken, not the frontend. Body was:\n{_action_keywords_body()}"
+        rules, unrecognised, clauses, body = _javascript_drop_rules()
+        # Guard-the-guard, on the INCREMENT rather than the base. A floor
+        # ("more than one clause") is satisfied by the rules already parsed,
+        # so a fifth rule the regex cannot see costs nothing and the set
+        # comparison below still passes. `return false` is what a drop rule
+        # IS, whatever shape it is written in: parse one per occurrence, or
+        # fail loudly instead of predicting a button set the player never sees.
+        returns = body.count("return false")
+        assert len(clauses) == returns, (
+            f"parsed {len(clauses)} drop rule(s) out of actionKeywords but its "
+            f"body contains {returns} `return false` -- the parse is broken, "
+            "not the frontend, and every comparison below is vacuous until it "
+            f"is fixed. Body was:\n{body}"
         )
         assert not unrecognised, (
             "actionKeywords contains a drop rule this module cannot classify: "
@@ -273,6 +296,30 @@ class TestTheMirrorTracksTheFrontend:
         assert rules == _MIRRORED_RULES, (
             f"the frontend applies {sorted(rules)}; this module mirrors "
             f"{sorted(_MIRRORED_RULES)}"
+        )
+
+    def test_the_docstring_names_every_rule_the_function_applies(self):
+        """The prose beside the filter, held to the filter.
+
+        That docstring used to promise "one bullet per ``return false``, in the
+        same order" and had two of them transposed -- a claim about ORDER is
+        checkable only by counting, and nobody counts. Each bullet now leads
+        with the identifier its clause turns on, which is a claim about NAMES,
+        and names are matchable. A rule with no bullet fails here.
+        """
+        rules, _, _, _ = _javascript_drop_rules()
+        assert rules, "no drop rules were classified -- the parse is broken"
+        doc = _action_keywords_docstring()
+        missing = {
+            rule: [t for t in _RULE_SIGNATURES[rule] if t not in doc]
+            for rule in sorted(rules)
+            if any(t not in doc for t in _RULE_SIGNATURES[rule])
+        }
+        assert not missing, (
+            "actionKeywords applies drop rules its own docstring does not "
+            f"name: {missing}\n\nAdd a bullet led by the identifier the clause "
+            "turns on. Prose that describes a subset of the rules is how the "
+            "button list and its explanation drift apart."
         )
 
     def test_the_chat_alias_set_is_the_frontends(self):

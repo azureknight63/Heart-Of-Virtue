@@ -10,7 +10,8 @@ from typing import NamedTuple, Tuple
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from src.api.config import DevelopmentConfig
+from werkzeug.http import parse_set_header
+from src.api.config import Config, DevelopmentConfig
 from src.api.security_headers import _register_security_headers
 from src.api.services import SessionManager, GameService
 from src.env_bootstrap import PROJECT_ROOT as _REPO_ROOT
@@ -409,6 +410,17 @@ def _init_socketio(app):
     SOCKETIO_CORS_ALLOWED_ORIGINS falls back to the HTTP CORS origins, and
     SOCKETIO_MESSAGE_QUEUE (e.g. a Redis URL) fans emits out across workers
     when set — None keeps the single-process in-memory queue.
+
+    ``max_http_buffer_size`` is the body bound for this half of the app, and it
+    is separate from ``MAX_CONTENT_LENGTH`` because ``/socket.io/*`` never
+    reaches Flask: ``flask_socketio`` sets itself as ``app.wsgi_app`` and
+    answers those paths inside the middleware, so
+    :func:`_register_request_limits`'s ``before_request`` — and every other one
+    — is bypassed for them. Engine.IO's own default is 1,000,000 bytes, near
+    enough to the same number that pinning it here changes nothing today; it is
+    pinned so that a change to ``MAX_CONTENT_LENGTH`` is made in view of both
+    bounds rather than moving one and silently leaving the other where a
+    library author put it.
     """
     socketio = SocketIO(
         app,
@@ -416,6 +428,9 @@ def _init_socketio(app):
             "SOCKETIO_CORS_ALLOWED_ORIGINS", app.config["CORS_ORIGINS"]
         ),
         message_queue=app.config.get("SOCKETIO_MESSAGE_QUEUE"),
+        max_http_buffer_size=(
+            app.config.get("MAX_CONTENT_LENGTH") or Config.MAX_CONTENT_LENGTH
+        ),
         async_mode="threading",
         logger=app.debug,
         engineio_logger=app.debug,
@@ -759,42 +774,103 @@ def _register_request_limits(app):
 
     ``MAX_CONTENT_LENGTH`` (``src/api/config.py``) already stops Werkzeug
     *reading* past the cap, so the body is never buffered — but on its own it
-    is not enough to make the refusal legible. Werkzeug raises
-    ``RequestEntityTooLarge`` at the moment the body is read, which for every
-    route in this API is inside a ``try:`` whose ``except Exception`` returns
-    that route's own 500. The client is then told the server broke, the app-wide
-    500 handler logs a traceback per hostile request, and nothing says
-    "too large". Checking the declared ``Content-Length`` in a ``before_request``
-    moves the refusal in front of the view function entirely.
+    is not enough to make the refusal legible, and for a streamed body it is
+    not even audible. Both halves are handled here, because this is the only
+    place in the request path that runs before a route's ``except Exception``
+    can relabel the answer.
 
-    The two endpoints that make this matter are the two an unauthenticated
-    client can reach: ``POST /api/logs/browser`` and ``POST /api/auth/register``.
+    **Declared length.** ``werkzeug.wsgi.get_input_stream`` raises
+    ``RequestEntityTooLarge`` the moment a body with ``Content-Length`` over
+    the cap is read — which for every route in this API is inside a ``try:``
+    whose ``except Exception`` returns that route's own 500. Checking
+    ``request.content_length`` here moves the refusal in front of the view
+    function entirely.
 
-    ``Content-Length`` is absent from a chunked request, and this hook cannot
-    bound one — the size is not known until the body is read. That case falls
-    through to Werkzeug's own limit and to the 413 handler in
-    ``handlers/error_handler.py``, which is why both exist.
+    **No declared length** (a chunked body). Werkzeug does *not* raise for this
+    case, contrary to what this docstring and ``handlers/error_handler.py``
+    used to claim. ``request.stream`` is a ``LimitedStream(..., is_max=True)``,
+    whose ``readall`` — the thing ``get_data`` calls — stops at the cap and
+    returns; only a *further* read reaches ``on_exhausted`` and raises. So
+    ``get_json`` on a 10 MiB chunked body returns the first megabyte, silently
+    truncated, and the route answers 400 "malformed" for a request that was
+    merely too big. Memory was bounded (that part always worked), but nothing
+    said "too large" and no 413 handler was ever reached. Verified against
+    Werkzeug 3.1.8.
+
+    So this hook reads such a body itself, ``cache=True`` so the route's own
+    ``get_json``/``form`` still sees it (``Request._get_stream_for_parsing``
+    replays the cached bytes), and refuses it if it reached the cap. Reaching
+    the cap *exactly* is treated as too large: a stream truncated at N bytes
+    and a stream that happened to end at N are indistinguishable — Werkzeug
+    says as much in ``LimitedStream.on_disconnect`` — and one wrongly-refused
+    1048576-byte body is the better error.
+
+    That read is gated on ``Transfer-Encoding: chunked`` and not merely on "no
+    Content-Length", which those two conditions are NOT the same: a request
+    with neither header has no body, and reading its stream is exactly how a
+    server whose length-less body reader waits for EOF (gunicorn's
+    ``EOFReader``, on the versions that use it) would block on a POST that had
+    already finished arriving. The narrower gate costs one exotic case — a
+    proxy that strips ``Transfer-Encoding`` and forwards no length — where the
+    answer stays 400-after-truncation rather than 413. Memory is still bounded
+    there, because ``MAX_CONTENT_LENGTH`` bounds it whether or not this hook
+    fires; only the legibility is lost.
+
+    The two endpoints that make any of this matter are the two an
+    unauthenticated client can reach: ``POST /api/logs/browser`` and
+    ``POST /api/auth/register``.
+
+    Not covered: ``/socket.io/*``. ``flask_socketio`` installs itself as
+    ``app.wsgi_app`` (``flask_socketio/__init__.py``, ``app.wsgi_app =
+    self.sockio_mw``) and answers those paths inside the middleware, so Flask's
+    request dispatch — and therefore every ``before_request`` including this
+    one — never runs for them. The Socket.IO frame bound is
+    ``max_http_buffer_size``, set beside ``MAX_CONTENT_LENGTH`` in
+    :func:`_init_socketio`.
     """
+
+    def _too_large(limit):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "payload_too_large",
+                    "message": ("Request body is too large (limit %d bytes)." % limit),
+                }
+            ),
+            413,
+        )
 
     @app.before_request
     def reject_oversized_body():
         from flask import request
 
         limit = app.config.get("MAX_CONTENT_LENGTH")
+        if not limit:
+            return None
+
         length = request.content_length
-        if limit and length is not None and length > limit:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "payload_too_large",
-                        "message": (
-                            "Request body is too large (limit %d bytes)." % limit
-                        ),
-                    }
-                ),
-                413,
-            )
+        if length is not None:
+            return _too_large(limit) if length > limit else None
+
+        # No ``Content-Length``. Only a *chunked* request is a body here; a
+        # request with neither header has none at all, and reading one anyway
+        # is how a WSGI server whose length-less reader waits for EOF gets to
+        # block on a POST that was already complete. Tested for with Werkzeug's
+        # own parser, since this is the same condition that made
+        # ``request.content_length`` None a few lines up.
+        if "chunked" not in parse_set_header(
+            request.headers.get("Transfer-Encoding") or ""
+        ):
+            return None
+        # Werkzeug only reads a length-less body when the server terminates the
+        # stream; otherwise ``request.stream`` is an empty BytesIO and there is
+        # nothing to bound. (``get_input_stream``'s "safe fallback".)
+        if "wsgi.input_terminated" not in request.environ:
+            return None
+        if len(request.get_data(cache=True)) >= limit:
+            return _too_large(limit)
+        return None
 
 
 def _register_meta_routes(app):

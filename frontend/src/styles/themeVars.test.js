@@ -50,7 +50,10 @@ function normalise(value) {
  */
 function rootDeclarations() {
     const block = INDEX_CSS.match(/:root\s*\{([\s\S]*?)\n\}/)
-    expect(block, 'index.css declares no :root block').not.toBeNull()
+    // Returns empty rather than asserting: this runs at describe-collection
+    // time, where a thrown expectation surfaces as a collection error with no
+    // test name on it. The emptiness is what the guard test below reports.
+    if (!block) return []
     const declarations = []
     for (const line of block[1].split('\n')) {
         const m = line.match(/^\s*(--[\w-]+)\s*:\s*([^;]+);\s*(?:\/\*\s*theme:\s*([\w.]+)\s*\*\/)?/)
@@ -83,6 +86,11 @@ describe('index.css :root mirrors styles/theme.js', () => {
         // every assertion below vacuous in the permissive direction — which is
         // the only direction that matters, since the whole point is catching a
         // duplicate nobody declared.
+        // Same shape rootDeclarations() parses, so this reports the reason
+        // rather than leaving the reader with an empty-array count.
+        expect(INDEX_CSS, 'index.css declares no parseable :root block').toMatch(
+            /:root\s*\{[\s\S]*?\n\}/
+        )
         expect(declarations.length).toBeGreaterThan(2)
         expect(annotated.length).toBeGreaterThan(1)
     })

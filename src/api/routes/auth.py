@@ -196,6 +196,21 @@ async def register():
             }
         }
     """
+    # Spent before the body is parsed and outside the try below, the way
+    # logs.py and feedback.py spend theirs. It used to sit after the shape
+    # validation, on the argument that "a malformed payload costs nothing and
+    # should not spend anyone's budget". The first half of that is not true —
+    # this route is unauthenticated, so parsing up to MAX_CONTENT_LENGTH of
+    # attacker-chosen JSON was the one piece of work no throttle gated — and
+    # the second half bought nothing: an attacker who wants to exhaust a
+    # shared NAT's register budget sends *well-formed* payloads, which are
+    # cheaper for them and always counted. Outside the try so the 429 cannot
+    # be relabelled a 500 by the catch-all at the bottom.
+    if _is_register_rate_limited():
+        return rate_limited_response(
+            "Too many registration attempts. Please try again later."
+        )
+
     try:
         data = request.get_json(silent=True)
 
@@ -233,14 +248,6 @@ async def register():
         username = data["username"].strip()
         password = data["password"]
         email = data["email"].strip()
-
-        # Throttled after shape validation and before create_user: a malformed
-        # payload costs nothing and should not spend anyone's budget, while a
-        # well-formed one is about to hash a password and write a row.
-        if _is_register_rate_limited():
-            return rate_limited_response(
-                "Too many registration attempts. Please try again later."
-            )
 
         # Registration logic using auth_service
         try:
@@ -369,6 +376,16 @@ async def login():
         username = data["username"].strip()
         password = data["password"]
 
+        # The one throttle in this API that cannot be hoisted above the parse,
+        # and it is not an oversight. This is a *failed-attempt* counter, not a
+        # request counter: `_record_failed_login` runs only on a bad password,
+        # and half the key is the username, which does not exist until the body
+        # is parsed. Moved up, it would check a budget nothing has spent and
+        # key it on nothing. It is inside the try for the same reason. What it
+        # therefore does not gate — the parse of an unauthenticated body — is
+        # gated instead by `MAX_CONTENT_LENGTH` and the `before_request` hook
+        # in `src/api/app.py::_register_request_limits`, which bound the parse
+        # for every route rather than for the throttled ones.
         rate_key = _login_rate_limit_key(username)
         if _is_login_rate_limited(rate_key):
             return rate_limited_response(

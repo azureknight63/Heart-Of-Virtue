@@ -11,17 +11,28 @@ that "the non-LLM credential that also rides in on ``.env``". At the time it
 was written there were at least four, and by the time this file was added there
 were ten.
 
-So the question is asked the other way round. Rather than maintaining a list of
-secrets to blank, this reads the NAMES declared in ``.env`` and
-``.env.example`` and requires every secret-shaped one to be classified as
-either outbound (blanked) or local-only (deliberately not). A new credential
-fails until somebody decides which it is. That is the property no version of
-the hand-maintained list ever had.
+So the question is asked the other way round -- twice, because the first
+inversion did not go far enough.
 
-On its first run this guard found ``ANTHROPIC_API_KEY`` and ``OPENAI_API_KEY``
-sitting unblanked in ``.env.example`` -- documented as supported, absent from
-the provider registry that ``PROVIDER_KEY_ENVS`` derives from, and therefore
-invisible to every list that had come before it.
+The first version read the NAMES declared in ``.env`` and ``.env.example`` and
+required every *secret-shaped* one to be classified as outbound (blanked) or
+local-only (deliberately not). On its first run it found ``ANTHROPIC_API_KEY``
+and ``OPENAI_API_KEY`` sitting unblanked in ``.env.example`` -- documented as
+supported, absent from the provider registry that ``PROVIDER_KEY_ENVS`` derives
+from, and invisible to every list that had come before it.
+
+But "secret-shaped" was itself a hand-maintained list: a regex of credential
+word stems (KEY, TOKEN, SECRET, PASS, WEBHOOK, ...). A credential named
+``*_DSN``, ``*_BASE_URL``, ``*_ENDPOINT`` or ``*_HOOK`` never reached the
+classifier at all, so it passed exactly as silently as an unclassified one
+would have. ``OLLAMA_BASE_URL`` is the proof: it matched no stem, and was
+covered only because somebody had hand-listed it somewhere else.
+
+So the filter is gone. EVERY declared name must be classified now -- as
+outbound, local-only, an LLM setting (both of those classes are derived, not
+listed), or as a non-credential with a written reason in ``NON_SECRET_ENVS``.
+The list of things to think about is no longer chosen by a pattern that can be
+wrong about what a credential looks like.
 """
 
 import os
@@ -30,8 +41,10 @@ import pytest
 
 from tests.llm_doubles import (
     LOCAL_ONLY_SECRET_ENVS,
+    NON_SECRET_ENVS,
     OUTBOUND_CREDENTIAL_ENVS,
-    secret_shaped_env_names,
+    classify_env_name,
+    declared_env_names,
 )
 
 #: The committed inventory, plus the developer's real file when it exists.
@@ -41,36 +54,95 @@ ENV_FILES = (".env", ".env.example")
 
 
 def _declared():
-    return secret_shaped_env_names(*ENV_FILES)
+    return declared_env_names(*ENV_FILES)
 
 
 class TestEverySecretIsClassified:
     def test_the_scan_finds_something(self):
         """Non-vacuity. A scan that reads nothing agrees with any claim.
 
-        The env files could move, the parser could break on a format change, or
-        the pattern could stop matching -- and every assertion below would pass
-        silently. That is the failure this whole file exists to prevent, so it
-        would be absurd to leave the door open here.
+        The env files could move or the parser could break on a format change,
+        and every assertion below would pass silently. That is the failure this
+        whole file exists to prevent, so it would be absurd to leave the door
+        open here. The floor is set against ``.env.example`` alone (the file CI
+        sees), which declares more than fifty.
         """
-        assert len(_declared()) >= 8, sorted(_declared())
+        assert len(_declared()) >= 40, sorted(_declared())
 
-    def test_no_declared_secret_is_unclassified(self):
-        classified = set(OUTBOUND_CREDENTIAL_ENVS) | set(LOCAL_ONLY_SECRET_ENVS)
-        unclassified = sorted(_declared() - classified)
+    def test_no_declared_name_is_unclassified(self):
+        unclassified = sorted(n for n in _declared() if classify_env_name(n) is None)
         assert unclassified == [], (
-            "these secret-shaped variables are declared in %s but classified "
-            "as neither outbound nor local-only: %s\n\n"
-            "Add each to OUTBOUND_CREDENTIAL_ENVS (blanked in tests and in "
-            "tools/bug_hunt.py) if it authenticates to anything off this "
-            "machine, or to LOCAL_ONLY_SECRET_ENVS with a one-line reason if "
-            "it does not. Do not delete it from the scan."
+            "these variables are declared in %s and classified as nothing: "
+            "%s\n\n"
+            "Every declared name needs an answer, not just the ones that look "
+            "like credentials -- looking like one was the filter that let "
+            "*_BASE_URL through. Put each in:\n"
+            "  OUTBOUND_CREDENTIAL_ENVS  if it authenticates to, or addresses, "
+            "anything off this machine (blanked in tests and in "
+            "tools/bug_hunt.py)\n"
+            "  LOCAL_ONLY_SECRET_ENVS    if it is a secret that never leaves "
+            "this box, with a one-line reason\n"
+            "  NON_SECRET_ENVS           if it is not a credential at all, "
+            "with a one-line reason\n"
+            "Do not delete it from the scan. A name picked up from a prose "
+            "comment in your own .env still needs an answer; if that is what "
+            "this is, the answer is usually NON_SECRET_ENVS."
             % (", ".join(ENV_FILES), ", ".join(unclassified))
         )
 
-    def test_the_two_classes_do_not_overlap(self):
-        both = set(OUTBOUND_CREDENTIAL_ENVS) & set(LOCAL_ONLY_SECRET_ENVS)
-        assert both == set(), sorted(both)
+    def test_the_classes_do_not_overlap(self):
+        classes = {
+            "OUTBOUND_CREDENTIAL_ENVS": set(OUTBOUND_CREDENTIAL_ENVS),
+            "LOCAL_ONLY_SECRET_ENVS": set(LOCAL_ONLY_SECRET_ENVS),
+            "NON_SECRET_ENVS": set(NON_SECRET_ENVS),
+        }
+        names = sorted(classes)
+        for i, left in enumerate(names):
+            for right in names[i + 1 :]:
+                both = classes[left] & classes[right]
+                assert both == set(), "%s and %s both claim %s" % (
+                    left,
+                    right,
+                    sorted(both),
+                )
+
+    def test_every_non_secret_carries_a_reason(self):
+        """The allow-list is only worth more than the regex if each entry was
+        actually decided. An empty or one-word reason is a name somebody waved
+        through, which is the failure mode this class replaced."""
+        thin = sorted(
+            name
+            for name, reason in NON_SECRET_ENVS.items()
+            if len(reason.split()) < 5
+        )
+        assert thin == [], (
+            "these NON_SECRET_ENVS entries have no real reason written: %s"
+            % ", ".join(thin)
+        )
+
+    def test_a_credential_the_old_regex_missed_would_now_fail(self, tmp_path):
+        """The regression this inversion exists for, run against the parser.
+
+        ``ACME_BASE_URL`` / ``ACME_DSN`` / ``ACME_ENDPOINT`` / ``ACME_HOOK``
+        matched none of the retired pattern's stems, so the old scan never
+        showed them to the classifier. They must now come back unclassified.
+        """
+        env = tmp_path / ".env.fake"
+        env.write_text(
+            "ACME_BASE_URL=https://acme.test\n"
+            "ACME_DSN=postgres://u:p@acme.test/db\n"
+            "# ACME_ENDPOINT=https://acme.test/v1\n"
+            "ACME_HOOK=https://acme.test/hook/abc\n",
+            encoding="utf-8",
+        )
+        declared = declared_env_names(str(env))
+        assert declared == {
+            "ACME_BASE_URL",
+            "ACME_DSN",
+            "ACME_ENDPOINT",
+            "ACME_HOOK",
+        }
+        assert all(classify_env_name(n) is None for n in declared)
 
 
 class TestOutboundCredentialsAreBlankInThisProcess:

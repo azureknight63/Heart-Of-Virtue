@@ -1909,6 +1909,73 @@ class TestSavesRoutesAuthGuards:
         # row (with a null owner) and have it counted against the save limit.
         app._test_gs.save_game.assert_not_called()
 
+    def test_a_non_string_save_name_is_refused(self, client):
+        """``data.get("name")`` was passed through untouched, so a JSON object
+        or list became the save title in a durable Turso row and came back in
+        the 201 message. Refused rather than coerced, the way auth.py refuses a
+        non-string username."""
+        c, app = client
+        for bad in ({"$ne": None}, ["a", "b"], 7, True):
+            rv = c.post("/api/saves", json={"name": bad}, headers=AUTH_HEADER)
+            assert rv.status_code == 400, bad
+            assert rv.get_json()["success"] is False
+        app._test_gs.save_game.assert_not_called()
+
+    @staticmethod
+    def _saving(app, save_id="save_1"):
+        """Make ``save_game`` awaitable for the tests that reach it.
+
+        ``_make_game_service`` builds a plain MagicMock, which the sync routes
+        are happy with but ``await game_service.save_game(...)`` is not. Patched
+        per test rather than in the shared factory, so the other ~160 tests on
+        that fixture keep the object they were written against.
+        """
+        from unittest.mock import AsyncMock
+
+        app._test_gs.save_game = AsyncMock(return_value=save_id)
+        return app._test_gs.save_game
+
+    def test_an_over_long_save_name_is_truncated_not_refused(self, client):
+        """The name was bounded only by MAX_CONTENT_LENGTH, so a megabyte of
+        attacker text could be persisted and echoed. Truncated rather than
+        refused: a name is presentation, and losing its tail should not lose
+        the save."""
+        from src.api.routes.saves import MAX_SAVE_NAME_LENGTH
+
+        c, app = client
+        saver = self._saving(app)
+        rv = c.post(
+            "/api/saves",
+            json={"name": "x" * (MAX_SAVE_NAME_LENGTH + 5000)},
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 201, rv.get_json()
+        stored = saver.call_args[0][1]
+        assert stored == "x" * MAX_SAVE_NAME_LENGTH
+        assert stored in rv.get_json()["message"]
+
+    def test_a_blank_save_name_falls_back_to_the_default(self, client):
+        from src.api.routes.saves import DEFAULT_SAVE_NAME
+
+        c, app = client
+        saver = self._saving(app)
+        rv = c.post("/api/saves", json={"name": "   "}, headers=AUTH_HEADER)
+        assert rv.status_code == 201, rv.get_json()
+        assert saver.call_args[0][1] == DEFAULT_SAVE_NAME
+
+    def test_an_ordinary_save_name_is_stored_verbatim(self, client):
+        """The control. Every assertion above holds for a route that stores a
+        constant."""
+        c, app = client
+        saver = self._saving(app)
+        rv = c.post(
+            "/api/saves",
+            json={"name": "Before the Grotto, 3rd try"},
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 201, rv.get_json()
+        assert saver.call_args[0][1] == "Before the Grotto, 3rd try"
+
 
 # ===========================================================================
 # migrations.py (async)

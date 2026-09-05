@@ -178,12 +178,10 @@ export const accessibility = {
  * Named rather than spelled at each site so ConversationStage's default-layout
  * `width`, ConversationTranscript's "far below the stage portrait" note and
  * the test that checks it all read the live value instead of restating a
- * number — which is how the previous hardcoded 130px in the prose and in the
- * test outlived the value it described.
+ * number that outlives the value it described.
  *
  * It sits in theme.js rather than beside any one consumer because it has more
- * than one: it was declared in ConversationTranscript.jsx, which never used
- * it.
+ * than one.
  */
 export const STAGE_PORTRAIT_WIDTH_VAR = '--stage-portrait-width'
 

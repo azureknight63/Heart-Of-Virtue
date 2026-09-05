@@ -20,12 +20,11 @@
  *                      `message` at all, which is the first shape above.
  *
  * A site that reads `error` first is correct for the first shape and shows the
- * player the literal string `rate_limited` for the second. That is not
- * hypothetical: it is what FeedbackDialog did the day feedback.py adopted
- * `rate_limited_response()`, and it will happen again to the next route that
- * adopts it. Reading `message` first is correct for BOTH shapes, because no
- * response in this API carries a `message` that is worse copy than its
- * `error` — verified across src/api/routes/*.py.
+ * player the literal string `rate_limited` for the second — which is what
+ * happens to any route the day it adopts `rate_limited_response()`. Reading
+ * `message` first is correct for BOTH shapes, because no response in this API
+ * carries a `message` that is worse copy than its `error` — verified across
+ * src/api/routes/*.py.
  *
  * So the precedence is `message` -> `error` -> caller's copy, and it lives
  * here once instead of being hand-rolled per site.
@@ -44,9 +43,9 @@
  * is no body to read.
  *
  * Accepts either half of the same job: a rejected request (unwrap
- * `response.data`) or a body the caller already has in hand — thirteen call
- * sites read a `200`-with-`success: false` body rather than a rejection, and
- * they must not have to unwrap something that was never wrapped.
+ * `response.data`) or a body the caller already has in hand — many call sites
+ * read a `200`-with-`success: false` body rather than a rejection, and they
+ * must not have to unwrap something that was never wrapped.
  *
  * @param {*} source - A thrown error, a response body, or neither.
  * @returns {?Object} The body, or `null`.
@@ -105,7 +104,7 @@ export function apiErrorMessage(errOrBody, fallback) {
  * console arguments to /api/logs/browser and JSON-stringifies any object it is
  * given, and `AxiosError.toJSON()` carries `config.headers.Authorization` —
  * the Bearer session id — with it. utils/logger now redacts those keys at its
- * own choke point, because thirty call sites cannot be relied on to remember;
+ * own choke point, because no call site can be relied on to remember;
  * this function is the second layer, and the one that also keeps a request
  * config out of a log line that has no use for it.
  *

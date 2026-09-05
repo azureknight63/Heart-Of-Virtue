@@ -61,10 +61,12 @@ Each contract below is a ``{field: Read(...)}`` dict — see ``tests/_cite.py``.
 A ``Read`` names the consuming file and an *anchor*: a literal string that file
 is claimed to contain, normally the member expression the consumer evaluates.
 The line numbers are computed when a failure is printed, so they cannot go
-stale; they used to be written by hand here, and 85 of 172 of them were wrong
-by the time anyone looked. Where a field genuinely has no literal to anchor to
-the entry carries a ``note=`` instead and is counted by
-``TestCitationProvenance`` below. If a test here fails:
+stale; they used to be written by hand here, and by the time anyone checked,
+roughly half of them pointed at the wrong line. How many citations there are
+is not restated either — ``_reads_written_in_this_file`` counts them and
+``TestCitationProvenance`` asserts the scan sees every one. Where a field
+genuinely has no literal to anchor to, the entry carries a ``note=`` instead
+and is counted by ``TestCitationProvenance`` below. If a test here fails:
 
 - If the serializer/GameService method genuinely renamed or dropped the
   field, either restore it (if the frontend still needs it) or update the
@@ -76,6 +78,8 @@ the entry carries a ``note=`` instead and is counted by
   that defeats the point of the guard.
 """
 
+import ast
+import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1696,36 +1700,39 @@ class TestAbortableMoveWireContract:
 # reads. Nothing above notices the other direction: a component that stopped
 # reading a field, or a file that was renamed or deleted. A hand-written
 # `File.jsx:123` could not catch that — a stale number still renders as a
-# plausible reference — which is how 85 of the 172 citations in this file came
-# to point at the wrong line before they were derived. These two tests close
-# it.
+# plausible reference — which is why the citations below name an anchor
+# instead. These tests close the loop.
 
-ALL_CONTRACTS = (
-    COMBAT_TOP_LEVEL_CONTRACT,
-    BATTLE_STATE_CONTRACT,
-    MOVE_CONTRACT,
-    ABORTABLE_MOVE_CONTRACT,
-    MOVE_STAGE_BEATS_CONTRACT,
-    COMBATANT_CONTRACT,
-    ACTIVE_MOVE_CONTRACT,
-    STATE_EFFECT_CONTRACT,
-    TARGET_CONTRACT,
-    PLAYER_STATUS_CONTRACT,
-    PLAYER_STATS_CONTRACT,
-    PLAYER_STATE_ITEM_CONTRACT,
-    SHOP_STATE_CONTRACT,
-    SHOP_BUY_ITEM_CONTRACT,
-    SHOP_SELL_ITEM_CONTRACT,
-    SAVES_ROW_CONTRACT,
-    ROOM_CONTRACT,
-    ROOM_ITEM_CONTRACT,
-    ROOM_NPC_CONTRACT,
-    ROOM_OBJECT_CONTRACT,
-    INVENTORY_ITEM_CONTRACT,
-    SKILLS_CONTRACT,
-    KNOWN_MOVE_CONTRACT,
-    SKILL_TREE_ENTRY_CONTRACT,
+#: Every contract dict above, found rather than listed. A hand-maintained
+#: roster is a second place to forget: dropping a name from it would remove
+#: that dict's citations from both guards below with nothing failing, and the
+#: roster and the dicts would still look consistent to a reader.
+ALL_CONTRACTS = tuple(
+    value
+    for name, value in sorted(globals().items())
+    if name.endswith("_CONTRACT") and isinstance(value, dict)
 )
+
+
+def _source() -> str:
+    with io.open(__file__, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _reads_written_in_this_file() -> int:
+    """How many ``Read(...)`` calls this file's own source contains.
+
+    The floor on the INCREMENT, not just the base. ``ALL_CONTRACTS`` scans
+    globals, so a dict renamed out of the ``*_CONTRACT`` shape — or one built
+    somewhere the scan cannot see — would drop out silently while its Reads
+    stayed in the file. Parsed rather than counted with ``str.count`` so the
+    ``Read(...)`` in the module docstring above is not mistaken for one.
+    """
+    return sum(
+        1
+        for node in ast.walk(ast.parse(_source()))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "Read"
+    )
 
 
 def _all_reads():
@@ -1759,7 +1766,43 @@ ALL_READS = tuple(_all_reads())
 EXPECTED_UNVERIFIABLE = 4
 
 
+def _contracts_declared_in_this_file():
+    """The ``*_CONTRACT = {...}`` names this file's own source assigns."""
+    return {
+        target.id
+        for node in ast.parse(_source()).body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict)
+        for target in node.targets
+        if isinstance(target, ast.Name) and target.id.endswith("_CONTRACT")
+    }
+
+
 class TestCitationProvenance:
+    def test_the_scan_sees_every_contract_and_every_citation(self):
+        """Guard the guards: both of the tests below take a SET as input.
+
+        ``verify([])`` is ``[]`` and ``unverifiable([])`` is ``[]``, so an
+        input set that quietly emptied would leave both passing while checking
+        nothing. Neither half of the size is written down here — the contract
+        roster is compared against the dicts this file declares, and the
+        citation count against the ``Read(...)`` calls it contains — so the
+        floor cannot go stale the way a literal number would.
+        """
+        declared = _contracts_declared_in_this_file()
+        assert declared, "parsed no contract dicts out of this file's source"
+        assert len(ALL_CONTRACTS) == len(declared), (
+            f"{len(ALL_CONTRACTS)} contract dict(s) reached the citation scan "
+            f"but {len(declared)} are declared here ({sorted(declared)}) — a "
+            "contract built somewhere the globals scan cannot see contributes "
+            "no citations to either guard below."
+        )
+        written = _reads_written_in_this_file()
+        assert len(ALL_READS) == written, (
+            f"{written} Read(...) calls are written in this file but only "
+            f"{len(ALL_READS)} reached the guards. A citation that is not in a "
+            "module-level `*_CONTRACT` dict is checked by nothing."
+        )
+
     def test_every_anchored_citation_still_finds_its_anchor(self):
         broken = verify(ALL_READS)
         assert not broken, (

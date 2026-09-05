@@ -78,10 +78,17 @@ describe('conversation-cast import paths', () => {
         expect(sourceFiles(SRC).length).toBeGreaterThan(50)
     })
 
-    it('re-exports the symbols it claims to re-export', () => {
-        const hook = fs.readFileSync(path.join(SRC, 'hooks/useNpcChat.js'), 'utf8')
+    it('re-exports the symbols it claims to re-export', async () => {
+        // The BINDING, not the file text. `useNpcChat.js` also IMPORTS both
+        // names, so a substring check on the source passed even with the
+        // `export { npcCast, JEAN_ID }` line deleted — at which point the
+        // barrel expectation below asserts a barrel that re-exports nothing.
+        const barrel = await import('../hooks/useNpcChat')
         for (const symbol of BARREL_SYMBOLS) {
-            expect(hook, `useNpcChat should re-export ${symbol}`).toContain(symbol)
+            expect(
+                barrel[symbol],
+                `useNpcChat should re-export ${symbol}`
+            ).toBeDefined()
         }
     })
 

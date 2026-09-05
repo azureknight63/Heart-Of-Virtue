@@ -9,6 +9,19 @@ saves_bp = Blueprint("saves", __name__)
 
 logger = logging.getLogger(__name__)
 
+#: Longest save name accepted. The name is client-supplied, persisted to Turso,
+#: echoed back in the 201 body, and listed in the save picker, so it is bounded
+#: here rather than wherever it is next rendered. 96 is set against what a
+#: person types ("Before the Grotto, 3rd try") with room to spare, and far
+#: below MAX_CONTENT_LENGTH -- which was previously the *only* thing standing
+#: between this field and a megabyte of attacker text in a durable row. Feedback
+#: bounds its title the same way (MAX_TITLE_LENGTH, routes/feedback.py).
+MAX_SAVE_NAME_LENGTH = 96
+
+#: Used when a client sends no name at all, which is a documented shape: the
+#: route accepts a body carrying only ``is_autosave``.
+DEFAULT_SAVE_NAME = "Manual Save"
+
 
 @saves_bp.route("/saves", methods=["GET"])
 async def list_saves():
@@ -71,7 +84,25 @@ async def create_save():
                 400,
             )
 
-        save_name = data.get("name", "Manual Save")
+        # Rejected rather than coerced. ``str(data["name"])`` would happily
+        # persist "{'$ne': None}" or "[1, 2, 3]" as somebody's save title,
+        # which is a client bug worth reporting back rather than storing; this
+        # matches how auth.py answers a non-string username. Over-length IS
+        # truncated rather than refused, because a name is presentation and
+        # losing the tail of one should not lose the save.
+        save_name = data.get("name", DEFAULT_SAVE_NAME)
+        if not isinstance(save_name, str):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Save name must be a string",
+                    }
+                ),
+                400,
+            )
+        save_name = save_name.strip()[:MAX_SAVE_NAME_LENGTH] or DEFAULT_SAVE_NAME
+
         is_autosave = data.get("is_autosave", False)
 
         game_service, gs_error = require_game_service()

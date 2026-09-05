@@ -28,7 +28,6 @@ This is a plain module, not a ``conftest.py``, so nothing here is auto-injected;
 docstring). Sibling harness for the NPC/chat mixin: ``tests/_npc_fixtures.py``.
 """
 
-import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Type, TypeVar
 
@@ -46,6 +45,11 @@ __all__ = [
     "PROVIDER_KEY_ENVS",
     "PROVIDER_MODEL_ENVS",
     "CREDENTIAL_ENVS",
+    "OUTBOUND_CREDENTIAL_ENVS",
+    "LOCAL_ONLY_SECRET_ENVS",
+    "NON_SECRET_ENVS",
+    "declared_env_names",
+    "classify_env_name",
     "LLM_GATE_SUFFIXES",
     "LLM_SETTING_ENVS",
     "llm_gate_envs",
@@ -79,15 +83,6 @@ PROVIDER_MODEL_ENVS = tuple(
     )
 )
 
-#: Names that look like a secret, whoever wrote them.
-#:
-#: Used only by :func:`secret_shaped_env_names` and the guard that reads it --
-#: never to decide what gets blanked, which is an explicit choice below.
-_SECRET_NAME_PATTERN = re.compile(
-    r"(?:^|_)(?:KEY|TOKEN|SECRET|PASS|PASSWORD|WEBHOOK|CREDENTIALS?)(?:$|_)"
-    r"|_(?:DATABASE|AUTH)_URL$|^TURSO_",
-)
-
 #: Secrets that authenticate to something OUTSIDE this machine. Blanked.
 #:
 #: This list used to be ``PROVIDER_KEY_ENVS + ("GITHUB_TOKEN",)`` with a
@@ -119,7 +114,7 @@ OUTBOUND_CREDENTIAL_ENVS = PROVIDER_KEY_ENVS + (
 #: Not blanked, because blanking them breaks the thing under test rather than
 #: protecting anything: neither authenticates to anything off this machine.
 #: They are listed rather than merely omitted so that
-#: :func:`secret_shaped_env_names` has somewhere to put them -- an unclassified
+#: :func:`classify_env_name` has somewhere to put them -- an unclassified
 #: secret must fail, and "we thought about this one" has to be expressible.
 LOCAL_ONLY_SECRET_ENVS = (
     # Signs session cookies. TestingConfig mints a random one per run.
@@ -133,19 +128,30 @@ LOCAL_ONLY_SECRET_ENVS = (
 CREDENTIAL_ENVS = OUTBOUND_CREDENTIAL_ENVS
 
 
-def secret_shaped_env_names(*paths):
-    """Every secret-shaped variable name declared in the given env files.
+def declared_env_names(*paths):
+    """Every variable name declared in the given env files. No filtering.
 
     Reads the NAMES only -- never a value -- so this is safe to call on a real
     ``.env``. Commented-out declarations count: ``.env.example`` ships most of
     its entries commented, and a variable is no less a credential for being
     optional.
 
-    The point is the guard that consumes it: a new secret added to ``.env`` or
-    ``.env.example`` and classified as neither outbound nor local-only fails
-    the suite. That is the property three incidents' worth of hand-maintained
-    lists never had -- each of those was closed by adding one name, which left
-    the next omission exactly as invisible as the last.
+    This used to filter to "secret-shaped" names through a regex of
+    credential-ish word stems (``KEY``, ``TOKEN``, ``SECRET``, ``PASS``,
+    ``WEBHOOK``, ...). That regex is gone, and its removal is the point. It was
+    the same hand-maintained list as the ones that caused three incidents,
+    written one level up: a credential named ``*_DSN``, ``*_BASE_URL``,
+    ``*_ENDPOINT`` or ``*_HOOK`` did not match it, so it was never *shown* to
+    the classifier and passed as silently as if the classifier had approved it.
+    ``OLLAMA_BASE_URL`` -- the one variable in this file that can put a unit
+    test on the network by itself -- matched none of those stems and was
+    covered only because somebody had hand-listed it elsewhere.
+
+    So the question is asked with no filter at all: every declared name must be
+    classified, and the non-credentials are the ones that need a written reason
+    (:data:`NON_SECRET_ENVS`). Widening the regex would have been the same
+    shape with a longer list; this shape cannot have a blind spot, only a
+    backlog.
     """
     names = set()
     for path in paths:
@@ -161,8 +167,7 @@ def secret_shaped_env_names(*paths):
             name = name.strip()
             if not name.isupper() or not name.replace("_", "").isalnum():
                 continue
-            if _SECRET_NAME_PATTERN.search(name):
-                names.add(name)
+            names.add(name)
     return names
 
 
@@ -237,6 +242,142 @@ LLM_SETTING_ENVS = (
     "OPENROUTER_SITE",
     "OPENROUTER_SITE_TITLE",
 ) + PROVIDER_MODEL_ENVS
+
+
+#: Declared variables that are NOT credentials, and why each one is not.
+#:
+#: The third and largest class, and the one that makes the inversion in
+#: :func:`declared_env_names` work. With no "does this look like a secret?"
+#: filter in front of the classifier, every declared name arrives here, and a
+#: name nobody has thought about fails the suite instead of passing it.
+#:
+#: Grouped by shared reason rather than repeated per name: five sampling
+#: temperatures do not have five different justifications, and writing the same
+#: sentence five times is how a family drifts into four justifications and one
+#: stale one. A name whose reason is genuinely its own gets its own group.
+#:
+#: What does NOT belong here: anything that could authenticate to, or address,
+#: something off this machine. Those go in :data:`OUTBOUND_CREDENTIAL_ENVS`
+#: even when they are not obviously a credential -- ``HOV_ANALYTICS_WEBHOOK_URL``
+#: is a URL whose *path* is the credential, and a hostname alone is enough to
+#: put a test on the network.
+_NON_SECRET_GROUPS = (
+    (
+        "Where the process listens. A bind target, not a credential.",
+        ("HOST", "PORT"),
+    ),
+    (
+        "Selects a config class. wsgi.py refuses to boot on anything but "
+        "'production', so this cannot quietly weaken a deployment.",
+        ("FLASK_ENV",),
+    ),
+    (
+        "Path to a gameplay .ini. Every conftest already overrides it so a "
+        "developer's manual-QA config cannot change what the suite tests.",
+        ("CONFIG_FILE",),
+    ),
+    (
+        "Opt-in switch for binding the dev server off localhost. Security "
+        "relevant, but a boolean rather than a secret -- and blanking it is "
+        "the safe direction anyway.",
+        ("ALLOW_REMOTE_DEV_SERVER",),
+    ),
+    (
+        "How many X-Forwarded-For hops rate_limiter.client_ip() trusts. An "
+        "integer describing this deployment's proxy depth.",
+        ("TRUSTED_PROXY_COUNT",),
+    ),
+    (
+        "Logging destination and verbosity. What lands IN the log file can be "
+        "sensitive -- which is why app.py installs _RedactSecretsFilter and "
+        "confines the path to logs/ -- but neither name nor value is.",
+        ("LOG_FILE", "LOG_LEVEL"),
+    ),
+    (
+        "Feature flags. Booleans selecting which code path runs.",
+        ("COMBAT_SOCKET_STREAMING", "HOV_SAVE_V2", "HOV_STRICT_UNPICKLE"),
+    ),
+    (
+        "Gates the /api/test/session login-bypass route, so it is a door "
+        "rather than a key -- and one this suite has to leave open, since the "
+        "TestingConfig every API test builds sets it. Blanking it here would "
+        "disable the harness, not protect anything; what keeps it shut in "
+        "production is that ProductionConfig never sets it.",
+        ("TESTING",),
+    ),
+    (
+        "Throttle thresholds, read as integers by limiter_from_env. Worth "
+        "leaving live: a test that needs a different ceiling sets it itself, "
+        "and blanking them would exercise the fallback rather than the "
+        "configured path.",
+        (
+            "BROWSER_LOG_RATE_LIMIT_PER_MINUTE",
+            "FEEDBACK_RATE_LIMIT_PER_HOUR",
+            "LOGIN_IP_RATE_LIMIT_PER_15_MIN",
+            "LOGIN_RATE_LIMIT_PER_15_MIN",
+            "NPC_CHAT_IP_RATE_LIMIT_PER_MINUTE",
+            "NPC_CHAT_RATE_LIMIT_PER_MINUTE",
+            "REGISTER_RATE_LIMIT_PER_HOUR",
+        ),
+    ),
+    (
+        "Schedule and content of the analytics digest. The sink it posts to "
+        "is HOV_ANALYTICS_WEBHOOK_URL, which is outbound and blanked; without "
+        "that, these describe a report nothing sends.",
+        (
+            "HOV_ANALYTICS_ALERT_INTERVAL_HOURS",
+            "HOV_ANALYTICS_ALERT_THRESHOLD",
+            "HOV_ANALYTICS_INTERVAL_HOURS",
+            "HOV_ANALYTICS_SECTIONS",
+        ),
+    ),
+    (
+        "Numeric tuning for the provider digest and the Mynx fallback.",
+        ("LLM_SATURATION_CUTOFF", "MYNX_FALLBACK_DELAY"),
+    ),
+    (
+        "Extra logging for the Mynx adapter. A verbosity switch; the payload "
+        "bound it does not control lives in LLM_LOG_RAW_BODIES, which is in "
+        "LLM_SETTING_ENVS and blanked.",
+        ("MYNX_LLM_DEBUG",),
+    ),
+    (
+        "Sampling temperatures. Deliberately NOT blanked -- read as a bare "
+        "float(os.getenv(...)) with no except, so a blank value raises rather "
+        "than neutralising. See the note at the foot of LLM_SETTING_ENVS.",
+        (
+            "NPC_CHAT_TEMP_GUARD",
+            "NPC_CHAT_TEMP_NPC",
+            "NPC_CHAT_TEMP_OPTIONS",
+            "NPC_CHAT_TEMP_PERSONALITY",
+            "NPC_CHAT_TEMP_TURN",
+        ),
+    ),
+)
+
+#: ``{name: reason}``, flattened from :data:`_NON_SECRET_GROUPS`.
+NON_SECRET_ENVS = {
+    name: reason for reason, names in _NON_SECRET_GROUPS for name in names
+}
+
+
+def classify_env_name(name):
+    """Which class ``name`` falls in, or ``None`` if nobody has said.
+
+    Three of the four answers are derived rather than listed, which is the
+    whole point: a fifth provider registered in ``_OPENAI_COMPATIBLE_PROVIDERS``
+    or a sixth feature adapter following the ``<FEATURE>_LLM_*`` convention is
+    classified the moment it exists, without anyone editing this file.
+    """
+    if name in OUTBOUND_CREDENTIAL_ENVS:
+        return "outbound"
+    if name in LOCAL_ONLY_SECRET_ENVS:
+        return "local-only"
+    if name in LLM_SETTING_ENVS or name.endswith(LLM_GATE_SUFFIXES):
+        return "llm-setting"
+    if name in NON_SECRET_ENVS:
+        return "non-secret"
+    return None
 
 
 class Resp:

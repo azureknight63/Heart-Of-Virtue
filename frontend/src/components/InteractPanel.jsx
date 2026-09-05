@@ -26,29 +26,33 @@ const CHAT_KEYWORDS = new Set(['talk', 'chat'])
 /**
  * The action buttons a target actually earns, de-duplicated.
  *
- * Four separate reductions, in one place because they all answer "should this
- * keyword get a button" — one bullet below per `return false` in the filter,
- * in the same order (the count read "Three" for a round after one bullet was
- * split in two):
+ * Several separate reductions, in one place because they all answer "should
+ * this keyword get a button". One bullet per `return false` in the filter,
+ * each led by the identifier that clause turns on rather than by its position,
+ * so the two lists are matched by name and a reordering cannot transpose them:
  *
- *   - A container's own Loot / Take_all duplicate the contents list it already
- *     renders.
- *   - Aliases the engine marks as aliases (`action_aliases`) are folded into
+ *   - `is_container` — a container's own Loot / Take_all duplicate the
+ *     contents list it already renders.
+ *   - `action_aliases` — aliases the engine marks as aliases are folded into
  *     their primary. NOTE: this is live for objects and items, whose
  *     serializers forward the field, and INERT for NPCs —
  *     `src/api/serializers/npc_serializer.py` forwards `keywords` and never
  *     emits `action_aliases`, so the check reads `undefined` and passes
  *     everything through. That is why the chat collapse below cannot be
  *     delegated to it.
- *   - Case-folded duplicates keep their FIRST spelling: `['Open', 'open']`
- *     renders one button reading "Open".
- *   - The two chat aliases collapse to ONE keyword, and the survivor is
- *     CHOSEN, not first-won: "talk" beats "chat" whenever both are served, in
- *     whichever order the payload lists them, so the button always reads
- *     "Talk". A lone "chat" survives on its own so the action stays reachable.
- *     A plain `new Set(keywords)` would NOT have caught the reported
- *     duplicate — "talk" and "chat" are distinct strings that merely share a
- *     handler — and this is the half that matters.
+ *   - `CHAT_KEYWORDS` / `chatKept` — the two chat aliases collapse to ONE
+ *     keyword, and the survivor is CHOSEN, not first-won: "talk" beats "chat"
+ *     whenever both are served, in whichever order the payload lists them, so
+ *     the button always reads "Talk". A lone "chat" survives on its own so the
+ *     action stays reachable. A plain `new Set(keywords)` would NOT have
+ *     caught the reported duplicate — "talk" and "chat" are distinct strings
+ *     that merely share a handler — and this is the half that matters.
+ *   - `seen.has` — case-folded duplicates keep their FIRST spelling:
+ *     `['Open', 'open']` renders one button reading "Open".
+ *
+ * `tests/test_jambo_tent_navigation.py` parses these clauses out of the source
+ * and asserts every one of them is named above, so a rule added without a
+ * bullet fails there rather than leaving this list quietly short.
  *
  * Exported because it is a pure function over one serialized row and is worth
  * asserting on directly — a rendered-button count cannot say WHICH rule
