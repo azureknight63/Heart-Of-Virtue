@@ -1691,23 +1691,33 @@ class TestWireIdRoundTrip:
 
     def test_a_search_result_id_resolves_back_through_interact_with_target(self):
         """`search` mints its own found-entry ids, a fourth site that has to
-        agree with the room scheme."""
-        from src.items import Longsword
+        agree with the room scheme — the client's very next click after a
+        successful search posts one of these back to /interact.
+
+        A hidden *NPC* rather than a hidden item: an item with hide_factor 0 is
+        auto-taken into the pack by `search`, so it is no longer on the tile for
+        interact_with_target to resolve.
+        """
         from tests._gs_fixtures import live_world
 
         player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
         tile = game_map[(0, 0)]
-        hidden = Longsword()
-        hidden.hidden = True
-        hidden.hide_factor = 0
-        tile.items_here = [hidden]
+        lurker = Slime()
+        lurker.hidden = True
+        lurker.hide_factor = 0
+        tile.npcs_here = [lurker]
         gs = GameService()
 
         found = gs.search(player)["found"]
 
-        assert found, "fixture: expected the hidden Longsword to be found"
+        assert found, "fixture: expected the hidden Slime to be uncovered"
         _assert_opaque(found[0]["id"], "search()['found'][0].id")
-        assert found[0]["id"] == wire_handle(hidden)
+
+        result = gs.interact_with_target(player, found[0]["id"], "look")
+
+        assert result["message"] != "Target not found.", (
+            "the id search() published did not resolve"
+        )
 
     def test_an_inventory_row_id_resolves_back_through_get_item_and_index(self):
         from src.api.routes.inventory import get_item_and_index

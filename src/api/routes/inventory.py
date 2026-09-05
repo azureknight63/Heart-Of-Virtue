@@ -24,6 +24,9 @@ from src.api.serializers.inventory import (
 )
 from src.api.middleware.auth import get_session_and_player
 from src.api.utils.inventory import get_inventory_list
+# Two names for one function: `wire_handle` is the general entity minter,
+# `combatant_handle` its combat-facing alias (see src/combatant.py). Both
+# are imported so each call site reads in the vocabulary of its payload.
 from src.combatant import combatant_handle, wire_handle
 
 # Create blueprint

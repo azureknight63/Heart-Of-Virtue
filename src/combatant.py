@@ -11,6 +11,12 @@ Provides:
   - the ``_pending_animation`` channel's attribute and key names, single-sourced
     for the engine (src/moves/_base.py) and the API (src/api/combat_adapter.py)
     that share the channel — see the comment block below.
+  - wire_handle()/find_by_handle(): the opaque per-object identity the API gives
+    the client for ANY entity it names — combatants, room NPCs, world objects,
+    items, merchants, events — and the lookup that resolves one back. It lives
+    here rather than in src/api/ because the combat half (issue #511) predates
+    the rest (issue #518) and the engine-side attribute it mints hangs off
+    Combatant; nothing in the engine reads it.
 
 Usage (in each subclass __init__):
     self._init_resistances()
