@@ -15,8 +15,21 @@ import { isLiving } from '../utils/combatEntities';
 // ---------------------------------------------------------------------------
 // The battlefield's concurrent animation scheduler.
 //
-// Moved verbatim out of BattlefieldGrid so that file is left with rendering,
-// camera and pan concerns only (CLAUDE.md: "custom hooks for stateful logic").
+// Moved out of BattlefieldGrid so that file is left with rendering, camera and
+// pan concerns only (CLAUDE.md: "custom hooks for stateful logic").
+//
+// Verbatim EXCEPT for one effect, which was split (commit 1f2b46dc). The old
+// "new-fight housekeeping" effect had a single body that reset the touch pan
+// first and the animation pipeline second, sharing prevCombatIdRef so each
+// transition was recorded exactly once. The pan half never read that detection,
+// so it stayed in BattlefieldGrid as its own effect with the same deps and the
+// same unconditional body. The consequence that commit did not record: this
+// hook is called at the TOP of BattlefieldGrid's body, so its reset effect is
+// now declared before every effect in the component — the two halves run in the
+// opposite order to before (animation, then pan, where it used to be pan, then
+// animation). Nothing observed depends on that order, but a future change that
+// makes one half read state the other writes would depend on it silently.
+//
 // The queue/batch/reset semantics below are pinned by
 // BattlefieldGrid.concurrent.test.jsx and BattlefieldGrid.batching.test.jsx.
 // The pure helpers are re-exported from BattlefieldGrid.jsx so their existing
@@ -278,9 +291,11 @@ export default function useBattlefieldAnimations({
   // Guard ref: set to true on unmount to prevent stale setTimeout callbacks
   const animationCancelRef = useRef(false);
   const animationTimeoutsRef = useRef([]);
-  // Distinguish "a new fight started" from "this fight ended" -- the pan/reset
-  // effect below runs for both, and only the first may reset the animation
-  // cursor. See the comment there.
+  // Distinguish "a new fight started" from "this fight ended" -- the per-fight
+  // reset effect below runs for both, and only the first may reset the
+  // animation cursor. See the comment there. (The touch-pan half of the
+  // original combined effect lives in BattlefieldGrid.jsx now and resets
+  // unconditionally; see the file header.)
   const prevCombatIdRef = useRef(null);
   const prevCombatActiveRef = useRef(false);
 

@@ -42,10 +42,13 @@ import logger from '../utils/logger';
  * Three tries over ~10s: long enough to ride out a proxy blip or a cookie
  * re-issue, short enough that a structural fault (path-scoped cookie, a proxy
  * that strips it) settles onto the polling fallback quickly instead of
- * long-polling forever as a client that can join no room. No jitter: this is
- * one socket per player, and the failure that WOULD produce a thundering herd
- * — a server restart dropping every session — reports SESSION_INVALID, not
- * this.
+ * long-polling forever as a client that can join no room.
+ *
+ * These delays are exact, with no jitter of their own — but do NOT read that as
+ * "this client never jitters". socket.io's Manager applies its own
+ * `randomizationFactor` (0.5 by default) to the transport-level reconnect
+ * backoff, and `socket.connect()` below goes through it. What bounds the herd
+ * here is the hard three-retry cap, not an absence of randomness.
  */
 export const REHANDSHAKE_DELAYS_MS = [1000, 3000, 6000];
 

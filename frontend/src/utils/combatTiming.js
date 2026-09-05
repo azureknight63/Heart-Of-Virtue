@@ -83,7 +83,8 @@ export const MAX_LAYER_LEAD_MS = 600;
 
 /**
  * Ceiling on how many layers one batch may start (enforced where batches are
- * taken — BattlefieldGrid's `takeAnimationBatch`); overflow waits its turn as
+ * taken — `takeAnimationBatch` in hooks/useBattlefieldAnimations.js, which
+ * BattlefieldGrid.jsx only re-exports); overflow waits its turn as
  * a follow-up batch. Two jobs:
  *
  *   * a deep queue must never start hundreds of Audio elements, effect
