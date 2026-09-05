@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import PortraitImage from './PortraitImage'
-import { castMember, STAGE_PORTRAIT_WIDTH_VAR } from './ConversationTranscript'
+import { castMember } from './ConversationTranscript'
 import { DEFAULT_EMOTION } from '../utils/conversationSegment'
-import { colors, spacing, fonts, commonStyles } from '../styles/theme'
+import { colors, spacing, fonts, commonStyles, STAGE_PORTRAIT_WIDTH_VAR } from '../styles/theme'
 
 // Referentially stable stand-in for "no initial roster". `computeStage` is
 // memoized on its arguments, and a fresh `[]` per render would miss that cache

@@ -2397,7 +2397,8 @@ class GameService:
             }
         ]
         # combat_list_allies[0] is always the player — skip it to avoid a duplicate
-        # entry in the combatants list (same pattern as the [1:] slice at line ~1898).
+        # entry in the combatants list. ``get_player_status`` and ``flee_combat``
+        # take the same slice for the same reason.
         for ally in getattr(player, "combat_list_allies", [])[1:]:
             combatants.append(
                 {
@@ -3541,8 +3542,13 @@ class GameService:
                     ally.in_combat = False
                 player.combat_list_allies = [player] + existing_allies
                 player.current_move = None
-                # Strip non-persistent status effects that should have been cleared at
-                # combat end (mirrors combat.py line 624 which the API adapter never runs).
+                # Strip non-persistent status effects that should have been cleared
+                # at combat end. The terminal ``combat()`` loop did this on the way
+                # out; it was deleted with the rest of the terminal driver, and the
+                # API path never had an equivalent, so a save taken mid-fight can
+                # carry combat-only states into the world. ``persistent`` is the
+                # flag every ``State`` sets in ``src/states.py`` — True means the
+                # state is meant to outlive the fight.
                 player.states = [
                     s
                     for s in getattr(player, "states", [])

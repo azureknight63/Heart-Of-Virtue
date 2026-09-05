@@ -79,7 +79,7 @@ export default function TypewriterOutput({ text, speed = 30, style = {}, onCompl
                     // to sit right here shadowed the stylesheet's definition
                     // app-wide for as long as any typewriter was mid-line —
                     // the same collision the NPC chat panel's `pulse` caused
-                    // for HeroPanel and BattlefieldGrid.
+                    // for BattlefieldGrid's reticle.
                     animation: 'blink 1s step-end infinite'
                 }}>&nbsp;</span>
             )}

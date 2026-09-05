@@ -1,10 +1,12 @@
 """Security response headers: the CSPs, the static header set, and the hook.
 
-Extracted from ``src/api/app.py``, where this reasoning was 230 lines of an
-1100-line factory with exactly one edge back into it: ``create_app`` calls
-:func:`_register_security_headers`. Nothing else in that module referenced any
-name here, and ``tests/test_security_headers.py`` was paying the whole
-app-factory import -- universe build included -- to reach three constants.
+This module owns every security response header this app sets -- the two
+content security policies, the three static headers, HSTS and its production
+gate -- and the ``after_request`` hook that installs them. It has exactly one
+edge into the app factory: ``create_app`` calls
+:func:`_register_security_headers`. Nothing here imports from
+``src.api.app``, so ``tests/test_security_headers.py`` reaches these constants
+without building a universe.
 
 The header *values* are judgement calls about this app's shape rather than a
 hardening checklist, so the reasoning travels with them; it starts below.

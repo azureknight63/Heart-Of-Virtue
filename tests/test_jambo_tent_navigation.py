@@ -23,6 +23,7 @@ are correct; there is no backend coordinate/source regression. Only the
 serialized keyword data needed fixing.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -31,9 +32,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from src.api.serializers.object_serializer import ObjectSerializer
 from src.universe import Universe
 from src.player._movement import PlayerMovementMixin
 from src.narration import capture_narration
+
+from tests._cite import Read, verify
 
 MAP_DIR = ROOT / "src" / "resources" / "maps"
 MAP_FILES = [
@@ -80,38 +84,263 @@ def _find_passage(map_dict, name):
     return None
 
 
-def _displayed_actions(pw):
-    """The buttons the frontend renders for a PASSAGEWAY, and only a passageway.
+#: The frontend function this module mirrors. Cited by anchor rather than by
+#: line: the previous version of this helper named ``InteractPanel.jsx`` in
+#: prose with nothing checking that the name still resolved to anything, which
+#: is the defect class ``tests/_cite.py`` exists to close.
+_ACTION_KEYWORDS_JS = Read(
+    "frontend/src/components/InteractPanel.jsx",
+    "export function actionKeywords(",
+)
 
-    ``actionKeywords`` (frontend/src/components/InteractPanel.jsx) applies four
-    rules. Two of them can fire on a passageway, and those two are reproduced
-    here:
+#: The aliases ``actionKeywords`` collapses to a single button. Parsed out of
+#: the JSX by :func:`_javascript_chat_keywords` and compared against this, so
+#: the two halves cannot disagree silently.
+_CHAT_KEYWORDS = frozenset({"talk", "chat"})
 
-    * drop anything the engine lists in ``action_aliases``;
-    * de-duplicate case-insensitively, keeping the first spelling.
+#: The drop rules :func:`_displayed_actions` implements, by the ids
+#: :func:`_javascript_drop_rules` assigns. Asserted equal to what the JSX
+#: actually contains, so a rule added there and not here fails a test rather
+#: than quietly rendering a button set no Python check predicts.
+_MIRRORED_RULES = frozenset(
+    {"container-loot", "action-aliases", "chat-collapse", "case-folded-dedupe"}
+)
 
-    The other two are deliberately NOT mirrored, because no passageway can
-    reach them: the container rule needs ``is_container`` (a Container thing,
-    never a Passageway), and the talk/chat alias collapse needs a chat keyword
-    (served by NPCs, never by a passageway). Copying them would put a second,
-    untested implementation of the chat collapse in Python, free to drift from
-    the one that matters. If a passageway ever grows either shape, this helper
-    stops describing the frontend and must be revisited rather than trusted.
+
+def _displayed_actions(obj):
+    """The buttons the frontend renders for the world object ``obj``.
+
+    Split in two on purpose, because the helper it replaces conflated them and
+    got the first half wrong. The frontend renders
+    ``ObjectSerializer.serialize(obj)``, not the engine object: ``_serialize_base``
+    rewrites ``keywords`` -- adding or removing ``open``/``unlock`` -- for
+    anything carrying ``locked``, ``state`` or ``opened``, and
+    ``serialize_container`` is what sets the ``is_container`` flag
+    :func:`_render_buttons`' first rule reads. A ``Passageway`` declares none of
+    those today, which is exactly why reading ``obj.keywords`` off the engine
+    looked correct while modelling a different pipeline: give one a ``locked``
+    attribute and the engine-side version stays green against a UI rendering a
+    different button set. Pinned by
+    :meth:`TestTheMirrorTracksTheFrontend.test_the_mirror_reads_the_wire_not_the_engine`.
     """
+    return _render_buttons(ObjectSerializer.serialize(obj))
+
+
+def _render_buttons(target):
+    """``actionKeywords(target)``, in Python, over a *serialized* object.
+
+    The four drop rules below are the frontend's, in its order.
+    :meth:`TestTheMirrorTracksTheFrontend
+    .test_the_python_mirror_implements_every_javascript_rule` parses that set
+    out of the JSX and compares it with :data:`_MIRRORED_RULES`, so a fifth
+    rule appearing there fails here instead of silently going unmirrored.
+    """
+    keywords = target.get("keywords") or []
+    aliases = target.get("action_aliases") or []
+    is_container = bool(target.get("is_container"))
+
+    # `chatKw.find(k => k === 'talk') || chatKw[0]` -- prefer the canonical
+    # spelling, fall back to whichever alias came first, nothing if neither.
+    chat = [k for k in keywords if str(k).lower() in _CHAT_KEYWORDS]
+    chat_kept = next(
+        (k for k in chat if str(k).lower() == "talk"),
+        chat[0] if chat else None,
+    )
+
     seen = set()
     out = []
-    for kw in pw.keywords:
-        if kw in pw.action_aliases:
-            continue
+    for keyword in keywords:
         # Case-folded, matching the JS `String(keyword).toLowerCase()`: the
         # rendered list collapses 'Enter' and 'enter' into one button, so a
         # case-sensitive check here would claim two where the player sees one.
-        folded = str(kw).lower()
-        if folded in seen:
+        action = str(keyword).lower()
+        if is_container and action in ("loot", "take_all"):  # container-loot
             continue
-        seen.add(folded)
-        out.append(kw)
+        if keyword in aliases:  # action-aliases
+            continue
+        if action in _CHAT_KEYWORDS and keyword != chat_kept:  # chat-collapse
+            continue
+        if action in seen:  # case-folded-dedupe
+            continue
+        seen.add(action)
+        out.append(keyword)
     return out
+
+
+def _interact_panel_source():
+    return Path(_ACTION_KEYWORDS_JS.path()).read_text(encoding="utf-8")
+
+
+def _action_keywords_body():
+    """The body of ``actionKeywords``, brace-matched from its declaration."""
+    text = _interact_panel_source()
+    start = text.index(_ACTION_KEYWORDS_JS.anchor)
+    open_brace = text.index("{", start)
+    depth = 0
+    for index in range(open_brace, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_brace : index + 1]
+    raise AssertionError("actionKeywords' body is not brace-balanced")
+
+
+#: ``rule id -> the tokens that identify that clause``. Keyed on the
+#: discriminating identifier rather than the whole expression, so reformatting
+#: or an added optional-chain does not fail the test while a *new rule* does.
+_RULE_SIGNATURES = {
+    "container-loot": ("is_container",),
+    "action-aliases": ("action_aliases",),
+    "chat-collapse": ("CHAT_KEYWORDS", "chatKept"),
+    "case-folded-dedupe": ("seen.has",),
+}
+
+
+def _javascript_drop_rules():
+    """Every ``if (...) return false`` in ``actionKeywords``, as a rule id.
+
+    Returns ``(ids, unrecognised, raw clauses)``. A clause matching no
+    signature -- or more than one -- is reported rather than dropped: a parse
+    that silently skipped the rule it could not classify would pass on exactly
+    the change this test exists to catch.
+    """
+    body = _action_keywords_body()
+    clauses = re.findall(r"if\s*\((.*?)\)\s*return false", body)
+    rules = set()
+    unrecognised = []
+    for clause in clauses:
+        matched = [
+            name
+            for name, tokens in _RULE_SIGNATURES.items()
+            if all(token in clause for token in tokens)
+        ]
+        if len(matched) == 1:
+            rules.add(matched[0])
+        else:
+            unrecognised.append((clause.strip(), matched))
+    return rules, unrecognised, clauses
+
+
+def _javascript_chat_keywords():
+    """The ``CHAT_KEYWORDS`` set literal, read out of the JSX."""
+    match = re.search(
+        r"CHAT_KEYWORDS\s*=\s*new Set\(\[([^\]]*)\]\)", _interact_panel_source()
+    )
+    assert match, "could not find the CHAT_KEYWORDS set in InteractPanel.jsx"
+    tokens = {t.strip().strip("'\"") for t in match.group(1).split(",")}
+    return tokens - {""}
+
+
+class TestTheMirrorTracksTheFrontend:
+    """``_displayed_actions`` is a second implementation of JS that ships.
+
+    A Python copy of frontend logic is worth only its agreement with the
+    original, and nothing was checking that agreement: the helper named the
+    four rules and claimed to implement two of them, entirely in prose. These
+    tests derive both halves. The model is
+    ``frontend/src/hooks/useNpcChat.test.js``, which parses ``JEAN_TONES`` out
+    of the Python source and set-compares -- this is the same test pointing the
+    other way.
+    """
+
+    def test_the_cited_function_still_exists(self):
+        broken = verify([_ACTION_KEYWORDS_JS])
+        assert not broken, (
+            "the frontend function this module mirrors has moved or been "
+            "renamed:\n  " + "\n  ".join(broken) + "\n\nRepoint "
+            "_ACTION_KEYWORDS_JS, or delete the mirror if the frontend no "
+            "longer computes the button list here."
+        )
+
+    def test_the_python_mirror_implements_every_javascript_rule(self):
+        rules, unrecognised, clauses = _javascript_drop_rules()
+        # Guard-the-guard: a regex that matched nothing would make the
+        # comparisons below vacuous in the permissive direction, which is how
+        # the JEAN_TONES version of this test was made falsifiable.
+        assert len(clauses) > 1, (
+            "parsed no drop rules out of actionKeywords -- the parse is "
+            f"broken, not the frontend. Body was:\n{_action_keywords_body()}"
+        )
+        assert not unrecognised, (
+            "actionKeywords contains a drop rule this module cannot classify: "
+            f"{unrecognised}\n\n_displayed_actions is a mirror of that "
+            "function, so a rule only the frontend applies means the Python "
+            "here predicts a button set the player never sees. Implement it "
+            "and add its signature to _RULE_SIGNATURES."
+        )
+        assert rules == _MIRRORED_RULES, (
+            f"the frontend applies {sorted(rules)}; this module mirrors "
+            f"{sorted(_MIRRORED_RULES)}"
+        )
+
+    def test_the_chat_alias_set_is_the_frontends(self):
+        derived = _javascript_chat_keywords()
+        assert derived == set(_CHAT_KEYWORDS), (
+            "the frontend's CHAT_KEYWORDS and this mirror's copy have "
+            "diverged: frontend has %s, mirror has %s"
+            % (sorted(derived), sorted(_CHAT_KEYWORDS))
+        )
+
+    @pytest.mark.parametrize(
+        "target, expected, rule",
+        [
+            (
+                {"keywords": ["loot", "take_all", "search"], "is_container": True},
+                ["search"],
+                "container-loot",
+            ),
+            (
+                {"keywords": ["enter", "go"], "action_aliases": ["go"]},
+                ["enter"],
+                "action-aliases",
+            ),
+            (
+                {"keywords": ["chat", "Talk", "look"]},
+                ["Talk", "look"],
+                "chat-collapse",
+            ),
+            (
+                {"keywords": ["Enter", "enter", "look"]},
+                ["Enter", "look"],
+                "case-folded-dedupe",
+            ),
+        ],
+    )
+    def test_each_mirrored_rule_actually_fires(self, target, expected, rule):
+        """One case per id in :data:`_MIRRORED_RULES`, on a wire-shaped dict.
+
+        The test above compares that set against the JSX; this one stops the
+        set being a bare claim. Deleting a branch from :func:`_render_buttons`
+        while leaving its id in place would otherwise satisfy both.
+        """
+        assert _render_buttons(target) == expected, rule
+
+    def test_the_mirror_reads_the_wire_not_the_engine(self):
+        """The half the old helper got wrong, made falsifiable.
+
+        ``_serialize_base`` rewrites ``keywords`` for any object carrying
+        ``locked``: it strips ``open``/``unlock`` and re-adds the one the state
+        warrants. An object whose engine ``keywords`` disagree with its
+        serialized ones therefore renders differently from what
+        ``obj.keywords`` predicts, and only a mirror that goes through the
+        serializer says so.
+        """
+
+        class _LockedThing:
+            name = "Strongbox"
+            keywords = ["examine", "open"]
+            action_aliases = []
+            locked = True
+
+        obj = _LockedThing()
+        assert obj.keywords == ["examine", "open"]
+        assert ObjectSerializer.serialize(obj)["keywords"] == [
+            "examine",
+            "unlock",
+        ]
+        assert _displayed_actions(obj) == ["examine", "unlock"]
 
 
 @pytest.fixture(scope="module")

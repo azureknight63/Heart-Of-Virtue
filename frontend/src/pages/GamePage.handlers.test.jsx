@@ -12,6 +12,7 @@ import { useToast } from '../context/ToastContext';
 import { combat as combatApi } from '../api/endpoints';
 import { makePlayer, makeLocation } from '../test/payloads';
 import { TAB_KEYS } from '../utils/mobileTabs';
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds';
 
 // This file mocks every hook and heavy child component so it can drive
 // GamePage's *own* local handler functions (handleMove, handleEventInputWrapper,
@@ -93,7 +94,7 @@ vi.mock('../components/EventManager', () => ({
             {currentEvent && <span>{currentEvent.name}</span>}
             <button onClick={onClose}>Close Event</button>
             <button onClick={() => onSubmitInput('event-1', 'some-input')}>Submit Event Input</button>
-            <button onClick={() => onSubmitInput('combat_init', 'combat_start')}>Confirm Combat Start</button>
+            <button onClick={() => onSubmitInput(COMBAT_INIT_EVENT_ID, 'combat_start')}>Confirm Combat Start</button>
         </div>
     )
 }));

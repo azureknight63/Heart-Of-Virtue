@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useEventManager } from './useEventManager'
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import apiClient from '../api/client'
 
 // Mock useToast from ToastContext
@@ -676,15 +677,15 @@ describe('useEventManager', () => {
             const showError = vi.fn()
 
             await act(async () => {
-                await result.current.handleEventInput('combat_init', 'reply', showError)
+                await result.current.handleEventInput(COMBAT_INIT_EVENT_ID, 'reply', showError)
             })
 
             // Re-queuing combat_init should NOT be skipped as "recently processed"
             act(() => {
-                result.current.setEventQueue([{ event_id: 'combat_init', name: 'Combat Start', output_text: 'Begin!', needs_input: false }])
+                result.current.setEventQueue([{ event_id: COMBAT_INIT_EVENT_ID, name: 'Combat Start', output_text: 'Begin!', needs_input: false }])
             })
 
-            await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('combat_init'))
+            await waitFor(() => expect(result.current.currentEvent?.event_id).toBe(COMBAT_INIT_EVENT_ID))
         })
     })
 })

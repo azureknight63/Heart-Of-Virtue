@@ -108,14 +108,21 @@ def test_the_derived_midpoint_list_matches_the_ast(declarations):
     assert _docstring_list("the wire value with it (") == derived
 
 
-def test_the_two_kinds_partition_every_declaration(declarations):
-    """Neither list may quietly become the place a class is not mentioned.
+def test_the_ast_walk_still_finds_the_declarations(declarations):
+    """Non-vacuity for the three tests above, and nothing more.
 
-    Without this, deleting a name from both lists at once would satisfy the two
-    tests above and reopen exactly the hole they were written for.
+    Each of those compares a docstring list against a set built by
+    :func:`declarations`. If the AST walk ever stopped finding anything --
+    ``_npc.py`` moved, ``_DAMAGE_MULTIPLIER`` renamed, the walk broken -- every
+    one of those comparisons would become ``set() == set()`` for a docstring
+    edited to match, and three green tests would be pinning nothing. This
+    asserts the walk has something to say.
+
+    It deliberately does not re-assert the partition. ``declarations`` assigns
+    exactly one ``kind`` per class, so ``fixed | derived == set(declarations)``
+    holds by construction, and the two per-kind tests already compare both
+    halves in both directions -- deleting a name from a docstring list fails
+    them directly (verified by injection). An assertion that cannot fail on its
+    own is not a guard, whatever its name says.
     """
-    listed = _docstring_list("states it outright (") | _docstring_list(
-        "the wire value with it ("
-    )
-    assert listed == set(declarations)
     assert len(declarations) >= 10, "declarations vanished; check the AST walk"

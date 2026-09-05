@@ -1248,8 +1248,10 @@ class TestEnvToConfigMapping:
 
 
 class TestEnvFlagParsing:
-    """One truthiness parser. There were two, 87 lines apart, and they had
-    already diverged on whether an empty value means off.
+    """One truthiness parser, shared. It replaced two divergent copies that
+    disagreed on whether an empty value means off; ``_FALSEY_ENV_VALUES``'
+    comment in ``src/api/config.py`` carries that history, and git carries the
+    rest.
     """
 
     VAR = "HOV_TEST_ENV_FLAG"

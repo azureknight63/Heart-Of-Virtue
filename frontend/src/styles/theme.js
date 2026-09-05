@@ -140,9 +140,17 @@ export const shadows = {
  * `spacing.sm * 2` is `NaN` too — React drops a NaN style silently in
  * production and only warns in dev, so a broken layout is the first symptom.
  * (This is not hypothetical: `marginRight: -spacing.sm` shipped once.) For a
- * negative offset write the string: `` `-${spacing.sm}` ``. The
- * `--space-*` custom properties in styles/index.css mirror these keys, so a
- * value needed by both a stylesheet rule and an inline style has one source.
+ * negative offset write the string: `` `-${spacing.sm}` ``.
+ *
+ * A stylesheet cannot import from here, so a key ALSO needed by a rule in
+ * styles/index.css is restated there as a `--space-*` custom property. Only
+ * SOME keys are: the roster is whatever that stylesheet's `:root` block
+ * actually declares, and is deliberately not repeated here as a list or a
+ * count, because the previous version of this sentence claimed all six were
+ * mirrored when two were. Every restatement carries a `theme:` annotation
+ * naming the key it copies, and styles/themeVars.test.js both checks those
+ * agree and rejects any UNannotated literal in that block that matches a token
+ * defined in this file — so a hand-copied duplicate cannot be added silently.
  */
 export const spacing = {
     xs: '4px',
@@ -161,6 +169,23 @@ export const fonts = {
 export const accessibility = {
     touchTarget: '44px', // Apple/Google HIG minimum touch target size
 }
+
+/**
+ * The custom property that owns the conversation stage portrait's width.
+ *
+ * The NAME lives here; the VALUE lives in styles/index.css, which is the only
+ * place that can express the wide layout's `clamp()` and its mobile override.
+ * Named rather than spelled at each site so ConversationStage's default-layout
+ * `width`, ConversationTranscript's "far below the stage portrait" note and
+ * the test that checks it all read the live value instead of restating a
+ * number — which is how the previous hardcoded 130px in the prose and in the
+ * test outlived the value it described.
+ *
+ * It sits in theme.js rather than beside any one consumer because it has more
+ * than one: it was declared in ConversationTranscript.jsx, which never used
+ * it.
+ */
+export const STAGE_PORTRAIT_WIDTH_VAR = '--stage-portrait-width'
 
 export const commonStyles = {
     typewriterBox: {
@@ -224,5 +249,6 @@ export default {
     spacing,
     fonts,
     accessibility,
-    commonStyles
+    commonStyles,
+    STAGE_PORTRAIT_WIDTH_VAR
 }

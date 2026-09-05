@@ -29,12 +29,12 @@ _log = logging.getLogger(__name__)
 
 # Environment values that mean "off". The empty string is included: an
 # exported-but-blank variable is an operator saying nothing, not "on". This
-# tuple exists because there used to be two copies of the list, a dozen lines
-# apart, and they had already diverged on precisely that entry — so an empty
-# value was False for the COMBAT_SOCKET_STREAMING read and True for the
-# FLASK_DEBUG one. ``"off"`` is in neither of those copies: it is added here
-# because a single shared list should accept the spellings an operator actually
-# writes, rather than the union of two accidents.
+# tuple exists because there used to be two copies of the list, and they had
+# already diverged on precisely that entry — so an empty value was False for
+# the COMBAT_SOCKET_STREAMING read and True for the FLASK_DEBUG one. ``"off"``
+# is in neither of those copies: it is added here because a single shared list
+# should accept the spellings an operator actually writes, rather than the
+# union of two accidents.
 _FALSEY_ENV_VALUES = ("0", "false", "no", "off", "")
 
 

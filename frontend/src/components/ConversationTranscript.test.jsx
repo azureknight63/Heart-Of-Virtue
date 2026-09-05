@@ -5,9 +5,9 @@ import { describe, it, expect } from 'vitest'
 import ConversationTranscript, {
     TranscriptEntry,
     THUMB_SIZES,
-    STAGE_PORTRAIT_WIDTH_VAR,
     castMember,
 } from './ConversationTranscript'
+import { STAGE_PORTRAIT_WIDTH_VAR } from '../styles/theme'
 import { portraitUrl } from '../utils/portraits'
 
 /**

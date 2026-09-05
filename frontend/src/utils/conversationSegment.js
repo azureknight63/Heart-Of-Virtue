@@ -27,15 +27,25 @@
  * The Python producer is not ours to edit from here; when a field is added
  * there it belongs in this typedef too.
  *
- * TWO IMPORT PATHS, ON PURPOSE
- * ----------------------------
+ * TWO IMPORT PATHS, ONE OF WHICH NOBODY USES
+ * ------------------------------------------
  * `npcCast` and `JEAN_ID` are also re-exported by hooks/useNpcChat.js, so
- * there are two spellings of the same import and the choice is not free. The
- * rule: anything in the LIVE CHAT — the panel, the hook, their suites —
- * imports them from the hook, which is already its one import for that
- * vocabulary; everything else (the stage, the transcript, this module's own
- * tests) imports from here. Adding a symbol to the barrel means the live chat
- * needs it; nothing else should reach through the hook to get at this module.
+ * there are two spellings of the same import. This block used to state a rule
+ * about which spelling to use where. Its LIVE CHAT half was true — the
+ * panel and the hook's own suite do import through the barrel. Its
+ * "everything else" half was not: it named the stage, the transcript and
+ * this module's own tests as importing from here, and all three import
+ * `DEFAULT_EMOTION` only. Nobody imports directly. The barrel is the sole
+ * path in use.
+ *
+ * That is worth writing down rather than tidying away, because a rule with
+ * three phantom members and zero real ones is worse than no rule: it tells a
+ * reader the codebase is organised around a distinction it does not make, and
+ * the next person to add a consumer follows an instruction nobody has ever
+ * followed. `conversationSegment.consumers.test.js` now DERIVES the real
+ * population by scanning source, so this paragraph cannot drift again — if
+ * you add a direct importer, that test tells you, and this text is what needs
+ * updating.
  *
  * @typedef {Object} ConversationSegment
  * @property {string}  text            The spoken (or narrated) line.

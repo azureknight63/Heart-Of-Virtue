@@ -26,8 +26,10 @@ const CHAT_KEYWORDS = new Set(['talk', 'chat'])
 /**
  * The action buttons a target actually earns, de-duplicated.
  *
- * Three separate reductions, in one place because they all answer "should this
- * keyword get a button":
+ * Four separate reductions, in one place because they all answer "should this
+ * keyword get a button" — one bullet below per `return false` in the filter,
+ * in the same order (the count read "Three" for a round after one bullet was
+ * split in two):
  *
  *   - A container's own Loot / Take_all duplicate the contents list it already
  *     renders.

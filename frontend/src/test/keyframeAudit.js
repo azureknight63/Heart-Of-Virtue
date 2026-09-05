@@ -19,7 +19,10 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
  *   `blink`   TypewriterOutput declared it locally; it shadowed index.css's
  *             copy app-wide for as long as any typewriter was mid-line.
  *   `pulse`   NpcChatPanel declared it locally; it replaced the animation
- *             BattlefieldGrid's targeting reticle and HeroPanel were using.
+ *             BattlefieldGrid's targeting reticle was using. (HeroPanel is
+ *             not a victim here and used to be listed as one: it animates
+ *             with `hero-heartbeat`, which it declares itself. It was the
+ *             other DECLARER of `pulse`, which is a different hazard.)
  *   `fadeIn`  Declared only inside ItemDetailDialog and USED by ActionsPanel,
  *             whose message therefore animated only while an item dialog
  *             happened to be open.
@@ -45,9 +48,19 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
 const GLOBAL_STYLESHEET_DIR = 'styles'
 
 /**
- * Whether a path is a stylesheet whose `@keyframes` are document-global for
- * the whole app life — everything under `src/styles/*.css`, all of which the
- * bundle imports unconditionally.
+ * Whether a path is a stylesheet whose `@keyframes` this audit treats as
+ * document-global: everything under `src/styles/*.css`.
+ *
+ * Deliberately broader than "actually global for the whole app life", and the
+ * gap is worth knowing about. `index.css` is imported unconditionally by
+ * `main.jsx`, so its keyframes really are always present; `landing.css` is
+ * imported by `LandingPage.jsx` alone, so treating its names as global is a
+ * PERMISSIVE approximation — a component animating with `lpBreathe` would not
+ * be reported unresolved even on a route where the landing page never
+ * mounted. Left broad on purpose: narrowing it means teaching this file the
+ * bundle's import graph, and the failure it would prevent (a name resolving
+ * only on one route) has never occurred, while the false positives from
+ * getting the graph wrong would land on every run.
  */
 function isGlobalStylesheet(path) {
     return path.startsWith(`${GLOBAL_STYLESHEET_DIR}/`) && path.endsWith('.css')

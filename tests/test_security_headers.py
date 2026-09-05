@@ -55,9 +55,22 @@ from src.api.security_headers import (
     _STATIC_SECURITY_HEADERS,
     serves_html_document,
 )
+from tests._cite import Read, verify
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _FRONTEND = _REPO_ROOT / "frontend"
+
+#: Where the ``style-src`` concession is argued. Derived rather than written:
+#: this reference was ``app.py`` until the reasoning was extracted, and a
+#: hand-written module name is exactly what went stale. ``describe()`` resolves
+#: the file and line when a failure message needs them, and
+#: :meth:`TestTheHtmlPolicyMatchesTheRealFrontend
+#: .test_the_rationale_this_suite_cites_is_still_there` fails if the anchor
+#: moves out from under it.
+_STYLE_SRC_RATIONALE = Read(
+    "src/api/security_headers.py",
+    "style-src 'unsafe-inline'  A measured cost",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -378,8 +391,9 @@ class TestHeadersArePresent:
             assert response.headers.get(header) == value, header
 
     def test_the_static_set_is_the_three_agreed_headers(self):
-        """Pinned by value: each was a deliberate choice documented in app.py,
-        and ``Referrer-Policy`` in particular had a defensible alternative."""
+        """Pinned by value: each was a deliberate choice documented beside
+        ``_STATIC_SECURITY_HEADERS`` in ``src/api/security_headers.py``, and
+        ``Referrer-Policy`` in particular had a defensible alternative."""
         assert _STATIC_SECURITY_HEADERS == {
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
@@ -608,8 +622,8 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
         assert "https://fonts.gstatic.com" in _directive(_HTML_CSP, "font-src")
 
     #: The components whose inline ``<style>`` blocks are the entire reason
-    #: ``style-src`` carries ``'unsafe-inline'``, as named in ``app.py``'s
-    #: rationale beside that directive.
+    #: ``style-src`` carries ``'unsafe-inline'``, as named in the rationale
+    #: beside that directive -- :data:`_STYLE_SRC_RATIONALE` locates it.
     #:
     #: Pinned as a set, not counted, because the prose version of this list
     #: went stale without anything noticing: it named six components, three of
@@ -627,6 +641,22 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
         "ToastContext.jsx",
         "InteractPanel.jsx",  # document.createElement('style')
     }
+
+    def test_the_rationale_this_suite_cites_is_still_there(self):
+        """The citation above is only a citation while its anchor exists.
+
+        A module name in prose survives the module being gutted; an anchor does
+        not. This is the half a hand-written ``app.py`` could never give: when
+        the reasoning moves again, this fails instead of quietly pointing at a
+        file that no longer argues anything.
+        """
+        broken = verify([_STYLE_SRC_RATIONALE])
+        assert not broken, (
+            "the style-src rationale this suite cites has moved or been "
+            "reworded: " + "; ".join(broken) + ". Repoint "
+            "_STYLE_SRC_RATIONALE at the literal the rationale now carries -- "
+            "do not widen the anchor to something that happens to match."
+        )
 
     def _injectors(self):
         frontend_src = _FRONTEND / "src"
@@ -652,7 +682,8 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
         the only thing that will say so."""
         assert self._injectors() == self._STYLE_INJECTORS, (
             "the set of components injecting a <style> element has changed, so "
-            "app.py's style-src rationale (and this list) need updating"
+            f"the style-src rationale ({_STYLE_SRC_RATIONALE}) and this list "
+            "both need updating"
         )
 
 

@@ -3,11 +3,16 @@
  * and the engine class names it recognises by string.
  *
  * These live in a plain utils module rather than alongside the hook that uses
- * them because `useEventManager` is mocked wholesale in several suites
- * (`vi.mock('../hooks/useEventManager', () => ({ useEventManager: vi.fn() }))`).
- * A constant exported from there resolves to `undefined` in every one of those
- * tests, which silently breaks the consumer under test rather than failing
- * where the mock is declared. Nothing mocks this file.
+ * them because `useEventManager` is mocked wholesale — pages/GamePage.handlers
+ * .test.jsx does it today (`vi.mock('../hooks/useEventManager', () => ({
+ * useEventManager: vi.fn() }))`), and it is the natural thing for the next
+ * suite that wants to drive GamePage's own handlers to do. A constant exported
+ * from the hook resolves to `undefined` in any such suite, which silently
+ * breaks the consumer under test rather than failing where the mock is
+ * declared. Nothing mocks this file. (Named rather than counted: the previous
+ * wording said "several suites" when there was one, and a count here rots
+ * every time a suite is added or deleted — `grep -rn "vi.mock(.*useEventManager"
+ * src/` answers it exactly.)
  */
 
 /**
@@ -16,7 +21,11 @@
  * Load-bearing for EventDialog's soft-lock guard: it is the one event id where
  * a falsy submit result means "the dialog unmounted", not "the submit failed".
  * A rename reaching only some of the call sites would silently restore an
- * unrecoverable soft-lock, which is why the string is defined exactly once.
+ * unrecoverable soft-lock, which is why the string is spelled exactly once and
+ * imported everywhere else — the three suites that used to hard-code it
+ * (EventDialog, useEventManager, GamePage.handlers) now import it too, so a
+ * rename that reached the production sites and not the fixtures fails loudly
+ * instead of testing the old id against the new code.
  */
 export const COMBAT_INIT_EVENT_ID = 'combat_init'
 

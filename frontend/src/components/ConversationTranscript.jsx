@@ -7,19 +7,11 @@ import { colors, spacing, fonts, commonStyles } from '../styles/theme'
  * Thumbnail sizes, in the two densities a transcript entry is used at:
  * `compact` for the recap strip that sits above a live conversation, `full`
  * for the scrollable history. Both are far below the stage portrait, whose
- * width is `--stage-portrait-width` in index.css (and wider still under the
- * wide layout's clamp) — these are identifiers, not performances.
+ * width lives in index.css under the custom property styles/theme.js's
+ * `STAGE_PORTRAIT_WIDTH_VAR` names (and is wider still under the wide layout's
+ * clamp) — these are identifiers, not performances.
  */
 export const THUMB_SIZES = { compact: '40px', full: '56px' }
-
-/**
- * The custom property that owns the stage portrait's width. Named here so the
- * "far below the stage portrait" claim above, the test that checks it, and
- * ConversationStage's own default-layout `width` all read the live value
- * instead of restating a number — which is how the previous hardcoded 130px in
- * the prose and in the test outlived the value it described.
- */
-export const STAGE_PORTRAIT_WIDTH_VAR = '--stage-portrait-width'
 
 /**
  * Resolve a segment's speaker against the cast roster (name + which side they

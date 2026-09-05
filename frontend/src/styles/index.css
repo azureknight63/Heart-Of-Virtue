@@ -13,15 +13,29 @@
  * The handful of values shared between this stylesheet and the inline styles
  * in styles/theme.js. Anything a rule here and a component both need to agree
  * on belongs in this block rather than being re-typed as a literal in each.
- * `--space-*` mirror the identically-named keys in `spacing`.
+ *
+ * A stylesheet cannot import from JS, so the value IS restated here — but not
+ * silently. Each restatement carries a trailing `theme:` annotation naming the
+ * dotted path in styles/theme.js it copies, and styles/themeVars.test.js
+ * resolves that path and asserts the two agree. The annotation is the whole
+ * mechanism: an unannotated declaration in this block whose value matches any
+ * token in theme.js fails the same test, so a hand-copied literal cannot be
+ * added here without either a pin or a deliberate argument for it.
+ *
+ * Only the keys a rule below actually needs are mirrored; there is no
+ * obligation to restate the rest of a theme.js table just because part of it
+ * appears here.
  */
 :root {
+  /* Owned HERE, not in theme.js: the wide layout's clamp() and its mobile
+     override cannot be expressed as an inline style. styles/theme.js's
+     STAGE_PORTRAIT_WIDTH_VAR names this property so its consumers and the test
+     that checks it read the live value. */
   --stage-portrait-width: 130px;
-  --space-md: 12px;
-  --space-lg: 16px;
-  /* `colors.secondary` and `colors.border.light` from styles/theme.js. */
-  --color-secondary: #ffaa00;
-  --color-border-light: rgba(255, 170, 0, 0.1);
+  --space-md: 12px; /* theme: spacing.md */
+  --space-lg: 16px; /* theme: spacing.lg */
+  --color-secondary: #ffaa00; /* theme: colors.secondary */
+  --color-border-light: rgba(255, 170, 0, 0.1); /* theme: colors.border.light */
 }
 
 * {

@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import React from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
-import NpcChatPanel from './NpcChatPanel'
+import NpcChatPanel, { collapseTerminatorRun, TERMINATOR_RUN_RE } from './NpcChatPanel'
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
 
 // Mock the npcChat API
@@ -983,5 +986,143 @@ describe('NpcChatPanel', () => {
 
       expect(screen.getByText('Mynx the Swift — Conversation')).toBeInTheDocument()
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The cross-language duplicate
+// ---------------------------------------------------------------------------
+
+/**
+ * `collapseTerminatorRun` against `_collapse_terminator_run`, read out of the
+ * Python source rather than restated.
+ *
+ * The panel's copy is a line-for-line reimplementation of a function in
+ * `src/npc/_chat_llm.py`, written because the same seam exists on both sides:
+ * the server splices clauses out of a generated line and leaves two
+ * terminators glued together, and the announcer splices a stage direction in
+ * front of a spoken line and does the same. The duplication was acknowledged
+ * in a comment and pinned by nothing, so the two could be retuned apart in
+ * silence — a run the server now keeps as an ellipsis coming out of the
+ * announcer as a full stop, or worse, a character the server started
+ * collapsing that the client does not recognise at all.
+ *
+ * Same shape as the JEAN_TONES check in hooks/useNpcChat.test.js: parse the
+ * engine, do not copy it. What is parsed here is the pair of facts the
+ * behaviour actually turns on — the terminator ALPHABET (from
+ * `_TERMINATOR_RUN_PATTERN`) and the ELLIPSIS THRESHOLD (from the branch
+ * inside the function) — plus the function's statement-by-statement SHAPE.
+ *
+ * The shape check is what keeps the rest honest. The reference rule below is
+ * still JavaScript, so on its own it would be a third copy of the same logic;
+ * asserting the Python body is exactly the four statements it was translated
+ * from means a fifth statement, or a reworked branch, fails HERE rather than
+ * being silently mirrored by a reference that was written to match the old
+ * one. A structural change is meant to make somebody read both functions.
+ */
+describe('collapseTerminatorRun mirrors src/npc/_chat_llm.py', () => {
+  const CHAT_LLM_PY = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'src', 'npc', '_chat_llm.py'),
+    'utf8'
+  )
+
+  /**
+   * `_collapse_terminator_run`'s body, one trimmed statement per entry, with
+   * the docstring dropped.
+   */
+  function pythonBody() {
+    const lines = CHAT_LLM_PY.split('\n')
+    const start = lines.findIndex((line) => line.startsWith('def _collapse_terminator_run('))
+    expect(start, 'src/npc/_chat_llm.py declares no _collapse_terminator_run').toBeGreaterThan(-1)
+    const body = []
+    for (let i = start + 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === '') continue
+      if (!lines[i].startsWith('    ')) break
+      body.push(lines[i].trim())
+    }
+    if (body[0]?.startsWith('"""')) {
+      const close = body[0].length > 3 && body[0].endsWith('"""')
+        ? 0
+        : body.findIndex((line, i) => i > 0 && line.endsWith('"""'))
+      expect(close, 'the docstring never closes').toBeGreaterThan(-1)
+      body.splice(0, close + 1)
+    }
+    return body
+  }
+
+  const body = pythonBody()
+
+  // The terminator alphabet, from the pattern that decides which runs ever
+  // reach the function at all.
+  const patternMatch = CHAT_LLM_PY.match(
+    /^_TERMINATOR_RUN_PATTERN\s*=\s*re\.compile\(r"\[([^\]]+)\]\{(\d+),\}"\)/m
+  )
+
+  it('found the pattern and the function body it was translated from', () => {
+    // Guard the guard. Every comparison below is driven by these parses, so a
+    // regex that quietly matched nothing would leave the suite green and the
+    // duplication unpinned again — the exact failure mode this replaces.
+    expect(patternMatch, 'could not find _TERMINATOR_RUN_PATTERN in src/npc/_chat_llm.py').toBeTruthy()
+    expect(patternMatch[1].length).toBeGreaterThan(1)
+    expect(body.length).toBeGreaterThan(2)
+  })
+
+  const alphabet = [...(patternMatch?.[1] ?? '')]
+
+  it('recognises exactly the terminators the engine collapses', () => {
+    // The alphabet has to agree before the rule can mean anything: a rule that
+    // handles every character correctly still does nothing for a terminator
+    // the client's own run-matcher never captures.
+    for (const char of alphabet) {
+      expect(
+        TERMINATOR_RUN_RE.test(`Coin first${char}`),
+        `the engine collapses runs of "${char}" and the panel does not match it`
+      ).toBe(true)
+    }
+    // And no wider than the engine's, or the announcer eats punctuation the
+    // server deliberately left alone.
+    for (const char of [',', ';', ':', '…', '"']) {
+      if (alphabet.includes(char)) continue
+      expect(TERMINATOR_RUN_RE.test(`Coin first${char}`), `"${char}" is not a terminator`).toBe(false)
+    }
+  })
+
+  it('is the same four statements it was translated from', () => {
+    expect(body).toEqual([
+      'run = match.group(0)',
+      'if run.count(".") == len(run):',
+      'return "..." if len(run) > 2 else "."',
+      'return run[0]',
+    ])
+  })
+
+  it('agrees with the engine on every run those constants can form', () => {
+    const repeated = body[1].match(/^if run\.count\("(.)"\) == len\(run\):$/)
+    const branch = body[2].match(/^return "([.!?]+)" if len\(run\) > (\d+) else "([.!?])"$/)
+    expect(repeated, 'the pure-run test is no longer a run.count() comparison').toBeTruthy()
+    expect(branch, 'the ellipsis branch is no longer a conditional expression').toBeTruthy()
+    const [, repeatedChar] = repeated
+    const [, longForm, threshold, shortForm] = branch
+
+    /** The engine's rule, with its constants lifted from the engine. */
+    const engineRule = (run) =>
+      [...run].every((char) => char === repeatedChar)
+        ? (run.length > Number(threshold) ? longForm : shortForm)
+        : run[0]
+
+    // Every run of one to four terminators, not a sampled handful: the whole
+    // domain is 120 strings, and the disagreements that matter live at the
+    // boundaries (".." vs "...", ".!" vs "!.") rather than in the middle.
+    let runs = alphabet.slice()
+    const everyRun = [...runs]
+    for (let length = 2; length <= 4; length += 1) {
+      runs = runs.flatMap((run) => alphabet.map((char) => run + char))
+      everyRun.push(...runs)
+    }
+    expect(everyRun.length).toBeGreaterThan(100)
+
+    for (const run of everyRun) {
+      expect(collapseTerminatorRun(run), `the two disagree on "${run}"`).toBe(engineRule(run))
+    }
   })
 })

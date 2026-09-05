@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import EventDialog, { submissionErrorMessage } from './EventDialog';
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds';
 
 /**
  * EventDialog tests.
@@ -928,7 +929,7 @@ describe('EventDialog', () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined);
       const combatEvent = {
         ...mockEvent,
-        event_id: 'combat_init',
+        event_id: COMBAT_INIT_EVENT_ID,
         input_options: [{ label: 'Fight', value: 'combat_start' }]
       };
       render(<EventDialog event={combatEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />);
@@ -939,7 +940,7 @@ describe('EventDialog', () => {
       fireEvent.click(fight);
 
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-      expect(onSubmit).toHaveBeenCalledWith('combat_init', 'combat_start');
+      expect(onSubmit).toHaveBeenCalledWith(COMBAT_INIT_EVENT_ID, 'combat_start');
       expect(fight.disabled).toBe(true);
       expect(screen.queryByText(/Failed to submit input/i)).toBeNull();
     });

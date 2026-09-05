@@ -42,8 +42,9 @@ function ChatLoadingIndicator({ message, variant = 'block' }) {
         padding: isInline ? spacing.sm : spacing.xl,
         // `pulse-opacity` (index.css) rather than a locally-defined `pulse`:
         // keyframe names are document-global, so redefining `pulse` here
-        // silently re-pointed HeroPanel's and BattlefieldGrid's animations at
-        // this variant for as long as a chat was open.
+        // silently re-pointed BattlefieldGrid's reticle at this variant
+        // for as long as a chat was open. (BattlefieldGrid is the only bare
+        // `pulse` consumer in src; HeroPanel animates with `hero-heartbeat`.)
         animation: 'pulse-opacity 1s infinite',
       }}
     >
@@ -61,6 +62,18 @@ function ChatLoadingIndicator({ message, variant = 'block' }) {
 const ASIDE_LEAD_IN = 'Aside:'
 
 /**
+ * The sentence terminators a run can be made of, anchored to the end of a
+ * line.
+ *
+ * Exported so NpcChatPanel.test.jsx can pin this alphabet against the one
+ * `_TERMINATOR_RUN_PATTERN` uses in `src/npc/_chat_llm.py`. Without that,
+ * {@link collapseTerminatorRun} agreeing with its Python original would be a
+ * claim about a function that never sees the character the server started
+ * collapsing.
+ */
+export const TERMINATOR_RUN_RE = /[.!?]+$/
+
+/**
  * Reduce a run of sentence terminators to the one that ends the sentence.
  *
  * Mirrors `_collapse_terminator_run` in `src/npc/_chat_llm.py`, which was
@@ -69,10 +82,18 @@ const ASIDE_LEAD_IN = 'Aside:'
  * a mixed run keeps its first character, the terminator the sentence actually
  * ended on.
  *
- * @param {string} run - One or more of `.`, `!`, `?`.
+ * A line-for-line reimplementation across a language boundary, so the mirror
+ * is PINNED rather than merely asserted here: NpcChatPanel.test.jsx reads the
+ * Python function's own source, refuses to proceed if its shape has changed,
+ * lifts its terminator alphabet and its ellipsis threshold out of it, and
+ * compares the two implementations over every run those constants can form.
+ * Exported for that test — the behaviour is worth asserting directly, and a
+ * rendered announcement cannot say WHICH rule produced a terminator.
+ *
+ * @param {string} run - One or more of the characters {@link TERMINATOR_RUN_RE} matches.
  * @returns {string} The single terminator that should stand in its place.
  */
-function collapseTerminatorRun(run) {
+export function collapseTerminatorRun(run) {
   if (run.split('').every((char) => char === '.')) return run.length > 2 ? '...' : '.'
   return run[0]
 }
@@ -89,7 +110,7 @@ function collapseTerminatorRun(run) {
  */
 function announcedAside(flavor) {
   const trimmed = `${ASIDE_LEAD_IN} ${flavor}`.trim()
-  const run = trimmed.match(/[.!?]+$/)
+  const run = trimmed.match(TERMINATOR_RUN_RE)
   const body = run ? trimmed.slice(0, -run[0].length) : trimmed
   return body + collapseTerminatorRun(run ? run[0] : '.')
 }
@@ -509,11 +530,13 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       {/* Options */}
       {phase === CHAT_PHASES.WAITING_JEAN && !error && (
         <div
-          // Named so a test can ask for Jean's dialogue options as a set. The
-          // panel's other buttons (View History, End Conversation, Retry) carry
-          // the same GameButton testid, and identifying options by EXCLUDING
-          // those three labels meant the next button added anywhere in the
-          // panel would silently enrol itself as a dialogue option.
+          // Named so a test can ask for Jean's dialogue options as a set.
+          // Under this suite's GameButton mock (NpcChatPanel.test.jsx) every
+          // button renders one shared testid — GameButton itself sets none —
+          // so options used to be identified by EXCLUDING three literal
+          // labels (View History, End Conversation, Retry), which meant the
+          // next button added anywhere in the panel would silently enrol
+          // itself as a dialogue option.
           data-testid="npc-chat-options"
           style={{
             display: 'flex',

@@ -14,8 +14,10 @@
  *                        message: "Slow down — too many messages."}` — a
  *                      MACHINE token in `error`, the human half in `message`.
  *                      Emitted by `rate_limited_response()`
- *                      (src/api/rate_limiter.py) and by every failure in
- *                      src/api/routes/auth.py.
+ *                      (src/api/rate_limiter.py) and by auth.py's login and
+ *                      register handlers. NOT by every auth.py failure —
+ *                      several put prose straight in `error` with no
+ *                      `message` at all, which is the first shape above.
  *
  * A site that reads `error` first is correct for the first shape and shows the
  * player the literal string `rate_limited` for the second. That is not
