@@ -138,7 +138,12 @@ export const GLOSSARY_ENTRIES = [
     patterns: ['heat'],
     short: 'A multiplier on every point of damage Jean deals. Landing hits pushes it up, getting hit pulls it down, and it drifts back toward neutral every beat.',
     body: `A multiplier on every point of damage Jean deals — shown as 1.62×. Landing hits, parrying, and making enemies miss push it up; missing, being parried, and taking hits pull it down. It closes ${ENGINE_CONSTANTS.heatDriftPercentPerBeat}% of the gap back to 1.00× every beat, so it is a lease, not a bank. It never leaves the range ${ENGINE_CONSTANTS.heatMin.toFixed(2)}×–${ENGINE_CONSTANTS.heatMax.toFixed(2)}×, and only Jean has one.`,
-    tell: 'The HEAT meter on the left panel names the band you are in and lists exactly what raises and lowers it.',
+    // Deliberately does not quote the meter's on-screen heading. The engine
+    // stat is `heat` and the maintainer's ruling for #507 is that the player
+    // sees Heat too, but the meter is still captioned "Momentum" in
+    // MomentumMeter.jsx — that rename is outstanding, and naming the band
+    // labels instead is true both before and after it lands.
+    tell: 'The meter under the hero on the left panel names the band you are in — STEADY, FERVENT, RIGHTEOUS — and lists exactly what raises and lowers it.',
   },
   {
     id: 'distance',
@@ -155,7 +160,10 @@ export const GLOSSARY_ENTRIES = [
     category: 'damage',
     patterns: ['protections?', 'resistances?'],
     short: 'Resistance scales an incoming blow, then protection is subtracted from it as a flat amount, and heat is applied to what is left.',
-    body: 'A blow’s power is first scaled by the target’s resistance to that kind of damage (1.0 is neutral; lower resists more), then their protection is subtracted as a flat amount, and heat is applied to what is left. Protection appears as "Defense" on the stat panel.',
+    // The mockup said this reads "Defense" on the stat panel; it does not —
+    // StatsPanel labels the row "Protection", which is also the engine's own
+    // name for it. Guarded by StatsPanel.test.jsx.
+    body: 'A blow’s power is first scaled by the target’s resistance to that kind of damage (1.0 is neutral; lower resists more), then their protection is subtracted as a flat amount, and heat is applied to what is left. It is the "Protection" row on the stat panel.',
     tell: 'A blow that never gets past protection reads as "struck … but did no damage".',
   },
   {

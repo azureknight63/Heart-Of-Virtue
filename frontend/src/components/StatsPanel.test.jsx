@@ -2,6 +2,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import StatsPanel from './StatsPanel';
 import { makePlayerStats } from '../test/payloads';
+import { GLOSSARY_ENTRIES } from '../data/combatGlossary';
 
 describe('StatsPanel', () => {
   // Derived from the real GameService.get_player_stats payload
@@ -196,6 +197,18 @@ describe('StatsPanel', () => {
 
     const chip = screen.getByText(/FIRE: 150%/i);
     expect(chip.style.color).toBe('rgb(255, 68, 68)'); // colors.danger (#ff4444)
+  });
+
+  it('labels flat damage reduction with the word the combat glossary quotes (#507)', () => {
+    // The glossary's "Protection & resistance" entry tells the player which row
+    // on this panel it is talking about. Renaming the row without updating the
+    // copy sends them looking for a label that is not there — the mockup
+    // already said "Defense", which this panel has never used.
+    render(<StatsPanel player={makePlayerStats()} />);
+    expect(screen.getByText('Protection')).toBeInTheDocument();
+    const protectionEntry = GLOSSARY_ENTRIES.find(e => e.id === 'protection');
+    expect(protectionEntry.body).toContain('"Protection" row');
+    expect(protectionEntry.body).not.toContain('Defense');
   });
 
   describe('Accuracy and Evasion presentation', () => {

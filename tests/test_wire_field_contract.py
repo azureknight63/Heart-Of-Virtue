@@ -335,7 +335,13 @@ MOVE_CONTRACT = {
     "display_name": "CombatMovePanel.jsx:75,131 displayNameOf(move)",
     "description": "CombatMovePanel.jsx:140 move.description",
     "available": "CombatMovePanel.jsx:73 move.available !== false",
-    "reason": "CombatMovePanel.jsx:74,109,142-146 move.reason",
+    # Its *wording* is load-bearing too, not just its presence: the reason line
+    # renders through GlossaryText, which only attaches the "what is a beat?"
+    # explainer (#507) to words combatGlossary.js recognises. Rewording
+    # "Available in 5 beats" would leave this contract green while silently
+    # removing the explainer — tests/test_combat_glossary_contract.py runs the
+    # real reason strings against the glossary's own patterns to catch that.
+    "reason": "CombatMovePanel.jsx move.reason (rendered by GlossaryText)",
     "fatigue_cost": "CombatMovePanel.jsx:133-137 move.fatigue_cost",
     "targeted": "CombatMovePanel.jsx:80 move.targeted",
     "viable_targets": "CombatMovePanel.jsx:79-82 move.viable_targets",
