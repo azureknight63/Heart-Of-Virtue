@@ -178,6 +178,10 @@ class Player(
             []
         )  # list of pending events in combat. If non-empty, combat will be paused
         # while an event happens
+        self.combat_wave_pending = False  # True once functions.add_enemies_to_combat
+        # has enrolled a wave into this fight: a later beat that empties the roster
+        # while a queued combat event holds the beat is a wave transition, not the
+        # end of the fight (issue #514)
         self.combat_log = []  # List of combat messages
         self.combat_list = (
             []

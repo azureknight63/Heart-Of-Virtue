@@ -1734,7 +1734,10 @@ class TestGetCombatStatusExtra:
         mock_player._combat_adapter = adapter
 
         result = game_service.get_combat_status(mock_player, session_data={})
-        adapter._handle_victory.assert_called_once()
+        # settle_victory is the adapter method that fires victory AND publishes
+        # the terminal combat:ended stream; the service must not do either half
+        # itself (issue #514).
+        adapter.settle_victory.assert_called_once()
 
     def test_resume_current_move_when_interrupted(self, game_service, mock_player):
         mock_player._combat_deferred_enemies = None

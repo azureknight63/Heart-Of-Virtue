@@ -1016,8 +1016,18 @@ class ApiCombatAdapter:
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
                 self.player.combat_drops = []
+                # Waves are per-fight state as well (issue #514).
+                self.player.combat_wave_pending = False
                 self.output_capture.clear()  # Clear captured output
                 self.current_beat_state_index = 0  # Reset beat state tracking
+            else:
+                # A wave joining an ongoing fight means that fight has not
+                # ended, so any end-of-combat summary an earlier terminal beat
+                # left behind is stale. get_combat_state only publishes it while
+                # in_combat is False, which the reinit is about to flip back to
+                # True, so the staleness is latent — but it must not survive the
+                # transition (issue #514).
+                self.player.combat_end_summary = None
 
             # Initialize combat_proximity if it doesn't exist
             if not hasattr(self.player, "combat_proximity"):
@@ -2159,11 +2169,34 @@ class ApiCombatAdapter:
         # Check if events triggered (BEFORE calling get_combat_state which consumes them)
         event_just_triggered = "events_triggered" in self._adapter_state()
 
-        # ALWAYS handle victory when all enemies are defeated
+        # Is this beat a wave transition rather than the end of the fight?
+        # functions.add_enemies_to_combat sets combat_wave_pending when it
+        # enrolls a wave, so a fight that is already a multi-wave ambush says so
+        # before the roster next empties. Combined with a queued combat event
+        # holding this beat — the announcement stage that spawns the next wave a
+        # stage later — the empty combat_list means "the wave has not arrived
+        # yet", not "the fight is over" (issue #514). The signal is consumed
+        # here so one landed wave covers exactly one transition: if the queued
+        # event resolves without enrolling anything, the next roster wipe ends
+        # the fight normally.
+        wave_transition = (
+            len(self.player.combat_list) == 0
+            and self.player.in_combat
+            and event_just_triggered
+            and bool(getattr(self.player, "combat_wave_pending", False))
+        )
+        if wave_transition:
+            self.player.combat_wave_pending = False
+
+        # Otherwise ALWAYS handle victory when all enemies are defeated
         # (even if post-combat events like Ch01PostRumbler3 are firing).
         # Events should not suppress the victory state — the frontend needs
         # combat_end_summary to know when combat has ended.
-        if len(self.player.combat_list) == 0 and self.player.in_combat:
+        if (
+            len(self.player.combat_list) == 0
+            and self.player.in_combat
+            and not wave_transition
+        ):
             self._handle_victory()
 
             # Publish the terminal stream even when a post-combat event is
@@ -2912,6 +2945,24 @@ class ApiCombatAdapter:
 
         self._teardown_combat_roster()
 
+    def settle_victory(self) -> Dict[str, Any]:
+        """End the fight in victory and publish the terminal state.
+
+        Ending a fight is always both halves: ``_handle_victory`` awards exp and
+        writes ``combat_end_summary``, and the client needs the seq-guarded
+        ``combat:ended`` stream that goes with it or it can be shown victory
+        state it was never told to end on. The move loop does the pair inline;
+        every caller outside it — the status poll, and the event-resolution path
+        that settles a deferred wave transition (issue #514) — goes through here
+        rather than carrying its own copy.
+
+        Returns the terminal combat state the stream was built from.
+        """
+        self._handle_victory()
+        terminal_state = self.get_combat_state()
+        self._stream_combat_result(terminal_state, [], ended=True)
+        return terminal_state
+
     def _teardown_combat_roster(self):
         """End-of-combat roster reset, shared by the victory and defeat tails.
 
@@ -2938,6 +2989,10 @@ class ApiCombatAdapter:
         Invariant: combat_list_allies[0] is always the player.
         """
         self._discard_pending_animations()
+
+        # The fight is over, so no wave is outstanding: the next one to empty a
+        # roster must not inherit this fight's continuation signal (issue #514).
+        self.player.combat_wave_pending = False
 
         # Drop combat-effect events armed in rooms the player has since left.
         # player.combat_events is process-wide and no teardown path cleared it,

@@ -1493,6 +1493,18 @@ class GameService:
                 # Without this, the adapter holds stale viable_targets from before the event
                 # fired, causing 400s when the frontend auto-selects a dead enemy's ID.
                 if not result.get("needs_input", False):
+                    if not getattr(player, "combat_list", None):
+                        # The adapter deferred victory on this beat because the
+                        # fight was mid-ambush (issue #514), but the event that
+                        # held the beat resolved without enrolling a wave — the
+                        # fight really is over. Settle it here, exactly as the
+                        # status-poll path does, rather than leaving the player
+                        # awaiting a move against an empty battlefield.
+                        terminal_state = adapter.settle_victory()
+                        result["combat_state"] = (
+                            terminal_state.get("battle_state") or terminal_state
+                        )
+                        return result
                     adapter.awaiting_input = True
                     adapter.input_type = "move_selection"
                     adapter.available_options = adapter._get_available_moves()
@@ -2766,11 +2778,7 @@ class GameService:
                         # and publish the same terminal stream event as the normal
                         # move-execution path. Otherwise status polling can produce
                         # victory/log state without combat:ended.
-                        adapter._handle_victory()
-                        terminal_state = adapter.get_combat_state()
-                        adapter._stream_combat_result(
-                            terminal_state, [], ended=True
-                        )
+                        adapter.settle_victory()
                     elif hasattr(player, "current_move") and player.current_move:
                         # Resume the current move if it was interrupted
                         return adapter._execute_move(player.current_move)

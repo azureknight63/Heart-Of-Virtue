@@ -138,8 +138,10 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
         cprint(announcement, "red", attrs=["bold"])
 
     # Add enemies to combat list
+    enrolled_any = False
     for enemy in new_enemies:
         if enemy not in player.combat_list:
+            enrolled_any = True
             player.combat_list.append(enemy)
             enemy.in_combat = True
 
@@ -162,6 +164,19 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
             enemy.combat_list = player.combat_list_allies
             # Enemies are allied with other enemies
             enemy.combat_list_allies = player.combat_list
+
+    # Signal that this fight continues past a roster wipe (issue #514). The
+    # story chains that spawn waves announce the next one from a queued combat
+    # event and only enroll it a stage or two later, so the beat in between has
+    # an empty combat_list even though the ambush is still running. Recording
+    # the wave here — before the adapter is reinitialized, and long before that
+    # next beat — is what lets the terminal victory path recognize a wave
+    # transition ahead of time instead of ending the fight and then having it
+    # resume. The adapter consumes the signal on the transition it covers.
+    # Only a wave that actually joined the roster counts: a call that enrolls
+    # nothing must not buy a fight one free victory deferral.
+    if enrolled_any:
+        player.combat_wave_pending = True
 
     # Reinitialize positions for ALL combatants to include new enemies
     try:
