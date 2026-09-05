@@ -29,8 +29,6 @@ import { colors } from '../styles/theme'
  * number in the copy that is not sourced from here.
  */
 export const ENGINE_CONSTANTS = {
-  // src/player/__init__.py — Player.fatigue / maxfatigue
-  startingFatigue: 150,
   // src/moves/_utility.py — Rest.execute: ceil(maxfatigue * 0.4 * uniform(0.8, 1.2))
   restRecoveryFraction: 0.4,
   // src/player/_combat.py — change_heat clamps to [0.5, 10]
@@ -130,7 +128,7 @@ export const GLOSSARY_ENTRIES = [
     category: 'resources',
     patterns: ['fatigue'],
     short: 'The orange bar — what moves are paid for. It does not regenerate on its own during a fight.',
-    body: `The orange bar: what moves are paid for. It does not regenerate on its own during a fight. Rest recovers roughly ${Math.round(ENGINE_CONSTANTS.restRecoveryFraction * 100)}% of your maximum, some items restore it, and winning a fight refills it completely — nothing else gives it back. You start the game with ${ENGINE_CONSTANTS.startingFatigue}.`,
+    body: `The orange bar: what moves are paid for. It does not regenerate on its own during a fight. Rest recovers roughly ${Math.round(ENGINE_CONSTANTS.restRecoveryFraction * 100)}% of your maximum, some items restore it, and winning a fight refills it completely — nothing else gives it back.`,
     tell: 'Endurance raises your maximum fatigue; carrying too much weight lowers it. "Jean recovered 60 FP!" in the log is fatigue points.',
   },
   {

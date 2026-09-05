@@ -145,6 +145,44 @@ describe('CombatMovePanel', () => {
     expect(mockOnMoveClick).not.toHaveBeenCalled();
   });
 
+  it('offers the glossary from the panel header (#507)', () => {
+    render(
+      <CombatMovePanel
+        moves={mockMoves}
+        category="Offensive"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Open combat glossary' })).toBeInTheDocument();
+  });
+
+  it('makes the cooldown wording in an unavailability reason explain itself (#507)', () => {
+    render(
+      <CombatMovePanel
+        moves={[{
+          name: 'Power Strike',
+          category: 'Offensive',
+          description: 'Wind up.',
+          fatigue_cost: 35,
+          available: false,
+          reason: 'Available in 5 beats',
+        }]}
+        category="Offensive"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+
+    const beats = screen.getByRole('button', { name: /beats — what this means/i });
+    // The reason sits outside the (disabled) move button, or nothing nested in
+    // it would ever receive a click.
+    expect(beats.closest('button[disabled]')).toBeNull();
+
+    fireEvent.click(beats);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('The unit of combat time');
+  });
+
   it('renders empty state when no moves match category', () => {
     render(
       <CombatMovePanel 

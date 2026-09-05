@@ -192,6 +192,19 @@ describe('Battlefield', () => {
         expect(screen.getByText('1 standing')).toBeDefined();
     });
 
+    it('offers the combat glossary from the strip that says "Beat" (#507)', () => {
+        render(<Battlefield combat={mockCombat} currentLogIndex={0} />);
+        const help = screen.getByRole('button', { name: 'Open combat glossary' });
+        // Inside the labelled fight-status strip, not floating somewhere else.
+        expect(help.closest('[aria-label="Fight status"]')).not.toBeNull();
+    });
+
+    it('drops the glossary affordance along with the strip on the enemies tab', () => {
+        render(<Battlefield combat={mockCombat} currentLogIndex={0} />);
+        fireEvent.click(screen.getByText(/^Enemies/));
+        expect(screen.queryByRole('button', { name: 'Open combat glossary' })).toBeNull();
+    });
+
     it('rewinds the grid to the beat state named by currentLogIndex', () => {
         // mockCombat's two beats put Jean at [0,0] then [1,1] and drop the
         // Slime from 10 HP to 5 — so the beat the grid is handed is observable.
