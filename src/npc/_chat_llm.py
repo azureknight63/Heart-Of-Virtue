@@ -3911,7 +3911,8 @@ class ConversationalNPCMixin:
             # conversation and beyond.
             #
             # The cap goes FIRST because src/text_safety.py's convergence bound
-            # (64 passes, then fail closed) was reasoned about a 500-character
+            # (a budget derived from the string's own length, then fail
+            # closed) was reasoned about a 500-character payload
             # payload, and the route only caps the field at _MAX_FIELD_LEN =
             # 4000. Capping afterwards — as this did — handed the neutraliser
             # eight times the input its bound was sized for, on the one path

@@ -1218,3 +1218,64 @@ class TestTheAccumulatedCorpus:
         """Non-vacuity: a parametrize over an empty list passes silently."""
         assert len(COMMERCE_CORPUS) >= 25
         assert len(LORE_CORPUS) >= 18
+
+
+class TestEveryMerchantContributesAssertions:
+    """No conversational merchant may pass these guards by declaring nothing.
+
+    The three coverage tests above all walk
+    ``getattr(merchant, "always_stock", None) or []``. A merchant that declares
+    none contributes ZERO assertions and passes green — which is precisely the
+    sequence that produced the defect they were written to catch: an apothecary
+    was made conversational in the same change that "unified" the vocabulary,
+    and nothing connected the two facts.
+
+    ``MiloCurioDealer`` is already in that shape at HEAD — ``always_stock`` is
+    ``None``, ``specialties`` is empty, its goods live in ``self.inventory`` —
+    and it is one ``ConversationalNPCMixin`` away from reopening the hole with
+    the suite still green.
+
+    So the roster is asserted to be probeable, not merely walked. A merchant
+    whose stock this file cannot see fails HERE, with a message saying what to
+    do about it, rather than silently contributing nothing three tests over.
+    """
+
+    def _probeable_words(self, merchant):
+        """Every word the coverage guards would actually test for this host."""
+        words = []
+        for item in list(getattr(merchant, "always_stock", None) or []):
+            for attr in ("name", "subtype"):
+                word = getattr(item, attr, None)
+                if isinstance(word, str) and word.strip():
+                    words.append(word)
+        return words
+
+    def test_every_conversational_merchant_is_probeable(self):
+        silent = []
+        for cls in _conversational_merchants():
+            merchant = cls()
+            if not self._probeable_words(merchant):
+                silent.append(cls.__name__)
+        assert silent == [], (
+            "these conversational merchants contribute no assertions to the "
+            "coverage guards, so those guards pass green without checking "
+            "them: %s\n\n"
+            "The guards walk `always_stock`. A merchant that stocks through "
+            "`self.inventory` or a generated counter is invisible to them. "
+            "Either declare the representative goods in `always_stock`, or "
+            "widen the guards (and this one) to read the live stock — do not "
+            "leave the merchant unprobed, which is how the apothecary shipped "
+            "with its entire stock invisible to the classifier."
+            % ", ".join(sorted(silent))
+        )
+
+    def test_the_probe_words_are_not_all_the_same_merchant(self):
+        """Non-vacuity in the other direction.
+
+        A roster walk that returned one merchant would satisfy the test above
+        while checking a third of the shop floor.
+        """
+        merchants = _conversational_merchants()
+        assert len(merchants) >= 3, [c.__name__ for c in merchants]
+        for cls in merchants:
+            assert len(self._probeable_words(cls())) >= 2, cls.__name__

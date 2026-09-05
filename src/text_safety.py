@@ -181,7 +181,26 @@ _WS_RUN_PATTERN = re.compile(r"\s+")
 # The fail-closed hammer: with no angle brackets left in the string, no
 # substitution below can produce a tag, which is what lets :func:`_fail_closed`
 # run the remaining rules to convergence without a pass bound of its own.
-_ANGLE_BRACKET_PATTERN = re.compile(r"[<>]")
+# The ASCII pair, plus every code point a normaliser folds INTO one of them.
+#
+# Removing the fence's ingredients only works if "an angle bracket" means what
+# the MODEL will read as one, not what this file's author typed. Several
+# tokenizers NFKC-normalise before tokenizing, and `＜/player_input＞` (fullwidth)
+# survived every layer here with each ingredient intact until this line: the
+# class was written as the two ASCII characters, and a homoglyph is by
+# definition not one of those.
+#
+# DERIVED, from ``unicodedata.normalize`` over the whole code space, not
+# enumerated — the same lesson as the invisible-character class one screen up,
+# which was wrong twice for exactly this reason.
+# ``TestAngleBracketConfusables`` recomputes the set and fails if a Unicode
+# release adds one.
+#
+# Visual look-alikes that do NOT normalise (U+3008 〈, U+2039 ‹) are
+# deliberately excluded: a tokenizer has no rule that turns them into ``<``, so
+# admitting them would eat ordinary quotation marks for a threat that needs the
+# model to invent the fold itself.
+_ANGLE_BRACKET_PATTERN = re.compile("[<>\u226e\u226f\ufe64\ufe65\uff1c\uff1e]")
 
 #: The length past which :func:`_pass_budget` stops scaling and the ceiling
 #: bites. Not a truncation and not an unchecked precondition — the ``min()`` in
