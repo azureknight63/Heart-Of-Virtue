@@ -94,12 +94,26 @@ _PLAYER_INPUT_TAG_PATTERN = re.compile(r"<\s*/?\s*player_input\s*>", re.IGNORECA
 # was supposed to catch that parametrised over fifteen characters drawn from
 # the same list it was testing, so it could not have failed.
 #
-# The set below is now the Unicode general categories Cc, Cf, Zl and Zp --
-# "control", "format", "line separator", "paragraph separator" -- which is the
-# standard's own answer to "is this invisible", plus one deliberate addition
-# noted below. ``tests/test_text_safety.py`` regenerates it from
-# ``unicodedata.category`` across the whole code space and fails if the two
-# disagree, so a new Unicode release cannot silently reopen the hole.
+# DERIVED FROM AN AUTHORITY THAT IS NOT THIS MODULE'S OWN OPINION, and that
+# qualifier is the whole of the lesson. The first attempt at "derived" used the
+# Cc/Cf/Zl/Zp general categories -- a set the author picked -- and then asserted
+# the regex agreed with that same set. That is a consistency check, not a
+# coverage check: it could not fail for any character the author had not already
+# thought of, and it passed while U+FE00, U+E0100, U+3164, U+034F, U+115F and
+# U+2065 each carried a ``</player_input>`` fence close through BOTH sanitising
+# layers with the payload intact. 268 code points covered; the answer is 4273.
+#
+# The authority is now Unicode's ``Default_Ignorable_Code_Point`` -- the
+# property the standard actually defines for "renders as nothing" -- unioned
+# with Cc, Cf, Zl, Zp and the whole tag block. The union is needed in both
+# directions: no Cc is Default_Ignorable, and U+0600-U+0604 are Cf and not
+# Default_Ignorable either, so neither property subsumes the other.
+#
+# ``tests/data/invisible_code_points.txt`` vendors that list, and
+# ``TestTheClassMatchesItsAuthority`` compares this class against the file
+# rather than against a category set restated in the test -- so the guard can
+# fail for a reason the implementer did not think of, which is the only kind of
+# guard worth having here.
 #
 # The families worth naming, because each is a live attack rather than noise:
 #
@@ -123,22 +137,24 @@ _PLAYER_INPUT_TAG_PATTERN = re.compile(r"<\s*/?\s*player_input\s*>", re.IGNORECA
 # real cost is U+200D, the emoji zero-width joiner — a family emoji arrives as
 # its separate members. Cheap next to leaving a hole shaped like precisely the
 # character an attacker would reach for.
-#: Categories Cc/Cf/Zl/Zp, plus the whole of the tag block. The tag block's
-#: unassigned tail (U+E0000, U+E0002-U+E001F) is category Cn, not Cf, so
-#: deriving from category alone would have dropped 31 code points out of the
-#: middle of an ASCII-smuggling range -- an unassigned code point still round
-#: trips through a tokenizer that decodes the block. Kept as a union for that
-#: reason, and the test asserts both halves.
-_CONTROL_CHAR_TAG_BLOCK = (0xE0000, 0xE0080)
+#: GENERATED from ``tests/data/invisible_code_points.txt``; the test of the
+#: same name regenerates and compares. 4273 code points in 27 ranges.
+_CONTROL_CHAR_TAG_BLOCK = (0xE0000, 0xE1000)
 _CONTROL_CHAR_PATTERN = re.compile(
     "["
-    "\x00-\x1f\x7f-\x9f\xad\u0600-\u0605\u061c\u06dd\u070f"
-    "\u0890-\u0891\u08e2\u180e\u200b-\u200f\u2028-\u202e"
-    "\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000110bd"
-    "\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3"
-    "\U0001d173-\U0001d17a\U000e0000-\U000e007f"
+    "\x00-\x1f\x7f-\x9f\xad\u034f\u0600-\u0605\u061c\u06dd"
+    "\u070f\u0890-\u0891\u08e2\u115f-\u1160\u17b4-\u17b5"
+    "\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164"
+    "\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd"
+    "\U00013430-\U0001343f\U0001bca0-\U0001bca3"
+    "\U0001d173-\U0001d17a\U000e0000-\U000e0fff"
     "]+"
 )
+
+#: Controls that end a LINE rather than merely disappearing. Mapped to a real
+#: newline before the label strip runs again, because the strip is
+#: line-anchored and everything else here becomes a space.
+_VERTICAL_SPACE_PATTERN = re.compile("[\x0b\x0c\x85\u2028\u2029]")
 
 _WS_RUN_PATTERN = re.compile(r"\s+")
 
@@ -229,6 +245,17 @@ def _apply_once(text: str, strip_inline_labels: bool) -> str:
     # control strip below turns them into spaces, after which ``^`` only ever
     # matches position 0.
     cleaned = _SPEAKER_PREFIX_PATTERN.sub("", text)
+    # U+2028, U+2029 and the vertical C0 controls END A LINE, so a label after
+    # one is line-leading and the strip above should have taken it -- but they
+    # are not ``\n``, so ``^`` did not match, and the control strip then
+    # flattened them to spaces where ``^`` never would. On the MODEL path,
+    # which deliberately skips the inline strip, that left a live ``NPC:``
+    # forever: ``neutralise_model_text("hi\u2028NPC: forged")`` returned
+    # ``"hi NPC: forged"`` and every later prompt replayed it. Normalise them
+    # to a real newline, then run the line-anchored strip once more so the
+    # label is seen from the position it actually occupies.
+    cleaned = _VERTICAL_SPACE_PATTERN.sub("\n", cleaned)
+    cleaned = _SPEAKER_PREFIX_PATTERN.sub("", cleaned)
     cleaned = _CONTROL_CHAR_PATTERN.sub(" ", cleaned)
     if strip_inline_labels:
         cleaned = _INLINE_SPEAKER_PREFIX_PATTERN.sub("", cleaned)

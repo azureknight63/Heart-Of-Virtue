@@ -28,6 +28,8 @@ This is a plain module, not a ``conftest.py``, so nothing here is auto-injected;
 docstring). Sibling harness for the NPC/chat mixin: ``tests/_npc_fixtures.py``.
 """
 
+import re
+from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Type, TypeVar
 
 from ai.llm_client import (
@@ -77,11 +79,91 @@ PROVIDER_MODEL_ENVS = tuple(
     )
 )
 
-#: :data:`PROVIDER_KEY_ENVS` plus the non-LLM credential that also rides in on
-#: ``.env``. ``GITHUB_TOKEN`` is here because ``feedback.py``'s issue-filing
-#: path has no TESTING guard by design, so a child process that inherits it
-#: files real GitHub issues.
-CREDENTIAL_ENVS = PROVIDER_KEY_ENVS + ("GITHUB_TOKEN",)
+#: Names that look like a secret, whoever wrote them.
+#:
+#: Used only by :func:`secret_shaped_env_names` and the guard that reads it --
+#: never to decide what gets blanked, which is an explicit choice below.
+_SECRET_NAME_PATTERN = re.compile(
+    r"(?:^|_)(?:KEY|TOKEN|SECRET|PASS|PASSWORD|WEBHOOK|CREDENTIALS?)(?:$|_)"
+    r"|_(?:DATABASE|AUTH)_URL$|^TURSO_",
+)
+
+#: Secrets that authenticate to something OUTSIDE this machine. Blanked.
+#:
+#: This list used to be ``PROVIDER_KEY_ENVS + ("GITHUB_TOKEN",)`` with a
+#: comment calling GITHUB_TOKEN "the non-LLM credential that also rides in on
+#: ``.env``". There were four, and the omissions cost real money and real
+#: noise: the harness filed 20 real GitHub issues, then wrote real rows to the
+#: production database, then spent real provider credit -- three incidents,
+#: one shape, each closed by adding one more name by hand.
+#:
+#: ``TURSO_*`` were transcribed as literals in ``tests/conftest.py`` AND
+#: ``tools/bug_hunt.py``, which is the duplication this module exists to end,
+#: so they live here now and both call sites read them.
+OUTBOUND_CREDENTIAL_ENVS = PROVIDER_KEY_ENVS + (
+    "GITHUB_TOKEN",
+    "TURSO_DATABASE_URL",
+    "TURSO_AUTH_TOKEN",
+    "HOV_ANALYTICS_WEBHOOK_URL",
+    "NEXUS_PASS",
+    # Documented in .env.example but absent from _OPENAI_COMPATIBLE_PROVIDERS,
+    # so PROVIDER_KEY_ENVS does not derive them. Found by the guard below on
+    # its first run -- which is the guard earning its keep, and the reason it
+    # reads the env files rather than trusting this tuple.
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+)
+
+#: Secrets that are local-only, and why each is safe to leave alone.
+#:
+#: Not blanked, because blanking them breaks the thing under test rather than
+#: protecting anything: neither authenticates to anything off this machine.
+#: They are listed rather than merely omitted so that
+#: :func:`secret_shaped_env_names` has somewhere to put them -- an unclassified
+#: secret must fail, and "we thought about this one" has to be expressible.
+LOCAL_ONLY_SECRET_ENVS = (
+    # Signs session cookies. TestingConfig mints a random one per run.
+    "SECRET_KEY",
+    # Encrypts saved games at rest, in this process, on this disk.
+    "ENCRYPTION_KEY",
+)
+
+#: Backwards-compatible alias. Both conftests and ``tools/bug_hunt.py`` blank
+#: this set.
+CREDENTIAL_ENVS = OUTBOUND_CREDENTIAL_ENVS
+
+
+def secret_shaped_env_names(*paths):
+    """Every secret-shaped variable name declared in the given env files.
+
+    Reads the NAMES only -- never a value -- so this is safe to call on a real
+    ``.env``. Commented-out declarations count: ``.env.example`` ships most of
+    its entries commented, and a variable is no less a credential for being
+    optional.
+
+    The point is the guard that consumes it: a new secret added to ``.env`` or
+    ``.env.example`` and classified as neither outbound nor local-only fails
+    the suite. That is the property three incidents' worth of hand-maintained
+    lists never had -- each of those was closed by adding one name, which left
+    the next omission exactly as invisible as the last.
+    """
+    names = set()
+    for path in paths:
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            stripped = line.lstrip("# ").strip()
+            name, sep, _value = stripped.partition("=")
+            if not sep:
+                continue
+            name = name.strip()
+            if not name.isupper() or not name.replace("_", "").isalnum():
+                continue
+            if _SECRET_NAME_PATTERN.search(name):
+                names.add(name)
+    return names
 
 
 # ---------------------------------------------------------------------------

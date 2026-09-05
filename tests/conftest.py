@@ -61,8 +61,9 @@ for _key_env in CREDENTIAL_ENVS:
 # Same shape as the GITHUB_TOKEN incident above, one layer down. Blank both, so
 # an unguarded DB write fails loudly with "TURSO_DATABASE_URL is not set"
 # instead of succeeding against production.
-for _db_env in ("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"):
-    os.environ[_db_env] = ""
+# (The Turso pair is in CREDENTIAL_ENVS now and is blanked by the loop
+#  above. It used to be spelled here AND in tools/bug_hunt.py -- the
+#  duplication that vocabulary exists to end.)
 
 # Neutralise every per-feature LLM gate, plus the host, the settings and the
 # model pins that do not follow the gate naming convention, then pin the three
