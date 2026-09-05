@@ -170,7 +170,15 @@ _GAP = r"(?:\w+\s+){0,2}?"
 # counter. Coin is deliberately absent — "the gold in this region" is lore, and
 # ``_chat_llm``'s transaction pattern already matches coin words directly, so
 # admitting them here would make every sentence naming gold a shop question.
+#
+# NOT one trade's vocabulary. It read as arms-and-armour for two rounds while
+# an apothecary was conversational, so "Do you have any restoratives?" was not
+# a stock request at any counter. The list answers "could this be traded", not
+# "does THIS merchant stock it" — the per-host half of that question is
+# ``_chat_llm._host_merchandise_pattern``, derived from the roster.
 MERCHANDISE = (
+    r"potions?|draughts?|restoratives?|antidotes?|tonics?|salves?|elixirs?|"
+    r"remed(?:y|ies)|medicines?|bandages?|herbs?|vials?|"
     r"swords?|blades?|daggers?|kni(?:fe|ves)|axes?|spears?|bows?|arrows?|"
     r"armou?r|mail|chain|leather|shields?|helms?|helmets?|buckles?|"
     r"harness(?:es)?|cuirass(?:es)?|jerkins?|doublets?|weapons?|gear|boots|"

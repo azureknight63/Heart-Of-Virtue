@@ -774,14 +774,75 @@ _MERCHANT_ITEM_REQUEST_PATTERN = re.compile(
 # not let "How much for the sword?" through — and "how many"/"how much" are
 # excused anyway, because "How many spears do you have?" really is a stock
 # request.
+# A manner, place, time or person interrogative ANYWHERE in the sentence, not
+# only at its start. The ``^`` anchor this used to carry is what let
+# "Do you keep the leather oiled?" be classified as a stock request while
+# "How do you keep the leather oiled?" was correctly allowed — the same
+# maintenance question, one word apart, on opposite sides of the rule. Both are
+# topics ``_build_trade_block`` asks the model to raise.
+#
+# ``how much``/``how many`` are excused: they open a price or a quantity
+# question, not a manner one. The veto applies ONLY to the ambiguous stock
+# frame (see :meth:`_is_stock_request`) — a price question stays commerce
+# however it is worded, which is why "How much for the sword?" is unaffected.
 _MERCHANT_LORE_LEAD_PATTERN = re.compile(
-    r"^\W*(?:how|where|when|who|whom|whose|why)\b(?!\s+(?:many|much)\b)",
+    r"\b(?:how|where|when|who|whom|whose|why)\b(?!\s+(?:many|much)\b)",
+    re.IGNORECASE,
+)
+
+# What turns the stock frame into a question ABOUT the goods rather than FOR
+# them. A stock request ends at its object; a craft, maintenance or provenance
+# question predicates something OF the object and keeps going.
+#
+#   "Do you have any spears?"                 object, then done   -> stock
+#   "Do you keep the leather oiled?"          trailing participle -> lore
+#   "Do you carry the same harness your       trailing clause     -> lore
+#    father did?"
+#   "Do you have a trick for keeping mail     "for <gerund>"      -> lore
+#    dry?"
+_MERCHANT_TRAILING_PREDICATION = re.compile(
+    r"\b(?:for|from|against)\s+\w+ing\b"
+    r"|\b\w+ed\s*[?.!]*\s*$"
+    r"|\b(?:your|his|her|their|my)\s+\w+\s+\w+"
+    r"|\ba\s+(?:trick|knack|way|method|secret)\b"
+    r"|\bsame\b",
+    re.IGNORECASE,
+)
+
+# Words that stand in for the goods when no noun is named. This is the ONE
+# place a noun list belongs — as a disambiguator inside an ambiguous frame,
+# never as a gate on a price question. "Do you have family in the valley?" and
+# "Do you have any spears?" are the same frame, and only the object separates
+# them.
+_MERCHANT_GENERIC_GOODS = re.compile(
+    r"\banything\s+(?:else|cheaper|better)\b"
+    r"|\banything\b\s*[?.!]*\s*$"
+    r"|\bwhat\s+else\b"
+    r"|\bbehind\s+the\s+counter\b"
+    r"|\bin\s+stock\b",
     re.IGNORECASE,
 )
 # "does it cost", "would it cost" -- shared verbatim by the price pattern
 # and the item-less pattern below, which is why it is a fragment rather
 # than two character-identical literals forty lines apart.
 _MERCHANT_IT_COST = r"\b(?:does|do|would|will|can)\s+it\s+cost\b"
+
+# THE NOMINAL PRICE FRAME: "the price/cost/worth OF X". Kept separate from the
+# transactional frames below because it is the one price wording that is
+# routinely metaphorical -- "What is the price of freedom?", "What was the cost
+# of the war?", "What is the worth of a vow?" are lore, and a merchant is
+# exactly the character who says them. So this frame alone still consults the
+# merchandise vocabulary: an abstract object means it is not a shop question.
+#
+# "How much for X?", by contrast, is a purchase offer whatever X is, and needs
+# no noun. That asymmetry is the point -- the earlier design gated BOTH on a
+# noun list and so missed every price question about a noun nobody had listed.
+_MERCHANT_NOMINAL_PRICE_PATTERN = re.compile(
+    r"\b(?:what(?:['’]s)?\s+(?:is|are|was|were|does|do)?|"
+    r"how\s+much\s+(?:does|do|would|will|can))\b"
+    r".{0,80}\b(?:price|cost|worth|value)\b",
+    re.IGNORECASE,
+)
 
 _MERCHANT_PRICE_PATTERN = re.compile(
     r"\bhow\s+much\s+for\b|"
@@ -790,10 +851,7 @@ _MERCHANT_PRICE_PATTERN = re.compile(
     # counter walked straight through, one word away from the row the
     # regression test asserts. That is what a probe list drawn from a bug
     # report buys you: the sentence in the report, and nothing beside it.
-    r"\bhow\s+much\s+(?:is|are|was|were)\b|"
-    r"\b(?:what(?:['’]s)?\s+(?:is|are|does|do)?|"
-    r"how\s+much\s+(?:does|do|would|will|can))\b"
-    r".{0,80}\b(?:price|cost|worth|value)\b|"
+    r"\bhow\s+much\s+(?:is|are|was|were|would|will|could)\b|"
     + _MERCHANT_IT_COST
     + r"|"
     r"\b(?:does|do|would|will|can)\s+(?:it|the|this|that|these|those|any)\s+cost\s+(?:more|less|extra)\b",
@@ -818,7 +876,14 @@ _MERCHANT_ANY_AVAILABLE_PATTERN = re.compile(
 # pattern needs its own copy of the *behaviour* because a lore frame
 # short-circuits :meth:`_is_merchant_commerce_question` before the item-less
 # pattern is ever consulted; it does not need its own copy of the string.
-_MERCHANT_COIN_FOR = r"\b(?:coin|gold)\s+for\b"
+# "less coin for the buckles" — haggling, which is commerce. But a bare
+# "gold for" is not: "Did they trade gold for salt on this road?" is regional
+# history, one of the five substitute topics, and it matched. The comparative
+# is what makes it an offer, so the comparative is required.
+_MERCHANT_COIN_FOR = (
+    r"\b(?:less|more|fewer|another|extra|additional)\s+(?:coin|gold|silver)\s+for\b"
+    r"|\b(?:pay|paid|paying)\s+(?:you\s+)?\w*\s*(?:coin|gold|silver)\s+for\b"
+)
 
 # Trade with no item named. Deliberately narrow: without a noun to anchor it,
 # only an explicit purchasing amount or an offer fragment counts. "gold in"/
@@ -854,7 +919,22 @@ _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
     # so invisible to every other branch. "What will you give me for
     # this?" is the plainest sell offer in the language.
     r"\bwhat\s+(?:will|would|can|could)\s+you\s+give\s+me\s+for\b|"
-    r"\bin\s+the\s+market\s+for\b",
+    r"\bin\s+the\s+market\s+for\b|"
+    # Frames found by testing against sentences NOBODY had reported — the
+    # held-out half of the corpus. Every previous version of this classifier
+    # was tuned only on the rows from a bug report, which is why each fix was
+    # correct on those rows and wrong one word away.
+    r"\bwhat\s+would\s+you\s+(?:want|take|charge)\s+for\b|"
+    r"\b(?:can|could|may)\s+i\s+(?:buy|have|purchase)\b|"
+    r"\bwould\s+you\s+take\s+\w+\s+(?:gold|coin|silver|pieces?)\b|"
+    r"\bwould\s+you\s+(?:buy|sell|trade)\s+me\b|"
+    r"\bany\s+chance\s+of\s+a\s+(?:discount|deal|bargain)\b|"
+    # Declarative commerce. The classifier used to require a question mark or
+    # an interrogative prefix, which made every one of these unreachable —
+    # including the three alternations directly above, since a purchase is
+    # more often announced than asked.
+    r"\b(?:i'?ll|i\s+will)\s+take\s+(?:the|a|an|that|this|these|those)\b|"
+    r"\b(?:yours|mine)\s+for\s+\w+\s+(?:gold|coin|silver|pieces?)\b",
     re.IGNORECASE,
 )
 # A transaction word beside an item noun. The first alternation names the
@@ -2381,91 +2461,112 @@ class ConversationalNPCMixin:
         host = self._host_merchandise_pattern()
         return bool(host and host.search(text))
 
+    #: Frames that settle the question on their own, with no noun consulted.
+    #:
+    #: This tuple is the correction of a defect that survived three fixes. The
+    #: classifier used to gate almost every commerce verdict behind
+    #: ``has_item`` — a noun list — so "How much for the longsword?" was not a
+    #: price question, because "longsword" was not in the list. Each round
+    #: widened the list and the next round found the noun it had missed:
+    #: weapons, then an apothecary's whole stock, then everything
+    #: ``_fill_remaining_stock`` puts on the counter from the item catalogue.
+    #:
+    #: The list was never going to be complete, because it was answering the
+    #: wrong question. "How much for X?" is a price question WHATEVER X is —
+    #: the frame carries the speech act and the object does not. So these
+    #: patterns are consulted first and alone, and the merchandise vocabulary
+    #: is demoted to what it is actually good for: telling "Do you have any
+    #: spears?" from "Do you have family in the valley?", one ambiguous frame
+    #: where the object genuinely is the deciding evidence.
+    _MERCHANT_SELF_SUFFICIENT = (
+        _MERCHANT_PRICE_PATTERN,
+        _MERCHANT_EXPLICIT_PATTERN,
+        _MERCHANT_STOCK_REQUEST_PATTERN,
+        _MERCHANT_ANY_AVAILABLE_PATTERN,
+        _MERCHANT_ITEMLESS_TRADE_PATTERN,
+        _MERCHANT_DIRECT_TRADE_PATTERN,
+    )
+
     def _is_merchant_commerce_question(self, text: str) -> bool:
-        """True when a merchant line asks about shop transactions or stock."""
+        """True when a merchant line asks about shop transactions or stock.
+
+        Two tiers, per sentence:
+
+        1. a self-sufficient commerce frame — a price question, an explicit
+           shop noun, a stock request, an offer. No noun is consulted, because
+           none of these needs one to mean what it means.
+        2. the one ambiguous frame, ``do you have|carry|keep X``, resolved by
+           :meth:`_is_stock_request`.
+
+        Per SENTENCE rather than per option: a Jean option is routinely two
+        sentences, and a commerce question in the second used to be excused by
+        a lore word in the first.
+
+        There is deliberately no question-mark gate. There used to be, and it
+        made declarative commerce structurally unreachable — "I'll take the
+        shortsword." and "The cuirass is yours for eighty gold." were never
+        classified at all, which also made three alternations of
+        ``_MERCHANT_DIRECT_TRADE_PATTERN`` dead, since a purchase is more often
+        announced than asked.
+        """
         if not self._is_merchant_chat():
             return False
-        if "?" not in text and not _MERCHANT_QUESTION_PREFIX_PATTERN.search(text):
-            return False
-
-        has_item = self._names_merchandise(text)
-        lore_frame = self._is_lore_frame(text)
-        stock_request = self._is_stock_request(text)
-
-        # In a lore frame, only block if the sentence is still clearly a shop
-        # transaction. "That old cuirass has seen three wars." stays chat; "How
-        # much for the old cuirass?" is still a price question.
-        if has_item and lore_frame:
-            if _MERCHANT_PRICE_PATTERN.search(text):
+        for sentence in _split_sentences(text) or [text]:
+            if any(p.search(sentence) for p in self._MERCHANT_SELF_SUFFICIENT):
                 return True
-            if stock_request:
+            if self._is_stock_request(sentence):
                 return True
-            if _MERCHANT_TRANSACTION_PATTERN.search(text):
-                return True
-            return False
+            # The two frames that legitimately need the goods vocabulary,
+            # because both are metaphorical or idle without it:
+            #   "What is the price of freedom?"   nominal price, abstract
+            #   "Did you learn the leather trade?" transaction word, no offer
+            if self._names_merchandise(sentence):
+                if _MERCHANT_NOMINAL_PRICE_PATTERN.search(sentence):
+                    return True
+                if _MERCHANT_TRANSACTION_PATTERN.search(sentence):
+                    return True
+        return False
 
-        # Explicit shop nouns outside a lore frame are always commerce.
-        if _MERCHANT_EXPLICIT_PATTERN.search(text):
-            return True
+    def _is_stock_request(self, sentence: str) -> bool:
+        """True when this sentence asks whether something is on the counter.
 
-        # These short forms are common inventory questions even without an item.
-        if _MERCHANT_STOCK_REQUEST_PATTERN.search(text):
-            return True
-        if _MERCHANT_ANY_AVAILABLE_PATTERN.search(text):
-            return True
+        The frame alone cannot decide it. ``do you have|carry|keep X`` is a
+        stock request when X is the goods and the sentence ends there, and a
+        maintenance or provenance question when the sentence predicates
+        something OF X and continues:
 
-        # An item combined with a request, price, or transaction verb is a shop
-        # question. Do not confuse craft questions such as "How does leather
-        # compare with chain?" with a transaction just because an item is named.
-        if has_item:
-            if stock_request:
-                return True
-            if _MERCHANT_PRICE_PATTERN.search(text):
-                return True
-            if _MERCHANT_TRANSACTION_PATTERN.search(text):
-                return True
+            "Do you have any spears?"              -> stock request
+            "Do you keep the leather oiled?"       -> maintenance
+            "Do you carry the same harness your    -> provenance
+             father did?"
+            "Do you have family in the valley?"    -> not about goods at all
 
-        # Price/cost forms without an item are only blocked when they explicitly
-        # ask for an item's price or an actionable purchasing amount.
-        if _MERCHANT_ITEMLESS_TRADE_PATTERN.search(text):
-            return True
+        Three things separate them, and none is a longer noun list:
 
-        # "What are you looking to buy?", "your selection of buckles",
-        # "haggling over the mail" — every alternative of this pattern names the
-        # transaction outright, so none of them needs a noun to confirm it. It
-        # used to return ``has_item``, which is why the first string this
-        # feature's own test docstring names as its target ("What are you
-        # looking to buy?") was never suppressed: "buy" is not an item.
-        return bool(_MERCHANT_DIRECT_TRADE_PATTERN.search(text))
+        * a manner/place/person interrogative anywhere in the sentence
+          (``_MERCHANT_LORE_LEAD_PATTERN``);
+        * trailing predication — a participle, a relative clause, a
+          ``for <gerund>`` (``_MERCHANT_TRAILING_PREDICATION``);
+        * an object that is plausibly merchandise, either by this host's own
+          derived vocabulary or by a generic stand-in ("anything else",
+          "behind the counter").
 
-    @staticmethod
-    def _is_stock_request(text: str) -> bool:
-        """True when any sentence asks whether something is on the counter.
-
-        The verb frame alone is not enough. "Where did you get that leather?"
-        and "How do you keep the chain from rusting?" are provenance and
-        maintenance — two of the five topics :meth:`_build_trade_block` tells
-        the model to raise *instead* of commerce — so a manner or provenance
-        interrogative disqualifies the frame.
-
-        That veto is ``^``-anchored, and this is asked of whole Jean options
-        as well as of single sentences: :meth:`_qc_jean_options` hands the
-        entire option text down, and an option is routinely two sentences.
-        So "How's the forge? Do you have any spears?" had its stock request
-        disqualified by a lore word belonging to the *other* sentence, and
-        the commerce question shipped to the player.
-
-        The veto is therefore applied per sentence, where it was written to
-        apply. Only the veto moves: the surrounding classifier still reads
-        the whole text, because the item and the price frequently sit in
-        different sentences ("That old cuirass has seen three wars. How much
-        for it?") and splitting there would lose them both.
+        The last is the only place the noun list is consulted, and it is
+        consulted as evidence rather than as a gate — which is the whole
+        difference between this and the three versions before it.
         """
-        return any(
-            not _MERCHANT_LORE_LEAD_PATTERN.search(sentence)
-            and _MERCHANT_ITEM_REQUEST_PATTERN.search(sentence)
-            for sentence in _split_sentences(text)
-        )
+        if not _MERCHANT_ITEM_REQUEST_PATTERN.search(sentence):
+            return False
+        if _MERCHANT_LORE_LEAD_PATTERN.search(sentence):
+            return False
+        if _MERCHANT_TRAILING_PREDICATION.search(sentence):
+            return False
+        if not (
+            self._names_merchandise(sentence)
+            or _MERCHANT_GENERIC_GOODS.search(sentence)
+        ):
+            return False
+        return True
 
     def _is_lore_frame(self, text: str) -> bool:
         """True when the sentence reads as history, ritual, or biography."""

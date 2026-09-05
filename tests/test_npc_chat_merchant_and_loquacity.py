@@ -20,6 +20,7 @@
 No provider calls: every test drives the deterministic QC/prompt/loquacity paths.
 """
 
+import re
 import pytest
 
 from src.npc._chat_llm import (
@@ -576,6 +577,16 @@ class TestMerchantForbiddenTopicsHaveOneSpelling:
             )
 
 
+#: Matches the seam between two adjacent string literals -- a closing
+#: quote, optional whitespace/plus/``r`` prefix, then an opening quote.
+#: Removing the seams reconstructs the value the interpreter builds.
+PIECE_JOIN = re.compile(
+    "[" + chr(34) + chr(39) + "]"
+    r"\s*\+?\s*"
+    "r?[" + chr(34) + chr(39) + "]"
+)
+
+
 class TestMerchantRegexFragmentsAreSpelledOnce:
     """Finding 6: fragments that were character-identical in two patterns."""
 
@@ -624,10 +635,24 @@ class TestMerchantRegexFragmentsAreSpelledOnce:
         ["_MERCHANT_IT_COST", "_MERCHANT_WORTH_QUESTION", "_MERCHANT_COIN_FOR"],
     )
     def test_the_fragment_appears_in_the_source_exactly_once(self, fragment):
-        """Interpolating it is only DRY while nobody re-types it beside it."""
+        """Interpolating it is only DRY while nobody re-types it beside it.
+
+        The source is normalised for implicit concatenation first. A fragment
+        long enough to be worth naming is usually too long for one 88-column
+        line, so it is written as adjacent string literals -- at which point
+        its joined value appears nowhere in the file and a raw ``count`` reads
+        zero, failing for the opposite of the reason this test exists. Joining
+        the pieces back together is what lets the guard see the definition it
+        is counting.
+        """
+        import re as _re
+
         from src.npc import _chat_llm
 
-        assert self._source().count(getattr(_chat_llm, fragment)) == 1, fragment
+        # Join adjacent string literals the way Python does, so a fragment
+        # written across two lines is visible as one value.
+        joined = _re.sub(PIECE_JOIN, "", self._source())
+        assert joined.count(getattr(_chat_llm, fragment)) == 1, fragment
 
     @pytest.mark.parametrize(
         "text",
@@ -1073,3 +1098,123 @@ class TestEveryConversationalMerchantSellsWordsTheClassifierKnows:
             "no stocked item is recognised only via the per-host vocabulary, so "
             "these tests would still pass with _host_merchandise_pattern deleted"
         )
+
+
+# ---------------------------------------------------------------------------
+# The accumulated corpus. Every sentence any review round has ruled on.
+# ---------------------------------------------------------------------------
+#: Sentences that MUST be suppressed, gathered across five rounds of this
+#: classifier being wrong. Each block is labelled with what it caught, because
+#: the pattern in the failures is more useful than any single row: every
+#: previous version was correct on the sentences in the bug report and wrong
+#: one word away from them.
+COMMERCE_CORPUS = [
+    # the canonical price question, and the two spellings a later round found
+    "How much for the sword?",
+    "How much is the sword?",
+    "What's the price of that dagger?",
+    "What is the price of this sword?",
+    # nouns no vocabulary contained: filled stock, not always_stock
+    "How much for the longsword?",
+    "How much for the battleaxe?",
+    "How much for the chainmail?",
+    "How much for a Respite?",
+    # the apothecary, invisible for a whole round
+    "How much for the antidote?",
+    "Do you have any restoratives?",
+    "What potions do you carry?",
+    # commerce with no item in it anywhere
+    "What are you looking to buy?",
+    "Are you buying or selling today?",
+    "What can I get for you?",
+    "What are you in the market for?",
+    # a commerce question in the SECOND sentence of an option
+    "How's the forge? Do you have any spears?",
+    "That old cuirass has seen three wars. How much for it?",
+    # declarative: unreachable while the classifier required a question mark
+    "I'll take the shortsword.",
+    "I'm in the market for a blade.",
+    "The cuirass is yours for eighty gold.",
+    # HELD OUT -- written before the current design existed, never tuned on
+    "How much would the axe run me?",
+    "What would you want for the shield?",
+    "Have you got anything cheaper?",
+    "Can I buy that helm?",
+    "Do you sell arrows?",
+    "Would you take fifty coin for it?",
+    "What else have you got behind the counter?",
+    "Any chance of a discount?",
+]
+
+#: Sentences that MUST survive. Most are the substitute topics
+#: ``_build_trade_block`` instructs the model to raise INSTEAD of commerce --
+#: suppressing these is how a pool of generic filler ended up in the
+#: merchants' mouths.
+LORE_CORPUS = [
+    # provenance and maintenance, the advertised substitutes
+    "Where did you get that leather?",
+    "How do you keep the chain from rusting?",
+    "Who taught you to work leather?",
+    "Where did you learn the trade?",
+    # the SAME substitutes in an auxiliary frame -- one word from the rows
+    # above, and suppressed for a whole round because the veto was
+    # sentence-initial
+    "Do you keep the leather oiled?",
+    "Do you have a trick for keeping mail dry?",
+    "Do you carry the same harness your father did?",
+    # an item noun beside a transaction word, which is not an offer
+    "Did you trade for that mail?",
+    "Did you learn the leather trade here?",
+    "Did they trade gold for salt on this road?",
+    # price words used metaphorically -- a merchant is exactly the character
+    # who says these, and they are why the nominal price frame still consults
+    # the goods vocabulary while "how much for" does not
+    "What is the price of freedom?",
+    "What was the cost of the war?",
+    "What is the worth of a vow?",
+    # ordinary lore that merely contains a commerce-ish word
+    "How much do you know about the nomads?",
+    "How much snow falls up on the pass?",
+    # HELD OUT
+    "How did you come by that scar?",
+    "Does the cold ruin a bowstring?",
+    "Do you sharpen your own blades?",
+    "Do you remember the siege?",
+    "Do you have family in the valley?",
+    "How long does leather last in this damp?",
+]
+
+
+class TestTheAccumulatedCorpus:
+    """Both directions, at every conversational merchant on the roster.
+
+    Run against each merchant rather than one, because the classifier used to
+    give different answers at different counters -- the noun vocabulary gated
+    the verdict, so "How much for the antidote?" was commerce at the apothecary
+    and not at the weaponsmith. It is the same question in both places. A
+    single shared answer is the property this asserts.
+    """
+
+    def _merchants(self):
+        return [cls() for cls in _conversational_merchants()]
+
+    @pytest.mark.parametrize("text", COMMERCE_CORPUS)
+    def test_commerce_is_suppressed_at_every_counter(self, text):
+        for merchant in self._merchants():
+            assert merchant._is_merchant_commerce_question(text) is True, (
+                type(merchant).__name__,
+                text,
+            )
+
+    @pytest.mark.parametrize("text", LORE_CORPUS)
+    def test_lore_survives_at_every_counter(self, text):
+        for merchant in self._merchants():
+            assert merchant._is_merchant_commerce_question(text) is False, (
+                type(merchant).__name__,
+                text,
+            )
+
+    def test_the_corpus_is_not_empty(self):
+        """Non-vacuity: a parametrize over an empty list passes silently."""
+        assert len(COMMERCE_CORPUS) >= 25
+        assert len(LORE_CORPUS) >= 18
