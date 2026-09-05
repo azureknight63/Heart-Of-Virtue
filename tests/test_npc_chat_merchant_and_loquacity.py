@@ -1001,12 +1001,16 @@ def _conversational_merchants():
     """
     import inspect
 
-    import src.npc as npc_pkg
+    import src.npc._merchants as merchants_module
     from src.npc._chat_llm import ConversationalNPCMixin
     from src.npc._merchants import Merchant
 
+    # The MODULE, not the package namespace. `src/npc/__init__.py` re-exports
+    # by hand, so a conversational merchant added to `_merchants.py` and not
+    # listed there was invisible to every guard below — the roster walk would
+    # simply not see it, and four coverage tests would pass without it.
     found = []
-    for _name, obj in vars(npc_pkg).items():
+    for _name, obj in vars(merchants_module).items():
         if (
             inspect.isclass(obj)
             and issubclass(obj, ConversationalNPCMixin)
@@ -1332,3 +1336,63 @@ class TestEveryMerchantContributesAssertions:
         assert len(merchants) >= 3, [c.__name__ for c in merchants]
         for cls in merchants:
             assert len(self._probeable_words(cls())) >= 2, cls.__name__
+
+
+class TestClassFormStockContributesVocabulary:
+    """`always_stock` may hold Item CLASSES, and those used to yield nothing.
+
+    `src/npc/_shop.py` documents the field as `list[Item | type[Item]]` and
+    `_create_always_stock_item` accepts the type form. But `Item.name` and
+    `Item.subtype` are bare ANNOTATIONS, so `getattr(Shortsword, "name", None)`
+    is `None` — a class-form merchant derived an empty vocabulary and fell back
+    to the shared floor alone.
+
+    Nothing caught it: the roster coverage guards walk the same attributes and
+    `continue` past a `None`, so a merchant stocked entirely by class passed
+    every one of them green while its own goods were invisible to the
+    classifier. That is the Jambo defect with a different cause.
+    """
+
+    def _kaelen_stocking(self, stock):
+        from src.npc._merchants import Kaelen
+
+        merchant = Kaelen()
+        merchant.always_stock = stock
+        merchant._host_merchandise_cache = None
+        return merchant
+
+    def test_a_class_form_entry_yields_its_nouns(self):
+        from src.items import Shortsword, Spear
+
+        merchant = self._kaelen_stocking([Shortsword, Spear])
+        pattern = merchant._host_merchandise_pattern()
+        assert pattern is not None
+        for noun in ("shortsword", "spear"):
+            assert pattern.search(noun), (noun, pattern.pattern)
+
+    def test_class_and_instance_forms_agree(self):
+        """The two spellings of the same stock must derive the same words."""
+        from src.items import Shortsword, Spear
+
+        by_class = self._kaelen_stocking([Shortsword, Spear])
+        by_instance = self._kaelen_stocking([Shortsword(), Spear()])
+        assert (
+            by_class._host_merchandise_pattern().pattern
+            == by_instance._host_merchandise_pattern().pattern
+        )
+
+    def test_a_class_form_merchant_still_suppresses_its_own_goods(self):
+        """The functional half, through a frame that NEEDS the vocabulary.
+
+        Deliberately not "Do you have any shortswords?" — that is rescued by
+        the quantifier whatever the vocabulary says, so it passed even with the
+        class-form derivation broken and proved nothing. The NOMINAL price
+        frame is gated on `_names_goods`, so it fails when the vocabulary is
+        empty and is therefore the honest probe.
+        """
+        from src.items import Shortsword
+
+        merchant = self._kaelen_stocking([Shortsword])
+        assert merchant._is_merchant_commerce_question(
+            "What is the price of the shortsword?"
+        ) is True

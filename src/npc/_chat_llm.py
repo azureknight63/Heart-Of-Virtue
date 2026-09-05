@@ -1056,6 +1056,11 @@ _MERCHANT_ROLE_PATTERN = re.compile(
     r"\bmerchant\b|\btrader\b|\bshopkeep\w*\b|\bstall\b", re.IGNORECASE
 )
 _MERCHANT_HOST_ATTRS = ("shop_name", "always_stock", "stock_count")
+# ORPHANED by the speech-act redesign: the classifier no longer gates on a
+# question mark or an interrogative prefix, because doing so made declarative
+# commerce ("I'll take the shortsword.") structurally unreachable. Kept only
+# because deleting a pattern is cheap to get wrong and this one costs nothing;
+# if it is still unreferenced next round, delete it.
 _MERCHANT_QUESTION_PREFIX_PATTERN = re.compile(
     r"^\s*(?:what|how|which|who|where|when|do|does|can|could|may|would|"
     r"is|are|any)\b",
@@ -2472,7 +2477,9 @@ class ConversationalNPCMixin:
         return FilterResult(text, None, removed)
 
     #: Per-instance cache for :meth:`_host_merchandise_pattern`. Keyed on the
-    #: id of the stock list so a merchant restocked at runtime rebuilds.
+    #: the declared stock's CLASS NAMES. Not an id: a restock that swaps
+    #: instances of the same classes deliberately does not rebuild, because
+    #: the vocabulary those instances yield is identical.
     _host_merchandise_cache = None
 
     def _host_merchandise_pattern(self):
@@ -2500,6 +2507,17 @@ class ConversationalNPCMixin:
 
         words = set()
         for item in stock:
+            # `_shop.py` documents `always_stock` as `list[Item | type[Item]]`
+            # and `_create_always_stock_item` accepts the type form — but
+            # `Item.name`/`subtype` are bare ANNOTATIONS, so `getattr` on the
+            # class returns None and a class-form entry contributed nothing at
+            # all. The roster guard skipped past the Nones silently and
+            # reported green. Instantiate what we are given.
+            if isinstance(item, type):
+                try:
+                    item = item()
+                except Exception:  # pragma: no cover - defensive
+                    continue
             for raw in (
                 getattr(item, "name", None),
                 getattr(item, "subtype", None),
