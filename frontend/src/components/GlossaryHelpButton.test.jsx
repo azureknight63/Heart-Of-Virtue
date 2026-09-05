@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 
 import GlossaryHelpButton from './GlossaryHelpButton'
 import { accessibility, colors } from '../styles/theme'
+import { hexToRgb } from '../test/hexToRgb'
 
 const mocks = vi.hoisted(() => ({ isMobile: false, openGlossary: vi.fn() }))
 
@@ -39,17 +40,23 @@ describe('GlossaryHelpButton', () => {
   it('lights up on hover and on keyboard focus alike', () => {
     render(<GlossaryHelpButton />)
     const button = screen.getByRole('button')
-    const resting = button.style.borderColor
+    // "alike" is the claim, so capture the whole visual state and compare the
+    // two paths against each other — not one property per path, which would
+    // pass even if hover and focus rendered differently.
+    const snapshot = () => [button.style.borderColor, button.style.backgroundColor,
+      button.style.boxShadow, button.style.color].join(' | ')
+    const resting = snapshot()
 
     fireEvent.mouseEnter(button)
-    expect(button.style.borderColor).not.toBe(resting)
+    const hovered = snapshot()
+    expect(hovered).not.toBe(resting)
     fireEvent.mouseLeave(button)
-    expect(button.style.borderColor).toBe(resting)
+    expect(snapshot()).toBe(resting)
 
     fireEvent.focus(button)
-    expect(button.style.boxShadow).not.toBe('none')
+    expect(snapshot()).toBe(hovered)
     fireEvent.blur(button)
-    expect(button.style.boxShadow).toBe('none')
+    expect(snapshot()).toBe(resting)
   })
 
   it('is an 18px circle on a pointer device', () => {
@@ -72,10 +79,21 @@ describe('GlossaryHelpButton', () => {
     expect(screen.getByRole('button').style.marginLeft).toBe('auto')
   })
 
-  it('draws itself in the theme’s information colour, not a copied hex', () => {
+  it('reads its glyph colour from the accent token rather than inlining a hex', () => {
     render(<GlossaryHelpButton />)
+    // Derived from the token, so a component that inlined the same hex would
+    // still pass — but a component that stopped tracking the token would not.
+    expect(screen.getByRole('button').style.color).toBe(hexToRgb(colors.accent))
+  })
+
+  it('keeps its own size and shape when the container passes layout styles', () => {
+    mocks.isMobile = true
+    // A caller reaching for width/height must not be able to shrink the button
+    // below the platform minimum touch target the component promises.
+    render(<GlossaryHelpButton style={{ marginLeft: 'auto', width: '4px', height: '4px' }} />)
     const button = screen.getByRole('button')
-    expect(button.style.color).toBe('rgb(0, 204, 255)')
-    expect(colors.accent).toBe('#00ccff')
+    expect(button.style.marginLeft).toBe('auto')
+    expect(button.style.width).toBe(accessibility.touchTarget)
+    expect(button.style.height).toBe(accessibility.touchTarget)
   })
 })

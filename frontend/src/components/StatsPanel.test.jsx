@@ -205,10 +205,20 @@ describe('StatsPanel', () => {
     // copy sends them looking for a label that is not there — the mockup
     // already said "Defense", which this panel has never used.
     render(<StatsPanel player={makePlayerStats()} />);
-    expect(screen.getByText('Protection')).toBeInTheDocument();
     const protectionEntry = GLOSSARY_ENTRIES.find(e => e.id === 'protection');
-    expect(protectionEntry.body).toContain('"Protection" row');
-    expect(protectionEntry.body).not.toContain('Defense');
+    expect(protectionEntry, 'no glossary entry with id "protection"').toBeDefined();
+
+    // Take the label out of the glossary copy and require the panel to render
+    // it, rather than spelling 'Protection' a third time here. Asserting in
+    // this direction is what makes the test drift-proof: renaming the row
+    // fails on getByText, and rewording the entry to quote a row that does not
+    // exist fails too. Two literals agreeing with each other would catch
+    // neither.
+    const quoted = protectionEntry.body.match(/"([^"]+)" row/);
+    expect(quoted, 'the entry should send the player to a named row on this panel').not.toBeNull();
+    expect(screen.getByText(quoted[1])).toBeInTheDocument();
+    // The mockup called this row "Defense", a word the panel has never used.
+    expect(quoted[1]).not.toBe('Defense');
   });
 
   describe('Accuracy and Evasion presentation', () => {

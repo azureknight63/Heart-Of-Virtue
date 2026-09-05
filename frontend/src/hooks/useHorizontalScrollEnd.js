@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
+import useScrollGeometry, { SCROLL_EDGE_EPSILON_PX } from './useScrollGeometry'
 
 /**
  * Tracks whether a horizontally scrolling element still has content to its
@@ -7,30 +8,23 @@ import { useCallback, useEffect, useState } from 'react'
  * already scrolled to its end reads as a rendering bug rather than a hint.
  *
  * Attach the returned `ref` callback to the scrolling element.
+ *
+ * Returns { hasMore, ref, check }
+ *   hasMore — content remains to the right, i.e. the row is NOT at its end.
+ *             Note the polarity is the opposite of the hook's name. `false`
+ *             until the element is attached, so a row that has not been laid
+ *             out yet draws no cue rather than a wrong one.
+ *   ref     — callback ref to attach to the scrolling element
+ *   check   — re-measure imperatively, after a programmatic `scrollLeft` reset
  */
 export default function useHorizontalScrollEnd() {
-  const [el, setEl] = useState(null)
   const [hasMore, setHasMore] = useState(false)
 
-  const ref = useCallback(node => setEl(node), [])
+  const measure = useCallback(el => {
+    setHasMore(el.scrollLeft + el.clientWidth < el.scrollWidth - SCROLL_EDGE_EPSILON_PX)
+  }, [])
 
-  const check = useCallback(() => {
-    if (!el) return
-    setHasMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 4)
-  }, [el])
-
-  useEffect(() => {
-    if (!el) return undefined
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the initial measurement of an external system (the element's scroll geometry), knowable only once it is attached; mirrors useScrollIndicators.
-    check()
-    el.addEventListener('scroll', check, { passive: true })
-    const observer = new ResizeObserver(check)
-    observer.observe(el)
-    return () => {
-      el.removeEventListener('scroll', check)
-      observer.disconnect()
-    }
-  }, [el, check])
+  const { ref, check } = useScrollGeometry(measure)
 
   return { hasMore, ref, check }
 }

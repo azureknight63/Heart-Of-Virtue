@@ -5,10 +5,7 @@ import ActionsPanel from './ActionsPanel';
 import apiEndpoints from '../api/endpoints';
 import { AudioProvider } from '../context/AudioContext';
 import { colors } from '../styles/theme';
-
-/** #rrggbb -> the `rgb(r, g, b)` form jsdom normalises inline styles to. */
-const hexToRgb = (hex) =>
-  `rgb(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+import { hexToRgb } from '../test/hexToRgb';
 
 // Mock apiEndpoints
 vi.mock('../api/endpoints', () => ({
