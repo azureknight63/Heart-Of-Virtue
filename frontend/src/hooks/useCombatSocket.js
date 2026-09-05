@@ -17,7 +17,34 @@ import {
   RESOLVED_EVENT,
   ENDED_EVENT,
   SUGGESTIONS_EVENT,
+  ERROR_EVENT,
+  ERROR_SESSION_MISSING,
+  ERROR_SESSION_INVALID,
 } from '../utils/combatBeatSchema';
+import logger from '../utils/logger';
+
+/**
+ * Backoff before re-handshaking after the server reports that the handshake
+ * carried no credential (ERROR_SESSION_MISSING). One entry per retry; running
+ * off the end means give up and stay on the HTTP path for the rest of the
+ * fight.
+ *
+ * A *re-handshake*, not a re-emit: Flask-SocketIO builds every handler's
+ * request context from the environ captured at connect time
+ * (`server.get_environ(sid)`), so the cookies a later `join_combat` sees are
+ * the cookies the ORIGINAL handshake carried. Re-emitting on a connection that
+ * handshook without the cookie can never succeed; only a new connection can
+ * pick up a cookie that has since become available.
+ *
+ * Three tries over ~10s: long enough to ride out a proxy blip or a cookie
+ * re-issue, short enough that a structural fault (path-scoped cookie, a proxy
+ * that strips it) settles onto the polling fallback quickly instead of
+ * long-polling forever as a client that can join no room. No jitter: this is
+ * one socket per player, and the failure that WOULD produce a thundering herd
+ * — a server restart dropping every session — reports SESSION_INVALID, not
+ * this.
+ */
+export const REHANDSHAKE_DELAYS_MS = [1000, 3000, 6000];
 
 export function useCombatSocket({
   enabled = true,
@@ -102,16 +129,76 @@ export function useCombatSocket({
       resync();
     };
     socket.on('connect', joinAndResync);
-    // A server restart invalidates in-memory sessions. The browser may still
-    // have the old token and an already-open socket will reconnect before the
-    // HTTP 401 handler gets a chance to redirect. Stop reconnect churn as soon
-    // as the room join is rejected; the caller owns clearing auth state.
-    socket.on('error', (payload) => {
-      const message = String(payload?.message || '').toLowerCase();
-      if (message.includes('invalid session') || message.includes('missing session')) {
+
+    // How many ERROR_SESSION_MISSING rejections we have already answered with a
+    // fresh handshake. Reset by a successful join, so a later episode gets a
+    // full budget rather than inheriting an exhausted one.
+    let rehandshakes = 0;
+    let rehandshakeTimer = null;
+    socket.on('joined_combat', () => {
+      rehandshakes = 0;
+    });
+
+    // The join was rejected. WHY decides what we do, and the two reasons are
+    // opposites — which is exactly what this handler used to get wrong: it
+    // substring-matched the human-readable message, and the missing-credential
+    // message ("Missing or invalid session credentials") contains the substring
+    // "invalid session", so a handshake that merely failed to carry the cookie
+    // was answered by clearing local session state and hard-navigating to the
+    // login page. HTTP was still working perfectly at the time; the player was
+    // thrown out of a live fight for nothing. Key off the code (issue #436).
+    socket.on(ERROR_EVENT, (payload) => {
+      const code = payload?.code;
+
+      if (code === ERROR_SESSION_INVALID) {
+        // The credential arrived and names no live session — the player really
+        // is signed out. Stop the reconnect churn before the caller tears the
+        // page down; the caller owns clearing auth state.
         socket.disconnect();
         cbs.current.onSessionInvalid?.(payload);
+        return;
       }
+
+      // Anything else — including an error with no code at all — is not an
+      // authentication verdict this hook can act on, so it does nothing. A
+      // session that is genuinely dead still gets caught: every HTTP call the
+      // page makes carries the same credential, and the axios 401 interceptor
+      // performs the same teardown.
+      if (code !== ERROR_SESSION_MISSING) return;
+
+      // No credential reached the server. That is a transport fault, not a
+      // sign-out: the HTTP path is unaffected and GamePage keeps an 8s combat
+      // poll running in both modes, so the fight self-heals — what is lost is
+      // per-beat animation and immediate feedback, not the fight.
+      logger.event('combat.socket.no_credential', { rehandshakes });
+      socket.disconnect();
+      const delay = REHANDSHAKE_DELAYS_MS[rehandshakes];
+      if (delay === undefined) {
+        // Out of retries: the fault is structural (a path-scoped cookie, a
+        // proxy that drops it) and another handshake will fail the same way.
+        // Stay down and let the poll carry the fight. One last resync so the
+        // board is current the moment we stop streaming.
+        logger.event('combat.socket.degraded_to_polling');
+        resync();
+        return;
+      }
+      rehandshakes += 1;
+      // Never orphan a pending timer: a second rejection arriving before the
+      // first retry fires would otherwise leave a setTimeout nothing holds a
+      // handle to, and the unmount cleanup could only cancel the newest one.
+      if (rehandshakeTimer) clearTimeout(rehandshakeTimer);
+      rehandshakeTimer = setTimeout(() => {
+        rehandshakeTimer = null;
+        try {
+          // A NEW handshake, not another join_combat on this connection:
+          // Flask-SocketIO builds every handler's request context from the
+          // environ captured at connect time, so this connection will never
+          // see a cookie its own handshake did not carry.
+          socket.connect?.();
+        } catch {
+          /* nothing left to try; the poll carries the fight */
+        }
+      }, delay);
     });
     // socket.io-client v4 emits 'reconnect' on the Manager (socket.io), not the
     // Socket itself — listening on the Socket never fires. Guarded so a bare
@@ -146,6 +233,7 @@ export function useCombatSocket({
     return () => {
       lastSeqRef.current = null;
       lastStateSeqRef.current = null;
+      if (rehandshakeTimer) clearTimeout(rehandshakeTimer);
       try {
         socket.disconnect();
       } catch {

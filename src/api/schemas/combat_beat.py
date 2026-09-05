@@ -1,7 +1,8 @@
 """Combat beat streaming protocol — Python source of truth (issue #436).
 
 Defines the payload shapes for the SocketIO events the engine streams during
-combat, plus pure builders/validators. The frontend mirror lives at
+combat, the machine-readable codes its ``error`` event carries, plus pure
+builders/validators. The frontend mirror lives at
 ``frontend/src/utils/combatBeatSchema.js``; ``tests/test_combat_beat_schema.py``
 asserts the two stay in parity so the wire contract can't silently drift.
 
@@ -13,6 +14,34 @@ BEAT_EVENT = "combat:beat"
 RESOLVED_EVENT = "combat:resolved"
 ENDED_EVENT = "combat:ended"
 SUGGESTIONS_EVENT = "combat:suggestions"
+ERROR_EVENT = "error"
+
+# ── ``error`` payload codes ─────────────────────────────────────────────────
+#
+# The socket ``error`` payload carries BOTH a human-readable ``message`` and
+# one of these codes; the client keys its behaviour off the code and never off
+# the prose. It used to have no choice but the prose, and substring-matching it
+# conflated two conditions that call for opposite responses:
+#
+# * ``ERROR_SESSION_MISSING`` — the handshake carried no credential at all.
+#   That is a *transport* failure, not an authentication one: the cookie is
+#   ``Path=/`` precisely because the handshake is served from ``/socket.io/``
+#   outside the SPA's base path (see src/api/session_cookie.py), so a path
+#   scoping regression, a proxy that drops the header, or a cross-origin dev
+#   setup where SameSite withholds it all produce this while every HTTP request
+#   keeps working. Logging the player out over it would throw them to the login
+#   screen out of a live fight for a fault that costs nothing but animation.
+# * ``ERROR_SESSION_INVALID`` — a credential arrived and names no live session
+#   (expired, or dropped by a server restart). The player really is signed out.
+#
+# Before the codes existed, the two messages were "Missing or invalid session
+# credentials" (since reworded) and "Invalid session" (still the wording for
+# ERROR_SESSION_INVALID). Note that the FIRST contains the substring "invalid
+# session", so the client's prose test matched it through the wrong clause.
+# Keep any future wording free of that kind of accident — but the codes, not
+# the wording, are the contract.
+ERROR_SESSION_MISSING = "session_missing"
+ERROR_SESSION_INVALID = "session_invalid"
 
 # Top-level ``combat:beat`` fields (this tuple documents the shape).
 BEAT_FIELDS = (
