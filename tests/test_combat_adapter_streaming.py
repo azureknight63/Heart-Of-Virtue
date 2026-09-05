@@ -10,6 +10,7 @@ from flask import Flask
 from src.api.combat_adapter import ApiCombatAdapter
 from src.api.combat_beat_stream import CombatBeatStreamer
 from src.api.schemas.combat_beat import BEAT_EVENT, RESOLVED_EVENT, ENDED_EVENT
+from src.api.serializers.combat import CombatantSerializer
 
 
 class FakeSocketIO:
@@ -179,7 +180,9 @@ def test_record_departure_uses_enemy_stream_id():
 
     enemy = FakeEnemy()
     adapter._record_departure(enemy, "fled")
-    assert adapter._departures == {f"enemy_{id(enemy)}": "fled"}
+    assert adapter._departures == {
+        CombatantSerializer.stream_id(enemy): "fled"
+    }
 
 
 def test_stream_combat_result_consumes_and_clears_departures():

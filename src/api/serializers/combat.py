@@ -13,7 +13,7 @@ from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
 from src.api.constants import ITEM_USE_RANGE
 from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
-from src.combatant import move_in_progress
+from src.combatant import combatant_handle, move_in_progress
 from src.moves import attacker_accuracy
 from src.moves._base import display_name_of
 
@@ -268,19 +268,30 @@ class CombatantSerializer:
 
     @staticmethod
     def stream_id(combatant: Any) -> str:
-        """Canonical wire id for a combatant: ``player`` / ``ally_<id>`` /
-        ``enemy_<id>``.
+        """Canonical wire id for a combatant: ``player`` / ``ally_<handle>`` /
+        ``enemy_<handle>``.
 
         Single source of truth for the combatant-id scheme so the serialized
         combat state and the beat streamer (issue #436) can never diverge.
+
+        The suffix is the combatant's stable opaque handle
+        (``src.combatant.combatant_handle``), NOT ``id(combatant)``: heap
+        addresses both leaked process layout to the client and were recycled
+        onto later-spawned NPCs, silently aliasing stale client-held ids onto a
+        different combatant. See the handle's comment block in
+        ``src/combatant.py`` for the full rationale (issue #511).
+
+        The prefix still depends on live state (``friend``), so a combatant
+        that changes sides changes wire id -- that is deliberate and unchanged:
+        the client keys allies and enemies apart by prefix.
         """
         from src.player import Player
 
         if isinstance(combatant, Player):
             return "player"
         if getattr(combatant, "friend", False):
-            return f"ally_{id(combatant)}"
-        return f"enemy_{id(combatant)}"
+            return f"ally_{combatant_handle(combatant)}"
+        return f"enemy_{combatant_handle(combatant)}"
 
     @staticmethod
     def serialize_combatant(combatant: Any, reference: Any = None) -> Dict[str, Any]:

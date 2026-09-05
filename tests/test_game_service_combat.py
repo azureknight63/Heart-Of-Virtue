@@ -30,6 +30,7 @@ import pytest
 
 from src.events import Event
 from src.npc import NPC, Slime
+from src.api.serializers.combat import CombatantSerializer
 from tests._gs_fixtures import GRID_3X3, live_world
 
 
@@ -138,7 +139,7 @@ class TestStartCombat:
             "is_player": True,
             "is_ally": False,
         }
-        assert result["combatants"][1]["id"] == f"enemy_{id(slime)}"
+        assert result["combatants"][1]["id"] == CombatantSerializer.stream_id(slime)
         assert result["combatants"][1]["is_ally"] is False
         assert result["turn_order"] == [c["id"] for c in result["combatants"]]
 

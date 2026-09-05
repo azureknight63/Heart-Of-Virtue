@@ -18,6 +18,8 @@ Usage (in each subclass __init__):
 
 
 import math
+import uuid
+import weakref
 
 # Move stages, in the order Move.advance walks them. 0/1 are "not resolved
 # yet" (the move's effect is still coming); 2/3 are aftermath.
@@ -53,6 +55,84 @@ PENDING_ANIMATION_ATTR = "_pending_animation"
 OUTCOME_KEY = "outcome"
 OUTCOME_TARGET_KEY = "outcome_target"
 REPORTED_BEAT_KEY = "_reported_beat"
+
+#: ── The combatant wire handle ─────────────────────────────────────
+#:
+#: Every combatant carries an opaque, stable identity token used as its wire id
+#: by ``CombatantSerializer.stream_id`` (``player`` / ``ally_<handle>`` /
+#: ``enemy_<handle>``). The scheme used to interpolate ``id(combatant)`` --
+#: CPython's heap address -- which was wrong twice over (issue #511):
+#:
+#:   1. it shipped raw process addresses to the client in every combat poll,
+#:      log line and socket emission, and
+#:   2. ``id()`` values are RECYCLED. A combatant that dies leaves
+#:      ``combat_list`` and can be freed, so a later-spawned NPC can inherit its
+#:      address -- and every client-held reference to the dead one
+#:      (``last_move_target_id``, animation ``target_id``s, death-chain
+#:      bookkeeping) then silently points at a different combatant. The same
+#:      recycling hazard had already been found and fixed *inside* the adapter
+#:      during #506, where an "already announced" set held ``id(enemy)`` and so
+#:      skipped a reinforcement that reused a dead enemy's address.
+#:
+#: ``uuid4`` rather than a per-combat counter: combatants outlive the process
+#: they were minted in (allies and the player are pickled into saves), so a
+#: counter would have to be persisted and restored globally or a loaded
+#: combatant and a freshly spawned one would collide on the same small integer
+#: -- exactly the aliasing this replaces. A uuid needs no coordination, no
+#: global mutable state, and is unique across processes and saves by
+#: construction. It also carries no ordering or population information.
+COMBAT_HANDLE_ATTR = "_combat_handle"
+
+#: Handles for combatants that cannot hold an attribute of their own (spec'd
+#: test doubles, mostly). Keyed by the object itself and weak, so an entry dies
+#: with the combatant it names -- unlike an ``id()``-keyed cache, which is the
+#: very recycling hazard this module closes.
+_FALLBACK_HANDLES = weakref.WeakKeyDictionary()
+
+
+def combatant_handle(combatant):
+    """Return ``combatant``'s stable opaque handle, minting one if needed.
+
+    Minting is lazy rather than done in each subclass ``__init__`` so there is
+    exactly ONE code path: a combatant restored from a save written before
+    #511 has no handle, and takes the same branch a freshly spawned one takes
+    the first time its identity is asked for. An eager mint would leave the
+    lazy path as a rarely-exercised special case for old saves.
+
+    The handle is a plain ``str`` in ``__dict__``, so it pickles with the rest
+    of the combatant (``Combatant.__getstate__`` strips only the transient
+    animation channel) and survives a save/load round trip. Nothing in the
+    engine reads it -- it exists solely as the API's entity identity.
+
+    The mint goes through ``__dict__.setdefault`` rather than ``setattr``
+    because it is racy otherwise: the combat poll and the socket beat emitter
+    run on different threads, and two threads that both find no handle would
+    each mint one, the second ``setattr`` silently overwriting the id the
+    first had already shipped to the client -- leaving the client holding an
+    id that resolves to nobody. ``dict.setdefault`` is atomic under the GIL,
+    so the first writer wins and every caller sees that same handle.
+    """
+    existing = getattr(combatant, COMBAT_HANDLE_ATTR, None)
+    if isinstance(existing, str) and existing:
+        return existing
+    handle = uuid.uuid4().hex
+    try:
+        return combatant.__dict__.setdefault(COMBAT_HANDLE_ATTR, handle)
+    except AttributeError:
+        # No instance dict (``__slots__``).
+        pass
+    try:
+        setattr(combatant, COMBAT_HANDLE_ATTR, handle)
+        return handle
+    except (AttributeError, TypeError):
+        pass
+    try:
+        return _FALLBACK_HANDLES.setdefault(combatant, handle)
+    except TypeError:
+        # Neither settable nor weak-referenceable: nothing left to hang the
+        # handle on. Unreachable for real combatants; better an unstable id
+        # than an exception out of a serializer.
+        return handle
 
 
 def move_in_progress(combatant):
@@ -143,6 +223,11 @@ class Combatant:
         adds further API-layer exclusions of its own on top by delegating to
         this method (see ``Player.__getstate__``), so a strip added here
         reaches every combatant structurally.
+
+        ``COMBAT_HANDLE_ATTR`` is deliberately NOT stripped: the wire handle is
+        persisted combatant identity (issue #511), and dropping it would remint
+        a fresh one on load -- breaking any id a client still holds across a
+        save/load and reintroducing, per reload, the aliasing it replaced.
         """
         state = self.__dict__.copy()
         state.pop(PENDING_ANIMATION_ATTR, None)
