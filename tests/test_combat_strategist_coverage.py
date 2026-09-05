@@ -7,17 +7,28 @@ is always a lightweight fake/mock here — no network access is possible.
 """
 import ast
 import pathlib
+import typing
 
 import pytest
 
+from ai import combat_strategist
 from ai.combat_strategist import (
     CombatStrategist,
+    PlayerDefenses,
+    PlayerVitals,
+    _HEAT_BLAZING,
+    _HEAT_COLD,
+    _HEAT_HOT,
+    _heat_band,
+    _vital_band,
     _CATEGORY_BASE_SCORES,
     _DEFENSIVE_STANCE_BEATS,
     _DEFENSIVE_WINDOW_BEATS,
     _DODGE_IMPAIRING_STATUSES,
     _DOT_STATUSES,
+    _FINISHABLE_HP_PCT,
     _HEAT_MISS_PENALTY,
+    _IMMINENT_CHARGE_BEATS,
     _LAST_DEFENSIBLE_BEAT,
     _incoming_beats,
 )
@@ -42,6 +53,24 @@ class FakeLLMClient:
         if self._raise_on_generate:
             raise RuntimeError("simulated LLM failure")
         return self._structured_response
+
+
+def _vitals(hp=100, max_hp=100, fatigue=100, max_fatigue=100, heat=1.0):
+    """Build the vitals a section helper is handed, guards already applied.
+
+    Section helpers take `PlayerVitals` rather than the raw player dict
+    precisely so HP cannot be supplied twice and disagree with itself; a test
+    that hand-rolled the tuple would put that back.
+    """
+    return PlayerVitals(
+        hp=hp,
+        max_hp=max_hp,
+        hp_pct=hp / max_hp,
+        fatigue=fatigue,
+        max_fatigue=max_fatigue,
+        fatigue_pct=fatigue / max_fatigue,
+        heat=heat,
+    )
 
 
 @pytest.fixture
@@ -840,8 +869,8 @@ class TestDefensiveWindowMatchesTheEngine:
                     "stats": {"damage": 10},
                     "move_in_process": {"name": "Gore", "beats_until_resolve": bui},
                 }],
-                {"stats": {"evasion": 30, "defense": 30}},
-                player_hp=100,
+                _vitals(hp=100),
+                PlayerDefenses(evasion=30, defense=30),
             )
             return alerts[0] if alerts else ""
 
@@ -851,6 +880,99 @@ class TestDefensiveWindowMatchesTheEngine:
         assert "lands in time" in alert_for(_LAST_DEFENSIBLE_BEAT)
         # Past the stance's reach: nothing worth spending this beat on.
         assert alert_for(_LAST_DEFENSIBLE_BEAT + 1) == ""
+
+
+class TestTheThreatTheDefenceWouldActuallyAnswer:
+    """Which of several charges the tactical state is built around.
+
+    The window is a RANGE, so "the most pressing charge" and "the charge a
+    Dodge cast now could actually meet" are two different enemies whenever a
+    harmless blow lands sooner than a dangerous one. Selecting by soonest-overall
+    hands the scorer a hit no defence can reach, and the whole defensive branch
+    goes silent for the hit it could have stopped.
+    """
+
+    @staticmethod
+    def _two_charges(near_bui, far_bui):
+        """A trivial blow landing at ``near_bui``; a lethal one at ``far_bui``."""
+        return _base_ctx(
+            enemies=[
+                {"name": "Gnat", "id": "e1", "hp": 10, "max_hp": 10,
+                 "stats": {"damage": 1}, "fatigue": 50, "max_fatigue": 50,
+                 "status_effects": [],
+                 "move_in_process": {"name": "Nip",
+                                     "beats_until_resolve": near_bui,
+                                     "damage_multiplier": 1.0}},
+                {"name": "Ogre", "id": "e2", "hp": 40, "max_hp": 40,
+                 "stats": {"damage": 200}, "fatigue": 50, "max_fatigue": 50,
+                 "status_effects": [],
+                 "move_in_process": {"name": "Smash",
+                                     "beats_until_resolve": far_bui,
+                                     "damage_multiplier": 1.0}},
+            ],
+            available_moves=[
+                {"name": "Dodge", "category": "Defensive", "available": True},
+                {"name": "Slash", "category": "Offensive", "available": True},
+            ],
+        )
+
+    def test_a_defensible_hit_is_not_masked_by_a_sooner_undefendable_one(
+        self, strategist
+    ):
+        """The measured failure: Dodge scored 65 while a lethal blow was dodgeable.
+
+        A gnat's nip two beats out cannot be defended against at all. An ogre's
+        lethal smash six beats out is squarely inside the window. Ranking the
+        threats by soonest-overall picked the nip, so `_defense_lands_in_time`
+        said no and the fallback answered a lethal, avoidable hit with Slash.
+        """
+        ctx = self._two_charges(
+            near_bui=_DEFENSIVE_WINDOW_BEATS - 2,
+            far_bui=_DEFENSIVE_WINDOW_BEATS + 2,
+        )
+        scores = {
+            s["move_name"]: s["score"]
+            for s in strategist._get_fallback_suggestions(ctx, 3)
+        }
+        assert scores["Dodge"] >= 80, (
+            "a lethal hit is landing inside the defensive window, but the "
+            f"tactical state was built around a sooner undefendable one, so "
+            f"Dodge scored {scores['Dodge']}"
+        )
+
+    def test_the_state_describes_the_hit_the_defence_is_answering(self, strategist):
+        """Damage and lethality must name the same enemy the window does.
+
+        `_score_defensive_move` interpolates all three into its reasoning, so a
+        state assembled from two different enemies tells the model a hit is
+        survivable while flagging a window opened by a lethal one.
+        """
+        ctx = self._two_charges(
+            near_bui=_DEFENSIVE_WINDOW_BEATS - 2,
+            far_bui=_DEFENSIVE_WINDOW_BEATS + 2,
+        )
+        state = strategist._derive_tactical_state(ctx)
+
+        assert state["in_defensive_window"] is True
+        assert state["incoming_beats"] == _DEFENSIVE_WINDOW_BEATS + 2
+        assert state["incoming_lethal"] is True, (
+            "the ogre's smash is the hit the window is open for, but lethality "
+            "was read off the gnat"
+        )
+
+    def test_an_undefendable_hit_still_drives_the_state_when_it_is_the_only_one(
+        self, strategist
+    ):
+        """The fallback path. Nothing is defensible, so the worst threat wins.
+
+        Dropping back to `_worst_incoming_threat` is what keeps the alert text
+        and the estimated damage honest when every charge is out of reach.
+        """
+        ctx = self._two_charges(near_bui=1, far_bui=2)
+        state = strategist._derive_tactical_state(ctx)
+
+        assert state["in_defensive_window"] is False
+        assert state["incoming_beats"] == 1
 
 
 class TestEngineOwnedStatusSets:
@@ -1212,3 +1334,149 @@ class TestEngineOwnedHeatPenalty:
             "ai/combat_strategist.py quotes a miss penalty the engine does not "
             "apply; src/moves/_base.py's Move._HEAT_MISS_PENALTY is the owner."
         )
+
+
+# ---------------------------------------------------------------------------
+# Closed vocabularies and the tables keyed on them
+# ---------------------------------------------------------------------------
+#
+# Table shape is guarded by the shared ``assert_closed_over`` fixture
+# (tests/conftest.py), which takes NAMES so a failure can say which table
+# drifted. What the fixture cannot see is whether the ladder that produces a
+# member can actually reach it: a table covering every member is worth nothing
+# if `_heat_band` never returns one of them, because an unreachable band is a
+# dead branch and a dead row in every table at once. Those checks stay here.
+
+
+class TestHeatBandIsClosed:
+    """Six spellings of one vocabulary, and no test used to read any of them."""
+
+    def test_every_heat_table_covers_every_band(self, assert_closed_over):
+        assert_closed_over(
+            combat_strategist,
+            "HeatBand",
+            "_HEAT_OFFENSIVE_BONUS",
+            "_HEAT_LABEL_BODY",
+            "_HEAT_OFFENSIVE_NOTE",
+            # Partial on purpose: HOT and WARM are already described by the heat
+            # label on the player line, so only the two extremes earn a line in
+            # SITUATIONAL ALERTS. Verified against the live table, not assumed.
+            partial={"_HEAT_ALERTS": {"BLAZING", "COLD"}},
+        )
+
+    def test_the_heat_tables_fail_when_a_band_is_added(
+        self, assert_closed_over, monkeypatch
+    ):
+        """The negative control — without it the assertion above is theatre."""
+        monkeypatch.setattr(
+            combat_strategist,
+            "HeatBand",
+            typing.Literal["BLAZING", "HOT", "WARM", "COLD", "SCORCHING"],
+        )
+        with pytest.raises(AssertionError, match="SCORCHING"):
+            assert_closed_over(
+                combat_strategist, "HeatBand", "_HEAT_OFFENSIVE_BONUS"
+            )
+
+    def test_adding_a_band_also_forces_a_decision_about_the_alert_table(
+        self, assert_closed_over, monkeypatch
+    ):
+        """The point of an exact partial set rather than "may be short".
+
+        A partial table allowed to be any subset would drift back to fail-open
+        the moment a band was added — the new band would simply be absent and
+        nothing would say so.
+        """
+        monkeypatch.setattr(
+            combat_strategist,
+            "HeatBand",
+            typing.Literal["BLAZING", "HOT", "WARM", "COLD", "SCORCHING"],
+        )
+        with pytest.raises(AssertionError):
+            assert_closed_over(
+                combat_strategist,
+                "HeatBand",
+                partial={"_HEAT_ALERTS": {"BLAZING", "COLD", "SCORCHING"}},
+            )
+
+    def test_every_band_is_reachable_from_a_real_heat_value(self):
+        """The ladder must be able to return each member it declares."""
+        probes = [
+            0.0,
+            _HEAT_COLD - 0.01,
+            _HEAT_COLD,
+            1.0,
+            _HEAT_HOT - 0.01,
+            _HEAT_HOT,
+            _HEAT_BLAZING - 0.01,
+            _HEAT_BLAZING,
+            10.0,
+        ]
+        assert {_heat_band(h) for h in probes} == set(
+            typing.get_args(combat_strategist.HeatBand)
+        )
+
+    def test_the_boundaries_land_on_the_side_the_prompt_says_they_do(self):
+        """The prompt quotes these two numbers, so the ladder must be inclusive."""
+        assert _heat_band(_HEAT_HOT) == "HOT"
+        assert _heat_band(_HEAT_BLAZING) == "BLAZING"
+        assert _heat_band(_HEAT_COLD) == "WARM"
+
+
+class TestVitalBandIsClosed:
+    """The critical/low/ok ladder, and the three flag tables keyed on it."""
+
+    def test_every_flag_table_covers_every_band(self, assert_closed_over):
+        assert_closed_over(
+            combat_strategist,
+            "VitalBand",
+            "_PLAYER_HP_FLAGS",
+            "_PLAYER_FATIGUE_FLAGS",
+            "_ENEMY_FATIGUE_FLAGS",
+        )
+
+    def test_the_flag_tables_fail_when_a_band_is_added(
+        self, assert_closed_over, monkeypatch
+    ):
+        monkeypatch.setattr(
+            combat_strategist,
+            "VitalBand",
+            typing.Literal["CRITICAL", "LOW", "OK", "EMPTY"],
+        )
+        with pytest.raises(AssertionError, match="EMPTY"):
+            assert_closed_over(
+                combat_strategist, "VitalBand", "_ENEMY_FATIGUE_FLAGS"
+            )
+
+    def test_every_band_is_reachable(self):
+        probes = [0.0, 0.24, 0.25, 0.49, 0.50, 1.0]
+        produced = {_vital_band(x, 0.25, 0.50) for x in probes}
+        assert produced == set(typing.get_args(combat_strategist.VitalBand))
+
+    def test_the_bands_nest_the_way_the_scorer_assumes(self):
+        """`fatigue_low` is read as "LOW or worse", so CRITICAL must be inside it."""
+        assert _vital_band(0.1, 0.25, 0.50) == "CRITICAL"
+        assert _vital_band(0.3, 0.25, 0.50) == "LOW"
+        assert _vital_band(0.5, 0.25, 0.50) == "OK"
+
+
+class TestPerspectiveIsClosed:
+    """The note column each side of the fight reads."""
+
+    def test_both_perspectives_have_a_column(self, assert_closed_over):
+        assert_closed_over(
+            combat_strategist, "Perspective", "_PERSPECTIVE_NOTE_KEYS"
+        )
+
+    def test_a_new_perspective_without_a_column_is_caught(
+        self, assert_closed_over, monkeypatch
+    ):
+        monkeypatch.setattr(
+            combat_strategist,
+            "Perspective",
+            typing.Literal["player", "enemy", "ally"],
+        )
+        with pytest.raises(AssertionError, match="ally"):
+            assert_closed_over(
+                combat_strategist, "Perspective", "_PERSPECTIVE_NOTE_KEYS"
+            )

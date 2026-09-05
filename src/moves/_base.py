@@ -291,9 +291,17 @@ class Move:  # master class for all moves
     # it, and the Tactical Advisor decides POTENTIALLY LETHAL from that number
     # — so a heavy move that leaves this at 1.0 understates itself to the
     # model. Any move that hits for more (or less) than its user's raw damage
-    # overrides it; the ones that roll a range declare the bounds and derive
-    # this as their midpoint, so retuning the roll moves the wire value with
-    # it. See TelegraphedSurge and GorranClub in src/moves/_npc.py.
+    # overrides it. See TelegraphedSurge and GorranClub in src/moves/_npc.py.
+    #
+    # A move that ROLLS its power declares the band instead, as
+    # `_POWER_ROLL_MIN`/`_POWER_ROLL_MAX`, and derives this as their midpoint
+    # — the factor the hit CENTRES on, which is what the wire means. The
+    # midpoint and not the ceiling: `_estimate_incoming_damage`
+    # (ai/combat_strategist.py) already renders the wire value as a ±20%
+    # band and flags POTENTIALLY LETHAL when that band's midpoint reaches half
+    # the player's HP, so a ceiling here would double-count the high roll and
+    # cry wolf. `_rolled_power()` below is the single place the band is rolled,
+    # so the roll and the number derived from it cannot be retuned apart.
     _DAMAGE_MULTIPLIER: float = 1.0
 
     # Heat multipliers the shared outcome handlers below (parry/hit/miss)
@@ -301,11 +309,20 @@ class Move:  # master class for all moves
     # running heat and clamps it to [0.5, 10], so a value above 1 rewards the
     # outcome and one below 1 punishes it.
     #
-    # Named rather than inlined because they are read from OUTSIDE the engine:
-    # ai/combat_strategist.py quotes the cost of a miss in the combat LLM
-    # prompt and used to carry its own hand-copied 0.85 with nothing holding
-    # the pair in step. Values that repeat are separate constants on purpose —
-    # they are independently tunable outcomes that happen to agree today.
+    # Named rather than inlined because each one prices a tuning decision, and
+    # because ONE of them is read from outside the engine: ai/combat_strategist
+    # quotes the cost of a miss in the combat LLM prompt and used to carry its
+    # own hand-copied 0.85 with nothing holding the pair in step. That is
+    # `_HEAT_MISS_PENALTY` alone; the rest are internal, and named for
+    # consistency rather than because anything else reads them. Values that
+    # repeat are separate constants on purpose — they are independently
+    # tunable outcomes that happen to agree today.
+    #
+    # These eight are every heat outcome that is a FIXED factor. There is a
+    # ninth, and it is deliberately not here: when Jean takes damage, `hit()`
+    # scales his heat by `1 - damage/maxhp`, a proportion of the blow rather
+    # than a constant, so there is no value to name. It stays inline at its
+    # call site, where the two operands are in scope.
     _HEAT_PARRY_REWARD = 1.4  # Jean parries an incoming attack
     _HEAT_PARRIED_PENALTY = 0.75  # Jean's own attack is parried
     _HEAT_HIT_REWARD = 1.25  # Jean lands damage
@@ -685,6 +702,24 @@ class Move:  # master class for all moves
         self,
     ):  # adjusts the move's attributes to match the current game state
         pass
+
+    def _rolled_power(self):
+        """The user's damage rolled through this move's declared power band.
+
+        For moves that declare `_POWER_ROLL_MIN`/`_POWER_ROLL_MAX`. Deliberately
+        NOT given defaults on this class: a move that calls this without
+        declaring a band should raise here rather than silently roll a
+        1.0–1.0 no-op, which would look exactly like a working roll.
+
+        Here rather than in each `evaluate()` because the expression stood
+        identically in five of them, and because `_DAMAGE_MULTIPLIER` is
+        derived from the same two bounds. One roll site means a retune cannot
+        move the roll while leaving the wire's midpoint behind — which is the
+        entire claim those derivations make.
+        """
+        return self.user.damage * random.uniform(
+            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
+        )
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         # Check if user is player generally (by name or class, assuming Player class has no friend attr)

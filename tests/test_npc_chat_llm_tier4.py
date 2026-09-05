@@ -1,7 +1,12 @@
 """
 Tier 4B - Comprehensive test suite for ConversationalNPCMixin chat system.
 
-100% coverage on src/npc/_chat_llm.py (373 lines).
+Exercises ``src/npc/_chat_llm.py``. An earlier revision claimed "100% coverage
+on src/npc/_chat_llm.py (373 lines)" here; nothing in the suite measures that
+percentage, and the module is an order of magnitude longer than the line count
+given. Both numbers are gone rather than corrected -- a figure no test checks
+rots the moment the module is touched, and the area list below is the part
+that was actually useful.
 
 Tests cover:
 - Initialization and attribute setup
@@ -22,32 +27,97 @@ Tests cover:
 """
 
 import pytest
-import sys
 import json
-import re
 from pathlib import Path
-from unittest.mock import MagicMock, patch, Mock, call, PropertyMock
-from typing import Dict, Any, List
-
-# Ensure src is on path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
+from unittest.mock import MagicMock, patch
 
 from src.npc._chat_llm import (
     MAX_OPTION_CHARS,
     _MIN_OPTION_CHARS,
     ConversationalNPCMixin,
+    scale_loquacity,
 )
 from tests._gs_fixtures import live_world
 from tests._npc_fixtures import (
     ScriptedAdapter,
     chat_npc,
     chat_player,
-    prohibit,
     qc_npc,
     ready_npc,
     wired_chat_npc,
 )
+
+
+@pytest.fixture
+def player():
+    """The live-world player four test classes each declared for themselves.
+
+    Safe at module scope: every consumer of ``player`` in this file sat inside
+    one of those four classes, so nothing here was reaching the root
+    conftest's same-named fixture that this one shadows.
+    """
+    return live_world()[0]
+
+
+class _CustomNomad(ConversationalNPCMixin):
+    """A generic NPC with a class name of its own.
+
+    Not built with ``chat_npc``: ``_get_npc_key`` derives the key from
+    ``type(self).__name__``, so these tests need a distinctly-named class to
+    have something to assert on. One class serves both because the instance
+    counter lives in ``player.npc_chat_histories["__meta__"]`` -- per player,
+    not on the class -- and both tests pass a fresh ``{}``, so neither can see
+    the other's count.
+    """
+
+    def __init__(self):
+        self.name = "NomadTrader"
+        self._chat_config_path = None
+        self._chat_char_config = None
+        self._chat_npc_key = None
+
+
+class _LegacyAdapter:
+    """A legacy two-method adapter whose replies are whatever a test hands it.
+
+    Replaces six classes: ``_Empty``, ``_Malformed`` and ``_Boom`` (identical
+    but for what ``generate_npc_turn`` returned or raised) and
+    ``MockAdapterFailThenSucceed`` / ``MockAdapterBadThenGood`` /
+    ``MockAdapterBadOptions`` (identical but for a two-step reply sequence and
+    an options list).
+
+    ``replies`` are served in order and the last one repeats, which is what the
+    retry tests need: attempt 1 gets a reply the pipeline rejects, attempt 2
+    gets the good one. ``error`` raises instead. ``options`` is what
+    ``generate_jean_options`` hands back -- ``None`` (the default) drives the
+    fallback pool.
+
+    ``tests._npc_fixtures.ScriptedAdapter`` already covers this interface and
+    is where this belongs, but it always *builds* a turn dict out of
+    ``npc_text`` and ``quality``, so it can neither hand back a malformed
+    payload nor raise. Two keyword arguments there would retire this class --
+    see the handoff note in this pass's report.
+    """
+
+    enabled = True
+
+    def __init__(self, *replies, error=None, options=None):
+        self.replies = list(replies)
+        self.error = error
+        self.options = options
+        self.call_count = 0
+
+    def generate_npc_turn(self, *args, **kwargs):
+        self.call_count += 1
+        if self.error is not None:
+            raise self.error
+        return self.replies[min(self.call_count - 1, len(self.replies) - 1)]
+
+    def generate_jean_options(self, *args, **kwargs):
+        return self.options
+
+    def generate_personality(self, class_name):
+        return None
 
 
 class TestInitChatAttrs:
@@ -59,7 +129,7 @@ class TestInitChatAttrs:
         assert npc.loquacity_current == 0
         assert npc.loquacity_max == 0
         assert npc.loquacity_threshold == 0
-        assert npc.loquacity_recovery == 2
+        assert npc.loquacity_recovery == scale_loquacity(2)
         assert npc._chat_history == []
         assert npc._chat_personality is None
         assert npc._chat_npc_key is None
@@ -242,7 +312,7 @@ class TestComputeLoquacity:
         player = chat_player(charisma=10, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
-        assert npc.loquacity_max >= 20  # Min is 20
+        assert npc.loquacity_max == scale_loquacity(60)
         assert npc.loquacity_current > 0
         assert npc.loquacity_threshold > 0
 
@@ -265,8 +335,8 @@ class TestComputeLoquacity:
         player = chat_player(charisma=10, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
-        # Charisma 15 gives +5*3=+15 bonus
-        assert npc.loquacity_max > 60
+        # Charisma 15 gives +5*3=+15 bonus before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 + 15)
 
     def test_compute_loquacity_reputation_bonus(self):
         """Test positive reputation bonus."""
@@ -276,8 +346,8 @@ class TestComputeLoquacity:
         )
 
         npc._compute_loquacity(player)
-        # Positive rep gives +20
-        assert npc.loquacity_max >= 80
+        # Positive rep gives +20 before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 + 20)
 
     def test_compute_loquacity_reputation_penalty(self):
         """Test negative reputation penalty."""
@@ -287,8 +357,8 @@ class TestComputeLoquacity:
         )
 
         npc._compute_loquacity(player)
-        # Negative rep gives -20
-        assert npc.loquacity_max < 60
+        # Negative rep gives -20 before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 - 20)
 
     def test_compute_loquacity_jean_charisma_bonus(self):
         """Test Jean's charisma modifier."""
@@ -296,8 +366,8 @@ class TestComputeLoquacity:
         player = chat_player(charisma=15, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
-        # Jean charisma 15 gives +5*2=+10 bonus
-        assert npc.loquacity_max > 60
+        # Jean charisma 15 gives +5*2=+10 bonus before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 + 10)
 
     def test_compute_loquacity_equipment_bonus(self):
         """Test equipment modifiers."""
@@ -307,8 +377,8 @@ class TestComputeLoquacity:
         )
 
         npc._compute_loquacity(player)
-        # Crucifix gives +10
-        assert npc.loquacity_max > 60
+        # Crucifix gives +10 before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 + 10)
 
     def test_compute_loquacity_gorran_ally_bonus(self):
         """Test Gorran in allies gives bonus."""
@@ -318,8 +388,8 @@ class TestComputeLoquacity:
         player = chat_player(charisma=10, equipped={}, allies=[gorran])
 
         npc._compute_loquacity(player)
-        # Gorran gives +10
-        assert npc.loquacity_max > 60
+        # Gorran gives +10 before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 + 10)
 
     def test_compute_loquacity_recovery_from_wisdom(self):
         """Test recovery rate derived from wisdom."""
@@ -327,8 +397,8 @@ class TestComputeLoquacity:
         player = chat_player(charisma=10, equipped={}, allies=[])
 
         npc._compute_loquacity(player)
-        # Wisdom 16 gives recovery = 16 // 8 = 2
-        assert npc.loquacity_recovery >= 2
+        # Wisdom 16 gives recovery = 16 // 8 = 2 before the 15% scale.
+        assert npc.loquacity_recovery == scale_loquacity(2)
 
     def test_compute_loquacity_min_threshold(self):
         """Test loquacity threshold has minimum."""
@@ -338,8 +408,8 @@ class TestComputeLoquacity:
         )
 
         npc._compute_loquacity(player)
-        # Min threshold is 10
-        assert npc.loquacity_threshold >= 10
+        # The pre-scale floor is 10, then the threshold is scaled as well.
+        assert npc.loquacity_threshold == scale_loquacity(10)
 
 
 class TestGetNPCKey:
@@ -363,42 +433,24 @@ class TestGetNPCKey:
 
     def test_get_npc_key_generic_first_instance(self):
         """Test generic NPC gets unique key."""
-        # Not built with chat_npc: the key is type(self).__name__, so this test
-        # needs a class of its own to have a name to assert on.
-        class CustomNomad(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "NomadTrader"
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_npc_key = None
-
-        npc = CustomNomad()
+        npc = _CustomNomad()
         player = MagicMock()
         player.npc_chat_histories = {}
 
         key = npc._get_npc_key(player)
-        assert "CustomNomad_0" == key
+        assert "_CustomNomad_0" == key
 
     def test_get_npc_key_generic_instance_count(self):
         """Test generic NPCs increment instance counter."""
-        # Not built with chat_npc: the per-class counter is keyed on
-        # type(self).__name__, which a shared host class cannot vary.
-        class CustomNomad(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "NomadTrader"
-                self._chat_config_path = None
-                self._chat_char_config = None
-                self._chat_npc_key = None
-
-        npc1 = CustomNomad()
-        npc2 = CustomNomad()
+        npc1 = _CustomNomad()
+        npc2 = _CustomNomad()
         player = MagicMock()
         player.npc_chat_histories = {}
 
         key1 = npc1._get_npc_key(player)
         key2 = npc2._get_npc_key(player)
-        assert key1 == "CustomNomad_0"
-        assert key2 == "CustomNomad_1"
+        assert key1 == "_CustomNomad_0"
+        assert key2 == "_CustomNomad_1"
 
     def test_get_npc_key_caching(self):
         """Test key is cached after first call."""
@@ -625,10 +677,6 @@ class TestBuildSystemPrompt:
     ``Player``/``Universe`` and assert no mock repr survives.
     """
 
-    @pytest.fixture
-    def player(self):
-        return live_world()[0]
-
     def test_generic_npc_prompt_is_built_from_its_personality(self, player):
         npc = chat_npc(
             init=False,
@@ -773,10 +821,6 @@ class TestBuildSystemPrompt:
 
 class TestBuildJeanContextBlock:
     """``_build_jean_context_block`` — chapter-gates Jean's own dialogue options."""
-
-    @pytest.fixture
-    def player(self):
-        return live_world()[0]
 
     @pytest.fixture
     def npc(self):
@@ -1354,10 +1398,6 @@ class TestQCJeanOptions:
 class TestChatOpen:
     """``chat_open`` — the first turn of a conversation."""
 
-    @pytest.fixture
-    def player(self):
-        return live_world()[0]
-
     def test_the_llm_line_reaches_the_player_and_the_history(self, player):
         """The old version of this test asserted ``"npc_opening" in result`` and
         ``isinstance(result["jean_options"], list)`` — both true for *any*
@@ -1497,19 +1537,7 @@ class TestChatOpen:
         ids=["none", "empty-dict", "empty-text", "null-text"],
     )
     def test_an_empty_llm_response_falls_back_cleanly(self, player, malformed):
-        class _Empty:
-            enabled = True
-
-            def generate_npc_turn(self, *args, **kwargs):
-                return malformed
-
-            def generate_jean_options(self, *args, **kwargs):
-                return None
-
-            def generate_personality(self, class_name):
-                return None
-
-        result = ready_npc(_Empty()).chat_open(player)
+        result = ready_npc(_LegacyAdapter(malformed)).chat_open(player)
 
         assert result["success"] is True
         assert result["llm_available"] is False
@@ -1541,19 +1569,7 @@ class TestChatOpen:
         ``AttributeError`` text no longer reaches the client. When the fallback
         is fixed, this test should expect ``success: True`` and the pool line.
         """
-        class _Malformed:
-            enabled = True
-
-            def generate_npc_turn(self, *args, **kwargs):
-                return malformed
-
-            def generate_jean_options(self, *args, **kwargs):
-                return None
-
-            def generate_personality(self, class_name):
-                return None
-
-        result = ready_npc(_Malformed()).chat_open(player)
+        result = ready_npc(_LegacyAdapter(malformed)).chat_open(player)
 
         assert isinstance(result, dict)
         assert result["success"] is False
@@ -1565,19 +1581,8 @@ class TestChatOpen:
         player a turn. Master pinned the old behaviour (the exception escaped
         to ``chat_open``'s handler and ended the conversation); the adapter call
         is now wrapped, so the authored fallback pool takes over."""
-        class _Boom:
-            enabled = True
-
-            def generate_npc_turn(self, *args, **kwargs):
-                raise RuntimeError("llm timed out")
-
-            def generate_jean_options(self, *args, **kwargs):
-                return None
-
-            def generate_personality(self, class_name):
-                return None
-
-        result = ready_npc(_Boom()).chat_open(player)
+        adapter = _LegacyAdapter(error=RuntimeError("llm timed out"))
+        result = ready_npc(adapter).chat_open(player)
 
         assert result["success"] is True
         assert result["llm_available"] is False
@@ -1902,13 +1907,23 @@ class TestGetFallbackJeanOptions:
     """Test _get_fallback_jean_options."""
 
     def test_get_fallback_jean_options_rotation(self):
-        """Test Jean options rotate through pool."""
+        """Consecutive calls serve different entries from the pool.
+
+        Under a comment about rotation, this used to assert only that each
+        call returned three options -- which is true of a method that returns
+        the same three every time, the exact failure the name warns about.
+        Both the advancing counter and the differing text are pinned: the
+        counter is the mechanism, the text is what the player actually sees,
+        and a pool of identical groups would satisfy the counter alone.
+        """
         npc = chat_npc(init=False, _chat_fallback_idx=0)
         opts1 = npc._get_fallback_jean_options()
+        assert npc._chat_fallback_idx == 1
         opts2 = npc._get_fallback_jean_options()
-        # Different calls should potentially use different pool entries
+        assert npc._chat_fallback_idx == 2
         assert len(opts1) == 3
         assert len(opts2) == 3
+        assert [o["text"] for o in opts1] != [o["text"] for o in opts2]
 
     def test_get_fallback_jean_options_format(self):
         """Test Jean options have correct format."""
@@ -1986,14 +2001,20 @@ class TestCacheManagement:
     """Test class-level cache management."""
 
     def test_world_facts_cache_shared(self):
-        """Test world facts cache is shared across instances."""
+        """Two hosts see one cache object, not two equal copies.
+
+        This built ``npc1`` and ``npc2``, used neither, and then asserted that
+        the class attribute still equalled the dict the test had just assigned
+        to it -- true of any implementation, including a per-instance cache.
+        Identity through both instances is the claim the name makes.
+        """
         ConversationalNPCMixin._world_facts_cache = {"cached": True}
 
         npc1 = chat_npc(init=False, name="NPC1")
         npc2 = chat_npc(init=False, name="NPC2")
 
-        # Both should use the same cache reference
-        assert ConversationalNPCMixin._world_facts_cache == {"cached": True}
+        assert npc1._world_facts_cache is ConversationalNPCMixin._world_facts_cache
+        assert npc2._world_facts_cache is npc1._world_facts_cache
 
     def test_char_config_cache(self):
         """Test character config cache."""
@@ -2077,7 +2098,7 @@ class TestEquipmentHandling:
 
         npc._compute_loquacity(player)
         # Should handle gracefully
-        assert npc.loquacity_max >= 20
+        assert npc.loquacity_max == scale_loquacity(60)
 
     def test_compute_loquacity_religious_token(self):
         """Test religious token equipment bonus."""
@@ -2087,8 +2108,8 @@ class TestEquipmentHandling:
         )
 
         npc._compute_loquacity(player)
-        # Should get equipment bonus
-        assert npc.loquacity_max > 60
+        # Should get equipment bonus before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 + 10)
 
     def test_compute_loquacity_nomad_gear(self):
         """Test nomad gear equipment bonus."""
@@ -2098,8 +2119,8 @@ class TestEquipmentHandling:
         )
 
         npc._compute_loquacity(player)
-        # Should get equipment bonus
-        assert npc.loquacity_max > 60
+        # Should get equipment bonus before the 15% scale.
+        assert npc.loquacity_max == scale_loquacity(60 + 10)
 
 
 class TestChatOpenWithLLM:
@@ -2107,21 +2128,16 @@ class TestChatOpenWithLLM:
 
     def test_chat_open_with_adapter_success(self):
         """Test chat_open when LLM adapter succeeds."""
-        class MockAdapter:
-            enabled = True
-
-            def generate_npc_turn(self, system, history, is_opening=False):
-                return {"npc_text": "Hello there, friend."}
-
-            def generate_jean_options(self, name, voice, opening, history, turn):
-                return [
-                    {"text": "Who are you?", "tone": "direct"},
-                    {"text": "Nice to meet you.", "tone": "open"},
-                    {"text": "What do you want?", "tone": "guarded"},
-                ]
-
+        adapter = ScriptedAdapter(
+            "Hello there, friend.",
+            options=[
+                {"text": "Who are you?", "tone": "direct"},
+                {"text": "Nice to meet you.", "tone": "open"},
+                {"text": "What do you want?", "tone": "guarded"},
+            ],
+        )
         npc = ready_npc(
-            MockAdapter(),
+            adapter,
             loquacity_current=0,
             loquacity_max=0,
             loquacity_threshold=0,
@@ -2144,25 +2160,16 @@ class TestChatRespondWithLLM:
 
     def test_chat_respond_with_adapter_success(self):
         """Test chat_respond when LLM adapter succeeds."""
-        class MockAdapter:
-            enabled = True
-
-            def generate_npc_turn(
-                self, system, history, is_opening=False, jean_text=None
-            ):
-                return {
-                    "npc_text": "That's very interesting to me.",
-                    "conversation_quality": "positive",
-                }
-
-            def generate_jean_options(self, name, voice, response, history, turn):
-                return [
-                    {"text": "Tell me more.", "tone": "open"},
-                    {"text": "I understand.", "tone": "guarded"},
-                    {"text": "What else?", "tone": "direct"},
-                ]
-
-        npc = ready_npc(MockAdapter(), _chat_history=[{"npc": "Hello", "jean": ""}])
+        adapter = ScriptedAdapter(
+            "That's very interesting to me.",
+            quality="positive",
+            options=[
+                {"text": "Tell me more.", "tone": "open"},
+                {"text": "I understand.", "tone": "guarded"},
+                {"text": "What else?", "tone": "direct"},
+            ],
+        )
+        npc = ready_npc(adapter, _chat_history=[{"npc": "Hello", "jean": ""}])
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2177,26 +2184,17 @@ class TestChatRespondWithLLM:
 
     def test_chat_respond_applies_reputation_delta(self):
         """The NPC's in-character reaction to Jean's words shifts reputation."""
-        class MockAdapter:
-            enabled = True
-
-            def generate_npc_turn(
-                self, system, history, is_opening=False, jean_text=None
-            ):
-                return {
-                    "npc_text": "I won't forget that kindness.",
-                    "conversation_quality": "positive",
-                    "reputation_delta": 5,
-                }
-
-            def generate_jean_options(self, name, voice, response, history, turn):
-                return [
-                    {"text": "Tell me more.", "tone": "open"},
-                    {"text": "I understand.", "tone": "guarded"},
-                    {"text": "What else?", "tone": "direct"},
-                ]
-
-        npc = ready_npc(MockAdapter(), _chat_history=[{"npc": "Hello", "jean": ""}])
+        adapter = ScriptedAdapter(
+            "I won't forget that kindness.",
+            quality="positive",
+            options=[
+                {"text": "Tell me more.", "tone": "open"},
+                {"text": "I understand.", "tone": "guarded"},
+                {"text": "What else?", "tone": "direct"},
+            ],
+            reputation_delta=5,
+        )
+        npc = ready_npc(adapter, _chat_history=[{"npc": "Hello", "jean": ""}])
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2212,24 +2210,13 @@ class TestChatRespondWithLLM:
 
     def test_chat_respond_clamps_reputation_to_bounds(self):
         """Reputation never exceeds +/-100 even with repeated extreme deltas."""
-        class MockAdapter:
-            enabled = True
-
-            def generate_npc_turn(
-                self, system, history, is_opening=False, jean_text=None
-            ):
-                return {
-                    "npc_text": "How could you say something so cruel to me after everything.",
-                    "conversation_quality": "offensive",
-                    "reputation_delta": -5,
-                }
-
-            def generate_jean_options(self, name, voice, response, history, turn):
-                return [
-                    {"text": "Tell me more.", "tone": "open"},
-                ]
-
-        npc = ready_npc(MockAdapter(), _chat_history=[{"npc": "Hello", "jean": ""}])
+        adapter = ScriptedAdapter(
+            "How could you say something so cruel to me after everything.",
+            quality="offensive",
+            options=[{"text": "Tell me more.", "tone": "open"}],
+            reputation_delta=-5,
+        )
+        npc = ready_npc(adapter, _chat_history=[{"npc": "Hello", "jean": ""}])
         player = MagicMock()
         player.universe.game_tick = 10
         player.universe.story = {}
@@ -2347,25 +2334,17 @@ class TestALLMRetryLogic:
     def test_chat_open_retries_on_first_attempt_failure(self):
         """Test chat_open retries when first LLM attempt fails."""
 
-        class MockAdapterFailThenSucceed:
-            enabled = True
-            call_count = 0
-
-            def generate_npc_turn(self, system, history, is_opening=False):
-                self.call_count += 1
-                if self.call_count == 1:
-                    return {"npc_text": None}  # First attempt fails
-                return {"npc_text": "Hello there."}
-
-            def generate_jean_options(self, name, voice, opening, history, turn):
-                return [
-                    {"text": "Who?", "tone": "direct"},
-                    {"text": "OK.", "tone": "guarded"},
-                    {"text": "Tell.", "tone": "open"},
-                ]
-
+        adapter = _LegacyAdapter(
+            {"npc_text": None},  # first attempt fails
+            {"npc_text": "Hello there."},
+            options=[
+                {"text": "Who?", "tone": "direct"},
+                {"text": "OK.", "tone": "guarded"},
+                {"text": "Tell.", "tone": "open"},
+            ],
+        )
         npc = ready_npc(
-            MockAdapterFailThenSucceed(),
+            adapter,
             loquacity_current=0,
             loquacity_max=0,
             loquacity_threshold=0,
@@ -2393,10 +2372,6 @@ class TestConversationQualityDrains:
     a MagicMock silently answers both and the lazy-initialization branches go
     untested.
     """
-
-    @pytest.fixture
-    def player(self):
-        return live_world()[0]
 
     @pytest.mark.parametrize(
         "quality, expected",
@@ -2535,26 +2510,17 @@ class TestRetryOnQCFailure:
     def test_chat_open_retries_on_qc_failure(self):
         """Test chat_open retries when QC rejects NPC text."""
 
-        class MockAdapterBadThenGood:
-            enabled = True
-            call_count = 0
-
-            def generate_npc_turn(self, system, history, is_opening=False):
-                self.call_count += 1
-                if self.call_count == 1:
-                    # Return text that will be rejected by QC
-                    return {"npc_text": "x"}  # Too short, < 10 chars
-                return {"npc_text": "This is a proper response."}
-
-            def generate_jean_options(self, name, voice, opening, history, turn):
-                return [
-                    {"text": "Option one ok", "tone": "direct"},
-                    {"text": "Option two ok", "tone": "guarded"},
-                    {"text": "Option three ok", "tone": "open"},
-                ]
-
+        adapter = _LegacyAdapter(
+            {"npc_text": "x"},  # too short (< 10 chars), so QC rejects it
+            {"npc_text": "This is a proper response."},
+            options=[
+                {"text": "Option one ok", "tone": "direct"},
+                {"text": "Option two ok", "tone": "guarded"},
+                {"text": "Option three ok", "tone": "open"},
+            ],
+        )
         npc = ready_npc(
-            MockAdapterBadThenGood(),
+            adapter,
             loquacity_current=0,
             loquacity_max=0,
             loquacity_threshold=0,
@@ -2579,18 +2545,12 @@ class TestJeanOptionsQCRetry:
     def test_chat_open_jean_options_bad_then_fallback(self):
         """Test chat_open falls back when Jean options QC fails."""
 
-        class MockAdapterBadOptions:
-            enabled = True
-
-            def generate_npc_turn(self, system, history, is_opening=False):
-                return {"npc_text": "Hello friend."}
-
-            def generate_jean_options(self, name, voice, opening, history, turn):
-                # Return invalid options that QC will reject
-                return [{"text": "x"}]  # Not list of 3
-
+        # One malformed option, not a list of three, so QC rejects the set.
+        adapter = _LegacyAdapter(
+            {"npc_text": "Hello friend."}, options=[{"text": "x"}]
+        )
         npc = ready_npc(
-            MockAdapterBadOptions(),
+            adapter,
             loquacity_current=0,
             loquacity_max=0,
             loquacity_threshold=0,
@@ -2689,7 +2649,7 @@ class TestChatRespondHistoryIntegrity:
         )
         player = self._make_player()
 
-        opened = npc.chat_open(player)
+        npc.chat_open(player)
         assert hasattr(player, "npc_chat_histories")
 
         npc.chat_respond(player, "Q1", "direct")

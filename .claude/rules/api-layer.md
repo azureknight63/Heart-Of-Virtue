@@ -1,6 +1,9 @@
 ---
 paths:
   - "src/api/**"
+  - "src/env_bootstrap.py"
+  - "wsgi.py"
+  - "tools/run_api.py"
 ---
 
 # API layer rules (`src/api/`)
@@ -37,4 +40,4 @@ A serializer **never raises on a degraded object** (missing/None/wrong-typed att
 - Saves: cloud autosave is one `is_autosave=TRUE` row per user (UPSERT) written every `AUTOSAVE_TICK_THRESHOLD` (3) movement/combat transitions; there is no local autosave. `list_saves` emits `timestamp_ms` (epoch, computed *before* `astimezone(user_tz)`) — the client sorts on it, never on the display string. Failed cloud saves surface to the player via toast.
 - Shop pricing lives on the `Merchant` (`buy_modifier`, `sell_modifier`, `shop_name`) and is read by `GameService.shop_buy/sell` and `ShopSerializer` — don't re-derive prices in a route.
 - Blueprint URL prefixes have been misrouted before (reputation, npc, quests, quest-chains). When adding a blueprint, add a route test that hits the full prefixed path.
-- Env: `ENCRYPTION_KEY` is required in production (fail-closed at import). `.env` is **not** loaded by `db.py` directly — `src/env_bootstrap.load_project_env()` owns it, resolving the path from `__file__` so a process started outside the repo root still finds it. Five modules call it at their own import time: `src/api/rate_limiter.py`, `src/api/db.py`, `ai/llm_client.py`, `wsgi.py`, `tools/run_api.py`. In the API the load happens during `create_app()`'s blueprint imports, and `rate_limiter.py` calls it in its module body precisely so import order can't matter — every limiter is built by `limiter_from_env()` before `create_app()` returns. Consequences worth knowing: anything importing the app (pytest included) picks up the real `.env`, and **importing `ai.llm_client` alone does too**, with no Flask app anywhere. `load_dotenv(override=False)` (`env_bootstrap.py`) fills only *absent* keys, so neutralize a live secret by assigning `""`, never by `.pop()`.
+- Env: `ENCRYPTION_KEY` is required in production (fail-closed at import). `db.py` does **not** own the `.env` load — `src/env_bootstrap.load_project_env()` does; `db.py` is one of its callers, resolving the path from `__file__` so a process started outside the repo root still finds it. Five modules call it at their own import time: `src/api/rate_limiter.py`, `src/api/db.py`, `ai/llm_client.py`, `wsgi.py`, `tools/run_api.py`. In the API the load happens during `create_app()`'s blueprint imports, and `rate_limiter.py` calls it in its module body precisely so import order can't matter — every limiter is built by `limiter_from_env()` before `create_app()` returns. Consequences worth knowing: anything importing the app (pytest included) picks up the real `.env`, and **importing `ai.llm_client` alone does too**, with no Flask app anywhere. `load_dotenv(override=False)` (`env_bootstrap.py`) fills only *absent* keys, so neutralize a live secret by assigning `""`, never by `.pop()`.

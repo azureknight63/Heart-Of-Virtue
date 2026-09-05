@@ -7,7 +7,7 @@ from pathlib import Path
 # Keep API tests deterministic even when the developer's .env selects a manual
 # gameplay configuration. Individual tests that exercise config loading use
 # monkeypatch/patch.dict explicitly.
-_TEST_CONFIG_FILE = os.environ.pop("CONFIG_FILE", None)
+os.environ.pop("CONFIG_FILE", None)
 # A missing CONFIG_FILE makes SessionManager fall back to the developer-only
 # config_dev.ini when it exists. Use a nonexistent sentinel instead so tests
 # exercise engine defaults without depending on an untracked local file.

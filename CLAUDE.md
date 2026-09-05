@@ -40,7 +40,7 @@ cd frontend && npm install && npm run dev     # SPA on :3000
 ## Running Tests
 
 ```bash
-python -m pytest -q                                   # backend default suite (excludes tests/api, tests/broken, tests/uat, tests/integration)
+python -m pytest -q                                   # backend default suite (excludes tests/broken, tests/uat, tests/integration)
 python -m pytest --cov=src --cov=ai --cov-report=term-missing --cov-fail-under=85 -q   # what CI enforces
 cd frontend && npm test -- --run                      # frontend; add --coverage for the 95% thresholds in vite.config.js
 flake8 --extend-ignore=E501 src/ && python -m black --check src/
@@ -49,7 +49,7 @@ python tools/inquisitor.py --headless --output tools/browser_findings.json   # r
 ```
 
 - Always `python -m pytest`, never bare `pytest` — the venv may not expose the binary and bare runs fail silently on imports.
-- **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/`, which is excluded from the default run: a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests. Other route tests use a *mocked* `session_manager`.
+- **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/`, which **runs in the default suite** — `pytest.ini`'s `norecursedirs` is `tests/broken tests/uat tests/integration .claude` and nothing else. Building a real session mutates module-level item/merchant registries, so such a module depends on its own internal ordering; `--dist loadfile` schedules every test in a file onto one worker, which is what keeps that ordering intact. Other route tests use a *mocked* `session_manager`.
 - Coverage gates: backend ≥85% (CI, `--cov-fail-under=85`), frontend ≥95% (`vite.config.js` thresholds). The measured numbers live in `docs/coverage/coverage-dashboard.md` and nowhere else — a second copy here goes stale within the week. Re-measure before quoting either.
 - Tests touching randomness must seed or patch `random` — the engine makes ~220 unseeded `random.*` calls (only `positions.py` seeds). Never assert on an unseeded roll.
 - Mocks that stub an engine module imported as `import src.x as m` must patch both `sys.modules["src.x"]` *and* the `src` package attribute (see `_fake_engine_modules` in `tests/test_session_manager_coverage.py`); to pass an engine `isinstance`, set `mock.__class__` to the real class or build with `RealClass.__new__(RealClass)`.
@@ -81,10 +81,14 @@ Pick the cheapest rung that can actually observe the change, run it, and show th
 Balance or behaviour changes need rung 2 or 3, not just rung 1.
 
 The backend suite runs in ~20s because `pytest.ini` sets `-n auto --dist loadfile`; use `-n0` when
-debugging a single test. The 565 skips are a known, audited quantity — do not add a blanket skip to
-make the suite green; a prior sweep found ~517 supposed skips ("coverage requirements already met",
-"test isolation issues") were, without exception, false — the tests failed for stale API signatures,
-mislabelled story flags, an unrestored class attribute, and one infinite loop.
+debugging a single test. Skips are a known, audited quantity, and the quantity is small: **12 skip
+sites in the tree, 3 actual skips in a default run** — two from `tests/api/test_cloud_integration.py`
+(gated on `HOV_LIVE_DB`) and one from `tests/test_secure_pickle.py`'s `importorskip("resource")`,
+which is a Unix-only stdlib module. Seven of the twelve sit in `tests/integration/`, which the default
+run never walks. Do not add a blanket skip to make the suite green: an earlier sweep of this suite
+found that every blanket skip then in the tree ("coverage requirements already met", "test isolation
+issues") was false — those tests were failing for stale API signatures, mislabelled story flags, an
+unrestored class attribute, and one infinite loop.
 
 ## Coding conventions
 
@@ -137,7 +141,7 @@ mislabelled story flags, an unrestored class attribute, and one infinite loop.
 | ≤ 1000 changed lines | `code-review` | Inline, single pass, current conversation |
 | > 1000 changed lines | `code-scrubber` | Chunked, 5 dimension subagents per chunk, dispatched as a background Agent |
 
-Both grade DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness, plus the Heart of Virtue-specific **Architecture** (the rules above — gating) and **Correctness** (graded, reported). Dimension tables, the ≥80 confidence filter, and grading rules live in the two `SKILL.md` files — don't duplicate them here. Non-trivial changes iterate until every gating dimension is A; don't suggest `/commit` before that. If a dimension can't reach A without a user decision, stop and ask. Trivial changes (config, comments): confirm N/A or A and move on.
+Both grade the six generic dimensions — DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness — but **their seventh dimension is not the same one**. `code-review` adds the Heart of Virtue-specific **Architecture** (the rules above — gating) and **Correctness** (graded, reported). `code-scrubber` adds **Alignment** instead: `GRADING_DIMENSIONS` in `.claude/skills/_shared/review_rules/code_scrubber_rules.py` is the six core keys plus `"Alignment"`, and none of its dimension subagents reviews Architecture. **A diff over 1000 lines therefore never gets an architecture pass from the skill that reviews it.** Run `/code-review` over the architecture-touching subset of a scrubbed diff before calling the gate closed — this is not bookkeeping: the `player.attack` error survived three correction rounds because the review surface itself carried it. Dimension tables, the ≥80 confidence filter, and grading rules live in the two `SKILL.md` files — don't duplicate them here. Non-trivial changes iterate until every gating dimension is A; don't suggest `/commit` before that. If a dimension can't reach A without a user decision, stop and ask. Trivial changes (config, comments): confirm N/A or A and move on.
 
 ## Session workflow
 

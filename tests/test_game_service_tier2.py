@@ -140,7 +140,7 @@ class TestNpcChatOpen:
         result = game_service.npc_chat_open(player, "Gorran")
 
         assert result["success"] is False
-        # S5: the exception string used to be interpolated into the
+        # The exception string used to be interpolated into the
         # client-facing error and rendered verbatim in the player's panel.
         # A provider SDK exception stringifies to endpoint URL, model id,
         # status body and request id; the detail belongs in the server log.

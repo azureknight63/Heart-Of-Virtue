@@ -2433,6 +2433,15 @@ class TestDeclaredDamageMultiplier:
     # too. The KEYS are checked against reflection, so this is a pin list, not
     # an exception list.
     DECLARED = {
+        # The generic NPC swing, and the base of the TelegraphedSurge family
+        # below — whose factors multiply a power this class has already
+        # rolled. It declared nothing until it was found missing from BOTH
+        # sides of this guard: reflection reads ``__dict__``, so an inherited
+        # 1.0 is invisible to it, and the midpoint of NpcAttack's own band is
+        # 1.0 — the wire was correct by coincidence, not by construction, and
+        # a retune of the roll would have shipped a stale multiplier with
+        # nothing here naming this class.
+        "NpcAttack": 1.0,
         # TelegraphedSurge family — the attribute is functionally live here,
         # applied by TelegraphedSurge.evaluate().
         "SlimeVolley": 2.2,
@@ -2443,8 +2452,10 @@ class TestDeclaredDamageMultiplier:
         "GorranClub": 2.25,
         "VenomClaw": 0.8,
         # 1.0 is also the serializer's default for a move that declares
-        # nothing, so SpiderBite is the one case where a stale wire value
-        # would still look correct.
+        # nothing, so SpiderBite and NpcAttack are the two cases where a stale
+        # wire value would still look correct — which is exactly why both
+        # need their roll pinned to their declaration here rather than being
+        # eyeballed.
         "SpiderBite": 1.0,
         "BatBite": 0.9,
         "SeismicSlam": 0.7,
@@ -2462,7 +2473,7 @@ class TestDeclaredDamageMultiplier:
     def test_reflection_actually_finds_the_declarations(self):
         """Floor: if discovery silently returns nothing, the test above passes
         against an empty pin list and guards nothing."""
-        assert len(_classes_overriding_damage_multiplier()) >= 9
+        assert len(_classes_overriding_damage_multiplier()) >= 10
 
     @pytest.mark.parametrize("cls_name,expected", sorted(DECLARED.items()))
     def test_declared_value(self, cls_name, expected):

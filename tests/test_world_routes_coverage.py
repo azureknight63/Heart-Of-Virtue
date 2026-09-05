@@ -146,12 +146,18 @@ class TestGetCurrentRoom:
         the reset fixtures have run. The provider-digest scheduler three lines
         below this call is gated for exactly that reason.
         """
-        with patch("ai.llm_client.NpcChatLLMAdapter.prewarm") as prewarm, patch(
+        with patch("ai.llm_client.NpcChatLLMAdapter.prewarm"), patch(
             "ai.llm_client.NpcChatLLMAdapter.is_prewarmed", return_value=False
-        ):
+        ), patch("src.api.routes.world.threading.Thread") as thread:
             rv = client.get("/world", headers=AUTH)
         assert rv.status_code == 200
-        prewarm.assert_not_called()
+        # Asserted against Thread, not against prewarm itself. Production hands
+        # prewarm to a *daemon thread*; if this gate were removed, the request
+        # would return while that thread was still being scheduled, and a
+        # `prewarm.assert_not_called()` running immediately afterwards would
+        # pass or fail on timing. Thread construction is synchronous and
+        # happens before the request returns, so this cannot race.
+        assert thread.call_count == 0
 
     def test_trailing_slash(self, client):
         rv = client.get("/world/", headers=AUTH)
@@ -228,6 +234,8 @@ class TestMovePlayer:
     def test_move_missing_direction(self, client):
         rv = client.post("/world/move", json={}, headers=AUTH)
         assert rv.status_code == 400
+        data = rv.get_json()
+        assert "direction" in data["error"]
 
     def test_move_rejects_a_direction_the_engine_does_not_support(self, client):
         """A well-formed string that is not one of the eight compass headings.
@@ -243,8 +251,6 @@ class TestMovePlayer:
         data = rv.get_json()
         assert data["success"] is False
         assert "widdershins" in data["error"] or "direction" in data["error"].lower()
-        data = rv.get_json()
-        assert "direction" in data["error"]
 
     def test_move_no_body(self, client):
         # No JSON body: get_json() raises or returns None; route catches and returns 4xx/5xx
@@ -907,7 +913,7 @@ class TestSearchRoom:
         assert rv.status_code == 500
 
 # ---------------------------------------------------------------------------
-# M14 — the branch's headline behaviour, in both directions
+# The branch's headline behaviour, in both directions
 # ---------------------------------------------------------------------------
 
 

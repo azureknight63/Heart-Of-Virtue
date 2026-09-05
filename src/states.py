@@ -12,14 +12,22 @@ import src.functions as functions
 # Advisor (``tactical_mechanics``) is rendered through this, so no percentage in
 # this module is spelled out by hand.
 #
-# The two are not equally strict, and the difference is worth knowing.
-# ``description`` interpolates the same class constant the ``add_*`` assignment
-# multiplies by: prose and modifier cannot disagree on the FRACTION, though the
-# ``int()`` truncation means a 20% penalty on a 7-point stat applies 1 point and
-# not 1.4, and a compounding state's description keeps quoting its first
-# application. ``tactical_mechanics`` is derived the other way round, from the
-# ``add_*`` delta actually on the books (see ``State._applied_pct``), so what
+# The two carry DIFFERENT contracts, and the difference is worth knowing.
+#
+# ``description`` is interpolated from class constants and frozen at
+# construction. It cannot disagree with the ``add_*`` assignment about the
+# FRACTION, because both read the same constant -- but that is the whole of its
+# guarantee. ``int()`` truncation means a 20% penalty on a 7-point stat applies
+# 1 point and not 1.4, and a twice-compounded ``Slimed`` still spells out its
+# FIRST application's numbers, because nothing re-renders the string.
+#
+# ``tactical_mechanics`` is read live, and means one of two things depending on
+# the state (see ``State._render_tactical_mechanics``). For the states whose
+# ``compound()`` moves an ``add_*``, it is derived the other way round -- from
+# the delta actually on the books (see ``State._applied_pct``) -- so what
 # reaches the combat prompt is what the engine applied, compounding included.
+# For the rest it is the NOMINAL class fraction their constructor passed, which
+# is exact for them precisely because nothing can move it.
 #
 # Imported rather than defined here:
 # ai/combat_strategist.py needs the identical renderer for the thresholds IT
@@ -29,11 +37,32 @@ import src.functions as functions
 from src.text_format import pct as _pct
 
 
+# Distinguishes "this state never captured a base stat" from "the base stat it
+# captured was 0". ``getattr(self, base_attr, 0)`` could not tell the two apart,
+# and answered both with the nominal fraction -- so a modifier the engine had
+# provably applied as 0 was reported to the combat prompt as the full class
+# percentage. See ``State._applied_pct``.
+_BASE_NOT_CAPTURED = object()
+
+
 class State:  # master class for all states
     """
     If beats_max is 0 (default), the state will not expire after n beats.
 
     """
+
+    # What a re-application does to a compounding state's CLOCKS: stretch both
+    # ceilings by ``_COMPOUND_DURATION_MULT``, then top each remainder back up
+    # toward its new ceiling by ``1 / _COMPOUND_REFRESH_DIVISOR`` of it.
+    #
+    # Here rather than on each state because ``Poisoned``, ``Slimed`` and
+    # ``Petrified`` all run this identical rule, and three private copies of one
+    # rule is three places to retune and two chances to forget. A state that
+    # wants a different clock rule overrides the constants; one that wants a
+    # different SHAPE (``Enflamed`` refreshes rather than stretches, ``Fervent``
+    # adds a flat beat count) simply does not call the helper.
+    _COMPOUND_DURATION_MULT = 1.1
+    _COMPOUND_REFRESH_DIVISOR = 4
 
     def __init__(
         self,
@@ -104,13 +133,36 @@ class State:  # master class for all states
     def _render_tactical_mechanics(self):
         """Build the summary from the state's current modifiers.
 
-        Override in any state whose ``add_*`` values change after ``__init__``.
+        This default returns the static string the constructor was passed, so
+        for the states that take it, ``tactical_mechanics`` reports the NOMINAL
+        class fraction. That is exact for them: nothing moves their modifiers
+        after ``__init__``, so nominal and applied are the same number.
+
+        Override in any state whose ``add_*`` values change after ``__init__``,
+        where the two part company. The criterion is mechanical -- does
+        ``compound()`` move an ``add_*``? -- and where it holds, the override
+        renders through ``_applied_pct`` and the property means the APPLIED
+        delta instead. ``Slimed``, ``Petrified`` and ``Fervent`` are today's
+        three; ``tests/test_states_tactical_mechanics.py`` derives that set from
+        the behaviour rather than listing it.
+
         The ``getattr`` default is for unpickling a save written before this
         field existed; overrides get the same protection from
         ``_applied_pct``, which reads every field it needs through ``getattr``
         for the same reason.
         """
         return getattr(self, "_tactical_mechanics", "")
+
+    def _capture_bases(self, target, *attrs):
+        """Record the target stats this state's modifiers are being taken from.
+
+        ``_applied_pct`` divides by these to report the fraction the engine
+        really applied, so every state that renders live captures them. One
+        named call rather than the same pair of lines (and the same pair of
+        comment lines) copied into each such state.
+        """
+        for attr in attrs:
+            setattr(self, "_base_" + attr, getattr(target, attr))
 
     def _applied_pct(self, add_attr, base_attr, nominal_pct):
         """``add_attr`` as a percentage of the stat it was taken from.
@@ -127,18 +179,53 @@ class State:  # master class for all states
         they were, bonuses weaker, and both went into the prompt as fact.
 
         ``nominal_pct`` — the class's first-application fraction — is reached
-        only when ``base_attr`` is missing (a state unpickled from a save
-        written before the base was captured) or zero (a holder with no stat to
-        take a fraction of). Both are better answered with the nominal figure
-        than with an exception: ``StateEffectSerializer`` reads this property
-        through ``getattr(state, "tactical_mechanics", "")``, so raising here
-        would not surface as a failure. It would quietly ship an empty
-        mechanics line.
+        in exactly one case: ``base_attr`` is absent, because the state was
+        unpickled from a save written before the base was captured. There is
+        then no delta to divide and nothing better to say. Answering with the
+        nominal beats raising, because ``StateEffectSerializer`` reads this
+        property through ``getattr(state, "tactical_mechanics", "")`` — an
+        exception here would not surface as a failure, it would quietly ship an
+        empty mechanics line.
+
+        A base that was captured and is ZERO is a different case, and used to
+        share that branch. ``int(0 * fraction)`` is 0, so the engine applied
+        nothing; quoting the nominal there told the combat prompt "+25%
+        protection" for a modifier provably worth 0. A wrong number is worse
+        than a missing one, which is the whole reason this property exists, so
+        0 is reported as 0.
         """
-        base = getattr(self, base_attr, 0)
-        if not base:
+        base = getattr(self, base_attr, _BASE_NOT_CAPTURED)
+        if base is _BASE_NOT_CAPTURED:
             return _pct(nominal_pct)
+        if not base:
+            return _pct(0)
         return _pct(abs(getattr(self, add_attr, 0)) / base)
+
+    def _extend_compounded_duration(self):
+        """Stretch both clocks' ceilings on a re-application and refresh toward them.
+
+        The block this replaces stood byte-identically in three ``compound()``
+        methods. Each state now supplies only what is its own -- the modifier or
+        tick it deepens -- and calls this for the part that is everybody's.
+        """
+        self.beats_max, self.beats_left = self._stretched_clock(
+            self.beats_max, self.beats_left
+        )
+        self.steps_max, self.steps_left = self._stretched_clock(
+            self.steps_max, self.steps_left
+        )
+
+    @classmethod
+    def _stretched_clock(cls, ceiling, remaining):
+        """One clock's new ``(ceiling, remaining)`` after a re-application.
+
+        The refresh is a fraction of the NEW ceiling, and cannot push the
+        remainder past it.
+        """
+        ceiling = int(ceiling * cls._COMPOUND_DURATION_MULT)
+        return ceiling, min(
+            remaining + int(ceiling / cls._COMPOUND_REFRESH_DIVISOR), ceiling
+        )
 
     def effect(self, target):
         """
@@ -227,6 +314,14 @@ class Poisoned(State):
     # Beat interval between damage ticks. Quoted by tactical_mechanics below,
     # so the model is never told a rate the effect does not run at.
     _EXECUTE_ON = 5
+    # What a re-application does to the POISON itself: the tick counter jumps a
+    # quarter, and since effect() scales damage by ``self.tick``, that is where
+    # "worsens if reapplied" is actually spent. The clocks move separately and
+    # by a different factor -- ``State._COMPOUND_DURATION_MULT``, which is 1.1,
+    # not 1.25. The comment that used to sit in compound() called the whole
+    # thing "25%", which was right about the strength and wrong about both
+    # durations.
+    _COMPOUND_TICK_MULT = 1.25
 
     def __init__(self, target):
         duration = random.randint(50, 150)
@@ -268,20 +363,9 @@ class Poisoned(State):
             target.hp -= damage
 
     def compound(self, target):
-        #  Increases the strength and duration of the poison by 25% every time it's inflicted
         cprint("{}'s poisoning has gotten worse!".format(target.name), "magenta")
-        self.tick *= 1.25
-        self.tick = int(self.tick)
-        self.beats_max *= 1.1
-        self.beats_max = int(self.beats_max)
-        self.steps_max *= 1.1
-        self.steps_max = int(self.steps_max)
-        self.beats_left += int((self.beats_max / 4))
-        if self.beats_left > self.beats_max:
-            self.beats_left = self.beats_max
-        self.steps_left += int((self.steps_max / 4))
-        if self.steps_left > self.steps_max:
-            self.steps_left = self.steps_max
+        self.tick = int(self.tick * self._COMPOUND_TICK_MULT)
+        self._extend_compounded_duration()
 
 
 # Balance constants for Enflamed (issue #343) -- tune here rather than
@@ -502,10 +586,6 @@ class Slimed(State):
     _PROTECTION_PENALTY_PCT = 0.15
     _COMPOUND_FINESSE_PENALTY_PCT = 0.05
     _COMPOUND_PROTECTION_PENALTY_PCT = 0.05
-    # Each re-application stretches the ceiling and tops the clock back up
-    # toward it by a fraction of the new ceiling.
-    _COMPOUND_DURATION_MULT = 1.1
-    _COMPOUND_REFRESH_DIVISOR = 4
     _EXECUTE_ON = 6
 
     def __init__(self, target):
@@ -533,10 +613,7 @@ class Slimed(State):
         )
         self.tick = 0
         self.execute_on = self._EXECUTE_ON
-        # The stats these penalties were taken against, so the summary can
-        # report the fraction the engine really applied. See _applied_pct.
-        self._base_finesse = target.finesse
-        self._base_protection = target.protection
+        self._capture_bases(target, "finesse", "protection")
         self.add_fin = -int(target.finesse * self._FINESSE_PENALTY_PCT)
         self.add_protection = -int(target.protection * self._PROTECTION_PENALTY_PCT)
 
@@ -575,16 +652,7 @@ class Slimed(State):
         self.add_protection -= int(
             target.protection * self._COMPOUND_PROTECTION_PENALTY_PCT
         )
-        self.beats_max = int(self.beats_max * self._COMPOUND_DURATION_MULT)
-        self.beats_left = min(
-            self.beats_max,
-            self.beats_left + int(self.beats_max / self._COMPOUND_REFRESH_DIVISOR),
-        )
-        self.steps_max = int(self.steps_max * self._COMPOUND_DURATION_MULT)
-        self.steps_left = min(
-            self.steps_max,
-            self.steps_left + int(self.steps_max / self._COMPOUND_REFRESH_DIVISOR),
-        )
+        self._extend_compounded_duration()
         functions.refresh_stat_bonuses(target)
 
 
@@ -697,10 +765,6 @@ class Petrified(State):
     _COMPOUND_FINESSE_PENALTY_PCT = 0.10
     _COMPOUND_SPEED_PENALTY_PCT = 0.10
     _COMPOUND_PROTECTION_BONUS_PCT = 0.10
-    # Each re-application stretches the ceiling and tops the clock back up
-    # toward it by a fraction of the new ceiling.
-    _COMPOUND_DURATION_MULT = 1.1
-    _COMPOUND_REFRESH_DIVISOR = 4
     _EXECUTE_ON = 6
     _FATIGUE_DRAIN_PCT = 0.05
 
@@ -727,11 +791,7 @@ class Petrified(State):
         )
         self.tick = 0
         self.execute_on = self._EXECUTE_ON
-        # The stats these modifiers were taken against, so the summary can
-        # report the fraction the engine really applied. See _applied_pct.
-        self._base_finesse = target.finesse
-        self._base_speed = target.speed
-        self._base_protection = target.protection
+        self._capture_bases(target, "finesse", "speed", "protection")
         self.add_fin = -int(target.finesse * self._FINESSE_PENALTY_PCT)
         self.add_speed = -int(target.speed * self._SPEED_PENALTY_PCT)
         self.add_protection = int(target.protection * self._PROTECTION_BONUS_PCT)
@@ -785,16 +845,7 @@ class Petrified(State):
         self.add_protection += int(
             target.protection * self._COMPOUND_PROTECTION_BONUS_PCT
         )
-        self.beats_max = int(self.beats_max * self._COMPOUND_DURATION_MULT)
-        self.beats_left = min(
-            self.beats_max,
-            self.beats_left + int(self.beats_max / self._COMPOUND_REFRESH_DIVISOR),
-        )
-        self.steps_max = int(self.steps_max * self._COMPOUND_DURATION_MULT)
-        self.steps_left = min(
-            self.steps_max,
-            self.steps_left + int(self.steps_max / self._COMPOUND_REFRESH_DIVISOR),
-        )
+        self._extend_compounded_duration()
         functions.refresh_stat_bonuses(target)
 
 
@@ -904,10 +955,7 @@ class Fervent(State):
         )
         self.tick = 0
         self.execute_on = self._EXECUTE_ON
-        # The stats these bonuses were taken against, so the summary can report
-        # the fraction the engine really applied. See _applied_pct.
-        self._base_strength = target.strength
-        self._base_finesse = target.finesse
+        self._capture_bases(target, "strength", "finesse")
         self.add_str = int(target.strength * self._STRENGTH_BONUS_PCT)
         self.add_fin = int(target.finesse * self._FINESSE_BONUS_PCT)
         self.add_endurance = -self._ENDURANCE_PENALTY_POINTS

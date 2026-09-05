@@ -327,6 +327,22 @@ _NPC_TEXT_RULE = (
     % (MAX_NPC_SENTENCES, MAX_NPC_TEXT_CHARS)
 )
 
+#: Shared guidance for every prompt that asks the model for Jean's options.
+_JEAN_OPTION_IDENTITY_RULE = (
+    "Jean speaks in first person: never refer to Jean by name or in the third "
+    "person, except for a genuine self-introduction such as 'My name is Jean' "
+    "or 'I'm Jean'."
+)
+
+#: Conditional guidance for merchant system prompts. The mixin supplies the
+#: ``TRADE`` block; repeating its consequence in the user task keeps the rule
+#: visible to adapters that treat system/user messages differently.
+_MERCHANT_OPTION_RULE = (
+    "If the system prompt contains TRADE, Jean must not ask about price, "
+    "inventory, stock, wares, buying, selling, or discounts; ask about craft, "
+    "fit, maintenance, provenance, or lore instead."
+)
+
 #: The ``conversation_quality`` enum: value -> what it means.
 #:
 #: One mapping, four derivations. The gloss below was hoisted into a constant
@@ -3647,7 +3663,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{MAX_OPTION_CHARS} characters. Ground each one in the specific thing the NPC "
             "just said and in the history — concrete details, not pleasantries. Never echo "
             "a history line, and never reference anything outside JEAN'S KNOWN CONTEXT, "
-            "the WORLD facts, and this conversation."
+            "the WORLD facts, and this conversation.\n"
+            f"{_JEAN_OPTION_IDENTITY_RULE}\n"
+            f"{_MERCHANT_OPTION_RULE}"
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_TURN", "0.7"))
@@ -3809,6 +3827,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"- {JEAN_TONES[2]}: Jean engages with some warmth or genuine curiosity\n"
             "- No option may echo the recent history above\n"
             "- All options must be plausible for a careful, measured human traveler\n"
+            f"- {_JEAN_OPTION_IDENTITY_RULE}\n"
+            f"- {_MERCHANT_OPTION_RULE}\n"
             f"- Keep each option under {MAX_OPTION_CHARS} characters\n"
             f"- This is turn {turn} of the conversation — options should feel natural for mid-conversation, not just openers"
         )

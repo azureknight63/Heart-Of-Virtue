@@ -982,30 +982,33 @@ python tools/run_api.py  # Do NOT use in production
 
 ### Unit Tests
 
-Run all API tests:
+Always `python -m pytest`, never bare `pytest` — the venv may not expose the binary
+and a bare run fails silently on imports.
+
+Run all API tests (`tests/api/` runs in the default suite; it is not excluded):
 
 ```powershell
-pytest tests/api/ -v
+python -m pytest tests/api/ -v
 ```
 
 Run specific test file:
 
 ```powershell
-pytest tests/api/test_validators.py -v
+python -m pytest tests/test_validators_and_sanitizer.py -v
 ```
 
 Run with coverage:
 
 ```powershell
-pytest tests/api/ --cov=src/api --cov-report=term-missing
+python -m pytest tests/api/ --cov=src/api --cov-report=term-missing
 ```
 
 ### Integration Tests
 
-Test full flow (auth → action → result):
+Full flow through the real engine over HTTP (auth → action → result):
 
 ```powershell
-pytest tests/api/test_routes_integration.py -v
+python -m pytest tests/api/test_combat_routes_integration.py -v
 ```
 
 ### Manual Testing with cURL

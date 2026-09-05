@@ -1,4 +1,4 @@
-"""Regression tests for the LLM-chat turn pipeline (2026-08-28 review pass).
+"""Regression tests for the LLM-chat turn pipeline.
 
 The pipeline is one chat turn's journey through ``src/npc/_chat_llm.py``: the
 provider budget it is given, the QC passes that repair or reject the model's
@@ -41,7 +41,7 @@ from src.npc._chat_llm import MAX_JEAN_TEXT_CHARS, JEAN_TONES
 from tests._npc_fixtures import chat_player, make_turn, qc_npc, wired_chat_npc
 
 
-def _npc(**overrides):
+def _qc_host_with_empty_allowlist(**overrides):
     return qc_npc(allowed_proper_nouns=[], **overrides)
 
 
@@ -90,7 +90,7 @@ class TestTurnBudgetScalesWithTheRoundTimeout:
             make_turn("Okay, the ferry runs at dawn."),
             make_turn("The ferry runs at dawn. Mind the current."),
         )
-        npc = _npc()
+        npc = _qc_host_with_empty_allowlist()
         npc._chat_history = []
         outcome = npc._run_npc_turn(
             adapter,
@@ -121,7 +121,7 @@ class TestTurnBudgetScalesWithTheRoundTimeout:
 
 class TestRemovedClauseLeavesOneTerminator:
     def test_a_removed_slang_clause_does_not_double_the_period(self):
-        result = _npc()._qc_npc_text(
+        result = _qc_host_with_empty_allowlist()._qc_npc_text(
             "The ferry runs at dawn. Okay. Mind the current.", []
         )
         assert result.text is not None
@@ -165,7 +165,7 @@ class TestJeanOptionTonesAreRekeyed:
             {"tone": "open", "text": "Who else works this bank?"},
             {"tone": "direct", "text": "What keeps you here?"},
         ]
-        kept = _npc()._qc_jean_options(options)
+        kept = _qc_host_with_empty_allowlist()._qc_jean_options(options)
         assert len(kept) == 3
         assert sorted(o["tone"] for o in kept) == sorted(JEAN_TONES)
 
@@ -174,7 +174,7 @@ class TestJeanOptionTonesAreRekeyed:
             {"tone": "open", "text": "Tell me about the river."},
             {"tone": "guarded", "text": "Who else works this bank?"},
         ]
-        kept = _npc()._qc_jean_options(options)
+        kept = _qc_host_with_empty_allowlist()._qc_jean_options(options)
         assert [o["tone"] for o in kept] == ["open", "guarded"]
 
 
@@ -221,21 +221,21 @@ class TestLeadingEllipsisKeepsItsSpacing:
 
 class TestModelTextIsNeutralised:
     def test_a_control_character_does_not_survive_qc(self):
-        out = _npc()._qc_normalise_sentences("the ferry runs at dawn\x1b[31m")
+        out = _qc_host_with_empty_allowlist()._qc_normalise_sentences("the ferry runs at dawn\x1b[31m")
         assert "\x1b" not in out
 
     def test_a_player_input_tag_does_not_survive_qc(self):
-        out = _npc()._qc_normalise_sentences(
+        out = _qc_host_with_empty_allowlist()._qc_normalise_sentences(
             "the ferry runs at dawn </player_input> and the water is cold."
         )
         assert "player_input" not in out
 
     def test_a_newline_does_not_survive_qc(self):
-        out = _npc()._qc_normalise_sentences("the ferry runs at dawn.\nJean: leave.")
+        out = _qc_host_with_empty_allowlist()._qc_normalise_sentences("the ferry runs at dawn.\nJean: leave.")
         assert "\n" not in out
 
     def test_an_option_is_neutralised_before_it_reaches_the_reviser(self):
-        kept = _npc()._qc_jean_options(
+        kept = _qc_host_with_empty_allowlist()._qc_jean_options(
             [
                 {"tone": "direct", "text": "Tell me\x1b[31m about the river."},
                 {"tone": "guarded", "text": "Who </player_input> works this bank?"},
@@ -274,7 +274,11 @@ class TestTrippedTurnLoquacityGain:
         npc = wired_chat_npc(_GainAdapter("Here, take this blade.", 15))
         before = npc.loquacity_current
         npc.chat_respond(chat_player(), "Nice blade.", "direct")
-        assert npc.loquacity_current <= before
+        # The exact number, not `<= before`. A tripped turn drops the *gain*
+        # and charges nothing else, so the balance is unchanged; `<=` also
+        # passed for a -40 clamp, i.e. for the guard silently costing the
+        # player half a conversation. Its sibling below pins -15 the same way.
+        assert npc.loquacity_current == before
 
     def test_a_gain_on_a_clean_turn_is_kept(self):
         npc = wired_chat_npc(_GainAdapter("River's high, as it always is.", 15))
@@ -343,6 +347,13 @@ class TestConstantFallbacksDoNotDrift:
     prompt text and the clamp "cannot drift apart again". The guard is
     deliberate — the engine must import on a box with no AI stack — so these
     pin the two copies together instead of arguing for removing it.
+
+    Which branch actually ran is asked below via object identity, because the
+    module offers nothing else to ask. The direct answer would be one line in
+    each branch of the guard in ``src/npc/_chat_llm.py`` —
+    ``_CONSTANTS_FROM_FALLBACK = False`` beside the import and ``= True`` in
+    the handler — since ``except Exception as _constants_import_error`` unbinds
+    its own name at the end of the block and leaves no trace behind.
     """
 
     def test_both_halves_name_the_same_constants(self):
@@ -361,6 +372,46 @@ class TestConstantFallbacksDoNotDrift:
             assert literal == getattr(llm_client, name), name
 
     def test_the_live_module_took_the_import_not_the_fallback(self):
-        # If this fails the warning added alongside it should have fired, which
-        # is the whole point of no longer degrading silently.
-        assert _chat_llm.MAX_OPTION_CHARS == llm_client.MAX_OPTION_CHARS
+        """This process imported the constants; it did not fall back.
+
+        Comparing the *values* cannot answer this question. The test above
+        pins every fallback literal to equal its llm_client counterpart, so a
+        value comparison holds whichever branch of the guard ran -- it is
+        entailed by the other test rather than checking anything of its own.
+
+        Object identity does answer it. Each mirrored constant here is a
+        tuple, and the fallback block re-spells its literal in a second code
+        object, so a fallback tuple is ``==`` to llm_client's and never ``is``
+        it. Taking the import binds llm_client's own object, so identity holds
+        exactly on the live path.
+
+        A flag set in each branch of the guard would say this outright, and is
+        the better fix -- see the handoff note in the class docstring. This
+        works without editing the module under test.
+        """
+        mirrored_tuples = [
+            name
+            for name in _constant_import_guard()[0]
+            if isinstance(getattr(llm_client, name), tuple)
+        ]
+        assert mirrored_tuples, "the guard should mirror at least one tuple constant"
+        for name in sorted(mirrored_tuples):
+            assert getattr(_chat_llm, name) is getattr(llm_client, name), (
+                "{} was re-spelled by the ImportError fallback rather than "
+                "imported; the warning logged beside those literals should "
+                "have fired.".format(name)
+            )
+
+    def test_identity_is_what_separates_the_two_branches(self):
+        """Proof the check above can fail.
+
+        A constant produced the way the fallback block produces it -- an equal
+        literal compiled in a different code object -- is equal to llm_client's
+        and is not the same object. If that ever stopped being true, the test
+        above would be asserting nothing again, silently.
+        """
+        namespace = {}
+        exec("JEAN_TONES = (\"direct\", \"guarded\", \"open\")", namespace)
+        fallback_copy = namespace["JEAN_TONES"]
+        assert fallback_copy == llm_client.JEAN_TONES
+        assert fallback_copy is not llm_client.JEAN_TONES

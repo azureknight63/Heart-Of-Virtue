@@ -25,39 +25,70 @@ import warnings
 
 import pytest
 
-from tests.llm_doubles import PROVIDER_KEY_ENVS
+from tests.llm_doubles import (
+    LLM_SETTING_ENVS,
+    PROVIDER_KEY_ENVS,
+    llm_gate_envs,
+)
 
-# Provider configuration these tests need restored from .env. The credential
-# half is derived from the provider registry (see tests/llm_doubles.py): a
-# provider registered but missing from this tuple would be left blanked by
-# tests/conftest.py for the whole live run, so the chain would quietly serve
-# every call from a different provider than the one under test.
+# Provider configuration these tests need restored from .env.
 #
-# The rule for the named half: a variable belongs here if some adapter under
-# test *reads* it. Each adapter declares its own gate, provider and model
-# (GenericLLMClient._{ENABLED,PROVIDER,MODEL}_ENV_VARS), and every one of those
-# names has to be restored or the adapter runs the live suite on a different
-# configuration than the deployment does. The COMBAT_ trio was the one that
-# proved it: test_tactical_advisor_live.py builds a real CombatLLMAdapter,
-# whose gate is ("COMBAT_LLM_ENABLED", "MYNX_LLM_ENABLED") -- first non-empty
-# wins -- so a .env carrying COMBAT_LLM_ENABLED=0 made available() False,
-# _make_client() return None, and all 21 tests skip. Restoring MYNX_LLM_ENABLED
-# alone could not reach that gate.
-_LIVE_KEYS = (
-    "MYNX_LLM_ENABLED",
-    "MYNX_LLM_PROVIDER",
-    "MYNX_LLM_MODEL",
-    "NPC_CHAT_LLM_ENABLED",
+# The rule: a variable belongs here if tests/conftest.py blanked it and some
+# adapter under test *reads* it. Each adapter declares its own gate, provider
+# and model (GenericLLMClient._{ENABLED,PROVIDER,MODEL}_ENV_VARS), and every
+# one of those names has to be restored or the adapter runs the live suite on
+# a different configuration than the deployment does. The COMBAT_ trio was the
+# one that proved it: test_tactical_advisor_live.py builds a real
+# CombatLLMAdapter, whose gate is ("COMBAT_LLM_ENABLED", "MYNX_LLM_ENABLED")
+# -- first non-empty wins -- so a .env carrying COMBAT_LLM_ENABLED=0 made
+# available() False, _make_client() return None, and all 21 tests skip.
+# Restoring MYNX_LLM_ENABLED alone could not reach that gate.
+#
+# DERIVED, and it has to stay derived. This list used to be hand-written while
+# the blanking half in tests/conftest.py was a suffix sweep, which made the
+# pair a one-way ratchet: a new feature adapter's trio was blanked
+# automatically and restored by nobody, so the live suite ran that feature
+# disabled and said nothing -- the exact failure the COMBAT_ story above
+# already demonstrated once. Both halves now come from the same vocabulary in
+# tests/llm_doubles.py, so a trio cannot be blanked without also being
+# restored.
+#
+# _live_keys() unions three sources, and each is load-bearing:
+#   * llm_gate_envs(os.environ) -- exactly what tests/conftest.py blanked,
+#     since it blanks by assignment (the keys are still present, empty).
+#   * llm_gate_envs(dotenv_values()) -- what .env can contribute, in case the
+#     working directory moved between conftest import and fixture setup.
+#   * _STATIC_LIVE_KEYS -- names that must be saved even when absent from
+#     both, because _apply_single_provider_isolation WRITES them. A key it
+#     writes but the teardown does not restore would outlive this module.
+
+#: Every name _apply_single_provider_isolation assigns. Enforced at runtime by
+#: live_env, which diffs the environment across that call.
+_ISOLATION_WRITES = (
     "NPC_CHAT_LLM_PROVIDER",
-    "NPC_CHAT_LLM_MODEL",
-    "NPC_CHAT_LLM_TIMEOUT",
-    "COMBAT_LLM_ENABLED",
     "COMBAT_LLM_PROVIDER",
-    "COMBAT_LLM_MODEL",
-    "OPENROUTER_SITE",
-    "OPENROUTER_SITE_TITLE",
     "OLLAMA_BASE_URL",
 ) + PROVIDER_KEY_ENVS
+
+#: The credentials plus the non-gate settings tests/conftest.py blanks, plus
+#: the isolation writes. The credential half is derived from the provider
+#: registry: a provider registered but missing here would stay blanked for the
+#: whole live run, so the chain would quietly serve every call from a
+#: different provider than the one under test.
+_STATIC_LIVE_KEYS = _ISOLATION_WRITES + LLM_SETTING_ENVS
+
+
+def _live_keys():
+    """Every environment name live_env must save, restore, and repopulate."""
+    from dotenv import dotenv_values
+
+    return tuple(
+        sorted(
+            set(_STATIC_LIVE_KEYS)
+            | set(llm_gate_envs(os.environ))
+            | set(llm_gate_envs(dotenv_values()))
+        )
+    )
 
 
 def live_llm_enabled() -> bool:
@@ -83,8 +114,11 @@ def _apply_single_provider_isolation():
 
         HOV_LIVE_LLM=1 HOV_LIVE_ONLY=groq python -m pytest tests/integration/...
 
-    Every key touched here is in ``_LIVE_KEYS``, so the fixture's own finally
-    block restores it -- the blanking never outlives the module.
+    Every key touched here is named in ``_ISOLATION_WRITES`` and therefore in
+    the set the fixture saved, so its ``finally`` block restores it -- the
+    blanking never outlives the module. ``live_env`` checks that rather than
+    trusting this paragraph: it diffs the environment across this call and
+    raises if anything changed that it did not save.
     """
     only = os.getenv("HOV_LIVE_ONLY", "").strip().lower()
     if not only:
@@ -145,7 +179,8 @@ def live_env():
     from dotenv import dotenv_values
 
     cfg = dotenv_values()
-    saved = {k: os.environ.get(k) for k in _LIVE_KEYS}
+    live_keys = _live_keys()
+    saved = {k: os.environ.get(k) for k in live_keys}
 
     # Discovery and the failed-model penalties are class-level and process-wide.
     # Clear them on the way in so a prior module's failures do not poison this
@@ -170,11 +205,28 @@ def live_env():
     # finally still restores the saved env, so a live-enabled configuration
     # (real API key included) can never leak into later test modules.
     try:
-        for key in _LIVE_KEYS:
+        for key in live_keys:
             value = cfg.get(key)
             if value:
                 os.environ[key] = value
+
+        # The guard on _ISOLATION_WRITES: a write this fixture did not save is
+        # a live provider configuration that outlives the module. Not an
+        # ``assert`` -- ``python -O`` strips those, and the one configuration
+        # nobody runs the suite under is the wrong place to lose this.
+        before = dict(os.environ)
         _apply_single_provider_isolation()
+        unsaved = sorted(
+            k
+            for k in set(before) | set(os.environ)
+            if before.get(k) != os.environ.get(k) and k not in saved
+        )
+        if unsaved:
+            raise RuntimeError(
+                "_apply_single_provider_isolation changed %s, which live_env "
+                "does not restore. Add the name to _ISOLATION_WRITES."
+                % ", ".join(unsaved)
+            )
         _reset()
         yield
     finally:

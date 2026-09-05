@@ -369,6 +369,11 @@ class TestLogsRoutes:
         written = "".join(p.read_text(encoding="utf-8") for p in tmp_path.glob("*.log"))
         assert "kept" in written
         assert "not-a-dict" not in written
+        # The sentence above about the count is an assertion, not a claim: the
+        # route used to report len(logs) -- 3 written for a batch where 1 was.
+        # Phrasing matches the single-entry case pinned in
+        # tests/test_api_routes_and_serializers.py.
+        assert rv.get_json()["message"] == "Successfully wrote 1 log entries"
 
     def test_receive_logs_no_logs_key(self, client):
         rv = client.post("/api/logs/browser", json={"session_id": "x"})

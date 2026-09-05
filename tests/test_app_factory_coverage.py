@@ -804,7 +804,7 @@ class TestUniverseBuildSuccessPath:
 
 
 # ---------------------------------------------------------------------------
-# CONFIG_FILE parsing exception handler (lines 94-95)
+# CONFIG_FILE parsing: the except around the startposition read in create_app
 # ---------------------------------------------------------------------------
 
 
@@ -814,7 +814,7 @@ class TestConfigFileParsingError:
         try block; the factory should catch it, log a warning, and continue
         with default position rather than crashing.
 
-        S19: this was a bare ``print()``, which bypassed the rotating LOG_FILE
+        This was a bare ``print()``, which bypassed the rotating LOG_FILE
         handler the module had just gained — so the two most consequential
         startup failures in the file were the two least likely to be recorded.
         It is a module-logger warning now, hence caplog rather than capsys.
@@ -833,7 +833,7 @@ class TestConfigFileParsingError:
 
 
 # ---------------------------------------------------------------------------
-# Test-only endpoints — success/exception branches (lines 319, 333-341)
+# Test-only endpoints — the success and exception branches of /test/reset-game
 # ---------------------------------------------------------------------------
 
 
@@ -908,7 +908,7 @@ class TestTestingEndpointsSuccessPaths:
 
 
 # ---------------------------------------------------------------------------
-# Debug routes endpoint — TESTING=False guard (line 378)
+# Debug routes endpoint — the TESTING=False guard on /debug/routes
 # ---------------------------------------------------------------------------
 
 

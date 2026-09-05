@@ -7,14 +7,12 @@ runtime. This script materializes that set to a sorted, human-diffable manifest
 so the drift is also visible in review, and so ``test_secure_pickle`` can assert
 the checked-in file still matches the code.
 
-What this manifest is **not**: the enforcement gate. Nothing on the save-load
-path consults ``get_allowlist()`` -- ``secure_pickle._build_allowlist``'s own
-docstring says so. Strict-mode enforcement is the broader engine-module rule in
-``_is_allowed`` (which also admits engine functions and methods, not just
-classes), and it only runs at all when ``HOV_STRICT_UNPICKLE`` is set. Calling
-this file "the strict-mode allow-list" -- as this docstring once did -- reads as
-a promise the loader does not make. The same disclaimer is written into the
-generated JSON as a ``note`` key so the artifact carries its own caveat.
+What this manifest is **not**: the enforcement gate. Calling it "the strict-mode
+allow-list" -- as this docstring once did -- reads as a promise the loader does
+not make. :data:`MANIFEST_NOTE` below states exactly what it is and is not, and
+that text is written into the generated JSON as a ``note`` key so a reader who
+opens the artifact without opening this script gets the caveat too. It is stated
+once, there, rather than twice here.
 
 Usage:
     python tools/gen_allowlist_manifest.py            # write the manifest
@@ -37,9 +35,10 @@ MANIFEST_NOTE = (
     "tools/gen_allowlist_manifest.py. NOT the enforcement gate: nothing on the "
     "save-load path consults secure_pickle.get_allowlist(). Strict-mode "
     "enforcement is secure_pickle._is_allowed (engine-module based, admits "
-    "functions and methods too) and runs only when HOV_STRICT_UNPICKLE is set, "
-    "which no config, .env.example or CI workflow does. Regenerate, never "
-    "hand-edit."
+    "functions and methods too) and runs only when HOV_STRICT_UNPICKLE is set. "
+    ".env.example documents that variable but ships it commented out and off, "
+    "and no config or CI workflow turns it on, so in a default checkout the "
+    "loader is permissive. Regenerate, never hand-edit."
 )
 
 MANIFEST_PATH = os.path.join(
@@ -74,7 +73,8 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    manifest_text = _serialize(build_manifest())
+    manifest = build_manifest()
+    manifest_text = _serialize(manifest)
 
     if args.check:
         if not os.path.exists(MANIFEST_PATH):
@@ -95,7 +95,7 @@ def main(argv=None):
     os.makedirs(os.path.dirname(MANIFEST_PATH), exist_ok=True)
     with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
         f.write(manifest_text)
-    print(f"Wrote {MANIFEST_PATH} ({build_manifest()['count']} classes).")
+    print(f"Wrote {MANIFEST_PATH} ({manifest['count']} classes).")
     return 0
 
 

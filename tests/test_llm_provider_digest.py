@@ -335,7 +335,7 @@ class TestDigestScheduler:
         assert digest._baseline_interval_seconds() == 168 * 3600
 
     def test_the_usage_window_gets_slack_over_the_cadence(self, monkeypatch):
-        """R7: the auto-roll bound used to be set to EXACTLY the cadence.
+        """The auto-roll bound used to be set to EXACTLY the cadence.
 
         The scheduler measures its cadence by counting SCHEDULER_TICK_SECONDS
         ticks and ``time.sleep`` overshoots, so real elapsed time always runs

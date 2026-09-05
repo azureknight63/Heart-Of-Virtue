@@ -31,18 +31,66 @@ from ai.llm_client import NpcChatLLMAdapter, _JSONTools
 from tests._npc_fixtures import chat_player, make_turn, qc_npc, wired_chat_npc
 
 
-def _npc(allowed_nouns=None, personality=None, prohibited=None):
-    """Thin adapter onto the shared ``qc_npc`` harness.
+def _qc_host(allowed_nouns=None, personality=None, prohibited=None):
+    """Thin adapter onto the shared ``qc_npc`` harness: a QC host.
 
-    Kept as a local name only because ~90 call sites in this file spell it, and
-    because the harness takes ``allowed_proper_nouns=None`` to mean "no
-    allow-list key at all" where this file has always meant "an empty one".
+    Kept as a local name because most tests in this file spell it, and because
+    the harness takes ``allowed_proper_nouns=None`` to mean "no allow-list key
+    at all" where this file has always meant "an empty one". (An earlier
+    revision justified it with a call-site count that was never right and would
+    have rotted if it had been -- ``grep -c`` answers that question.)
+
+    Named for what it builds, because two sibling files define a module-local
+    ``_qc_host()`` producing materially different objects under the same name.
     """
     return qc_npc(
         allowed_proper_nouns=allowed_nouns or [],
         prohibited=[re.escape(p) for p in (prohibited or [])],
         _chat_personality=personality,
     )
+
+
+
+class _TurnAdapter:
+    """One scripted combined-interface adapter for this whole file.
+
+    Replaces five method-local classes all named ``FakeAdapter`` plus a
+    ``_CountingAdapter`` that differed from them only in keeping a tally. Each
+    of the six was a ``generate_turn`` handing back a ``make_turn(...)``; under
+    one name in six places, an agent grepping ``FakeAdapter`` landed on
+    whichever copy came first.
+
+    ``turns`` are served in order and the last one repeats, which is what the
+    retry tests need: attempt 1 gets a line the QC pass rejects, attempt 2 gets
+    the replacement. A bare string is wrapped with :func:`make_turn`, since
+    that is what every call site here was doing by hand.
+
+    ``prompts`` records the ``system`` string of every call, so a test can
+    assert on what was actually *sent* -- the retry-guidance test used to
+    re-implement exactly this with a closed-over list. ``calls`` is kept as a
+    plain counter rather than ``len(prompts)`` so the budget tests below read
+    as what they are about.
+
+    Not :class:`tests._npc_fixtures.StubAdapter`, which is the natural home for
+    this: that class's ``generate_turn`` omits the ``history`` parameter, while
+    ``_generate_turn`` passes history positionally, so handing it to the mixin
+    raises ``TypeError`` into a bare ``except`` and silently exercises the
+    fallback path instead of the adapter. Fix that signature and this class
+    collapses into it.
+    """
+
+    enabled = True
+
+    def __init__(self, *turns):
+        self.turns = [make_turn(t) if isinstance(t, str) else t for t in turns]
+        self.prompts = []
+        self.calls = 0
+
+    def generate_turn(self, system, history, is_opening=False, jean_text=None):
+        self.prompts.append(system)
+        turn = self.turns[min(self.calls, len(self.turns) - 1)]
+        self.calls += 1
+        return turn
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +100,7 @@ def _npc(allowed_nouns=None, personality=None, prohibited=None):
 
 class TestAllowlistMatching:
     def test_multiword_allowed_noun_survives(self):
-        npc = _npc(allowed_nouns=["Wailing Badlands", "Echoing Caves"])
+        npc = _qc_host(allowed_nouns=["Wailing Badlands", "Echoing Caves"])
         result = npc._qc_npc_text(
             "You'll find shelter in the Echoing Caves before nightfall.", []
         ).text
@@ -60,27 +108,27 @@ class TestAllowlistMatching:
         assert "they" not in result.split()
 
     def test_singular_of_allowed_plural_survives(self):
-        npc = _npc(allowed_nouns=["Golemites"])
+        npc = _qc_host(allowed_nouns=["Golemites"])
         result = npc._qc_npc_text("I once traded with a Golemite patrol.", []).text
         assert "Golemite" in result
 
     def test_plural_of_allowed_singular_survives(self):
-        npc = _npc(allowed_nouns=["Grondite"])
+        npc = _qc_host(allowed_nouns=["Grondite"])
         result = npc._qc_npc_text("Two of the Grondites passed through camp.", []).text
         assert "Grondites" in result
 
     def test_adjectival_extension_of_allowed_stem_survives(self):
-        npc = _npc(allowed_nouns=["Grondia"])
+        npc = _qc_host(allowed_nouns=["Grondia"])
         result = npc._qc_npc_text("He wore a fine Grondian cloak.", []).text
         assert "Grondian" in result
 
     def test_generic_npc_own_given_name_survives(self):
-        npc = _npc(personality={"given_name": "Ren"})
+        npc = _qc_host(personality={"given_name": "Ren"})
         result = npc._qc_npc_text("Folk out here call me Ren, nothing more.", []).text
         assert "Ren" in result
 
     def test_invented_noun_replaced_grammatically(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("I met Kessa near the ford.", []).text
         assert "Kessa" not in result
         assert "someone" in result
@@ -88,7 +136,7 @@ class TestAllowlistMatching:
         assert "met they" not in result
 
     def test_invented_place_replaced_with_that_place(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("The caravan set out for Vetheria at dawn.", []).text
         assert "Vetheria" not in result
         assert "that place" in result
@@ -101,18 +149,18 @@ class TestAllowlistMatching:
 
 class TestPunctuationPreservation:
     def test_questions_and_exclamations_survive_sentence_cap(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("What do you want? Stay back! I mean it.", []).text
         assert "?" in result
         assert "!" in result
 
     def test_ellipsis_preserved(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("Well... maybe you're right.", []).text
         assert "..." in result
 
     def test_sentence_cap_still_three(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("One! Two? Three. Four. Five.", []).text
         assert "Four" not in result
         assert result.startswith("One!")
@@ -125,7 +173,7 @@ class TestPunctuationPreservation:
 
 class TestRewriteCleanup:
     def test_slang_removal_leaves_no_orphan_comma(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("Yeah, I know the road well.", []).text
         assert result is not None
         assert "Yeah" not in result
@@ -135,13 +183,13 @@ class TestRewriteCleanup:
     def test_you_know_question_form_removed(self):
         # The old pattern's trailing \b made "you know?" unmatchable at the
         # end of a sentence — its only realistic position.
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("The road gets rough out west, you know?", []).text
         assert result is not None
         assert "you know" not in result.lower()
 
     def test_cool_as_temperature_is_not_slang(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, reason, _aside = npc._qc_npc_text(
             "The water runs cool under the bridge.", [], allow_rewrite=False
         )
@@ -149,7 +197,7 @@ class TestRewriteCleanup:
         assert "cool" in cleaned
 
     def test_cool_as_interjection_is_slang(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, reason, _aside = npc._qc_npc_text(
             "That's cool, I suppose.", [], allow_rewrite=False
         )
@@ -160,17 +208,17 @@ class TestRewriteCleanup:
         # A hyphenated ALLOWLIST entry is split on "-" by _allowed_noun_tokens;
         # both halves must license the compound (a descriptive compound like
         # "East-bank" is separately covered by the _COMMON_CAP_WORDS rule).
-        npc = _npc(allowed_nouns=["Kel-Thar"])
+        npc = _qc_host(allowed_nouns=["Kel-Thar"])
         result = npc._qc_npc_text("We crossed below Kel-Thar before dawn.", []).text
         assert "Kel-Thar" in result
 
     def test_descriptive_compound_survives_without_allowlist(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("We camped on the East-bank side of the river.", []).text
         assert "East-bank" in result
 
     def test_prohibited_phrase_removed_without_artifact(self):
-        npc = _npc(prohibited=["forbidden"])
+        npc = _qc_host(prohibited=["forbidden"])
         result = npc._qc_npc_text("This forbidden word is gone now.", []).text
         assert result is not None
         assert "[...]" not in result
@@ -184,7 +232,7 @@ class TestRewriteCleanup:
 
 class TestStrictMode:
     def test_strict_rejects_invented_noun_with_reason(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, reason, _aside = npc._qc_npc_text(
             "I saw Xanthor by the river.", [], allow_rewrite=False
         )
@@ -192,7 +240,7 @@ class TestStrictMode:
         assert "Xanthor" in reason
 
     def test_strict_rejects_slang_with_reason(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, reason, _aside = npc._qc_npc_text(
             "Yeah, the road is long.", [], allow_rewrite=False
         )
@@ -200,7 +248,7 @@ class TestStrictMode:
         assert "slang" in reason
 
     def test_rewrite_mode_salvages_same_text(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, reason, _aside = npc._qc_npc_text(
             "I saw Xanthor by the river.", [], allow_rewrite=True
         )
@@ -209,11 +257,11 @@ class TestStrictMode:
         assert reason is None
 
     def test_jean_dialogue_present_tense_rejected(self):
-        npc = _npc()
+        npc = _qc_host()
         assert npc._qc_npc_text("Jean says he wants to leave.", []).text is None
 
     def test_jean_dialogue_rejected_in_both_modes(self):
-        npc = _npc()
+        npc = _qc_host()
         for allow in (False, True):
             cleaned, _r, _a = npc._qc_npc_text(
                 "Jean said hello to me today.", [], allow_rewrite=allow
@@ -228,14 +276,14 @@ class TestStrictMode:
 
 class TestActionAsides:
     def test_asides_stripped_from_spoken_text(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("*nods slowly* Fine. Have it your way.", []).text
         assert "*" not in result
         assert "nods slowly" not in result
         assert result.startswith("Fine.")
 
     def test_extract_returns_aside_text(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, _reason, aside = npc._qc_npc_text(
             "*shrugs* The road decides, not me.", []
         )
@@ -243,7 +291,7 @@ class TestActionAsides:
         assert cleaned.startswith("The road")
 
     def test_markdown_bold_unwrapped_not_extracted(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("That is **not** a good idea.", []).text
         assert "*" not in result
         assert "not" in result
@@ -251,7 +299,7 @@ class TestActionAsides:
     def test_mid_sentence_emphasis_is_unwrapped_not_extracted(self):
         # Single-asterisk emphasis embedded between words is markdown
         # emphasis, not a stage direction — the word must stay in place.
-        npc = _npc()
+        npc = _qc_host()
         cleaned, _reason, aside = npc._qc_npc_text(
             "I would *never* sell to them.", []
         )
@@ -259,7 +307,7 @@ class TestActionAsides:
         assert aside == ""
 
     def test_trailing_aside_extracted(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, _reason, aside = npc._qc_npc_text(
             "Suit yourself. *turns back to the fire*", []
         )
@@ -267,19 +315,16 @@ class TestActionAsides:
         assert aside == "turns back to the fire"
 
     def test_spoken_text_capitalized_after_leading_aside(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, _reason, _aside = npc._qc_npc_text("*shrugs* fine, go.", [])
         assert cleaned.startswith("Fine")
 
     def test_run_npc_turn_relocates_aside_into_empty_flavor(self):
-        class FakeAdapter:
-            def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                return make_turn("*studies the horizon* Storm's coming.")
-
-        npc = _npc()
+        adapter = _TurnAdapter("*studies the horizon* Storm's coming.")
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
-            FakeAdapter(), "sys", llm_available=True, is_opening=True, jean_text=None
+            adapter, "sys", llm_available=True, is_opening=True, jean_text=None
         )
         assert turn is not None
         assert "*" not in turn.npc_text
@@ -287,17 +332,16 @@ class TestActionAsides:
         assert "studies the horizon" in turn.npc_flavor.lower()
 
     def test_model_supplied_flavor_takes_priority_over_aside(self):
-        class FakeAdapter:
-            def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                return make_turn(
-                    "*sighs* So be it.",
-                    npc_flavor="She turns away toward the fire.",
-                )
-
-        npc = _npc()
+        adapter = _TurnAdapter(
+            make_turn(
+                "*sighs* So be it.",
+                npc_flavor="She turns away toward the fire.",
+            )
+        )
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
-            FakeAdapter(), "sys", llm_available=True, is_opening=True, jean_text=None
+            adapter, "sys", llm_available=True, is_opening=True, jean_text=None
         )
         assert turn.npc_flavor == "She turns away toward the fire."
 
@@ -309,23 +353,17 @@ class TestActionAsides:
 
 class TestRetryGuidance:
     def test_second_attempt_carries_rejection_reason(self):
-        calls = []
-
-        class FakeAdapter:
-            def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                calls.append(system)
-                if len(calls) == 1:
-                    text = "I saw Xanthor by the river."
-                else:
-                    text = "The river runs cold this season."
-                return make_turn(text)
-
-        npc = _npc()
+        adapter = _TurnAdapter(
+            "I saw Xanthor by the river.",
+            "The river runs cold this season.",
+        )
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
-            FakeAdapter(), "base system", llm_available=True,
+            adapter, "base system", llm_available=True,
             is_opening=True, jean_text=None,
         )
+        calls = adapter.prompts
         assert turn.npc_text.startswith("The river")
         assert len(calls) == 2
         assert "[RETRY GUIDANCE]" not in calls[0]
@@ -333,15 +371,12 @@ class TestRetryGuidance:
         assert "Xanthor" in calls[1]
 
     def test_final_attempt_rewrites_instead_of_falling_back(self):
-        class FakeAdapter:
-            def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                # Both attempts return the same invented-noun line.
-                return make_turn("I saw Xanthor by the river.")
-
-        npc = _npc()
+        # One turn, so both attempts get the same invented-noun line.
+        adapter = _TurnAdapter("I saw Xanthor by the river.")
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
-            FakeAdapter(), "sys", llm_available=True, is_opening=True, jean_text=None
+            adapter, "sys", llm_available=True, is_opening=True, jean_text=None
         )
         # Salvaged in place on the final attempt — not dropped to fallback.
         # ("Xanthor" ends in -or, so the place-shaped replacement applies.)
@@ -357,7 +392,7 @@ class TestRetryGuidance:
 
 class TestJeanOptionTopUp:
     def test_partial_set_topped_up_to_three(self):
-        npc = _npc()
+        npc = _qc_host()
         npc._chat_fallback_idx = 0
         kept = [
             {"tone": "direct", "text": "Where does the road lead?"},
@@ -372,13 +407,13 @@ class TestJeanOptionTopUp:
         assert all(o["tone"] in ("direct", "guarded", "open") for o in result)
 
     def test_empty_set_yields_full_fallback_pool(self):
-        npc = _npc()
+        npc = _qc_host()
         npc._chat_fallback_idx = 0
         result = npc._top_up_jean_options([])
         assert len(result) == 3
 
     def test_top_up_prefers_missing_tone(self):
-        npc = _npc()
+        npc = _qc_host()
         npc._chat_fallback_idx = 0
         kept = [
             {"tone": "direct", "text": "Where does the road lead?"},
@@ -499,7 +534,7 @@ class TestGeneratePlainNoJsonLeak:
 class TestCleanupRegressions:
     def test_sentence_final_removal_leaves_no_orphan_comma(self):
         # Removing a sentence-final span used to leave "It's fine,."
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("It's fine, cool.", []).text
         assert result == "It's fine."
 
@@ -521,35 +556,35 @@ class TestCleanupRegressions:
         )
 
     def test_consecutive_asides_are_both_extracted(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned, aside = npc._extract_action_asides("*nods* *smiles* Fine.")
         assert cleaned == "Fine."
         assert aside == "nods smiles"
 
     def test_trailing_quote_gains_no_stray_period(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text('He called it "the long road."', []).text
         assert result == 'He called it "the long road."'
 
     def test_leading_ellipsis_survives_the_sentence_cap(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_npc_text("...fine. Have it your way.", []).text
         assert result.startswith("...fine.")
 
 
 class TestFlavorQCDirect:
     def test_flavor_is_capitalized_and_terminated(self):
-        npc = _npc()
+        npc = _qc_host()
         assert npc._qc_flavor_text("studies the horizon") == "Studies the horizon."
 
     def test_flavor_substitutes_invented_nouns(self):
-        npc = _npc()
+        npc = _qc_host()
         result = npc._qc_flavor_text("Watches Xanthor pass by.")
         assert "Xanthor" not in result
         assert result != ""
 
     def test_unusable_flavor_drops_to_empty(self):
-        npc = _npc()
+        npc = _qc_host()
         assert npc._qc_flavor_text("???") == ""
 
 
@@ -567,7 +602,7 @@ class TestUnclosedAsideAnywhereInTheLine:
     """
 
     def test_an_unclosed_aside_after_speech_keeps_the_speech(self):
-        npc = _npc()
+        npc = _qc_host()
         spoken, aside = npc._extract_action_asides(
             "Fine. *nods slowly and turns away"
         )
@@ -577,13 +612,13 @@ class TestUnclosedAsideAnywhereInTheLine:
     def test_a_closed_aside_does_not_hide_a_later_unclosed_one(self):
         """The first, closed aside moves the lone marker off the front, which
         is what defeated the leading-only repair."""
-        npc = _npc()
+        npc = _qc_host()
         spoken, aside = npc._extract_action_asides("*nods* Fine. *shrugs")
         assert spoken == "Fine."
         assert aside == "nods shrugs"
 
     def test_the_unclosed_aside_ends_at_the_next_terminator(self):
-        npc = _npc()
+        npc = _qc_host()
         spoken, aside = npc._extract_action_asides(
             "Fine. *turns away. And that was that."
         )
@@ -593,14 +628,14 @@ class TestUnclosedAsideAnywhereInTheLine:
     def test_a_reply_that_is_only_an_unclosed_aside_still_fails_qc(self):
         """Unchanged from the leading-only repair: nothing is spoken, so the
         turn is correctly rejected rather than narrating the direction."""
-        npc = _npc()
+        npc = _qc_host()
         cleaned, reason, aside = npc._qc_npc_text("*nods slowly Fine, then.", [])
         assert cleaned is None
         assert reason
         assert aside == "nods slowly Fine, then"
 
     def test_the_stage_direction_never_reaches_the_spoken_line(self):
-        npc = _npc()
+        npc = _qc_host()
         cleaned = npc._qc_npc_text(
             "The ferry runs at dawn. *she does not look up", []
         ).text
@@ -614,36 +649,29 @@ class TestUnclosedAsideAnywhereInTheLine:
 
 class TestFlavorObeysTheJeanDialogueRule:
     def test_flavor_that_speaks_for_jean_is_dropped(self):
-        npc = _npc()
+        npc = _qc_host()
         assert npc._qc_flavor_text('Jean said, "Leave it."') == ""
 
     def test_flavor_that_narrates_jean_speaking_is_dropped(self):
-        npc = _npc()
+        npc = _qc_host()
         assert npc._qc_flavor_text("Jean asks about the crossing.") == ""
 
     def test_a_relocated_aside_cannot_smuggle_jeans_dialogue_into_flavor(self):
         """The whole point: the aside is EXTRACTED from the line the rule
         protects and then relocated into the channel beside it."""
 
-        class FakeAdapter:
-            enabled = True
-
-            def generate_turn(self, system, history, is_opening=False, jean_text=None):
-                return make_turn(
-                    '*Jean said, "Leave it."* The ferry runs at dawn.'
-                )
-
-        npc = _npc()
+        adapter = _TurnAdapter('*Jean said, "Leave it."* The ferry runs at dawn.')
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
-            FakeAdapter(), "sys", llm_available=True, is_opening=True, jean_text=None
+            adapter, "sys", llm_available=True, is_opening=True, jean_text=None
         )
         assert turn is not None
         assert turn.npc_text == "The ferry runs at dawn."
         assert turn.npc_flavor == ""
 
     def test_ordinary_flavor_still_survives(self):
-        npc = _npc()
+        npc = _qc_host()
         assert npc._qc_flavor_text("She studies the far bank.") == (
             "She studies the far bank."
         )
@@ -654,7 +682,7 @@ class TestFlavorObeysTheDanglingFragmentPolicy:
     boundary and then add the cosmetic period the policy exists to forbid."""
 
     def test_a_cut_off_beat_is_dropped_rather_than_closed_with_a_period(self):
-        npc = _npc()
+        npc = _qc_host()
         complete = "She sets the ledger down and looks a long while at the water."
         result = npc._qc_flavor_text(complete + " The man who keeps it is")
         assert result == complete
@@ -662,7 +690,7 @@ class TestFlavorObeysTheDanglingFragmentPolicy:
     def test_a_beat_that_is_only_a_fragment_is_still_closed(self):
         """The inverse failure: discarding unconditionally would amputate a
         beat that never had a terminator to begin with."""
-        npc = _npc()
+        npc = _qc_host()
         assert npc._qc_flavor_text("She sets the ledger down") == (
             "She sets the ledger down."
         )
@@ -671,18 +699,6 @@ class TestFlavorObeysTheDanglingFragmentPolicy:
 # ---------------------------------------------------------------------------
 # The deadline cancels the retry, not the rewrite
 # ---------------------------------------------------------------------------
-
-
-class _CountingAdapter:
-    enabled = True
-
-    def __init__(self, npc_text):
-        self.npc_text = npc_text
-        self.calls = 0
-
-    def generate_turn(self, system, history, is_opening=False, jean_text=None):
-        self.calls += 1
-        return make_turn(self.npc_text)
 
 
 class TestExpiredBudgetStillRewrites:
@@ -694,8 +710,8 @@ class TestExpiredBudgetStillRewrites:
         return time.monotonic() - 1.0
 
     def test_a_content_violation_is_repaired_without_a_second_call(self):
-        adapter = _CountingAdapter("I saw Xanthor by the river.")
-        npc = _npc()
+        adapter = _TurnAdapter("I saw Xanthor by the river.")
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
             adapter,
@@ -711,8 +727,8 @@ class TestExpiredBudgetStillRewrites:
         assert adapter.calls == 1, "the salvage must not open a provider stage"
 
     def test_the_carried_aside_survives_the_salvage(self):
-        adapter = _CountingAdapter("*sets down the ledger* I saw Xanthor here.")
-        npc = _npc()
+        adapter = _TurnAdapter("*sets down the ledger* I saw Xanthor here.")
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
             adapter,
@@ -728,8 +744,8 @@ class TestExpiredBudgetStillRewrites:
     def test_a_structural_rejection_is_not_salvaged(self):
         """Rewrite mode repairs content, never structure — a line that speaks
         for Jean has no safe rewrite and must still reach the fallback."""
-        adapter = _CountingAdapter('Jean said, "I will go."')
-        npc = _npc()
+        adapter = _TurnAdapter('Jean said, "I will go."')
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
             adapter,
@@ -745,8 +761,8 @@ class TestExpiredBudgetStillRewrites:
     def test_a_stage_is_not_opened_without_room_for_a_full_round_timeout(self):
         """Gating on "has the deadline passed?" let a stage start with
         milliseconds left and then run a whole provider chain."""
-        adapter = _CountingAdapter("I saw Xanthor by the river.")
-        npc = _npc()
+        adapter = _TurnAdapter("I saw Xanthor by the river.")
+        npc = _qc_host()
         npc._chat_history = []
         turn = npc._run_npc_turn(
             adapter,
@@ -774,7 +790,7 @@ class TestRetryGuidanceIsBounded:
             "Aardor", "Baldor", "Caldor", "Daldor", "Ealdor", "Faldor",
             "Galdor", "Haldor", "Ialdor", "Jaldor", "Kaldor", "Laldor",
         ]
-        npc = _npc()
+        npc = _qc_host()
         reason = npc._qc_npc_text(
             "He met " + ", ".join(names) + " by the water.", [], allow_rewrite=False
         ).reason
@@ -790,7 +806,7 @@ class TestAcceptedLineIsSingleLine:
         by newlines (revise_turn's options block, the replayed history rows).
         The production adapter happens to collapse whitespace upstream; the
         legacy adapter path this module still supports does not."""
-        npc = _npc()
+        npc = _qc_host()
         cleaned = npc._qc_npc_text("The ferry runs\nat dawn.", []).text
         assert cleaned == "The ferry runs at dawn."
 

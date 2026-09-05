@@ -129,7 +129,7 @@ class TestSharedChatPayload:
 
 
 class TestOllamaTransportIsMetered:
-    """R5: ``GenericLLMClient._ollama_chat`` was the last unmetered transport,
+    """``GenericLLMClient._ollama_chat`` was the last unmetered transport,
     while its sibling ``NpcChatLLMAdapter._call_ollama`` metered. Every Mynx and
     CombatStrategist Ollama call was invisible to the digest."""
 
@@ -179,7 +179,7 @@ class TestOllamaTransportIsMetered:
 
 
 class TestOpenAiCompatibleFailuresAreCounted:
-    """S5: ``_post_chat_completion`` and ``response.json()`` sat outside any
+    """``_post_chat_completion`` and ``response.json()`` sat outside any
     try, so a socket error or a non-JSON 200 escaped without ever reaching
     ``_record_provider_usage`` -- a groq or cerebras outage was invisible in the
     digest, and ``_call_llm``'s broad except was quietly load-bearing for this
@@ -213,7 +213,7 @@ class TestOpenAiCompatibleFailuresAreCounted:
 
 
 class TestValidationRespectsTheAccountQuota:
-    """S2: ``_validate_and_fallback_openrouter`` was the third OpenRouter loop
+    """``_validate_and_fallback_openrouter`` was the third OpenRouter loop
     and the one the 429 work never reached -- 1 primary + 5 fallback dials, all
     guaranteed 429s, at prewarm on a spent account -- and it then latched
     ``self.enabled = False``, disabling the WHOLE chain (groq and cerebras

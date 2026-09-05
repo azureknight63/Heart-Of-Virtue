@@ -10,12 +10,25 @@ test could not reach the prohibited-phrase branch at all), some omitted
 ``_chat_world_facts`` (so the invented-proper-noun scan silently saw an empty
 allow-list), and none of them was reusable from a sibling file.
 
-That migration is **in progress, not finished** — the number above is where it
-started, and roughly eighty of those bodies were still inline when this
-paragraph was written. Treat any count here as stale on sight and run
-``grep -c "class TestNPC" tests/test_npc_chat_llm_tier4.py`` instead; the point
-of the sentence is that new tests must not add to the pile, which does not
-depend on the exact figure.
+That migration is **complete**. Every inline body that could be expressed as
+a factory call is one; the handful that remain are exceptions that state
+their own reason on the line above the ``class`` statement, and all of them
+pin a state the factory cannot reach *because* it is a complete host --
+a missing ``keywords``, a missing ``_chat_config_path``, or a class whose
+``__name__`` is itself the thing under assertion (``_get_npc_key`` derives
+the key from ``type(self).__name__``, so a shared host class has nothing to
+vary). Adding a body without such a reason is the regression.
+
+To re-derive rather than trust this paragraph::
+
+    grep -rn "(ConversationalNPCMixin)" tests/
+
+That is the honest command: counting ``class TestNPC`` alone misses the two
+named ``CustomNomad`` and the two in ``tests/integration/``. As of this
+writing it finds five subclasses in the default-collected suite (four in
+``test_npc_chat_llm_tier4.py``, one file-local builder in
+``test_npc_chat_llm_review.py``), two in the opt-in live suite, and
+:class:`ChatHost` below.
 
 :func:`chat_npc` builds one host object carrying the mixin's *whole* documented
 attribute contract (see the module docstring of ``src/npc/_chat_llm.py``), with
@@ -31,14 +44,25 @@ Why these stay plain functions, and stay here
 This file is not a ``conftest.py``, so nothing in it is auto-discovered; a test
 module imports what it needs by name. Earlier revisions carried a standing note
 saying these should be promoted into ``tests/conftest.py``. They should not, and
-the note is retired rather than acted on: ``tests/conftest.py`` is the *root*
-conftest, so a fixture added there is visible to all ~1000 tests in the suite,
-including the several hundred that have nothing to do with NPCs. Names like
-``chat_player`` and ``make_turn`` are generic enough to shadow a file-local
-fixture in a suite that never meant to use them, and the resulting failure
-points at a file the author never opened — which is the exact papercut that
-deleting the broken ``flask_app``/``flask_client``/``app_with_session``
-fixtures from the root conftest was meant to stop repeating.
+the note is retired rather than acted on — but the reason it used to give was
+backwards, so here is the real one.
+
+pytest resolves a fixture from the most specific scope outward: a definition in
+the test module itself wins, then a ``conftest.py`` in the same directory, then
+each parent ``conftest.py``. A root-conftest fixture therefore **cannot** shadow
+a file-local one; the file-local definition always wins. (``tests/conftest.py``
+states this correctly on its own ``game_service`` fixture.)
+
+The hazard runs the other way, and it is quieter. ``tests/conftest.py`` is the
+*root* conftest, so a fixture added there is visible to every test in the suite
+— 10,675 of them at last count, the great majority with nothing to do with
+NPCs. A name as generic as ``chat_player`` or ``make_turn`` would then be
+silently *inherited* by any file that forgot to define its own: the test does
+not fail, it passes, against an object its author never chose and cannot see
+from the file they are reading. That is the same class of papercut as the
+broken ``flask_app``/``flask_client``/``app_with_session`` fixtures deleted
+from the root conftest, which handed an ``AttributeError`` out of a file
+nobody had opened.
 
 The import line these factories cost is the price of that isolation, and it is
 also documentation: it says on the face of the test file where its objects come
@@ -47,6 +71,7 @@ from. If they ever do warrant fixture form, the right home is a
 """
 
 import re
+from typing import Any, Dict, Iterable, List, Optional, Pattern, Sequence
 
 from src.npc._chat_llm import ConversationalNPCMixin
 
@@ -73,12 +98,14 @@ class ChatPlayer:
     for why this is a double rather than a real ``Player``.
     """
 
-    def __init__(self, universe=None, reputation=None):
+    def __init__(
+        self, universe: Any = None, reputation: Optional[Dict[str, Any]] = None
+    ) -> None:
         self.universe = universe
-        self.reputation = {} if reputation is None else reputation
+        self.reputation: Dict[str, Any] = {} if reputation is None else reputation
 
 
-def chat_player(persist=False, **overrides):
+def chat_player(persist: bool = False, **overrides: Any) -> ChatPlayer:
     """Build the player object a chat test hands to ``chat_open``/``chat_respond``.
 
     ``player = chat_player()`` is the ordinary case. Nothing else is needed:
@@ -92,9 +119,16 @@ def chat_player(persist=False, **overrides):
             attribute itself when it is missing, so this is not required — it is
             for tests that want to *read* the dict afterwards without depending
             on that creation having happened.
-        **overrides: any further attribute, set on the finished instance —
-            a pre-seeded ``reputation``, a stub ``universe`` carrying a
-            ``story``, and so on.
+        **overrides: ``universe`` and ``reputation`` are routed into the
+            constructor; every other keyword is set on the finished
+            instance. The routing is not cosmetic: ``ChatPlayer.__init__``
+            normalises ``reputation=None`` to ``{}``, and setting the
+            attribute afterwards instead skips that -- so
+            ``chat_player(reputation=None)`` used to hand back a player
+            whose ``reputation`` was ``None``, which is the
+            AttributeError-shaped trap this module exists to prevent.
+            Same reason :func:`chat_npc` routes its own constructor
+            keywords rather than setattr-ing them.
 
     A double rather than a real ``src.player.Player`` on purpose, and this is
     the one place in the NPC suite where that is the right call: ``reputation``
@@ -108,7 +142,9 @@ def chat_player(persist=False, **overrides):
     was a third copy under a third name, and ``_PersistPlayer`` was the same
     thing plus ``npc_chat_histories`` -- which is the ``persist=True`` argument.
     """
-    player = ChatPlayer()
+    ctor_keys = ("universe", "reputation")
+    ctor = {k: overrides.pop(k) for k in ctor_keys if k in overrides}
+    player = ChatPlayer(**ctor)
     if persist:
         player.npc_chat_histories = {}
     for key, value in overrides.items():
@@ -116,29 +152,41 @@ def chat_player(persist=False, **overrides):
     return player
 
 
-def make_turn(npc_text, **overrides):
+def make_turn(npc_text: str, **overrides: Any) -> Dict[str, Any]:
     """One structured turn payload, as an adapter's ``generate_turn`` returns it.
 
     ``make_turn("The road north is closed.")``, or
     ``make_turn("...", reputation_delta=3, jean_options=[...])``.
 
     The six keys are the shape ``_qc_npc_text`` and the loquacity/reputation
-    bookkeeping read, and the defaults are the inert value for each: empty
-    flavor, ``"neutral"`` quality, no reputation movement, the ordinary
-    ``-5`` loquacity cost, no options. A test therefore states only the field
-    it is varying, which is also the field the assertion is about -- the whole
-    dict spelled out inline buries that one field among five constants.
+    bookkeeping read, and each default is the value that leaves that field's
+    behaviour to the engine: empty flavor, ``"neutral"`` quality, no reputation
+    movement, no options. A test therefore states only the field it is varying,
+    which is also the field the assertion is about -- the whole dict spelled
+    out inline buries that one field among five constants.
+
+    ``loquacity_delta`` defaults to ``None`` because ``None`` is a *sentinel*
+    here, not an absent number. ``_apply_loquacity_delta`` reads it as "the
+    model did not signal a cost" and falls through to the quality-based
+    ``_LOQUACITY_DRAIN`` table (``positive`` 3, ``neutral`` 8, ``negative`` 15,
+    ``offensive`` 30, keyed on the ``conversation_quality`` in this same dict).
+    Any non-``None`` value suppresses that whole branch, so a factory that
+    supplied one would route every one of its call sites away from the
+    production path while calling the default inert -- and would silently
+    decouple ``conversation_quality`` from the cost it is supposed to drive.
+    Pass an explicit number only when the *signalled* delta is what the test is
+    about.
 
     Deliberately not validated against a schema: several tests exist precisely
     to feed this pipeline a ``reputation_delta`` of ``"not-a-number"`` or
     ``999999`` and watch it clamp, so every override passes through untouched.
     """
-    turn = {
+    turn: Dict[str, Any] = {
         "npc_text": npc_text,
         "npc_flavor": "",
         "conversation_quality": "neutral",
         "reputation_delta": 0,
-        "loquacity_delta": -5,
+        "loquacity_delta": None,
         "jean_options": [],
     }
     turn.update(overrides)
@@ -154,8 +202,9 @@ class ChatHost(ConversationalNPCMixin):
     ``_init_chat_attrs``.
     """
 
-    def __init__(self, name="TestNPC", charisma=10, wisdom=10, keywords=None,
-                 config_path=None, init=True):
+    def __init__(self, name: str = "TestNPC", charisma: int = 10,
+                 wisdom: int = 10, keywords: Optional[Iterable[str]] = None,
+                 config_path: Optional[str] = None, init: bool = True) -> None:
         self.name = name
         self.charisma = charisma
         self.wisdom = wisdom
@@ -165,7 +214,7 @@ class ChatHost(ConversationalNPCMixin):
             self._init_chat_attrs()
 
 
-def chat_npc(init=True, **overrides):
+def chat_npc(init: bool = True, **overrides: Any) -> ChatHost:
     """Build a mixin host, then apply ``overrides`` as plain attributes.
 
     Args:
@@ -185,7 +234,9 @@ def chat_npc(init=True, **overrides):
     return npc
 
 
-def qc_npc(allowed_proper_nouns=None, prohibited=(), name="TestNPC", **overrides):
+def qc_npc(allowed_proper_nouns: Optional[Iterable[str]] = None,
+           prohibited: Sequence[str] = (), name: str = "TestNPC",
+           **overrides: Any) -> ChatHost:
     """A host wired for the ``_qc_npc_text`` pipeline specifically.
 
     ``_qc_npc_text`` reads exactly two pieces of instance state —
@@ -200,7 +251,7 @@ def qc_npc(allowed_proper_nouns=None, prohibited=(), name="TestNPC", **overrides
     without forking the factory — which is exactly how the hand-rolled copies
     in ``test_npc_chat_qc_hardening.py`` started.
     """
-    facts = {}
+    facts: Dict[str, Any] = {}
     if allowed_proper_nouns is not None:
         facts["allowed_proper_nouns"] = list(allowed_proper_nouns)
     return chat_npc(
@@ -212,9 +263,14 @@ def qc_npc(allowed_proper_nouns=None, prohibited=(), name="TestNPC", **overrides
     )
 
 
-def prohibit(*phrases):
+def prohibit(*phrases: str) -> List[Pattern[str]]:
     """Compile ``phrases`` the way ``_init_chat_attrs`` compiles them."""
     return [re.compile(p, re.IGNORECASE) for p in phrases]
+
+
+#: "no scripted raw payload" -- distinct from a scripted ``None``, which
+#: is itself one of the malformed shapes the mixin has to survive.
+_UNSET = object()
 
 
 class StubAdapter:
@@ -227,12 +283,17 @@ class StubAdapter:
     once the list is exhausted.
     """
 
-    def __init__(self, *turns):
-        self.turns = list(turns)
-        self.prompts = []
+    def __init__(self, *turns: Any, enabled: bool = True) -> None:
+        # `enabled` is not decoration: `_prepare_turn_context` reads it to
+        # decide whether an adapter counts as available at all, so without it
+        # the mixin raises AttributeError before this stub is ever called.
+        self.enabled = enabled
+        self.turns: List[Any] = list(turns)
+        self.prompts: List[Any] = []
+        self.history: Any = None
         self.calls = 0
 
-    def _next(self):
+    def _next(self) -> Any:
         index = min(self.calls, len(self.turns) - 1)
         self.calls += 1
         turn = self.turns[index]
@@ -240,8 +301,23 @@ class StubAdapter:
             raise turn
         return turn
 
-    def generate_turn(self, system=None, is_opening=False, jean_text=None, **kwargs):
+    def generate_turn(self, system: Any = None, history: Any = None,
+                      is_opening: bool = False,
+                      jean_text: Optional[str] = None, **kwargs: Any) -> Any:
+        """Match the mixin's call shape exactly.
+
+        ``history`` is second and positional because that is how
+        ``_generate_turn`` calls it (``src/npc/_chat_llm.py``):
+        ``method(system, self._chat_history, is_opening=True)``. Omitting it
+        bound the history list to ``is_opening``, so the keyword arrived twice
+        and raised ``TypeError`` -- into ``_generate_turn``'s bare ``except``,
+        which then silently ran the FALLBACK path. Every test using this stub
+        passed while asserting on a turn the stub never produced: ``calls`` 0,
+        ``prompts`` empty, turn ``None``. A double that cannot be reached is
+        worse than no double, because the suite stays green either way.
+        """
         self.prompts.append(system)
+        self.history = history
         return self._next()
 
 
@@ -258,38 +334,63 @@ class ScriptedAdapter:
     """
 
     #: A Jean-options block that survives ``_qc_jean_options`` unchanged.
-    VALID_OPTIONS = [
+    VALID_OPTIONS: List[Dict[str, str]] = [
         {"text": "Tell me more.", "tone": "direct"},
         {"text": "I will remember that.", "tone": "guarded"},
         {"text": "Go on, then.", "tone": "open"},
     ]
 
-    def __init__(self, npc_text="The road north is closed.", quality="neutral",
-                 options=None, enabled=True, personality=None, **extra):
+    def __init__(self, npc_text: str = "The road north is closed.",
+                 quality: str = "neutral",
+                 options: Optional[List[Dict[str, str]]] = None,
+                 enabled: bool = True,
+                 personality: Optional[Dict[str, Any]] = None,
+                 raw: Any = _UNSET,
+                 error: Optional[BaseException] = None,
+                 **extra: Any) -> None:
         self.enabled = enabled
         self.npc_text = npc_text
         self.quality = quality
         self.options = self.VALID_OPTIONS if options is None else options
         self.personality = personality
+        #: Return this instead of a built turn -- for the malformed-payload
+        #: cases (``None``, ``[]``, a bare string) the mixin must survive.
+        self.raw = raw
+        #: Raise this instead of returning -- for the adapter-blew-up path.
+        self.error = error
         self.extra = extra
-        self.prompts = []
-        self.jean_texts = []
+        self.prompts: List[Any] = []
+        self.jean_texts: List[Optional[str]] = []
 
-    def generate_npc_turn(self, system, history, is_opening=False, jean_text=None):
+    def generate_npc_turn(self, system: Any, history: Any,
+                          is_opening: bool = False,
+                          jean_text: Optional[str] = None) -> Dict[str, Any]:
         self.prompts.append(system)
         self.jean_texts.append(jean_text)
-        turn = {"npc_text": self.npc_text, "conversation_quality": self.quality}
+        # `raw` and `error` exist so the malformed-payload and raising-adapter
+        # cases need no local class of their own. Checked before the turn is
+        # built, because both are about the adapter never returning a
+        # well-formed one.
+        if self.error is not None:
+            raise self.error
+        if self.raw is not _UNSET:
+            return self.raw
+        turn: Dict[str, Any] = {
+            "npc_text": self.npc_text,
+            "conversation_quality": self.quality,
+        }
         turn.update(self.extra)
         return turn
 
-    def generate_jean_options(self, name, voice, response, history, turn):
+    def generate_jean_options(self, name: str, voice: Any, response: Any,
+                              history: Any, turn: Any) -> List[Dict[str, str]]:
         return self.options
 
-    def generate_personality(self, class_name):
+    def generate_personality(self, class_name: str) -> Optional[Dict[str, Any]]:
         return self.personality
 
 
-def ready_npc(adapter=None, **overrides):
+def ready_npc(adapter: Any = None, **overrides: Any) -> ChatHost:
     """A mixin host wired for a live ``chat_open``/``chat_respond`` round.
 
     Sets every attribute those two methods read, so a test only has to state
@@ -297,7 +398,7 @@ def ready_npc(adapter=None, **overrides):
     reads the on-disk world-facts/character-config JSON; the attributes it
     would set are supplied here as fixed, inspectable values instead.
     """
-    defaults = {
+    defaults: Dict[str, Any] = {
         "name": "TestNPC",
         "charisma": 10,
         "wisdom": 10,
@@ -320,7 +421,8 @@ def ready_npc(adapter=None, **overrides):
     return chat_npc(init=False, **defaults)
 
 
-def wired_chat_npc(adapter, persist=False, **overrides):
+def wired_chat_npc(adapter: Any, persist: bool = False,
+                   **overrides: Any) -> ChatHost:
     """A mixin host wired for a real ``chat_open``/``chat_respond`` round.
 
     Unlike :func:`ready_npc`, which only carries attributes, this also stubs the
@@ -345,7 +447,7 @@ def wired_chat_npc(adapter, persist=False, **overrides):
     they take the caller's arguments *without* a ``self`` — attribute lookup on
     an instance does not bind.
     """
-    defaults = {
+    defaults: Dict[str, Any] = {
         "name": "Mara",
         "_chat_world_facts": {"allowed_proper_nouns": ["Mara", "Jean"]},
         "_chat_char_config": None,

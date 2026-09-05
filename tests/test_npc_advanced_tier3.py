@@ -11,13 +11,10 @@ Target: 120+ tests covering all conditional paths, edge cases, error states.
 """
 
 import pytest
-import sys
 import json
-import random
 import os
-from unittest.mock import MagicMock, patch, call, ANY, mock_open
+from unittest.mock import MagicMock, patch, call, mock_open
 from pathlib import Path
-from io import StringIO
 from types import SimpleNamespace
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

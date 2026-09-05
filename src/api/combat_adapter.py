@@ -1930,7 +1930,17 @@ class ApiCombatAdapter:
                     # Gather context
                     all_moves = self._get_available_moves()
                     ctx = {
-                        "player": CombatantSerializer.serialize_combatant(self.player),
+                        "player": {
+                            **CombatantSerializer.serialize_combatant(self.player),
+                            # serialize_combatant carries no consumables key, so
+                            # without this the tactical prompt renders
+                            # "Consumables: [None]" on every turn while telling the
+                            # model to prefer UseItem. Same list the combat state
+                            # sends to the client as `player_consumables`.
+                            "consumables": CombatStateSerializer._get_consumables(
+                                self.player
+                            ),
+                        },
                         "enemies": [
                             CombatantSerializer.serialize_combatant(
                                 e, reference=self.player

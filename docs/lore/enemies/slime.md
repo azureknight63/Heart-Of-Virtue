@@ -23,15 +23,15 @@ Slimes are viscous, gelatinous creatures that ooze through caverns, dungeons, an
 - Vulnerable to area and high-precision damage: because they are fragile individually, area-of-effect spells or weapons that deal concentrated damage handle them well.
 
 ## Example Stats (from code)
-- Source: `src/npc.py` — `class Slime` (constructor values)
+- Source: `src/npc/_enemies.py` — `class Slime` (constructor values)
 - HP: 10 (maxhp=10)
 - Damage: 20 (damage=20) — note: this value in code represents the NPC damage parameter and may be scaled by moves/attacks
 - Awareness: 12 (awareness=12)
 - Aggro: True — will engage the player on sight
 - XP Award: 1 (exp_award=1)
-- Typical move set: `NpcAttack` (primary), `Advance` (to close distance), `NpcIdle`, `Dodge` (see `src/npc.py`)
+- Typical move set: `NpcAttack` (primary), `Advance` (to close distance), `NpcIdle`, `Dodge` (see `src/npc/_enemies.py`)
 
-> Implementation note: the numbers above are taken directly from the `Slime` class in `src/npc.py`. The damage value may seem high compared to HP because NPC damage and weapon/player damage scales are separate and handled in the combat system.
+> Implementation note: the numbers above are taken directly from the `Slime` class in `src/npc/_enemies.py`. The damage value may seem high compared to HP because NPC damage and weapon/player damage scales are separate and handled in the combat system.
 
 ## Encounter & Lore Notes
 - Common in damp caverns, sewers, and ruins; slimes are ideal low-level encounters or environmental hazards that punish careless exploration.
@@ -43,7 +43,7 @@ Slimes are viscous, gelatinous creatures that ooze through caverns, dungeons, an
 - Flavor them: describe the smell, the sound of grit within them, and how light refracts through their gelatinous bodies to make a simple enemy feel atmospheric.
 
 ## References
-- Code: `src/npc.py` (see `class Slime`)
-- Moves: `src/moves.py` (`NpcAttack`, `Advance`, `Dodge`)
+- Code: `src/npc/_enemies.py` (see `class Slime`)
+- Moves: `src/moves/` (`NpcAttack`, `Advance`, `Dodge`)
 - Spawner: `src/story/effects.py` (`NPCSpawnerEvent`)
 

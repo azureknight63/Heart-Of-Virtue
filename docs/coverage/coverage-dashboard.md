@@ -14,20 +14,32 @@ of them.
 | Backend (Python) | ≥ 85% | `--cov-fail-under=85` in `.github/workflows/test-coverage.yml` |
 | Frontend (React) | ≥ 95% lines/statements/functions/branches | `vite.config.js` thresholds — the build fails below them |
 
-## Test counts — measured 2026-08-28
+## Test counts — measured 2026-08-30
 
-| Suite | Result | Command |
-|---|---|---|
-| Backend (default suite) | **10,434 passed, 0 failed** | `python -m pytest -q` |
-| Frontend | **2,600 passed, 0 failed** across **116 test files** | `cd frontend && npm test -- --run` |
+| Suite | Passed | Skipped | Other | Command |
+|---|---|---|---|---|
+| Backend (default suite) | **10,558** | **3** | 1 xfailed, 0 failed | `python -m pytest -q` |
+| Frontend | **2,660** across **118 test files** | 0 | 0 failed | `cd frontend && npm test -- --run` |
 
-The default backend suite excludes `tests/api`, `tests/broken`, `tests/uat` and
-`tests/integration` (`pytest.ini`'s `norecursedirs`).
+The Skipped column is here because the count is small enough to audit and worth
+auditing. All 3 backend skips are environmental, not disabled tests: two in
+`tests/api/test_cloud_integration.py` (gated on `HOV_LIVE_DB`, so the suite never
+writes to the live database) and one in `tests/test_secure_pickle.py`, whose
+`importorskip("resource")` cannot resolve on Windows. Twelve skip sites exist in the
+tree and only those two fire: seven are in `tests/integration/`, which the default run
+does not walk, and the remaining three guard branches that do not trigger here
+(`tests/test_security_headers.py` skips only when `frontend/` is absent, and
+`tests/test_error_handler_logging.py` only when Flask is not installed). A number materially above 3 means someone added a blanket skip
+— see root `CLAUDE.md` for why that has always turned out to be masking a real failure.
+
+The default backend suite excludes `tests/broken`, `tests/uat` and `tests/integration`
+(`pytest.ini`'s `norecursedirs`). `tests/api` is **not** excluded — it was, for long
+enough that its contents rotted, and it now runs in the gate.
 
 ## Coverage percentages — NOT measured in this pass
 
 The percentages and rollups below are from the **2026-08-23** run. The backend suite has
-grown from 7,671 to 10,434 tests since then and the frontend from 2,296 to 2,600, so
+grown from 7,671 to 10,558 tests since then and the frontend from 2,296 to 2,660, so
 treat every number in this section as **unverified**: it is the last known measurement,
 not the current one. Re-run the commands under "Regenerating this dashboard" before
 quoting any of it, and update this heading when you do.
@@ -117,9 +129,9 @@ Add `--cov-report=html` (backend, → `htmlcov/index.html`) or open
 `frontend/coverage/index.html` for a browsable per-line report. Neither is checked in:
 a generated HTML report in `docs/` goes stale silently and cannot be diffed.
 
-**Backend exclusions** (`pytest.ini`): `tests/api/`, `tests/broken/`, `tests/uat/`,
-`tests/integration/`. **Frontend**: all of `src/**/*.{js,jsx}` except `src/main.jsx` and
-`src/test/**`.
+**Backend exclusions** (`pytest.ini`'s `norecursedirs`): `tests/broken/`, `tests/uat/`,
+`tests/integration/`, `.claude/`. **Frontend**: all of `src/**/*.{js,jsx}` except
+`src/main.jsx` and `src/test/**`.
 
 ## FAQ
 

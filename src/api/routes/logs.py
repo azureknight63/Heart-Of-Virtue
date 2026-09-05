@@ -120,6 +120,9 @@ def receive_browser_logs():
 
         # Append logs to the file, bounding every free-text field so no single
         # oversized entry can blow up disk usage.
+        # Counts lines actually written, not entries submitted: malformed entries
+        # are skipped below, so len(logs) would over-report on a mixed batch.
+        written = 0
         with open(log_filepath, "a", encoding="utf-8") as f:
             for log_entry in logs:
                 # Hostile payloads may include non-dict entries (e.g. bare
@@ -146,6 +149,7 @@ def receive_browser_logs():
                     f"[{timestamp}] [{level}] [{session_id}] [{url}] {message}\n"
                 )
                 f.write(log_line)
+                written += 1
 
         # Perform automatic cleanup after writing logs
         # This runs silently in the background
@@ -158,7 +162,7 @@ def receive_browser_logs():
         return (
             jsonify(
                 {
-                    "message": f"Successfully wrote {len(logs)} log entries",
+                    "message": f"Successfully wrote {written} log entries",
                     "file": str(log_filename),
                 }
             ),

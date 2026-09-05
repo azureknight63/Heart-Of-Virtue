@@ -20,7 +20,9 @@ Design decisions under test (user-approved, 2026-08-21):
 
 import ast
 import re
+import types
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -44,7 +46,49 @@ def _assert_statement_lines(source):
     ]
 
 
-def _npc(char_config=None, personality=None, growth=None, moves=None, world=None):
+#: ``_PATTERNS`` is the one category-keyed table that is correctly absent from
+#: the registry: it is what ``_check_tables`` reads *from*, comparing every
+#: other table's key set against it, so registering it would only ask the check
+#: to confirm that ``_PATTERNS`` covers the same categories as ``_PATTERNS``.
+#: Nothing else is exempt by name -- ``_SCANS`` is keyed by ``SCAN_*`` values
+#: rather than categories, so the key-intersection test below drops it without
+#: needing to be told, and a table added tomorrow gets no such courtesy.
+_TABLES_OUTSIDE_THE_REGISTRY_BY_DESIGN = frozenset({"_PATTERNS"})
+
+
+def _category_keyed_table_names(module):
+    """Names of every module-level lookup table in ``module`` keyed by category.
+
+    Walked out of ``vars(module)`` rather than transcribed. A list of names
+    written down in this file is a second copy of the thing under test, and it
+    drifts the same way the registry does -- so a table added to neither would
+    satisfy a test whose whole subject is tables added to neither.
+
+    A table counts as category-keyed when its keys, or the first element of its
+    key tuples for the ``(category, subcategory)`` tables, intersect the values
+    of the module's ``CATEGORY_*`` constants.
+    """
+    categories = {
+        value
+        for name, value in vars(module).items()
+        if name.startswith("CATEGORY_") and isinstance(value, str)
+    }
+    names = set()
+    for name, table in vars(module).items():
+        if name.startswith("__") or not isinstance(table, (dict, frozenset, set)):
+            continue
+        heads = {key[0] if isinstance(key, tuple) and key else key for key in table}
+        if heads & categories:
+            names.add(name)
+    return names - _TABLES_OUTSIDE_THE_REGISTRY_BY_DESIGN
+
+
+def _registered_table_names(module):
+    """The names ``_check_tables`` will actually look at."""
+    return set(module._CATEGORY_TABLES) | set(module._SUBCATEGORY_TABLES)
+
+
+def _guard_host(char_config=None, personality=None, growth=None, moves=None, world=None):
     """A bare guard host: the attributes the tripwire and prompt build read.
 
     Deliberately *not* wired for a chat round — see
@@ -252,7 +296,7 @@ class TestNoFalsePositives:
 
 class TestAllowedTopics:
     def test_ally_own_techniques_are_not_flagged(self):
-        npc = _npc(
+        npc = _guard_host(
             growth={"tier": "ally"},
             moves=[_Move("Rivercut", "a low sweeping strike")],
         )
@@ -265,18 +309,18 @@ class TestAllowedTopics:
         assert guard.scan_npc_text(line) != []
 
     def test_ally_growth_talk_is_not_flagged(self):
-        npc = _npc(growth={"tier": "ally"})
+        npc = _guard_host(growth={"tier": "ally"})
         topics = npc._guard_allowed_topics()
         line = "I could teach you the way I hold a guard now."
         assert guard.scan_npc_text(line, topics) == []
 
     def test_knowledge_scope_topics_are_whitelisted(self):
-        npc = _npc(char_config={"knowledge_scope": ["the ferry crossing and its tolls"]})
+        npc = _guard_host(char_config={"knowledge_scope": ["the ferry crossing and its tolls"]})
         topics = npc._guard_allowed_topics()
         assert any("ferry" in t for t in topics)
 
     def test_generic_npc_has_no_combat_topics(self):
-        npc = _npc()
+        npc = _guard_host()
         topics = npc._guard_allowed_topics()
         assert not any("technique" in t for t in topics)
 
@@ -325,7 +369,7 @@ class TestDeterministicHedge:
 
 class TestGuardTurn:
     def test_clean_turn_makes_no_llm_call(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter()
         text, flavor, options = npc._guard_turn(
             adapter,
@@ -344,7 +388,7 @@ class TestGuardTurn:
         assert len(options) == 3
 
     def test_dirty_turn_escalates_once_and_takes_the_revision(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(
             revision={
                 "npc_text": "The blade on that rack was my father's work.",
@@ -371,7 +415,7 @@ class TestGuardTurn:
         assert all(guard.scan_option_text(o["text"]) == [] for o in options)
 
     def test_guidance_names_the_violated_categories(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(revision=None)
         npc._guard_turn(
             adapter,
@@ -384,7 +428,7 @@ class TestGuardTurn:
         assert guard.CATEGORY_TRANSACTION in guidance
 
     def test_revision_that_is_still_dirty_falls_back_to_the_hedge(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(
             revision={"npc_text": "Fine — I'll give you my knife instead."}
         )
@@ -401,7 +445,7 @@ class TestGuardTurn:
         assert len(adapter.calls) == 1
 
     def test_adapter_failure_falls_back_to_the_hedge(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(raises=True)
         text, _flavor, _options = npc._guard_turn(
             adapter,
@@ -415,7 +459,7 @@ class TestGuardTurn:
         assert len(adapter.calls) == 1
 
     def test_adapter_without_revise_turn_uses_the_hedge(self):
-        npc = _npc()
+        npc = _guard_host()
 
         class Legacy:
             enabled = True
@@ -430,7 +474,7 @@ class TestGuardTurn:
         assert guard.scan_npc_text(text) == []
 
     def test_no_adapter_at_all_still_guards(self):
-        npc = _npc()
+        npc = _guard_host()
         text, _flavor, _options = npc._guard_turn(
             None,
             "SYSTEM",
@@ -441,7 +485,7 @@ class TestGuardTurn:
         assert guard.scan_npc_text(text) == []
 
     def test_soliciting_option_is_dropped_and_topped_up(self):
-        npc = _npc()
+        npc = _guard_host()
         options = _opts(
             "Will you come with me across the river?",
             "How long have you worked this crossing?",
@@ -455,7 +499,7 @@ class TestGuardTurn:
         assert "come with me" not in " ".join(o["text"].lower() for o in out)
 
     def test_flavor_implying_a_transfer_is_dropped(self):
-        npc = _npc()
+        npc = _guard_host()
         _text, flavor, _options = npc._guard_turn(
             None,
             "SYSTEM",
@@ -466,7 +510,7 @@ class TestGuardTurn:
         assert flavor == ""
 
     def test_whitelisted_ally_line_does_not_escalate(self):
-        npc = _npc(
+        npc = _guard_host(
             growth={"tier": "ally"},
             moves=[_Move("Rivercut", "a low sweeping strike")],
         )
@@ -489,7 +533,7 @@ class TestGuardTurn:
 
 class TestPromptPrevention:
     def test_system_prompt_forbids_transactions(self, monkeypatch):
-        npc = _npc()
+        npc = _guard_host()
         monkeypatch.setattr(npc, "_get_chapter", lambda player: "01")
         monkeypatch.setattr(
             npc, "_build_jean_context_block", lambda player, chapter: "CTX"
@@ -723,7 +767,7 @@ class TestTopicMatchingIsWholeWord:
         assert guard.scan_npc_text(line, {"river cut"}) == []
 
     def test_generic_knowledge_scope_words_are_not_topics(self):
-        npc = _npc(
+        npc = _guard_host(
             char_config={"knowledge_scope": ["what people will and will not tell you"]}
         )
         topics = npc._guard_allowed_topics()
@@ -732,7 +776,7 @@ class TestTopicMatchingIsWholeWord:
         assert "tell" not in topics
 
     def test_jean_is_never_a_topic(self):
-        npc = _npc(char_config={"knowledge_scope": ["how Jean carries himself"]})
+        npc = _guard_host(char_config={"knowledge_scope": ["how Jean carries himself"]})
         assert "jean" not in npc._guard_allowed_topics()
 
 
@@ -822,7 +866,7 @@ class TestRevisionGoesThroughTheNormalQC:
     """The reviser's output has never seen the QC pipeline the generator's has."""
 
     def test_invented_noun_in_a_revision_is_repaired(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(revision={"npc_text": "The rack was forged by Xanthus."})
         text, _flavor, _options = npc._guard_turn(
             adapter,
@@ -835,7 +879,7 @@ class TestRevisionGoesThroughTheNormalQC:
         assert guard.scan_npc_text(text) == []
 
     def test_meta_speech_in_a_revised_option_is_dropped(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(
             revision={
                 "npc_text": "The rack by the door holds my work.",
@@ -857,7 +901,7 @@ class TestRevisionGoesThroughTheNormalQC:
         assert not any("[Option" in o["text"] for o in options)
 
     def test_overlong_revised_option_is_dropped(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(
             revision={
                 "npc_text": "The rack by the door holds my work.",
@@ -879,7 +923,7 @@ class TestFlavorOnlyFlagDoesNotEscalate:
     """Flagged flavor is dropped, never rewritten — so it is not worth a call."""
 
     def test_no_llm_call_when_only_the_flavor_trips(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter()
         text, flavor, options = npc._guard_turn(
             adapter,
@@ -894,7 +938,7 @@ class TestFlavorOnlyFlagDoesNotEscalate:
         assert len(options) == 3
 
     def test_a_line_flag_alongside_a_flavor_flag_still_escalates(self):
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(revision=None)
         npc._guard_turn(
             adapter,
@@ -954,7 +998,7 @@ class TestReviserReturnHardening:
                 self.calls.append({"guidance": guidance})
                 return "not a dict at all"
 
-        npc = _npc()
+        npc = _guard_host()
         adapter = WeirdAdapter()
         text, _flavor, options = npc._guard_turn(
             adapter,
@@ -972,7 +1016,7 @@ class TestGuardedOptionsSalvageOriginals:
         # One soliciting option trips the guard; the reviser returns a single
         # clean replacement. The two clean ORIGINAL options are context-aware
         # and must survive alongside it instead of generic pool fillers.
-        npc = _npc()
+        npc = _guard_host()
         adapter = _Adapter(
             revision={
                 "npc_text": "The river takes what it takes.",
@@ -1163,19 +1207,35 @@ class TestGuardTablesAreQualifiedByCategory:
         with pytest.raises(RuntimeError, match="no pattern emits"):
             guard._check_tables()
 
-    def test_every_table_is_registered_with_the_integrity_check(self):
+    def test_every_category_keyed_table_is_registered_with_the_integrity_check(self):
         """The rule the registry exists to enforce: a table nothing checks is
-        the shape that produced this bug three times."""
-        registered = set(guard._CATEGORY_TABLES) | set(guard._SUBCATEGORY_TABLES)
-        keyed_tables = {
-            "_HEDGES",
-            "_GUIDANCE",
-            "PROMPT_RULES",
-            "_SCAN_SCOPE",
-            "_EXCUSABLE_SUBCATEGORIES",
-            "_OPTION_SKIP_SUBCATEGORIES",
-        }
-        assert keyed_tables <= registered
+        the shape that produced this bug three times.
+
+        Both sides are derived from the live module, and the comparison is
+        equality. An earlier revision transcribed the left side as a literal
+        set of six names and asked only that it be a *subset* of the registry,
+        which meant a seventh category-keyed table registered nowhere passed
+        the test twice over -- absent from the hand-written literal, and
+        unreachable by ``<=``. That is the precise shape the module comment
+        beside ``_CATEGORY_TABLES`` says the registry exists to stop.
+        """
+        assert _category_keyed_table_names(guard) == _registered_table_names(guard)
+
+    def test_the_registration_rule_notices_a_table_registered_nowhere(self, monkeypatch):
+        """The failure mode the test above is worthless without.
+
+        A seventh category-keyed table, named in neither registry tuple, is
+        the exact drift ``_CATEGORY_TABLES``' comment describes; the derived
+        left-hand side has to see it, or the guard is decorative.
+        """
+        monkeypatch.setattr(
+            guard,
+            "_LATE_ADDED_TABLE",
+            {guard.CATEGORY_SOLICIT: ("nothing checks this",)},
+            raising=False,
+        )
+        unregistered = _category_keyed_table_names(guard) - _registered_table_names(guard)
+        assert unregistered == {"_LATE_ADDED_TABLE"}
 
 
 # ---------------------------------------------------------------------------
@@ -1279,7 +1339,7 @@ class TestReputationIsNotAwardedForAGuardedTurn:
         assert player.reputation["Mara"] == 0
 
     def test_the_guard_reports_whether_it_tripped(self):
-        npc = _npc()
+        npc = _guard_host()
         clean = npc._guard_turn(
             None,
             "SYSTEM",
@@ -1306,7 +1366,7 @@ class TestAllowedTopicsMemo:
     would start rewriting the very talk the whitelist exists to permit."""
 
     def test_a_newly_learned_move_joins_the_whitelist(self):
-        npc = _npc(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
+        npc = _guard_host(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
         assert "rivercut" in npc._guard_allowed_topics()
         assert "stonebreak" not in npc._guard_allowed_topics()
 
@@ -1314,11 +1374,11 @@ class TestAllowedTopicsMemo:
         assert "stonebreak" in npc._guard_allowed_topics()
 
     def test_the_set_is_reused_when_nothing_changed(self):
-        npc = _npc(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
+        npc = _guard_host(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
         assert npc._guard_allowed_topics() is npc._guard_allowed_topics()
 
     def test_a_newly_learned_move_is_not_rewritten_by_the_guard(self):
-        npc = _npc(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
+        npc = _guard_host(growth={"tier": "ally"}, moves=[_Move("Rivercut", "a sweep")])
         line = "I could teach you Stonebreak, though it took me years."
         assert npc._guard_turn(None, "SYSTEM", Turn(line)).tripped is True
 
@@ -1335,3 +1395,143 @@ def test_the_module_docstring_names_the_two_engine_hooks():
     doc = guard.__doc__ or ""
     assert "reputation_delta" in doc
     assert "loquacity_delta" in doc
+
+
+# ---------------------------------------------------------------------------
+# Negative controls for the shared ``assert_closed_over`` helper
+# ---------------------------------------------------------------------------
+# The helper in tests/conftest.py generalises the rule this file's
+# ``TestGuardTablesAreQualifiedByCategory`` enforces by hand for
+# ``_chat_guard``: every lookup table must be keyed over exactly the members of
+# the vocabulary it claims to cover, because a table missing a row fails OPEN
+# -- the lookup just never matches, and nothing raises.
+#
+# These live here, rather than beside the ``ai.combat_strategist`` tables they
+# also exercise, because this file is where "a table nothing checks is the bug"
+# is the subject. They are the only thing proving the helper can fail: a shared
+# guard with no guard on itself is the exact shape the rest of this pass has
+# been removing. Every case below asserts on a *distinct* failure mode, so a
+# helper that degraded to `assert True` would take several of them down at once.
+
+
+_BAND_MEMBERS = {"BLAZING": 1, "HOT": 2, "WARM": 3, "COLD": 4}
+
+#: A four-member vocabulary standing in for a real one, so the negative
+#: controls do not depend on any production module keeping its current members.
+_Band = Literal["BLAZING", "HOT", "WARM", "COLD"]
+
+
+def _vocabulary_module(**tables):
+    """A throwaway module owning ``_Band`` and whichever tables a test needs.
+
+    The helper resolves both the vocabulary and the tables by *name* off a
+    module, so exercising it needs a module rather than a dict.
+    """
+    module = types.ModuleType("fake_owner")
+    module.Band = _Band
+    module.NotALiteral = str
+    for name, table in tables.items():
+        setattr(module, name, table)
+    return module
+
+
+class TestAssertClosedOverCatchesEachWayATableCanDrift:
+    def test_it_passes_when_every_table_is_complete(self, assert_closed_over):
+        module = _vocabulary_module(
+            A=dict(_BAND_MEMBERS),
+            B=dict(_BAND_MEMBERS),
+            P={"BLAZING": "x", "COLD": "y"},
+        )
+        assert_closed_over(module, "Band", "A", "B", partial={"P": {"BLAZING", "COLD"}})
+
+    def test_it_fails_when_a_table_is_missing_a_member(self, assert_closed_over):
+        module = _vocabulary_module(
+            A=dict(_BAND_MEMBERS),
+            B={k: v for k, v in _BAND_MEMBERS.items() if k != "WARM"},
+        )
+        with pytest.raises(AssertionError) as excinfo:
+            assert_closed_over(module, "Band", "A", "B")
+        # Names the table that drifted, not merely that something did.
+        assert "fake_owner.B" in str(excinfo.value)
+        assert "'WARM'" in str(excinfo.value)
+
+    def test_it_fails_when_a_table_has_a_key_that_is_not_a_member(
+        self, assert_closed_over
+    ):
+        module = _vocabulary_module(A=dict(_BAND_MEMBERS, TEPID=9))
+        with pytest.raises(AssertionError) as excinfo:
+            assert_closed_over(module, "Band", "A")
+        assert "TEPID" in str(excinfo.value)
+
+    def test_it_fails_when_a_partial_table_drifts_from_its_declared_subset(
+        self, assert_closed_over
+    ):
+        """A partial table is still pinned -- to the subset it declared."""
+        module = _vocabulary_module(P={"BLAZING": "x"})
+        with pytest.raises(AssertionError) as excinfo:
+            assert_closed_over(module, "Band", partial={"P": {"BLAZING", "COLD"}})
+        assert "'COLD'" in str(excinfo.value)
+
+    def test_it_fails_when_a_partial_declaration_names_a_non_member(
+        self, assert_closed_over
+    ):
+        """The declaration is checked against the vocabulary too, so a typo in
+        the *test* cannot quietly widen what the table is allowed to hold."""
+        module = _vocabulary_module(P={"BLAZING": "x"})
+        with pytest.raises(AssertionError) as excinfo:
+            assert_closed_over(module, "Band", partial={"P": {"BLAZING", "TEPID"}})
+        assert "TEPID" in str(excinfo.value)
+
+    def test_it_rejects_a_vocabulary_that_is_not_a_literal(self, assert_closed_over):
+        module = _vocabulary_module(A=dict(_BAND_MEMBERS))
+        with pytest.raises(AssertionError, match="not a Literal"):
+            assert_closed_over(module, "NotALiteral", "A")
+
+    def test_it_rejects_a_table_named_both_complete_and_partial(
+        self, assert_closed_over
+    ):
+        module = _vocabulary_module(A=dict(_BAND_MEMBERS))
+        with pytest.raises(AssertionError, match="both table_names and partial"):
+            assert_closed_over(module, "Band", "A", partial={"A": {"BLAZING"}})
+
+    def test_it_rejects_a_call_that_names_no_tables(self, assert_closed_over):
+        """The degenerate call that would otherwise pass vacuously."""
+        with pytest.raises(AssertionError, match="named no tables"):
+            assert_closed_over(_vocabulary_module(), "Band")
+
+    def test_a_typo_in_a_table_name_is_loud(self, assert_closed_over):
+        """Tables are named, not passed, precisely so this raises."""
+        module = _vocabulary_module(A=dict(_BAND_MEMBERS))
+        with pytest.raises(AttributeError):
+            assert_closed_over(module, "Band", "A_TYPO")
+
+
+class TestAssertClosedOverAgainstRealTables:
+    """The controls above use a synthetic vocabulary; these two use a live one,
+    so the helper is known to work on the shape it was written for."""
+
+    def test_every_heat_table_covers_every_band(self, assert_closed_over):
+        from ai import combat_strategist
+
+        assert_closed_over(
+            combat_strategist,
+            "HeatBand",
+            "_HEAT_OFFENSIVE_BONUS",
+            "_HEAT_LABEL_BODY",
+            "_HEAT_OFFENSIVE_NOTE",
+            partial={"_HEAT_ALERTS": {"BLAZING", "COLD"}},
+        )
+
+    def test_the_real_tables_fail_when_a_band_is_added(
+        self, assert_closed_over, monkeypatch
+    ):
+        """Adding a band without adding its rows is the whole failure mode."""
+        from ai import combat_strategist
+
+        monkeypatch.setattr(
+            combat_strategist,
+            "HeatBand",
+            Literal["BLAZING", "HOT", "WARM", "COLD", "SCORCHING"],
+        )
+        with pytest.raises(AssertionError, match="SCORCHING"):
+            assert_closed_over(combat_strategist, "HeatBand", "_HEAT_OFFENSIVE_BONUS")

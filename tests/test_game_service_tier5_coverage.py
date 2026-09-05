@@ -1991,7 +1991,7 @@ class TestNpcChat:
         mock_player.current_room.npcs_here = [npc]
         result = game_service.npc_chat_open(mock_player, "Gorran")
         assert result["success"] is False
-        # S5: the exception text used to be interpolated into the client-facing
+        # The exception text used to be interpolated into the client-facing
         # error and rendered verbatim in the player's panel; provider SDK
         # exceptions stringify to endpoint URL, model id, status body and
         # request id. The detail now stays in the server log.

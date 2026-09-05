@@ -28,7 +28,7 @@ This is a plain module, not a ``conftest.py``, so nothing here is auto-injected;
 docstring). Sibling harness for the NPC/chat mixin: ``tests/_npc_fixtures.py``.
 """
 
-from typing import Any, Dict, Mapping, Optional, Type, TypeVar
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Type, TypeVar
 
 from ai.llm_client import (
     _OPENAI_COMPATIBLE_PROVIDERS,
@@ -42,7 +42,11 @@ import ai.llm_client as llm
 
 __all__ = [
     "PROVIDER_KEY_ENVS",
+    "PROVIDER_MODEL_ENVS",
     "CREDENTIAL_ENVS",
+    "LLM_GATE_SUFFIXES",
+    "LLM_SETTING_ENVS",
+    "llm_gate_envs",
     "Resp",
     "make_chat_adapter",
     "make_generic_client",
@@ -59,11 +63,98 @@ PROVIDER_KEY_ENVS = tuple(
     sorted(cfg["key_env"] for cfg in _OPENAI_COMPATIBLE_PROVIDERS.values())
 )
 
+#: The per-provider model pin, derived from the same registry. ``openrouter``
+#: has no ``model_env`` (it rotates models itself), so this is shorter than
+#: :data:`PROVIDER_KEY_ENVS` by construction rather than by omission. Blanking
+#: one is safe: the read site is
+#: ``os.getenv(model_env, "").strip() or cfg["default_model"]``, so an empty
+#: value restores the registry default instead of emptying the model id.
+PROVIDER_MODEL_ENVS = tuple(
+    sorted(
+        cfg["model_env"]
+        for cfg in _OPENAI_COMPATIBLE_PROVIDERS.values()
+        if cfg.get("model_env")
+    )
+)
+
 #: :data:`PROVIDER_KEY_ENVS` plus the non-LLM credential that also rides in on
 #: ``.env``. ``GITHUB_TOKEN`` is here because ``feedback.py``'s issue-filing
 #: path has no TESTING guard by design, so a child process that inherits it
 #: files real GitHub issues.
 CREDENTIAL_ENVS = PROVIDER_KEY_ENVS + ("GITHUB_TOKEN",)
+
+
+# ---------------------------------------------------------------------------
+# The LLM environment vocabulary, owned here so both conftests derive from it
+# ---------------------------------------------------------------------------
+# tests/conftest.py BLANKS this set process-wide; tests/integration/conftest.py
+# RESTORES it for the opt-in live suite. Those two halves have to describe the
+# same set of names or the live suite runs a feature adapter that the default
+# suite disabled and nobody re-enabled -- which is precisely how
+# test_tactical_advisor_live.py came to skip all 21 of its tests while
+# reporting success. Neither conftest can import the other (no
+# ``tests/__init__.py``, so pytest imports the root conftest under the bare
+# name ``conftest``), so the vocabulary lives in this plain module, which both
+# already import.
+
+#: The naming convention every feature LLM adapter's gate trio obeys:
+#: ``<FEATURE>_LLM_ENABLED`` / ``_PROVIDER`` / ``_MODEL``, resolved by
+#: ``GenericLLMClient._first_env`` with "first non-empty wins". Swept by suffix
+#: rather than from a list of adapter classes so an adapter added tomorrow --
+#: or one whose module is mid-refactor and does not currently import -- is
+#: covered without anyone remembering to add it.
+LLM_GATE_SUFFIXES = ("_LLM_ENABLED", "_LLM_PROVIDER", "_LLM_MODEL")
+
+
+def llm_gate_envs(names: Iterable[str]) -> Tuple[str, ...]:
+    """The gate-trio variables among ``names``, sorted and de-duplicated.
+
+    ``names`` is normally ``os.environ`` (what is actually set in this process)
+    or the keys of ``dotenv_values()`` (what ``.env`` can contribute). Both
+    conftests call this rather than spelling a tuple, so the blanked set and
+    the restored set cannot drift apart.
+    """
+    return tuple(sorted({n for n in names if n.endswith(LLM_GATE_SUFFIXES)}))
+
+
+#: The LLM settings that do NOT follow the gate-trio convention, so nothing
+#: derives them. Each is here because leaving it live changes what the default
+#: suite tests:
+#:
+#: * ``OLLAMA_BASE_URL`` -- the one that actually reaches the network.
+#:   ``_provider_chain`` appends ollama whenever it is set and
+#:   ``_provider_available("ollama")`` reads nothing else, so a developer with
+#:   a local Ollama gets unit tests dialling it. This is the "host" the
+#:   blanking comment in tests/conftest.py always claimed to cover.
+#: * ``NPC_CHAT_LLM_TIMEOUT`` -- feeds ``_turn_deadline``. A large ``.env``
+#:   value spends the whole per-round budget on attempt 1, so the QC retry and
+#:   the state-guard revision call never run and their tests pass for the
+#:   wrong reason. Blanking is safe: ``_round_timeout`` wraps the ``float()``
+#:   in ``except (TypeError, ValueError)``.
+#: * ``NPC_CHAT_LLM_FALLBACK`` -- three-state. ``_remote_fallback_setting``
+#:   reads a blank as "unset", which is the default this suite wants.
+#: * ``LLM_LOG_RAW_BODIES`` -- transcribes whole provider bodies to the log.
+#: * ``OPENROUTER_SITE`` / ``_SITE_TITLE`` -- ranking headers; both read as
+#:   ``os.getenv(...).strip() or None``, so blank is exactly absent.
+#: * :data:`PROVIDER_MODEL_ENVS` -- the "model" half of the same claim.
+#:
+#: Deliberately ABSENT: the five ``NPC_CHAT_TEMP_*`` overrides. They are read
+#: as a bare ``float(os.getenv("NPC_CHAT_TEMP_NPC", "0.65"))`` with no
+#: ``try``/``except`` (ai/llm_client.py, five call sites), and ``float("")``
+#: raises -- so blanking them would turn a developer's ``.env`` override into a
+#: crash rather than neutralising it, and pinning them to their defaults here
+#: would be a sixth copy of five constants that live in the engine. They also
+#: cannot reach the network on their own: they only set ``temperature`` on a
+#: call the blanked chain never dials. Fix the read sites (give them
+#: ``_round_timeout``'s ``except``) before adding them here.
+LLM_SETTING_ENVS = (
+    "LLM_LOG_RAW_BODIES",
+    "NPC_CHAT_LLM_FALLBACK",
+    "NPC_CHAT_LLM_TIMEOUT",
+    "OLLAMA_BASE_URL",
+    "OPENROUTER_SITE",
+    "OPENROUTER_SITE_TITLE",
+) + PROVIDER_MODEL_ENVS
 
 
 class Resp:
@@ -220,6 +311,19 @@ def isolate_llm_class_state(monkeypatch, tmp_path):
     clean, provider-less baseline that individual tests override as needed; the
     credential names come from :data:`PROVIDER_KEY_ENVS`, so a newly registered
     provider is neutralised here without anyone remembering to add it.
+
+    Those names are SET EMPTY rather than deleted, which is not a style choice.
+    ``load_dotenv`` runs with ``override=False``, so it refills a key that is
+    *absent* and leaves an assigned empty one alone — and ``load_project_env()``
+    runs again at import of several ``src.api`` modules. A ``delenv`` here
+    therefore held only until the test under it imported something from the API,
+    at which point the repo's real ``GROQ_API_KEY``/``CEREBRAS_API_KEY``/
+    ``OPENROUTER_API_KEY`` came straight back from ``.env`` and armed the
+    fallback chain inside a unit test. Empty is what every consumer reads as
+    unset anyway: ``_first_env()`` strips and skips it, ``_provider_chain``
+    tests ``os.getenv(key_env, "").strip()``, and the enabled gate compares
+    against ``("1", "true", "True")``. Same trap as the GITHUB_TOKEN incident,
+    and the same fix as :func:`child_env` and ``tests/conftest.py``.
     """
     GenericLLMClient.reset_class_state()
     GenericLLMClient._nightly_refresh_started = False
@@ -232,7 +336,7 @@ def isolate_llm_class_state(monkeypatch, tmp_path):
         "NPC_CHAT_LLM_PROVIDER",
         "NPC_CHAT_LLM_MODEL",
     ):
-        monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv(key, "")
     yield
     GenericLLMClient.reset_class_state()
     GenericLLMClient._nightly_refresh_started = False

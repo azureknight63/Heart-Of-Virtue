@@ -6,7 +6,7 @@ Nothing tested this at all. ``grep -rln "run_api" tests/`` found one
 import-sync test and nothing else, so the ``.env`` resolution that decides
 whether the API boots with the project's settings or with none of them was
 entirely unguarded — in the module that exists *because* the two entry points'
-hand-rolled copies had already diverged (S14: ``tools/run_api.py`` grew an
+hand-rolled copies had already diverged (``tools/run_api.py`` grew an
 explicit-path reload while ``wsgi.py``, the gunicorn entry point, kept the bare
 ``load_dotenv()`` whose failure mode the reload exists to fix).
 
@@ -130,7 +130,7 @@ def _run_child(code, cwd, **env_overrides):
 
 
 class TestFromAnotherWorkingDirectory:
-    """The failure S14 describes, reproduced and then guarded.
+    """The failure this module exists to prevent, reproduced and then guarded.
 
     Run from a directory that is not the project root, a bare
     ``load_dotenv()`` finds nothing. These drive the real function in a child
@@ -194,7 +194,7 @@ class TestFromAnotherWorkingDirectory:
 
 
 class TestEntryPointsShareTheBootstrap:
-    """S14: the fix landed in ``run_api.py`` and not in ``wsgi.py`` — the
+    """The fix landed in ``run_api.py`` and not in ``wsgi.py`` — the
     gunicorn entry point named in run_api.py's own docstring — so the
     documented failure mode stayed live in production while dev was patched.
     """
@@ -214,7 +214,7 @@ class TestEntryPointsShareTheBootstrap:
     def test_the_env_load_precedes_the_config_import(self, entry):
         """The ordering still matters, but no longer for the reason it was
         written for: ``src/api/config.py`` used to read SECRET_KEY/FLASK_ENV in
-        its CLASS BODY at import time (S15), and those reads have since moved
+        its CLASS BODY at import time, and those reads have since moved
         into ``runtime_config()``, which runs at ``create_app()`` time.
 
         What still reads the environment during import is everything the

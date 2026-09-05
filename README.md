@@ -1,7 +1,7 @@
 # Heart-Of-Virtue
 
 [![CI Status](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square)](https://github.com/yourusername/Heart-Of-Virtue/actions)
-[![Backend Coverage](https://img.shields.io/badge/backend--coverage-47%25-orange?style=flat-square)](docs/coverage/coverage-dashboard.md)
+[![Backend Coverage](https://img.shields.io/badge/backend--coverage-see%20dashboard-lightgray?style=flat-square)](docs/coverage/coverage-dashboard.md)
 [![Frontend Coverage](https://img.shields.io/badge/frontend--coverage-pending-lightgray?style=flat-square)](docs/coverage/coverage-dashboard.md)
 
 Adventure RPG
@@ -12,7 +12,7 @@ This is a text RPG - all graphics are represented using text characters! The hum
 If you like this project and are interested in contributing, please drop me a message.
 
 ## Requirements
-- Python 3.13 (see .python-version)
+- Python 3.11 (see `.python-version`; CI pins 3.11 in all three workflows and `pyproject.toml` targets `py311`). Not a style preference: the save allow-list manifest is derived from `__module__`, which CPython moves between releases, so regenerating it on a newer interpreter fixes your box by breaking CI. See `docs/LOCAL_DEV_SETUP.md`.
 - See requirements.txt for dependencies
 
 ## Optional AI Integration (Mynx LLM Adapter)

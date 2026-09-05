@@ -93,7 +93,7 @@ The first six dimensions below are generic and language-agnostic. **Architecture
 
 ### 3. Optimization
 
-**Evaluate:** N+1 patterns, unnecessary branching, redundant computation, connection reuse. Weigh this hardest in `src/combat.py` / `src/moves/` (the one true hot path in this codebase) and leniently in one-time setup, story events, or admin/debug endpoints.
+**Evaluate:** N+1 patterns, unnecessary branching, redundant computation, connection reuse. Weigh this hardest in `src/combatant.py` / `src/moves/` / `src/api/combat_adapter.py` (the one true hot path in this codebase — the terminal combat loop that used to carry it was deleted in the teardown) and leniently in one-time setup, story events, or admin/debug endpoints.
 
 **Red flags:** N+1 query/API patterns inside a loop; unnecessary branching that a better default would remove; no retry/backoff for transient external calls; expensive work repeated inside the combat loop.
 

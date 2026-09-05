@@ -42,6 +42,6 @@ Cave Bats are small, nocturnal flyers that inhabit dark caverns and narrow tunne
 - Combine with heavier foes to split the party's attention and create interesting combat priorities.
 
 ## References
-- Code: `src/npc.py` (see bat/cave variants)
-- Moves: `src/moves.py` (`NpcAttack`, `Advance`, `Withdraw`, `Dodge`)
+- Code: `src/npc/_enemies.py` (see bat/cave variants)
+- Moves: `src/moves/` (`NpcAttack`, `Advance`, `Withdraw`, `Dodge`)
 ```

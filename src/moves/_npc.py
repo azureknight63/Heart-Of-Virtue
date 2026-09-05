@@ -14,6 +14,24 @@ from ._base import Move, _apply_to_hit_modifiers, to_hit_chance  # noqa: F401
 class NpcAttack(Move):  # basic attack function, NPCs only
     display_name = 'Attack'
     web_animation = "attack"
+
+    # The generic NPC swing's power band, and _DAMAGE_MULTIPLIER as its
+    # midpoint — the same declaration GorranClub, VenomClaw, SpiderBite and
+    # BatBite make, and documented once on ``Move`` (src/moves/_base.py).
+    #
+    # This class needs it MORE than they do, not less. It is the most common
+    # attack in the game, and it is the base of the TelegraphedSurge family,
+    # whose factors are applied on top of the roll below. It nevertheless sat
+    # outside the convention: the roll was inline, and because the class
+    # declared no _DAMAGE_MULTIPLIER it inherited Move's 1.0 — which the
+    # midpoint of (0.8, 1.2) happens to equal, so the wire was right by
+    # coincidence rather than by construction. Reflection over ``__dict__``
+    # (tests/test_npc_moves_coverage.py) skips inherited values by design, so
+    # the one move every NPC uses was in neither the convention nor its guard.
+    _POWER_ROLL_MIN = 0.8
+    _POWER_ROLL_MAX = 1.2
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     # Subclasses that declare their own mvrange in __init__ (e.g. ranged
     # attacks like MineralSpit/WailStrike) must set this True so evaluate()
     # stops clobbering it back to the NPC's generic melee range every beat
@@ -99,7 +117,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
             narrate(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
             return
 
-        power = self.user.damage * random.uniform(0.8, 1.2)
+        power = self._rolled_power()
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -386,24 +404,13 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     display_name = 'Club Strike'
     web_animation = "heavy_attack"
 
-    # Power roll bounds, and _DAMAGE_MULTIPLIER as their midpoint. The wire's
-    # `damage_multiplier` (src/api/serializers/combat.py) reads
-    # `_DAMAGE_MULTIPLIER` off the class, so the Tactical Advisor's threat
-    # estimate is only as honest as this attribute. Deriving it from the same
-    # bounds evaluate() rolls between means there is no second literal to keep
-    # in step — retune the roll and the wire follows.
-    #
-    # The MIDPOINT, not the ceiling: ai/combat_strategist.py
-    # `_estimate_incoming_damage` renders the wire value as a ±20% band and
-    # flags POTENTIALLY LETHAL when the band's midpoint reaches HALF the
-    # player's HP. That 0.5 already IS the margin for a high roll, so a
-    # ceiling here would double-count it and cry wolf.
+    # Power band and derived midpoint — the convention ``Move`` documents.
     #
     # The TelegraphedSurge multipliers above are midpoints on this same scale,
     # not exact factors: NpcAttack.evaluate has already rolled power through
-    # uniform(0.8, 1.2) by the time TelegraphedSurge.evaluate multiplies by
-    # them, so 2.2/2.5/1.8 centre the hit on the user's damage exactly as this
-    # midpoint does. Every declaration in this module means the same thing.
+    # its own band by the time TelegraphedSurge.evaluate multiplies by them, so
+    # 2.2/2.5/1.8 centre the hit on the user's damage exactly as this midpoint
+    # does. Every declaration in this module means the same thing.
     _POWER_ROLL_MIN = 1.5
     _POWER_ROLL_MAX = 3.0
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
@@ -476,9 +483,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(
-            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
-        )
+        power = self._rolled_power()
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -561,10 +566,7 @@ class VenomClaw(Move):  # Poisonous attack
     display_name = 'Venom Claw'
     web_animation = "attack"
 
-    # Power roll bounds; _DAMAGE_MULTIPLIER is their midpoint and is what the
-    # serializer puts on the wire for the Tactical Advisor's threat estimate.
-    # Derived rather than re-typed, so retuning the roll cannot leave the wire
-    # value stale (see GorranClub for why the midpoint and not the ceiling).
+    # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
     _POWER_ROLL_MIN = 0.6
     _POWER_ROLL_MAX = 1.0
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
@@ -631,9 +633,7 @@ class VenomClaw(Move):  # Poisonous attack
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(
-            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
-        )
+        power = self._rolled_power()
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -717,10 +717,7 @@ class SpiderBite(Move):  # Poisonous attack
     display_name = 'Spider Bite'
     web_animation = "quick_attack"
 
-    # Power roll bounds; _DAMAGE_MULTIPLIER is their midpoint and is what the
-    # serializer puts on the wire for the Tactical Advisor's threat estimate.
-    # Derived rather than re-typed, so retuning the roll cannot leave the wire
-    # value stale (see GorranClub for why the midpoint and not the ceiling).
+    # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
     _POWER_ROLL_MIN = 0.8
     _POWER_ROLL_MAX = 1.2
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
@@ -790,9 +787,7 @@ class SpiderBite(Move):  # Poisonous attack
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(
-            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
-        )
+        power = self._rolled_power()
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
@@ -876,10 +871,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
     display_name = 'Bat Bite'
     web_animation = "quick_attack"
 
-    # Power roll bounds; _DAMAGE_MULTIPLIER is their midpoint and is what the
-    # serializer puts on the wire for the Tactical Advisor's threat estimate.
-    # Derived rather than re-typed, so retuning the roll cannot leave the wire
-    # value stale (see GorranClub for why the midpoint and not the ceiling).
+    # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
     _POWER_ROLL_MIN = 0.7
     _POWER_ROLL_MAX = 1.1
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
@@ -947,9 +939,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(
-            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
-        )
+        power = self._rolled_power()
         prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1

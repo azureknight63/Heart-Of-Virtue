@@ -242,11 +242,14 @@ def _build_allowlist():
     engine top-level modules) so a newly added module is covered automatically.
 
     Each entry is a ``(module, name)`` tuple keyed on :func:`_public_module`,
-    **not** on the raw ``__module__``. That distinction is the whole point of
-    commit 52a2e01: ``__module__`` is what pickle stores, but it is not
+    **not** on the raw ``__module__``. That distinction is the whole point of the
+    function: ``__module__`` is what pickle stores, but it is not
     interpreter-stable (``pathlib.Path.__module__`` is ``pathlib`` through 3.12
-    and ``pathlib._local`` on 3.13+), so keying on it made the generated drift
-    manifest pass only on the interpreter that wrote it.
+    and ``pathlib._local`` on 3.13+), so keying the manifest on it made the file
+    reproduce only on the interpreter that wrote it -- a developer on a newer
+    Python regenerated it, the drift test went green locally, and CI (pinned to
+    3.11) failed on the same commit. :func:`_public_module` canonicalizes the
+    known cases; extend it rather than re-keying on ``__module__``.
 
     This set is an inventory for the drift manifest and for tooling/tests. It
     is **not** the enforcement gate: nothing on the save-load path consults

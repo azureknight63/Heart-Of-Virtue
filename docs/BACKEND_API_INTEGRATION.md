@@ -118,9 +118,14 @@ All endpoints should follow this format:
 ### Environment Variables (for API server)
 ```bash
 FLASK_ENV=development
-FLASK_HOST=127.0.0.1
-FLASK_PORT=5000
+HOST=127.0.0.1
+PORT=5000
 ```
+
+`HOST` and `PORT` are the names `tools/run_api.py` actually reads. There is no
+`FLASK_HOST`, `FLASK_PORT` or `FLASK_DEBUG` — nothing in this project reads them.
+`FLASK_ENV` selects the config class, and that class pins `DEBUG`. Full list:
+`.env.example`.
 
 ### Frontend Environment Variables (frontend/.env)
 ```bash

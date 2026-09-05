@@ -212,7 +212,7 @@ A small community of exiled or fractured individuals who have made the badlands 
 - Related lore: `docs/lore/environments/resolute-plains/` (connection point west), `docs/lore/environments/sanctuary-of-illusions/` (connection point east, future)
 - Golemite history: `docs/lore/character-profiles/` and Elder Votha Krr lore (the Broken Gate's significance)
 - Map JSON: `src/resources/maps/wailing-badlands.json` (to be created during implementation)
-- NPC integration: Elder Korash and Mara the Scavenger (to be added to `src/npc.py`)
+- NPC integration: Elder Korash and Mara the Scavenger (to be added to `src/npc/_enemies.py`)
 
 ---
 

@@ -140,7 +140,15 @@ class TestStructuredCapabilityFilter:
 # ---------------------------------------------------------------------------
 
 
-def _adapter():
+def _json_capable_adapter_with_key():
+    """The module-level default: a JSON-capable model with a key present.
+
+    Named for its parameterisation rather than ``_adapter``. Under the bare
+    name it was one of eleven ``_adapter``/``_adapter_returning`` definitions
+    across six different signatures, and the only one a *bare* ``_json_capable_adapter_with_key()``
+    call resolved to -- so two classes reached this while nine others meant
+    their own method by the same name.
+    """
     return make_chat_adapter(model="json-capable", api_key="test-key")
 
 
@@ -154,7 +162,7 @@ class TestChatPayloadRequestsJson:
 
         monkeypatch.setattr(llm, "_post_chat_completion", fake_post)
         monkeypatch.setattr(GenericLLMClient, "_free_models_cache", [])
-        out = _adapter()._call_openrouter("sys", "user", 500, 0.7)
+        out = _json_capable_adapter_with_key()._call_openrouter("sys", "user", 500, 0.7)
 
         assert out == '{"npc_text": "Fine."}'
         assert seen.get("response_format") == {"type": "json_object"}
@@ -304,7 +312,7 @@ class TestTheDiscarded400IsMetered:
         calls = self._four_hundred_then_ok(monkeypatch)
         monkeypatch.setattr(GenericLLMClient, "_free_models_cache", [])
 
-        out = _adapter()._call_openrouter("sys", "user", 500, 0.7)
+        out = _json_capable_adapter_with_key()._call_openrouter("sys", "user", 500, 0.7)
 
         assert out == '{"npc_text": "Fine."}'
         assert len(calls) == 2, "the retry did not happen; the test proves nothing"
@@ -317,7 +325,7 @@ class TestTheDiscarded400IsMetered:
         calls = self._four_hundred_then_ok(monkeypatch)
         monkeypatch.setenv("GROQ_API_KEY", "g")
 
-        out = _adapter()._call_openai_compatible("groq", "sys", "user", 500, 0.7)
+        out = _json_capable_adapter_with_key()._call_openai_compatible("groq", "sys", "user", 500, 0.7)
 
         assert out == '{"npc_text": "Fine."}'
         assert len(calls) == 2, "the retry did not happen; the test proves nothing"
@@ -331,7 +339,7 @@ class TestTheDiscarded400IsMetered:
         monkeypatch.setattr(llm.requests, "post", lambda *a, **k: Resp())
         monkeypatch.setenv("GROQ_API_KEY", "g")
 
-        _adapter()._call_openai_compatible("groq", "sys", "user", 500, 0.7)
+        _json_capable_adapter_with_key()._call_openai_compatible("groq", "sys", "user", 500, 0.7)
 
         stats = GenericLLMClient._provider_usage["groq"]
         assert stats["requests"] == 1
@@ -515,7 +523,7 @@ class TestUnparseablePenalty:
 class TestAdapterPenalizesOnParseFailure:
     """The penalty must actually be wired to the chat call sites."""
 
-    def _adapter_returning(self, raw):
+    def _chatty_adapter_serving(self, raw):
         return make_chat_adapter(
             model="chatty",
             api_key=None,
@@ -524,17 +532,17 @@ class TestAdapterPenalizesOnParseFailure:
         )
 
     def test_generate_turn_penalizes_unparseable_output(self):
-        adapter = self._adapter_returning("Here's a thinking process: 1. Analyze...")
+        adapter = self._chatty_adapter_serving("Here's a thinking process: 1. Analyze...")
         assert adapter.generate_turn("sys", [], is_opening=True) is None
         assert "chatty" in GenericLLMClient._failed_models
 
     def test_revise_turn_penalizes_unparseable_output(self):
-        adapter = self._adapter_returning("Let me think about this instead.")
+        adapter = self._chatty_adapter_serving("Let me think about this instead.")
         assert adapter.revise_turn("sys", "line", [], "guidance") is None
         assert "chatty" in GenericLLMClient._failed_models
 
     def test_good_output_is_not_penalized(self):
-        adapter = self._adapter_returning('{"npc_text": "The river is high."}')
+        adapter = self._chatty_adapter_serving('{"npc_text": "The river is high."}')
         assert adapter.generate_turn("sys", [], is_opening=True) is not None
         assert GenericLLMClient._failed_models == {}
 
@@ -554,26 +562,26 @@ class TestProviderChain:
     documented, but no call path ever existed.
     """
 
-    def _adapter(self, provider="openrouter"):
+    def _adapter_for_provider(self, provider="openrouter"):
         return make_chat_adapter(provider=provider)
 
     def test_configured_provider_leads(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
-        chain = self._adapter("groq")._provider_chain()
+        chain = self._adapter_for_provider("groq")._provider_chain()
         assert chain[0] == "groq"
 
     def test_providers_without_credentials_are_never_contacted(self, monkeypatch):
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
-        chain = self._adapter("openrouter")._provider_chain()
+        chain = self._adapter_for_provider("openrouter")._provider_chain()
         assert chain == ["openrouter"]
 
     def test_credentialed_providers_join_the_chain(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("CEREBRAS_API_KEY", "c")
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
-        chain = self._adapter("openrouter")._provider_chain()
+        chain = self._adapter_for_provider("openrouter")._provider_chain()
         assert chain[0] == "openrouter"
         assert set(chain) == {"openrouter", "groq", "cerebras"}
 
@@ -581,20 +589,20 @@ class TestProviderChain:
         monkeypatch.setenv("GROQ_API_KEY", "   ")
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
-        assert self._adapter("openrouter")._provider_chain() == ["openrouter"]
+        assert self._adapter_for_provider("openrouter")._provider_chain() == ["openrouter"]
 
     def test_local_ollama_joins_when_configured(self, monkeypatch):
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        chain = self._adapter("openrouter")._provider_chain()
+        chain = self._adapter_for_provider("openrouter")._provider_chain()
         assert chain == ["openrouter", "ollama"]
 
     def test_no_duplicate_when_configured_provider_also_has_a_key(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
-        chain = self._adapter("groq")._provider_chain()
+        chain = self._adapter_for_provider("groq")._provider_chain()
         assert chain.count("groq") == 1
 
 
@@ -781,7 +789,7 @@ class TestProviderChainNeedsAnExplicitProvider:
 
 
 class TestCallLlmFallsThrough:
-    def _adapter(self, monkeypatch, calls, results):
+    def _adapter_recording_provider_calls(self, monkeypatch, calls, results):
         a = make_chat_adapter()
 
         def _or(*args, **kw):
@@ -801,20 +809,20 @@ class TestCallLlmFallsThrough:
 
     def test_exhausted_provider_falls_through_to_the_next(self, monkeypatch):
         calls = []
-        a = self._adapter(monkeypatch, calls, {"openrouter": None, "groq": '{"a": 1}'})
+        a = self._adapter_recording_provider_calls(monkeypatch, calls, {"openrouter": None, "groq": '{"a": 1}'})
         out = a._call_llm("sys", "user")
         assert out == '{"a": 1}'
         assert calls == ["openrouter", "groq"]
 
     def test_first_usable_response_wins(self, monkeypatch):
         calls = []
-        a = self._adapter(monkeypatch, calls, {"openrouter": '{"a": 1}'})
+        a = self._adapter_recording_provider_calls(monkeypatch, calls, {"openrouter": '{"a": 1}'})
         assert a._call_llm("sys", "user") == '{"a": 1}'
         assert calls == ["openrouter"]
 
     def test_a_raising_provider_does_not_abort_the_chain(self, monkeypatch):
         calls = []
-        a = self._adapter(monkeypatch, calls, {"groq": '{"ok": 1}'})
+        a = self._adapter_recording_provider_calls(monkeypatch, calls, {"groq": '{"ok": 1}'})
 
         def _boom(*args, **kw):
             calls.append("openrouter")
@@ -826,13 +834,13 @@ class TestCallLlmFallsThrough:
 
     def test_all_providers_down_returns_none(self, monkeypatch):
         calls = []
-        a = self._adapter(monkeypatch, calls, {})
+        a = self._adapter_recording_provider_calls(monkeypatch, calls, {})
         assert a._call_llm("sys", "user") is None
         assert calls == ["openrouter", "groq", "cerebras"]
 
     def test_thinking_only_response_is_skipped_not_returned(self, monkeypatch):
         calls = []
-        a = self._adapter(
+        a = self._adapter_recording_provider_calls(
             monkeypatch, calls, {"openrouter": "<think>hmm", "groq": '{"a": 1}'}
         )
         assert a._call_llm("sys", "user") == '{"a": 1}'
@@ -840,14 +848,14 @@ class TestCallLlmFallsThrough:
 
     def test_disabled_adapter_contacts_nobody(self, monkeypatch):
         calls = []
-        a = self._adapter(monkeypatch, calls, {"openrouter": '{"a": 1}'})
+        a = self._adapter_recording_provider_calls(monkeypatch, calls, {"openrouter": '{"a": 1}'})
         a.enabled = False
         assert a._call_llm("sys", "user") is None
         assert calls == []
 
 
 class TestOpenAiCompatibleCall:
-    def _adapter(self):
+    def _groq_adapter_without_key(self):
         return make_chat_adapter(provider="groq", api_key=None)
 
     def test_missing_key_makes_no_request(self, monkeypatch):
@@ -856,7 +864,7 @@ class TestOpenAiCompatibleCall:
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: called.append(1)
         )
-        assert self._adapter()._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
+        assert self._groq_adapter_without_key()._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
         assert called == []
 
     def test_payload_carries_json_mode_and_provider_reasoning(self, monkeypatch):
@@ -870,7 +878,7 @@ class TestOpenAiCompatibleCall:
 
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setattr(llm, "_post_chat_completion", fake_post)
-        out = self._adapter()._call_openai_compatible("groq", "sys", "u", 100, 0.5)
+        out = self._groq_adapter_without_key()._call_openai_compatible("groq", "sys", "u", 100, 0.5)
 
         assert out == '{"npc_text": "Fine."}'
         assert "groq.com" in seen["url"]
@@ -884,13 +892,13 @@ class TestOpenAiCompatibleCall:
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: Resp(429, text="slow down")
         )
-        assert self._adapter()._call_openai_compatible("cerebras", "s", "u", 10, 0.5) is None
+        assert self._groq_adapter_without_key()._call_openai_compatible("cerebras", "s", "u", 10, 0.5) is None
 
     def test_served_model_is_recorded_with_its_provider(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("GROQ_MODEL", "some-fast-model")
         monkeypatch.setattr(llm, "_post_chat_completion", lambda *a, **k: Resp())
-        a = self._adapter()
+        a = self._groq_adapter_without_key()
         a._call_openai_compatible("groq", "sys", "u", 100, 0.5)
         assert a._last_served_model == "groq:some-fast-model"
 
@@ -914,7 +922,7 @@ class TestOpenAiCompatibleCall:
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: Resp(status, text="nope")
         )
-        a = self._adapter()
+        a = self._groq_adapter_without_key()
         assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
         assert a._is_model_failed("groq:retired-slug")
 
@@ -928,7 +936,7 @@ class TestOpenAiCompatibleCall:
             return Resp(404, text="model_not_found")
 
         monkeypatch.setattr(llm, "_post_chat_completion", counting_post)
-        a = self._adapter()
+        a = self._groq_adapter_without_key()
         assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
 
         # Second turn: the guard at the top of the method must short-circuit.
@@ -943,7 +951,7 @@ class TestOpenAiCompatibleCall:
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: Resp(503, text="try later")
         )
-        a = self._adapter()
+        a = self._groq_adapter_without_key()
         assert a._call_openai_compatible("groq", "sys", "u", 100, 0.5) is None
         assert not a._is_model_failed("groq:fine-slug")
 
@@ -1131,7 +1139,7 @@ class TestJeanOptionsUnderJsonMode:
     every turn silently fell back to canned player options.
     """
 
-    def _adapter(self, raw):
+    def _json_capable_adapter_serving(self, raw):
         return make_chat_adapter(
             model="json-capable",
             api_key=None,
@@ -1147,7 +1155,7 @@ class TestJeanOptionsUnderJsonMode:
     OBJECT = '{"options": %s}' % ARRAY
 
     def _options(self, raw):
-        return self._adapter(raw).generate_jean_options("Ned", "gruff", "hello", [], 1)
+        return self._json_capable_adapter_serving(raw).generate_jean_options("Ned", "gruff", "hello", [], 1)
 
     def test_json_mode_object_wrapper_is_accepted(self):
         opts = self._options(self.OBJECT)
@@ -1380,7 +1388,7 @@ class TestSaturationCutoff:
 
 
 class TestChainSkipsSaturatedProviders:
-    def _adapter(self):
+    def _default_adapter(self):
         return make_chat_adapter()
 
     def test_spent_provider_drops_out_of_the_chain(self, monkeypatch):
@@ -1391,7 +1399,7 @@ class TestChainSkipsSaturatedProviders:
             "openrouter",
             Resp(headers={"x-ratelimit-limit": "50", "x-ratelimit-remaining": "0"}),
         )
-        assert self._adapter()._provider_chain() == ["groq"]
+        assert self._default_adapter()._provider_chain() == ["groq"]
 
     def test_chain_is_not_emptied_when_everything_is_spent(self, monkeypatch):
         """A spent chain still tries: a stale reading must not mute the game."""
@@ -1402,7 +1410,7 @@ class TestChainSkipsSaturatedProviders:
             "openrouter",
             Resp(headers={"x-ratelimit-limit": "50", "x-ratelimit-remaining": "0"}),
         )
-        assert self._adapter()._provider_chain() == ["openrouter"]
+        assert self._default_adapter()._provider_chain() == ["openrouter"]
 
 
 class TestDuplicateJsonKeys:
@@ -1454,18 +1462,18 @@ class TestNoneSentinelDisarmsChain:
     the default unit suite could dial OpenRouter for real.
     """
 
-    def _adapter(self, provider):
+    def _adapter_for_provider(self, provider):
         return make_chat_adapter(provider=provider)
 
     def test_none_provider_yields_empty_chain_despite_keys(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "real-looking-key")
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-        assert self._adapter("none")._provider_chain() == []
+        assert self._adapter_for_provider("none")._provider_chain() == []
 
     def test_empty_provider_yields_empty_chain(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "real-looking-key")
-        assert self._adapter("")._provider_chain() == []
+        assert self._adapter_for_provider("")._provider_chain() == []
 
     def test_call_llm_makes_no_request_with_none_provider(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "real-looking-key")
@@ -1474,7 +1482,7 @@ class TestNoneSentinelDisarmsChain:
             raise AssertionError("network dial attempted with provider=none")
 
         monkeypatch.setattr(llm.requests, "post", _bomb)
-        assert self._adapter("none")._call_llm("sys", "user") is None
+        assert self._adapter_for_provider("none")._call_llm("sys", "user") is None
 
 
 class TestOpenrouterFallbackUsesItsOwnDialect:
@@ -1508,7 +1516,7 @@ class TestOpenrouterFallbackUsesItsOwnDialect:
 class TestOllamaTrafficIsMetered:
     """Ollama calls must appear in the usage picture and honour the bench."""
 
-    def _adapter(self):
+    def _ollama_adapter(self):
         return make_chat_adapter(
             provider="ollama",
             model="local-llama",
@@ -1522,7 +1530,7 @@ class TestOllamaTrafficIsMetered:
             "post",
             lambda *a, **kw: Resp(payload={"message": {"content": "{}"}}),
         )
-        self._adapter()._call_ollama("sys", "user", 100, 0.5)
+        self._ollama_adapter()._call_ollama("sys", "user", 100, 0.5)
         snap = GenericLLMClient.usage_snapshot()
         ollama = snap["providers"].get("ollama")
         assert ollama and ollama["requests"] >= 1 and ollama["successes"] >= 1
@@ -1533,7 +1541,7 @@ class TestOllamaTrafficIsMetered:
 
         monkeypatch.setattr(llm.requests, "post", _bomb)
         GenericLLMClient._bench_model("ollama:local-llama", duration_minutes=15)
-        assert self._adapter()._call_ollama("sys", "user", 100, 0.5) is None
+        assert self._ollama_adapter()._call_ollama("sys", "user", 100, 0.5) is None
 
 
 class TestResetHeaderHardening:
@@ -1592,7 +1600,7 @@ class Test429ReachesTheMeter:
     watching a spinner on.
     """
 
-    def _adapter(self, provider="openrouter"):
+    def _adapter_for_provider(self, provider="openrouter"):
         return make_chat_adapter(provider=provider)
 
     def test_an_openai_compatible_429_marks_the_provider_spent(self, monkeypatch):
@@ -1602,7 +1610,7 @@ class Test429ReachesTheMeter:
         )
 
         assert (
-            self._adapter("cerebras")._call_openai_compatible(
+            self._adapter_for_provider("cerebras")._call_openai_compatible(
                 "cerebras", "s", "u", 10, 0.5
             )
             is None
@@ -1619,21 +1627,21 @@ class Test429ReachesTheMeter:
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: Resp(429, text="slow down")
         )
-        self._adapter("cerebras")._call_openai_compatible("cerebras", "s", "u", 10, 0.5)
+        self._adapter_for_provider("cerebras")._call_openai_compatible("cerebras", "s", "u", 10, 0.5)
         assert GenericLLMClient._provider_available("groq") is True
 
 
 class TestOpenrouterAttempt:
     """``_openrouter_attempt`` is the single metered OpenRouter transport.
 
-    Both OpenRouter call paths funnel through it (C1), so this is where a 429
+    Both OpenRouter call paths funnel through it, so this is where a 429
     has to become saturation and a bench -- and where a success has to clear a
     stale inferred guess. The base client's own HTTP path used to record
     nothing, so a combat 429 could not raise saturation and a combat success
     could not clear NPC chat's guess.
     """
 
-    def _adapter(self):
+    def _adapter_with_primary_model(self):
         return make_chat_adapter(model="primary/model")
 
     def test_a_429_meters_the_provider_and_benches_the_model(self, monkeypatch):
@@ -1641,7 +1649,7 @@ class TestOpenrouterAttempt:
         monkeypatch.setattr(
             llm, "_post_chat_completion", lambda *a, **k: Resp(429, text="slow down")
         )
-        a = self._adapter()
+        a = self._adapter_with_primary_model()
 
         assert a._call_openrouter("sys", "user", 100, 0.5) is None
 
@@ -1665,7 +1673,7 @@ class TestOpenrouterAttempt:
             return Resp(429, text="slow down")
 
         monkeypatch.setattr(llm, "_post_chat_completion", counting_post)
-        assert self._adapter()._call_openrouter("sys", "user", 100, 0.5) is None
+        assert self._adapter_with_primary_model()._call_openrouter("sys", "user", 100, 0.5) is None
         assert dialled == ["primary/model"]
 
     def test_a_non_429_failure_does_advance_to_the_next_candidate(self, monkeypatch):
@@ -1682,7 +1690,7 @@ class TestOpenrouterAttempt:
             return Resp(404, text="model_not_found")
 
         monkeypatch.setattr(llm, "_post_chat_completion", post)
-        out = self._adapter()._call_openrouter("sys", "user", 100, 0.5)
+        out = self._adapter_with_primary_model()._call_openrouter("sys", "user", 100, 0.5)
 
         assert out == '{"npc_text": "Fine."}'
         assert "second/model" in dialled
@@ -1698,7 +1706,7 @@ class TestOpenrouterAttempt:
         assert GenericLLMClient._provider_available("openrouter") is False
 
         monkeypatch.setattr(llm, "_post_chat_completion", lambda *a, **k: Resp())
-        a = self._adapter()
+        a = self._adapter_with_primary_model()
         a.model = "fresh/model"
         assert a._call_openrouter("sys", "user", 100, 0.5)
         assert GenericLLMClient._provider_available("openrouter") is True

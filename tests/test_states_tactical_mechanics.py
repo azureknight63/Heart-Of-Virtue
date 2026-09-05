@@ -502,3 +502,250 @@ def test_the_strategist_table_holds_only_perspective_notes():
     """Regression: the mechanical column used to live in the adapter as well."""
     for name, entry in _STATUS_TACTICAL_NOTES.items():
         assert set(entry) == {"player_note", "enemy_note"}, name
+
+
+# ---------------------------------------------------------------------------
+# What the summary reports when there is no stat to take a fraction OF
+# ---------------------------------------------------------------------------
+
+
+def _states_that_render_live():
+    """States that build their summary from the modifiers on the books.
+
+    Derived from the override itself, not named: these are exactly the states
+    whose text goes through ``State._applied_pct`` rather than repeating the
+    static string their constructor was handed. Everything below applies only
+    to them, because only they have an applied delta to get wrong.
+    """
+    return [
+        (name, cls)
+        for name, cls in _state_classes()
+        if cls._render_tactical_mechanics
+        is not states.State._render_tactical_mechanics
+    ]
+
+
+_LIVE = _states_that_render_live()
+_LIVE_IDS = [name for name, _ in _LIVE]
+
+
+def test_the_live_rendering_set_is_not_empty():
+    """The two checks below are parametrized over it; an empty set passes both."""
+    assert len(_LIVE) >= 3
+
+
+def _zero_stat_target():
+    """A holder with no stat to take a fraction of.
+
+    ``_Target`` pins every stat at 100 so percentages land on exact integers,
+    which is right for every other check here and is also why nothing ever
+    exercised the zero branch.
+    """
+    target = _Target()
+    for field in _STAT_FIELDS:
+        setattr(target, field, 0)
+        setattr(target, f"{field}_base", 0)
+    target.protection = target.protection_base = 0
+    return target
+
+
+@pytest.mark.parametrize("name,cls", _LIVE, ids=_LIVE_IDS)
+def test_a_modifier_taken_from_a_zero_stat_is_reported_as_zero(name, cls):
+    """``int(0 * fraction)`` is 0, and the summary has to say so.
+
+    The renderer used to answer a zero base with the NOMINAL class fraction,
+    on the reasoning that a state with nothing to divide by is better served
+    by the nominal than by an exception. But the two cases it lumped together
+    are not alike. A missing ``_base_*`` really does leave nothing to say. A
+    captured base of 0 says something exact: the engine multiplied 0 by the
+    fraction, put 0 on the books, and the combat prompt was told "+25%
+    protection" for a modifier provably worth nothing.
+
+    That is the same class of defect as the stale summary this whole module
+    exists to prevent -- a number in the prompt the engine never applied --
+    and it sat inside the property written to end them.
+    """
+    with _quiet_narration():
+        state = cls(_zero_stat_target())
+
+    quoted = _PCT_TOKEN.findall(state.tactical_mechanics)
+    assert quoted, (
+        f"{name} quotes no percentage against a zero-stat holder, so this case "
+        f"checks nothing -- {state.tactical_mechanics!r}"
+    )
+    for sign, value, stat in quoted:
+        attr = _STAT_ATTR[stat]
+        # Assert the premise before the conclusion: if the fixture ever stops
+        # producing a zero delta, this must fail loudly rather than confirm
+        # "0%" against a modifier that is no longer 0.
+        assert getattr(state, attr, 0) == 0, (
+            f"{name}: fixture no longer zeroes {stat} -- {attr} is "
+            f"{getattr(state, attr, 0)}, so the zero branch is not under test"
+        )
+        assert int(value) == 0, (
+            f"{name}: {attr} is 0 against a zero {stat}, so the engine applied "
+            f"nothing -- but the summary hands the combat prompt "
+            f"{sign}{value}% {stat}"
+        )
+
+
+@pytest.mark.parametrize("name,cls", _LIVE, ids=_LIVE_IDS)
+def test_a_state_missing_its_captured_bases_still_reports_the_nominal(name, cls):
+    """The other half of the split, and the reason it needs a sentinel.
+
+    A state unpickled from a save written before ``_capture_bases`` existed
+    carries no ``_base_*`` at all. There is genuinely no delta to divide, so
+    the nominal is the best answer available -- and it must stay the answer,
+    or the fix above would have traded a wrong number for a different wrong
+    number on every old save.
+
+    Checked by equality against the freshly built summary rather than against
+    a spelled-out string: ``_Target``'s stats are round, so the applied
+    fraction and the nominal fraction are the same number, and the fallback
+    has to reproduce the live rendering exactly.
+    """
+    with _quiet_narration():
+        state = cls(_Target())
+    rendered_live = state.tactical_mechanics
+
+    captured = [attr for attr in vars(state) if attr.startswith("_base_")]
+    assert captured, (
+        f"{name} captures no base stat, so the old-save path is not under test"
+    )
+    for attr in captured:
+        delattr(state, attr)
+
+    assert state.tactical_mechanics == rendered_live, (
+        f"{name}: with its captured bases gone the summary reads "
+        f"{state.tactical_mechanics!r}, not the {rendered_live!r} an old save "
+        "should still render"
+    )
+
+
+def test_every_combat_state_with_mechanics_carries_a_perspective_note():
+    """The mirror of ``..._the_strategist_annotates_carries_its_own_mechanics``.
+
+    That test walks the table and demands engine-side mechanics for each entry.
+    This one walks the engine and demands a table entry for each combat state
+    that has mechanics to explain. Without it, a new status effect can declare
+    a perfect summary and still reach the model as bare numbers with no
+    statement of what they IMPLY: ``_format_status_effects`` renders the
+    mechanics and simply omits the ``->`` clause when the lookup misses, so
+    nothing anywhere reports the gap.
+
+    The exemption is derived, not listed: a state with ``combat=False`` never
+    reaches a combat prompt, so it has no perspective to be written from. The
+    lookup key is the state's runtime ``name``, because that is what
+    ``StateEffectSerializer.serialize_state`` puts on the wire and what
+    ``_STATUS_TACTICAL_NOTES.get`` is handed.
+    """
+    missing = [
+        f"{cls_name} (wire name {instance.name!r})"
+        for cls_name, instance in _ANNOTATED
+        if instance.combat and instance.name not in _STATUS_TACTICAL_NOTES
+    ]
+    assert not missing, (
+        "combat states that state their mechanics but have no perspective note "
+        f"in ai/combat_strategist._STATUS_TACTICAL_NOTES: {missing}. The model "
+        "is told what they do and not what to do about it."
+    )
+
+
+# ---------------------------------------------------------------------------
+# One clock rule, not three copies of one clock rule
+# ---------------------------------------------------------------------------
+
+
+def _states_whose_compound_stretches_the_clock():
+    """Compoundable states that re-apply by moving ``beats_max``.
+
+    Derived, not listed. ``Enflamed`` compounds by adding a stack and topping
+    ``beats_left`` back to an unchanged ceiling, and ``Fervent`` by adding a
+    flat beat count; neither stretches, and neither should be dragged into a
+    rule it does not follow. What is left is the set that does.
+
+    Measured before-and-after on ONE instance. Comparing a fresh instance
+    against a separately built compounded one would compare two independent
+    ``random.randint`` durations and call the difference a stretch -- which
+    swept in ``Fervent``, whose ceiling never moves.
+    """
+    found = []
+    for name, cls in _COMPOUNDABLE:
+        target = _Target()
+        with _quiet_narration():
+            state = cls(target)
+            target.states.append(state)
+            functions.refresh_stat_bonuses(target)
+            before = state.beats_max
+            state.compound(target)
+        if state.beats_max != before:
+            found.append((name, cls))
+    return found
+
+
+_STRETCHING = _states_whose_compound_stretches_the_clock()
+_STRETCHING_IDS = [name for name, _ in _STRETCHING]
+
+
+def test_the_stretching_set_is_not_empty():
+    """Parametrized over it below; an empty set would pass vacuously."""
+    assert len(_STRETCHING) >= 3
+
+
+@pytest.mark.parametrize("name,cls", _STRETCHING, ids=_STRETCHING_IDS)
+def test_a_re_application_stretches_both_clocks_by_the_shared_rule(name, cls):
+    """Every stretching state must use ``State``'s constants, not its own copy.
+
+    The expected values are computed from ``State._COMPOUND_DURATION_MULT`` and
+    ``State._COMPOUND_REFRESH_DIVISOR`` deliberately -- read off the BASE class
+    rather than off ``cls``. Reading them off ``cls`` would follow a state that
+    had quietly re-declared its own private pair and confirm it against itself,
+    which is exactly the shape this guard exists to prevent: the rule had one
+    encoding, then three, and each copy was a separate place to retune and
+    forget.
+
+    This pins the SHAPE of the rule and its uniformity across the states that
+    follow it, not the numbers. ``tests/test_states_coverage.py`` pins what
+    ``_COMPOUND_DURATION_MULT`` actually is.
+    """
+    target = _Target()
+    with _quiet_narration():
+        state = cls(target)
+        target.states.append(state)
+        functions.refresh_stat_bonuses(target)
+
+    # Run both clocks down before re-applying, the way ``State.process()`` does
+    # on every beat. Without this the refresh term is INVISIBLE: a freshly
+    # applied state has ``beats_left == beats_max``, so topping up by any
+    # fraction of a larger ceiling saturates at that ceiling and every divisor
+    # produces the same answer. A guard that skipped this step would confirm a
+    # ``_COMPOUND_REFRESH_DIVISOR`` of 3, 4 or 40 equally happily -- which is
+    # how the divisor came to be the one half of this rule nothing pinned.
+    state.beats_left = state.beats_max // 3
+    state.steps_left = state.steps_max // 3
+
+    before = {
+        "beats": (state.beats_max, state.beats_left),
+        "steps": (state.steps_max, state.steps_left),
+    }
+    with _quiet_narration():
+        state.compound(target)
+    after = {
+        "beats": (state.beats_max, state.beats_left),
+        "steps": (state.steps_max, state.steps_left),
+    }
+
+    mult = states.State._COMPOUND_DURATION_MULT
+    divisor = states.State._COMPOUND_REFRESH_DIVISOR
+
+    for clock, (ceiling_before, left_before) in before.items():
+        expected_ceiling = int(ceiling_before * mult)
+        expected_left = min(
+            left_before + int(expected_ceiling / divisor), expected_ceiling
+        )
+        assert after[clock] == (expected_ceiling, expected_left), (
+            f"{name}: re-application moved the {clock} clock from "
+            f"{(ceiling_before, left_before)} to {after[clock]}, but the rule "
+            f"State declares (x{mult} ceiling, refresh by 1/{divisor} of it) "
+            f"gives {(expected_ceiling, expected_left)}"
+        )
