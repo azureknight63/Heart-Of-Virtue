@@ -26,6 +26,31 @@ def register_socket_handlers(socketio):
     def handle_disconnect():
         logger.debug("[SOCKET] Client disconnected: %s", request.sid)
 
+    def _payload_session_id_allowed():
+        """Whether a caller may name its own session in the event payload.
+
+        Only in a ``TESTING`` app. A payload session id has never been
+        authenticated, only believed: outside a test app a caller carrying NO
+        cookie could name any session, be joined to ``combat_<that session>``
+        and receive every ``combat:started``/``combat:beat``/``combat:ended``
+        payload for a fight that is not theirs — full battle state, player
+        stats and combat log. Same precedent, and the same reason, as
+        ``/api/test/session`` and ``debug_bp``, which are likewise registered
+        only when ``app.config["TESTING"]``.
+
+        No real client needs it: since issue #493 the browser sends ``{}`` and
+        authenticates off the handshake cookie, and nothing in ``tools/``
+        (bug-hunt harness, Inquisitor) speaks Socket.IO at all — they hold a
+        session id for the HTTP ``Authorization`` header only.
+
+        Returns False outside an app context: an absent context is not a
+        licence to trust the payload.
+        """
+        try:
+            return bool(current_app.config.get("TESTING"))
+        except RuntimeError:  # working outside of application context
+            return False
+
     def _session_id(data):
         """The session this socket event belongs to.
 
@@ -34,20 +59,27 @@ def register_socket_handlers(socketio):
         credential is an ``HttpOnly`` cookie the page cannot read. Flask-SocketIO
         runs handlers inside a request context built from the handshake, so the
         cookie the browser sent with it is available here and the server
-        resolves the session itself.
+        resolves the session itself. That is the only way a real client
+        authenticates a socket.
 
-        The payload form remains a fallback for the non-browser callers that
-        hold an explicit session id (the QA harnesses, and any Socket.IO client
-        outside a cookie jar) — the same fallback, and the same reasoning, as
-        ``middleware.auth.session_token``.
+        The payload form survives as a test-only affordance, gated by
+        :func:`_payload_session_id_allowed` — see there for why it must never
+        be reachable in production.
 
-        Precedence matches that helper's, cookie first, and for the same reason:
-        a client-supplied session id has never been authenticated, only
-        believed, so a page that carries a real cookie must not be able to name
-        somebody else's room instead. Reversing these two would let script on
-        the page join another session's combat stream.
+        Cookie first, and for the same reason as
+        ``middleware.auth.session_token``: a page that carries a real cookie
+        must not be able to name somebody else's room instead. Reversing these
+        two would let script on the page join another session's combat stream.
         """
-        return session_id_from_cookie() or (data or {}).get("session_id")
+        from_cookie = session_id_from_cookie()
+        if from_cookie:
+            return from_cookie
+        if not _payload_session_id_allowed():
+            return None
+        # Coerce rather than trust: ``emit("join_combat", "some string")`` is a
+        # legal Socket.IO call, and ``.get`` on a str raises inside the handler.
+        payload = data if isinstance(data, dict) else {}
+        return payload.get("session_id")
 
     @socketio.on("join_combat")
     def on_join(data):

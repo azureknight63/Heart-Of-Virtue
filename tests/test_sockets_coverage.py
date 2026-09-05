@@ -65,6 +65,7 @@ def test_on_join_missing_session_id_emits_error():
 def test_on_join_invalid_session_emits_error():
     handlers = _register_and_capture_handlers()
     fake_app = MagicMock()
+    fake_app.config = {"TESTING": True}
     fake_app.session_manager.get_session.return_value = None
 
     with patch("src.api.sockets.current_app", fake_app), \
@@ -80,6 +81,7 @@ def test_on_join_invalid_session_emits_error():
 def test_on_join_valid_session_joins_room_and_emits(caplog):
     handlers = _register_and_capture_handlers()
     fake_app = MagicMock()
+    fake_app.config = {"TESTING": True}
     fake_app.session_manager.get_session.return_value = MagicMock()
     fake_request = MagicMock()
     fake_request.sid = "sid-xyz"
@@ -102,9 +104,14 @@ def test_on_leave_with_session_id_leaves_room_and_emits(caplog):
     handlers = _register_and_capture_handlers()
     fake_request = MagicMock()
     fake_request.sid = "sid-xyz"
+    # The payload session id is a TESTING-only affordance now, so the handler
+    # has to see a TESTING app for it to resolve at all.
+    fake_app = MagicMock()
+    fake_app.config = {"TESTING": True}
 
     with caplog.at_level(logging.DEBUG, logger="src.api.sockets"):
-        with patch("src.api.sockets.request", fake_request), \
+        with patch("src.api.sockets.current_app", fake_app), \
+             patch("src.api.sockets.request", fake_request), \
              patch("src.api.sockets.leave_room") as mock_leave_room, \
              patch("src.api.sockets.emit") as mock_emit:
             handlers["leave_combat"]({"session_id": "abc"})
