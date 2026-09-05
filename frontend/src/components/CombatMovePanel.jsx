@@ -3,6 +3,8 @@ import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
+import GlossaryHelpButton from './GlossaryHelpButton';
+import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
 import { displayNameOf } from '../utils/combatMoveStatus';
 import {
@@ -151,19 +153,25 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                 <GameText variant="secondary" weight="bold" style={{ textTransform: 'uppercase' }}>
                     {category} MOVES
                 </GameText>
-                <button
-                    onClick={onClose}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        color: colors.text.muted,
-                        cursor: 'pointer',
-                        fontSize: '18px',
-                        padding: spacing.xs,
-                    }}
-                >
-                    ✕
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+                    {/* Second entry point to the same glossary as the fight-status
+                        strip's "?" — this panel is where the cooldown wording the
+                        player asked about (#507) actually appears. */}
+                    <GlossaryHelpButton />
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            color: colors.text.muted,
+                            cursor: 'pointer',
+                            fontSize: '18px',
+                            padding: spacing.xs,
+                        }}
+                    >
+                        ✕
+                    </button>
+                </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm, overflowY: 'auto', flex: 1, minHeight: 0 /* Critical: flex children need minHeight:0 to shrink below content size and enable scrolling */, paddingRight: spacing.sm, marginRight: `-${spacing.sm}` }}>
@@ -184,9 +192,30 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                             ? firstTarget.id
                             : null;
 
+                        // The card is a wrapper, not the button itself: the
+                        // unavailability reason carries interactive glossary terms
+                        // (#507), and a disabled <button> does not dispatch pointer
+                        // or keyboard events to anything nested inside it — so a
+                        // term rendered in there would be inert exactly when it is
+                        // needed, besides being a nested interactive control.
                         return (
+                          <div
+                            key={moveKey}
+                            style={{
+                                backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                                border: `1px solid ${isHovered ? colors.secondary : colors.border.light}`,
+                                borderRadius: '4px',
+                                padding: spacing.md,
+                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: spacing.xs,
+                                opacity: isAvailable ? 1 : 0.6,
+                                boxShadow: isHovered ? shadows.glow : 'none',
+                                width: '100%',
+                            }}
+                          >
                             <button
-                                key={moveKey}
                                 onClick={() => {
                                     if (isAvailable && !isProcessing) {
                                         playSFX('attack');
@@ -211,18 +240,15 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                 disabled={!isAvailable || isProcessing}
                                 title={!isAvailable ? reason : ''}
                                 style={{
-                                    backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-                                    border: `1px solid ${isHovered ? colors.secondary : colors.border.light}`,
-                                    borderRadius: '4px',
-                                    padding: spacing.md,
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: 0,
+                                    color: 'inherit',
                                     textAlign: 'left',
                                     cursor: isProcessing ? 'wait' : (isAvailable ? 'pointer' : 'not-allowed'),
-                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: spacing.xs,
-                                    opacity: isAvailable ? 1 : 0.6,
-                                    boxShadow: isHovered ? shadows.glow : 'none',
                                     width: '100%',
                                 }}
                             >
@@ -243,12 +269,20 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                 <GameText variant={isAvailable ? 'muted' : 'dim'} size="sm">
                                     {move.description}
                                 </GameText>
-                                {!isAvailable && reason && (
-                                    <GameText variant="danger" size="xs" style={{ fontStyle: 'italic', marginTop: spacing.xs }}>
-                                        ⚠ {reason}
-                                    </GameText>
-                                )}
                             </button>
+                            {!isAvailable && reason && (
+                                <GlossaryText
+                                    text={`⚠ ${reason}`}
+                                    style={{
+                                        color: colors.text.danger,
+                                        fontSize: '0.75rem',
+                                        fontStyle: 'italic',
+                                        fontFamily: '"Courier New", monospace',
+                                        marginTop: spacing.xs,
+                                    }}
+                                />
+                            )}
+                          </div>
                         );
                     })
                 )}

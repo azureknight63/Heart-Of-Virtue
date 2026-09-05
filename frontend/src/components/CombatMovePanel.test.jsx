@@ -145,6 +145,44 @@ describe('CombatMovePanel', () => {
     expect(mockOnMoveClick).not.toHaveBeenCalled();
   });
 
+  it('offers the glossary from the panel header (#507)', () => {
+    render(
+      <CombatMovePanel
+        moves={mockMoves}
+        category="Offensive"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Open combat glossary' })).toBeInTheDocument();
+  });
+
+  it('makes the cooldown wording in an unavailability reason explain itself (#507)', () => {
+    render(
+      <CombatMovePanel
+        moves={[{
+          name: 'Power Strike',
+          category: 'Offensive',
+          description: 'Wind up.',
+          fatigue_cost: 35,
+          available: false,
+          reason: 'Available in 5 beats',
+        }]}
+        category="Offensive"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+
+    const beats = screen.getByRole('button', { name: /beats — what this means/i });
+    // The reason sits outside the (disabled) move button, or nothing nested in
+    // it would ever receive a click.
+    expect(beats.closest('button[disabled]')).toBeNull();
+
+    fireEvent.click(beats);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('The unit of combat time');
+  });
+
   it('renders empty state when no moves match category', () => {
     render(
       <CombatMovePanel 
@@ -238,16 +276,20 @@ describe('CombatMovePanel', () => {
     );
 
     const moveBtn = screen.getByText('Slash').closest('button');
-    
+    // The card's chrome lives on the wrapper, not the button: an unavailable
+    // move's reason line sits outside the (disabled) button so its glossary
+    // terms stay interactive.
+    const card = moveBtn.parentElement;
+
     // Test initial state (non-hover)
-    expect(moveBtn.style.backgroundColor).toBe('rgba(255, 255, 255, 0.03)');
+    expect(card.style.backgroundColor).toBe('rgba(255, 255, 255, 0.03)');
     
     // Test hover state
     act(() => {
       fireEvent.mouseEnter(moveBtn);
     });
-    expect(moveBtn.style.backgroundColor).toBe('rgba(255, 170, 0, 0.1)');
-    expect(moveBtn.style.borderColor).toBe('rgb(255, 170, 0)');
+    expect(card.style.backgroundColor).toBe('rgba(255, 170, 0, 0.1)');
+    expect(card.style.borderColor).toBe('rgb(255, 170, 0)');
   });
 
   describe('move commitment bar', () => {
