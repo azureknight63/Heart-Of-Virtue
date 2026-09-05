@@ -406,6 +406,12 @@ class ApiCombatAdapter:
         # initialize_combat.
         self._announced_enemies = set()
 
+        # True while _execute_move_inner is driving a beat loop. A reinit that
+        # arrives from inside a beat (an enemy move or a combat event that
+        # calls functions.add_enemies_to_combat) must not resume the player's
+        # in-flight move a second time — see initialize_combat.
+        self._executing_move = False
+
         self._reset_log_index_state()
 
         # combat_log rides in the pickled save, so a tampered or legacy save
@@ -976,6 +982,22 @@ class ApiCombatAdapter:
                 )
             delattr(entity, PENDING_ANIMATION_ATTR)
 
+    @staticmethod
+    def _reset_idle_move_stages(combatant) -> None:
+        """Rewind a combatant's moves to stage 0, sparing the one in flight.
+
+        Used by the reinit path of :meth:`initialize_combat`. The combatant's
+        ``current_move`` is skipped: rewinding a move that is mid-``advance``
+        traps ``Move.advance``'s stage loop, which only terminates once the
+        stage counter passes 3.
+        """
+        active = getattr(combatant, "current_move", None)
+        for move in getattr(combatant, "known_moves", []):
+            if move is active:
+                continue
+            move.current_stage = 0
+            move.beats_left = 0
+
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
     ) -> Dict[str, Any]:
@@ -1122,12 +1144,24 @@ class ApiCombatAdapter:
                         move.beats_left = 0
             else:
                 # For re-init, ensure ALL combatants are properly flagged and
-                # reset player move stages so prior cooldowns don't block new combat.
+                # reset move stages so prior cooldowns don't block new combat.
+                #
+                # A combatant's *in-flight* move is exempt. Rewinding it to
+                # stage 0 with beats_left 0 while Move.advance is inside its
+                # `while self.beats_left == 0` stage loop pushes that loop back
+                # to the start on every pass, so it never reaches the
+                # current_stage > 3 exit: the engine spins forever. That is
+                # reachable from normal play — any move or combat effect that
+                # spawns reinforcements mid-execute (functions.
+                # add_enemies_to_combat -> initialize_combat(reinit=True))
+                # re-enters here from inside its own advance().
+                #
+                # Exempting it is also what the resume path below wants: it
+                # deliberately continues player.current_move from its stored
+                # stage (issue #344), which a reset to 0 had already destroyed.
                 for ally in self.player.combat_list_allies:
                     ally.in_combat = True
-                    for move in ally.known_moves:
-                        move.current_stage = 0
-                        move.beats_left = 0
+                    self._reset_idle_move_stages(ally)
                 for enemy in self.player.combat_list:
                     enemy.in_combat = True
                     try:
@@ -1137,9 +1171,7 @@ class ApiCombatAdapter:
                             "Could not set player_ref on enemy %s",
                             getattr(enemy, "name", enemy),
                         )
-                    for move in enemy.known_moves:
-                        move.current_stage = 0
-                        move.beats_left = 0
+                    self._reset_idle_move_stages(enemy)
 
             # Initialize combat lists for all participants (Enemies and Allies)
             # This ensures collision detection works correctly for everyone
@@ -1176,6 +1208,19 @@ class ApiCombatAdapter:
                 name = getattr(enemy, "name", "Enemy")
                 alert = getattr(enemy, "alert_message", "appears!")
                 self._add_log_entry(1, f"{name} {alert}", "system")
+
+            # A reinit raised from *inside* an in-flight move — an enemy move
+            # or a combat event that spawns reinforcements during a beat —
+            # must stop here. _execute_move is already on the stack and will
+            # keep driving the beat loop; falling through to the resume branch
+            # below re-entered it on the same player.current_move, and the
+            # fresh beat loop gave the summoning NPC another turn, which
+            # summoned again: unbounded recursion that pinned the request
+            # thread and grew the enemy roster without limit. The roster,
+            # positions and arrival announcements are already updated above,
+            # so the arrivals join the fight mid-beat exactly as intended.
+            if reinit and self._executing_move:
+                return self.get_combat_state()
 
             # Process initial NPC turns only for new combats
             if not reinit:
@@ -1885,6 +1930,12 @@ class ApiCombatAdapter:
         already-in-progress move continues from its stored stage instead of
         being restarted (used by the reinit/reinforcement path).
         """
+        # Mark the beat loop as running so a mid-beat reinforcement spawn
+        # (functions.add_enemies_to_combat -> initialize_combat(reinit=True))
+        # does not recursively resume this same move. Saved/restored rather
+        # than simply cleared so the guard survives legitimate nesting.
+        was_executing = self._executing_move
+        self._executing_move = True
         try:
             return self._execute_move_inner(move, resume=resume)
         except Exception as e:
@@ -1901,6 +1952,8 @@ class ApiCombatAdapter:
             except Exception:
                 self.available_options = []
             return {"error": f"Move execution failed: {e}"}
+        finally:
+            self._executing_move = was_executing
 
     def _execute_move_inner(self, move, resume: bool = False) -> Dict[str, Any]:
         """Inner move execution — called only via _execute_move which handles state recovery.

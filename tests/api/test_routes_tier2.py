@@ -139,8 +139,13 @@ class TestAuthRoutesTier2:
 
         assert response.status_code == 401
 
-    def test_auth_settings_get(self, app_and_client):
-        """Test getting auth settings."""
+    # /api/auth/settings reads and writes a *registered account's* row, so it
+    # requires session.db_user_id. A session made straight off SessionManager
+    # (the QA/test bypass — see CLAUDE.md, "How auth works") has none, so the
+    # route refuses it rather than silently editing nothing.
+
+    def test_auth_settings_get_without_db_user_is_unauthorized(self, app_and_client):
+        """GET settings on a session with no db_user_id is refused."""
         client = app_and_client["client"]
         session_manager = app_and_client["session_manager"]
 
@@ -152,10 +157,13 @@ class TestAuthRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404, 500]
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Unauthorized"
 
-    def test_auth_settings_put(self, app_and_client):
-        """Test updating auth settings."""
+    def test_auth_settings_put_without_db_user_is_unauthorized(self, app_and_client):
+        """PUT settings on a session with no db_user_id is refused."""
         client = app_and_client["client"]
         session_manager = app_and_client["session_manager"]
 
@@ -164,11 +172,34 @@ class TestAuthRoutesTier2:
 
         response = client.put(
             "/api/auth/settings",
-            json={"setting_key": "setting_value"},
+            json={"timezone": "Europe/Berlin"},
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404, 500]
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Unauthorized"
+
+    def test_auth_settings_get_returns_the_sessions_timezone(self, app_and_client):
+        """With a db_user_id present the route serves the session's timezone."""
+        client = app_and_client["client"]
+        session_manager = app_and_client["session_manager"]
+
+        session_id, _ = session_manager.create_session("testuser_settings_ok")
+        session = session_manager.get_session(session_id)
+        session.db_user_id = "db-user-1"
+        session.data["timezone"] = "Europe/Berlin"
+
+        response = client.get(
+            "/api/auth/settings",
+            headers=self.get_auth_header(session_id),
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        assert data["data"]["timezone"] == "Europe/Berlin"
 
 
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
@@ -213,6 +244,17 @@ class TestNPCRoutesTier2:
             data = response.get_json()
             assert "profile" in data or "success" in data
 
+    @pytest.mark.xfail(
+        reason=(
+            "No quest system exists in this tree: there is no quest, "
+            "quest-chain or npc-quest blueprint under src/api/routes/, and "
+            "no quest method on GameService, so every /api/quests/*, "
+            "/api/quest-chains/* and /api/npc/quests/* URL 404s. This test "
+            "asserts the endpoint the feature would expose; the sibling "
+            "tests in this class only pass because they accept 404."
+        ),
+        strict=True,
+    )
     def test_npc_get_active_quests(self, app_and_client):
         """Test GET /npc/quests/active."""
         client = app_and_client["client"]
@@ -576,6 +618,17 @@ class TestQuestRewardRoutesTier2:
 
         assert response.status_code in [200, 400, 404]
 
+    @pytest.mark.xfail(
+        reason=(
+            "No quest system exists in this tree: there is no quest, "
+            "quest-chain or npc-quest blueprint under src/api/routes/, and "
+            "no quest method on GameService, so every /api/quests/*, "
+            "/api/quest-chains/* and /api/npc/quests/* URL 404s. This test "
+            "asserts the endpoint the feature would expose; the sibling "
+            "tests in this class only pass because they accept 404."
+        ),
+        strict=True,
+    )
     def test_quest_get_progression(self, app_and_client):
         """Test GET /quests/progression."""
         client = app_and_client["client"]
@@ -986,6 +1039,17 @@ class TestQuestChainsRoutesTier2:
         """Get authorization header for session."""
         return {"Authorization": f"Bearer {session_id}"}
 
+    @pytest.mark.xfail(
+        reason=(
+            "No quest system exists in this tree: there is no quest, "
+            "quest-chain or npc-quest blueprint under src/api/routes/, and "
+            "no quest method on GameService, so every /api/quests/*, "
+            "/api/quest-chains/* and /api/npc/quests/* URL 404s. This test "
+            "asserts the endpoint the feature would expose; the sibling "
+            "tests in this class only pass because they accept 404."
+        ),
+        strict=True,
+    )
     def test_quest_chains_get_progress(self, app_and_client):
         """Test GET /quest-chains/progress."""
         client = app_and_client["client"]

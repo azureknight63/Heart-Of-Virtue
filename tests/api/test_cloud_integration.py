@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import uuid
 import json
@@ -32,6 +34,20 @@ class TestCloudIntegration:
         """Clean up test data."""
         asyncio.run(self._do_cleanup())
 
+    @pytest.mark.xfail(
+        condition=not os.getenv("TURSO_DATABASE_URL"),
+        reason=(
+            "Needs a reachable Turso database. src/api/db.py raises "
+            "'TURSO_DATABASE_URL is not set' on first execute(), and the "
+            "register route's config-leak guard turns that into HTTP 503, so "
+            "the very first assertion (201 from /api/auth/register) fails. "
+            "This test verifies real cloud persistence — registration, the "
+            "manual-save row, the single-row autosave UPSERT, and load-after-"
+            "relogin — so a fake db would verify nothing it exists to verify. "
+            "Set TURSO_DATABASE_URL/TURSO_AUTH_TOKEN and it runs for real."
+        ),
+        strict=False,
+    )
     def test_user_lifecycle_and_saves(self, client, app):
         """Test registration, login, and cloud save persistence."""
 

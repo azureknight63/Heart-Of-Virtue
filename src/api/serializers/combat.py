@@ -356,6 +356,9 @@ class CombatantSerializer:
         """Serialize currently active/charging move."""
         move = move_in_progress(combatant)
         if move:
+            beats_until_resolve = CombatantSerializer._move_method(
+                move, "beats_until_resolve"
+            )
             return {
                 "name": getattr(move, "name", "Unknown"),
                 "display_name": display_name_of(move),
@@ -375,12 +378,38 @@ class CombatantSerializer:
                 # smaller number — the battlefield countdown badge renders
                 # this one instead. Computed by the engine (Move.
                 # beats_until_resolve) so the stage machine has one owner.
-                "beats_until_resolve": move.beats_until_resolve(),
+                #
+                # Reached through _move_method: an absent countdown must not
+                # blank a whole fighter. See _move_method's docstring.
+                "beats_until_resolve": (
+                    beats_until_resolve()
+                    if beats_until_resolve is not None
+                    else None
+                ),
                 "target_id": CombatantSerializer._serialize_move_target_id(move),
                 "mvrange": CombatantSerializer._serialize_move_range(move),
                 "falloff": CombatantSerializer._serialize_move_falloff(move),
             }
         return None
+
+    @staticmethod
+    def _move_method(move: Any, name: str):
+        """Return ``move``'s bound engine method ``name``, or None if absent.
+
+        Every real Move (src/moves/_base.py) defines these, so this is not a
+        guard against engine bugs — a method that *raises* still propagates,
+        exactly as :meth:`_serialize_move_range` documents. It guards the one
+        case where ``current_move`` is not a Move at all: a save written while
+        a move was in flight, whose move class has since been renamed or
+        removed, restores as a synthesized legacy placeholder (see
+        ``src/secure_pickle.py``) carrying none of Move's API. That
+        AttributeError escaped :meth:`_serialize_active_move` and the _safe
+        boundary then replaced the WHOLE combatant with ``{}`` — no name, no
+        hp, no position on the wire — so the battlefield rendered empty for
+        every fighter, Jean included, with only a log warning to show for it.
+        """
+        method = getattr(move, name, None)
+        return method if callable(method) else None
 
     @staticmethod
     def _serialize_move_target_id(move: Any) -> Optional[str]:
@@ -441,7 +470,14 @@ class CombatantSerializer:
         # real engine bug, and swallowing it here would ship a silently wrong
         # threat radius instead — the exact silent-failure mode this payload's
         # contract test exists to prevent.
-        effective_max = move.get_effective_range_max(getattr(move, "user", None))
+        get_effective_range_max = CombatantSerializer._move_method(
+            move, "get_effective_range_max"
+        )
+        effective_max = (
+            get_effective_range_max(getattr(move, "user", None))
+            if get_effective_range_max is not None
+            else None
+        )
         if effective_max is not None:
             range_max = effective_max
 
@@ -464,7 +500,14 @@ class CombatantSerializer:
         The client draws the difference — a dissolving gradient for a decaying
         move, a hard ring for a bounded one.
         """
-        falloff = move.get_accuracy_falloff(getattr(move, "user", None))
+        get_accuracy_falloff = CombatantSerializer._move_method(
+            move, "get_accuracy_falloff"
+        )
+        falloff = (
+            get_accuracy_falloff(getattr(move, "user", None))
+            if get_accuracy_falloff is not None
+            else None
+        )
         if not falloff:
             return None
         start, per_ft = falloff

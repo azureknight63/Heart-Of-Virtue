@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from src.moves import Move
+from src.narration import narrate
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -79,7 +80,7 @@ class PauseEvent:
             return
         self.needs_input = False
         self.completed = True
-        print("The battle resumes.")
+        narrate("The battle resumes.")
 
 
 class ReinforcementEvent:
@@ -114,7 +115,7 @@ class ReinforcementEvent:
         add_enemies_to_combat(self.player, new_enemies, announcement="Reinforcements arrive!")
         self.needs_input = False
         self.completed = True
-        print("Reinforcements arrive!")
+        narrate("Reinforcements arrive!")
 
 
 class CallForHelpMove(Move):
@@ -148,7 +149,7 @@ class CallForHelpMove(Move):
 
         self.executed = True
         add_enemies_to_combat(user.player_ref, [CaveBat()], announcement="Help arrives!")
-        print("Help arrives!")
+        narrate("Help arrives!")
 
 
 class StageProbeMove(Move):
@@ -178,19 +179,19 @@ class StageProbeMove(Move):
 
     def prep(self, user):
         self.prep_called = True
-        print("STAGE_PROBE_PREP")
+        narrate("STAGE_PROBE_PREP")
 
     def execute(self, user):
         self.execute_called = True
-        print("STAGE_PROBE_EXECUTE")
+        narrate("STAGE_PROBE_EXECUTE")
 
     def recoil(self):
         self.recoil_called = True
-        print("STAGE_PROBE_RECOIL")
+        narrate("STAGE_PROBE_RECOIL")
 
     def cooldown(self, user):
         self.cooldown_called = True
-        print("STAGE_PROBE_COOLDOWN")
+        narrate("STAGE_PROBE_COOLDOWN")
 
 
 @pytest.mark.integration

@@ -42,6 +42,16 @@ def create_mock_move(name="Attack"):
                 self.current_stage = 0
                 user.current_move = None
 
+        def beats_until_resolve(self):
+            """Mirror Move.beats_until_resolve — the serializer calls it.
+
+            Real moves (src/moves/_base.py) all expose this; a double that
+            doesn't is not a stand-in for one.
+            """
+            if self.current_stage not in (0, 1):
+                return None
+            return self.beats_left
+
     return SimpleMockMove()
 
 
@@ -310,6 +320,13 @@ class TestTacticalStrategistIntegration:
 
             assert response.status_code == 201
 
+            # Force proximity for test stability (ensure melee range). Combat
+            # start seeds positions from the battlefield grid, which can place
+            # the enemy outside the mock move's mvrange — the target would then
+            # be rejected as out of range, not as a bug in the combined path.
+            player.combat_proximity = {enemy: 2}
+            enemy.combat_proximity = {player: 2}
+
             # Execute combined move+target action
             response = client.post(
                 "/api/combat/move",
@@ -393,6 +410,17 @@ class TestTacticalStrategistIntegration:
             )
 
             assert response.status_code == 201
+
+            # Pin melee range before acting. /api/combat/start seeds
+            # battlefield positions from the coordinate grid, which is
+            # randomised — an enemy spawned outside the move's mvrange is
+            # filtered out of _get_available_targets and the move is
+            # rejected with "No valid targets available for this move".
+            # Without this the whole file is a coin flip (measured: 5 runs,
+            # 0-2 failures each). test_full_combat_cycle_with_ai_suggestions
+            # has always pinned it; the rest simply forgot.
+            player.combat_proximity = {enemy: 2}
+            enemy.combat_proximity = {player: 2}
             data = json.loads(response.data)
 
             # Verify battle state includes combatant data
@@ -454,6 +482,17 @@ class TestTacticalStrategistIntegration:
             )
 
             assert response.status_code == 201
+
+            # Pin melee range before acting. /api/combat/start seeds
+            # battlefield positions from the coordinate grid, which is
+            # randomised — an enemy spawned outside the move's mvrange is
+            # filtered out of _get_available_targets and the move is
+            # rejected with "No valid targets available for this move".
+            # Without this the whole file is a coin flip (measured: 5 runs,
+            # 0-2 failures each). test_full_combat_cycle_with_ai_suggestions
+            # has always pinned it; the rest simply forgot.
+            player.combat_proximity = {enemy: 2}
+            enemy.combat_proximity = {player: 2}
 
             # Execute a move to create history
             response = client.post(
@@ -528,6 +567,17 @@ class TestEnhancedCombatVisualizationIntegration:
             )
 
             assert response.status_code == 201
+
+            # Pin melee range before acting. /api/combat/start seeds
+            # battlefield positions from the coordinate grid, which is
+            # randomised — an enemy spawned outside the move's mvrange is
+            # filtered out of _get_available_targets and the move is
+            # rejected with "No valid targets available for this move".
+            # Without this the whole file is a coin flip (measured: 5 runs,
+            # 0-2 failures each). test_full_combat_cycle_with_ai_suggestions
+            # has always pinned it; the rest simply forgot.
+            player.combat_proximity = {enemy: 2}
+            enemy.combat_proximity = {player: 2}
             data = json.loads(response.data)
 
             # Verify combatants are serialized
@@ -585,6 +635,17 @@ class TestEnhancedCombatVisualizationIntegration:
             )
 
             assert response.status_code == 201
+
+            # Pin melee range before acting. /api/combat/start seeds
+            # battlefield positions from the coordinate grid, which is
+            # randomised — an enemy spawned outside the move's mvrange is
+            # filtered out of _get_available_targets and the move is
+            # rejected with "No valid targets available for this move".
+            # Without this the whole file is a coin flip (measured: 5 runs,
+            # 0-2 failures each). test_full_combat_cycle_with_ai_suggestions
+            # has always pinned it; the rest simply forgot.
+            player.combat_proximity = {enemy: 2}
+            enemy.combat_proximity = {player: 2}
             data = json.loads(response.data)
 
             # Execute a move to generate beat states

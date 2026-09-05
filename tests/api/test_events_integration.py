@@ -53,20 +53,29 @@ def session_id(app):
     return sid
 
 
+def universe(app, session_id):
+    """Return the Universe owned by a session's player.
+
+    ``GameService.__init__`` is ``pass`` — there is no ``game_service.universe``.
+    The universe hangs off the player (see CLAUDE.md, "GameService patterns").
+    """
+    return app.session_manager.get_player(session_id).universe
+
+
 class TestEventIntegration:
     """Test event system integration with world navigation."""
 
     def test_tile_entry_triggers_events(self, app, client, session_id):
         """Test that entering a tile with events triggers them."""
         # Setup: Add an event to the tile at (1,2) - south of starting position (1,1)
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
             event = MockEvent("Entering southern room", repeat=False)
             tile.events_here.append(event)
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -81,7 +90,7 @@ class TestEventIntegration:
     def test_multiple_events_on_tile(self, app, client, session_id):
         """Test that a tile with multiple events triggers all of them."""
         # Setup: Add multiple events to tile at (2,1) - east of starting position
-        tile = app.game_service.universe.get_tile(2, 1)
+        tile = universe(app, session_id).get_tile(2, 1)
         if tile:
             event1 = MockEvent("First event", repeat=False)
             event2 = MockEvent("Second event", repeat=False)
@@ -89,7 +98,7 @@ class TestEventIntegration:
 
         # Action: Move east
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "east"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -102,14 +111,14 @@ class TestEventIntegration:
     def test_event_data_in_response(self, app, client, session_id):
         """Test that event data is properly formatted in response."""
         # Setup: Add an event to tile at (1,2) - south of starting position
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
             event = MockEvent("Test event description", repeat=True)
             tile.events_here.append(event)
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -127,20 +136,20 @@ class TestEventIntegration:
         """Test that movement result includes event consequences."""
         # Action: Get initial position
         response = client.get(
-            "/world/",
+            "/api/world/",
             headers={"Authorization": f"Bearer {session_id}"},
         )
         initial_data = response.get_json()
 
         # Setup: Add event to destination (1,2) - south of starting position
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
             event = MockEvent("Consequence event")
             tile.events_here.append(event)
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -155,13 +164,13 @@ class TestEventIntegration:
     def test_tile_without_events(self, app, client, session_id):
         """Test movement to tile without events still works."""
         # Setup: Ensure tile at (1,2) has no events
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
             tile.events_here = []
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -175,7 +184,7 @@ class TestEventIntegration:
     def test_event_processing_on_movement(self, app, client, session_id):
         """Test that events are processed when player enters tile."""
         # Setup: Add event that tracks processing to tile at (1,2) - south
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
             event = MockEvent("Processing test")
             tile.events_here.append(event)
@@ -183,7 +192,7 @@ class TestEventIntegration:
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -200,7 +209,7 @@ class TestEventIntegration:
         """Test that events are NOT triggered on GET /world/ (current room check)."""
         # Action: Get current room
         response = client.get(
-            "/world/",
+            "/api/world/",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -217,7 +226,7 @@ class TestEventEdgeCases:
     def test_malformed_event_object(self, app, client, session_id):
         """Test handling of malformed event objects."""
         # Setup: Add event with missing attributes to tile at (1,2)
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
 
             class BadEvent:
@@ -228,7 +237,7 @@ class TestEventEdgeCases:
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -241,7 +250,7 @@ class TestEventEdgeCases:
     def test_event_without_process_method(self, app, client, session_id):
         """Test handling of events without process method."""
         # Setup: Add event without process method to tile at (1,2)
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
 
             class SimpleEvent:
@@ -252,7 +261,7 @@ class TestEventEdgeCases:
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -265,7 +274,7 @@ class TestEventEdgeCases:
     def test_event_process_raises_exception(self, app, client, session_id):
         """Test handling of events that raise exceptions during processing."""
         # Setup: Add event that raises exception to tile at (1,2)
-        tile = app.game_service.universe.get_tile(1, 2)
+        tile = universe(app, session_id).get_tile(1, 2)
         if tile:
 
             class BadProcessEvent:
@@ -279,7 +288,7 @@ class TestEventEdgeCases:
 
         # Action: Move south
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             json={"direction": "south"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
