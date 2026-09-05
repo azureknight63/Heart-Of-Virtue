@@ -1278,14 +1278,14 @@ def test_both_endings_route_through_the_shared_teardown():
     assert "_teardown_combat_roster" in _method_calls(
         ApiCombatAdapter._handle_victory
     )
-    # The defeat tail lives in _handle_defeat, reached from _execute_move_inner.
-    assert "_handle_defeat" in _method_calls(ApiCombatAdapter._execute_move_inner)
-    defeat_calls = _method_calls(ApiCombatAdapter._handle_defeat)
+    # The defeat tail lives in settle_defeat, reached from _execute_move_inner.
+    assert "settle_defeat" in _method_calls(ApiCombatAdapter._execute_move_inner)
+    defeat_calls = _method_calls(ApiCombatAdapter.settle_defeat)
     assert "_teardown_combat_roster" in defeat_calls, (
         "the defeat tail no longer routes through the shared teardown"
     )
     assert "_discard_pending_animations" not in defeat_calls, (
-        "_handle_defeat discards directly instead of via the teardown "
+        "settle_defeat discards directly instead of via the teardown "
         "(the defeat-path discard used to hide inside a try that swallowed it)"
     )
 

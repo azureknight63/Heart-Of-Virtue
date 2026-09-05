@@ -2126,7 +2126,7 @@ class ApiCombatAdapter:
 
         # Check win/loss conditions
         if not self.player.is_alive() and not self.player.check_revive():
-            return self._handle_defeat(beat_states)
+            return self.settle_defeat(beat_states)
 
         # Evaluate all combat events one final time when enemies are defeated
         # This allows events (like reinforcement spawners) to inject new enemies before victory
@@ -2229,24 +2229,15 @@ class ApiCombatAdapter:
             and self.player.in_combat
             and not wave_transition
         ):
-            self._handle_victory()
-
             # Publish the terminal stream even when a post-combat event is
             # queued. The event dialog and victory state are independent; the
             # old path only streamed when no event was pending.
-            result = self.get_combat_state()
-            result["beat_states"] = beat_states
-            self._stream_combat_result(result, beat_states, ended=True)
-            # get_combat_state() consumes events_triggered; restore them so the
-            # normal tail below can still return the pending event to the API.
-            triggered_events = result.get("events_triggered")
-            if triggered_events:
-                self.player.combat_adapter_state["events_triggered"] = triggered_events
-
+            #
             # Return the terminal state immediately. If a post-combat event is
-            # pending, its payload was restored above and travels with this result;
-            # do not fall through and replay the same beat stream a second time.
-            return result
+            # pending, settle_victory restores its payload and it travels with
+            # this result; do not fall through and replay the same beat stream a
+            # second time.
+            return self.settle_victory(beat_states)
 
         # Set up for next move selection if battle continues and no event is blocking
         if not event_just_triggered:
@@ -2903,15 +2894,18 @@ class ApiCombatAdapter:
 
         threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
 
-    def _handle_defeat(self, beat_states):
+    def settle_defeat(self, beat_states) -> Dict[str, Any]:
         """End the fight in defeat, publish the terminal stream, and return it.
 
-        The COMPLETE defeat path: it writes ``combat_end_summary``, calls
-        ``_stream_combat_result(..., ended=True)`` and returns the result the
-        caller hands straight back. Its mirror is therefore
-        :meth:`settle_victory`, NOT :meth:`_handle_victory` — that one is only
-        the exp/summary half and publishes nothing. (This docstring used to
-        name ``_handle_victory``, which reads as a licence to pair the two.)
+        The COMPLETE defeat path, and the exact mirror of :meth:`settle_victory`
+        — same ``(beat_states) -> result`` shape, same guarantee that the
+        seq-guarded ``combat:ended`` stream goes out with the summary. It was
+        called ``_handle_defeat``, which read as one half of a pair with
+        ``_handle_victory``; it never was. ``_handle_victory`` is the exp and
+        summary half ALONE and publishes nothing, so the matching name invited a
+        new exit path to reach for it and silently ship a victory the client is
+        never told to end on (issue #520). The ``settle_*`` pair is now the pair,
+        and ``_handle_victory`` is private and named unlike either of them.
         """
         self.player.in_combat = False
         self.awaiting_input = False
@@ -2951,12 +2945,12 @@ class ApiCombatAdapter:
         None. A caller that stops here leaves the client showing victory state
         it was never told to end on.
 
-        Only the move loop may call this directly, because it does the stream
-        inline immediately afterwards. **Every other exit path must call
-        :meth:`settle_victory`**, which is this plus the stream and exists for
-        exactly that reason. Note the asymmetry with :meth:`_handle_defeat`,
-        which IS complete on its own: the two names look like a pair and are
-        not one.
+        **:meth:`settle_victory` is the only caller and the only entry point any
+        exit path may use** — it is this plus the stream, and it exists for
+        exactly that reason. This one stays private and deliberately unlike the
+        ``settle_*`` names, so it cannot be mistaken for the complete tail the
+        way ``_handle_defeat`` (now :meth:`settle_defeat`) once made it look
+        (issue #520).
         """
         self.player.in_combat = False
         self.awaiting_input = False
@@ -3145,22 +3139,37 @@ class ApiCombatAdapter:
 
         self._teardown_combat_roster()
 
-    def settle_victory(self) -> Dict[str, Any]:
+    def settle_victory(self, beat_states=None) -> Dict[str, Any]:
         """End the fight in victory and publish the terminal state.
 
         Ending a fight is always both halves: ``_handle_victory`` awards exp and
         writes ``combat_end_summary``, and the client needs the seq-guarded
         ``combat:ended`` stream that goes with it or it can be shown victory
-        state it was never told to end on. The move loop does the pair inline;
-        every caller outside it — the status poll, and the event-resolution path
-        that settles a deferred wave transition (issue #514) — goes through here
-        rather than carrying its own copy.
+        state it was never told to end on. EVERY victory exit goes through here
+        — the move loop, the status poll, and the event-resolution path that
+        settles a deferred wave transition (issue #514). The move loop used to
+        carry its own inline copy of the pair, differing only by the beats it
+        injects and the ``events_triggered`` restore; both of those live here
+        now (issue #520), so there is one victory tail rather than two that can
+        drift apart.
+
+        ``beat_states`` are the per-beat snapshots of the move that ended the
+        fight, empty for the exits that end one between requests.
 
         Returns the terminal combat state the stream was built from.
         """
+        beat_states = [] if beat_states is None else beat_states
         self._handle_victory()
         terminal_state = self.get_combat_state()
-        self._stream_combat_result(terminal_state, [], ended=True)
+        terminal_state["beat_states"] = beat_states
+        self._stream_combat_result(terminal_state, beat_states, ended=True)
+        # get_combat_state() CONSUMES events_triggered — it pops the payload out
+        # of adapter state. A post-combat event queued on this beat would be
+        # dropped on the floor for any caller that does not hand this result
+        # straight back to the API, so put it back.
+        triggered_events = terminal_state.get("events_triggered")
+        if triggered_events:
+            self.player.combat_adapter_state["events_triggered"] = triggered_events
         return terminal_state
 
     def _teardown_combat_roster(self):
