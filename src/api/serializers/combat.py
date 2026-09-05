@@ -367,9 +367,6 @@ class CombatantSerializer:
         """Serialize currently active/charging move."""
         move = move_in_progress(combatant)
         if move:
-            beats_until_resolve = CombatantSerializer._move_method(
-                move, "beats_until_resolve"
-            )
             return {
                 "name": getattr(move, "name", "Unknown"),
                 "display_name": display_name_of(move),
@@ -390,12 +387,10 @@ class CombatantSerializer:
                 # this one instead. Computed by the engine (Move.
                 # beats_until_resolve) so the stage machine has one owner.
                 #
-                # Reached through _move_method: an absent countdown must not
-                # blank a whole fighter. See _move_method's docstring.
-                "beats_until_resolve": (
-                    beats_until_resolve()
-                    if beats_until_resolve is not None
-                    else None
+                # Reached through _call_move_method: an absent countdown must
+                # not blank a whole fighter. See _move_method's docstring.
+                "beats_until_resolve": CombatantSerializer._call_move_method(
+                    move, "beats_until_resolve"
                 ),
                 "target_id": CombatantSerializer._serialize_move_target_id(move),
                 "mvrange": CombatantSerializer._serialize_move_range(move),
@@ -421,6 +416,20 @@ class CombatantSerializer:
         """
         method = getattr(move, name, None)
         return method if callable(method) else None
+
+    @staticmethod
+    def _call_move_method(move: Any, name: str, *args):
+        """Call ``move``'s engine method ``name``, or return None if absent.
+
+        The conditional-call idiom that goes with :meth:`_move_method`, in one
+        place instead of copy-pasted at each call site. Deliberately NOT
+        wrapped in try/except: absence resolves to None here, and a method that
+        *raises* still propagates — see :meth:`_move_method` and
+        :meth:`_serialize_move_range` for why swallowing it would ship a
+        silently wrong payload instead of a loud bug.
+        """
+        method = CombatantSerializer._move_method(move, name)
+        return method(*args) if method is not None else None
 
     @staticmethod
     def _serialize_move_target_id(move: Any) -> Optional[str]:
@@ -476,18 +485,14 @@ class CombatantSerializer:
 
         # Every Move has get_effective_range_max (the base returns None — see
         # src/moves/_base.py), matching how combat_adapter.
-        # _get_available_targets already invokes it. Reached via _move_method,
-        # which resolves *absence* only — there is still no try/except here:
-        # an override that raises is a real engine bug, and swallowing it
-        # would ship a silently wrong threat radius instead, the exact
-        # silent-failure mode this payload's contract test exists to prevent.
-        get_effective_range_max = CombatantSerializer._move_method(
-            move, "get_effective_range_max"
-        )
-        effective_max = (
-            get_effective_range_max(getattr(move, "user", None))
-            if get_effective_range_max is not None
-            else None
+        # _get_available_targets already invokes it. Reached via
+        # _call_move_method, which resolves *absence* only — there is still no
+        # try/except here: an override that raises is a real engine bug, and
+        # swallowing it would ship a silently wrong threat radius instead, the
+        # exact silent-failure mode this payload's contract test exists to
+        # prevent.
+        effective_max = CombatantSerializer._call_move_method(
+            move, "get_effective_range_max", getattr(move, "user", None)
         )
         if effective_max is not None:
             range_max = effective_max
@@ -511,13 +516,8 @@ class CombatantSerializer:
         The client draws the difference — a dissolving gradient for a decaying
         move, a hard ring for a bounded one.
         """
-        get_accuracy_falloff = CombatantSerializer._move_method(
-            move, "get_accuracy_falloff"
-        )
-        falloff = (
-            get_accuracy_falloff(getattr(move, "user", None))
-            if get_accuracy_falloff is not None
-            else None
+        falloff = CombatantSerializer._call_move_method(
+            move, "get_accuracy_falloff", getattr(move, "user", None)
         )
         if not falloff:
             return None

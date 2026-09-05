@@ -27,6 +27,8 @@ the event-patch construction. These are cheap to test directly and nothing else
 covers them.
 """
 
+import inspect
+
 import pytest
 
 from src.api.services.game_service import GameService
@@ -493,10 +495,32 @@ class TestPendingEventProseSurvivesRePolling:
 
         A fourth staged part added to one helper and not the other would go
         missing on re-poll exactly as ``output_text`` used to.
+
+        Driven from ``_STAGED_PAYLOAD_KEYS`` and the helper's SIGNATURE, not
+        from a hand-written call. The previous version passed the three parts
+        positionally, so a fourth part added as a defaulted parameter simply
+        went unpassed, wrote nothing, and the assertion still held — the test
+        could not catch the one drift its docstring names.
         """
+        parts = [
+            p
+            for p in inspect.signature(
+                GameService._apply_staged_payload
+            ).parameters.values()
+            if p.name != "target"
+        ]
+        assert len(parts) == len(GameService._STAGED_PAYLOAD_KEYS), (
+            "_apply_staged_payload takes "
+            f"{[p.name for p in parts]} but _STAGED_PAYLOAD_KEYS declares "
+            f"{list(GameService._STAGED_PAYLOAD_KEYS)} — update the tuple and "
+            "_carry_staged_payload together, or the new part goes missing on "
+            "re-poll"
+        )
+
+        # Every part truthy, so each `if <part>:` branch writes.
         target = {}
         game_service._apply_staged_payload(
-            target, "some prose", [{"text": "a beat"}], {"cast": []}
+            target, *[f"<{p.name}>" for p in parts]
         )
         assert set(target) == set(GameService._STAGED_PAYLOAD_KEYS)
 

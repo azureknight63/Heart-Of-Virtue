@@ -28,20 +28,26 @@ export function createCombatSocket({ url } = {}) {
     // connect as nobody.
     withCredentials: true,
     // LOAD-BEARING IN PRODUCTION — do not delete this as a dev-server relic.
-    // The app's Content-Security-Policy (src/resources/csp-policy.json) grants
-    // `connect-src 'self'` in `base` and lists `ws:`/`wss:` only under
-    // `dev_additions`. A WebSocket upgrade is a connect-src check, and
-    // `'self'` does not cover the ws(s) scheme, so under the enforcing
-    // production policy the browser blocks the upgrade outright: a socket
-    // allowed to upgrade works in dev and dies in production, where the
-    // failure is a silently dead combat stream. Pinning polling keeps the
-    // transport inside what the policy actually permits.
+    // The deployment cannot serve a WebSocket upgrade at all. `src/api/app.py`
+    // builds SocketIO with `async_mode="threading"`, `requirements-api.txt`
+    // pulls in neither eventlet nor gevent, and `wsgi.py` documents production
+    // as `gunicorn -w 1 ... wsgi:app` — gunicorn's sync worker has no async
+    // machinery to hijack the connection with, so an upgrade attempt there
+    // fails and the client is left retrying instead of streaming. wsgi.py's
+    // own header says as much: WebSockets work under Werkzeug (dev) and "fall
+    // back to long-polling behind gunicorn sync workers". Pinning polling asks
+    // for the transport the server can actually serve, in dev and in prod
+    // alike, so the two behave the same.
     // (It also avoids the spurious 500 — "write() before start_response" —
     // that Werkzeug's threaded dev server logs when a browser closes a
     // WebSocket. That was the original reason and it is the lesser one; the
-    // CSP constraint is why the pin stays.)
-    // tests/test_socket_transport_csp_contract.py ties this line to the policy
-    // file so the two cannot drift apart unnoticed.
+    // deployment constraint is why the pin stays.)
+    // NOTE: CSP is NOT the reason, whatever an older comment here claimed.
+    // CSP Level 3 relaxed `connect-src 'self'` to match the ws/wss variants of
+    // the page's own origin, and both Blink and Gecko implement that — so
+    // `'self'` would permit a same-origin upgrade just fine.
+    // tests/test_socket_transport_pin_contract.py ties this line to the
+    // deployment so the two cannot drift apart unnoticed.
     transports: ['polling'],
   });
 }

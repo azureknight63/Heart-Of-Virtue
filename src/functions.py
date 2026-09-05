@@ -246,7 +246,15 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
         try:
             player._combat_adapter.initialize_combat(new_enemies, reinit=True)
         except Exception:
-            pass
+            # Recover rather than crash the combat loop (CLAUDE.md), but do not
+            # recover SILENTLY: this bare swallow is what turned the reinit
+            # recursion into a livelock instead of a RecursionError — the loop
+            # ran forever with nothing anywhere to say why. Left broad on
+            # purpose; the log line, not a narrower except, is the fix.
+            logger.exception(
+                "Combat adapter reinit failed after adding %d enemies",
+                len(new_enemies),
+            )
 
 
 def refresh_stat_bonuses(

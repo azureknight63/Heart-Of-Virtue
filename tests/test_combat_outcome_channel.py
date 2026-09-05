@@ -700,7 +700,13 @@ def test_initialize_combat_flushes_animations_left_by_the_initial_turns():
     """
     from src.api.combat_adapter import ApiCombatAdapter
 
+    # ``initialize_combat`` is a thin lock wrapper over
+    # ``_initialize_combat_locked`` (see ``_beat_lock``), so scan whichever one
+    # actually holds the body — follow the delegation rather than pinning the
+    # split, which is an implementation detail this test has no stake in.
     calls = _method_calls(ApiCombatAdapter.initialize_combat)
+    if "_initialize_combat_locked" in calls:
+        calls |= _method_calls(ApiCombatAdapter._initialize_combat_locked)
     # An ast.Call, not a source-substring: a comment or docstring mentioning
     # the flush would satisfy a text search without ever running it.
     assert "_flush_pending_animations" in calls, (

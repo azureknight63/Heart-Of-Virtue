@@ -240,3 +240,80 @@ def test_leave_combat_emits_left(socket_app):
     received = client.get_received()
 
     assert "left_combat" in _event_names(received)
+
+
+def test_a_payload_session_id_is_refused_outside_a_testing_app(socket_app):
+    """The payload fallback is a TESTING affordance, not an auth path.
+
+    Without this gate a caller holding NO cookie could name any session in the
+    event payload, be joined to ``combat_<that session>`` and receive every
+    ``combat:started``/``combat:beat``/``combat:ended`` payload for a fight
+    that is not theirs -- full battle state, player stats and combat log. The
+    id has never been authenticated, only believed.
+
+    The rejection uses the MISSING code, not INVALID: from the server's point
+    of view no credential arrived at all, and the client must not answer this
+    one by signing the player out.
+    """
+    app, socketio = socket_app
+    app.config["TESTING"] = False
+    client = _cookie_client(app, socketio, cookie=None)
+
+    client.emit("join_combat", {"session_id": "good-session"})
+    received = client.get_received()
+
+    assert "joined_combat" not in _event_names(received)
+    assert _error_code(received) == ERROR_SESSION_MISSING
+    # The store was never consulted: the payload id never became a candidate.
+    app.session_manager.get_session.assert_not_called()
+
+
+def test_a_non_dict_payload_is_rejected_cleanly(socket_app):
+    """``emit("join_combat", "some string")`` is a legal Socket.IO call.
+
+    ``(data or {}).get(...)`` did not coerce a non-dict, so a str payload
+    raised AttributeError inside the handler. It must come back as the
+    ordinary missing-credential error instead.
+    """
+    app, socketio = socket_app
+    app.config["TESTING"] = False
+    client = _cookie_client(app, socketio, cookie=None)
+
+    for payload in ("some string", ["session_id"], 7):
+        client.emit("join_combat", payload)
+        received = client.get_received()
+        assert "joined_combat" not in _event_names(received)
+        assert _error_code(received) == ERROR_SESSION_MISSING
+
+
+def test_a_non_dict_payload_is_rejected_cleanly_in_a_testing_app(socket_app):
+    """Same for the branch that DOES read the payload.
+
+    That is where the ``.get`` actually runs, so the coercion has to hold
+    there or the AttributeError simply moves behind the gate.
+    """
+    app, socketio = socket_app
+    assert app.config["TESTING"] is True
+    client = _cookie_client(app, socketio, cookie=None)
+
+    client.emit("join_combat", "good-session")
+    received = client.get_received()
+
+    assert "joined_combat" not in _event_names(received)
+    assert _error_code(received) == ERROR_SESSION_MISSING
+
+
+def test_leave_combat_ignores_a_payload_session_id_outside_a_testing_app(socket_app):
+    """The same gate on the other room handler.
+
+    ``leave_room`` is less dangerous than ``join_room``, but both handlers
+    must resolve a session the same way or the next reader has to prove which
+    one is safe.
+    """
+    app, socketio = socket_app
+    app.config["TESTING"] = False
+    client = _cookie_client(app, socketio, cookie=None)
+
+    client.emit("leave_combat", {"session_id": "good-session"})
+
+    assert "left_combat" not in _event_names(client.get_received())
