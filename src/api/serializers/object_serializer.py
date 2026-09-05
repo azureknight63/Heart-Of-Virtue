@@ -1,7 +1,9 @@
 """World object serialization for API responses."""
 
 from typing import Dict, Any, List
+
 from src.api.serializers.item_serializer import ItemSerializer
+from src.combatant import wire_handle
 
 
 class ObjectSerializer:
@@ -25,8 +27,14 @@ class ObjectSerializer:
                 return attr_name in obj
             return hasattr(obj, attr_name)
 
-        # Default object id
-        obj_id = get_attr("id", id(obj))
+        # Default object id: an opaque, stable handle rather than the heap
+        # address this used to interpolate (issue #518). An explicit `id` on
+        # the object still wins -- map data and test doubles set one -- but
+        # engine objects have none, so they get the handle every other entity
+        # (NPC, item, merchant) is identified by.
+        obj_id = get_attr("id", None)
+        if obj_id is None:
+            obj_id = wire_handle(obj)
 
         obj_data = {
             "id": str(obj_id),

@@ -2,6 +2,8 @@
 
 from typing import Dict, Any, List
 
+from src.combatant import wire_handle
+
 
 class NPCSerializer:
     """Serialize NPC objects to JSON-safe dictionaries."""
@@ -20,7 +22,7 @@ class NPCSerializer:
             return {}
 
         npc_data = {
-            "id": str(id(npc)),
+            "id": wire_handle(npc),
             "name": getattr(npc, "name", "Unknown"),
             "type": type(npc).__name__,
             "description": getattr(npc, "description", ""),

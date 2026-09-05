@@ -15,6 +15,7 @@ Classes:
 from typing import Dict, Optional
 
 from src.api.utils.inventory import get_inventory_list
+from src.combatant import wire_handle
 
 # Effect descriptors for consumable items, keyed by class name.
 # Each list entry has a `type` discriminator used by the frontend chip renderer.
@@ -207,7 +208,10 @@ class InventoryItemSerializer:
         # Build base item data
         interactions = getattr(item, "interactions", [])
         item_data = {
-            "id": str(id(item)),  # Unique identifier for this item object
+            # Opaque, stable per-object handle — never the heap address,
+            # which leaked process layout and was recycled onto later items
+            # (issue #518).
+            "id": wire_handle(item),
             "index": index,
             "name": getattr(item, "name", "Unknown Item"),
             "type": item_type,
