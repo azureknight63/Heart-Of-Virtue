@@ -589,7 +589,7 @@ class TestPreviewMatchesRealExecute:
         """Jab is the heat *builder*, not a heat spender -- pinned, not assumed.
 
         Unarmed trades damage capacity for tactical control: its moves stack
-        momentum that the heavy moves cash in. Jab has the shortest cycle in
+        heat that the heavy moves cash in. Jab has the shortest cycle in
         the game (one beat) and so is by far the fastest heat generator; if it
         also scaled with the heat it generates, the fastest builder would be
         the best spender and there would be no reason to ever swing anything
@@ -724,7 +724,7 @@ class TestPreviewMatchesRealExecute:
     def test_lightning_assault_previews_the_full_flurry(self, variance, key):
         """Three strikes, all landing, at the heat each strike is actually
         scored with: ``Move.hit`` multiplies Jean's heat by 1.25 per landed
-        blow, so strikes two and three ride the momentum strike one earned.
+        blow, so strikes two and three ride the heat strike one earned.
         The preview must reproduce that with the real ``change_heat`` -- a
         second copy of its arithmetic is exactly the drift this file exists
         to prevent."""
@@ -904,11 +904,11 @@ def _divergences(source):
     if not canonical and not _calls(tree, "uniform"):
         reasons.append("scores damage outside the canonical variance expression")
     # A hand-rolled damage line that never mentions heat has silently dropped
-    # the attacker's momentum multiplier. This is the signal the enumeration
+    # the attacker's heat multiplier. This is the signal the enumeration
     # was missing: PowerStrike kept its variance roll and its facing curve and
     # so tripped none of the other checks, while omitting heat entirely -- so
     # its preview advertised 128-192 against 64-96 actually dealt at heat 2.0,
-    # and the game's heaviest bludgeon finisher could not cash in the momentum
+    # and the game's heaviest bludgeon finisher could not cash in the heat
     # it exists to spend. Nothing detected that until this line.
     if not canonical and not _applies_heat(tree):
         reasons.append("omits the attacker's heat multiplier")

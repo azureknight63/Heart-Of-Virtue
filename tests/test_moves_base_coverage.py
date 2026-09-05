@@ -1622,10 +1622,10 @@ class TestResolveStrikeOutcomeSignature:
 
 
 class TestProjectedHitHeatSequence:
-    """The preview-side replay of Move.hit's momentum reward."""
+    """The preview-side replay of Move.hit's heat reward."""
 
     def test_constant_matches_the_literal_move_hit_passes(self):
-        """``Move.hit`` must keep its literal 1.25 (the momentum-tooltip
+        """``Move.hit`` must keep its literal 1.25 (the heat-tooltip
         contract counts the literals in _base.py), so the named constant the
         heat-sequence simulation replays cannot be spliced into that call.
         This is the pin that keeps the two from drifting apart."""
@@ -2146,7 +2146,7 @@ class TestProjectedHitHeatSequenceIsDetached:
             jean.heat = junk
             heats = projected_hit_heat_sequence(jean, 3)
             assert len(heats) == 3
-            # Seeded from the sanitised heat (1.0), then the real momentum
+            # Seeded from the sanitised heat (1.0), then the real heat
             # arithmetic replays on top of it.
             assert heats[0] == 1.0
             assert heats[1] == 1.25
@@ -2177,6 +2177,6 @@ class TestProjectedHitHeatSequenceIsDetached:
         assert heats[1] > heats[0] and heats[2] > heats[1]
         assert jean.__dict__["_heat_writes"] == writes_before, (
             "the preview wrote the LIVE heat: a move resolving mid-poll "
-            "would score at inflated momentum and its own write would be "
+            "would score at inflated heat and its own write would be "
             "clobbered by the restore"
         )

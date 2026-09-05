@@ -338,14 +338,14 @@ class CombatantSerializer:
             "maxfatigue": getattr(
                 combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)
             ),
-            # Momentum multiplier. Only the player has one — `standard_execute_attack`
+            # Heat multiplier. Only the player has one — `standard_execute_attack`
             # (src/moves/_base.py) multiplies Jean's damage by it and nothing scales
             # NPC damage, so enemies report the neutral 1.0.
             #
             # Rounded to 2dp because the per-beat decay (ApiCombatAdapter._update_heat)
             # does NOT round the way Player.change_heat does — heat drifts to values
             # like 1.6234567891 — and this is the number the client renders directly
-            # (MomentumMeter, via frontend/src/utils/momentum.js). Rounding on the wire
+            # (HeatMeter, via frontend/src/utils/heat.js). Rounding on the wire
             # keeps the displayed multiplier and its client-derived per-beat delta
             # stable instead of jittering in the eighth decimal. `_num` (rather than a
             # bare getattr) matches every other numeric field here and stops a None or

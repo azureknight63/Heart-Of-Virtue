@@ -493,7 +493,7 @@ COMBATANT_CONTRACT = {
     "battle_symbol": "BattlefieldGrid.jsx entitiesToRender displaySymbol fallback chain",
     "position": "BattlefieldGrid.jsx getPos(entity) -> getEntityStyle / fitBox framing",
     "current_move": "BattlefieldGrid.jsx CombatantMarker telegraph + EntityTooltip",
-    # Momentum meter. This is the RAW FLOAT multiplier applied to Jean's damage
+    # Heat meter. This is the RAW FLOAT multiplier applied to Jean's damage
     # by src/moves/_base.py standard_execute_attack.
     #
     # battle_state carries a SECOND, different representation of the same
@@ -502,9 +502,9 @@ COMBATANT_CONTRACT = {
     # the adapter serializes at combat_adapter.py:1338. Reading that one as a
     # multiplier renders "162.00x"; reading this one is correct. The client has
     # exactly one reader and no `??` chain across the two (see the header
-    # comment in frontend/src/utils/momentum.js), which is the only reason the
+    # comment in frontend/src/utils/heat.js), which is the only reason the
     # duplication is survivable.
-    "heat": "LeftPanel.jsx combat?.player?.heat -> MomentumMeter (utils/momentum.js)",
+    "heat": "LeftPanel.jsx combat?.player?.heat -> HeatMeter (utils/heat.js)",
 }
 
 # The in-progress move hanging off a combatant (CombatantSerializer.
@@ -571,7 +571,7 @@ class TestCombatantWireContract:
         _assert_contract(payload, COMBATANT_CONTRACT, "serialize_combatant(enemy)")
 
     def test_player_heat_is_a_float_multiplier_at_wire_precision(self):
-        """MomentumMeter renders this number directly, so its scaling is load-bearing.
+        """HeatMeter renders this number directly, so its scaling is load-bearing.
 
         `hit_chance` (bug #4) was this exact failure: two plausible scalings for
         one quantity, and a client that picked the wrong one showed a silently,
@@ -592,7 +592,7 @@ class TestCombatantWireContract:
         assert CombatantSerializer.serialize_combatant(player)["heat"] == 1.62
 
     def test_enemy_heat_is_neutral_because_nothing_scales_npc_damage(self):
-        """Enemies must not render as if they had momentum of their own."""
+        """Enemies must not render as if they had heat of their own."""
         payload = CombatantSerializer.serialize_combatant(Slime(), reference=Player())
         assert payload["heat"] == 1.0
 
