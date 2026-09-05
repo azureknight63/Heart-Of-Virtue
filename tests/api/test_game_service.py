@@ -7,8 +7,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+from unittest.mock import patch
+
 import pytest
 from src.api.services.game_service import GameService  # type: ignore
+
+
+class _FakeResult:
+    """Minimal stand-in for a libsql result set."""
+
+    def __init__(self, rows=None, rows_affected=0):
+        self.rows = rows or []
+        self.rows_affected = rows_affected
+
+
+class _FakeDb:
+    """Records every (sql, params) pair and answers save_game's SELECTs."""
+
+    def __init__(self, manual_save_count=0):
+        self.calls = []
+        self._manual_save_count = manual_save_count
+
+    async def execute(self, sql, params=None):
+        self.calls.append((" ".join(sql.split()), params))
+        if "COUNT(*)" in sql:
+            return _FakeResult([[self._manual_save_count]])
+        return _FakeResult([])
 
 
 class MockTile:
@@ -17,6 +41,12 @@ class MockTile:
     def __init__(self, name="Test Tile", x=0, y=0):
         self.name = name
         self.description = f"Description of {name}"
+        # The engine's MapTile exposes its coordinates as ``x``/``y``
+        # (src/tiles.py); ``location_x``/``location_y`` are the *player's*
+        # attribute names. GameService reads tile.x/tile.y when recording
+        # explored tiles, so the mock has to carry them.
+        self.x = x
+        self.y = y
         self.location_x = x
         self.location_y = y
         self.exits = {
@@ -295,22 +325,48 @@ class TestGameService:
         assert result["objects"][0]["name"] == "Test Object"
         assert "exits" in result
 
-    def test_save_game(self):
-        """Test saving a game."""
-        save_id = self.service.save_game(self.player, "Test Save")
+    @pytest.mark.asyncio
+    async def test_save_game(self):
+        """Test saving a game.
+
+        save_game is async and DB-backed (Turso): it takes the DB user id and
+        writes a row, so the test drives it with a fake db.
+        """
+        db = _FakeDb()
+        with patch("src.api.db.db", db):
+            save_id = await self.service.save_game(
+                self.player, "Test Save", "user-1"
+            )
 
         assert save_id is not None
         assert isinstance(save_id, str)
+        sql, params = db.calls[-1]
+        assert sql.startswith("INSERT INTO saves")
+        assert params[0] == save_id
+        assert params[1] == "user-1"
+        assert params[2] == "Test Save"
+        assert isinstance(params[3], bytes)
 
-    def test_list_saves(self):
-        """Test listing saves."""
-        result = self.service.list_saves()
+    @pytest.mark.asyncio
+    async def test_list_saves(self):
+        """Test listing saves for a user."""
+        db = _FakeDb()
+        with patch("src.api.db.db", db):
+            result = await self.service.list_saves("user-1")
 
         assert isinstance(result, list)
+        sql, params = db.calls[-1]
+        assert "FROM saves" in sql
+        assert params == ["user-1"]
 
-    def test_delete_save(self):
-        """Test deleting a save."""
-        result = self.service.delete_save("test_save_id")
+    @pytest.mark.asyncio
+    async def test_delete_save(self):
+        """Deleting a save that does not belong to the user deletes nothing."""
+        db = _FakeDb()
+        with patch("src.api.db.db", db):
+            result = await self.service.delete_save("test_save_id", "user-1")
 
-        # TODO: delete_save not yet implemented - currently returns False
         assert result is False
+        sql, params = db.calls[-1]
+        assert sql.startswith("DELETE FROM saves")
+        assert params == ["test_save_id", "user-1"]

@@ -45,12 +45,20 @@ class TestAuthRoutes:
                              headers={'Authorization': f'Bearer {session_id}'})
         assert response.status_code in [200, 404]
 
-    def test_logout_missing_auth(self, client):
-        """Test logout without authentication."""
+    def test_logout_without_auth_still_clears_the_cookie(self, client):
+        """Logout is deliberately NOT @require_auth (issue #493).
+
+        401-ing on an expired/unknown credential left the browser pinned to a
+        dead cookie it could no longer clear itself, so logout now always
+        succeeds and always clears the cookie.
+        """
         response = client.post('/api/auth/logout')
-        assert response.status_code == 401
+        assert response.status_code == 200
         data = response.get_json()
-        assert data['success'] is False
+        assert data['success'] is True
+        set_cookie = response.headers.get('Set-Cookie', '')
+        assert 'hov_session=' in set_cookie
+        assert ('Max-Age=0' in set_cookie or 'Expires=' in set_cookie)
 
     def test_session_validation(self, client, authenticated_session):
         """Test session validation endpoint."""
@@ -268,40 +276,58 @@ class TestPlayerStatusRoutes:
 class TestSaveRoutes:
     """Test save and load routes."""
 
-    def test_auto_save(self, client, authenticated_session):
-        """Test auto-save functionality."""
+    # The save API is cloud-only: POST/GET /api/saves, POST /api/saves/<id>/load,
+    # DELETE /api/saves/<id>. There are no /saves/auto, /saves/manual,
+    # /saves/list or /saves/load endpoints. A test-bypass session carries no
+    # db_user_id (see CLAUDE.md, "How auth works"), so every write path is
+    # refused with 403 and the read path reports an empty list.
+
+    def test_auto_save_without_db_user_is_refused(self, client, authenticated_session):
+        """Auto-save on a session with no db_user_id is refused, not silently lost."""
         session_id, player, session_manager = authenticated_session
 
-        response = client.post('/api/saves/auto',
-                             json={},
+        response = client.post('/api/saves',
+                             json={'is_autosave': True},
                              headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 400, 404, 500]
+        assert response.status_code == 403
+        data = response.get_json()
+        assert data['success'] is False
+        assert 'registered account' in data['error']
 
-    def test_manual_save(self, client, authenticated_session):
-        """Test manual save."""
+    def test_manual_save_without_db_user_is_refused(self, client, authenticated_session):
+        """Manual save on a session with no db_user_id is refused."""
         session_id, player, session_manager = authenticated_session
 
-        response = client.post('/api/saves/manual',
-                             json={'save_name': 'checkpoint_1'},
+        response = client.post('/api/saves',
+                             json={'name': 'checkpoint_1'},
                              headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 400, 404, 500]
+        assert response.status_code == 403
+        data = response.get_json()
+        assert data['success'] is False
+        assert 'registered account' in data['error']
 
     def test_list_saves(self, client, authenticated_session):
-        """Test listing saved games."""
+        """Listing saves for a session with no db_user_id yields an empty list."""
         session_id, player, session_manager = authenticated_session
 
-        response = client.get('/api/saves/list',
+        response = client.get('/api/saves',
                             headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 404, 500]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['success'] is True
+        assert data['saves'] == []
 
     def test_load_save(self, client, authenticated_session):
-        """Test loading a save."""
+        """Loading a save on a session with no db_user_id is refused."""
         session_id, player, session_manager = authenticated_session
 
-        response = client.post('/api/saves/load',
-                             json={'save_id': 'nonexistent'},
+        response = client.post('/api/saves/nonexistent/load',
+                             json={},
                              headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [400, 404, 500]
+        assert response.status_code == 403
+        data = response.get_json()
+        assert data['success'] is False
+        assert 'registered account' in data['error']
 
 
 class TestNPCRoutes:
