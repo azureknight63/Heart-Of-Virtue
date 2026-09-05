@@ -229,8 +229,11 @@ code past the login screen.
    `script-src` (no `'unsafe-inline'`). `preview` proxies the API the same way
    the dev server does, so `connect-src 'self'` holds there too.
 4. Flip the switches:
-   - Flask: `CSP_REPORT_ONLY = False` in `src/api/config.py` (or the
-     `CSP_REPORT_ONLY=false` environment variable).
+   - Flask: `CSP_REPORT_ONLY = False` in `src/api/config.py`. It has to be the
+     config edit — `CSP_REPORT_ONLY=false` in the environment does nothing.
+     `_flag` reads `app.config.get(key, os.environ.get(key))` and the base
+     `Config` defines the key, so config always wins and the environment
+     fallback is unreachable for every `CSP_*` switch.
    - Vite: change the header name in `cspHeaders()` in
      `frontend/vite.config.js`.
    - The production web server: change `Content-Security-Policy-Report-Only` to
