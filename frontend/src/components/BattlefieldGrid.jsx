@@ -1599,7 +1599,8 @@ function BattlefieldGrid({
   hoveredTargetId = null,
   mapSize = null,
   // True when this grid mounted into a fight that was already under way — a page
-  // refresh mid-combat. Supplied by GamePage; see replayedLogIdsRef below.
+  // refresh mid-combat. Supplied by GamePage; see replayedLogIdsRef in
+  // useBattlefieldAnimations, which this is forwarded to.
   isReloadRecovery = false,
   onAnimatingChange = null,
   // Engine-driven combat streaming (issue #436). When `streaming` is true the
