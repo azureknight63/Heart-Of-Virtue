@@ -27,9 +27,14 @@
 #     have never been exercised for order independence. They are not order-safe
 #     yet -- with shuffling on, test_debug_endpoint.py fails. Making them order-safe
 #     is worth doing; until then this job pins the order rather than flaking.
-#   * `--timeout` so a future hang FAILS the job instead of hanging it until the
-#     runner's own limit. (test_combat_midbattle_api.py used to hang; it now runs
-#     in ~1s, but nothing structurally stops the next one.)
+#   * `--timeout=300` so a future hang FAILS the job instead of hanging it until
+#     the runner's own limit. (test_combat_midbattle_api.py used to hang; it now
+#     runs in ~1s, but nothing structurally stops the next one.) 300s is per
+#     TEST, not per file, and is deliberately far above any real runtime here --
+#     the whole directory finishes in seconds. It is a hang detector, not a
+#     performance budget, so it must not be tightened to "something that should
+#     be enough": that converts a slow CI runner into a red build. The job's own
+#     `timeout-minutes: 20` is the outer bound.
 #   * `|| status=1` rather than `set -e`, so every file reports its own result and
 #     one red file does not hide the ones behind it.
 #
@@ -39,11 +44,15 @@
 
 name: API Integration Tests
 
+# Trigger set kept identical to test-coverage.yml's. A narrower PR filter here
+# meant a PR onto web-api -- the branch CLAUDE.md names as active -- ran the
+# coverage gate but not this job, so the one directory nothing else in CI
+# covers was unguarded on exactly the branch most work lands on.
 on:
   push:
-    branches: [master, web-api]
+    branches: [master, web-api, develop, main]
   pull_request:
-    branches: [master]
+    branches: [master, web-api, develop, main]
 
 jobs:
   api-tests:
@@ -74,25 +83,46 @@ jobs:
           # Both of pytest's default python_files patterns, not just test_*.py:
           # a future *_test.py in here would otherwise be skipped in silence,
           # which is the same class of miss this whole job exists to close.
-          files=$(find tests/api \
-            \( -name 'test_*.py' -o -name '*_test.py' \) -type f | sort)
-          if [ -z "$files" ]; then
+          #
+          # NUL-delimited end to end. `for f in $files` word-splits the list on
+          # IFS, so a path containing a space would be handed to pytest as two
+          # nonexistent paths -- exit 4, a usage error, rather than a real
+          # result for the file. Nothing under tests/api has such a name today;
+          # the loop should not be what stops one being added.
+          #
+          # Via a file rather than `files=$(find ... -print0)`: command
+          # substitution STRIPS NUL bytes, so capturing -print0 output into a
+          # variable silently undoes the whole point and re-creates the
+          # word-splitting bug one layer down.
+          files_list="$(mktemp)"
+          trap 'rm -f "$files_list"' EXIT
+          find tests/api \
+            \( -name 'test_*.py' -o -name '*_test.py' \) -type f -print0 \
+            | sort -z > "$files_list"
+          if [ ! -s "$files_list" ]; then
             echo "::error::no test files found under tests/api"
             exit 1
           fi
           status=0
           failed=""
-          for f in $files; do
+          count=0
+          while IFS= read -r -d '' f; do
+            count=$((count + 1))
             echo "::group::$f"
             python -m pytest "$f" -q -p no:randomly -n0 --timeout=300 \
               || { status=1; failed="$failed $f"; }
             echo "::endgroup::"
-          done
-          echo "ran $(echo "$files" | wc -l) file(s)"
+          done < "$files_list"
+          echo "ran $count file(s)"
           if [ "$status" -ne 0 ]; then
             echo "::error::tests/api failures in:$failed"
           fi
           exit "$status"
+        # Both halves of the pair, deliberately: they keep the Mynx ambient-LLM
+        # path off so this job makes no outbound network calls. Without that a
+        # CI run would depend on a third-party endpoint and an API key the
+        # workflow does not have -- a hang or a hard failure in a job whose
+        # subject is the game engine, not the LLM integration.
         env:
           MYNX_LLM_ENABLED: "0"
           MYNX_LLM_PROVIDER: "none"

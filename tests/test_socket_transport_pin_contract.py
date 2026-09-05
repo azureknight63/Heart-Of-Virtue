@@ -40,6 +40,8 @@ pinned --- and tie the client's transport pin to them.
 import re
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[1]
 _SOCKET_CLIENT = _ROOT / "frontend" / "src" / "api" / "socketClient.js"
 _APP = _ROOT / "src" / "api" / "app.py"
@@ -66,7 +68,11 @@ def _declared_requirements():
         line = line.split("#", 1)[0].strip()
         if not line:
             continue
-        names.append(re.split(r"[<>=!\[;]", line, 1)[0].strip().lower())
+        # maxsplit by keyword: passing it positionally to re.split is
+        # deprecated in 3.13 and slated for removal.
+        names.append(
+            re.split(r"[<>=!\[;]", line, maxsplit=1)[0].strip().lower()
+        )
     return names
 
 
@@ -87,7 +93,14 @@ def test_the_deployment_carries_no_async_websocket_worker():
 def test_socket_client_pins_a_transport_the_deployment_can_serve():
     declared = _declared_requirements()
     if [n for n in declared if n in _ASYNC_WORKERS]:
-        return  # an async worker is present; the pin is no longer load-bearing
+        # skip, not `return`: a bare return reports PASSED, so the day someone
+        # adds eventlet this contract would go quietly green while asserting
+        # nothing -- indistinguishable in CI from a contract still being
+        # enforced. A skip says out loud that the premise changed.
+        pytest.skip(
+            "an async worker is declared; the transport pin is no longer "
+            "load-bearing and its rationale needs re-deriving"
+        )
     transports = _client_transports()
     assert transports == ("polling",), (
         "socketClient.js must pin transports: ['polling'] while the API runs "

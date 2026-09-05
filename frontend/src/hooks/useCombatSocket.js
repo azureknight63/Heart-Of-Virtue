@@ -170,7 +170,25 @@ export function useCombatSocket({
       // session that is genuinely dead still gets caught: every HTTP call the
       // page makes carries the same credential, and the axios 401 interceptor
       // performs the same teardown.
-      if (code !== ERROR_SESSION_MISSING) return;
+      if (code !== ERROR_SESSION_MISSING) {
+        // Observability only — deliberately NOT a retry and NOT a resync. The
+        // 8s combat poll GamePage keeps running bounds the cost of doing
+        // nothing here, and an unrecognised code is by definition one this
+        // hook has no verdict for; inventing a recovery for it is how the
+        // substring-matching bug above got written. But doing nothing SILENTLY
+        // is the part worth fixing: without this line nothing distinguishes
+        // "the server never errored" from "the server errored with a code we
+        // do not understand, over and over".
+        //
+        // The code and the message's presence, not the message itself: the
+        // payload text is server-authored and carries session wording (see the
+        // comment above), and this feed ships to logs/browser/*.jsonl.
+        logger.event('combat.socket.uncoded_error', {
+          code: code ?? null,
+          hasMessage: typeof payload?.message === 'string',
+        });
+        return;
+      }
 
       // No credential reached the server. That is a transport fault, not a
       // sign-out: the HTTP path is unaffected and GamePage keeps an 8s combat
