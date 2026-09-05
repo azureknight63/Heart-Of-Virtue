@@ -140,24 +140,53 @@ describe('useCombatLogPlayback — reveal pacing', () => {
     act(() => { rerender({ combat: { combat_id: 'fight-1', log: batch } }) })
 
     expect(mockPlaySFX).not.toHaveBeenCalled()
-    // No animation metadata -> getAnimationDuration falls back to the default config.
+    // The head of the batch is revealed synchronously; `trailing` is what the
+    // hold releases. Asserted exactly, because `length >= 2` was already
+    // satisfied on the line above and the advance proved nothing.
+    expect(messages(result)).toEqual(['opening line', 'Jean attacks'])
+    // No animation metadata -> getAnimationDuration falls back to `pulse`
+    // (400ms), and Math.max(400, delayPerLine) is the same 400.
     act(() => { vi.advanceTimersByTime(400) })
-    expect(messages(result).length).toBeGreaterThanOrEqual(2)
+    expect(messages(result)).toEqual(['opening line', 'Jean attacks', 'trailing'])
   })
 
+  /**
+   * `result.current` is NOT an observable of the timer chain once the hook is
+   * unmounted: React stops re-rendering it, so the displayed array is frozen
+   * at the unmount snapshot whether the chain kept running or not. Asserting
+   * on it -- and on `getTimerCount()` AFTER advancing, by which point the
+   * chain has run itself out either way -- was a negative control that passed
+   * with the clearTimeout cleanup deleted AND with the isMounted guard
+   * deleted. The two things that do survive the unmount are the timer the
+   * teardown was supposed to cancel, and `playSFX`, which the chain calls on
+   * any keyword-matched line.
+   *
+   * Coverage is honest but not total: the cleanup's clearTimeout and the
+   * isMounted guard are deliberately redundant, so no behavioural test can
+   * isolate the second one. The timer-count assertion pins clearTimeout
+   * exactly; the SFX assertion fails when both guards go.
+   */
   it('does not reveal further entries after unmount', () => {
     const first = [entry('one')]
     const { result, rerender, unmount } = mountThenReveal(first)
     act(() => { vi.advanceTimersByTime(400) })
 
+    // The tail line is keyword-matched on purpose ('misses' -> attack_miss),
+    // so revealing it leaves a trace outside the unmounted tree.
     act(() => {
-      rerender({ combat: { combat_id: 'fight-1', log: [...first, entry('two'), entry('three')] } })
+      rerender({ combat: { combat_id: 'fight-1', log: [...first, entry('two'), entry('Jean misses')] } })
     })
     expect(messages(result)).toEqual(['one', 'two'])
+    mockPlaySFX.mockClear()
 
     unmount()
-    act(() => { vi.advanceTimersByTime(5000) })
+    // A 400ms timeout for the third line was in flight; teardown must cancel
+    // it rather than leave it to fire into a dead closure.
     expect(vi.getTimerCount()).toBe(0)
+
+    act(() => { vi.advanceTimersByTime(5000) })
+    expect(mockPlaySFX).not.toHaveBeenCalled()
+    expect(messages(result)).toEqual(['one', 'two'])
   })
 })
 
@@ -194,11 +223,23 @@ describe('useCombatLogPlayback — per-fight reset', () => {
   })
 
   it('re-reveals a line from a previous fight that a cumulative revealed set would have swallowed', () => {
+    // The revealed COUNT is what makes this test bite. Asserting only the
+    // final messages was a negative control: with the per-fight reset deleted
+    // the shared line stays displayed from fight one, so the array reads
+    // identical and the test passed either way. The count going to 0 is the
+    // reset happening; the count coming back to 1 is the line being revealed
+    // AGAIN rather than merely surviving.
+    const onDisplayedLogCountChange = vi.fn()
     const shared = entry('Jean attacks the slime')
-    const { result, rerender } = mountThenReveal([{ ...shared }])
+    const { result, rerender } = mountThenReveal(
+      [{ ...shared }], { onDisplayedLogCountChange }
+    )
     act(() => { vi.advanceTimersByTime(400) })
+    expect(onDisplayedLogCountChange).toHaveBeenLastCalledWith(1)
+    onDisplayedLogCountChange.mockClear()
 
     act(() => { rerender({ combat: { combat_id: 'fight-2', log: [{ ...shared }] } }) })
+    expect(onDisplayedLogCountChange.mock.calls.map(c => c[0])).toEqual([0, 1])
     expect(messages(result)).toEqual(['Jean attacks the slime'])
   })
 
@@ -209,6 +250,47 @@ describe('useCombatLogPlayback — per-fight reset', () => {
 
     act(() => { rerender({ combat: { log: [...first, entry('two')] } }) })
     expect(messages(result)).toEqual(['one', 'two'])
+  })
+})
+
+describe('useCombatLogPlayback — malformed entries', () => {
+  /**
+   * `entry.message` is coerced, not trusted (`String(entry.message ?? '')`).
+   *
+   * Unguarded, the throw has no ErrorBoundary anywhere in frontend/src to stop
+   * it. The FIRST entry of a batch is processed synchronously from the effect
+   * body, so it unmounts the whole SPA; a later entry kills the timer chain
+   * with isProcessingLog stuck true, and the next poll re-enters and throws
+   * again. `combat_log` is pickled into saves, so an entry can outlive the
+   * build that wrote it.
+   */
+  it('reveals an entry with no message instead of throwing', () => {
+    const first = [entry('one')]
+    const { result, rerender } = mountThenReveal(first)
+    act(() => { vi.advanceTimersByTime(400) })
+
+    // Head of the batch: the synchronous, SPA-killing position.
+    const batch = [...first, { type: 'combat', round: 2, beat_index: 1 }, entry('three')]
+    expect(() => {
+      act(() => { rerender({ combat: { combat_id: 'fight-1', log: batch } }) })
+    }).not.toThrow()
+
+    expect(result.current.displayedLog).toHaveLength(2)
+    act(() => { vi.advanceTimersByTime(400) })
+    expect(messages(result)).toEqual(['one', undefined, 'three'])
+  })
+
+  it('reveals an entry whose message is not a string instead of throwing', () => {
+    const first = [entry('one')]
+    const { result, rerender } = mountThenReveal(first)
+    act(() => { vi.advanceTimersByTime(400) })
+
+    const batch = [...first, entry(42), entry('three')]
+    expect(() => {
+      act(() => { rerender({ combat: { combat_id: 'fight-1', log: batch } }) })
+    }).not.toThrow()
+    act(() => { vi.advanceTimersByTime(400) })
+    expect(messages(result)).toEqual(['one', 42, 'three'])
   })
 })
 

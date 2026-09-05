@@ -5,6 +5,7 @@ import {
   ERROR_SESSION_MISSING,
   ERROR_SESSION_INVALID,
 } from '../utils/combatBeatSchema';
+import logger from '../utils/logger';
 
 // Fake socket: records handlers and lets tests fire server events. Mirrors
 // socket.io-client v4's split between Socket-level events (.on) and
@@ -122,7 +123,7 @@ describe('useCombatSocket', () => {
       expect(socket.connect).toHaveBeenCalledTimes(1);
     });
 
-    it('degrades to the HTTP polling path once the retries run out', async () => {
+    it('degrades to the HTTP polling path once the retries run out', () => {
       vi.useFakeTimers();
       const { socket, calls } = setup();
       for (const delay of REHANDSHAKE_DELAYS_MS) {
@@ -193,6 +194,34 @@ describe('useCombatSocket', () => {
     expect(calls.onSessionInvalid).not.toHaveBeenCalled();
     expect(socket.disconnect).not.toHaveBeenCalled();
     expect(socket.connect).not.toHaveBeenCalled();
+  });
+
+  it('reports an error it cannot classify instead of dropping it silently', () => {
+    // Ignoring the error is the correct behaviour and stays. Ignoring it with
+    // NO trace is what made the class undiagnosable: a server emitting an
+    // unrecognised code every beat looked exactly like a server emitting
+    // nothing. The event carries the code and whether a message was present,
+    // never the message itself -- that text is server-authored, carries
+    // session wording, and this feed ships to logs/browser/*.jsonl.
+    const spy = vi.spyOn(logger, 'event').mockImplementation(() => {});
+    try {
+      const { socket, calls } = setup();
+      act(() => socket.fire('error', { code: 'SOMETHING_NEW', message: 'nope' }));
+      act(() => socket.fire('error', {}));
+
+      expect(spy.mock.calls.filter((c) => c[0] === 'combat.socket.uncoded_error'))
+        .toEqual([
+          ['combat.socket.uncoded_error', { code: 'SOMETHING_NEW', hasMessage: true }],
+          ['combat.socket.uncoded_error', { code: null, hasMessage: false }],
+        ]);
+      // Control flow is deliberately unchanged: no retry, no resync, no logout.
+      expect(calls.onSessionInvalid).not.toHaveBeenCalled();
+      expect(calls.fetchStatus).not.toHaveBeenCalled();
+      expect(socket.disconnect).not.toHaveBeenCalled();
+      expect(socket.connect).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('forwards beats in order', () => {

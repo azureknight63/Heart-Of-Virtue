@@ -24,8 +24,19 @@ import { getAnimationDuration } from '../utils/animationConfigs'
  *   world-state `player`
  * @param {Function} [options.onLogProgress] called with each revealed entry's beat index
  * @param {Function} [options.onLogProcessingChange] called with the combined busy flag
- * @param {Function} [options.onDisplayedLogCountChange] called with the revealed line count
+ * @param {Function} [options.onDisplayedLogCountChange] called with the revealed line
+ *   count. This is the END-OF-COMBAT GATE, not a display statistic:
+ *   `useCombatCoordinator` compares it against the log's distinct-entry count
+ *   (`distinctLogCount`) and refuses to open the victory/defeat dialog until
+ *   the two agree, so a count that stops advancing soft-locks the fight on the
+ *   battlefield with no dialog.
  * @returns {{displayedLog: Array, isProcessingLog: boolean, isBusyProcessing: boolean}}
+ *   The two busy flags are NOT interchangeable. `isProcessingLog` means a
+ *   reveal loop is mid-batch; `isBusyProcessing` means that OR there are
+ *   entries queued that the loop has not started on. LeftPanel gates the
+ *   input/move dialogs on the first and `isMyTurn` on the second, so swapping
+ *   them either shows the move panel during the one-render window before a
+ *   batch starts, or leaves it hidden after the last line is revealed.
  */
 export default function useCombatLogPlayback(combat, {
   activePlayer,
@@ -36,7 +47,10 @@ export default function useCombatLogPlayback(combat, {
   // Audio context
   const { playSFX, playSting } = useAudio()
 
-  // Log processing state
+  // Log processing state. `isProcessingLog` = a reveal loop is mid-batch;
+  // `isBusyProcessing` (below) also covers "entries are queued but the loop
+  // has not started". See the @returns note above for why the two are not
+  // interchangeable at the call sites.
   const [isProcessingLog, setIsProcessingLog] = useState(false)
   const [displayedLog, setDisplayedLog] = useState([])
 
@@ -112,7 +126,10 @@ export default function useCombatLogPlayback(combat, {
     }
   }, [displayedLog.length, pendingLogEntries.length])
 
-  // Determine if we are effectively busy
+  // Determine if we are effectively busy. Strictly wider than
+  // `isProcessingLog`: it also covers the render in which a batch is queued
+  // but the reveal effect has not run yet. LeftPanel gates `isMyTurn` on this
+  // one and the input/move dialogs on the narrower flag.
   const isBusyProcessing = isProcessingLog || pendingLogEntries.length > 0
 
   // Notify parent about log processing state
@@ -127,16 +144,22 @@ export default function useCombatLogPlayback(combat, {
     let isMounted = true
     let timeoutId = null
 
-    // Use the memoized pending entries which we calculated above
-    // But we need to be careful: pendingLogEntries is derived during render.
-    // If we put it in dependency array, this effect runs when it changes.
-
     if (pendingLogEntries.length > 0) {
       setIsProcessingLog(true)
 
       const delayPerLine = 400 // ms per line
       let currentIndex = 0
       const currentPending = pendingLogEntries // capture for closure
+      // ORDERING DEPENDENCY: the reload-recovery effect above WRITES
+      // `isPageReloadRecovery.current`; this line READS it and captures the
+      // value into the closure for the whole timer chain that follows. React
+      // runs passive effects in declaration order, so that effect must stay
+      // declared before this one — swap the two and this reads the previous
+      // render's value instead. (Deliberately no claim here about what the
+      // player then sees: on a real page reload this hook may mount with
+      // `combat === null`, which trips the new-fight branch and clears the
+      // flag, so whether the fast path is live at all depends on mount
+      // ordering nobody has traced.)
       const skipDelays = isPageReloadRecovery.current
 
       // Function to process one line at a time
@@ -160,7 +183,19 @@ export default function useCombatLogPlayback(combat, {
         // keyword matcher below (which would double-fire the sound).
         const hasAnimation = entry.type === 'animation' || !!entry.animation
 
-        const msg = entry.message.toLowerCase()
+        // Coerced, not trusted. An entry with no `message` would throw
+        // here, and there is no ErrorBoundary anywhere in frontend/src: for
+        // the FIRST entry of a batch processNextLine is called synchronously
+        // from the effect body, so the throw unmounts the whole SPA; for a
+        // later entry it kills the timer chain with `isProcessingLog` stuck
+        // true, and the next 8s poll re-enters and throws again. No live
+        // producer omits `message` today — this is the house rule the sibling
+        // consumers already follow (`entry?.message ?? ''` in
+        // utils/combatLogKey.js, and the same reasoning spelled out in
+        // StatusEffectsIconPanel.jsx), and `combat_log` is pickled into saves,
+        // so entries outlive the build that wrote them. Byte-identical for a
+        // well-formed entry.
+        const msg = String(entry.message ?? '').toLowerCase()
 
 
         // Add this line to displayed log
@@ -209,8 +244,9 @@ export default function useCombatLogPlayback(combat, {
 
           // activePlayer, not player: `player` lags combat state, and this
           // check fires at exactly the moment a hit lands — when the two
-          // diverge. Every other live-combat HP read in this file goes
-          // through activePlayer for the same reason.
+          // diverge. This is the ONLY HP read in this file, so the rule has
+          // nowhere else here to be inferred from — restate it on the next
+          // one rather than assuming a reader will find this line.
           if (msg.includes('attacks') && msg.includes('jean') && activePlayer?.hp < (activePlayer?.max_hp * 0.3)) {
             playSFX('low_health_warning')
           }

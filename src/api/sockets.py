@@ -9,6 +9,12 @@ from src.api.schemas.combat_beat import (
     ERROR_EVENT,
     ERROR_SESSION_INVALID,
     ERROR_SESSION_MISSING,
+    JOIN_EVENT,
+    JOINED_EVENT,
+    LEAVE_EVENT,
+    LEFT_EVENT,
+    PING_EVENT,
+    PONG_EVENT,
 )
 from src.api.session_cookie import session_id_from_cookie
 
@@ -81,7 +87,7 @@ def register_socket_handlers(socketio):
         payload = data if isinstance(data, dict) else {}
         return payload.get("session_id")
 
-    @socketio.on("join_combat")
+    @socketio.on(JOIN_EVENT)
     def on_join(data):
         """Join a combat room based on session ID."""
         session_id = _session_id(data)
@@ -111,9 +117,9 @@ def register_socket_handlers(socketio):
         # HttpOnly cookie is that page script cannot obtain this value, and
         # echoing it back in the ack would hand it straight over.
         logger.debug("[SOCKET] Client %s joined its combat room", request.sid)
-        emit("joined_combat", {"joined": True})
+        emit(JOINED_EVENT, {"joined": True})
 
-    @socketio.on("leave_combat")
+    @socketio.on(LEAVE_EVENT)
     def on_leave(data):
         """Leave a combat room."""
         session_id = _session_id(data)
@@ -123,9 +129,9 @@ def register_socket_handlers(socketio):
             # See on_join: the room name is the credential, so it is neither
             # logged nor returned to the client.
             logger.debug("[SOCKET] Client %s left its combat room", request.sid)
-            emit("left_combat", {"left": True})
+            emit(LEFT_EVENT, {"left": True})
 
-    @socketio.on("ping_combat")
+    @socketio.on(PING_EVENT)
     def on_ping(data):
         """Simple ping-pong for testing."""
-        emit("pong_combat", {"message": "ready"})
+        emit(PONG_EVENT, {"message": "ready"})

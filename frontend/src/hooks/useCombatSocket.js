@@ -17,6 +17,9 @@ import {
   RESOLVED_EVENT,
   ENDED_EVENT,
   SUGGESTIONS_EVENT,
+  UPDATE_EVENT,
+  JOIN_EVENT,
+  JOINED_EVENT,
   ERROR_EVENT,
   ERROR_SESSION_MISSING,
   ERROR_SESSION_INVALID,
@@ -39,10 +42,13 @@ import logger from '../utils/logger';
  * Three tries over ~10s: long enough to ride out a proxy blip or a cookie
  * re-issue, short enough that a structural fault (path-scoped cookie, a proxy
  * that strips it) settles onto the polling fallback quickly instead of
- * long-polling forever as a client that can join no room. No jitter: this is
- * one socket per player, and the failure that WOULD produce a thundering herd
- * — a server restart dropping every session — reports SESSION_INVALID, not
- * this.
+ * long-polling forever as a client that can join no room.
+ *
+ * These delays are exact, with no jitter of their own — but do NOT read that as
+ * "this client never jitters". socket.io's Manager applies its own
+ * `randomizationFactor` (0.5 by default) to the transport-level reconnect
+ * backoff, and `socket.connect()` below goes through it. What bounds the herd
+ * here is the hard three-retry cap, not an absence of randomness.
  */
 export const REHANDSHAKE_DELAYS_MS = [1000, 3000, 6000];
 
@@ -118,7 +124,7 @@ export function useCombatSocket({
     // handshake carried (see `_session_id` in src/api/sockets.py), which is
     // also the only way it could be trusted — a client-supplied session id was
     // never authenticated, it was merely believed.
-    const join = () => socket.emit('join_combat', {});
+    const join = () => socket.emit(JOIN_EVENT, {});
     // Initial connect is the same situation as a reconnect: beats emitted before
     // join_combat completed went to a room we weren't in, and lastSeqRef starts
     // null so classifySeq can't detect that gap. Re-seed from status either way.
@@ -135,7 +141,7 @@ export function useCombatSocket({
     // full budget rather than inheriting an exhausted one.
     let rehandshakes = 0;
     let rehandshakeTimer = null;
-    socket.on('joined_combat', () => {
+    socket.on(JOINED_EVENT, () => {
       rehandshakes = 0;
     });
 
@@ -164,7 +170,25 @@ export function useCombatSocket({
       // session that is genuinely dead still gets caught: every HTTP call the
       // page makes carries the same credential, and the axios 401 interceptor
       // performs the same teardown.
-      if (code !== ERROR_SESSION_MISSING) return;
+      if (code !== ERROR_SESSION_MISSING) {
+        // Observability only — deliberately NOT a retry and NOT a resync. The
+        // 8s combat poll GamePage keeps running bounds the cost of doing
+        // nothing here, and an unrecognised code is by definition one this
+        // hook has no verdict for; inventing a recovery for it is how the
+        // substring-matching bug above got written. But doing nothing SILENTLY
+        // is the part worth fixing: without this line nothing distinguishes
+        // "the server never errored" from "the server errored with a code we
+        // do not understand, over and over".
+        //
+        // The code and the message's presence, not the message itself: the
+        // payload text is server-authored and carries session wording (see the
+        // comment above), and this feed ships to logs/browser/*.jsonl.
+        logger.event('combat.socket.uncoded_error', {
+          code: code ?? null,
+          hasMessage: typeof payload?.message === 'string',
+        });
+        return;
+      }
 
       // No credential reached the server. That is a transport fault, not a
       // sign-out: the HTTP path is unaffected and GamePage keeps an 8s combat
@@ -215,7 +239,7 @@ export function useCombatSocket({
     // Legacy/compatibility state updates are not authoritative beat events,
     // but they are still useful as a recovery path when the backend streaming
     // flag is off or a beat event was missed.
-    socket.on('combat:update', (state) => {
+    socket.on(UPDATE_EVENT, (state) => {
       const seq = state?.seq;
       if (seq != null && lastStateSeqRef.current != null && seq < lastStateSeqRef.current) return;
       if (seq != null) lastStateSeqRef.current = seq;

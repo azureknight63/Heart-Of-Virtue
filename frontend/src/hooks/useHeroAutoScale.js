@@ -19,7 +19,11 @@ const MAX_SCALE = 2.8
  * Extracted verbatim from LeftPanel (issue #490).
  *
  * @param {{current: HTMLElement|null}} containerRef ref on the element to measure
- * @param {Array} [recalcDeps] values that should force a re-measure/re-subscribe
+ * @param {Array} [recalcDeps] values that should force a re-measure/re-subscribe.
+ *   MUST be a fixed-length array across renders — it is spread into a
+ *   dependency list, and React throws if a dependency list changes size
+ *   between renders. Pass a constant number of entries, padding with `null`
+ *   rather than conditionally omitting one.
  * @returns {number} scale factor, clamped to [0.4, 2.8]; 1 until first measured
  */
 export default function useHeroAutoScale(containerRef, recalcDeps = []) {
@@ -39,9 +43,9 @@ export default function useHeroAutoScale(containerRef, recalcDeps = []) {
       const scaleW = width / BASE_WIDTH
       const scaleH = height / BASE_HEIGHT
 
-      // Calculate scale to fit while filling space
-      // For combat, we might want it slightly larger or smaller?
-      // User said "auto-scale to fill the space", so we use the smaller of W/H to fit.
+      // Fit to the SMALLER axis ratio: the panel is scaled uniformly, so
+      // taking the larger one would fill the container on one axis and
+      // overflow it on the other.
       let newScale = Math.min(scaleW, scaleH)
 
       // Sanity bounds
@@ -58,8 +62,8 @@ export default function useHeroAutoScale(containerRef, recalcDeps = []) {
     calculateScale()
 
     return () => observer.disconnect()
-    // `recalcDeps` is spread by the caller's contract: it is a fixed-length
-    // array of layout triggers, so the dependency list keeps a stable size.
+    // `recalcDeps` is spread here; the fixed-length requirement that makes
+    // that safe is part of this hook's signature — see the @param above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef, ...recalcDeps])
 
