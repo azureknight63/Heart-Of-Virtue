@@ -199,11 +199,53 @@ class TestCombatWireContract:
         real_combat_player.combat_proximity = {enemy: 10}
         real_adapter.awaiting_input = True
         real_adapter.input_type = "target_selection"
-        real_adapter.available_options = [{"id": f"enemy_{id(enemy)}"}]
+        real_adapter.available_options = [
+            {"id": CombatantSerializer.stream_id(enemy)}
+        ]
 
         result = real_adapter.get_combat_state()
 
         _assert_contract(result["battle_state"], BATTLE_STATE_CONTRACT, "battle_state")
+
+    def test_no_combatant_id_in_a_real_payload_carries_a_heap_address(
+        self, real_adapter, real_combat_player
+    ):
+        """Issue #511 moved the wire-id scheme off ``id(combatant)``: heap
+        addresses both leaked process layout to the client and were recycled
+        onto later-spawned NPCs, silently retargeting stale client-held ids.
+
+        Checked here on a payload built by the whole chain (adapter →
+        serializer → handle), which is the only place all three run together;
+        the handle's format, stability and the recycling regression are pinned
+        once in tests/test_combatant_wire_handles.py rather than restated here.
+        """
+        enemy = Slime()
+        ally = Slime()
+        ally.friend = True
+        real_combat_player.combat_list = [enemy]
+        real_combat_player.combat_list_allies = [real_combat_player, ally]
+        real_combat_player.combat_proximity = {enemy: 10, ally: 5}
+        real_adapter.awaiting_input = True
+        real_adapter.input_type = "move_selection"
+        real_adapter.available_options = []
+
+        battle_state = real_adapter.get_combat_state()["battle_state"]
+
+        # `allies` excludes Jean (he ships separately under `player`), so the
+        # roster is paired up by name rather than by position — a zip would
+        # silently drop whichever side ran short and pass on two thirds of the
+        # payload.
+        assert len(battle_state["enemies"]) == 1
+        assert len(battle_state["allies"]) == 1
+        roster = [
+            (battle_state["enemies"][0], enemy),
+            (battle_state["allies"][0], ally),
+            (battle_state["player"], real_combat_player),
+        ]
+        for entity, combatant in roster:
+            assert str(id(combatant)) not in entity["id"], (
+                f"{entity['id']!r} leaks {type(combatant).__name__}'s heap address"
+            )
 
     def test_combat_id_is_stable_across_polls_but_changes_between_fights(
         self, real_adapter, real_combat_player

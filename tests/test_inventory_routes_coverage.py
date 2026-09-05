@@ -24,6 +24,8 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from flask import Flask
 
+from src.combatant import combatant_handle
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -541,7 +543,7 @@ class TestUseItem:
         item = _make_item()
         ally = MagicMock()
         ally.name = "Gorran"
-        ally_id = id(ally)
+        ally_id = combatant_handle(ally)
         player = _make_player(items=[item])
         player.in_combat = True
         player.combat_list_allies = [player, ally]
@@ -947,7 +949,7 @@ class TestResolveAllyTarget:
         player = _make_player()
         ally = MagicMock()
         player.combat_list_allies = [player, ally]
-        target_id = f"ally_{id(ally)}"
+        target_id = f"ally_{combatant_handle(ally)}"
         result = _resolve_ally_target(player, target_id)
         assert result is ally
 
@@ -970,8 +972,8 @@ class TestResolveAllyTarget:
         player = _make_player()
         ally = MagicMock()
         player.combat_list_allies = [player, ally]
-        assert _resolve_ally_target(player, f"ally_{id(player)}") is None
-        assert _resolve_ally_target(player, f"ally_{id(ally)}") is ally
+        assert _resolve_ally_target(player, f"ally_{combatant_handle(player)}") is None
+        assert _resolve_ally_target(player, f"ally_{combatant_handle(ally)}") is ally
 
     def test_strips_ally_prefix(self):
         from src.api.routes.inventory import _resolve_ally_target
@@ -979,7 +981,7 @@ class TestResolveAllyTarget:
         player = _make_player()
         ally = MagicMock()
         player.combat_list_allies = [player, ally]
-        raw_id = str(id(ally))
+        raw_id = combatant_handle(ally)
         result = _resolve_ally_target(player, f"ally_{raw_id}")
         assert result is ally
 

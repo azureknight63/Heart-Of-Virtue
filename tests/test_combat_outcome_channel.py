@@ -490,12 +490,22 @@ def test_a_non_dict_pending_animation_cannot_crash_the_move_loop():
     assert not [e for e in player.combat_log if e.get("animation")]
 
 
-#: A hand-rolled wire id is any f-string that interpolates ``id(...)`` next to
-#: an ally/enemy discriminator. Keying on ``id(`` rather than on a literal
-#: ``enemy_``/``ally_`` prefix is deliberate: the prefix can be spelled as a
-#: conditional, and the first version of this guard missed a real site that
-#: did exactly that.
-_HANDROLLED_ID = r'f"[^"]*(?:ally|enemy)[^"]*\{id\([^)]*\)\}[^"]*"'
+#: A hand-rolled wire id is any f-string that interpolates an identity call
+#: (``id(...)`` or ``combatant_handle(...)``) next to an ally/enemy
+#: discriminator. Keying on the call rather than on a literal ``enemy_``/
+#: ``ally_`` prefix is deliberate: the prefix can be spelled as a conditional,
+#: and the first version of this guard missed a real site that did exactly
+#: that.
+#:
+#: ``combatant_handle`` joined the pattern with issue #511, which moved the id
+#: scheme off ``id(combatant)`` onto a stable per-combatant handle. Rebuilding
+#: the prefix around the *new* suffix is the same mistake in new clothes — the
+#: prefix depends on live ``friend`` state, so an unconditional one still
+#: mislabels the player and any combatant on the "wrong" list. Only
+#: ``stream_id`` gets to spell this.
+_HANDROLLED_ID = (
+    r'f"[^"]*(?:ally|enemy)[^"]*\{(?:id|combatant_handle)\([^)]*\)\}[^"]*"'
+)
 
 
 def test_no_animation_payload_hardcodes_a_combatant_wire_id():
@@ -552,6 +562,9 @@ def test_the_hardcoded_id_scan_can_actually_find_something():
         '        "target_id": f"ally_{id(target)}",',
         '        "source_id": f"{\'ally\' if npc.friend else \'enemy\'}_{id(npc)}",',
         '        label = f"enemy_{id(move.target)}" if x else "player"',
+        # Post-#511 spellings: the suffix changed, the mistake did not.
+        '        "source_id": f"enemy_{combatant_handle(npc)}",',
+        '        "target_id": f"{\'ally\' if npc.friend else \'enemy\'}_{combatant_handle(npc)}",',
     ]
     for spelling in known_spellings:
         assert re.findall(_HANDROLLED_ID, spelling), (

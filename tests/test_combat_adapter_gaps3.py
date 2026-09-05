@@ -41,6 +41,7 @@ import pytest
 from flask import Flask
 
 from src.api.combat_adapter import ApiCombatAdapter
+from src.api.serializers.combat import CombatantSerializer
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors tests/test_combat_adapter_gaps2.py)
@@ -502,7 +503,7 @@ class TestHandleCombinedSelectionTargetResolution:
         adapter.awaiting_input = True
         adapter.input_type = "move_selection"
 
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         with patch.object(adapter, "_execute_move", return_value={"ok": True}):
             result = adapter._handle_combined_selection("Slash", target_id)
 
@@ -523,7 +524,9 @@ class TestHandleCombinedSelectionTargetResolution:
             patch.object(
                 ApiCombatAdapter,
                 "_get_available_targets",
-                return_value=[{"id": f"enemy_{id(enemy)}", "name": "Goblin"}],
+                return_value=[
+                    {"id": CombatantSerializer.stream_id(enemy), "name": "Goblin"}
+                ],
             ),
             patch.object(adapter, "_execute_move", return_value={"ok": True}),
         ):
@@ -1856,7 +1859,7 @@ class TestGetAvailableMovesRemainingBranches:
         # Identity/position/health are pinned exactly — the client renders each
         # entry directly, so the entry's shape is the contract.
         assert {k: target[k] for k in ("id", "name", "distance", "is_ally", "health")} == {
-            "id": f"enemy_{id(enemy)}",
+            "id": CombatantSerializer.stream_id(enemy),
             "name": "Goblin",
             "distance": 5,
             "is_ally": False,
@@ -1954,8 +1957,8 @@ class TestSuggestionsNeverTargetOutOfRangeEnemy:
         # real per-move range-scoping logic actually runs.
         adapter.strategist = CombatStrategist(client=_UnavailableLLMClient())
 
-        far_id = f"enemy_{id(far_enemy)}"
-        near_id = f"enemy_{id(near_enemy)}"
+        far_id = CombatantSerializer.stream_id(far_enemy)
+        near_id = CombatantSerializer.stream_id(near_enemy)
 
         with patch("threading.Thread", side_effect=_run_thread_synchronously):
             adapter.refresh_suggestions()

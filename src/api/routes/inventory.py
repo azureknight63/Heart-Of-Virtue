@@ -24,6 +24,7 @@ from src.api.serializers.inventory import (
 )
 from src.api.middleware.auth import get_session_and_player
 from src.api.utils.inventory import get_inventory_list
+from src.combatant import combatant_handle
 
 # Create blueprint
 inventory_bp = Blueprint("inventory", __name__)
@@ -64,15 +65,17 @@ def get_item_and_index(player, item_id=None, item_index=None):
 def _resolve_ally_target(player, target_id: str):
     """Resolve a target_id string to an NPC ally object.
 
-    Accepts IDs in the form "ally_<python-id>" as produced by the party_members
-    serializer and the combat serializer.  Returns None if not found.
+    Accepts IDs in the form "ally_<handle>" as produced by the party_members
+    serializer and the combat serializer — i.e. by
+    ``CombatantSerializer.stream_id``, whose suffix is the combatant's stable
+    handle rather than a Python ``id()`` (issue #511).  Returns None if not
+    found.
     """
     if target_id.startswith("ally_"):
         target_id = target_id[len("ally_"):]
-    raw_id = target_id
     # Skip index 0 (the player) — allies start at index 1
     for ally in getattr(player, "combat_list_allies", [])[1:]:
-        if str(id(ally)) == raw_id:
+        if combatant_handle(ally) == target_id:
             return ally
     return None
 

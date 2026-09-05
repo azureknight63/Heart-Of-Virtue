@@ -25,6 +25,8 @@ import pytest
 
 import src.moves as moves
 from src.npc import NPC
+from src.api.serializers.combat import CombatantSerializer
+from src.combatant import combatant_handle
 from tests._combat_fixtures import (
     forced_roll,
     make_adapter,
@@ -129,7 +131,7 @@ def test_select_target_rejects_out_of_range_enemy(fight):
     assert adapter.input_type == "target_selection"
 
     result = adapter.process_command(
-        {"type": "select_target", "target_id": f"enemy_{id(far)}"}
+        {"type": "select_target", "target_id": CombatantSerializer.stream_id(far)}
     )
 
     assert "error" in result
@@ -143,7 +145,7 @@ def test_select_target_rejects_ally_for_move_without_ally_targeting(fight):
     adapter.process_command({"type": "select_move", "move_index": 0})
 
     result = adapter.process_command(
-        {"type": "select_target", "target_id": f"ally_{id(ally)}"}
+        {"type": "select_target", "target_id": CombatantSerializer.stream_id(ally)}
     )
 
     assert "error" in result
@@ -158,7 +160,7 @@ def test_combined_selection_rejects_out_of_range_enemy(fight):
         {
             "type": "select_move_and_target",
             "move_name": "Disrupt",
-            "target_id": f"enemy_{id(far)}",
+            "target_id": CombatantSerializer.stream_id(far),
         }
     )
 
@@ -174,7 +176,7 @@ def test_combined_selection_rejects_ally(fight):
         {
             "type": "select_move_and_target",
             "move_name": "Disrupt",
-            "target_id": f"ally_{id(ally)}",
+            "target_id": CombatantSerializer.stream_id(ally),
         }
     )
 
@@ -201,7 +203,7 @@ def test_rejected_target_leaves_combat_state_untouched(fight, bad):
 
     prefix = "enemy" if bad == "far" else "ally"
     result = adapter.process_command(
-        {"type": "select_target", "target_id": f"{prefix}_{id(fight[bad])}"}
+        {"type": "select_target", "target_id": f"{prefix}_{combatant_handle(fight[bad])}"}
     )
 
     assert "error" in result
@@ -215,12 +217,12 @@ def test_client_can_retry_with_a_legal_target_after_rejection(fight):
     adapter, near, far = fight["adapter"], fight["near"], fight["far"]
     adapter.process_command({"type": "select_move", "move_index": 0})
     adapter.process_command(
-        {"type": "select_target", "target_id": f"enemy_{id(far)}"}
+        {"type": "select_target", "target_id": CombatantSerializer.stream_id(far)}
     )
 
     with forced_roll(**_ALWAYS_HITS):
         result = adapter.process_command(
-            {"type": "select_target", "target_id": f"enemy_{id(near)}"}
+            {"type": "select_target", "target_id": CombatantSerializer.stream_id(near)}
         )
 
     assert "error" not in result
@@ -240,7 +242,7 @@ def test_valid_in_range_enemy_still_resolves(fight):
 
     with forced_roll(**_ALWAYS_HITS):
         result = adapter.process_command(
-            {"type": "select_target", "target_id": f"enemy_{id(near)}"}
+            {"type": "select_target", "target_id": CombatantSerializer.stream_id(near)}
         )
 
     assert "error" not in result
@@ -254,7 +256,7 @@ def test_ally_accepted_for_move_that_declares_accepts_ally_target():
     adapter, ally, move = fight["adapter"], fight["ally"], fight["move"]
 
     assert move.accepts_ally_target is True
-    assert f"ally_{id(ally)}" in {
+    assert CombatantSerializer.stream_id(ally) in {
         o["id"] for o in adapter._get_available_targets(move)
     }
 
@@ -262,7 +264,7 @@ def test_ally_accepted_for_move_that_declares_accepts_ally_target():
         {
             "type": "select_move_and_target",
             "move_name": "Advance",
-            "target_id": f"ally_{id(ally)}",
+            "target_id": CombatantSerializer.stream_id(ally),
         }
     )
 
@@ -317,7 +319,7 @@ def test_untargeted_move_never_consults_the_target_option_set():
             {
                 "type": "select_move_and_target",
                 "move_name": "Dodge",
-                "target_id": f"ally_{id(fight['ally'])}",
+                "target_id": CombatantSerializer.stream_id(fight['ally']),
             }
         )
 

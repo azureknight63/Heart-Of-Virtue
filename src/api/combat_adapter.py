@@ -35,6 +35,7 @@ from src.combatant import (
     OUTCOME_TARGET_KEY,
     PENDING_ANIMATION_ATTR,
     REPORTED_BEAT_KEY,
+    combatant_handle,
 )
 from src.moves._base import select_weighted_target, display_name_of
 from src.events import purge_orphaned_combat_events
@@ -64,7 +65,11 @@ logger = logging.getLogger(__name__)
 
 
 def _strip_combatant_prefix(target_id: str) -> str:
-    """Strip 'enemy_' or 'ally_' prefix and return the raw Python id string."""
+    """Strip the 'enemy_'/'ally_' prefix, leaving the bare combatant handle.
+
+    The suffix is the combatant's stable handle (``combatant_handle``), not a
+    Python ``id()`` -- see ``CombatantSerializer.stream_id`` and issue #511.
+    """
     for prefix in ("enemy_", "ally_"):
         if target_id.startswith(prefix):
             return target_id[len(prefix):]
@@ -1300,14 +1305,14 @@ class ApiCombatAdapter:
         return self.get_combat_state()
 
     def _lookup_combatant(self, target_id: str):
-        """Return the combatant whose id() matches target_id, or None.
+        """Return the combatant whose handle matches target_id, or None.
 
         The prefix (``enemy_``/``ally_``) is stripped before comparison so
-        either form resolves against the raw Python id string.
+        either form resolves against the bare handle.
         """
-        target_obj_id = _strip_combatant_prefix(target_id)
+        target_handle = _strip_combatant_prefix(target_id)
         for combatant in self.player.combat_list + self.player.combat_list_allies:
-            if str(id(combatant)) == target_obj_id:
+            if combatant_handle(combatant) == target_handle:
                 return combatant
         return None
 
@@ -1359,7 +1364,7 @@ class ApiCombatAdapter:
             if isinstance(option, dict) and isinstance(option.get("id"), str)
         }
 
-        if str(id(candidate)) not in allowed_ids:
+        if combatant_handle(candidate) not in allowed_ids:
             return {
                 "error": (
                     f"{getattr(candidate, 'name', 'That target')} is not a valid "

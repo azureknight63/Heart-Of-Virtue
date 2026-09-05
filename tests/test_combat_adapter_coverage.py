@@ -38,6 +38,7 @@ from src.api.combat_adapter import (
     CombatOutputCapture,
     _strip_combatant_prefix,
 )
+from src.api.serializers.combat import CombatantSerializer
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures
@@ -988,7 +989,7 @@ class TestHandleMoveSelection:
         player.known_moves = [move]
         player.combat_list = [enemy]
         player.combat_list_allies = [player]
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         with (
             patch.object(
                 adapter := _make_adapter(player),
@@ -1115,7 +1116,7 @@ class TestHandleTargetSelection:
         adapter = _make_adapter(player)
         adapter.input_type = "target_selection"
         adapter.pending_move_index = 0
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         with patch.object(adapter, "_execute_move", return_value={"ok": True}) as exe:
             result = adapter._handle_target_selection(target_id)
         exe.assert_called_once()
@@ -1140,7 +1141,7 @@ class TestHandleTargetSelection:
         adapter = _make_adapter(player)
         adapter.input_type = "target_selection"
         adapter.pending_move_index = 0
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         with patch.object(adapter, "get_combat_state", return_value={"ok": True}):
             adapter._handle_target_selection(target_id)
         assert adapter.input_type == "number_input"
