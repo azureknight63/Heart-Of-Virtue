@@ -2,19 +2,19 @@
 name: issue-triage
 version: 1.0.0
 description: |
-  Works the open GitHub issue list end to end: reads every issue, sorts what can
-  be actioned now from what needs a maintainer decision, fans out subagents to
-  diagnose and fix the clear ones in parallel, verifies each fix is real, and
-  brings the genuine decisions back as a single batched question rather than
-  guessing. Built for solo-maintainer repos where the issue list mixes player
-  bug reports, deferred refactors, and "Decision:" issues that have been open
-  for months.
-  Use this whenever the user says "issue triage", "triage the issues", "work
-  through the backlog", "go through the open issues", "what's on the issue
-  list", "clear out some issues", or asks you to pick up several GitHub issues
-  at once — even if they don't say the word "triage". Also use it when the user
-  points at a handful of issue numbers and asks you to handle them together.
-  Do NOT use it for a single named issue you are simply asked to fix; that is
+  Use when the user wants their open GitHub issues worked as a batch rather
+  than one named issue fixed. Trigger on any ask to triage, sort, clear out,
+  shrink, work through, deal with, knock out, or simply see what is on the
+  issue list / queue / backlog — including casual phrasings ("what's open right
+  now?", "close what you can", "handle whatever doesn't need me"), asks that
+  mix doing the easy ones with flagging the rest, a count of open bug reports
+  or refactors to be worked together, or several issue numbers handed over at
+  once. Also trigger when the user describes the workflow themselves (fan out
+  subagents across the issues, batch the decisions back to me).
+  It reads every open issue, separates what can be fixed now from what needs
+  the maintainer's call, diagnoses before fixing, revert-proves each fix, and
+  returns the genuine decisions as one batched question instead of guessing.
+  Do NOT use it to fix a single specified issue, or to file a new one — that is
   ordinary work.
 allowed-tools:
   - Read
