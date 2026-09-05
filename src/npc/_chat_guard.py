@@ -143,10 +143,33 @@ _OFFER = r"\b(?:I" + _APO + r"ll|I will|I can|I could|I" + _APO + r"d|let me|sha
 # Up to two filler words between the opener and the verb ("I'll happily give").
 _GAP = r"(?:\w+\s+){0,2}?"
 
-_POSSESSIONS = (
-    r"sword|blade|knife|axe|spear|bow|arrows?|armou?r|mail|shield|helm|pack|"
-    r"purse|coins?|gold|silver|rations|supplies|provisions|weapons?|gear|"
-    r"boots|cloak|map|wounds?|injuries|injury|belongings"
+# Goods an arms-and-armor merchant can actually put on a counter — the regex
+# alternation body, without the surrounding ``\b(?:...)\b``.
+#
+# Public because it is the ONE spelling of "a thing that is bought and sold",
+# read by both halves of the merchant rule: this module's possession tripwire
+# below, and ``_chat_llm._MERCHANT_ITEM_PATTERN``, which decides whether a
+# sentence in merchant chat is shop business. Those two were written
+# independently and had inverted the rule at its primary NPC — the chat-side
+# list enumerated armour nouns only, so at Kaelen's weapon stall (Shortsword,
+# Spear, Dagger) "How much for the sword?" was not commerce, while this list
+# had the weapon nouns and not the armour materials.
+#
+# Membership rule: a noun belongs here when a merchant could hand it across a
+# counter. Coin is deliberately absent — "the gold in this region" is lore, and
+# ``_chat_llm``'s transaction pattern already matches coin words directly, so
+# admitting them here would make every sentence naming gold a shop question.
+MERCHANDISE = (
+    r"swords?|blades?|daggers?|kni(?:fe|ves)|axes?|spears?|bows?|arrows?|"
+    r"armou?r|mail|chain|leather|shields?|helms?|helmets?|buckles?|"
+    r"harness(?:es)?|cuirass(?:es)?|jerkins?|doublets?|weapons?|gear|boots|"
+    r"cloaks?|rations|supplies|provisions|wares|goods|merchandise|items?"
+)
+
+# What an NPC must not assert Jean is carrying: everything sellable, plus the
+# personal effects and bodily state a merchant never stocks.
+_POSSESSIONS = MERCHANDISE + (
+    r"|pack|purse|coins?|gold|silver|map|wounds?|injuries|injury|belongings"
 )
 
 _NUMBERS = (

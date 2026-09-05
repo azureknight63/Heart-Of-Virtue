@@ -13,6 +13,51 @@ const FLUSH_INTERVAL = 5000; // 5 seconds
 const MAX_QUEUE_SIZE = 100;
 const FAILURE_BACKOFF_MS = 30000;
 
+const REDACTED = '[redacted]';
+
+/**
+ * Keys whose VALUE never leaves the browser, at any depth, in any argument.
+ *
+ * This is a credential leak, not tidiness. Roughly thirty sites across the app
+ * write `console.error('...', err)` with a raw rejected request, and axios's
+ * `AxiosError.prototype.toJSON` — which `JSON.stringify` calls for us — emits
+ * `config`, whose `headers` carry the `Authorization: Bearer <session id>`
+ * that api/client.js's request interceptor attached. So a single failed
+ * request used to POST the player's live session token to
+ * /api/logs/browser, where it landed in a file on disk.
+ *
+ * It is redacted HERE rather than at the call sites because the call sites are
+ * not the hazard: the next `console.error(msg, err)` anyone writes reopens it.
+ * `config` and `request` go whole (an XHR/config object is diagnostic noise
+ * that happens to carry secrets); `headers`, `authorization`, `cookie` and
+ * `set-cookie` go by name so a bare header bag passed on its own is covered
+ * too. The cost is that a domain object with a `config` field logs as
+ * `[redacted]` — an acceptable trade for a class of leak that cannot be
+ * closed by remembering to be careful.
+ */
+const REDACTED_KEYS = new Set([
+    'config',
+    'request',
+    'headers',
+    'authorization',
+    'cookie',
+    'set-cookie',
+]);
+
+/**
+ * `JSON.stringify` replacer that blanks the values above.
+ *
+ * Runs AFTER `toJSON()` on each value (that is the serialization order the
+ * spec defines), so it sees the object graph `AxiosError.toJSON()` actually
+ * produces rather than the error's own enumerable properties.
+ */
+function redactCredentials(key, value) {
+    if (typeof key === 'string' && REDACTED_KEYS.has(key.toLowerCase())) {
+        return REDACTED;
+    }
+    return value;
+}
+
 class BrowserLogger {
     constructor() {
         this.logQueue = [];
@@ -100,13 +145,18 @@ class BrowserLogger {
     }
 
     /**
-     * Format console arguments into a string
+     * Format console arguments into a string, with credentials stripped.
+     *
+     * See `REDACTED_KEYS`: everything here is shipped to a server-side log
+     * file, so no argument may carry an auth header into it. The `String(arg)`
+     * fallback for an unserializable value is safe on the same grounds — an
+     * error's `toString()` is its name and message, never its request config.
      */
     formatArgs(args) {
         return args.map(arg => {
             if (typeof arg === 'object') {
                 try {
-                    return JSON.stringify(arg, null, 2);
+                    return JSON.stringify(arg, redactCredentials, 2);
                 } catch (e) {
                     return String(arg);
                 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { AxiosError } from 'axios';
 import logger from './logger';
 
 describe('BrowserLogger', () => {
@@ -100,6 +101,81 @@ describe('BrowserLogger', () => {
     circular.self = circular;
     console.log(circular);
     expect(logger.logQueue[0].message).toBe(String(circular));
+  });
+
+  describe('credential redaction', () => {
+    // The leak this closes: ~30 sites across the app write
+    // `console.error('...', err)` with a raw rejected request. Axios defines
+    // `AxiosError.prototype.toJSON`, which `JSON.stringify` calls, and it emits
+    // `config` — carrying the `Authorization: Bearer <session id>` that
+    // api/client.js attaches to every request. Every failed call therefore
+    // wrote the player's live session token into a server-side log file.
+    //
+    // A REAL AxiosError is constructed rather than an error-shaped literal:
+    // the whole hazard is what axios's own `toJSON` chooses to serialize, so an
+    // invented shape would only be testing this file's guess about it.
+    const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.super-secret-session-token';
+
+    const shippedBody = async (...args) => {
+      logger.log('error', ...args);
+      await logger.flush();
+      return global.fetch.mock.calls[0][1].body;
+    };
+
+    const unauthorizedError = () =>
+      new AxiosError(
+        'Request failed with status code 401',
+        'ERR_BAD_REQUEST',
+        {
+          url: '/npc/chat/open',
+          method: 'post',
+          headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+        },
+        {},
+        { status: 401, data: { error: 'unauthorized' } }
+      );
+
+    it('proves axios really does serialize the auth header', () => {
+      // Guard-the-guard. If a future axios stops emitting `config` from
+      // `toJSON`, the assertions below would pass for the wrong reason — they
+      // would be redacting something that was never there.
+      expect(JSON.stringify(unauthorizedError())).toContain(TOKEN);
+    });
+
+    it('never ships an AxiosError’s Authorization header to the log endpoint', async () => {
+      const body = await shippedBody('[npcChat] open failed:', unauthorizedError());
+
+      expect(body).not.toContain(TOKEN);
+      expect(body).not.toContain('Bearer');
+      // Still a useful log line: the redaction takes the credentials, not the
+      // diagnosis.
+      expect(body).toContain('Request failed with status code 401');
+      expect(body).toContain('[npcChat] open failed:');
+    });
+
+    it('redacts a header bag nested at any depth, under any casing', async () => {
+      const body = await shippedBody({
+        outer: {
+          deeper: {
+            response: { CONFIG: { HEADERS: { authorization: `Bearer ${TOKEN}` } } },
+            cookie: `session=${TOKEN}`,
+            'Set-Cookie': `session=${TOKEN}`,
+          },
+        },
+      });
+
+      expect(body).not.toContain(TOKEN);
+      expect(body).toContain('[redacted]');
+    });
+
+    it('leaves ordinary object arguments alone', async () => {
+      const body = await shippedBody('payload:', { npcId: 'Mynx', loquacity: 3 });
+
+      const message = JSON.parse(body).logs[0].message;
+      expect(message).toContain('"npcId": "Mynx"');
+      expect(message).toContain('"loquacity": 3');
+      expect(message).not.toContain('[redacted]');
+    });
   });
 
   it('manually logs a message via log()', () => {

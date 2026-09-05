@@ -24,15 +24,34 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
  *             whose message therefore animated only while an item dialog
  *             happened to be open.
  *
- * Each was found by eye and fixed one at a time. This closes the class: every
- * animation name a source file uses must resolve to a `@keyframes` that either
- * sits in a global stylesheet or is declared in that same file.
+ * Each was found by eye and fixed one at a time. This closes the class, and it
+ * takes TWO checks to do it, because the two halves above fail in opposite
+ * directions:
+ *
+ *   RESOLUTION  every animation name a source file uses must resolve to a
+ *               `@keyframes` that either sits in a global stylesheet or is
+ *               declared in that same file. Catches `fadeIn` and `spin` —
+ *               names used where nothing declares them.
+ *   SHADOWING   no name may be declared in more than one place once a global
+ *               stylesheet declares it. Catches `blink` and `pulse`. A
+ *               resolution check structurally CANNOT see these: a component
+ *               that redeclares a global name still resolves it, which is
+ *               exactly what makes the shadowing silent.
  *
  * jsdom does not load stylesheets, so no rendering test can check this. The
  * audit is deliberately static — it reads the files.
  */
 
 const GLOBAL_STYLESHEET_DIR = 'styles'
+
+/**
+ * Whether a path is a stylesheet whose `@keyframes` are document-global for
+ * the whole app life — everything under `src/styles/*.css`, all of which the
+ * bundle imports unconditionally.
+ */
+function isGlobalStylesheet(path) {
+    return path.startsWith(`${GLOBAL_STYLESHEET_DIR}/`) && path.endsWith('.css')
+}
 
 /**
  * Shorthand keywords that can appear in an `animation` value. Anything left
@@ -250,7 +269,14 @@ export function readSourceFiles(root = SRC_DIR) {
  * `src/styles/*.css`, all of which are imported into the bundle and so are
  * document-global) or in the same file that uses it.
  *
- * @returns {{unresolved: Array, interpolated: Array, declaredIn: Map<string, string[]>}}
+ * `shadowed` is the other half — see SHADOWING in the module header. It is
+ * every name with more than one declaration where at least one of them is a
+ * global stylesheet's, which is the shape `blink` and `pulse` had. Two
+ * declarations in components alone are not listed here because the
+ * `localOnly` case in the suite already rejects that shape.
+ *
+ * @returns {{unresolved: Array, interpolated: Array, shadowed: Array,
+ *   declaredIn: Map<string, string[]>}}
  */
 export function auditKeyframes(files) {
     const declaredIn = new Map()
@@ -258,7 +284,7 @@ export function auditKeyframes(files) {
 
     for (const { path, content } of files) {
         const clean = stripComments(content)
-        const isGlobal = path.startsWith(`${GLOBAL_STYLESHEET_DIR}/`) && path.endsWith('.css')
+        const isGlobal = isGlobalStylesheet(path)
         DECLARATION_RE.lastIndex = 0
         let m
         while ((m = DECLARATION_RE.exec(clean))) {
@@ -268,6 +294,13 @@ export function auditKeyframes(files) {
             if (isGlobal) globalNames.add(name)
         }
     }
+
+    // Every declaration is pushed, not every declaring FILE, so a stylesheet
+    // that declares the same name twice is listed too — the second block
+    // silently wins over the first, which is the same failure at smaller scale.
+    const shadowed = [...declaredIn.entries()]
+        .filter(([, paths]) => paths.length > 1 && paths.some(isGlobalStylesheet))
+        .map(([name, paths]) => ({ name, paths }))
 
     const unresolved = []
     const interpolated = []
@@ -300,7 +333,7 @@ export function auditKeyframes(files) {
         }
     }
 
-    return { unresolved, interpolated, declaredIn }
+    return { unresolved, interpolated, shadowed, declaredIn }
 }
 
 /** One human-readable line per unresolved usage, for a failure message. */
@@ -314,5 +347,14 @@ export function describeUnresolved(unresolved) {
                   + 'but only via its animate-* utility classes — use the class, not the name)'
             return `${u.path}:${u.line} uses "${u.name}" (${u.value}): ${where}`
         })
+        .join('\n')
+}
+
+/** One human-readable line per shadowed name, for a failure message. */
+export function describeShadowed(shadowed) {
+    return shadowed
+        .map((s) => `"${s.name}" is declared in ${s.paths.join(' AND ')} — `
+            + 'keyframe names are document-global, so whichever declaration is '
+            + 'in the document last wins for every other user of that name')
         .join('\n')
 }

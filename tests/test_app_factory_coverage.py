@@ -1406,18 +1406,35 @@ class TestWsgiRefusesATestingConfig:
         module = self._exec_wsgi()
         assert (module.app, module.socketio) == sentinel
 
-    def test_development_still_boots(self, monkeypatch):
-        """DevelopmentConfig has ``TESTING = False``, so the guard keys on the
-        attribute that actually gates the test-only routes rather than on the
-        string ``"testing"``."""
-        import src.api.app as api_app
+    def test_development_is_refused_too(self, monkeypatch):
+        """This used to assert the opposite, and the opposite was the bug.
 
-        sentinel = (object(), object())
-        monkeypatch.setattr(api_app, "create_app", lambda *a, **kw: sentinel)
+        The TESTING refusal above is necessary but not sufficient:
+        DevelopmentConfig has ``TESTING = False``, so it sailed past that guard
+        and gunicorn served ``DEBUG=True``, ``SESSION_COOKIE_SECURE=False``,
+        localhost-only CORS and a per-worker ``os.urandom(24)`` SECRET_KEY on a
+        public listener. ``wsgi.py`` now requires the word ``production``.
+
+        Note what did NOT change: ``config_for_env("development")`` still
+        returns ``DevelopmentConfig``, because development-by-default is the
+        right answer on a developer's box. The asymmetry is the point, and
+        ``tests/api/test_wsgi_production_guard.py`` pins it directly so that
+        nobody resolves it by "tidying" the refusal into the shared mapping.
+        """
+        import src.api.app as api_app
+        from src.api.config import DevelopmentConfig, config_for_env
+
+        assert config_for_env("development") is DevelopmentConfig
+
+        called = []
+        monkeypatch.setattr(
+            api_app, "create_app", lambda *a, **kw: called.append(a) or (None, None)
+        )
         monkeypatch.setenv("FLASK_ENV", "development")
 
-        module = self._exec_wsgi()
-        assert (module.app, module.socketio) == sentinel
+        with pytest.raises(SystemExit):
+            self._exec_wsgi()
+        assert called == []
 
 
 class TestUnrecognisedFlaskEnvIsNotSilent:

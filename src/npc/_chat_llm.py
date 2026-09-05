@@ -101,6 +101,7 @@ try:  # pragma: no cover - trivially exercised by importing this module
         MAX_NPC_SENTENCES,
         MAX_NPC_TEXT_CHARS,
         MAX_OPTION_CHARS,
+        MERCHANT_SUBSTITUTE_TOPICS,
         REPUTATION_DELTA_BOUNDS,
     )
 except Exception as _constants_import_error:  # pragma: no cover - no AI stack
@@ -126,6 +127,9 @@ except Exception as _constants_import_error:  # pragma: no cover - no AI stack
     REPUTATION_DELTA_BOUNDS = (-5, 5)
     LOQUACITY_DELTA_BOUNDS = (-40, 15)
     LOQUACITY_DELTA_DEFAULT = -8
+    MERCHANT_SUBSTITUTE_TOPICS = (
+        "craft, fit, maintenance, provenance, or general lore"
+    )
 
 _AI_DIR = Path(__file__).resolve().parent.parent.parent / "ai"
 _HUMAN_NPC_DIR = _AI_DIR / "npc" / "human"
@@ -393,46 +397,67 @@ def _no_stage_budget(deadline: Optional[float], adapter: Any = None) -> bool:
 _warned_round_timeout: Optional[float] = None
 
 
+# The provider stages one player message may open, in the order they run:
+#
+#   1. the NPC turn                  (_run_npc_turn attempt 1)
+#   2. the QC retry                  (_run_npc_turn attempt 2)
+#   3. the state-guard revision      (_guard_turn — the call _chat_guard
+#                                     exists to make)
+#   4. the Jean-options call         (_resolve_jean_options, on a legacy
+#                                     two-call adapter only)
+#
+# Named so :func:`_turn_deadline` funds what ``_CHAT_DEADLINE_SECONDS``
+# enumerates. The two had drifted: the budget widened to *two* round timeouts
+# while the constant's comment listed these four, and since
+# :func:`_no_stage_budget` refuses to open a stage unless a whole round timeout
+# still fits, a 12s budget stopped admitting stages six seconds in. At the
+# 2-4s per call the adapter documents as healthy, that meant any turn which
+# spent its QC retry had already lost the guard revision and hedged
+# deterministically instead — the failure mode the guard exists to avoid.
+_MAX_TURN_STAGES = 4
+
+
 def _turn_deadline(adapter: Any) -> float:
     """The instant after which this turn may open no further provider stage.
 
     ``_CHAT_DEADLINE_SECONDS`` is a fixed number, but the per-call timeout
     :func:`_no_stage_budget` measures the remaining budget against is
-    ``NPC_CHAT_LLM_TIMEOUT`` — operator-tunable, with no upper bound. At the
-    default 6s two stages fit. At 8s the gate is already closed straight after
-    attempt one; at 12s or more it is closed on its FIRST evaluation of every
-    turn, which silently disables the QC retry, the state-guard revision call
-    and the legacy options call — while logging "the turn's provider budget is
-    spent", a cause that was never true and that sends a debugger the wrong
-    way.
+    ``NPC_CHAT_LLM_TIMEOUT`` — operator-tunable, with no upper bound. So the
+    budget scales with the timeout it is compared against: one round timeout
+    per stage in :data:`_MAX_TURN_STAGES`, with the constant as the floor.
 
-    So the budget scales with the timeout it is compared against: at least two
-    stages always fit, and the constant is the floor. A configured timeout wide
-    enough to force that is also worth saying out loud once, because it means
-    a single conversation round can now run for four times the number the
-    feature was designed around.
+    That funds every stage at the latencies the feature targets (a healthy call
+    returns in 2-4s against a 6s ceiling). If *every* call instead runs to the
+    full timeout, the last stage is refused — correctly: there is no longer
+    room for it to finish inside the budget, and refusing costs a hedged line
+    where admitting it would cost the player another whole round timeout of
+    spinner.
+
+    A per-call timeout wider than the 6s the budget is sized around is worth
+    saying out loud once, because it multiplies the whole turn.
     """
     round_timeout = _round_timeout(adapter)
-    two_stages = 2 * round_timeout
-    if two_stages > _CHAT_DEADLINE_SECONDS:
-        _warn_round_timeout_over_budget(round_timeout, two_stages)
-    return time.monotonic() + max(_CHAT_DEADLINE_SECONDS, two_stages)
+    budget = _MAX_TURN_STAGES * round_timeout
+    if round_timeout > _DEFAULT_ROUND_TIMEOUT_SECONDS:
+        _warn_round_timeout_over_budget(round_timeout, budget)
+    return time.monotonic() + max(_CHAT_DEADLINE_SECONDS, budget)
 
 
 def _warn_round_timeout_over_budget(round_timeout: float, widened: float) -> None:
-    """Report a per-call timeout too wide for the fixed turn budget, once."""
+    """Report a per-call timeout wider than the budget is sized for, once."""
     global _warned_round_timeout
     if _warned_round_timeout == round_timeout:
         return
     _warned_round_timeout = round_timeout
     logger.warning(
-        "NPC chat per-call timeout is %.1fs, so two provider stages (%.1fs) do "
-        "not fit the %.1fs turn budget; widening the budget to %.1fs. Lower "
-        "NPC_CHAT_LLM_TIMEOUT to keep a conversation round short.",
+        "NPC chat per-call timeout is %.1fs, wider than the %.1fs the turn "
+        "budget is sized around, so one conversation round may now run for up "
+        "to %.1fs (%d provider stages). Lower NPC_CHAT_LLM_TIMEOUT to keep a "
+        "round short.",
         round_timeout,
+        _DEFAULT_ROUND_TIMEOUT_SECONDS,
         widened,
-        _CHAT_DEADLINE_SECONDS,
-        widened,
+        _MAX_TURN_STAGES,
     )
 
 
@@ -593,12 +618,12 @@ _MIN_OPTION_CHARS = 5
 _MIN_TRUNCATION_KEEP_RATIO = 0.5
 
 # Bounds how many provider STAGES one player message may open — not, despite
-# the name, how long it may take. A turn composes several LLM stages (up to two
-# QC attempts, a state-guard revision, and on a legacy adapter a separate
-# options call), and each stage walks the whole provider fallback chain, so a
-# single stage can cost `chain x models x 2 x round timeout`. Nothing bounded
-# the *sum* at all, and the worst case ran well over a minute on a synchronous
-# Flask worker with the player watching a spinner.
+# the name, how long it may take. A turn composes several LLM stages (the four
+# enumerated on :data:`_MAX_TURN_STAGES`), and each stage walks the whole
+# provider fallback chain, so a single stage can cost
+# `chain x models x 2 x round timeout`. Nothing bounded the *sum* at all, and
+# the worst case ran well over a minute on a synchronous Flask worker with the
+# player watching a spinner.
 #
 # A stage is opened only while a full round timeout still fits in the remaining
 # budget (see :func:`_no_stage_budget`), so the real ceiling is this value plus
@@ -608,8 +633,9 @@ _MIN_TRUNCATION_KEEP_RATIO = 0.5
 # salvage in _run_npc_turn) rather than opening another stage.
 #
 # This is the FLOOR of the budget, not the whole rule: the per-call timeout it
-# is measured against is operator-tunable and unbounded, so :func:`_turn_deadline`
-# widens the budget to fit two calls whenever the configured timeout is large.
+# is measured against is operator-tunable and unbounded, so
+# :func:`_turn_deadline` sizes the budget at one round timeout per stage in
+# :data:`_MAX_TURN_STAGES` and takes whichever is larger.
 _CHAT_DEADLINE_SECONDS = 12.0
 
 # Meta-speech markers ("[Option 2]", "As Jean, I...") that mean the model
@@ -650,20 +676,13 @@ _JEAN_SELF_INTRO_PATTERN = re.compile(
 # or question-shaped sentence, so ordinary lore such as "Is it worth the risk?"
 # remains eligible unless the merchant is clearly being asked to sell, price, or
 # inventory something.
+#
+# The noun list is _chat_guard.MERCHANDISE — the same vocabulary that module's
+# possession tripwire reads. Spelled here independently it enumerated armour
+# nouns and no weapon nouns, so at Kaelen's arms stall (Shortsword, Spear,
+# Dagger) the canonical "How much for the sword?" was not commerce at all.
 _MERCHANT_ITEM_PATTERN = re.compile(
-    r"\b(?:armor|armour|weapons?|shields?|helmets?|buckles?|"
-    r"harness(?:es)?|cuirass(?:es)?|leather|chain|gear|wares|goods|items?)\b",
-    re.IGNORECASE,
-)
-
-# Broad vocabulary gate. The classifier below supplies the context and sentence
-# shape checks; this pattern must not itself decide that a lore question is trade.
-_MERCHANT_COMMERCE_PATTERN = re.compile(
-    r"\b(?:inventory|stock\w*|wares|merchandise|shop|for\s+sale|"
-    r"budget|discount\w*|bargain\w*|cheaper|buy\w*|sell\w*|"
-    r"purchas\w*|pay\w*|trade|price|cost|worth|value|coin|gold|"
-    r"selection|variety|assortment|haggling?|haggle|available|"
-    r"offer|carry|got)\b",
+    r"\b(?:" + _chat_guard.MERCHANDISE + r")\b",
     re.IGNORECASE,
 )
 
@@ -679,9 +698,40 @@ _MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
     r"would\s+you\s+trade|what\s+is\s+it\s+worth)\s*[?.!]*\s*$",
     re.IGNORECASE,
 )
+# Verbs a stock request is built from. They only mean "is this on your counter"
+# inside a second-person offer frame: bare, they fired on the very topics the
+# TRADE prompt block tells the model to substitute for commerce — provenance
+# ("where did you GET that leather") and maintenance ("how do you KEEP the
+# chain from rusting") — so the classifier suppressed the substitutes and let
+# the price question through.
+_MERCHANT_STOCK_VERB = r"have|carry|keep|stock|offer|sell|got"
 _MERCHANT_ITEM_REQUEST_PATTERN = re.compile(
-    r"\b(?:have|carry|keep|offer|get|got)\b|"
-    r"\b(?:available|in\s+stock|for\s+sale)\b",
+    # "do you have", "have you got any", "would you carry a lighter mail"
+    r"\b(?:do|does|did|have|has|would|will|can|could|are)\s+you\b"
+    r"(?:\s+\w+){0,3}?\s+\b(?:" + _MERCHANT_STOCK_VERB + r")\b|"
+    # "you keep any", "you sell some" — an offer frame without the auxiliary
+    r"\byou\s+(?:" + _MERCHANT_STOCK_VERB + r")\s+(?:any|anything|some)\b|"
+    r"\b(?:available|in\s+stock|for\s+sale|on\s+offer)\b",
+    re.IGNORECASE,
+)
+
+# The substitute-topic list lives in ``ai.llm_client.MERCHANT_SUBSTITUTE_TOPICS``
+# and arrives through the guarded import above, because a third copy of it sits
+# in that module's ``_MERCHANT_OPTION_RULE`` and the two had already drifted.
+# The prompt half (:meth:`_build_trade_block`) and the deterministic half (the
+# classifier below) have to agree on it: a sentence about one of these topics
+# must survive QC, or the model is punished for obeying the instruction it was
+# just given.
+
+# Interrogatives that make a stock verb a craft or provenance question instead.
+# "How do you keep the chain from rusting?" is maintenance; "Do you keep
+# spears?" is inventory. Price questions are matched by
+# _MERCHANT_PRICE_PATTERN, which runs separately, so excluding "how" here does
+# not let "How much for the sword?" through — and "how many"/"how much" are
+# excused anyway, because "How many spears do you have?" really is a stock
+# request.
+_MERCHANT_LORE_LEAD_PATTERN = re.compile(
+    r"^\W*(?:how|where|when|who|whom|whose|why)\b(?!\s+(?:many|much)\b)",
     re.IGNORECASE,
 )
 _MERCHANT_PRICE_PATTERN = re.compile(
@@ -692,10 +742,34 @@ _MERCHANT_PRICE_PATTERN = re.compile(
     r"\b(?:does|do|would|will|can)\s+(?:it|the|this|that|these|those|any)\s+cost\s+(?:more|less|extra)\b",
     re.IGNORECASE,
 )
-_MERCHANT_GOLD_ALLOWANCE_PATTERN = re.compile(
-    r"\bhow\s+much\s+(?:gold|coin)\s+(?:should|would|will|can)\b",
+# "How much gold should I bring?" — an actionable purchasing amount rather
+# than the price of a named thing. Interpolated into the item-less pattern
+# below rather than spelled twice: it used to be a compiled constant nothing
+# read, plus a literal copy inside the classifier.
+_MERCHANT_GOLD_ALLOWANCE = (
+    r"\bhow\s+much\s+(?:gold|coin)\s+(?:should|would|will|can)\b"
+)
+
+# "Anything available?" — a stock request that never names a thing.
+_MERCHANT_ANY_AVAILABLE_PATTERN = re.compile(
+    r"\b(?:any|anything|something)\s+available\b",
     re.IGNORECASE,
 )
+
+# Trade with no item named. Deliberately narrow: without a noun to anchor it,
+# only an explicit purchasing amount or an offer fragment counts. "gold in"/
+# "coin in" is excluded — it reads as ordinary lore ("the gold in this region")
+# far more often than as an offer, unlike "gold for" ("less coin for the
+# buckles").
+_MERCHANT_ITEMLESS_TRADE_PATTERN = re.compile(
+    r"\b(?:does|do|would|will|can)\s+it\s+cost\b|"
+    r"\b(?:what|which)\s+(?:is|are)\s+it\s+worth\b|"
+    + _MERCHANT_GOLD_ALLOWANCE + r"|"
+    r"\b(?:coin|gold)\s+for\b|"
+    r"\b(?:pay|paid|paying)\s+(?:for|in)\b",
+    re.IGNORECASE,
+)
+
 _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
     r"\b(?:looking|want|need)\s+to\s+(?:buy|sell)\b|"
     r"\b(?:your|the)\s+(?:selection|variety|assortment)\s+of\b|"
@@ -774,6 +848,13 @@ def scale_loquacity(value: int) -> int:
 #: host that is inspected (or persisted) before then never carries an old-scale
 #: number.
 _DEFAULT_LOQUACITY_RECOVERY = scale_loquacity(2)
+
+#: The attribute on ``src.player.Player`` that holds Jean's travelling party.
+#: Named rather than spelled inline so a test can assert the real Player still
+#: has it: this was ``allies``, an attribute no Player has ever carried, which
+#: made the Gorran loquacity bonus below permanently zero in the game and
+#: reachable only from a test double that invented the attribute.
+_PARTY_ATTR = "combat_list_allies"
 
 #: Pre-scale floors, kept as the numbers the design was written in so the scaling
 #: rule is visible at the one place it is applied.
@@ -898,6 +979,52 @@ _BRUSH_OFF_LINES = (
     "A brief shake of the head.",
     "Not now.",
 )
+
+
+def _validate_restored_personality(raw: Any) -> Optional[Dict[str, Any]]:
+    """Re-check a save-restored personality seed, or ``None`` if unusable.
+
+    ``NpcChatLLMAdapter._validate_personality`` is the one definition of a
+    usable seed: every field type-checked, the three strings neutralised and
+    length-capped, ``attitude_to_strangers`` confined to the four the prompt
+    offers, ``loquacity_base`` clamped to its bounds. It lives on the adapter
+    because that is where seeds are generated; it is *reached* from here
+    through the same shared module loader :meth:`_get_adapter` uses, rather
+    than re-implemented, because a second copy of this rule would drift the way
+    the merchant vocabulary above did.
+
+    ``None`` is also returned when the AI stack is not importable. That is not
+    a hole: a box without ``ai.llm_client`` cannot have generated a seed in the
+    first place, and the caller's fallback is the hand-written
+    :data:`_GENERIC_FALLBACKS` pool, which is authored rather than restored.
+    """
+    if not isinstance(raw, dict):
+        logger.warning("Saved personality is %s, not a mapping.", type(raw).__name__)
+        return None
+    module = _load_llm_client_module(_AI_DIR / "llm_client.py")
+    validate = getattr(
+        getattr(module, "NpcChatLLMAdapter", None), "_validate_personality", None
+    )
+    if not callable(validate):
+        logger.warning(
+            "ai.llm_client is unavailable, so a saved personality cannot be "
+            "validated; falling back to an authored one."
+        )
+        return None
+    required = getattr(module, "_PERSONALITY_FIELDS", frozenset())
+    if not required.issubset(raw.keys()):
+        logger.warning(
+            "Saved personality is missing %s.", sorted(set(required) - set(raw))
+        )
+        return None
+    try:
+        return validate(raw)
+    except Exception as e:  # a hand-edited save must never break loading a game
+        logger.warning(
+            "Saved personality failed validation (%s: %s).", type(e).__name__, e
+        )
+        return None
+
 
 # Generic nomad fallbacks (selected via a stable crc32 digest, not the
 # built-in hash(), so the pick is deterministic across process restarts)
@@ -1176,8 +1303,14 @@ class ConversationalNPCMixin:
             else 0
         )
 
-        # Party check (Gorran in allies)
-        allies = getattr(player, "allies", [])
+        # Party check (Gorran travelling with Jean). The attribute is
+        # ``combat_list_allies`` — the party list ``src/player.py`` actually
+        # defines and ``src/api/combat_adapter.py`` reads throughout. This was
+        # ``player.allies``, which nothing in src/ has ever set, so the modifier
+        # was structurally unreachable and every test that "covered" it fed the
+        # double an attribute the real Player does not have. The list's first
+        # entry is the player himself; the name check skips him harmlessly.
+        allies = getattr(player, _PARTY_ATTR, None) or []
         party_mod = 10 if any(getattr(a, "name", "") == "Gorran" for a in allies) else 0
 
         unscaled_max = max(
@@ -1233,7 +1366,18 @@ class ConversationalNPCMixin:
         return self._chat_npc_key
 
     def _load_history_from_persistence(self, player):
-        """Load chat history and personality from player persistence."""
+        """Load chat history and personality from player persistence.
+
+        A restored personality is re-validated rather than trusted. It reaches
+        this method out of a save file, and it is spliced verbatim into every
+        later system prompt by :meth:`_build_character_block` — so a hand-edited
+        or corrupted save was, until this check, a permanent prompt injection
+        and a permanent crash source ("knowledge": "a string" makes
+        ``", ".join(...)`` spell the value out one character at a time).
+        Generation-time validation already refuses exactly these shapes; the
+        restore path skipped it, which meant the only value in the system that
+        outlives the process was the one value nobody checked.
+        """
         hists = getattr(player, "npc_chat_histories", {})
         key = self._chat_npc_key
         if not key or key not in hists:
@@ -1241,8 +1385,18 @@ class ConversationalNPCMixin:
 
         entry = hists[key]
         self._chat_history = entry.get("exchanges", [])
-        if "personality" in entry and entry["personality"]:
-            self._chat_personality = entry["personality"]
+        if entry.get("personality"):
+            restored = _validate_restored_personality(entry["personality"])
+            if restored is None:
+                # _ensure_personality's deterministic pool is a better character
+                # than a half-invented one, and it is what an NPC with no saved
+                # personality gets anyway.
+                logger.warning(
+                    "Discarding an unusable saved personality for npc_key=%s; "
+                    "the deterministic fallback will be used instead.",
+                    key,
+                )
+            self._chat_personality = restored
 
         # Use None (absent) rather than 0 as the "never persisted" sentinel —
         # a persisted 0 (patience exhausted) must be restored as 0, not
@@ -1403,8 +1557,8 @@ class ConversationalNPCMixin:
             "TRADE: Buying, selling, and stock belong to the shop interface, not "
             "conversation. Do not ask Jean what he wants to buy, quote or negotiate "
             "a price, ask about his budget, list inventory or wares, or make a purchase "
-            "promise. If commerce comes up, steer toward craft, fit, maintenance, "
-            "provenance, or general lore instead."
+            "promise. If commerce comes up, steer toward "
+            + MERCHANT_SUBSTITUTE_TOPICS + " instead."
         )
 
     def _build_system_prompt(self, player) -> str:
@@ -2056,6 +2210,7 @@ class ConversationalNPCMixin:
 
         has_item = bool(_MERCHANT_ITEM_PATTERN.search(text))
         lore_frame = self._is_lore_frame(text)
+        stock_request = self._is_stock_request(text)
 
         # In a lore frame, only block if the sentence is still clearly a shop
         # transaction. "That old cuirass has seen three wars." stays chat; "How
@@ -2063,7 +2218,7 @@ class ConversationalNPCMixin:
         if has_item and lore_frame:
             if _MERCHANT_PRICE_PATTERN.search(text):
                 return True
-            if _MERCHANT_ITEM_REQUEST_PATTERN.search(text):
+            if stock_request:
                 return True
             if _MERCHANT_TRANSACTION_PATTERN.search(text):
                 return True
@@ -2076,18 +2231,14 @@ class ConversationalNPCMixin:
         # These short forms are common inventory questions even without an item.
         if _MERCHANT_STOCK_REQUEST_PATTERN.search(text):
             return True
-        if re.search(
-            r"\b(?:any|anything|something)\s+available\b",
-            text,
-            re.IGNORECASE,
-        ):
+        if _MERCHANT_ANY_AVAILABLE_PATTERN.search(text):
             return True
 
         # An item combined with a request, price, or transaction verb is a shop
         # question. Do not confuse craft questions such as "How does leather
         # compare with chain?" with a transaction just because an item is named.
         if has_item:
-            if _MERCHANT_ITEM_REQUEST_PATTERN.search(text):
+            if stock_request:
                 return True
             if _MERCHANT_PRICE_PATTERN.search(text):
                 return True
@@ -2095,24 +2246,31 @@ class ConversationalNPCMixin:
                 return True
 
         # Price/cost forms without an item are only blocked when they explicitly
-        # ask for an item's price or an actionable purchasing amount. "gold in"/
-        # "coin in" is deliberately excluded from the offer fragment below — it
-        # reads as ordinary lore ("the gold in this region") far more often than
-        # as an offer, unlike "gold for" ("less coin for the buckles").
-        if re.search(
-            r"\b(?:does|do|would|will|can)\s+it\s+cost\b|"
-            r"\b(?:what|which)\s+(?:is|are)\s+it\s+worth\b|"
-            r"\bhow\s+much\s+(?:gold|coin)\s+(?:should|would|will|can)\b|"
-            r"\b(?:coin|gold)\s+for\b|"
-            r"\b(?:pay|paid|paying)\s+(?:for|in)\b",
-            text,
-            re.IGNORECASE,
-        ):
+        # ask for an item's price or an actionable purchasing amount.
+        if _MERCHANT_ITEMLESS_TRADE_PATTERN.search(text):
             return True
 
-        if _MERCHANT_DIRECT_TRADE_PATTERN.search(text):
-            return has_item
-        return False
+        # "What are you looking to buy?", "your selection of buckles",
+        # "haggling over the mail" — every alternative of this pattern names the
+        # transaction outright, so none of them needs a noun to confirm it. It
+        # used to return ``has_item``, which is why the first string this
+        # feature's own test docstring names as its target ("What are you
+        # looking to buy?") was never suppressed: "buy" is not an item.
+        return bool(_MERCHANT_DIRECT_TRADE_PATTERN.search(text))
+
+    @staticmethod
+    def _is_stock_request(text: str) -> bool:
+        """True when the sentence asks whether something is on the counter.
+
+        The verb frame alone is not enough. "Where did you get that leather?"
+        and "How do you keep the chain from rusting?" are provenance and
+        maintenance — two of the five topics :meth:`_build_trade_block` tells
+        the model to raise *instead* of commerce — so a manner or provenance
+        interrogative disqualifies the frame.
+        """
+        if _MERCHANT_LORE_LEAD_PATTERN.search(text):
+            return False
+        return bool(_MERCHANT_ITEM_REQUEST_PATTERN.search(text))
 
     def _is_lore_frame(self, text: str) -> bool:
         """True when the sentence reads as history, ritual, or biography."""
@@ -2153,6 +2311,20 @@ class ConversationalNPCMixin:
             )
         return FilterResult(cleaned, None, True)
 
+    #: Every content-filter stage, in the order it runs. The registration, not
+    #: a description of one: :meth:`_apply_content_filters` resolves these off
+    #: ``self`` and runs them all, and the prose that used to enumerate them
+    #: said "three stages" while the tuple held four. Nothing rots silently now
+    #: — ``tests/test_npc_chat_qc_hardening.py`` rediscovers the stages by
+    #: signature (``(self, text, allow_rewrite) -> FilterResult``) and fails if
+    #: this tuple and the class disagree in either direction.
+    _CONTENT_FILTER_STAGES = (
+        "_qc_invented_nouns",
+        "_qc_slang",
+        "_qc_prohibited",
+        "_qc_merchant_commerce",
+    )
+
     def _apply_content_filters(self, text: str, allow_rewrite: bool) -> FilterResult:
         """Run the content filters in order, stopping at the first rejection.
 
@@ -2160,17 +2332,12 @@ class ConversationalNPCMixin:
         carry a reduced copy of this and had drifted three ways — most of all,
         it skipped the prohibited-phrase patterns entirely, so a phrase a
         character must never say was blocked in the spoken line and printed in
-        the beat right beside it. Every caller therefore runs all three stages;
-        there is no way to opt out of the prohibited-phrase pass, because
-        wanting to is what caused the drift.
+        the beat right beside it. Every caller therefore runs every stage in
+        :data:`_CONTENT_FILTER_STAGES`; there is no way to opt out of the
+        prohibited-phrase pass, because wanting to is what caused the drift.
         """
         rewrote = False
-        stages = (
-            self._qc_invented_nouns,
-            self._qc_slang,
-            self._qc_prohibited,
-            self._qc_merchant_commerce,
-        )
+        stages = tuple(getattr(self, name) for name in self._CONTENT_FILTER_STAGES)
         for stage in stages:
             text, reason, stage_rewrote = stage(text, allow_rewrite)
             rewrote = rewrote or stage_rewrote
@@ -2350,6 +2517,14 @@ class ConversationalNPCMixin:
         # word boundary and then adding a period manufactured a sentence the
         # model never finished ("She sets down the ledger and looks at the.").
         flavor = " ".join(self._split_dropping_dangling_fragment(flavor))
+        # Containment, at the same point in the pipeline the spoken line gets it
+        # (see :meth:`_qc_normalise_sentences`). This was the one model-authored
+        # channel with no neutralisation gate at all: the beat is model text
+        # that reaches the player's screen through the chat payload, and a
+        # surviving ``</player_input>``, C0 escape or ANSI sequence forges
+        # structure just as well from npc_flavor as from npc_text.
+        # ``neutralise_model_text`` subsumes the whitespace collapse.
+        flavor = neutralise_model_text(flavor)
         if not _has_real_npc_text(flavor):
             return ""
         flavor = _ensure_terminal_punctuation(flavor)

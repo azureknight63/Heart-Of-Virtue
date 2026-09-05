@@ -77,9 +77,10 @@ def main():
 
     # Run
     port = int(os.environ.get("PORT", 5000))
-    # app.config, not config.DEBUG: _apply_runtime_config overlays the
-    # environment-backed settings onto app.config, which is what the app
-    # itself honours. Reading the class attribute bypasses that overlay.
+    # app.config, not config.DEBUG. The two agree today -- `runtime_config()`
+    # has no DEBUG branch, so nothing overlays it -- and this reads the value
+    # the app is actually running with rather than the one its config class was
+    # declared with, so it keeps agreeing if that ever stops being true.
     debug = app.config["DEBUG"]
 
     # 127.0.0.1 by default. With debug=True, run_simple wraps the app in

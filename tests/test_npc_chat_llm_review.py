@@ -272,7 +272,25 @@ class TestLoquacityRecovery:
             "loquacity_scale": 15,
         }
 
-    def test_old_scale_exhausted_value_stays_zero(self):
+    def test_old_scale_exhausted_value_scales_to_zero_then_recovers(self):
+        """Scaling rounds an exhausted value to 0; the tick then lifts it to 1.
+
+        Two separate claims, and the end state distinguishes them: had the
+        rescale rounded 0 up to 1, recovery would land on 2. So asserting 1
+        still pins the original intent of this test -- that the migration does
+        not invent conversation out of an exhausted NPC.
+
+        What changed is the second half. This previously asserted 0, codifying
+        an undocumented ``loq_cur > 0`` guard that made recovery skip exhausted
+        entries entirely, leaving the NPC below ``loquacity_threshold`` for the
+        life of the save. Three things say that was not intended:
+        ``loquacity_tick``, which this function's docstring says it mirrors,
+        does not special-case 0; ``_chat_llm.py:749-751`` says in as many words
+        that a recovery reaching 0 "would leave an exhausted NPC permanently
+        mute"; and the guard carried no comment. Permanent muteness is a
+        player-facing defect, not a budget.
+        """
+
         svc = self._service()
         player = MagicMock()
         player.__dict__["_active_chat_npc_id"] = None
@@ -285,7 +303,7 @@ class TestLoquacityRecovery:
         }
         svc._recover_npc_loquacity(player)
         assert player.npc_chat_histories["Mara"] == {
-            "loquacity_current": 0,
+            "loquacity_current": 1,
             "loquacity_max": 12,
             "loquacity_recovery": 1,
             "loquacity_scale": 15,

@@ -803,7 +803,7 @@ def _restore_os_environ():
 # fire just does not, in the one situation it was written for.
 #
 # ``ai/combat_strategist.py``'s ``HeatBand`` is the live instance (four tables,
-# one of them deliberately partial); ``src/npc/_state_guard.py``'s category
+# one of them deliberately partial); ``src/npc/_chat_guard.py``'s category
 # tables were the previous one. Each round closed its own instance with its own
 # bespoke test, which is how there came to be four of them.
 #

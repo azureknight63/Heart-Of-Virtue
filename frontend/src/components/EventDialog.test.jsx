@@ -603,7 +603,7 @@ describe('EventDialog', () => {
     const damageEvent = { ...mockEvent, needs_input: false, output_text: 'Jean suffers 12 damage!' };
     const SPEED_MS = 25; // EventDialog's speed={25}
     // The tick on which the final character of the damage line lands.
-    const REVEAL_MS = 'Jean suffers 12 damage!'.length * SPEED_MS;
+    const REVEAL_MS = damageEvent.output_text.length * SPEED_MS;
     // handleDamageHit's own removal delay.
     const REMOVAL_MS = 500;
     const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });

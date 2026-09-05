@@ -73,7 +73,7 @@ def _ensure_background_services_started(app):
     services are individually idempotent — ``start_digest_scheduler()`` latches
     every terminal branch, including the unconfigured ones, and ``prewarm()``
     claims its attempt under a lock — so re-entering them is cheap. Reaching
-    them is not: ``from ai.llm_client import ...`` pulls in a 3000-line module
+    them is not: ``from ai.llm_client import ...`` pulls in a large module
     that imports ``requests`` and calls ``load_project_env()``, and an
     unlatched route would pay that import lookup plus two function calls on the
     request thread for the rest of the process's life.

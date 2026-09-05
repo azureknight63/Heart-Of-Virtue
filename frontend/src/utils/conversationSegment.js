@@ -27,6 +27,16 @@
  * The Python producer is not ours to edit from here; when a field is added
  * there it belongs in this typedef too.
  *
+ * TWO IMPORT PATHS, ON PURPOSE
+ * ----------------------------
+ * `npcCast` and `JEAN_ID` are also re-exported by hooks/useNpcChat.js, so
+ * there are two spellings of the same import and the choice is not free. The
+ * rule: anything in the LIVE CHAT — the panel, the hook, their suites —
+ * imports them from the hook, which is already its one import for that
+ * vocabulary; everything else (the stage, the transcript, this module's own
+ * tests) imports from here. Adding a symbol to the barrel means the live chat
+ * needs it; nothing else should reach through the hook to get at this module.
+ *
  * @typedef {Object} ConversationSegment
  * @property {string}  text            The spoken (or narrated) line.
  *   Honoured by: stage (typed out a character at a time), transcript,

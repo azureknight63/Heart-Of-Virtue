@@ -23,18 +23,22 @@ copies:
 import logging
 import os
 from datetime import timedelta
+from typing import Any, Dict, Optional, Type
 
 _log = logging.getLogger(__name__)
 
 # Environment values that mean "off". The empty string is included: an
 # exported-but-blank variable is an operator saying nothing, not "on". This
-# tuple exists because two copies of it, 87 lines apart, had already diverged
-# on precisely that entry — so an empty value was False for one flag and True
-# for another.
+# tuple exists because there used to be two copies of the list, a dozen lines
+# apart, and they had already diverged on precisely that entry — so an empty
+# value was False for the COMBAT_SOCKET_STREAMING read and True for the
+# FLASK_DEBUG one. ``"off"`` is in neither of those copies: it is added here
+# because a single shared list should accept the spellings an operator actually
+# writes, rather than the union of two accidents.
 _FALSEY_ENV_VALUES = ("0", "false", "no", "off", "")
 
 
-def _env_flag(name, default=False):
+def _env_flag(name: str, default: bool = False) -> bool:
     """Read ``name`` as a boolean. Unset falls back to ``default``."""
     raw = os.environ.get(name)
     if raw is None:
@@ -42,13 +46,13 @@ def _env_flag(name, default=False):
     return raw.strip().lower() not in _FALSEY_ENV_VALUES
 
 
-def normalized_env(env=None):
+def normalized_env(env: Optional[str] = None) -> str:
     """The comparable form of ``FLASK_ENV`` (stripped, lowercased)."""
     raw = env if env is not None else os.environ.get("FLASK_ENV", "development")
     return (raw or "").strip().lower()
 
 
-def combat_socket_streaming_enabled():
+def combat_socket_streaming_enabled() -> bool:
     """Read the server-owned combat streaming switch.
 
     Kept as a module-level function (rather than folded into
@@ -106,7 +110,7 @@ class Config:
     COMBAT_SOCKET_STREAMING = False
 
     @classmethod
-    def _pinned_by_subclass(cls, key):
+    def _pinned_by_subclass(cls, key: str) -> bool:
         """True when a subclass (not ``Config`` itself) hard-codes ``key``.
 
         ``DevelopmentConfig.DEBUG = True`` and ``ProductionConfig.
@@ -123,7 +127,7 @@ class Config:
         return False
 
     @classmethod
-    def runtime_config(cls):
+    def runtime_config(cls) -> Dict[str, Any]:
         """Read the environment-backed settings, at ``create_app()`` time.
 
         Returns a dict to overlay onto ``app.config``. Keys a subclass pins
@@ -194,7 +198,7 @@ _CONFIG_BY_ENV = {
 }
 
 
-def config_for_env(env=None):
+def config_for_env(env: Optional[str] = None) -> Type[Config]:
     """Return the config class for ``env`` (defaults to ``FLASK_ENV``).
 
     Both process entry points (``tools/run_api.py``, ``wsgi.py``) call this so

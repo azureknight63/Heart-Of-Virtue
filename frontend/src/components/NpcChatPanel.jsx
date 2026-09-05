@@ -379,9 +379,11 @@ function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onE
 /**
  * NpcChatPanel - A full NPC conversation UI component
  *
- * @param {string} npcId - NPC class name (e.g., 'Mynx', 'Gorran')
- * @param {string} npcName - Display name shown in header
- * @param {function} onClose - Callback when conversation ends or user closes
+ * @param {Object} props
+ * @param {string} props.npcId - NPC class name (e.g., 'Mynx', 'Gorran')
+ * @param {string} props.npcName - Display name shown in header
+ * @param {Function} props.onClose - Callback when conversation ends or user
+ *   closes
  */
 export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -401,9 +403,11 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     cancelAutoClose,
   } = useNpcChat(npcId, npcName, onClose)
 
-  // Opening the transcript suspends the "conversation ended" auto-close: the
+  // Opening the transcript CANCELS the "conversation ended" auto-close: the
   // player is reading the log, and the panel closing out from under them takes
-  // it with it. Dismissing the transcript resumes the close it suspended.
+  // it with it. Dismissing the transcript then closes immediately rather than
+  // re-arming the 2s delay — the delay exists to let the player read the last
+  // line, and they have just finished reading the whole transcript.
   const handleOpenHistory = () => {
     cancelAutoClose()
     setHistoryOpen(true)
@@ -416,19 +420,20 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
   const loquacityPercentage = loquacity.max > 0 ? (loquacity.current / loquacity.max) * 100 : 0
 
-  // The stage only ever shows the newest beat, which used to make Jean's own
-  // line vanish the moment the NPC answered it. The recap strip keeps the turn
-  // immediately before the current one on screen so the reply always has its
-  // question next to it; everything older lives in the history dialog.
-  // conversationCast is only null before the first `open()` response lands,
-  // so the fallback is memoized rather than rebuilt (a new array) every
-  // render once the real cast has already taken over.
+  // conversationCast is only null before the first `open()` response lands, so
+  // the fallback is memoized rather than rebuilt (a new array) every render
+  // once the real cast has already taken over.
   const fallbackCast = useMemo(() => npcCast(npcId, displayName), [npcId, displayName])
   const cast = conversationCast || fallbackCast
   // ConversationStage is React.memo'd; an object literal here would defeat that
   // on every render, which is exactly what memoizing `fallbackCast` above was
   // for. The wrapper object has to be memoized too, not just its contents.
   const conversationProp = useMemo(() => ({ cast }), [cast])
+
+  // The stage only ever shows the newest beat, which used to make Jean's own
+  // line vanish the moment the NPC answered it. The recap strip keeps the turn
+  // immediately before the current one on screen so the reply always has its
+  // question next to it; everything older lives in the history dialog.
   const previousSegment =
     conversationSegments.length > 1
       ? conversationSegments[conversationSegments.length - 2]
@@ -504,6 +509,12 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       {/* Options */}
       {phase === CHAT_PHASES.WAITING_JEAN && !error && (
         <div
+          // Named so a test can ask for Jean's dialogue options as a set. The
+          // panel's other buttons (View History, End Conversation, Retry) carry
+          // the same GameButton testid, and identifying options by EXCLUDING
+          // those three labels meant the next button added anywhere in the
+          // panel would silently enrol itself as a dialogue option.
+          data-testid="npc-chat-options"
           style={{
             display: 'flex',
             flexDirection: 'column',

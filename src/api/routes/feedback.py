@@ -91,6 +91,18 @@ _GITHUB_ACTIVATORS = re.compile(
 # cats the issue) and the rest are not.
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
+# Whitespace runs inside a *label*. Newline, tab and carriage return survive
+# :data:`_CONTROL_CHARS` on purpose, because a bug report's *body* is prose and
+# needs them. A username is not prose: it is interpolated into one line of that
+# body, and a newline there ends the line and hands whatever follows the
+# document's own structure. None of the character-class scrubs sees it, because
+# the forgery is in the line breaks rather than in any sigil — "jean\n---"
+# renders "jean" as a setext heading, and the rest of the username then reads
+# as free-standing template text (blockquote, table, list, "Maintainer note:").
+# `AuthService.create_user` validates a username on length alone, so such a
+# name is registrable.
+_LABEL_WHITESPACE = re.compile(r"\s+")
+
 
 def _neutralise_github_markup(text: str) -> str:
     """Defuse the GitHub markup that *acts*, leaving prose readable.
@@ -362,8 +374,19 @@ def submit_feedback():
         # length alone, so `@azureknight63` is registrable and reached the
         # attribution line of every non-anonymous issue as a live mention.
         # It strips control characters from the label as well.
+        # `_LABEL_WHITESPACE` runs *before* `_neutralise_github_markup`, not
+        # after: that pass appends U+200B, which is not in `\s`, but relying on
+        # that would make the order look interchangeable when it is not.
         username = _neutralise_github_markup(
-            _MARKDOWN_UNSAFE.sub("", getattr(session, "username", "Unknown Player"))
+            _LABEL_WHITESPACE.sub(
+                " ",
+                _MARKDOWN_UNSAFE.sub(
+                    "", getattr(session, "username", "Unknown Player")
+                ),
+            ).strip()
+            # A name that was nothing but whitespace and markdown sigils
+            # collapses to "", which renders as an empty bolded label.
+            or "Unknown Player"
         )
 
         data = request.get_json(silent=True) or {}
@@ -375,9 +398,9 @@ def submit_feedback():
         # GitHub renders an issue *title* as plain text — no markdown, no
         # autolinks — so the `_MARKDOWN_UNSAFE` scrub here is tidiness and
         # defence in depth, NOT the thing standing between a title and a live
-        # mention. (The comment that used to sit here claimed otherwise. A
-        # title cannot carry a mention or a cross-reference in the first
-        # place, which is why no `_neutralise_github_markup` pass is added.)
+        # mention. A title cannot carry a mention or a cross-reference in the
+        # first place, which is why no `_neutralise_github_markup` pass is
+        # added.
         #
         # `_CONTROL_CHARS` is a different matter, and its absence here was a
         # real asymmetry: field *bodies* have had ESC and friends stripped

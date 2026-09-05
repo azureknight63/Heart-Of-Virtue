@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import PortraitImage from './PortraitImage'
-import { castMember } from './ConversationTranscript'
+import { castMember, STAGE_PORTRAIT_WIDTH_VAR } from './ConversationTranscript'
 import { DEFAULT_EMOTION } from '../utils/conversationSegment'
 import { colors, spacing, fonts, commonStyles } from '../styles/theme'
 
@@ -165,7 +165,7 @@ function Portrait({ member, isSpeaker, wide = false }) {
                     // including its mobile override) so it isn't duplicated
                     // here with a competing inline value. The default layout's
                     // width reads the same custom property the CSS clamp does.
-                    width: wide ? undefined : 'var(--stage-portrait-width)',
+                    width: wide ? undefined : `var(${STAGE_PORTRAIT_WIDTH_VAR})`,
                     height: 'auto',
                     borderRadius: '6px',
                     border: `2px solid ${isSpeaker ? colors.secondary : colors.border.light}`,
@@ -355,13 +355,14 @@ function StageDialogueCard({
  * deliberately reads only the four per-line fields. That module is where a new
  * field gets declared.
  *
- * @param {import('../utils/conversationSegment').ConversationSegment[]} segments
+ * @param {Object} props
+ * @param {import('../utils/conversationSegment').ConversationSegment[]} props.segments
  *   - ordered beats from the event payload
- * @param {Object}   conversation - { cast: [...] } initial roster (optional)
- * @param {Function} onComplete - called once after the final beat is revealed (never in `"live"` mode)
- * @param {number}   [speed]    - typewriter speed (ms/char)
- * @param {'authored'|'live'} [mode] - interactive+hinted+from-beat-0, or non-interactive+tail-following
- * @param {'default'|'wide'} [layout] - layout density for the conversation stage
+ * @param {?Object} props.conversation - { cast: [...] } initial roster (optional)
+ * @param {Function} props.onComplete - called once after the final beat is revealed (never in `"live"` mode)
+ * @param {number} [props.speed] - typewriter speed (ms/char)
+ * @param {'authored'|'live'} [props.mode] - interactive+hinted+from-beat-0, or non-interactive+tail-following
+ * @param {'default'|'wide'} [props.layout] - layout density for the conversation stage
  */
 function ConversationStage({
     segments = [],

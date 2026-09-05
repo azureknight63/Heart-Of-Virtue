@@ -381,17 +381,18 @@ class CombatantSerializer:
         guard. ANY move that hits for more or less than its user's raw damage
         must override it — that is not a ``TelegraphedSurge`` privilege. Most
         of the declarations in src/moves/_npc.py are on plain ``Move``
-        subclasses (GorranClub, VenomClaw, SpiderBite, BatBite, SeismicSlam,
-        TwinFangs), so an audit that only looks at the surge family will miss
-        them and leave a new heavy move understating itself at 1.0.
+        subclasses (NpcAttack, GorranClub, VenomClaw, SpiderBite, BatBite,
+        SeismicSlam, TwinFangs), so an audit that only looks at the surge
+        family will miss them and leave a new heavy move understating itself
+        at 1.0.
 
         Two ways to declare it, both in src/moves/_npc.py:
           * a move with a fixed factor states it outright (SlimeVolley,
             TidalSurge, WailStrike, SeismicSlam, TwinFangs);
           * a move that rolls a range declares ``_POWER_ROLL_MIN``/``_MAX``
             and derives this as their midpoint, so retuning the roll moves
-            the wire value with it (GorranClub, VenomClaw, SpiderBite,
-            BatBite).
+            the wire value with it (NpcAttack, GorranClub, VenomClaw,
+            SpiderBite, BatBite).
         Either way the number is a MIDPOINT on the user's raw damage, never a
         ceiling: the surge family's factor is applied on top of a power
         ``NpcAttack.evaluate`` has already rolled through ``uniform(0.8,

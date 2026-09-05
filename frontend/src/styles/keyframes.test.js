@@ -4,19 +4,24 @@ import {
     animationNamesIn,
     stripComments,
     describeUnresolved,
+    describeShadowed,
     readSourceFiles,
 } from '../test/keyframeAudit'
 
 /**
  * Every animation name used in `src` must resolve to a `@keyframes` that is
- * actually reachable from where it is used.
+ * actually reachable from where it is used, and no name a global stylesheet
+ * owns may be declared a second time anywhere.
  *
- * This replaces four separate one-at-a-time fixes (`blink`, `pulse`, `fadeIn`,
- * and a `spin` that only worked by accident of a Tailwind class sitting on the
- * same element). Keyframe names are document-global, so a component-local
- * `<style>` block both shadows other declarations of that name and, worse,
- * appears to define a name for the whole app while actually only defining it
- * while that component is mounted.
+ * This replaces four separate one-at-a-time fixes, and it takes both halves to
+ * replace all four. Keyframe names are document-global, so a component-local
+ * `<style>` block fails in two opposite ways: it appears to define a name for
+ * the whole app while actually only defining it while that component is
+ * mounted (`fadeIn`, and a `spin` that only worked by accident of a Tailwind
+ * class sitting on the same element — caught by `unresolved`), and it shadows
+ * the global declaration of a name it does NOT own (`blink`, `pulse` — caught
+ * by `shadowed`, and invisible to `unresolved`, because a redeclared name
+ * still resolves).
  *
  * The scan is static because it has to be: jsdom loads no stylesheets, so
  * nothing rendered in this suite can tell "CSS supplied it" from "it was never
@@ -43,6 +48,15 @@ describe('animation names resolve to a reachable @keyframes', () => {
         expect(audit.unresolved, describeUnresolved(audit.unresolved)).toEqual([])
     })
 
+    it('no name a global stylesheet declares is declared a second time', () => {
+        // The `blink`/`pulse` half. Both were declared in index.css AND
+        // redeclared in a component `<style>` block, which made the component's
+        // copy win app-wide for as long as it was mounted. The assertion above
+        // cannot see this — a redeclared name still resolves everywhere — so
+        // this is the check that actually closes those two bugs.
+        expect(audit.shadowed, describeShadowed(audit.shadowed)).toEqual([])
+    })
+
     it('no animation name is assembled from an interpolated variable', () => {
         // A name built at runtime cannot be checked by any static scan, so it
         // would be a permanent blind spot in the guard above. Interpolating the
@@ -51,7 +65,12 @@ describe('animation names resolve to a reachable @keyframes', () => {
         expect(audit.interpolated).toEqual([])
     })
 
-    it('names a component-local <style> block declares are visible only to that file', () => {
+    it('a name declared only in component <style> blocks is declared in exactly one of them', () => {
+        // Visibility — that such a name is not used from anywhere else — is the
+        // `unresolved` case above. What is left to check is that no two
+        // components declare the same one, which `shadowed` deliberately does
+        // not cover (it is scoped to names a global stylesheet owns).
+        //
         // The remaining injectors (GameOverScreen, HeroPanel, ToastContext,
         // InteractPanel) are legitimate ONLY because each uses the name it
         // declares. This asserts the containment rather than trusting it: if a
@@ -94,6 +113,50 @@ describe('the audit itself fails when it should', () => {
         expect(unresolved[0].name).toBe('borrowed')
         expect(unresolved[0].declaredElsewhereIn).toEqual(['components/Owner.jsx'])
         expect(describeUnresolved(unresolved)).toContain('not visible unless that component is mounted')
+    })
+
+    it('reports a component that REDECLARES a name a global stylesheet owns', () => {
+        // Exactly the `blink`/`pulse` bug, and the case the resolution check
+        // is blind to: `unresolved` is empty here, because the component's own
+        // declaration resolves its own usage and index.css resolves everyone
+        // else's. Only the declaration count says anything is wrong.
+        const { unresolved, shadowed } = auditKeyframes([
+            { path: 'styles/index.css', content: '@keyframes pulse { to { opacity: 1 } }' },
+            {
+                path: 'components/Shadower.jsx',
+                content: "const s = { animation: 'pulse 1s' }\n"
+                    + '<style>{`@keyframes pulse { to { opacity: 0.5 } }`}</style>',
+            },
+        ])
+
+        expect(unresolved).toEqual([])
+        expect(shadowed).toEqual([
+            { name: 'pulse', paths: ['styles/index.css', 'components/Shadower.jsx'] },
+        ])
+        expect(describeShadowed(shadowed)).toContain('styles/index.css AND components/Shadower.jsx')
+    })
+
+    it('reports a stylesheet that declares the same name twice', () => {
+        const { shadowed } = auditKeyframes([
+            {
+                path: 'styles/index.css',
+                content: '@keyframes drift { to { opacity: 1 } }\n@keyframes drift { to { opacity: 0 } }',
+            },
+        ])
+
+        expect(shadowed.map((s) => s.name)).toEqual(['drift'])
+    })
+
+    it('does not call two component-local declarations shadowing', () => {
+        // Not this check's job: no global declaration is being overridden, and
+        // the localOnly case in the suite above already rejects the shape. Two
+        // overlapping rules that both fire would make either one unremovable.
+        const { shadowed } = auditKeyframes([
+            { path: 'components/A.jsx', content: "const s = { animation: 'own 1s' }\n<style>{`@keyframes own { to { opacity: 1 } }`}</style>" },
+            { path: 'components/B.jsx', content: "const s = { animation: 'own 1s' }\n<style>{`@keyframes own { to { opacity: 0 } }`}</style>" },
+        ])
+
+        expect(shadowed).toEqual([])
     })
 
     it('accepts a name the same file declares, and one a global stylesheet declares', () => {

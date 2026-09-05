@@ -3881,15 +3881,25 @@ class GameService:
                     entry["loquacity_current"] = loq_cur
                     entry["loquacity_max"] = loq_max
                     entry["loquacity_recovery"] = recovery
-                if loq_cur > 0 and loq_cur < loq_max:
+                # `loq_cur < loq_max`, deliberately not `loq_cur > 0 and ...`:
+                # an exhausted entry is the one that most needs the tick.
+                # `ConversationalNPCMixin.loquacity_tick`, the live-instance
+                # behaviour this mirrors, recovers whenever `loquacity_max` is
+                # nonzero and does not special-case 0, and
+                # `LOQUACITY_SCALE_PERCENT`'s own note says a recovery that
+                # reaches 0 "would leave an exhausted NPC permanently mute".
+                if loq_cur < loq_max:
                     entry["loquacity_current"] = min(loq_max, loq_cur + recovery)
                 entry["loquacity_scale"] = LOQUACITY_SCALE_PERCENT
-        except Exception as e:
-            import logging as _logging
-
-            _logging.getLogger(__name__).debug(
-                "loquacity recovery skipped: %s", e
-            )
+        except Exception:
+            # WARNING, not DEBUG: this block runs a migration over a
+            # *persisted* save, and the app's own default leaves root at
+            # WARNING unless LOG_LEVEL is set, so a DEBUG line here is
+            # invisible on every deployment that has not opted in — the same
+            # reasoning `src/api/routes/world.py` gives for its background
+            # services. A migration that silently declines to run leaves
+            # old-scale rows in the save for good.
+            _log.warning("loquacity recovery skipped", exc_info=True)
 
     def npc_chat_open(
         self, player: "player_module.Player", npc_id: str

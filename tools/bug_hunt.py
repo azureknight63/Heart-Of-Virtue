@@ -50,6 +50,19 @@ os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
 # moments later during the create_app() import chain, silently undoing this.
 os.environ["GITHUB_TOKEN"] = ""
 
+# Never let the harness transact against the real database. Same shape as the
+# GITHUB_TOKEN neutralisation above, one layer down: the token SPENDS and
+# POSTS, this one PERSISTS. src/api/db.py reads TURSO_DATABASE_URL /
+# TURSO_AUTH_TOKEN straight from the environment rather than from Flask config,
+# and `auth_service.create_user` has no TESTING guard, so any scenario that
+# reaches POST /api/auth/register writes a real row to the live Turso database.
+# The .env load that arms this happens inside `create_app()` below (db.py is
+# pulled in when the blueprints are imported, not when this module is), so
+# blanking here lands before it. Set (not pop), for the reason spelled out
+# above. tests/conftest.py does the same thing for the same reason.
+for _db_env in ("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"):
+    os.environ[_db_env] = ""
+
 # ---------------------------------------------------------------------------
 # Now safe to import project modules.
 # ---------------------------------------------------------------------------

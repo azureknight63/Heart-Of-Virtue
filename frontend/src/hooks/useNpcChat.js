@@ -10,14 +10,19 @@ import {
 import { apiErrorDetail } from '../utils/apiError'
 
 // Re-exported so the panel and its suites keep one import for the whole live
-// chat vocabulary; both now live in utils/conversationSegment, beside the
-// segment shape whose `speaker` and `reactions` keys they name.
+// chat vocabulary; both are DECLARED in utils/conversationSegment, beside the
+// segment shape whose `speaker` and `reactions` keys they name. That module's
+// docstring records which consumers are meant to come through here and which
+// should import from it directly — two paths to one symbol is a decision, not
+// a convenience, so it is written down in exactly one place.
 export { npcCast, JEAN_ID }
 
 /** @typedef {import('../utils/conversationSegment').ConversationSegment} ConversationSegment */
 
-// Jean's chosen tone -> the portrait she wears while she says it. `direct` /
-// `guarded` / `open` are the only tones the engine emits (src/npc/_chat_llm.py).
+// Jean's chosen tone -> the portrait worn while delivering it. The KEYS are
+// the engine's tone vocabulary, owned by ai/llm_client.py's `JEAN_TONES`
+// (`direct` / `guarded` / `open`), and useNpcChat.test.js pins them against
+// that file rather than against a copy of this table.
 export const TONE_EMOTIONS = {
   direct: DEFAULT_EMOTION,
   guarded: 'skeptical',
@@ -268,6 +273,14 @@ export function useNpcChat(npcId, npcName, onClose) {
    * options as none, missing standing as unknown), so they are written once
    * instead of being duplicated between the two handlers where they could
    * drift apart unnoticed.
+   *
+   * Pure state, no I/O. The served options are RETURNED rather than preloaded
+   * here so that `preloadTurnPortraits` — which constructs `Image()` objects
+   * and issues real network requests — stays visible at the two call sites,
+   * while the defaults above still live in one place.
+   *
+   * @param {Object} data - An `/open` or `/respond` response body.
+   * @returns {Array} The turn's Jean options, after the missing-field default.
    */
   const applyTurnPayload = (data) => {
     setLoquacity({
@@ -277,7 +290,7 @@ export function useNpcChat(npcId, npcName, onClose) {
     const options = data.jean_options || []
     setCurrentOptions(options)
     setRelationship(data.relationship || null)
-    preloadTurnPortraits(npcId, options)
+    return options
   }
 
   // On mount (and whenever the panel is pointed at a different NPC), open the
@@ -301,6 +314,13 @@ export function useNpcChat(npcId, npcName, onClose) {
     setError(null)
     setRetry(null)
     setPhase(CHAT_PHASES.OPENING)
+    // The one-dismissal latch belongs to the conversation that was dismissed,
+    // not to the hook. Left set, `handleEndConversation` — documented below as
+    // the ONLY sanctioned way out of the panel — is a permanent no-op for the
+    // NEXT NPC: no `/end`, no `onClose`, and a leaked `_active_chat_npc_id`.
+    // Latent only because InteractPanel keys the panel per NPC, which is
+    // exactly the assumption `turnSeqRef` above refuses to make.
+    endingRef.current = false
 
     // Supersession guard. `isMountedRef` only covers unmount, so on an
     // A -> B -> A switch a late response could overwrite a newer one; it also
@@ -335,7 +355,7 @@ export function useNpcChat(npcId, npcName, onClose) {
         setNpcKey(data.npc_key)
         setDisplayName(data.npc_name || npcName)
         setConversationCast(npcCast(npcId, data.npc_name || npcName))
-        applyTurnPayload(data)
+        preloadTurnPortraits(npcId, applyTurnPayload(data))
 
         if (data.npc_opening) {
           setConversationSegments([
@@ -413,8 +433,9 @@ export function useNpcChat(npcId, npcName, onClose) {
         }),
       ])
 
-      // Update loquacity, options, and relationship standing
-      applyTurnPayload(data)
+      // Update loquacity, options and relationship standing, then warm the
+      // portraits the next turn will need.
+      preloadTurnPortraits(npcId, applyTurnPayload(data))
 
       // Check if conversation ended
       if (data.conversation_ended) {

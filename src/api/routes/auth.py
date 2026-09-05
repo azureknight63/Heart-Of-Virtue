@@ -2,7 +2,7 @@
 
 import logging
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, jsonify, request
 from src.api.middleware.auth import resolve_session
 from src.api.rate_limiter import (
     RateLimiter,
@@ -283,9 +283,6 @@ async def register():
                 )
             raise e
 
-        # Get session manager from app context
-        from flask import current_app
-
         session_manager = current_app.session_manager
 
         # Create session and link it to the DB user record.
@@ -395,9 +392,6 @@ async def login():
             )
 
         _clear_login_attempts(rate_key)
-
-        # Get session manager from app context
-        from flask import current_app
 
         session_manager = current_app.session_manager
 

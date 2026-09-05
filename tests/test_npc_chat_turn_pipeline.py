@@ -71,16 +71,45 @@ class _WideTimeoutAdapter:
 
 
 class TestTurnBudgetScalesWithTheRoundTimeout:
-    def test_budget_fits_two_calls_at_the_configured_timeout(self):
+    def test_budget_fits_every_documented_stage(self):
         adapter = _WideTimeoutAdapter()
         remaining = _chat_llm._turn_deadline(adapter) - time.monotonic()
-        assert remaining >= 2 * adapter.round_timeout - 0.5
+        assert remaining >= (
+            _chat_llm._MAX_TURN_STAGES * adapter.round_timeout - 0.5
+        )
 
     def test_budget_never_drops_below_the_fixed_floor(self):
-        # No adapter: _round_timeout falls back to 6s, two of which fit inside
-        # the constant, so the constant wins.
+        # No adapter: _round_timeout falls back to its 6s default.
         remaining = _chat_llm._turn_deadline(None) - time.monotonic()
         assert remaining >= _chat_llm._CHAT_DEADLINE_SECONDS - 0.5
+
+    def test_the_state_guard_revision_is_reachable_after_a_qc_retry(self):
+        """The bug the stage count fixes, stated as arithmetic.
+
+        ``_no_stage_budget`` refuses to open a stage unless a whole round
+        timeout still fits, so a 12s budget stopped admitting stages six
+        seconds in. At the 2-4s per call the adapter documents as healthy, a
+        turn that spent its QC retry had therefore already lost the
+        state-guard revision — the one provider call ``_chat_guard`` exists to
+        make — and hedged deterministically instead.
+        """
+        adapter = _WideTimeoutAdapter()
+        adapter.round_timeout = _chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
+        per_call = 3.0  # the healthy latency ai/llm_client.py documents
+        deadline = _chat_llm._turn_deadline(adapter)
+        for stage in range(1, _chat_llm._MAX_TURN_STAGES + 1):
+            elapsed = (stage - 1) * per_call
+            assert not _chat_llm._no_stage_budget(deadline - elapsed, adapter), (
+                f"stage {stage} of {_chat_llm._MAX_TURN_STAGES} was refused"
+            )
+
+    def test_the_budget_still_refuses_a_stage_past_the_documented_count(self):
+        """The bound is a bound: it is not merely wide enough to never bite."""
+        adapter = _WideTimeoutAdapter()
+        adapter.round_timeout = _chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
+        deadline = _chat_llm._turn_deadline(adapter)
+        past_the_end = _chat_llm._MAX_TURN_STAGES * adapter.round_timeout
+        assert _chat_llm._no_stage_budget(deadline - past_the_end, adapter)
 
     def test_the_qc_retry_still_fires_at_a_wide_timeout(self):
         """The bug: at a 20s per-call timeout the 12s budget was already spent

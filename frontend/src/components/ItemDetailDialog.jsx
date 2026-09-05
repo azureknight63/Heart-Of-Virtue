@@ -25,6 +25,19 @@ const BONUS_STAT_LABELS = {
 const REC_COLORS = { upgrade: '#00ff88', downgrade: '#ff6666', sidegrade: '#ffcc00' }
 const REC_LABELS = { upgrade: '↑ UPGRADE', downgrade: '↓ DOWNGRADE', sidegrade: '↔ SIDEGRADE' }
 
+/**
+ * The action-message line for an inventory request that THREW.
+ *
+ * The server's own prose goes up bare; the ✗ prefix marks the cases where all
+ * we have is the transport's complaint ("Network Error"), so a player can tell
+ * "the game said no" from "the request never landed".
+ *
+ * Shared by use-on-ally, equip, the generic use handler and drop, which had
+ * four verbatim copies of it — a distinction this fine is exactly the kind that
+ * drifts in one of four places and is never noticed in the other three.
+ */
+const actionFailureMessage = (err) => apiErrorMessage(err, '') || `✗ Error: ${err.message}`
+
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 const formatSigned = (value) => `${value >= 0 ? '+' : ''}${value}`
 const formatSignedPercent = (value) => `${value >= 0 ? '+' : ''}${Math.round(value * 100)}%`
@@ -121,10 +134,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot use this item'))
       }
     } catch (err) {
-      // The server's own prose goes up bare; the ✗ prefix marks the cases
-      // where all we have is the transport's complaint.
-      const serverText = apiErrorMessage(err, '')
-      setActionMessage(serverText || '✗ Error: ' + err.message)
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
     }
@@ -170,10 +180,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + apiErrorMessage(data, 'Failed to equip'))
       }
     } catch (err) {
-      // The server's own prose goes up bare; the ✗ prefix marks the cases
-      // where all we have is the transport's complaint.
-      const serverText = apiErrorMessage(err, '')
-      setActionMessage(serverText || '✗ Error: ' + err.message)
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
     }
@@ -199,10 +206,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           setActionMessage('✗ ' + apiErrorMessage(data, errorMsg))
         }
       } catch (err) {
-        // The server's own prose goes up bare; the ✗ prefix marks the cases
-        // where all we have is the transport's complaint.
-        const serverText = apiErrorMessage(err, '')
-        setActionMessage(serverText || '✗ Error: ' + err.message)
+        setActionMessage(actionFailureMessage(err))
       } finally {
         setIsLoading(false)
       }
@@ -257,10 +261,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + apiErrorMessage(data, 'Failed to drop'))
       }
     } catch (err) {
-      // The server's own prose goes up bare; the ✗ prefix marks the cases
-      // where all we have is the transport's complaint.
-      const serverText = apiErrorMessage(err, '')
-      setActionMessage(serverText || '✗ Error: ' + err.message)
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
       setShowDropConfirm(false)
@@ -715,12 +716,9 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             flexDirection: 'column',
             gap: '16px',
             // `fade-in-scale` is index.css's. It used to be declared as
-            // `fadeIn` by a style element at the bottom of this component,
-            // which meant ActionsPanel's action message — the other user of
-            // that name — only animated while this dialog was mounted. That
-            // element is gone, so this component no longer injects styles at
-            // all; see tests/test_security_headers.py, which greps for the
-            // literal tag name (hence its absence from this comment).
+            // `fadeIn` by a <style> tag at the bottom of this component, which
+            // meant ActionsPanel's action message — the other user of that
+            // name — only animated while this dialog was mounted.
             animation: 'fade-in-scale 0.2s ease-out',
             boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
           }}>

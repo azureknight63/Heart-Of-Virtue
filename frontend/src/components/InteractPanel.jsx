@@ -38,10 +38,15 @@ const CHAT_KEYWORDS = new Set(['talk', 'chat'])
  *     emits `action_aliases`, so the check reads `undefined` and passes
  *     everything through. That is why the chat collapse below cannot be
  *     delegated to it.
- *   - Case-folded duplicates, and the chat aliases, keep their first spelling
- *     only. A plain `new Set(keywords)` would NOT have caught the reported
- *     duplicate: "talk" and "chat" are distinct strings that happen to share a
- *     handler, and the alias-collapse is the half that matters.
+ *   - Case-folded duplicates keep their FIRST spelling: `['Open', 'open']`
+ *     renders one button reading "Open".
+ *   - The two chat aliases collapse to ONE keyword, and the survivor is
+ *     CHOSEN, not first-won: "talk" beats "chat" whenever both are served, in
+ *     whichever order the payload lists them, so the button always reads
+ *     "Talk". A lone "chat" survives on its own so the action stays reachable.
+ *     A plain `new Set(keywords)` would NOT have caught the reported
+ *     duplicate — "talk" and "chat" are distinct strings that merely share a
+ *     handler — and this is the half that matters.
  *
  * Exported because it is a pure function over one serialized row and is worth
  * asserting on directly — a rendered-button count cannot say WHICH rule
@@ -66,8 +71,8 @@ export function actionKeywords(target) {
     const chatKept = chatKw.find((k) => String(k).toLowerCase() === 'talk') || chatKw[0]
     return keywords.filter((keyword) => {
         const action = String(keyword).toLowerCase()
-        if (target.is_container && (action === 'loot' || action === 'take_all')) return false
-        if (target.action_aliases?.includes(keyword)) return false
+        if (target?.is_container && (action === 'loot' || action === 'take_all')) return false
+        if (target?.action_aliases?.includes(keyword)) return false
         if (CHAT_KEYWORDS.has(action) && keyword !== chatKept) return false
         if (seen.has(action)) return false
         seen.add(action)
@@ -316,6 +321,14 @@ function InteractPanel({
             default: return '❓'
         }
     }
+
+    // The NPC's class key, which is what `/api/npc/chat/open` receives as
+    // `npc_key`; the instance id would 404 it. `npc_class` is the remap of the
+    // serializer's `type` applied above, and the display name is the fallback
+    // for a row that predates it. Written once because the panel needs the same
+    // value twice — as its React key and as its `npcId` — and the two silently
+    // disagreeing would remount on every render.
+    const chatNpcId = selectedTarget?.npc_class || selectedTarget?.name
 
     return (<>
         <BaseDialog
@@ -737,8 +750,8 @@ function InteractPanel({
                 // per-NPC state, and reusing the instance left the previous
                 // NPC's portraits and options on screen for the whole of the
                 // new `/open` round trip.
-                key={selectedTarget.npc_class || selectedTarget.name}
-                npcId={selectedTarget.npc_class || selectedTarget.name}
+                key={chatNpcId}
+                npcId={chatNpcId}
                 npcName={selectedTarget.name}
                 onClose={() => {
                     setShowChatPanel(false)

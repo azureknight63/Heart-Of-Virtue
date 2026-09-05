@@ -3,10 +3,14 @@
 async_mode="threading" — WebSockets work with Werkzeug (dev) and fall back to
 long-polling behind gunicorn sync workers (acceptable for single-player).
 
-Usage (gunicorn, threading mode):
-    gunicorn -w 1 --bind "0.0.0.0:${PORT:-5000}" wsgi:app
+``FLASK_ENV=production`` is required, not assumed: this module refuses to boot
+under any other value. See the two guards at the bottom of the file.
 
-Or with flask run (dev):
+Usage (gunicorn, threading mode):
+    FLASK_ENV=production gunicorn -w 1 --bind "0.0.0.0:${PORT:-5000}" wsgi:app
+
+Development and testing configs go through the dev entry point instead, which
+binds 127.0.0.1 by default:
     python tools/run_api.py
 """
 
@@ -57,6 +61,35 @@ if getattr(_config, "TESTING", False):
         "blueprint — neither may be exposed by the production entry point. "
         "Use FLASK_ENV=production here, or run the testing config through "
         "tools/run_api.py, which serves it on 127.0.0.1 by default."
+    )
+
+# Everything that is not production is refused here too, and the refusal is
+# deliberately asymmetric with `config_for_env`: development-by-default is the
+# right answer on a developer's box, so the shared mapping keeps it. This file
+# is not a developer's box. It is the entry point gunicorn binds to a public
+# listener, and `config_for_env`'s docstring already enumerates what arriving
+# here as DevelopmentConfig costs — DEBUG=True (so Werkzeug's traceback page
+# and, under the dev server, its `/console`), SESSION_COOKIE_SECURE=False,
+# localhost-only CORS origins, and a fresh os.urandom(24) SECRET_KEY minted per
+# worker, which neither survives a worker recycle nor is shared between
+# workers, so sessions break at random under any -w greater than 1.
+#
+# Three separate spellings landed on DevelopmentConfig silently or nearly so:
+# FLASK_ENV unset (normalized_env defaults to "development"),
+# exported-but-blank (the falsy branch, which says nothing at all), and a typo
+# like "prod" (a warning nobody reads in a boot log). None of them is an
+# operator asking for a development server on the public internet, so require
+# the word.
+if _env != "production":
+    raise SystemExit(
+        f"wsgi.py refuses to boot with FLASK_ENV={_env!r}: this is the "
+        "production entry point and it serves ProductionConfig only. "
+        f"{_config.__name__} would run with DEBUG=True, "
+        "SESSION_COOKIE_SECURE=False, localhost-only CORS origins, and a "
+        "per-worker random SECRET_KEY that invalidates sessions on every "
+        "worker recycle. Set FLASK_ENV=production (exactly) to serve here, "
+        "or use tools/run_api.py for development and testing configs, which "
+        "serves them on 127.0.0.1 by default."
     )
 
 app, socketio = create_app(_config)

@@ -186,12 +186,9 @@ export default function ActionsPanel({ location, onClose }) {
             textAlign: 'center',
             boxShadow: '0 0 15px rgba(255, 170, 0, 0.2)',
             // Declared in styles/index.css. Named `fadeIn` until it was found
-            // to be declared only inside a style element local to
+            // to be declared only inside a <style> tag local to
             // ItemDetailDialog, so this message animated only while an item
-            // dialog happened to be open. (The literal tag name is spelled out
-            // nowhere in this comment on purpose: tests/test_security_headers.py
-            // greps the frontend for it to decide which components still inject
-            // styles, and a comment mentioning one counts as one.)
+            // dialog happened to be open.
             animation: 'fade-in-scale 0.3s ease-out'
           }}>
             {actionMessage}

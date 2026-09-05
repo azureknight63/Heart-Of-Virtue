@@ -81,16 +81,35 @@ def _find_passage(map_dict, name):
 
 
 def _displayed_actions(pw):
-    """Mirror frontend ``actionKeywords``: drop anything in action_aliases and
-    de-duplicate (case-insensitive)."""
+    """The buttons the frontend renders for a PASSAGEWAY, and only a passageway.
+
+    ``actionKeywords`` (frontend/src/components/InteractPanel.jsx) applies four
+    rules. Two of them can fire on a passageway, and those two are reproduced
+    here:
+
+    * drop anything the engine lists in ``action_aliases``;
+    * de-duplicate case-insensitively, keeping the first spelling.
+
+    The other two are deliberately NOT mirrored, because no passageway can
+    reach them: the container rule needs ``is_container`` (a Container thing,
+    never a Passageway), and the talk/chat alias collapse needs a chat keyword
+    (served by NPCs, never by a passageway). Copying them would put a second,
+    untested implementation of the chat collapse in Python, free to drift from
+    the one that matters. If a passageway ever grows either shape, this helper
+    stops describing the frontend and must be revisited rather than trusted.
+    """
     seen = set()
     out = []
     for kw in pw.keywords:
         if kw in pw.action_aliases:
             continue
-        if kw in seen:
+        # Case-folded, matching the JS `String(keyword).toLowerCase()`: the
+        # rendered list collapses 'Enter' and 'enter' into one button, so a
+        # case-sensitive check here would claim two where the player sees one.
+        folded = str(kw).lower()
+        if folded in seen:
             continue
-        seen.add(kw)
+        seen.add(folded)
         out.append(kw)
     return out
 

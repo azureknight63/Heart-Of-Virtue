@@ -25,10 +25,11 @@ import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from 
  * the placeholder instead of trying this speaker's `neutral.png`. Clearing it
  * during the commit closes the gap.
  *
- * @param {string} speaker  - character id used for the folder slug
- * @param {string} [name]   - display name for the alt text (defaults to `speaker`)
- * @param {string} emotion  - tagged emotion; normalized for the path, raw in the alt
- * @param {boolean} [lazy]  - defer loading until the image scrolls into view.
+ * @param {Object} props
+ * @param {string} props.speaker - character id used for the folder slug
+ * @param {string} [props.name] - display name for the alt text (defaults to `speaker`)
+ * @param {string} props.emotion - tagged emotion; normalized for the path, raw in the alt
+ * @param {boolean} [props.lazy] - defer loading until the image scrolls into view.
  *   For off-screen thumbnails only (the history transcript mounts one per turn
  *   inside a 65vh scroller); never for the stage portrait, which is on screen
  *   from the first frame and would visibly pop in.

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { apiErrorMessage } from '../utils/apiError'
+import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 
 /**
  * useWorldInteract — owns InteractPanel's world-interaction API calls and the
@@ -149,12 +150,14 @@ export function useWorldInteract({
             const data = response.data
 
             if (data.success) {
-                // When events are pending (e.g. PassagewayTransitionEvent),
-                // keep the spinner showing instead of flashing "Action completed."
+                // When events are pending (e.g. a passageway transition), keep
+                // the spinner showing instead of flashing "Action completed."
                 // The event UI will take over when it renders.
-                const hasPendingEvents = data.events_triggered && data.events_triggered.length > 0
-                const isPassagewayTransition = Array.isArray(data.events_triggered) &&
-                    data.events_triggered.some(event => event?.type === 'PassagewayTransitionEvent')
+                const triggeredEvents = Array.isArray(data.events_triggered) ? data.events_triggered : []
+                const hasPendingEvents = triggeredEvents.length > 0
+                const isPassagewayTransition = triggeredEvents.some(
+                    event => event?.type === PASSAGEWAY_TRANSITION_EVENT_TYPE
+                )
 
                 // A passageway transition owns the rest of this interaction.
                 // Close the source-room panel before the confirmation event is
@@ -162,10 +165,9 @@ export function useWorldInteract({
                 // and the same panel reappears with the destination room selected.
                 if (isPassagewayTransition) {
                     if (onClose) onClose()
-                    // Close the source panel before refreshing room state. The
-                    // transition confirmation must still be queued if that
-                    // refresh fails, so a transient error cannot strand the
-                    // player behind a closed interaction panel.
+                    // The transition confirmation must still be queued if the
+                    // refresh below fails, so a transient error cannot strand
+                    // the player behind a closed interaction panel.
                     if (onRefetch) {
                         try {
                             await onRefetch()
@@ -173,7 +175,7 @@ export function useWorldInteract({
                             console.error('Failed to refetch after passageway transition:', refetchError)
                         }
                     }
-                    if (onEventsTriggered) onEventsTriggered(data.events_triggered)
+                    if (onEventsTriggered) onEventsTriggered(triggeredEvents)
                     if (onInteractionComplete) onInteractionComplete()
                     return data
                 }
@@ -215,8 +217,8 @@ export function useWorldInteract({
                 }
 
                 if (onRefetch) await onRefetch()
-                if (data.events_triggered && data.events_triggered.length > 0 && onEventsTriggered) {
-                    onEventsTriggered(data.events_triggered)
+                if (hasPendingEvents && onEventsTriggered) {
+                    onEventsTriggered(triggeredEvents)
                 }
 
                 // Check for background events

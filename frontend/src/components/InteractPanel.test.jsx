@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel, { actionKeywords } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
+import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
 import React from 'react';
 
 // Mock apiEndpoints
@@ -663,36 +664,56 @@ describe('InteractPanel', () => {
     // /api/npc/chat/open receives as `npc_key`. The previous fixture set
     // `npc_class` directly, which no serializer emits: the remap overwrote it
     // with `undefined` and the assertion silently exercised the name fallback.
-    const chatLocation = {
-      ...mockLocation,
-      npcs: [{ id: 'npc1', name: 'Mynx', type: 'Mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true }],
-    };
+    const chatNpc = (npc) => ({ ...mockLocation, npcs: [{ ...npc, keywords: ['Talk'], llm_chat_enabled: true }] });
+    const chatLocation = chatNpc({ id: 'npc1', name: 'Mynx', type: 'Mynx', description: 'A curious sprite.' });
 
-    it('opens the chat panel keyed by the NPC class, not its instance id', () => {
-      render(<InteractPanel location={chatLocation} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
+    // Three shapes of the same claim, because the failure modes differ: a name
+    // that equals its class hides a remap bug, a name that differs from its
+    // class exposes one, and a merchant reaches this panel down a different
+    // branch (it also serves Buy/Sell) than a plain conversational NPC.
+    const chatFixtures = [
+      ['a class key equal to the display name', chatLocation, 'Mynx', 'Chatting with Mynx (Mynx)', 'npc1'],
+      [
+        'a class key that differs from the display name',
+        chatNpc({ id: 'npc7', name: 'The Adjutant', type: 'TheAdjutant', description: 'A drill sergeant.' }),
+        'The Adjutant',
+        'Chatting with The Adjutant (TheAdjutant)',
+        'npc7',
+      ],
+      [
+        'a merchant that also serves Buy/Sell',
+        {
+          ...mockLocation,
+          npcs: [{
+            id: 'jambo1',
+            name: 'Jambo',
+            type: 'JamboHealsU',
+            description: 'A wiry merchant with a massive grin.',
+            keywords: ['Buy', 'Sell', 'Talk'],
+            llm_chat_enabled: true,
+          }],
+        },
+        'Jambo',
+        'Chatting with Jambo (JamboHealsU)',
+        'jambo1',
+      ],
+    ];
 
-      // The mock panel echoes `Chatting with {npcName} ({npcId})`.
-      const panel = screen.getByTestId('npc-chat-panel').textContent;
-      expect(panel).toContain('Chatting with Mynx (Mynx)');
-      // Sending the instance id would 404 the chat route.
-      expect(panel).not.toContain('npc1');
-      expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
-    });
+    it.each(chatFixtures)(
+      'opens the chat panel keyed by the NPC class, not its instance id — %s',
+      (_shape, location, targetName, expectedEcho, instanceId) => {
+        render(<InteractPanel location={location} onClose={mockOnClose} />);
+        fireEvent.click(screen.getAllByText(new RegExp(targetName, 'i'))[0]);
+        fireEvent.click(screen.getByText(/^Talk$/i));
 
-    it('keeps npcName (display) and npcId (class) distinct', () => {
-      const adjutant = {
-        ...mockLocation,
-        npcs: [{ id: 'npc7', name: 'The Adjutant', type: 'TheAdjutant', description: 'A drill sergeant.', keywords: ['Talk'], llm_chat_enabled: true }],
-      };
-      render(<InteractPanel location={adjutant} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/The Adjutant/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
-
-      expect(screen.getByTestId('npc-chat-panel').textContent)
-        .toContain('Chatting with The Adjutant (TheAdjutant)');
-    });
+        // The mock panel echoes `Chatting with {npcName} ({npcId})`.
+        const panel = screen.getByTestId('npc-chat-panel').textContent;
+        expect(panel).toContain(expectedEcho);
+        // Sending the instance id would 404 the chat route.
+        expect(panel).not.toContain(instanceId);
+        expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
+      }
+    );
 
     it('closes the chat panel and refetches on close', () => {
       render(<InteractPanel location={chatLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
@@ -708,20 +729,25 @@ describe('InteractPanel', () => {
       expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
     });
 
-    it('does not open the chat panel when loquacity is unavailable', () => {
-      const unavailableLocation = {
-        ...mockLocation,
-        npcs: [{ id: 'npc1', name: 'Mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true, loquacity_available: false }],
-      };
-      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Mynx stays quiet.' } });
-      render(<InteractPanel location={unavailableLocation} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
+    it.each(chatFixtures)(
+      'falls through to the scripted talk when loquacity is unavailable — %s',
+      (_shape, location, targetName, _expectedEcho, instanceId) => {
+        const unavailable = {
+          ...location,
+          npcs: [{ ...location.npcs[0], loquacity_available: false }],
+        };
+        apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Nothing to say.' } });
+        render(<InteractPanel location={unavailable} onClose={mockOnClose} />);
+        fireEvent.click(screen.getAllByText(new RegExp(targetName, 'i'))[0]);
+        fireEvent.click(screen.getByText(/^Talk$/i));
 
-      expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
-      // Falls through to the ordinary scripted talk instead of the LLM panel.
-      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('npc1', 'Talk', null);
-    });
+        expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
+        // Falls through to the ordinary scripted talk instead of the LLM panel,
+        // and that call carries the INSTANCE id — the world route's key, where
+        // the chat route wants the class.
+        expect(apiEndpoints.world.interact).toHaveBeenCalledWith(instanceId, 'Talk', null);
+      }
+    );
   });
 
   describe('Book read (issue #326)', () => {
@@ -841,7 +867,7 @@ describe('InteractPanel', () => {
       items: [],
     };
     const transitionEvent = {
-      type: 'PassagewayTransitionEvent',
+      type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
       event_id: 'passage-1',
       name: 'Passage_Stone Arch',
       needs_input: true,
@@ -879,7 +905,13 @@ describe('InteractPanel', () => {
     expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
   });
 
-  it('shows the destination room with the interaction panel closed after confirmation', async () => {
+  it('shows the destination room, panel closed, once the transition refetch lands', async () => {
+    // The test above pins the ORDER (close, then refetch, then queue the
+    // event). This one pins the outcome the player sees, and it has to be
+    // driven through `onRefetch` to mean anything: that is the callback the
+    // production path awaits, and in the app it is what pulls the destination
+    // room in. A harness button that swapped the location itself would be
+    // asserting the harness.
     const sourceLocation = {
       ...mockLocation,
       npcs: [],
@@ -893,19 +925,18 @@ describe('InteractPanel', () => {
       y: 2,
     };
     const transitionEvent = {
-      type: 'PassagewayTransitionEvent',
+      type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
       event_id: 'passage-2',
       name: 'Passage_Stone Arch',
       needs_input: true,
     };
     const onEventsTriggered = vi.fn();
-    const onRefetch = vi.fn().mockResolvedValue(undefined);
+    const onRefetch = vi.fn();
     const onClose = vi.fn();
 
     function Harness() {
       const [location, updateLocation] = React.useState(sourceLocation);
       const [open, setOpen] = React.useState(true);
-      const [pendingEvent, setPendingEvent] = React.useState(null);
       return (
         <>
           {open && (
@@ -915,22 +946,12 @@ describe('InteractPanel', () => {
                 onClose();
                 setOpen(false);
               }}
-              onRefetch={onRefetch}
-              onEventsTriggered={(events) => {
-                onEventsTriggered(events);
-                setPendingEvent(events[0]);
-              }}
-            />
-          )}
-          {pendingEvent && (
-            <button
-              onClick={() => {
+              onRefetch={async () => {
+                onRefetch();
                 updateLocation(destinationLocation);
-                setPendingEvent(null);
               }}
-            >
-              Step through
-            </button>
+              onEventsTriggered={onEventsTriggered}
+            />
           )}
           <div data-testid="left-room-description">{location.description}</div>
           <div data-testid="right-map-position">{location.x},{location.y}</div>
@@ -947,17 +968,15 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/^Enter$/i));
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Step through' })).toBeInTheDocument();
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Step through' }));
-    await waitFor(() => {
       expect(screen.getByTestId('left-room-description')).toHaveTextContent(destinationLocation.description);
-      expect(screen.getByTestId('right-map-position')).toHaveTextContent('4,2');
     });
+    // The panel is gone and the map has followed the room — a source panel
+    // still on screen here is the bug this flow exists to prevent.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('right-map-position')).toHaveTextContent('4,2');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onRefetch).toHaveBeenCalledTimes(1);
+    expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
   });
 
   it('updates the selected target locally from the response object_state', async () => {
@@ -1357,59 +1376,6 @@ describe('InteractPanel', () => {
   });
 });
 
-
-describe('Jambo opens the LLM conversation dialog (merchant + ConversationalNPCMixin)', () => {
-    // Jambo is a Merchant that must now carry ConversationalNPCMixin so the
-    // frontend's Talk action opens NpcChatPanel instead of the scripted line.
-    // The class key (type) is what /api/npc/chat/open receives as npc_key.
-    // Self-contained fixtures: this describe is a top-level sibling, so the
-    // main suite's `mockLocation`/`mockOnClose` are out of scope here.
-    const mockOnClose = vi.fn();
-    beforeEach(() => {
-      vi.clearAllMocks();
-    });
-    const jamboLocation = {
-      name: 'Town Square',
-      objects: [],
-      items: [],
-      npcs: [{
-        id: 'jambo1',
-        name: 'Jambo',
-        type: 'JamboHealsU',
-        description: 'A wiry merchant with a massive grin.',
-        keywords: ['Buy', 'Sell', 'Talk'],
-        llm_chat_enabled: true,
-      }],
-    };
-
-    it('opens the chat panel keyed by the merchant class, not its instance id', () => {
-      render(<InteractPanel location={jamboLocation} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/Jambo/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
-
-      const panel = screen.getByTestId('npc-chat-panel').textContent;
-      // The class key is what /api/npc/chat/open receives as npc_key.
-      expect(panel).toContain('Chatting with Jambo (JamboHealsU)');
-      // Sending the instance id would 404 the chat route.
-      expect(panel).not.toContain('jambo1');
-      expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
-    });
-
-    it('does not open the chat panel when loquacity is unavailable (scripted fallback)', () => {
-      const unavailable = {
-        ...jamboLocation,
-        npcs: [{ ...jamboLocation.npcs[0], loquacity_available: false }],
-      };
-      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Jambo shrugs.' } });
-      render(<InteractPanel location={unavailable} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/Jambo/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
-
-      // Falls through to the ordinary scripted talk instead of the LLM panel.
-      expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
-      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('jambo1', 'Talk', null);
-    });
-});
 
 describe('actionKeywords', () => {
   // Asserted against the pure function rather than a rendered button count,

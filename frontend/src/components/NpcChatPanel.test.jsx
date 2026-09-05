@@ -135,11 +135,18 @@ describe('NpcChatPanel', () => {
   /** The loquacity fill element — the only place loquacity is rendered. */
   const loquacityBar = (container) => container.querySelector('[style*="height: 100%"]')
 
-  /** Option buttons only — the action row's own buttons share the testid. */
-  const optionButtons = () =>
-    screen
-      .getAllByTestId('game-button')
-      .filter((b) => !['View History', 'End Conversation', 'Retry'].includes(b.textContent))
+  /**
+   * Jean's dialogue options, scoped to the container that holds them.
+   *
+   * Every button in the panel is a GameButton and so shares one testid. This
+   * used to subtract three known labels instead, which meant any button added
+   * to the action row or the error box in future would have joined the option
+   * list unannounced — and the assertions here are about the option COUNT.
+   */
+  const optionButtons = () => {
+    const list = screen.queryByTestId('npc-chat-options')
+    return list ? within(list).getAllByTestId('game-button') : []
+  }
 
   /**
    * Wait for a line to land on the stage.
@@ -376,8 +383,15 @@ describe('NpcChatPanel', () => {
     // calling `POST /npc/chat/end`, leaving `player._active_chat_npc_id` and
     // the conversation record set server-side. The button was the only one
     // that closed properly, so both are asserted against the same claim.
+    //
+    // Only the ✕ is exercised here, because BaseDialog is mocked at the top of
+    // this file down to a single close button. That is enough: the three
+    // gestures are ONE prop as far as this panel is concerned, and that they
+    // all reach it is BaseDialog's own contract — asserted in
+    // BaseDialog.test.jsx ("calls onClose when overlay is clicked", "calls
+    // onClose when Escape is pressed").
     const dismissals = [
-      ['the dialog chrome (✕ / overlay / Escape)', () => screen.getByTestId('dialog-close')],
+      ["the dialog's ✕ (BaseDialog's onClose, shared with overlay and Escape)", () => screen.getByTestId('dialog-close')],
       ['the End Conversation button', () => screen.getByText('End Conversation')],
     ]
 
@@ -951,7 +965,8 @@ describe('NpcChatPanel', () => {
         expect(mockOnClose).not.toHaveBeenCalled()
         expect(screen.getByTestId('conversation-history')).toBeInTheDocument()
 
-        // Dismissing the transcript resumes the close it suspended.
+        // Dismissing the transcript closes the panel at once — no timer
+        // advance below, because the 2s delay is not re-armed.
         const closers = screen.getAllByTestId('dialog-close')
         fireEvent.click(closers[closers.length - 1])
         expect(mockOnClose).toHaveBeenCalledTimes(1)

@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import {
   useNpcChat,
@@ -277,15 +280,50 @@ describe('useNpcChat', () => {
       }
     })
 
-    it('resolves every tone and quality the engine emits through those tables', () => {
+    it('routes every key of both tables through its own lookup', () => {
       // Keys, not values: proves the lookups are wired to the tables under
-      // test and that neither has silently lost an entry.
+      // test. Note what this CANNOT say — the expectations are read out of the
+      // very tables being tested, so it passes for any table whatsoever. What
+      // the key SET has to agree with is the engine's, and that is the test
+      // below.
       for (const tone of Object.keys(TONE_EMOTIONS)) {
         expect(toneEmotion(tone)).toBe(TONE_EMOTIONS[tone])
       }
       for (const quality of Object.keys(QUALITY_EMOTIONS)) {
         expect(qualityEmotion(quality)).toBe(QUALITY_EMOTIONS[quality])
       }
+    })
+
+    it('has exactly the tones the engine emits, read from the engine', () => {
+      // The independent source. `TONE_EMOTIONS` keys are Jean's tone
+      // vocabulary, owned by ai/llm_client.py's JEAN_TONES: the prompt asks
+      // for those three labels and `_qc_jean_options` rejects anything else,
+      // so a tone added there and not here silently loses its portrait, and
+      // one removed there leaves a dead row nothing can reach.
+      //
+      // Parsed out of the Python source rather than restated, for the same
+      // reason tests/test_narration_emotions.py parses portraits.js: a
+      // hand-copied list cannot fail when the thing it copies changes. This is
+      // the JS-side mirror of that test, pointing the other way.
+      const source = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'ai', 'llm_client.py'),
+        'utf8'
+      )
+      // Module level (column 0), so the indented fallback copy in
+      // src/npc/_chat_llm.py's ImportError branch can never be what matches —
+      // and that copy is pinned to this one by
+      // tests/test_npc_chat_turn_pipeline.py.
+      const match = source.match(/^JEAN_TONES\s*=\s*\(([^)]*)\)/m)
+      expect(match, 'could not find the JEAN_TONES tuple in ai/llm_client.py').toBeTruthy()
+      const engineTones = match[1]
+        .split(',')
+        .map((token) => token.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean)
+      // Guard-the-guard: a regex that quietly matched nothing useful would
+      // make the comparison below vacuous in the permissive direction.
+      expect(engineTones.length).toBeGreaterThan(1)
+
+      expect([...engineTones].sort()).toEqual(Object.keys(TONE_EMOTIONS).sort())
     })
   })
 
@@ -838,6 +876,36 @@ describe('useNpcChat', () => {
 
       expect(npcChat.end).toHaveBeenCalledTimes(1)
       expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('can end again after the hook is pointed at a different NPC', async () => {
+      // The one-dismissal latch is per CONVERSATION, not per hook. Left set
+      // across a re-target it made `handleEndConversation` — the only
+      // sanctioned way out of the panel — a permanent no-op for the new NPC:
+      // no `/end`, no `onClose`, and `_active_chat_npc_id` left pointing at
+      // Gorran server-side. Latent today only because InteractPanel keys the
+      // panel per NPC, which is exactly the assumption the supersession guard
+      // in the same file refuses to make.
+      const { result, rerender } = await mountOpened('Mynx')
+
+      await act(async () => {
+        await result.current.handleEndConversation()
+      })
+      expect(npcChat.end).toHaveBeenCalledTimes(1)
+
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ npc_key: 'gorran_session_1', npc_name: 'Gorran' }),
+      })
+      await act(async () => rerender({ id: 'Gorran', name: 'Gorran' }))
+      await waitFor(() => expect(result.current.phase).toBe('waiting_jean'))
+
+      await act(async () => {
+        await result.current.handleEndConversation()
+      })
+
+      expect(npcChat.end).toHaveBeenCalledTimes(2)
+      expect(npcChat.end).toHaveBeenLastCalledWith('gorran_session_1')
+      expect(onClose).toHaveBeenCalledTimes(2)
     })
 
     it('closes without calling the server when there is no session key', async () => {

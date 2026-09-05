@@ -30,12 +30,12 @@ _MAX_FIELD_LEN = 4000
 # several provider stages — up to two QC attempts, a state-guard revision, and
 # (on a legacy adapter) a separate Jean-options call — and each stage walks the
 # whole provider fallback chain, so the worst case is closer to a dozen provider
-# calls than to the ~3 this comment used to claim. `_CHAT_DEADLINE_SECONDS` in
-# src/npc/_chat_llm.py bounds how many provider *stages* one call may open (a
-# stage starts only while a full round timeout still fits, so the real ceiling
-# is that budget plus one chain walk); this bounds how many calls a client may
-# start. Both matter: the operator's free-tier LLM quota is account-wide and a
-# script can drain it in seconds.
+# calls than to a handful. `_CHAT_DEADLINE_SECONDS` in src/npc/_chat_llm.py
+# bounds how many provider *stages* one call may open (a stage starts only
+# while a full round timeout still fits, so the real ceiling is that budget
+# plus one chain walk); this bounds how many calls a client may start. Both
+# matter: the operator's free-tier LLM quota is account-wide and a script can
+# drain it in seconds.
 #
 # 10/minute per player is well above anything a human clicking through dialogue
 # options can produce (each round trip takes seconds), and trivially exceeded

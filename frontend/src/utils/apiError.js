@@ -102,7 +102,10 @@ export function apiErrorMessage(errOrBody, fallback) {
  * The last resort is `String(err)`, never `err` itself: utils/logger mirrors
  * console arguments to /api/logs/browser and JSON-stringifies any object it is
  * given, and `AxiosError.toJSON()` carries `config.headers.Authorization` —
- * the Bearer session id — with it. Never pass the raw error to a log sink.
+ * the Bearer session id — with it. utils/logger now redacts those keys at its
+ * own choke point, because thirty call sites cannot be relied on to remember;
+ * this function is the second layer, and the one that also keeps a request
+ * config out of a log line that has no use for it.
  *
  * @param {*} err - A rejected request, or anything else that was thrown.
  * @returns {string} Something, always — an empty log line describes nothing.

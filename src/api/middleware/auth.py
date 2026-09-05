@@ -7,8 +7,8 @@ from flask import Response, current_app, jsonify, request
 #: The error half of the ``(value, error)`` contract these helpers return: the
 #: exact ``(response, status)`` pair Flask accepts from a view, so a caller
 #: forwards it with a bare ``return error``. Named because it appears in every
-#: signature below and, unannotated, the contract that 30-odd call sites depend
-#: on existed only in prose.
+#: signature below and, unannotated, the contract that every call site in
+#: ``src/api/routes/`` depends on existed only in prose.
 RouteError = Tuple[Response, int]
 
 
@@ -114,9 +114,15 @@ def require_game_service() -> Tuple[Optional[Any], Optional[RouteError]]:
     Companion to :func:`get_session_and_player`, and returns the same
     ``(value, error)`` shape so a route reads the two the same way::
 
-        game_service, error = require_game_service()
-        if error:
-            return error
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+    ``gs_error``, not ``error``: the overwhelming majority of routes call this
+    in a scope that already holds an ``error`` from
+    :func:`get_session_and_player`, and binding both to the same name discards
+    the first one's 401/404 in favour of this one's 500. Every call site in
+    ``src/api/routes/`` spells it this way.
 
     ``create_app`` always assigns ``app.game_service``, but
     :func:`~src.api.app._init_universe` falls back to a universe-less service

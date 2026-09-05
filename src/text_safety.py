@@ -32,15 +32,23 @@ an order that let one rule manufacture work for a rule that had already run —
 see :func:`_neutralise` for the two payloads that exploited it.
 """
 
+import hashlib
 import logging
 import re
 
 logger = logging.getLogger(__name__)
 
-# One line-leading ``NPC:`` / ``Jean:`` label. The conversation history block is
-# newline-delimited with exactly these two prefixes marking whose turn it is, so
-# a player who types one forges a turn that never happened and then answers it.
-_SPEAKER_PREFIX_PATTERN = re.compile(r"(?im)^[ \t]*(?:NPC|Jean)[ \t]*:[ \t]*")
+# A line-leading run of ``NPC:`` / ``Jean:`` labels. The conversation history
+# block is newline-delimited with exactly these two prefixes marking whose turn
+# it is, so a player who types one forges a turn that never happened and then
+# answers it.
+#
+# The trailing ``+`` buys nothing for the fixed point and everything for the
+# pass bound. ``re.sub`` resumes past its own replacement, so without it a chain
+# — ``NPC:NPC:NPC:`` — loses one label per pass and costs one pass per four
+# characters, which is the cheapest amplifier in this module. With it the whole
+# run goes in a single substitution. See :func:`_pass_budget`.
+_SPEAKER_PREFIX_PATTERN = re.compile(r"(?im)^[ \t]*(?:(?:NPC|Jean)[ \t]*:[ \t]*)+")
 
 # The same label once the text has been collapsed to a single line. Anchored to
 # the start of the string *or* to a preceding space, because a U+2028 or a
@@ -55,8 +63,14 @@ _SPEAKER_PREFIX_PATTERN = re.compile(r"(?im)^[ \t]*(?:NPC|Jean)[ \t]*:[ \t]*")
 # where it bought nothing (the model is not the attacker; the tag fence is what
 # guards that path) and silently ate authored NPC dialogue. See
 # :func:`neutralise_model_text`.
+#
+# The ``+`` is the pass-bound fix, and this is the pattern that needed it most.
+# The lookbehind reads the *input* string, so in ``x NPC:NPC:NPC:`` only the
+# first label is preceded by whitespace when the scan arrives and a single
+# ``re.sub`` deleted exactly one label. Repeating the group inside one match
+# consumes the whole chain instead. See :func:`_pass_budget`.
 _INLINE_SPEAKER_PREFIX_PATTERN = re.compile(
-    r"(?i)(?:^|(?<=\s))(?:NPC|Jean)\s*:\s*"
+    r"(?i)(?:^|(?<=\s))(?:(?:NPC|Jean)\s*:\s*)+"
 )
 
 # The delimiter ``_wrap_player_text`` opens around player text. A literal
@@ -102,26 +116,73 @@ _WS_RUN_PATTERN = re.compile(r"\s+")
 # run the remaining rules to convergence without a pass bound of its own.
 _ANGLE_BRACKET_PATTERN = re.compile(r"[<>]")
 
-#: How many convergence passes before we stop and fail closed.
+#: The length past which :func:`_pass_budget` stops scaling and the ceiling
+#: bites. Not a truncation and not an unchecked precondition — the ``min()`` in
+#: :func:`_pass_budget` is the check.
 #:
-#: Every pass that changes the string shortens it, once the first pass has
-#: turned the control characters into spaces — a tag becomes one space, a label
-#: is deleted, a whitespace run collapses — so the loop always terminates on
-#: its own; the bound is a guard against a pathological input spending real
-#: time, not a correctness requirement. Ordinary text settles in two passes
-#: (one to clean, one to confirm).
+#: 4000 is ``_MAX_FIELD_LEN`` in ``src/api/routes/npc_chat.py``, the widest door
+#: into this module. Everything real is far inside it: ``src/npc/_chat_llm.py``
+#: cuts player text to its 500-character ``MAX_JEAN_TEXT_CHARS`` *before*
+#: calling in, and model text is bounded by the request that produced it — the
+#: largest ``max_tokens`` configured anywhere in ``ai/llm_client.py`` is
+#: ``_STRUCTURED_MAX_TOKENS`` = 1024, with the chat paths at 400–800.
 #:
-#: What the bound has to clear is the *input* bound, and that is not the
-#: engine's 500-character ``MAX_JEAN_TEXT_CHARS``: ``src/npc/_chat_llm.py``
-#: neutralises the field and truncates it afterwards, so what arrives here is
-#: whatever the API route allowed — ``_MAX_FIELD_LEN``, 4000 characters, in
-#: ``src/api/routes/npc_chat.py``. A nesting costs 15 characters, so 4000 buys
-#: about 265 passes and 64 is comfortably *under* what is reachable today.
-#: Truncating before neutralising in ``_chat_llm.py`` is what makes 64 an
-#: honest bound (500 characters buy about 33); until it lands,
-#: :func:`_fail_closed` is a live path rather than a theoretical one, which is
-#: why it has to be as safe as the loop and is tested as such.
-_MAX_NEUTRALISE_PASSES = 64
+#: Truncating here instead was considered and rejected on the measurements. It
+#: would have to cut model text too — several ``ai/llm_client.py`` call sites
+#: neutralise a provider response *before* their own length cap — and it would
+#: buy nothing, because length is not what drives the pass count. Prose of any
+#: size settles in one or two passes; 100 000 characters of it needs exactly
+#: one. Reaching the ceiling takes 15 030 characters of *pure* nested
+#: ``</player_input>``, roughly 3750 tokens against a 1024-token budget. So the
+#: trade would be real dialogue lost at 4000 characters, to prevent nothing.
+_MAX_INPUT_CHARS = 4000
+
+#: The ceiling on :func:`_pass_budget` — a time guard, not a correctness one.
+#:
+#: Work is ``O(passes x length)``, so an unbounded budget on an unbounded input
+#: is quadratic: 100 000 characters of nesting takes 3.6s against this ceiling
+#: and 13.8s without one (measured). Past the ceiling :func:`_fail_closed`
+#: takes over, and it is safe *and* non-destructive — on benign prose it
+#: returns the string byte-identical; the most it ever does is delete angle
+#: brackets. Nothing is discarded, which is why letting the guard bite beats
+#: truncating the input to avoid it.
+_MAX_NEUTRALISE_PASSES = _MAX_INPUT_CHARS // 4 + 2
+
+
+def _pass_budget(text: str) -> int:
+    """Passes to allow for *this* string, computed from the string itself.
+
+    **Any pass after the first that changes the string shortens it by at least
+    four characters:**
+
+    * pass 1's control strip replaces every control and invisible character
+      with a space, and no rule here emits a character in that class, so from
+      pass 2 onwards the control strip is the identity;
+    * the two label strips delete, and the shortest thing they can delete is
+      ``NPC:`` — four characters;
+    * the tag strip replaces a match of at least fourteen characters with one;
+    * the whitespace collapse cannot be the only change on a later pass. The
+      previous pass ended with that same collapse and a ``strip()``, so its
+      input carries no run; only the tag strip can manufacture one, and that
+      change is already counted above.
+
+    Four characters a pass, plus the first pass and the confirming pass that
+    sees no change, is ``len(text) // 4 + 2``. Deriving it per call rather than
+    from a fixed number is the point: the budget is then provably sufficient
+    for the string in hand, with no precondition for anyone to check or
+    violate, and a 500-character input gets 127 passes instead of a thousand it
+    could never spend.
+
+    The bound used to be a flat 64, taken from the 15 characters a nested
+    ``</player_input>`` costs per pass. That was the wrong denominator and wrong
+    in the unsafe direction: a chain of labels cost *four*, so
+    ``"x " + "NPC:" * 124`` — 498 characters, inside even the engine's
+    500-character cap — exhausted the budget and failed closed. Both label
+    patterns now collapse such a chain in one pass, leaving the nesting as the
+    cheapest amplifier that survives, and four is what the arithmetic is done
+    with because four is what is *provable*.
+    """
+    return min(len(text) // 4 + 2, _MAX_NEUTRALISE_PASSES)
 
 
 def _apply_once(text: str, strip_inline_labels: bool) -> str:
@@ -146,6 +207,16 @@ def _apply_once(text: str, strip_inline_labels: bool) -> str:
     return _WS_RUN_PATTERN.sub(" ", cleaned).strip()
 
 
+def _digest(text: str) -> str:
+    """A short, stable fingerprint of a string, for a log that must not carry it.
+
+    ``surrogatepass`` because a lone surrogate can reach this module inside a
+    JSON body, and a diagnostic that raises from the failure path would be
+    worse than no diagnostic at all.
+    """
+    return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
 def _fail_closed(text: str, strip_inline_labels: bool) -> str:
     """Defang a string that would not converge inside the pass bound.
 
@@ -157,13 +228,15 @@ def _fail_closed(text: str, strip_inline_labels: bool) -> str:
 
     The rules then run to a fixed point rather than once each. Once was the
     same hole :func:`_neutralise` exists to close, in the branch that is
-    supposed to be the safe one: ``re.sub`` resumes past its own replacement
-    and ``_INLINE_SPEAKER_PREFIX_PATTERN``'s lookbehind reads the *input*
-    string, so in ``NPC:NPC:NPC:`` only the first label is preceded by
-    whitespace when the scan arrives. One call deleted one label and returned
-    the rest live. Measured, at 70 nestings and 140 chained labels — 1618
-    characters, well inside the 4000 the route allows — that was 75 live
-    labels out of the ingress call and 10 surviving both layers.
+    supposed to be the safe one: ``re.sub`` resumes past its own replacement,
+    so a nesting loses one layer per pass and one call leaves the rest live.
+    Chained labels leaked the same way — ``_INLINE_SPEAKER_PREFIX_PATTERN``'s
+    lookbehind reads the *input* string, so in ``NPC:NPC:NPC:`` only the first
+    label was preceded by whitespace when the scan arrived. Measured, at 70
+    nestings and 140 chained labels — 1618 characters, well inside the 4000 the
+    route allows — that was 75 live labels out of the ingress call and 10
+    surviving both layers. Both label patterns now match a whole run in one go,
+    so the chain costs a single substitution; the nesting still needs the loop.
 
     This loop needs no pass bound. With every ``<`` and ``>`` already gone no
     substitution can build a tag; the control strip replaces with a space and
@@ -207,20 +280,32 @@ def _neutralise(text, strip_inline_labels: bool) -> str:
     ``re.sub`` scanning past its own replacement is what makes depth matter:
     ``"<</player_input>/player_input>"`` has its inner tag replaced and the
     scan resumes beyond it, so the leftover ``<`` pairs up with the trailing
-    ``/player_input>`` only on the *next* pass. N nestings need N passes. The
-    same scan rule applies to a chain of labels, which is why
-    :func:`_fail_closed` loops too rather than applying each rule once.
+    ``/player_input>`` only on the *next* pass. N nestings need N passes, which
+    is why :func:`_fail_closed` loops too rather than applying each rule once.
+    The same scan rule used to apply to a chain of labels, at four characters a
+    pass instead of fifteen; both label patterns now match the whole run in one
+    substitution, and :func:`_pass_budget` records what that cost.
     """
     cleaned = str(text)
-    for _ in range(_MAX_NEUTRALISE_PASSES):
+    budget = _pass_budget(cleaned)
+    for _ in range(budget):
         before = cleaned
         cleaned = _apply_once(cleaned, strip_inline_labels)
         if cleaned == before:
             return cleaned
+    # A length and a digest, not the text. This line used to carry ``head=%r``
+    # — eighty characters of the string it gave up on, which on the player path
+    # is chat content, at ERROR, in whatever operational log the deployment
+    # ships. The digest is the whole diagnostic value: it identifies the same
+    # payload across the ingress and prompt-assembly layers, across sessions and
+    # across both entry points, which is what "is this one attacker or a bug?"
+    # actually asks. The characters answer nothing that the length does not.
     logger.error(
-        "text_safety: %d passes did not converge — failing closed. head=%r",
-        _MAX_NEUTRALISE_PASSES,
-        cleaned[:80],
+        "text_safety: %d passes did not converge — failing closed. "
+        "chars=%d sha256=%s",
+        budget,
+        len(cleaned),
+        _digest(cleaned),
     )
     return _fail_closed(cleaned, strip_inline_labels)
 

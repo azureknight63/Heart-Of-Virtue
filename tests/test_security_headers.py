@@ -6,9 +6,10 @@ accident:
 1. The headers are actually on real responses. Before this suite the app set
    none at all -- no CSP, no ``X-Frame-Options``, no ``nosniff``, no
    ``Referrer-Policy`` -- and nothing would have noticed.
-2. The strict :data:`~src.api.app._API_CSP` reaches exactly the responses it is
-   safe on (everything that does not render) and the permissive
-   :data:`~src.api.app._HTML_CSP` reaches exactly the ones that do. Getting that
+2. The strict :data:`~src.api.security_headers._API_CSP` reaches exactly the
+   responses it is safe on (everything that does not render) and the permissive
+   :data:`~src.api.security_headers._HTML_CSP` reaches exactly the ones that do.
+   Getting that
    branch backwards is silent in both directions: a strict policy on HTML is a
    blank page, a permissive policy on the API is the hole the strict one exists
    to close.
@@ -23,8 +24,8 @@ READ THIS BEFORE TRUSTING ``_HTML_CSP`` TO PROTECT ANYTHING
 below do not make it so. ``serves_html_document`` -- the only way a response
 can be given that policy -- has no production caller: the sole references in
 the repository are its own definition, the comment beside it in
-``src/api/app.py``, and this file, whose ``/__html_probe`` route calls it to
-exercise the branch. Nothing under ``src/`` calls ``render_template``,
+``src/api/security_headers.py``, and this file, whose ``/__html_probe`` route
+calls it to exercise the branch. Nothing under ``src/`` calls ``render_template``,
 ``send_file``, ``send_from_directory`` or registers a static folder; the React
 document is unpacked into a different container's document root by
 ``deploy.ps1`` and served by a webserver this app never sees.
@@ -46,7 +47,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.api.app import (
+from src.api.security_headers import (
     _API_CSP,
     _HSTS_HEADER,
     _HSTS_VALUE,
@@ -228,6 +229,28 @@ _JS_COMMENT_OR_STRING = re.compile(
 #: ``"<style>" in body or "createElement('style')" in body``, which
 #: ``createElement("style")``, ``<style type="text/css">``, ``insertRule`` and
 #: ``insertAdjacentHTML`` all walked straight past.
+#:
+#: The last alternative is knowingly the loose one, and it is loose on purpose.
+#: ``insertAdjacentHTML`` is the ordinary way to insert *any* markup, so a bare
+#: call proves nothing about stylesheets -- an ``insertAdjacentHTML`` of a
+#: ``<div>`` is matched here and is not an injector. The narrower rule would be
+#: to require ``<style`` inside the call, and that rule is defeated by one
+#: string concatenation: ``'<sty' + 'le>'``, which is
+#: ``TestTheInjectorScanItself``'s case I and which no character-level pattern
+#: can see through. The over-approximation is the cheaper error of the two,
+#: because of what each costs:
+#:
+#: * a false positive adds a filename to
+#:   :data:`TestTheHtmlPolicyMatchesTheRealFrontend._STYLE_INJECTORS`, and the
+#:   test that compares the two says so out loud on the next run;
+#: * a false negative silently drops a component from that list, which makes
+#:   ``style-src 'unsafe-inline'`` look closer to removable than it is -- and
+#:   removing it blanks the page.
+#:
+#: No file in ``frontend/src`` matches this alternative today, so it is a
+#: latent cost rather than a live one. If it ever fires on a component that
+#: inserts ordinary markup, tighten it *there* with the concatenation case in
+#: mind rather than deleting it.
 _INJECTS_STYLE = re.compile(
     r"""< style [\s/>]
       | createElement \s* \( \s* ['"`] style ['"`]

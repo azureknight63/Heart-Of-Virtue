@@ -11,6 +11,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from src.api.config import DevelopmentConfig
+from src.api.security_headers import _register_security_headers
 from src.api.services import SessionManager, GameService
 from src.env_bootstrap import PROJECT_ROOT as _REPO_ROOT
 import src.universe as universe_module
@@ -18,7 +19,7 @@ import src.universe as universe_module
 
 _log = logging.getLogger(__name__)
 
-# LOG_FILE is confined to this directory. See _resolve_log_file.
+# LOG_FILE is confined to this directory. See _resolve_log_file_setting.
 _LOG_DIR = _REPO_ROOT / "logs"
 
 # LOG_FILE rotation budget: a DEBUG run must not be able to fill the disk.
@@ -31,10 +32,10 @@ _LOG_FILE_BACKUP_COUNT = 3
 # day one of them is mistyped.
 _HOV_HANDLER_ATTR = "_hov_handler"
 
-# Read for two different questions ~700 lines apart — "what level?" in
-# _resolve_log_level and "is there anything to neutralise?" in
-# _testing_log_level — so both go through _log_level_setting() below rather
-# than through two literals that can drift apart.
+# Read for two different questions — "what level?" in _resolve_log_level and
+# "is there anything to neutralise?" in _testing_log_level — so both go
+# through _log_level_setting() below rather than through two literals that can
+# drift apart.
 _LOG_LEVEL_ENV = "LOG_LEVEL"
 
 # Level names only — getattr(logging, name) would happily resolve any module
@@ -116,8 +117,12 @@ class _RedactSecretsFilter(logging.Filter):
     * ``record.msg`` (with ``record.args`` dropped, as they have already been
       merged in by ``getMessage()``).
     * ``record.exc_text`` — the formatted traceback. This is the one that
-      matters most: ``logger.exception`` / ``exc_info=True`` at
-      ``auth.py``, ``game_service.py`` and ``world.py`` can surface a
+      matters most. Every ``logger.exception`` / ``exc_info=True`` call under
+      ``src/`` and ``ai/`` feeds it — dozens of sites across the tree, so no
+      list of them written here would stay true — and the largest single
+      contributor is not any route module but
+      ``src/api/handlers/error_handler.py``, the app-wide 500 handler that
+      every unhandled exception passes through. Any of them can surface a
       provider-SDK traceback whose frame locals or request repr carry the API
       key, and that text is rendered by ``Formatter.format`` *after* every
       filter has run. Rendering it here and caching the redacted result in
@@ -210,8 +215,15 @@ def _resolve_log_level(level_name=None):
     return logging.WARNING
 
 
-def _resolve_log_file(log_file):
-    """Return the confined absolute path LOG_FILE is allowed to write to.
+def _resolve_log_file_setting(log_file):
+    """Return the confined absolute path the LOG_FILE *setting* may write to.
+
+    Not to be confused with ``src.api.routes.logs._resolve_log_file``, which
+    shares this package and answers a different question with an incompatible
+    contract: that one takes a client-supplied filename to *read*, returns
+    ``(path, error)`` and never raises. This one takes an operator-supplied
+    setting to *write*, returns a ``Path`` and raises. The names were
+    interchangeable; the functions never were.
 
     Raises ValueError when it escapes ``<repo>/logs/``. Unconfined, this path
     reaches ``mkdir(parents=True)`` — which silently creates a directory tree
@@ -265,7 +277,7 @@ def _configure_logging(level_name=None):
     log_file = os.environ.get("LOG_FILE")
     if log_file:
         try:
-            path = _resolve_log_file(log_file)
+            path = _resolve_log_file_setting(log_file)
             path.parent.mkdir(parents=True, exist_ok=True)
             handlers.append(
                 logging.handlers.RotatingFileHandler(
@@ -325,6 +337,24 @@ def _configure_logging(level_name=None):
     resolved = logging.NOTSET if level is None else level
     for namespace in _APP_LOG_NAMESPACES:
         logging.getLogger(namespace).setLevel(resolved)
+
+
+def _testing_log_level(config_class):
+    """The level a TESTING config should pin, or ``None`` to leave levels alone.
+
+    The pin exists for exactly one scenario: ``.env`` reaches pytest (through
+    ``src/api/db.py``'s import-time ``load_project_env()``), so a developer's
+    ``LOG_LEVEL=DEBUG`` used to put the whole suite at DEBUG. When LOG_LEVEL is
+    *not* set there is nothing to neutralise, and pinning anyway would set an
+    explicit level on ``src``/``ai`` that outranks a plain
+    ``caplog.set_level(INFO)`` — which raises only the root level — and make
+    every app record invisible to it.
+    """
+    if not getattr(config_class, "TESTING", False):
+        return None
+    if _log_level_setting() is None:
+        return None
+    return "WARNING"
 
 
 def _apply_proxy_fix(app):
@@ -484,7 +514,17 @@ def _load_start_config() -> StartConfig:
 
 
 def _apply_starting_equipment(test_player, starting_equipment):
-    """Create, add and auto-equip each ``Item[:enchantment]`` spec."""
+    """Create, add and auto-equip each well-formed ``Item[:enchantment]`` spec.
+
+    A spec naming a class ``src.items`` does not define is skipped, and a
+    non-integer enchantment falls back to 0. Both are warnings rather than
+    errors: the specs come from ``starting_equipment`` in a hand-edited INI
+    (config_combat_testing.ini and friends), and refusing to build the whole
+    dev universe over one typo is worse than starting without that item. But
+    silence was worse still — a mistyped weapon name produced a weaponless
+    player with nothing said anywhere, in a config whose entire purpose is to
+    hand the player that weapon.
+    """
     import src.items as items
 
     for eq_spec in starting_equipment:
@@ -495,10 +535,21 @@ def _apply_starting_equipment(test_player, starting_equipment):
         try:
             enchantment_level = int(enchantment_level_str.strip())
         except ValueError:
+            _log.warning(
+                "starting_equipment %r: enchantment %r is not an integer; "
+                "using 0",
+                eq_spec,
+                enchantment_level_str.strip(),
+            )
             enchantment_level = 0
 
         # Get the item class from the items module
         if not hasattr(items, item_class_name):
+            _log.warning(
+                "starting_equipment %r: src.items defines no %r; skipping",
+                eq_spec,
+                item_class_name,
+            )
             continue
         item_class = getattr(items, item_class_name)
         # Create item with enchantment_level
@@ -526,13 +577,21 @@ def _make_get_tile(universe):
 
     Named factory rather than a closure defined inline in
     :func:`_build_dev_universe`, because the only thing that ever calls the
-    result reaches it as ``universe.get_tile`` — an attribute the Universe
-    class does not declare — and a closure assigned onto an instance from
-    inside a builder is not greppable from the call site.
+    result reaches it as ``universe.get_tile``, and a closure assigned onto an
+    instance from inside a builder is not greppable from the call site.
 
     Lookups are confined to the player's *current* map: coordinates repeat
     across maps, so searching all of them would silently return a tile from
     somewhere the player is not.
+
+    ``Universe.get_tile`` (src/universe.py) declares the same accessor with the
+    same semantics — same current-map confinement, same ``None`` when there is
+    no player or no map — so the assignment in :func:`_build_dev_universe`
+    shadows a real method rather than supplying a missing one, and this factory
+    is redundant. Removing it is a separate change: its branch coverage is
+    pinned by ``TestUniverseBuildSuccessPath::test_get_tile_wrapper_branches``
+    in ``tests/test_app_factory_coverage.py``, which drives the closure through
+    a ``MagicMock`` universe and would pass vacuously against the real method.
     """
 
     def get_tile_from_maps(x, y):
@@ -695,238 +754,6 @@ def _register_preflight(app):
             return response, 200
 
 
-# --------------------------------------------------------------------------
-# Security response headers
-# --------------------------------------------------------------------------
-#
-# The reasoning is written out here rather than filed in a doc, because every
-# value below is a judgement about *this* app's shape, and the shape is unusual
-# enough that the obvious policy is the wrong one.
-#
-# This Flask app serves no HTML. There is no ``templates/`` directory, no
-# ``static/`` directory, no ``render_template`` / ``send_file`` /
-# ``send_from_directory`` call anywhere under ``src/``, and no catch-all SPA
-# route; every registered endpoint returns ``jsonify()``. The React frontend is
-# a separate artefact on a separate origin -- Vite serves it from :3000 in
-# development (proxying ``/api`` here, which is why ``CORS_ORIGINS`` exists at
-# all), and ``deploy.ps1`` unpacks ``frontend/dist`` into a *different*
-# container's document root in production while this app runs as its own
-# systemd service. Two consequences follow, and they pull in opposite
-# directions:
-#
-#   * These headers can never reach the SPA document, so the CSP that backstops
-#     React's escaping of model-authored NPC dialogue is not something this file
-#     can ship. It has to be issued by whatever serves ``index.html``.
-#     :data:`_HTML_CSP` records the policy that document actually needs, so the
-#     requirement is written down in the repo and is applied automatically the
-#     day anything here does serve HTML.
-#   * Because nothing here renders, the API's own CSP can be the strictest one
-#     the grammar allows, with none of the blank-page risk that gets a CSP
-#     deleted. :data:`_API_CSP` takes that option.
-#
-# Nothing below touches the ``Access-Control-*`` headers that flask_cors and
-# :func:`_register_preflight` negotiate, and nothing below contradicts that
-# allow-list: CSP constrains what a *document* may load, CORS constrains who may
-# read a *response*, and the two never describe the same thing. In particular
-# ``default-src 'none'`` does not affect the SPA's cross-origin ``fetch``,
-# because a CSP binds the document it was served with and a fetched JSON body
-# never becomes a document.
-
-# The policy for every response this app actually produces today.
-#
-# ``default-src 'none'`` is safe precisely because it only ever binds the case
-# it is meant to stop: a browser induced to *navigate* to an API URL and render
-# the body (the classic route from a reflected value in an error payload to
-# script execution). XHR / fetch / EventSource / WebSocket responses are not
-# documents and ignore this header entirely, so the SPA is unaffected.
-# ``sandbox`` with no tokens drops such a document into an opaque origin with no
-# scripts, no forms and no top-level navigation -- belt to the braces.
-_API_CSP = (
-    "default-src 'none'; "
-    "frame-ancestors 'none'; "
-    "base-uri 'none'; "
-    "form-action 'none'; "
-    "sandbox"
-)
-
-# The policy for HTML -- unreachable from this app today (nothing calls
-# :func:`serves_html_document`), and deliberately kept anyway: it is the
-# specification the SPA's host must mirror, and it is what a future
-# ``send_from_directory`` of ``frontend/dist`` would need on day one. Derived
-# from what the frontend measurably does, not from a hardening checklist:
-#
-#   script-src 'self'  No inline <script>, no eval, no ``new Function``, no
-#       Worker and no blob: URL exists in ``frontend/src`` or ``index.html``
-#       (grepped: zero hits) -- index.html loads one module by src. So the
-#       directive that actually stops XSS stays strict, with no escape hatch.
-#
-#   style-src 'unsafe-inline'  A measured cost, not a necessity. Three
-#       components render a literal <style> element (GameOverScreen:61,
-#       HeroPanel:241, ToastContext:172) plus
-#       InteractPanel:761, which builds one via
-#       ``document.createElement('style')`` -- all of them for ``@keyframes``.
-#       Those four are the whole of what forces the concession today, and the
-#       count is falling: TypewriterOutput's ``blink``, NpcChatPanel's
-#       spinner keyframes and ItemDetailDialog's ``fadeIn`` have already been
-#       lifted into
-#       ``frontend/src/styles/index.css``, because keyframe names are
-#       document-global and a component-local block silently competes with
-#       every other definition of the same name. The same move would work for
-#       the remaining four, and if it is made this token should go with them.
-#       There is no nonce to offer them meanwhile: a statically hosted, cached
-#       index.html has no per-response value to mint. The ~1000 ``style={{}}``
-#       props are the weaker argument (React applies those through the CSSOM,
-#       which CSP does not police) but they are why a strict style policy would
-#       be one refactor away from a blank screen anyway. The concession is
-#       bounded: inline *style* cannot execute script, and the one place
-#       untrusted model text reaches the DOM as markup (CombatLog's
-#       ``dangerouslySetInnerHTML``) is already sanitised by DOMPurify -- CSP is
-#       the second line there, not the first. It is still an escape hatch
-#       written into a policy this file bills as the spec the SPA's host must
-#       mirror, so it is worth removing rather than inheriting.
-#
-#   fonts.googleapis.com / fonts.gstatic.com  index.html links a Google Fonts
-#       stylesheet, which in turn pulls its faces from the gstatic host. Both
-#       are needed or the game loses its typography.
-#
-#   img-src / media-src data:  Vite inlines assets under its 4 KB threshold as
-#       data: URIs at build time.
-#
-#   connect-src 'self'  Correct for the case this constant governs: HTML served
-#       *from here* is same-origin with this API, and CSP3's 'self' already
-#       covers the ws:/wss: upgrade Socket.IO performs against the same host. A
-#       host serving the SPA on a *different* origin from the API (today's
-#       production split, and any build setting VITE_API_URL) must append that
-#       API origin here.
-_HTML_CSP = (
-    "default-src 'self'; "
-    "base-uri 'self'; "
-    "frame-ancestors 'none'; "
-    "form-action 'self'; "
-    "object-src 'none'; "
-    "script-src 'self'; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com; "
-    "img-src 'self' data:; "
-    "media-src 'self' data:; "
-    "connect-src 'self'"
-)
-
-# Headers with no policy trade-off to weigh, and so no knob to offer.
-#
-#   X-Content-Type-Options  The precondition for most "navigate straight at an
-#       API endpoint" attacks is a browser deciding a JSON body is really HTML.
-#       nosniff removes it, and this app has no legitimate sniffing to lose.
-#
-#   X-Frame-Options  Nothing here is meant to be framed. This duplicates the
-#       CSPs' ``frame-ancestors 'none'`` on purpose: frame-ancestors supersedes
-#       it in modern browsers, and X-Frame-Options is what the ones that ignore
-#       CSP still honour. DENY rather than SAMEORIGIN because the SPA is a
-#       different origin and frames nothing.
-#
-#   Referrer-Policy  A deliberate pick, not a default. ``no-referrer`` was the
-#       alternative and would also have been defensible -- the API never
-#       initiates a navigation, so it has nothing to lose by sending nothing.
-#       ``strict-origin-when-cross-origin`` wins on two counts: it is the value
-#       the SPA's host will also set, so the two halves of the product state one
-#       policy rather than two, and it keeps the full URL on same-origin
-#       requests, which is what any debugging or log correlation on the API host
-#       wants. The residual cross-origin leak is the bare origin, and this API
-#       keeps no credential in a URL -- the session id travels in the
-#       Authorization header, by the convention in ``src/api/middleware/auth.py``.
-_STATIC_SECURITY_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-}
-
-# Strict-Transport-Security, production only.
-#
-# It is not in the set above because it is the one header here with a
-# precondition: a browser ignores HSTS over plaintext, but a host that is *not*
-# reachable over TLS and sends it anyway has locked its own clients out of it
-# for a year. So it is gated on ``SESSION_COOKIE_SECURE``, which is the flag by
-# which this app already says "I believe I am behind TLS" -- pinned True by
-# ProductionConfig and by ``runtime_config()`` for a production ``FLASK_ENV``.
-#
-# It matters more here than the cookie flag it rides on. The session id does
-# not travel in a cookie at all: ``src/api/middleware/auth.py`` reads it from
-# ``Authorization: Bearer``, which ``SESSION_COOKIE_SECURE`` does nothing to
-# protect. One ``http://`` request -- a typed URL, an old bookmark, a redirect
-# -- hands that credential to the network in clear text. HSTS is what stops the
-# request being made at all.
-#
-# One year, no ``includeSubDomains``, no ``preload``: the API is one host among
-# whatever else the operator runs under the same parent domain, and asserting
-# TLS on siblings this app knows nothing about is not its call to make.
-_HSTS_HEADER = "Strict-Transport-Security"
-_HSTS_VALUE = "max-age=31536000"
-
-
-# Marks a response as a real SPA document. Opt-in, and deliberately so.
-#
-# Sniffing ``mimetype == "text/html"`` reads the wrong way round. This app
-# authors no HTML, so every ``text/html`` response it emits today is written by
-# *Werkzeug*, not by us: routing redirects, and HTTPExceptions that reach the
-# WSGI layer with their default HTML bodies. Branching on the content type
-# therefore handed the permissive policy to exactly the responses nobody
-# designed -- the error paths an attacker reaches without credentials -- while
-# the strict one covered the routes we control. ``_register_preflight``'s bare
-# ``make_response()`` is a third case: Flask's default content type is
-# ``text/html``, so an empty preflight body looked like a document too.
-#
-# Inverted, the default is :data:`_API_CSP` and a view that genuinely serves
-# ``index.html`` asks for :data:`_HTML_CSP` by name. Forgetting to ask yields a
-# visibly blank page in development, which is the file's stated safe direction
-# to be wrong in; the sniffing version's failure was a policy that silently
-# stopped applying.
-_HTML_DOCUMENT_FLAG = "_hov_html_document"
-
-
-def serves_html_document(response):
-    """Mark ``response`` as an HTML document, so it gets :data:`_HTML_CSP`.
-
-    For whatever eventually serves ``frontend/dist`` from this app -- a
-    ``send_from_directory`` catch-all, or an SPA fallback route. Returns the
-    response, so it can wrap a return value in place.
-    """
-    setattr(response, _HTML_DOCUMENT_FLAG, True)
-    return response
-
-
-def _renders_as_html(response):
-    """True when this response has been marked as a document to render."""
-    return bool(getattr(response, _HTML_DOCUMENT_FLAG, False))
-
-
-def _register_security_headers(app):
-    """Install the single ``after_request`` hook that sets security headers.
-
-    Every header is written with ``setdefault``, so a reverse proxy or a route
-    that has already made a deliberate choice keeps it, and repeated
-    registration cannot stack or fight.
-
-    Covers Flask responses only. flask_socketio wraps ``app.wsgi_app``, so the
-    ``/socket.io/*`` handshake and polling responses are served beneath this
-    hook and carry none of these headers. Harmless -- they are not documents
-    and nothing frames them -- but the coverage is not total, and anything
-    that needs to be true of *every* response on the port has to be set at the
-    reverse proxy instead.
-    """
-
-    @app.after_request
-    def set_security_headers(response):
-        for header, value in _STATIC_SECURITY_HEADERS.items():
-            response.headers.setdefault(header, value)
-        if app.config.get("SESSION_COOKIE_SECURE"):
-            response.headers.setdefault(_HSTS_HEADER, _HSTS_VALUE)
-        response.headers.setdefault(
-            "Content-Security-Policy",
-            _HTML_CSP if _renders_as_html(response) else _API_CSP,
-        )
-        return response
-
-
 def _register_meta_routes(app):
     """Health and API info — the two unauthenticated public endpoints."""
 
@@ -1029,24 +856,6 @@ def _register_test_routes(app):
             )
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 500
-
-
-def _testing_log_level(config_class):
-    """The level a TESTING config should pin, or ``None`` to leave levels alone.
-
-    The pin exists for exactly one scenario: ``.env`` reaches pytest (through
-    ``src/api/db.py``'s import-time ``load_project_env()``), so a developer's
-    ``LOG_LEVEL=DEBUG`` used to put the whole suite at DEBUG. When LOG_LEVEL is
-    *not* set there is nothing to neutralise, and pinning anyway would set an
-    explicit level on ``src``/``ai`` that outranks a plain
-    ``caplog.set_level(INFO)`` — which raises only the root level — and make
-    every app record invisible to it.
-    """
-    if not getattr(config_class, "TESTING", False):
-        return None
-    if _log_level_setting() is None:
-        return None
-    return "WARNING"
 
 
 def create_app(config_class=None):

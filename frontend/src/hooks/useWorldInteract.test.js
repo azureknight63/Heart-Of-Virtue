@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useWorldInteract } from './useWorldInteract'
 import apiEndpoints from '../api/endpoints'
+import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -430,7 +431,7 @@ describe('useWorldInteract', () => {
     it('closes before refetching when a passageway transition confirmation is returned', async () => {
       const order = []
       const passagewayEvent = {
-        type: 'PassagewayTransitionEvent',
+        type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
         event_id: 'passage-1',
         needs_input: true,
       }
@@ -464,7 +465,7 @@ describe('useWorldInteract', () => {
     it('still shows the transition when the destination refetch fails', async () => {
       const refetchError = new Error('destination unavailable')
       const passagewayEvent = {
-        type: 'PassagewayTransitionEvent',
+        type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
         event_id: 'passage-1',
         needs_input: true,
       }

@@ -334,13 +334,31 @@ _JEAN_OPTION_IDENTITY_RULE = (
     "or 'I'm Jean'."
 )
 
+#: What a merchant is steered toward when commerce comes up.
+#:
+#: Public because three separate places have to agree on this list, and two had
+#: already drifted ("or lore" here against "or general lore" in
+#: ``src/npc/_chat_llm.py``): the merchant system prompt's ``TRADE`` block
+#: (``ConversationalNPCMixin._build_trade_block``), the user-task rule below,
+#: and the deterministic classifier that has to let these topics through QC. A
+#: sentence about one of these must survive the checker, or the model is
+#: punished for obeying the instruction it was just given -- which is the
+#: defect the round-nine classifier fix found, in both directions at once.
+MERCHANT_SUBSTITUTE_TOPICS = "craft, fit, maintenance, provenance, or general lore"
+
 #: Conditional guidance for merchant system prompts. The mixin supplies the
 #: ``TRADE`` block; repeating its consequence in the user task keeps the rule
 #: visible to adapters that treat system/user messages differently.
+#:
+#: The forbidden half stays spelled out here rather than shared with the
+#: classifier's regexes: prose for a model and a pattern for a checker are two
+#: representations of one rule that must agree in meaning, and cannot agree by
+#: sharing a string. Only the substitute list is literally the same text.
 _MERCHANT_OPTION_RULE = (
     "If the system prompt contains TRADE, Jean must not ask about price, "
-    "inventory, stock, wares, buying, selling, or discounts; ask about craft, "
-    "fit, maintenance, provenance, or lore instead."
+    "inventory, stock, wares, buying, selling, or discounts; ask about "
+    + MERCHANT_SUBSTITUTE_TOPICS
+    + " instead."
 )
 
 #: The ``conversation_quality`` enum: value -> what it means.

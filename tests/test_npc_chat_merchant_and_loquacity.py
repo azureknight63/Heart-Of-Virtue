@@ -230,6 +230,163 @@ class TestMerchantNpcLineSuppression:
         assert "price" in cleaned.lower()
 
 
+class TestWeaponMerchantCommerceQuestions:
+    """The classifier was inverted at Kaelen's stall, in both directions.
+
+    Kaelen is the arms half of Iron & Oath — his ``always_stock`` is a
+    Shortsword, a Spear and a Dagger (``src/npc/_merchants.py``). The chat-side
+    item vocabulary enumerated armour nouns and no weapon nouns, so the
+    canonical price question at his counter was not commerce at all; and the
+    stock-request pattern fired on a bare ``get``/``keep`` anywhere in the
+    sentence, so provenance and maintenance — two of the topics
+    ``_build_trade_block`` tells the model to raise *instead* — were suppressed.
+
+    Both directions are asserted here on purpose. A parametrised list of things
+    that must be dropped, with no list of things that must survive, cannot
+    distinguish a working filter from one that returns True unconditionally,
+    and it is what let the inversion ship.
+    """
+
+    KAELEN_CONFIG = {
+        "character_name": "Kaelen",
+        "role": "weaponsmith, merchant, co-proprietor of Iron & Oath",
+        "knowledge_scope": ["metallurgy, edge geometry, weapon balance"],
+        "system_prompt_snippet": "You are Kaelen, a weaponsmith.",
+    }
+
+    def _kaelen(self):
+        return chat_npc(name="Kaelen", _chat_char_config=self.KAELEN_CONFIG)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Kaelen's own stock, priced.
+            "How much for the sword?",
+            "How much for the spear?",
+            "How much for the dagger?",
+            "What is the price of this sword?",
+            "Do you have any bows?",
+            "Would you carry a lighter blade?",
+            # Vespera's half, so the armour nouns are not lost in the fix.
+            "How much for the leather armor?",
+            "Do you have any helmets?",
+            # The string this feature's own module docstring names first.
+            "What are you looking to buy?",
+        ],
+    )
+    def test_commerce_at_the_arms_stall_is_suppressed(self, text):
+        assert self._kaelen()._is_merchant_commerce_question(text) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Provenance, maintenance, craft, lore — the substitutes the TRADE
+            # block asks the model for. Suppressing these is how the pool of
+            # generic filler ended up in Kaelen's and Vespera's mouths.
+            "Where did you get that leather?",
+            "How do you keep the chain from rusting?",
+            "Who taught you to work leather?",
+            "How does a spear hold its edge?",
+            "What is the story behind that blade?",
+            "How long have you worked the forge?",
+            "Where do you keep the good steel?",
+            "How do you carry a blade that long?",
+        ],
+    )
+    def test_craft_and_provenance_questions_survive(self, text):
+        assert self._kaelen()._is_merchant_commerce_question(text) is False
+
+    def test_the_rule_is_still_scoped_to_merchant_context(self):
+        friend = _friend()
+        assert friend._is_merchant_commerce_question("How much for the sword?") is False
+
+
+class TestMerchantVocabularyHasOneSpelling:
+    """Finding 4: the item half of the rule must not be spelled twice."""
+
+    def test_the_item_pattern_is_built_from_the_guard_vocabulary(self):
+        from src.npc import _chat_guard, _chat_llm
+
+        assert _chat_guard.MERCHANDISE in _chat_llm._MERCHANT_ITEM_PATTERN.pattern
+
+    @pytest.mark.parametrize(
+        "noun", ["sword", "spear", "dagger", "leather", "chain", "helmet", "cuirass"]
+    )
+    def test_both_readers_of_the_vocabulary_agree(self, noun):
+        """A noun a merchant sells is a noun the guard calls a possession."""
+        import re
+
+        from src.npc import _chat_guard, _chat_llm
+
+        possessions = re.compile(
+            r"\b(?:" + _chat_guard._POSSESSIONS + r")\b", re.IGNORECASE
+        )
+        assert _chat_llm._MERCHANT_ITEM_PATTERN.search(noun)
+        assert possessions.search(noun)
+
+    def test_coin_words_are_deliberately_not_merchandise(self):
+        """"The gold in this region" is lore, not a price question."""
+        from src.npc import _chat_llm
+
+        for word in ("gold", "coin", "silver"):
+            assert not _chat_llm._MERCHANT_ITEM_PATTERN.search(word)
+
+    def test_the_prompt_and_the_classifier_name_the_same_substitutes(self):
+        """All three spellings of the substitute list are one string.
+
+        There were three: this module's ``TRADE`` block, the classifier's
+        exclusions, and ``ai.llm_client._MERCHANT_OPTION_RULE`` -- and two of
+        them had drifted ("or lore" against "or general lore") before they were
+        consolidated onto ``MERCHANT_SUBSTITUTE_TOPICS``. Asserting only that
+        the block contains the constant it is built from would pass for any
+        value of the constant, so reach across to the other module too: that
+        edge is the one that actually rotted.
+        """
+        from ai.llm_client import MERCHANT_SUBSTITUTE_TOPICS, _MERCHANT_OPTION_RULE
+        from src.npc import _chat_llm
+
+        assert _chat_llm.MERCHANT_SUBSTITUTE_TOPICS is MERCHANT_SUBSTITUTE_TOPICS
+        assert MERCHANT_SUBSTITUTE_TOPICS in _merchant()._build_trade_block()
+        assert MERCHANT_SUBSTITUTE_TOPICS in _MERCHANT_OPTION_RULE
+
+    def test_the_substitute_topics_survive_the_classifier(self):
+        """The list the model is handed must not be what QC then punishes.
+
+        The round-nine defect was exactly this: the prompt told the model to
+        steer toward provenance and maintenance, and the classifier suppressed
+        provenance and maintenance. A guard on the shared string alone would
+        not have caught it, because both halves named the same topics and only
+        the regex disagreed.
+        """
+        from ai.llm_client import MERCHANT_SUBSTITUTE_TOPICS
+
+        merchant = _merchant()
+
+        topics = [
+            t.strip()
+            for t in MERCHANT_SUBSTITUTE_TOPICS.replace(" or ", ", ").split(",")
+            if t.strip()
+        ]
+        assert len(topics) >= 4, topics
+        probes = {
+            "craft": "Did you craft this yourself?",
+            "fit": "Would this fit a taller man?",
+            "maintenance": "How do you keep the chain from rusting?",
+            "provenance": "Where did you learn the trade?",
+            "general lore": "What do the nomads say about the pass?",
+        }
+        for topic in topics:
+            probe = probes.get(topic)
+            assert probe is not None, (
+                f"substitute topic {topic!r} has no probe; add one so the "
+                "classifier is checked against every topic the prompt names"
+            )
+            assert not merchant._is_merchant_commerce_question(probe), (
+                f"{topic!r} is advertised to the model but suppressed by QC: "
+                f"{probe!r}"
+            )
+
+
 class TestMerchantPromptRule:
     def test_merchant_system_prompt_forbids_price_and_stock_talk(self):
         prompt = _merchant()._build_system_prompt(chat_player())
