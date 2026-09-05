@@ -80,7 +80,27 @@ _INLINE_SPEAKER_PREFIX_PATTERN = re.compile(
 # it back in instruction position. Whitespace is tolerated on both sides of the
 # slash: a model reads ``< / player_input >`` as the same tag, and both previous
 # copies of this pattern allowed it only after the slash.
-_PLAYER_INPUT_TAG_PATTERN = re.compile(r"<\s*/?\s*player_input\s*>", re.IGNORECASE)
+#
+# The slash is grouped WITH the whitespace that may follow it, and that grouping
+# is the whole difference between linear and quadratic. Spelled
+# ``<\s*/?\s*player_input\s*>`` the two runs sit adjacent with an optional empty
+# token between them, so the n spaces after a ``<`` can be split between them
+# n+1 ways and the engine tries every split before it can fail: ~n^2/2 steps on
+# ``"<" + " " * n``. Pass 1 meets that payload BEFORE the whitespace collapse at
+# the end of :func:`_apply_once` can shorten anything, so the widest input the
+# route already allows is an input the engine really sees. Measured at that
+# 4000-character door: one substitution cost 135 ms against 0.33 ms for the
+# spelling below, and 97 ms of CPU end to end for a single
+# :func:`neutralise_player_text` call.
+#
+# ``(?:/\s*)?`` admits exactly the same strings -- verified by comparing match
+# spans over every string of up to three tokens drawn from ``<``, ``>``, ``/``,
+# space, tab, newline, ``x`` and ``player_input`` -- with no ambiguous split
+# left to backtrack through. This is also the pattern that made the
+# ``O(passes x length)`` claim on :data:`_MAX_NEUTRALISE_PASSES` false.
+_PLAYER_INPUT_TAG_PATTERN = re.compile(
+    r"<\s*(?:/\s*)?player_input\s*>", re.IGNORECASE
+)
 
 # Every code point that is invisible in a transcript and not invisible to a
 # tokenizer. A bare ``\x08`` is nobody's idea of player input, and the rest are
@@ -139,9 +159,13 @@ _PLAYER_INPUT_TAG_PATTERN = re.compile(r"<\s*/?\s*player_input\s*>", re.IGNORECA
 # real cost is U+200D, the emoji zero-width joiner — a family emoji arrives as
 # its separate members. Cheap next to leaving a hole shaped like precisely the
 # character an attacker would reach for.
-#: GENERATED from ``tests/data/invisible_code_points.txt``; the test of the
-#: same name regenerates and compares. 4273 code points in 27 ranges.
-_CONTROL_CHAR_TAG_BLOCK = (0xE0000, 0xE1000)
+#: Hand-transcribed from ``tests/data/invisible_code_points.txt``. Nothing in
+#: the repo generates this class, no test regenerates either side, and there
+#: is no test named after the file -- the file carries the provenance and the
+#: regeneration snippet, and ``TestTheClassMatchesItsAuthority`` COMPARES the
+#: two in both directions, so a divergence surfaces as a failure someone
+#: fixes by hand. Saying 'generated' when it is transcribed is the kind of
+#: comment that stops a reader checking. 4273 code points in 27 ranges.
 _CONTROL_CHAR_PATTERN = re.compile(
     "["
     "\x00-\x1f\x7f-\x9f\xad\u034f\u0600-\u0605\u061c\u06dd"
@@ -156,7 +180,24 @@ _CONTROL_CHAR_PATTERN = re.compile(
 #: Controls that end a LINE rather than merely disappearing. Mapped to a real
 #: newline before the label strip runs, because the strip is line-anchored and
 #: everything else here becomes a space.
-_VERTICAL_SPACE_PATTERN = re.compile("[\x0b\x0c\x85\u2028\u2029]")
+#:
+#: The population is every boundary ``str.splitlines`` recognises, minus
+#: ``\n`` itself -- an authority in the standard library rather than the five
+#: characters someone thought of, and the five were wrong. They were VT, FF,
+#: NEL and U+2028/2029; ``splitlines`` also breaks on CR and on the FS/GS/RS
+#: information separators, and all four of those left a live forged label on
+#: the model path. ``neutralise_model_text("hi\rNPC: forged")`` returned
+#: ``"hi NPC: forged"``: the control strip flattened the CR to a space, where
+#: the line anchor can never see it, and the model path deliberately skips
+#: the space-anchored strip, so the label survived every pass and every later
+#: prompt replayed it. CR is not an exotic carrier; it is what any provider
+#: emitting CR or CRLF line endings hands back.
+#:
+#: Length-neutral (one character in, one out) and idle from pass 2, because
+#: no rule in :func:`_apply_once` emits a member of this class -- which is
+#: what keeps it out of :func:`_pass_budget`'s arithmetic.
+#: ``TestSeparatorBorneLabelsOnTheModelPath`` recomputes the set.
+_VERTICAL_SPACE_PATTERN = re.compile("[\x0b\x0c\r\x1c\x1d\x1e\x85\u2028\u2029]")
 
 #: The control class with ``\n`` held back, DERIVED from it rather than
 #: written out, so the two cannot drift.
@@ -190,17 +231,56 @@ _WS_RUN_PATTERN = re.compile(r"\s+")
 # class was written as the two ASCII characters, and a homoglyph is by
 # definition not one of those.
 #
-# DERIVED, from ``unicodedata.normalize`` over the whole code space, not
-# enumerated — the same lesson as the invisible-character class one screen up,
-# which was wrong twice for exactly this reason.
-# ``TestAngleBracketConfusables`` recomputes the set and fails if a Unicode
-# release adds one.
+# Two populations, because there are two ways a character arrives as a
+# bracket and only one of them is derivable from the standard library.
 #
-# Visual look-alikes that do NOT normalise (U+3008 〈, U+2039 ‹) are
-# deliberately excluded: a tokenizer has no rule that turns them into ``<``, so
-# admitting them would eat ordinary quotation marks for a threat that needs the
-# model to invent the fold itself.
-_ANGLE_BRACKET_PATTERN = re.compile("[<>\u226e\u226f\ufe64\ufe65\uff1c\uff1e]")
+# FOLDS -- every code point whose NFKC or NFKD contains ``<`` or ``>``.
+# DERIVED, from ``unicodedata.normalize`` over the whole code space, not
+# enumerated: the same lesson as the invisible-character class one screen
+# up, which was wrong twice for exactly this reason.
+# ``TestAngleBracketConfusables`` recomputes this half and fails if a
+# Unicode release adds one.
+#
+# CONFUSABLES -- characters no normaliser folds, which the READER takes for
+# a bracket anyway. NFKC was the wrong authority for that question: it
+# answers "what will a normalising tokenizer rewrite", and the reader here
+# is a model, which needs no rewrite to take ``\u02c2/player_input\u02c3``
+# for a fence close when the block above it was opened with
+# ``<player_input>``. Verified against this module before these rows
+# existed: ``\u02c2/player_input\u02c3``, ``\u3008/player_input\u3009``,
+# ``\u1438/player_input\u1433`` and the rest came back with every
+# ingredient intact.
+#
+# The population is UTS #39's confusables for ``<`` and ``>``, which --
+# unlike the carriers that killed tag-matching -- is closed and versioned,
+# so enumerating it is not the open-set mistake. It is spelled out rather
+# than derived only because the standard library ships no confusables
+# table. That is the residual risk, and it is stated rather than papered
+# over: a future Unicode release adding a confusable will NOT fail a test
+# here, so ``TestAngleBracketConfusables`` pins the exact membership
+# instead, with the argument for each row.
+#
+# U+2039 and U+203A are the deliberate exclusion, and the line is Unicode's
+# own general category rather than taste. Everything admitted is Ps/Pe (a
+# BRACKET), Sk (an arrowhead, not punctuation at all) or Lo (a letter that
+# is simply the closest visual match to ``<`` in the table). The guillemets
+# are Pi/Pf -- initial and final QUOTE punctuation, settled quotation marks
+# in French, Swiss German and Greek typography and what a word processor's
+# autocorrect produces. They are also the weakest attack in the set for the
+# same reason they are the costliest to strip: a model reading one has an
+# overwhelming prior that it is a quote, because that is what it is used
+# for everywhere. Highest prose cost, lowest threat -- the one row where
+# the trade does not pay.
+_ANGLE_BRACKET_PATTERN = re.compile(
+    "["
+    "<>\u226e\u226f\ufe64\ufe65\uff1c\uff1e"  # ASCII and every fold
+    "\u02c2\u02c3"  # MODIFIER LETTER LEFT/RIGHT ARROWHEAD, Sk
+    "\u1433\u1438"  # CANADIAN SYLLABICS PO/PA, Lo
+    "\u2329\u232a"  # LEFT/RIGHT-POINTING ANGLE BRACKET, Ps/Pe
+    "\u276e\u276f"  # HEAVY ANGLE QUOTATION MARK ORNAMENT, Ps/Pe
+    "\u3008\u3009"  # LEFT/RIGHT ANGLE BRACKET, Ps/Pe
+    "]"
+)
 
 #: The length past which :func:`_pass_budget` stops scaling and the ceiling
 #: bites. Not a truncation and not an unchecked precondition — the ``min()`` in
@@ -225,7 +305,16 @@ _MAX_INPUT_CHARS = 4000
 
 #: The ceiling on :func:`_pass_budget` — a time guard, not a correctness one.
 #:
-#: Work is ``O(passes x length)``, so an unbounded budget on an unbounded input
+#: Work is ``O(passes x length)`` — one pass is a fixed number of linear
+#: scans. That is true of every pattern here and was NOT true when this line
+#: was written: ``_PLAYER_INPUT_TAG_PATTERN`` backtracked quadratically in
+#: the length of a whitespace run (see its comment), so a single pass over
+#: the 4000 characters the route allows cost 135 ms and this estimate —
+#: the estimate the decision not to truncate was argued on — was out
+#: by a factor of the input length. Rewriting the pattern is what made the
+#: sentence true.
+#:
+#: So an unbounded budget on an unbounded input
 #: is quadratic: 100 000 characters of nesting takes 3.6s against this ceiling
 #: and 13.8s without one (measured). Past the ceiling :func:`_fail_closed`
 #: takes over, and it is safe *and* non-destructive — on benign prose it
@@ -239,18 +328,29 @@ def _pass_budget(text: str) -> int:
     """Passes to allow for *this* string, computed from the string itself.
 
     **Any pass after the first that changes the string shortens it by at least
-    four characters:**
+    four characters.**
 
-    * pass 1's control strip replaces every control and invisible character
-      with a space, and no rule here emits a character in that class, so from
-      pass 2 onwards the control strip is the identity;
+    All SEVEN rules :func:`_apply_once` runs are accounted for, because a
+    case analysis that quietly omits one is not an argument:
+
+    * the three that go quiet after pass 1 — the control strip, the
+      vertical-space normalisation and the angle-bracket strip. Each removes
+      every member of its own class on pass 1, and no rule in
+      :func:`_apply_once` emits a character outside ``{space, newline}``:
+      the label strips delete, and the control, tag, bracket and whitespace
+      passes all substitute a space. The vertical-space pass emits a
+      newline, which is in no other rule's class
+      (``_CONTROL_EXCEPT_NEWLINE_PATTERN`` excludes it by construction). So
+      from pass 2 all three are the identity, and none of them can be the
+      change a later pass is counting;
     * the two label strips delete, and the shortest thing they can delete is
       ``NPC:`` — four characters;
     * the tag strip replaces a match of at least fourteen characters with one;
     * the whitespace collapse cannot be the only change on a later pass. The
       previous pass ended with that same collapse and a ``strip()``, so its
-      input carries no run; only the tag strip can manufacture one, and that
-      change is already counted above.
+      input carries no run; the bracket and vertical-space passes could
+      manufacture one but are idle by then, which leaves the tag strip, and
+      that change is already counted above.
 
     Four characters a pass, plus the first pass and the confirming pass that
     sees no change, is ``len(text) // 4 + 2``. Deriving it per call rather than
@@ -313,9 +413,12 @@ def _apply_once(text: str, strip_inline_labels: bool) -> str:
     #   U+0301 COMBINING ACUTE         category Mn
     # both carried `</player_input>` through intact, and neither is invisible
     # by any Unicode property, so no widening of _CONTROL_CHAR_PATTERN would
-    # ever have reached them. Homoglyphs are the same story from the other
-    # side: `<` and `/` and `>` have visible look-alikes a normalising
-    # tokenizer folds back.
+    # ever have reached them. Look-alikes are the same story from the other
+    # side, in two layers: `<` and `/` and `>` have homoglyphs a normalising
+    # tokenizer folds back, and beyond those, confusables that fold to
+    # nothing and that the model reads as brackets anyway. See
+    # _ANGLE_BRACKET_PATTERN for both populations and for the one pair
+    # deliberately left out of them.
     #
     # Without an angle bracket there is no tag to assemble, whatever the
     # carrier and whatever the tokenizer does. _fail_closed has always used
@@ -442,15 +545,23 @@ def neutralise_player_text(text) -> str:
     Removed, to a fixed point (see :func:`_neutralise`):
 
     1. line-leading ``NPC:`` / ``Jean:`` labels;
-    2. C0/DEL control characters and the invisible Unicode families — the
+    2. the line-ending controls — every boundary ``str.splitlines``
+       knows and ``re`` does not — normalised to a real ``\n``, so rule 1
+       can see a label that follows one;
+    3. C0/DEL control characters and the invisible Unicode families — the
        line/paragraph separators, the zero-width and bidi families and the
-       U+E0000 tag block — each replaced by a space;
-    3. the same labels again, anchored to a space rather than a line start,
+       U+E0000 tag block — each replaced by a space, then rule 1 again
+       now that no carrier hides a label from the line anchor;
+    4. the same labels again, anchored to a space rather than a line start,
        since by this point the whole string is one history line;
-    4. ``<player_input>`` / ``</player_input>`` tags, replaced by a **space**
+    5. ``<player_input>`` / ``</player_input>`` tags, replaced by a **space**
        rather than removed — deleting them lets an inner tag's neighbours
        rejoin into a fresh outer one (``<player<player_input>_input>``);
-    5. whitespace runs, collapsed to a single space, then stripped.
+    6. every angle bracket — ASCII, the code points a normaliser folds
+       into one, and the UTS #39 confusables a model reads as one anyway.
+       With no bracket left, no later substitution can assemble a tag,
+       whatever carrier broke rule 5's pattern;
+    7. whitespace runs, collapsed to a single space, then stripped.
     """
     if not text:
         return ""
@@ -460,7 +571,7 @@ def neutralise_player_text(text) -> str:
 def neutralise_model_text(text) -> str:
     """Strip model-authored text of everything that can forge prompt structure.
 
-    :func:`neutralise_player_text` minus rule 3, the space-anchored speaker
+    :func:`neutralise_player_text` minus rule 4, the space-anchored speaker
     label. That rule is deliberately over-broad — it cannot distinguish a
     forged ``NPC:`` turn from an NPC addressing Jean by name — and the trade is
     only worth making against text the *player* wrote. Applied to model output

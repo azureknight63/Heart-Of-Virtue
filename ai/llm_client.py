@@ -3844,7 +3844,14 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # output too now — it is the ``given_name`` off the generated
         # personality seed, not a hand-authored NPC name.
         last_line = _quote_for_prompt(neutralise_model_text(last_npc_line))
-        quoted_name = _quote_for_prompt(npc_name)
+        # "The same treatment" has to mean the same two calls. ``npc_name`` had
+        # only the quote escape, and ``_quote_for_prompt`` escapes a backslash
+        # and a double quote and nothing else -- it is deliberately about one
+        # call site's syntax, not about what the text may contain. So a newline
+        # in the generated ``given_name`` broke the ``NPC: {quoted_name} - ...``
+        # line in two and put the remainder at the start of a line the prompt
+        # appears to have written itself, which is instruction position.
+        quoted_name = _quote_for_prompt(neutralise_model_text(npc_name))
 
         user = (
             f"NPC: {quoted_name} — {npc_voice_summary}\n"
