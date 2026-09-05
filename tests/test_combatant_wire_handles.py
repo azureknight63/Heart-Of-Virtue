@@ -23,11 +23,14 @@ included), and persisted with the combatant.
 import gc
 import pickle
 import re
+import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.api.serializers.combat import CombatantSerializer
+import src.combatant as combatant_module
 from src.combatant import COMBAT_HANDLE_ATTR, combatant_handle
 from src.npc import NPC, Slime
 from src.player import Player
@@ -179,18 +182,68 @@ class TestPersistence:
 
 
 class TestHandleMinting:
-    def test_the_mint_is_atomic_so_concurrent_polls_agree(self):
+    def test_the_mint_is_atomic_so_concurrent_polls_agree(self, monkeypatch):
         """The combat poll and the socket beat emitter run on different
-        threads. A plain ``setattr`` mint lets both find no handle, both mint,
-        and the second overwrite the id the first already shipped — leaving
-        the client holding an id that resolves to nobody. The mint therefore
-        goes through ``__dict__.setdefault``, which is atomic under the GIL.
+        threads (``async_mode="threading"``). A plain ``setattr`` mint lets
+        both find no handle, both mint, and the second overwrite the id the
+        first already shipped — leaving the client holding an id that resolves
+        to nobody. The mint therefore goes through ``__dict__.setdefault``,
+        which is atomic under the GIL.
+
+        This has to actually RACE the mint. The previous version of this test
+        pre-seeded a handle and asserted it came back, which returns on
+        ``combatant_handle``'s ``isinstance(existing, str)`` fast path without
+        reaching ``setdefault`` at all — it passed identically against
+        ``setattr``, against ``setdefault``, and against a mint that raises.
         """
         enemy = Slime()
         enemy.__dict__.pop(COMBAT_HANDLE_ATTR, None)
-        # Whoever got there first wins, and everyone reads that value back.
-        enemy.__dict__[COMBAT_HANDLE_ATTR] = "a" * 32
-        assert combatant_handle(enemy) == "a" * 32
+
+        racers = 8
+        # The window between the getattr miss and the write is a handful of
+        # bytecodes, so a bare thread race would essentially never interleave
+        # under the GIL and would pass against setattr too. Parking every
+        # thread inside uuid4 puts them all past the miss, each holding a
+        # DIFFERENT candidate, before any of them writes — the exact state an
+        # atomic mint has to survive, made deterministic.
+        gate = threading.Barrier(racers, timeout=10)
+        real_uuid4 = combatant_module.uuid.uuid4
+
+        def parked_uuid4():
+            candidate = real_uuid4()
+            gate.wait()
+            return candidate
+
+        monkeypatch.setattr(
+            combatant_module, "uuid", SimpleNamespace(uuid4=parked_uuid4)
+        )
+
+        minted = []
+        errors = []
+
+        def mint():
+            try:
+                minted.append(combatant_handle(enemy))
+            except BaseException as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=mint) for _ in range(racers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        assert not errors, errors
+        assert len(minted) == racers, "a racer never returned"
+        # One winner, and every racer read that same value back.
+        assert len(set(minted)) == 1, (
+            "the mint raced: callers were handed "
+            f"{len(set(minted))} different handles for one combatant "
+            f"({sorted(set(minted))})"
+        )
+        # ...and it is the handle the combatant actually kept, so an id already
+        # shipped to the client still resolves on the next poll.
+        assert minted[0] == enemy.__dict__[COMBAT_HANDLE_ATTR]
 
     def test_a_plain_mock_gets_one_stable_handle(self):
         """``stream_id`` is handed MagicMocks all over the adapter's own tests
