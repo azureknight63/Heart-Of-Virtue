@@ -9,7 +9,7 @@ from unittest.mock import patch
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.events import purge_orphaned_combat_events
-from src.functions import check_for_combat
+from src.functions import check_for_combat, signal_combat_wave_pending
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
 from src.narration import capture_narration, narrate
@@ -2315,6 +2315,34 @@ class GameService:
                         needs_input = getattr(event, "needs_input", False)
                         completed = getattr(event, "completed", False)
                         if needs_input and not completed:
+                            # A combat_effect event that passed its gate and
+                            # came back asking for input is a chain holding this
+                            # beat: the announcement stage that enrolls its wave
+                            # one or two round-trips later. Arm the continuation
+                            # signal now so the adapter reads the empty roster
+                            # this beat as a gap in the fight rather than the
+                            # end of it (issue #514).
+                            #
+                            # This is what covers the FIRST roster wipe.
+                            # add_enemies_to_combat only arms the signal once a
+                            # wave has joined, so before this waves 2+ were
+                            # protected and wave 1 -- the one the issue was
+                            # filed about -- was not: Ch01PostRumbler fires on
+                            # `not combat_list` before anything has been
+                            # enrolled, so victory was banked, summarised and
+                            # streamed, and only then did its third stage enroll
+                            # two rumblers into the same fight.
+                            #
+                            # The needs_input conjunct is load-bearing: it is
+                            # what excludes an event like Ch01PostRumbler2,
+                            # which fires on the killing blow but repopulates
+                            # the roster inline and never asks for input -- so
+                            # it needs no deferral and must not buy one.
+                            # Over-suppression by some future event that arms
+                            # this and then resolves without enrolling is
+                            # bounded by settle_victory, which ends the fight on
+                            # the resolving request and on the status poll.
+                            signal_combat_wave_pending(player)
                             event_data = self._store_pending_event(
                                 event,
                                 event_data,

@@ -2120,15 +2120,19 @@ class ApiCombatAdapter:
         event_just_triggered = "events_triggered" in self._adapter_state()
 
         # Is this beat a wave transition rather than the end of the fight?
-        # functions.add_enemies_to_combat sets combat_wave_pending when it
-        # enrolls a wave, so a fight that is already a multi-wave ambush says so
-        # before the roster next empties. Combined with a queued combat event
-        # holding this beat — the announcement stage that spawns the next wave a
-        # stage later — the empty combat_list means "the wave has not arrived
-        # yet", not "the fight is over" (issue #514). The signal is consumed
-        # here so one landed wave covers exactly one transition: if the queued
-        # event resolves without enrolling anything, the next roster wipe ends
-        # the fight normally.
+        # functions.signal_combat_wave_pending arms combat_wave_pending from two
+        # places: add_enemies_to_combat, once a wave has joined the roster, and
+        # GameService.trigger_combat_events, when a combat_effect event passes
+        # check_combat_conditions asking for input. The second is what covers
+        # the FIRST roster wipe of a chain, which no enrolment precedes. Either
+        # way, a fight that is mid-ambush says so before the roster empties.
+        # Combined with a queued combat event holding this beat — the
+        # announcement stage that spawns the next wave a stage later — the empty
+        # combat_list means "the wave has not arrived yet", not "the fight is
+        # over" (issue #514). The signal is consumed here so one arming covers
+        # exactly one transition: if the queued event resolves without enrolling
+        # anything, settle_victory ends the fight on that request, and the next
+        # roster wipe ends it normally.
         wave_transition = (
             len(self.player.combat_list) == 0
             and self.player.in_combat

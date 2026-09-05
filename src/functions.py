@@ -109,6 +109,30 @@ def check_for_combat(
     return enemy_combat_list
 
 
+def signal_combat_wave_pending(player):
+    """Arm the continuation signal for the fight ``player`` is currently in.
+
+    ``player.combat_wave_pending`` is the single signal that tells the combat
+    adapter "this roster wipe is a gap in an ongoing fight, not the end of it"
+    (issue #514). It is deliberately ONE flag with ONE consumption rule -- the
+    adapter clears it on the transition it covers, on a genuinely new fight and
+    on roster teardown. A second, differently-scoped continuation flag would
+    inevitably miss one of those clear sites and strand a fight the way a
+    never-cleared ``player.combat_events`` stranded one in issue #506, so every
+    arming site routes through here instead of inventing its own.
+
+    Two sites arm it:
+
+    * :func:`add_enemies_to_combat`, once a wave has actually joined the roster
+      -- that covers waves 2 and later.
+    * ``GameService.trigger_combat_events``, when a ``combat_effect`` event
+      passes ``check_combat_conditions`` and comes back asking for input -- that
+      covers the FIRST roster wipe, which no wave has preceded and which the
+      enrolment-only signal therefore could never reach.
+    """
+    player.combat_wave_pending = True
+
+
 def add_enemies_to_combat(player, new_enemies, announcement: str = None):
     """Add new enemies to an ongoing combat and reinitialize positions.
 
@@ -174,9 +198,12 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
     # transition ahead of time instead of ending the fight and then having it
     # resume. The adapter consumes the signal on the transition it covers.
     # Only a wave that actually joined the roster counts: a call that enrolls
-    # nothing must not buy a fight one free victory deferral.
+    # nothing must not buy a fight one free victory deferral. This covers waves
+    # 2 and later; the FIRST roster wipe of a chain has no enrolment behind it
+    # and is armed from the event side instead -- see
+    # signal_combat_wave_pending, which both sites share.
     if enrolled_any:
-        player.combat_wave_pending = True
+        signal_combat_wave_pending(player)
 
     # Reinitialize positions for ALL combatants to include new enemies
     try:
