@@ -657,7 +657,8 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
       <div class="entry">
         <div class="hd"><span class="term-name" style="color:var(--secondary)">Fatigue (FP)</span>
           <span class="cat c-res">Resources</span></div>
-        <div class="body">The orange bar — that which pays for moves.</div>
+        <div class="body">The orange bar — that which pays for moves. It does <b>not</b>
+          regenerate on its own during a fight.</div>
         <div class="tell">Endurance raises your maximum fatigue; carrying too much weight lowers it.
           "Jean recovered 60 FP!" in the log is fatigue points.</div>
       </div>
@@ -973,6 +974,10 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
   starting — the weapon's backswing. The four-stages entry now says so in those terms. Worth noting
   the UI still never names recoil outside the commitment-bar hover title, so the glossary is currently
   the only place a player can learn the word.<br><br>
+  <b>Fatigue does not regenerate during a fight.</b> The engine never states this — an exhaustive
+  grep finds only Rest, items, a mastery skill and <code>_handle_victory</code> ever adding fatigue,
+  so it was an inferred negative rather than a written rule. Confirmed as intended, and the Fatigue
+  entry now says so outright.<br><br>
   <b>Heat is the name, in the UI and on the wire.</b> The earlier draft called it Momentum in
   player-facing text while the engine called it <code>heat</code>; that split is gone — everything
   reads Heat now, so no alias entry is needed.
@@ -984,13 +989,7 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
   narrative unit. Every definition above is deliberately mechanical ("the unit of combat time"); if the
   maintainer wants a fictional gloss ("about one heartbeat"), that is a <i>writing</i> decision, not a
   fact to be read out of the code.<br><br>
-  <b>2. Whether fatigue regenerates during a fight was never stated in the engine.</b> An exhaustive
-  grep finds only Rest, items, a mastery skill and <code>_handle_victory</code> adding fatigue — so
-  "it does not regenerate on its own" is an inferred negative, not a rule anyone wrote down. The
-  Fatigue entry no longer claims it either way (that sentence was cut this pass), which leaves the
-  player with no answer to an obvious question. If the answer is "correct, no trickle", the entry
-  should say so; if a per-beat trickle is planned, it should say that instead.<br><br>
-  <b>3. Advance/Withdraw distance is a roll, not a constant.</b> "One to three feet per beat" describes
+  <b>2. Advance/Withdraw distance is a roll, not a constant.</b> "One to three feet per beat" describes
   the clamped range of <code>max(1, (rand(0,30) + speed − target.speed) // 10)</code>; the typical value
   depends on the speed gap. Stated as a range on purpose.
 </p>
