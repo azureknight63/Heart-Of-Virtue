@@ -27,10 +27,21 @@ export function createCombatSocket({ url } = {}) {
     // (VITE_API_URL pointed straight at the API port) does not silently
     // connect as nobody.
     withCredentials: true,
-    // The API runs Flask-SocketIO on Werkzeug's threaded development server.
-    // That server can log a spurious 500 ("write() before start_response")
-    // when a browser closes a WebSocket. Polling keeps Socket.IO real-time
-    // without sending the request through that fragile disconnect path.
+    // LOAD-BEARING IN PRODUCTION — do not delete this as a dev-server relic.
+    // The app's Content-Security-Policy (src/resources/csp-policy.json) grants
+    // `connect-src 'self'` in `base` and lists `ws:`/`wss:` only under
+    // `dev_additions`. A WebSocket upgrade is a connect-src check, and
+    // `'self'` does not cover the ws(s) scheme, so under the enforcing
+    // production policy the browser blocks the upgrade outright: a socket
+    // allowed to upgrade works in dev and dies in production, where the
+    // failure is a silently dead combat stream. Pinning polling keeps the
+    // transport inside what the policy actually permits.
+    // (It also avoids the spurious 500 — "write() before start_response" —
+    // that Werkzeug's threaded dev server logs when a browser closes a
+    // WebSocket. That was the original reason and it is the lesser one; the
+    // CSP constraint is why the pin stays.)
+    // tests/test_socket_transport_csp_contract.py ties this line to the policy
+    // file so the two cannot drift apart unnoticed.
     transports: ['polling'],
   });
 }

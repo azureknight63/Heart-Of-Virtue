@@ -15,6 +15,7 @@ import pytest
 from flask import Flask, jsonify, make_response
 
 from src.api.config import DevelopmentConfig, ProductionConfig, TestingConfig
+from src.api.schemas.combat_beat import ERROR_SESSION_MISSING
 from src.api.session_cookie import (
     DEFAULT_COOKIE_NAME,
     clear_session_cookie,
@@ -447,7 +448,15 @@ class TestSocketHandshake:
             ) as join_room:
                 handlers["join_combat"]({})
 
-        emit.assert_called_once_with("error", {"message": "Missing or invalid session credentials"})
+        # A missing credential is reported by CODE, distinctly from a dead
+        # session: the client must not answer this one by logging out.
+        emit.assert_called_once_with(
+            "error",
+            {
+                "code": ERROR_SESSION_MISSING,
+                "message": "No session credential on the socket handshake",
+            },
+        )
         join_room.assert_not_called()
 
     def test_the_cookie_beats_a_payload_that_names_another_session(

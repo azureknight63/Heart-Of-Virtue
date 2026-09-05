@@ -5,6 +5,11 @@ import logging
 from flask import request, current_app
 from flask_socketio import emit, join_room, leave_room
 
+from src.api.schemas.combat_beat import (
+    ERROR_EVENT,
+    ERROR_SESSION_INVALID,
+    ERROR_SESSION_MISSING,
+)
 from src.api.session_cookie import session_id_from_cookie
 
 logger = logging.getLogger(__name__)
@@ -49,13 +54,23 @@ def register_socket_handlers(socketio):
         """Join a combat room based on session ID."""
         session_id = _session_id(data)
         if not session_id:
-            return emit("error", {"message": "Missing or invalid session credentials"})
+            # Nothing to authenticate: the handshake carried no cookie and the
+            # caller named no session. Distinct from a dead session, and the
+            # ``code`` is what says so — see ERROR_SESSION_MISSING for why the
+            # client must not treat this as a sign-out.
+            return emit(ERROR_EVENT, {
+                "code": ERROR_SESSION_MISSING,
+                "message": "No session credential on the socket handshake",
+            })
 
         session_manager = current_app.session_manager
         session = session_manager.get_session(session_id)
 
         if not session:
-            return emit("error", {"message": "Invalid session"})
+            return emit(ERROR_EVENT, {
+                "code": ERROR_SESSION_INVALID,
+                "message": "Invalid session",
+            })
 
         room = f"combat_{session_id}"
         join_room(room)

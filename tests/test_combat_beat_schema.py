@@ -54,6 +54,24 @@ def test_event_name_parity():
     assert _js_string_const("RESOLVED_EVENT") == cb.RESOLVED_EVENT
     assert _js_string_const("ENDED_EVENT") == cb.ENDED_EVENT
     assert _js_string_const("SUGGESTIONS_EVENT") == cb.SUGGESTIONS_EVENT
+    assert _js_string_const("ERROR_EVENT") == cb.ERROR_EVENT
+
+
+def test_error_code_parity():
+    """The client keys its sign-out decision off these codes.
+
+    A drift here is not a cosmetic mismatch: if the JS constant stops matching
+    what the server emits, ``ERROR_SESSION_INVALID`` stops being recognised and
+    a genuinely dead session leaves the socket retrying forever, while
+    ``ERROR_SESSION_MISSING`` stops being recognised and a handshake that
+    simply lost the cookie falls through to "unknown code" and never retries.
+    """
+    assert _js_string_const("ERROR_SESSION_MISSING") == cb.ERROR_SESSION_MISSING
+    assert _js_string_const("ERROR_SESSION_INVALID") == cb.ERROR_SESSION_INVALID
+
+
+def test_error_codes_are_distinct():
+    assert cb.ERROR_SESSION_MISSING != cb.ERROR_SESSION_INVALID
 
 
 # ── build_beat ──────────────────────────────────────────────────────────────
