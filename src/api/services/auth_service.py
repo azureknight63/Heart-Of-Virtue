@@ -15,6 +15,29 @@ _DUMMY_PASSWORD_HASH = (
     "7KbniMDtZdj7bd8jcqYNPc4AUaZL3Wb7k3WpG2rg18g"
 )
 
+# Upper bounds on the three registration fields. ``create_user`` used to check
+# minimums only, which left every one of them unbounded above:
+#
+# * ``password`` is fed to Argon2, which is *deliberately* expensive — its cost
+#   is the defence. An unauthenticated caller supplying a multi-megabyte
+#   password turns that defence into the attack: the hash is computed over the
+#   whole string, on the request thread, in a single-worker deployment.
+# * ``username`` and ``email`` are written to the database on a path that
+#   is reachable without credentials, and the username is later interpolated
+#   into a GitHub issue by ``routes/feedback.py``.
+#
+# The values: 64 is far above any name a person types and is what
+# ``routes/feedback.py`` bounds its attribution label to; 128 accommodates a
+# generated passphrase from any password manager while keeping the Argon2 input
+# trivial; 254 is the maximum length of an email address in RFC 5321 §4.5.3.1.4.
+#
+# These are checked *before* the hash and the insert, and the request-body cap
+# (``Config.MAX_CONTENT_LENGTH``) sits above them as the coarse bound on the
+# payload that carries them.
+MAX_USERNAME_LENGTH = 64
+MAX_PASSWORD_LENGTH = 128
+MAX_EMAIL_LENGTH = 254
+
 
 class AuthService:
     def __init__(self):
@@ -58,11 +81,25 @@ class AuthService:
 
     async def create_user(self, username, password, email) -> Dict[str, Any]:
         """Create a new user in the database."""
-        # Validation
+        # Validation. Every bound is enforced here, before the Argon2 hash and
+        # before the insert — see the MAX_* constants for why the maximums are
+        # not optional.
         if len(username) < 4:
             raise ValueError("Username must be at least 4 characters")
+        if len(username) > MAX_USERNAME_LENGTH:
+            raise ValueError(
+                "Username must be at most %d characters" % MAX_USERNAME_LENGTH
+            )
         if len(password) < 16:
             raise ValueError("Password must be at least 16 characters")
+        if len(password) > MAX_PASSWORD_LENGTH:
+            raise ValueError(
+                "Password must be at most %d characters" % MAX_PASSWORD_LENGTH
+            )
+        if len(email) > MAX_EMAIL_LENGTH:
+            raise ValueError(
+                "Email must be at most %d characters" % MAX_EMAIL_LENGTH
+            )
 
         user_id = str(uuid.uuid4())
         password_hash = self.ph.hash(password)

@@ -98,6 +98,31 @@ class Config:
     JSON_SORT_KEYS = False
     JSONIFY_PRETTYPRINT_REGULAR = True
 
+    # Largest request body this API accepts, in bytes. Werkzeug refuses to read
+    # past it, so an oversized body is never buffered into the (single-worker)
+    # process; ``src/api/app.py::_register_request_limits`` turns that refusal
+    # into this API's own 413 before any route's ``except Exception`` can
+    # relabel it a 500.
+    #
+    # 1 MiB is set against the largest body a *legitimate* client sends, which
+    # is a browser-log batch: ``frontend/src/utils/logger.js`` caps its queue at
+    # MAX_QUEUE_SIZE = 100 entries, and ``routes/logs.py`` keeps at most
+    # MAX_MESSAGE_LENGTH (4000) + MAX_FIELD_LENGTH (2048) + two short fields of
+    # each one — roughly 0.64 MB of content the server would actually retain,
+    # so this leaves headroom without accepting a batch whose bulk would be
+    # discarded on arrival anyway. Every other endpoint is orders of magnitude
+    # smaller: a cloud save posts a *name* (the save document is built
+    # server-side), feedback is bounded at MAX_TITLE_LENGTH + a handful of
+    # MAX_FIELD_LENGTH fields, and an npc-chat turn is capped at 4000
+    # characters.
+    #
+    # Not environment-backed on purpose: the two endpoints that can be reached
+    # with no session at all (``POST /api/logs/browser``,
+    # ``POST /api/auth/register``) are the ones this bounds, so it is a floor
+    # under the deployment rather than a knob to tune per host — and an
+    # operator-typed value is one more thing that can be typed as "unlimited".
+    MAX_CONTENT_LENGTH = 1024 * 1024
+
     # SocketIO settings
     SOCKETIO_CORS_ALLOWED_ORIGINS = CORS_ORIGINS
     SOCKETIO_MESSAGE_QUEUE = None  # Use simple in-memory queue for now

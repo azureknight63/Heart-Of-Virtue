@@ -64,6 +64,27 @@ if (Get-Command sshpass -ErrorAction SilentlyContinue) {
 if ($LASTEXITCODE -ne 0) { Write-Error "Upload failed"; exit 1 }
 
 # ── 4. Deploy into container + pull backend + restart Flask ─────────────────
+#
+# FLASK_ENV=production on the backend is NOT set by this script and NOT set by
+# the Procfile. The Procfile's "web:" line carries the variable, but nothing on
+# this path reads a Procfile: the backend runs as the systemd unit
+# $serviceName, restarted below. FLASK_ENV therefore comes from that unit's
+# Environment=/EnvironmentFile=, or from the server's own $appDir/.env (which
+# wsgi.py loads with override=False) — all of them on the server, none of them
+# in this repo, and none of them visible from here.
+#
+# What makes that verifiable rather than assumed is wsgi.py: it refuses to boot
+# under anything but FLASK_ENV=production (SystemExit, before create_app), so a
+# unit missing the variable does not serve a development config — it fails to
+# start. "Unit is active after the restart" therefore *is* the proof that
+# FLASK_ENV=production reached the process, which is why the restart is its own
+# step with its own check below instead of the last clause of the chain above,
+# where a failure would have been reported as "Remote deployment failed".
+#
+# A systemd unit is deliberately not invented here for a machine this script
+# cannot inspect.
+$serviceName = "heart-of-virtue"
+
 Write-Host "Deploying on server..." -ForegroundColor Cyan
 
 # Construct the remote shell command
@@ -73,8 +94,7 @@ $remoteScript = "docker cp $remoteTar ${container}:/tmp/hov_dist.tar && " +
 "docker exec $container sh -c 'find $targetDir -type d -exec chmod 755 {} \;' && " +
 "docker exec $container sh -c 'find $targetDir -type f -exec chmod 644 {} \;' && " +
 "cd $appDir && git pull origin master && " +
-".venv/bin/pip install -q -r requirements.txt -r requirements-api.txt && " +
-"sudo systemctl restart heart-of-virtue"
+".venv/bin/pip install -q -r requirements.txt -r requirements-api.txt"
 
 $sshCommand = "ssh ${serverUser}@${serverHost} `"$remoteScript`""
 
@@ -85,6 +105,44 @@ if (Get-Command sshpass -ErrorAction SilentlyContinue) {
 }
 
 if ($LASTEXITCODE -ne 0) { Write-Error "Remote deployment failed"; exit 1 }
+
+# ── 4b. Restart the backend, then verify it actually came up ────────────────
+Write-Host "Restarting $serviceName and verifying it stays up..." -ForegroundColor Cyan
+
+# `sleep 3` before is-active: with Type=simple, `systemctl restart` returns as
+# soon as the process is forked, so an immediate check would pass for a
+# gunicorn that is about to exit on wsgi.py's refusal.
+$restartScript = "sudo systemctl restart $serviceName && sleep 3 && " +
+"systemctl is-active --quiet $serviceName"
+
+$restartCommand = "ssh ${serverUser}@${serverHost} `"$restartScript`""
+
+if (Get-Command sshpass -ErrorAction SilentlyContinue) {
+    sshpass -p $env:NEXUS_PASS $restartCommand
+} else {
+    Invoke-Expression $restartCommand
+}
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error @"
+$serviceName is not running after the restart. The frontend has been deployed;
+the backend has not come up.
+
+The most likely cause is the one this repo cannot check for you: wsgi.py exits
+before building the app unless FLASK_ENV is exactly "production", and that
+variable is set on the server -- by the systemd unit or by $appDir/.env --
+neither of which is in this repository. Check both:
+
+    systemctl cat $serviceName            # look for Environment=FLASK_ENV=production
+                                          # (or an EnvironmentFile= that sets it)
+    grep FLASK_ENV $appDir/.env           # the other place it can come from
+    journalctl -u $serviceName -n 50      # the refusal message names the value it saw
+
+Other startup failures (a missing SECRET_KEY or ENCRYPTION_KEY in production,
+a bad dependency install) surface in the same journal.
+"@
+    exit 1
+}
 
 # ── 5. Cleanup local tarball ────────────────────────────────────────────────
 Remove-Item $tarName -ErrorAction SilentlyContinue

@@ -103,6 +103,72 @@ def test_the_refusal_fires_before_the_app_is_ever_built(boot):
     assert boot.built == []
 
 
+class TestTheTestingRefusal:
+    """``FLASK_ENV=testing`` is refused by the *first* guard, on its own terms.
+
+    Every parametrization in this file stops at ``development``, so the guard
+    at ``wsgi.py:56`` -- the one keeping ``/api/test/session`` and
+    ``/api/debug/*`` off the public listener -- was never reached here. It
+    cannot simply join ``test_only_the_word_production_boots``: that asserts on
+    ``SECRET_KEY`` and ``SESSION_COOKIE_SECURE``, which are what
+    *DevelopmentConfig* would have cost and are deliberately absent from the
+    TESTING message, because what a TESTING config costs is something else.
+
+    **Read ``tests/test_app_factory_coverage.py::TestWsgiRefusesATestingConfig``
+    before adding anything below.** That class already covers the refusal
+    itself: all three case spellings, the ``/api/test/session`` and
+    ``/api/debug/`` markers, and that it fires before ``create_app``. This
+    class deliberately does *not* restate those -- two copies of one assertion
+    in two files is how a suite comes to have four bespoke tests for one rule.
+    What is here is only what that class does not say: that the two refusals in
+    ``wsgi.py`` stay *distinguishable* from each other.
+
+    Why that matters: both guards fire for ``FLASK_ENV=testing`` if the first
+    is removed -- the second catches it as "not production" -- so a suite that
+    only checked "does it raise?" would go on passing with the specific
+    refusal deleted, and the operator would be told about SECRET_KEY when the
+    real exposure was an unauthenticated login endpoint and an unauthenticated
+    state editor on a public listener. ``testing`` is not a hypothetical value
+    here either: this repo's own ``.env`` carries ``FLASK_ENV=testing``, and
+    ``wsgi.py`` loads ``.env``.
+    """
+
+    def test_it_is_a_distinct_message_from_the_production_refusal(self, boot):
+        """Delete the TESTING guard and this is what fails: the second guard
+        answers ``FLASK_ENV=testing`` instead -- it is "not production" too --
+        with a message about a different exposure entirely.
+
+        Note which assertions do the discriminating. Everything the two
+        refusals happen to share (the variable, the value, the config class
+        name, the pointer to run_api.py) is pinned below for the wording's
+        sake, but it is the two *absences* that tell the messages apart: the
+        production refusal enumerates what DevelopmentConfig would have cost,
+        and the TESTING one deliberately does not, because what a TESTING
+        config costs is two unauthenticated endpoints rather than a weak
+        session key.
+        """
+        with pytest.raises(SystemExit) as excinfo:
+            boot("testing")
+        message = str(excinfo.value)
+        assert "FLASK_ENV" in message
+        assert repr("testing") in message
+        assert "TestingConfig" in message
+        # The way out, since a testing config is a legitimate thing to want to
+        # run -- just not from this entry point.
+        assert "run_api.py" in message
+        # The discriminating half.
+        assert "SECRET_KEY" not in message
+        assert "SESSION_COOKIE_SECURE" not in message
+
+    def test_the_shared_mapping_still_serves_testing_elsewhere(self):
+        """The asymmetry, asserted as it is for the development case: the
+        refusal belongs to ``wsgi.py``, not to the shared mapping, which
+        ``tools/run_api.py`` uses to serve exactly this config on 127.0.0.1."""
+        from src.api.config import TestingConfig
+
+        assert config_for_env("testing") is TestingConfig
+
+
 @pytest.mark.parametrize("flask_env", ["production", "Production", "  PRODUCTION  "])
 def test_production_still_boots(boot, flask_env):
     """The negative control, on every spelling ``normalized_env`` accepts.

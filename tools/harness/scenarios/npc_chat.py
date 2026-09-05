@@ -1,10 +1,24 @@
 """NPC chat (LLM conversation) endpoint checks (npc_chat_bp).
 
-MYNX_LLM_ENABLED=0 is set by bug_hunt.py's bootstrap, so any conversation
-that actually opens will run through the LLM-disabled fallback path rather
-than making real network calls. This scenario mostly hunts for crashes on
-bad/missing input; if a human NPC happens to be on the current tile it also
-exercises a real open/respond/end/history round-trip.
+The gate that keeps this scenario off a real provider is
+``NPC_CHAT_LLM_ENABLED=0``, and **only** that one:
+``NpcChatLLMAdapter._ENABLED_ENV_VARS`` is ``("NPC_CHAT_LLM_ENABLED",)`` alone,
+so the MYNX_* pins say nothing about chat. This docstring used to name
+MYNX_LLM_ENABLED as the reason no network call could happen, which is how a
+harness run came to ship harness-authored dialogue off-box and spend real
+provider credit.
+
+Nothing about "this environment" makes that safe either. The control is
+``tools/bug_hunt.py``'s bootstrap: before ``src.api`` is imported it blanks
+every credential, gate and setting derived from ``tests/llm_doubles.py`` and
+then pins ``NPC_CHAT_LLM_ENABLED=0`` (and ``MYNX_LLM_PROVIDER=none``)
+explicitly. Read that header before changing anything here — this scenario
+POSTs a real ``npc_id`` when a human NPC is on the tile, so the conversation it
+opens is exactly what leaves the machine if that bootstrap is ever weakened.
+
+Otherwise this scenario mostly hunts for crashes on bad/missing input; if a
+human NPC happens to be on the current tile it also exercises a real
+open/respond/end/history round-trip.
 """
 
 from typing import List, Optional

@@ -1,9 +1,22 @@
 """In-game feedback endpoint checks (feedback_bp).
 
-GITHUB_TOKEN is not set in this environment, so a well-formed submission is
-expected to reach the "service not configured" branch (503) rather than
-actually filing a GitHub issue — that's still a legitimate, crash-free
-response and is what this scenario asserts on the happy path.
+``_create_github_issue()`` has no TESTING guard, by design: it files a **real**
+issue on azureknight63/heart-of-virtue whenever ``GITHUB_TOKEN`` is set, and
+this repo's own ``.env`` has carried a live one. So the safety here is not a
+property of "this environment" — that reading is what let ten harness runs file
+twenty real issues (#301-324).
+
+The control is ``tools/bug_hunt.py``'s bootstrap: before ``src.api`` is
+imported it blanks ``GITHUB_TOKEN`` along with every other name in
+``OUTBOUND_CREDENTIAL_ENVS`` (``tests/llm_doubles.py``), by *assignment* rather
+than ``pop`` — ``load_dotenv(override=False)`` refills a key that is absent and
+leaves an assigned blank one alone. Read that header before changing anything
+here.
+
+The expected happy-path result is therefore 503 ("service not configured"). A
+201 means the token was live and this run just wrote to the tracker, so this
+scenario reports it as a bug rather than a pass — the scenario is the last
+place that can notice.
 """
 
 from typing import List
@@ -147,8 +160,9 @@ class FeedbackScenario(Scenario):
             if bug:
                 bugs.append(bug)
 
-        # Well-formed bug report — no GITHUB_TOKEN configured here, so we
-        # expect a clean 503 ("service not configured"), never a 500.
+        # Well-formed bug report. bug_hunt.py's bootstrap blanks GITHUB_TOKEN,
+        # so the only correct outcome is a clean 503 ("service not
+        # configured") — never a 500, and never a 201.
         body = {
             "type": "bug",
             "title": "Harness bug-hunt test submission",
@@ -164,14 +178,40 @@ class FeedbackScenario(Scenario):
         bug = check_real_crash(resp, "Well-formed bug report submission", body)
         if bug:
             bugs.append(bug)
-        elif resp.status_code not in (200, 201, 503):
+        elif resp.status_code == 201:
+            # 201 is the route working perfectly, and that is the failure: the
+            # harness has just filed a real GitHub issue from a test payload.
+            # It was accepted as a pass here for as long as the docstring above
+            # claimed the token could not be set, which is why twenty of them
+            # reached the tracker before anyone looked. Reported at CRITICAL
+            # because the harness has written to something outside itself; the
+            # fix is in bug_hunt.py's credential sweep, not in this file.
+            bugs.append(self._bug(
+                title="Harness filed a REAL GitHub issue (GITHUB_TOKEN was live)",
+                severity=BugSeverity.CRITICAL,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/feedback/issue",
+                method="POST",
+                expected=(
+                    "HTTP 503 — bug_hunt.py's bootstrap blanks GITHUB_TOKEN "
+                    "before src.api is imported, so the issue-filing path must "
+                    "be unreachable from the harness"
+                ),
+                actual=(
+                    "HTTP 201: an issue was created at "
+                    f"{client.parse(resp).get('issue_url', 'unknown URL')}"
+                ),
+                response=resp,
+                request_body=body,
+            ))
+        elif resp.status_code != 503:
             bugs.append(self._bug(
                 title="Well-formed feedback submission returned unexpected status",
                 severity=BugSeverity.MEDIUM,
                 category=BugCategory.WRONG_RESPONSE,
                 endpoint="/api/feedback/issue",
                 method="POST",
-                expected="HTTP 201 (issue filed) or 503 (no GITHUB_TOKEN configured)",
+                expected="HTTP 503 (no GITHUB_TOKEN configured)",
                 actual=f"HTTP {resp.status_code}",
                 response=resp,
                 request_body=body,

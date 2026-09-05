@@ -304,6 +304,28 @@ class TestSavesRoutes:
 class TestLogsRoutes:
     """Tests for routes/logs.py."""
 
+    @pytest.fixture(autouse=True)
+    def _isolate_module_state(self, monkeypatch):
+        """Reset the two pieces of ``logs.py`` state that outlive a request.
+
+        Both are module-level and therefore shared with every other test in
+        this process:
+
+        * ``_browser_log_limiter`` — 60 posts per minute per source, and every
+          test here posts from the same address. A 429 would surface as
+          whatever assertion the test happened to make about the body.
+        * ``_last_cleanup_at`` — the retention sweep now runs on an interval
+          floor rather than once per request, so whichever test posted first
+          would otherwise be the only one that reaches ``cleanup()`` at all.
+          ``test_receive_logs_cleanup_failure`` below is about that call and
+          would silently stop exercising it.
+        """
+        from src.api.routes import logs as logs_module
+
+        monkeypatch.setattr(logs_module, "_last_cleanup_at", 0.0)
+        if logs_module._browser_log_limiter is not None:
+            logs_module._browser_log_limiter.clear_all()
+
     @pytest.fixture
     def app(self, minimal_app):
         from src.api.routes.logs import logs_bp

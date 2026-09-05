@@ -754,6 +754,49 @@ def _register_preflight(app):
             return response, 200
 
 
+def _register_request_limits(app):
+    """Refuse an oversized request body before any route sees it.
+
+    ``MAX_CONTENT_LENGTH`` (``src/api/config.py``) already stops Werkzeug
+    *reading* past the cap, so the body is never buffered — but on its own it
+    is not enough to make the refusal legible. Werkzeug raises
+    ``RequestEntityTooLarge`` at the moment the body is read, which for every
+    route in this API is inside a ``try:`` whose ``except Exception`` returns
+    that route's own 500. The client is then told the server broke, the app-wide
+    500 handler logs a traceback per hostile request, and nothing says
+    "too large". Checking the declared ``Content-Length`` in a ``before_request``
+    moves the refusal in front of the view function entirely.
+
+    The two endpoints that make this matter are the two an unauthenticated
+    client can reach: ``POST /api/logs/browser`` and ``POST /api/auth/register``.
+
+    ``Content-Length`` is absent from a chunked request, and this hook cannot
+    bound one — the size is not known until the body is read. That case falls
+    through to Werkzeug's own limit and to the 413 handler in
+    ``handlers/error_handler.py``, which is why both exist.
+    """
+
+    @app.before_request
+    def reject_oversized_body():
+        from flask import request
+
+        limit = app.config.get("MAX_CONTENT_LENGTH")
+        length = request.content_length
+        if limit and length is not None and length > limit:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "payload_too_large",
+                        "message": (
+                            "Request body is too large (limit %d bytes)." % limit
+                        ),
+                    }
+                ),
+                413,
+            )
+
+
 def _register_meta_routes(app):
     """Health and API info — the two unauthenticated public endpoints."""
 
@@ -915,6 +958,10 @@ def create_app(config_class=None):
 
     register_socket_handlers(socketio)
 
+    # Registered before the preflight hook so nothing runs ahead of the body
+    # bound: before_request callbacks fire in registration order, and this one
+    # is a resource guard.
+    _register_request_limits(app)
     _register_preflight(app)
     _register_security_headers(app)
     _register_meta_routes(app)

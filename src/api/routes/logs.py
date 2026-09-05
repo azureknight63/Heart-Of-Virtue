@@ -7,8 +7,16 @@ from flask import Blueprint, current_app, request, jsonify, abort
 from datetime import datetime
 import os
 import re
+import threading
+import time
 import zlib
 from pathlib import Path
+from src.api.rate_limiter import (
+    RateLimiter,
+    client_ip,
+    limiter_from_env,
+    rate_limited_response,
+)
 from src.api.utils.log_cleanup import LogCleanupManager
 
 logs_bp = Blueprint("logs", __name__)
@@ -55,6 +63,67 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 # Default: 7 days retention, 100MB max size
 cleanup_manager = LogCleanupManager(LOGS_DIR, retention_days=7, max_size_mb=100)
 
+# Requests per source IP per minute on the unauthenticated POST /browser route.
+# The IP is the only tier available: the frontend logger posts without a
+# session (and via sendBeacon on unload, which carries no headers of ours), so
+# there is no account or session to key on — see `client_ip` for how a source
+# is identified. Per-worker like every other limiter here (issue #284).
+#
+# 60/minute is set against what the logger can legitimately emit:
+# `frontend/src/utils/logger.js` flushes on a 5s timer (12/min) and whenever
+# its queue reaches BATCH_SIZE, so a burst of console output can exceed the
+# timer rate — but a request per second, per address, is far above a real
+# client and far below a flood. A tripped client is not broken by it: the
+# logger treats a non-2xx as a failure and stands down for FAILURE_BACKOFF_MS
+# (30s), re-queueing (and trimming) its backlog.
+#
+# Disableable via BROWSER_LOG_RATE_LIMIT_PER_MINUTE=0: what its absence costs
+# is log noise and disk churn on a debug facility, not an open credential path
+# — the same reasoning that lets FEEDBACK_RATE_LIMIT_PER_HOUR be switched off
+# and keeps the two LOGIN_* tiers from being.
+_BROWSER_LOG_RATE_LIMIT = 60
+_BROWSER_LOG_RATE_WINDOW = 60  # seconds
+_browser_log_limiter = limiter_from_env(
+    "BROWSER_LOG_RATE_LIMIT_PER_MINUTE",
+    _BROWSER_LOG_RATE_LIMIT,
+    _BROWSER_LOG_RATE_WINDOW,
+)
+
+# Minimum seconds between retention sweeps triggered by an inbound log post.
+# The sweep is a full listing + stat of every file in LOGS_DIR, and it ran once
+# per request on a route no credential guards — so a flood paid for a directory
+# scan per request *and* drove the 100 MB size-based eviction, which discards
+# the oldest files first: genuine logs. Running it on a floor instead keeps the
+# retention policy enforced under real traffic while decoupling its cost, and
+# its eviction, from the request rate. The TESTING-only POST /browser/cleanup
+# route is the on-demand path and is deliberately not throttled by this.
+CLEANUP_MIN_INTERVAL_SECONDS = 300
+
+_cleanup_lock = threading.Lock()
+# monotonic() so a clock adjustment cannot push the next sweep hours away; the
+# 0.0 start means the first post after boot sweeps, as before.
+_last_cleanup_at = 0.0
+
+
+def _maybe_cleanup():
+    """Run the retention sweep if the interval floor has elapsed.
+
+    Returns True when a sweep ran. Never raises: cleanup is housekeeping and
+    must not fail the write that triggered it.
+    """
+    global _last_cleanup_at
+    now = time.monotonic()
+    with _cleanup_lock:
+        if now - _last_cleanup_at < CLEANUP_MIN_INTERVAL_SECONDS:
+            return False
+        _last_cleanup_at = now
+    try:
+        cleanup_manager.cleanup()
+    except Exception as cleanup_error:
+        # Don't use the app logger here to avoid circular logging.
+        print(f"Warning: Log cleanup failed: {str(cleanup_error)}")
+    return True
+
 
 @logs_bp.route("/browser", methods=["POST"])
 def receive_browser_logs():
@@ -75,6 +144,15 @@ def receive_browser_logs():
         "session_id": "session_1234567890_abc123"
     }
     """
+    # Spent before the body is parsed and before anything is written: this is
+    # the only route in the API with neither authentication nor a session, so
+    # the throttle is the whole of its admission control. Checked outside the
+    # try below so the 429 cannot be relabelled a 500 by the catch-all.
+    if RateLimiter.check(_browser_log_limiter, client_ip()):
+        return rate_limited_response(
+            "Too many log submissions. Please slow down."
+        )
+
     try:
         data = request.get_json(silent=True)
 
@@ -151,13 +229,9 @@ def receive_browser_logs():
                 f.write(log_line)
                 written += 1
 
-        # Perform automatic cleanup after writing logs
-        # This runs silently in the background
-        try:
-            cleanup_manager.cleanup()
-        except Exception as cleanup_error:
-            # Don't fail the request if cleanup fails
-            print(f"Warning: Log cleanup failed: {str(cleanup_error)}")
+        # Automatic retention sweep, rate-floored rather than per-request —
+        # see CLEANUP_MIN_INTERVAL_SECONDS.
+        _maybe_cleanup()
 
         return (
             jsonify(

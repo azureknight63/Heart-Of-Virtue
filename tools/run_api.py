@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import ipaddress
 import os
 import sys
 from pathlib import Path
@@ -33,7 +34,81 @@ from src.env_bootstrap import load_project_env  # noqa: E402
 load_project_env()
 
 from src.api.app import create_app  # noqa: E402
-from src.api.config import config_for_env, normalized_env  # noqa: E402
+
+# `_env_flag` is imported across the module boundary on purpose, private name
+# and all: it is the one place that spells which values mean "off" (including
+# the exported-but-blank case), and that list has already been duplicated and
+# drifted once — see the `_FALSEY_ENV_VALUES` comment in src/api/config.py.
+# A fourth copy of the truthiness rule here would be the same mistake again.
+from src.api.config import (  # noqa: E402
+    _env_flag,
+    config_for_env,
+    normalized_env,
+)
+
+#: Second key required before a non-loopback HOST is honoured. See
+#: :func:`resolve_host`.
+REMOTE_OPT_IN_VAR = "ALLOW_REMOTE_DEV_SERVER"
+
+#: Hostnames that mean the loopback interface but do not parse as addresses.
+_LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", ""})
+
+
+def _is_loopback(host: str) -> bool:
+    """True when ``host`` can only reach this machine.
+
+    A name that is not an address is *not* assumed to be loopback: a hostname
+    resolves wherever DNS says, and the safe reading of an unrecognised value
+    on this switch is "this might be routable".
+    """
+    candidate = (host or "").strip()
+    if candidate.lower() in _LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False
+
+
+def resolve_host():
+    """The interface to bind, refusing a non-loopback one without an opt-in.
+
+    ``HOST`` on its own is not enough, and the asymmetry with the rest of this
+    file is deliberate. Everything else here is a *development* setting whose
+    worst case is a broken dev run; this one publishes, on the LAN:
+
+    * Werkzeug's ``/console`` — an interactive Python REPL, PIN-gated only —
+      and a full source traceback on every 500, because every config this entry
+      point will serve pins ``DEBUG = True``;
+    * with ``FLASK_ENV=testing`` (which this repo's own ``.env`` sets), the
+      ``/api/test/session`` route, which mints a valid session for any username
+      with no credentials at all, and the entire ``/api/debug/*`` blueprint —
+      the same pair ``wsgi.py`` refuses to boot rather than expose.
+
+    ``HOST`` is a value that gets set once for a demo and then lives in a
+    ``.env`` that is copied between machines, so by itself it does not
+    distinguish "expose this now" from "exposed it once, months ago".
+    Requiring a second, explicitly-named variable does.
+
+    Returns:
+        The host string to bind.
+
+    Raises:
+        SystemExit: when ``HOST`` is non-loopback and the opt-in is not set.
+    """
+    host = os.environ.get("HOST", "127.0.0.1")
+    if _is_loopback(host) or _env_flag(REMOTE_OPT_IN_VAR):
+        return host
+    raise SystemExit(
+        f"run_api.py refuses to bind HOST={host!r}: that is not a loopback "
+        "address, and this script serves the Werkzeug development server with "
+        "DEBUG on — an interactive /console (PIN-gated only) and a full source "
+        "traceback on every 500. Under FLASK_ENV=testing it also serves "
+        "/api/test/session, which mints a valid session for any username "
+        "without credentials, plus the /api/debug/* blueprint. Set "
+        f"{REMOTE_OPT_IN_VAR}=1 as well if you really do mean to publish that "
+        "to your network; otherwise leave HOST unset (127.0.0.1)."
+    )
 
 
 def main():
@@ -72,6 +147,12 @@ def main():
 
     config = config_for_env(env)
 
+    # Resolved before create_app(), for the same reason wsgi.py's refusals sit
+    # above its factory call: a refusal that fires after the universe is loaded
+    # and every blueprint registered has already done the work it exists to
+    # decline.
+    host = resolve_host()
+
     # Create app
     app, socketio = create_app(config)
 
@@ -82,13 +163,6 @@ def main():
     # the app is actually running with rather than the one its config class was
     # declared with, so it keeps agreeing if that ever stops being true.
     debug = app.config["DEBUG"]
-
-    # 127.0.0.1 by default. With debug=True, run_simple wraps the app in
-    # DebuggedApplication(evalex=True) — `/console` is an interactive Python
-    # console (PIN-gated only) and every 500 renders a full source traceback.
-    # Binding that to 0.0.0.0 hands it to everything on the LAN. Set HOST
-    # explicitly to expose the dev server on purpose.
-    host = os.environ.get("HOST", "127.0.0.1")
 
     print(f"\n{'='*60}")
     print(f"Heart of Virtue API - {env.upper()}")

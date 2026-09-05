@@ -6,6 +6,8 @@ Handles in-game player feedback and creates GitHub issues.
 import os
 import re
 import logging
+from typing import Literal, get_args
+
 import requests
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player
@@ -24,6 +26,22 @@ feedback_bp = Blueprint("feedback", __name__)
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_REPO = "azureknight63/heart-of-virtue"
 
+# The feedback vocabulary, declared once. Every table below is keyed over
+# exactly these members and every membership test asks this alias — the three
+# strings used to be spelled out four separate times (the labels, the field
+# table, the route's `not in (...)` test and its if/elif dispatch), so a fourth
+# type was three edits and a silent gap away.
+#
+# A `Literal` rather than a plain tuple because the drift guard this file is
+# pinned by (`assert_closed_over` in tests/conftest.py) reads one, and because
+# it is the shape the rest of the repo already uses for a closed vocabulary. It
+# is a vocabulary declaration, not a step towards annotating this module.
+FeedbackType = Literal["bug", "feature", "general"]
+
+#: The members of :data:`FeedbackType`, for membership tests at runtime.
+#: Derived, never retyped.
+FEEDBACK_TYPES = get_args(FeedbackType)
+
 LABEL_MAP = {
     "bug": ["bug", "player-report"],
     "feature": ["enhancement", "player-report"],
@@ -40,6 +58,16 @@ STAR_BLOCK = "⭐"
 
 MAX_TITLE_LENGTH = 256
 MAX_FIELD_LENGTH = 2000
+
+# Bound on the *display* label built from the submitter's username. Not a
+# validation rule — the name is already in the session by the time it gets
+# here — but the attribution line is one line of an issue body, and neither the
+# scrubs below nor `MAX_FIELD_LENGTH` (which applies to `fields`, not to this)
+# bounded its length. It matches `AuthService.MAX_USERNAME_LENGTH`, and is a
+# separate constant rather than an import because a row predating that cap, or
+# a session username minted by some future non-registration path, must still
+# render as a bounded label here.
+MAX_USERNAME_LABEL_LENGTH = 64
 _MARKDOWN_UNSAFE = re.compile(r"[*_`\[\]()#\\]")
 
 # Zero-width space. Inserted after a sigil so GitHub stops treating it as a
@@ -275,10 +303,27 @@ def _build_general_body(fields, attribution):
     return body
 
 
+# The three tables keyed over FeedbackType. Every member appears in every one
+# of them, including with an empty tuple — "this type has no mapping fields" is
+# a row, not an absence. That is what lets `_validate_fields_for_type` index
+# them rather than `.get(..., ())`, and what
+# `tests/test_feedback_routes_vocabulary.py` pins with `assert_closed_over`.
 _STRING_FIELD_KEYS_BY_TYPE = {
     "bug": ("steps", "expected", "actual", "severity"),
     "feature": ("description", "use_case"),
     "general": ("message",),
+}
+
+_MAPPING_FIELD_KEYS_BY_TYPE = {
+    "bug": (),
+    "feature": (),
+    "general": ("ratings",),
+}
+
+_BODY_BUILDERS = {
+    "bug": _build_bug_body,
+    "feature": _build_feature_body,
+    "general": _build_general_body,
 }
 
 
@@ -292,22 +337,34 @@ def _validate_fields_for_type(feedback_type, fields):
     ``{"ratings": "nope"}``) would raise ``AttributeError`` deep in the
     builder and surface as a 500. Reject it here as a 400 instead.
 
+    Both tables are **indexed, not ``.get``-ed**, and that is the point. The
+    previous ``.get(feedback_type, ())`` meant a type absent from the table
+    validated nothing at all and went straight to a builder — a fail-open
+    lookup in the one function whose job is to fail closed. Indexing turns the
+    same mistake into a ``KeyError`` on the first request. It cannot happen
+    from the route, which rejects anything outside :data:`FEEDBACK_TYPES`
+    first; if it ever does, a caller has invented a type without giving it a
+    row, and a 500 naming the missing key is the correct outcome.
+
     Args:
-        feedback_type: One of "bug", "feature", "general".
+        feedback_type: A member of :data:`FEEDBACK_TYPES`.
         fields: The ``fields`` dict from the request body.
 
     Returns:
         An error message string, or ``None`` if all present values type-check.
+
+    Raises:
+        KeyError: if ``feedback_type`` is not a member of the vocabulary.
     """
-    for key in _STRING_FIELD_KEYS_BY_TYPE.get(feedback_type, ()):
+    for key in _STRING_FIELD_KEYS_BY_TYPE[feedback_type]:
         value = fields.get(key)
         if value is not None and not isinstance(value, str):
             return f"fields.{key} must be a string"
 
-    if feedback_type == "general":
-        ratings = fields.get("ratings")
-        if ratings is not None and not isinstance(ratings, dict):
-            return "fields.ratings must be an object"
+    for key in _MAPPING_FIELD_KEYS_BY_TYPE[feedback_type]:
+        value = fields.get(key)
+        if value is not None and not isinstance(value, dict):
+            return f"fields.{key} must be an object"
 
     return None
 
@@ -377,11 +434,16 @@ def submit_feedback():
         # `_LABEL_WHITESPACE` runs *before* `_neutralise_github_markup`, not
         # after: that pass appends U+200B, which is not in `\s`, but relying on
         # that would make the order look interchangeable when it is not.
+        # Truncated *before* the scrubs, not after: the scrubs' cost is
+        # proportional to the input, and `_neutralise_github_markup` can only
+        # add characters (a zero-width space per activator), so bounding the
+        # output would not bound the work. See MAX_USERNAME_LABEL_LENGTH.
+        raw_username = getattr(session, "username", None) or "Unknown Player"
         username = _neutralise_github_markup(
             _LABEL_WHITESPACE.sub(
                 " ",
                 _MARKDOWN_UNSAFE.sub(
-                    "", getattr(session, "username", "Unknown Player")
+                    "", str(raw_username)[:MAX_USERNAME_LABEL_LENGTH]
                 ),
             ).strip()
             # A name that was nothing but whitespace and markdown sigils
@@ -407,8 +469,18 @@ def submit_feedback():
         # since `_neutralise_github_markup` existed, while a title carried
         # them straight into the tracker — and into every terminal that
         # later cats the issue.
+        #
+        # `_LABEL_WHITESPACE` closes the other half of that asymmetry.
+        # `_CONTROL_CHARS` deliberately spares \n, \t and \r because a bug
+        # report's *body* is prose that needs them — but a title is a label on
+        # one line, exactly like the username beside it, and those three were
+        # the only control characters still reaching the issue title. Collapsed
+        # rather than stripped so "a\nb" stays two words.
         title = (
-            _CONTROL_CHARS.sub("", _MARKDOWN_UNSAFE.sub("", raw_title)).strip()
+            _LABEL_WHITESPACE.sub(
+                " ",
+                _CONTROL_CHARS.sub("", _MARKDOWN_UNSAFE.sub("", raw_title)),
+            ).strip()
             if isinstance(raw_title, str)
             else ""
         )
@@ -417,7 +489,7 @@ def submit_feedback():
         if not isinstance(fields, dict):
             fields = {}
 
-        if feedback_type not in ("bug", "feature", "general"):
+        if feedback_type not in FEEDBACK_TYPES:
             return jsonify({"success": False, "error": "Invalid feedback type"}), 400
 
         if not title:
@@ -457,12 +529,12 @@ def submit_feedback():
             else f"Submitted in-game by: **{username}**"
         )
 
-        if feedback_type == "bug":
-            body = _build_bug_body(fields, attribution)
-        elif feedback_type == "feature":
-            body = _build_feature_body(fields, attribution)
-        else:
-            body = _build_general_body(fields, attribution)
+        # Indexed for the same reason `_validate_fields_for_type` indexes: the
+        # if/elif chain that used to live here ended in an `else` that sent
+        # *anything* unrecognised to the general-feedback builder, so a new
+        # type without a builder would have been rendered as general feedback
+        # rather than reported. Both lookups now fail loudly instead.
+        body = _BODY_BUILDERS[feedback_type](fields, attribution)
 
         labels = LABEL_MAP[feedback_type]
         issue_url, err = _create_github_issue(title, body, labels)

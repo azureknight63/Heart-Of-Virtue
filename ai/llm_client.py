@@ -346,17 +346,30 @@ _JEAN_OPTION_IDENTITY_RULE = (
 #: defect the round-nine classifier fix found, in both directions at once.
 MERCHANT_SUBSTITUTE_TOPICS = "craft, fit, maintenance, provenance, or general lore"
 
+#: The forbidden half of the merchant rule, spelled once, for the same reason
+#: as the substitute half above. It had already drifted: the ``TRADE`` block in
+#: ``ConversationalNPCMixin._build_trade_block`` said "budget" and "purchase
+#: promise" where the user-task rule below said "stock", "selling" and
+#: "discounts", so a merchant model was handed two different lists of the thing
+#: it must not do, in one prompt.
+#:
+#: The defence the option rule used to carry -- "prose for a model and a
+#: pattern for a checker cannot agree by sharing a string" -- is about the
+#: regex/prose split, and it is still true of the classifier. It says nothing
+#: about *two prompts*: both of these are prose, both are read by the same
+#: model, and there is no reason on earth for them to be two strings.
+MERCHANT_FORBIDDEN_TOPICS = (
+    "price, budget, inventory, stock, wares, buying, selling, "
+    "discounts, or purchase promises"
+)
+
 #: Conditional guidance for merchant system prompts. The mixin supplies the
 #: ``TRADE`` block; repeating its consequence in the user task keeps the rule
 #: visible to adapters that treat system/user messages differently.
-#:
-#: The forbidden half stays spelled out here rather than shared with the
-#: classifier's regexes: prose for a model and a pattern for a checker are two
-#: representations of one rule that must agree in meaning, and cannot agree by
-#: sharing a string. Only the substitute list is literally the same text.
 _MERCHANT_OPTION_RULE = (
-    "If the system prompt contains TRADE, Jean must not ask about price, "
-    "inventory, stock, wares, buying, selling, or discounts; ask about "
+    "If the system prompt contains TRADE, Jean must not ask about "
+    + MERCHANT_FORBIDDEN_TOPICS
+    + "; ask about "
     + MERCHANT_SUBSTITUTE_TOPICS
     + " instead."
 )

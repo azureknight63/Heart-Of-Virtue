@@ -101,6 +101,7 @@ try:  # pragma: no cover - trivially exercised by importing this module
         MAX_NPC_SENTENCES,
         MAX_NPC_TEXT_CHARS,
         MAX_OPTION_CHARS,
+        MERCHANT_FORBIDDEN_TOPICS,
         MERCHANT_SUBSTITUTE_TOPICS,
         REPUTATION_DELTA_BOUNDS,
     )
@@ -127,6 +128,10 @@ except Exception as _constants_import_error:  # pragma: no cover - no AI stack
     REPUTATION_DELTA_BOUNDS = (-5, 5)
     LOQUACITY_DELTA_BOUNDS = (-40, 15)
     LOQUACITY_DELTA_DEFAULT = -8
+    MERCHANT_FORBIDDEN_TOPICS = (
+        "price, budget, inventory, stock, wares, buying, selling, "
+        "discounts, or purchase promises"
+    )
     MERCHANT_SUBSTITUTE_TOPICS = (
         "craft, fit, maintenance, provenance, or general lore"
     )
@@ -185,8 +190,11 @@ _ACTION_ASIDE_PATTERN = re.compile(
 # comment there). Aliased here so this module never hand-spells another
 # variant — the class of bug that let a curly-quoted line have its first spoken
 # word scrubbed as an invented proper noun while the straight-quoted form was
-# fine. Public names over there: four of them are consumed here, and a private
-# name read across a module boundary is a contract either way.
+# fine. The aliases immediately below are the whole of what this module takes
+# from _chat_guard's character sets. No count of them is given: the prose here
+# used to say "four" and the matching prose in _chat_guard said "all four",
+# and both were wrong — the third hand-kept count in this feature to rot — so
+# the list, which the reader can already see, is left to speak for itself.
 _TERMINATORS = _chat_guard.TERMINATORS
 _CLOSING_QUOTES = _chat_guard.CLOSING_QUOTES
 _SENTENCE_BOUNDARY_CHARS = _chat_guard.SENTENCE_BOUNDARY_CHARS
@@ -703,16 +711,35 @@ _MERCHANT_ITEM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# ``stock`` and ``for sale`` appear here AND in
+# _MERCHANT_ITEM_REQUEST_PATTERN below, deliberately and at two different
+# strengths, so do not "unify" them. This pattern is an unconditional
+# verdict -- step 2 of :meth:`_is_merchant_commerce_question` returns True
+# on it outright -- while the item-request pattern is subject to the
+# lore-lead veto in :meth:`_is_stock_request`. "Where do you keep the good
+# steel?" has to reach that veto and survive it; "What is for sale?" must
+# not. One shared fragment would have to pick one of those two behaviours
+# for both, and either choice is a bug that has already shipped once.
 _MERCHANT_EXPLICIT_PATTERN = re.compile(
     r"\b(?:inventory|stock\w*|wares|merchandise|shop|for\s+sale|"
     r"budget|discount\w*|bargain\w*|cheaper)\b",
     re.IGNORECASE,
 )
+# "What is it worth?" -- the bare valuation question, spelled once and
+# interpolated into the two patterns that need it (the anchored
+# whole-sentence form below and the item-less form further down). It was
+# written out twice in two different spellings, one admitting "which" and
+# the other not, which is how a filter comes to answer the same question
+# two ways depending on which branch reached it.
+_MERCHANT_WORTH_QUESTION = r"(?:what|which)\s+(?:is|are)\s+it\s+worth"
+
 _MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
     r"^\s*(?:what\s+have\s+you\s+got|what\s+can\s+you\s+offer|"
     r"what\s+do\s+you\s+carry|what\s+do\s+you\s+have|"
     r"is\s+anything\s+available|are\s+any(?:\s+.+)?\s+available|"
-    r"would\s+you\s+trade|what\s+is\s+it\s+worth)\s*[?.!]*\s*$",
+    r"would\s+you\s+trade|"
+    + _MERCHANT_WORTH_QUESTION
+    + r")\s*[?.!]*\s*$",
     re.IGNORECASE,
 )
 # Verbs a stock request is built from. They only mean "is this on your counter"
@@ -751,6 +778,11 @@ _MERCHANT_LORE_LEAD_PATTERN = re.compile(
     r"^\W*(?:how|where|when|who|whom|whose|why)\b(?!\s+(?:many|much)\b)",
     re.IGNORECASE,
 )
+# "does it cost", "would it cost" -- shared verbatim by the price pattern
+# and the item-less pattern below, which is why it is a fragment rather
+# than two character-identical literals forty lines apart.
+_MERCHANT_IT_COST = r"\b(?:does|do|would|will|can)\s+it\s+cost\b"
+
 _MERCHANT_PRICE_PATTERN = re.compile(
     r"\bhow\s+much\s+for\b|"
     # "How much IS the sword?" -- the copula was missing while "how much does"
@@ -762,7 +794,8 @@ _MERCHANT_PRICE_PATTERN = re.compile(
     r"\b(?:what(?:['’]s)?\s+(?:is|are|does|do)?|"
     r"how\s+much\s+(?:does|do|would|will|can))\b"
     r".{0,80}\b(?:price|cost|worth|value)\b|"
-    r"\b(?:does|do|would|will|can)\s+it\s+cost\b|"
+    + _MERCHANT_IT_COST
+    + r"|"
     r"\b(?:does|do|would|will|can)\s+(?:it|the|this|that|these|those|any)\s+cost\s+(?:more|less|extra)\b",
     re.IGNORECASE,
 )
@@ -780,16 +813,27 @@ _MERCHANT_ANY_AVAILABLE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# "less coin for the buckles" -- a haggling fragment shared by the item-less
+# pattern below and by the transaction pattern's weak half. The transaction
+# pattern needs its own copy of the *behaviour* because a lore frame
+# short-circuits :meth:`_is_merchant_commerce_question` before the item-less
+# pattern is ever consulted; it does not need its own copy of the string.
+_MERCHANT_COIN_FOR = r"\b(?:coin|gold)\s+for\b"
+
 # Trade with no item named. Deliberately narrow: without a noun to anchor it,
 # only an explicit purchasing amount or an offer fragment counts. "gold in"/
 # "coin in" is excluded — it reads as ordinary lore ("the gold in this region")
 # far more often than as an offer, unlike "gold for" ("less coin for the
 # buckles").
 _MERCHANT_ITEMLESS_TRADE_PATTERN = re.compile(
-    r"\b(?:does|do|would|will|can)\s+it\s+cost\b|"
-    r"\b(?:what|which)\s+(?:is|are)\s+it\s+worth\b|"
-    + _MERCHANT_GOLD_ALLOWANCE + r"|"
-    r"\b(?:coin|gold)\s+for\b|"
+    _MERCHANT_IT_COST
+    + r"|\b"
+    + _MERCHANT_WORTH_QUESTION
+    + r"\b|"
+    + _MERCHANT_GOLD_ALLOWANCE
+    + r"|"
+    + _MERCHANT_COIN_FOR
+    + r"|"
     r"\b(?:pay|paid|paying)\s+(?:for|in)\b",
     re.IGNORECASE,
 )
@@ -806,11 +850,38 @@ _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
     r"\b(?:are|is)\s+you\b.{0,20}\b(?:buying|selling|trading)\b|"
     r"\bmake\s+a\s+purchase\b|"
     r"\bwhat\s+can\s+i\s+(?:get|do)\s+for\s+you\b|"
+    # Jean offering his own goods: no item noun, no transaction verb, and
+    # so invisible to every other branch. "What will you give me for
+    # this?" is the plainest sell offer in the language.
+    r"\bwhat\s+(?:will|would|can|could)\s+you\s+give\s+me\s+for\b|"
     r"\bin\s+the\s+market\s+for\b",
     re.IGNORECASE,
 )
+# A transaction word beside an item noun. The first alternation names the
+# transaction outright and needs no frame; the rest do.
+#
+# ``trade``, ``coin`` and ``gold`` used to sit in that first list, and bare
+# they are not transactions at all -- they are provenance and craft, which
+# is to say they are three of the five topics ``_build_trade_block`` tells
+# the model to raise INSTEAD of commerce. "Did you trade for that mail?",
+# "Do the nomads trade for their gear upriver?" and "Did you learn the
+# leather trade here?" were all suppressed, every one of them exactly what
+# the prompt had just asked for. So the weak words are admitted only inside
+# a second-person offer frame ("WOULD YOU TRADE me that mail") or a
+# haggling frame ("less COIN FOR the buckles"), which is what separates an
+# offer from a past-tense question about where a thing came from.
+#
+# Dropping them outright was the other candidate and is wrong: "Would you
+# trade me that mail?" is genuine commerce and nothing else in the
+# classifier catches it. Numeric price quotes do not depend on this pattern
+# either way -- ``_chat_guard``'s ``coin`` state-claim tripwire is the net
+# under those.
 _MERCHANT_TRANSACTION_PATTERN = re.compile(
-    r"\b(?:buy\w*|sell\w*|purchas\w*|pay\w*|trade|coin|gold)\b",
+    r"\b(?:buy\w*|sell\w*|purchas\w*|pay\w*)\b|"
+    r"\b(?:would|will|can|could|do|are)\s+you\s+(?:\w+\s+){0,2}?trad(?:e|ing)\b|"
+    r"\btrade\s+(?:me|with\s+me)\b|"
+    r"\b(?:less|more|fewer|any|some|enough)\s+(?:coin|gold)\b|"
+    + _MERCHANT_COIN_FOR,
     re.IGNORECASE,
 )
 
@@ -1337,8 +1408,11 @@ class ConversationalNPCMixin:
         )
 
         # Party check (Gorran travelling with Jean). The attribute is
-        # ``combat_list_allies`` — the party list ``src/player.py`` actually
-        # defines and ``src/api/combat_adapter.py`` reads throughout. This was
+        # :data:`_PARTY_ATTR` — ``Player.combat_list_allies``, which
+        # ``Player.__init__`` sets and ``CombatAdapter`` reads throughout.
+        # (Named, not pathed: the previous note cited ``src/player.py``, and
+        # ``src/player`` is a package. A symbol survives a file move; a path
+        # does not, and a wrong path is worse than none.) This was
         # ``player.allies``, which nothing in src/ has ever set, so the modifier
         # was structurally unreachable and every test that "covered" it fed the
         # double an attribute the real Player does not have. The list's first
@@ -1588,10 +1662,10 @@ class ConversationalNPCMixin:
             return ""
         return (
             "TRADE: Buying, selling, and stock belong to the shop interface, not "
-            "conversation. Do not ask Jean what he wants to buy, quote or negotiate "
-            "a price, ask about his budget, list inventory or wares, or make a purchase "
-            "promise. If commerce comes up, steer toward "
-            + MERCHANT_SUBSTITUTE_TOPICS + " instead."
+            "conversation. Do not raise, quote, negotiate, list, or promise "
+            + MERCHANT_FORBIDDEN_TOPICS
+            + ", and do not ask Jean what he wants to buy. If commerce comes "
+            "up, steer toward " + MERCHANT_SUBSTITUTE_TOPICS + " instead."
         )
 
     def _build_system_prompt(self, player) -> str:
@@ -2366,17 +2440,32 @@ class ConversationalNPCMixin:
 
     @staticmethod
     def _is_stock_request(text: str) -> bool:
-        """True when the sentence asks whether something is on the counter.
+        """True when any sentence asks whether something is on the counter.
 
         The verb frame alone is not enough. "Where did you get that leather?"
         and "How do you keep the chain from rusting?" are provenance and
         maintenance — two of the five topics :meth:`_build_trade_block` tells
         the model to raise *instead* of commerce — so a manner or provenance
         interrogative disqualifies the frame.
+
+        That veto is ``^``-anchored, and this is asked of whole Jean options
+        as well as of single sentences: :meth:`_qc_jean_options` hands the
+        entire option text down, and an option is routinely two sentences.
+        So "How's the forge? Do you have any spears?" had its stock request
+        disqualified by a lore word belonging to the *other* sentence, and
+        the commerce question shipped to the player.
+
+        The veto is therefore applied per sentence, where it was written to
+        apply. Only the veto moves: the surrounding classifier still reads
+        the whole text, because the item and the price frequently sit in
+        different sentences ("That old cuirass has seen three wars. How much
+        for it?") and splitting there would lose them both.
         """
-        if _MERCHANT_LORE_LEAD_PATTERN.search(text):
-            return False
-        return bool(_MERCHANT_ITEM_REQUEST_PATTERN.search(text))
+        return any(
+            not _MERCHANT_LORE_LEAD_PATTERN.search(sentence)
+            and _MERCHANT_ITEM_REQUEST_PATTERN.search(sentence)
+            for sentence in _split_sentences(text)
+        )
 
     def _is_lore_frame(self, text: str) -> bool:
         """True when the sentence reads as history, ritual, or biography."""

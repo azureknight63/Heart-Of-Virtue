@@ -1069,10 +1069,21 @@ class TestFeedbackRoute:
         # exception past validation would propagate to Flask's generic
         # handler instead of a controlled 500 with logging.
         c, _ = client
-        with patch(
-            "src.api.routes.feedback._build_bug_body",
-            side_effect=RuntimeError("boom"),
-        ):
+
+        def _boom(fields, attribution):
+            raise RuntimeError("boom")
+
+        # Patched through `_BODY_BUILDERS` rather than by module attribute
+        # name: the route dispatches on that table now (one lookup keyed over
+        # `FeedbackType`, replacing an if/elif chain whose `else` sent an
+        # unknown type to the general-feedback builder), and the table holds
+        # the function object it captured at import. Patching
+        # `feedback._build_bug_body` would rebind the name and leave the
+        # dispatch pointing at the original -- a test that passes while
+        # injecting nothing.
+        from src.api.routes import feedback as feedback_module
+
+        with patch.dict(feedback_module._BODY_BUILDERS, {"bug": _boom}):
             rv = c.post(
                 "/api/feedback/issue",
                 json={

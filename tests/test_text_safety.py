@@ -524,13 +524,28 @@ class TestTheConvergenceBoundFailsClosed:
     def _label_chain_beyond_the_bound(self):
         """A nest past the bound, then a chain of labels for it to hand back.
 
-        Measured rather than reasoned about. The whole payload is 1618
-        characters -- comfortably inside the route's ``_MAX_FIELD_LEN`` of
-        4000, which is what the neutraliser actually sees, because
-        ``src/npc/_chat_llm.py`` sanitises *before* cutting to
-        ``MAX_JEAN_TEXT_CHARS``. Against a fail-closed path that applied the
-        label rules once, this left 75 live ``NPC:`` labels after the ingress
-        call and 10 still live after the prompt-assembly call.
+        This payload is roughly 23,000 characters -- about 5.8x the route's
+        ``_MAX_FIELD_LEN`` of 4000 -- so NO REQUEST CAN DELIVER IT. It is a
+        property test of the fail-closed path, not a reachability claim, and
+        saying so is the point: the numbers here were written when the bound
+        was a flat 64 passes and went stale the moment it became the derived
+        ``_pass_budget``, while still reading as a live threat assessment.
+
+        The length is derived from the constants below rather than restated,
+        so it cannot go stale again. It is deliberately not asserted: the
+        figure above is context for a reader, and pinning it would make this
+        docstring a second place to edit when the budget changes.
+
+        The neighbouring claim that ``src/npc/_chat_llm.py`` "sanitises before
+        cutting" was also inverted -- ``_chat_llm.py`` cuts first
+        (``neutralise_player_text(jean_text[:MAX_JEAN_TEXT_CHARS])``), which is
+        what ``src/text_safety.py``'s module docstring says too. The one place
+        that genuinely sanitises before capping is
+        ``ai/llm_client.py``'s ``_wrap_player_text``.
+
+        Against a fail-closed path that applied the label rules once, this left
+        75 live ``NPC:`` labels after the ingress call and 10 still live after
+        the prompt-assembly call.
         """
         depth = text_safety._MAX_NEUTRALISE_PASSES + 6
         chain = text_safety._MAX_NEUTRALISE_PASSES * 2 + 12

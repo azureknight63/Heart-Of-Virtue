@@ -414,6 +414,266 @@ class TestMerchantVocabularyHasOneSpelling:
             )
 
 
+class TestMultiSentenceOptionsSeeEverySentence:
+    """Finding 1: the lore-lead veto is ``^``-anchored, options are not.
+
+    ``_MERCHANT_LORE_LEAD_PATTERN`` disqualifies a stock request that OPENS
+    with a manner or provenance word, and :meth:`_qc_jean_options` hands the
+    classifier a whole option, which is routinely two sentences. So a lore word
+    in the first sentence vetoed the stock request in the second, and "How's
+    the forge? Do you have any spears?" shipped to the player as a Jean option
+    at a counter that cannot sell him a spear.
+
+    Both directions, because half of this list would be satisfied by a veto
+    that never fires and the other half by one that always does.
+    """
+
+    KAELEN_CONFIG = TestWeaponMerchantCommerceQuestions.KAELEN_CONFIG
+
+    def _kaelen(self):
+        return chat_npc(name="Kaelen", _chat_char_config=self.KAELEN_CONFIG)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # A lore opener followed by a plain inventory question. The first
+            # two flipped with the fix; the others were already suppressed and
+            # are here so a future rewrite cannot lose them.
+            "How's the forge? Do you have any spears?",
+            "Who taught you that? Have you got any daggers?",
+            "Where did you learn the trade? Do you have any helmets?",
+            "How do you keep the chain from rusting? What do you have in stock?",
+        ],
+    )
+    def test_a_commerce_sentence_is_seen_behind_a_lore_opener(self, text):
+        assert self._kaelen()._is_merchant_commerce_question(text) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Two lore sentences must still both survive: the veto is applied
+            # per sentence, not weakened.
+            "How's the forge? Who taught you to work leather?",
+            "Where did you get that leather? It is fine work.",
+            "How do you keep the chain from rusting? Do you oil it?",
+            # And the single-sentence veto is untouched.
+            "Where did you get that leather?",
+            "How do you keep the chain from rusting?",
+            "Where do you keep the good steel?",
+        ],
+    )
+    def test_lore_sentences_still_survive_in_any_number(self, text):
+        assert self._kaelen()._is_merchant_commerce_question(text) is False
+
+    def test_the_option_path_agrees_with_the_classifier(self):
+        """The defect was only reachable through :meth:`_qc_jean_options`."""
+        npc = self._kaelen()
+        commerce = "How's the forge? Do you have any spears?"
+        lore = "How's the forge? Who taught you to work leather?"
+        kept = _texts(npc._qc_jean_options(_opts(commerce, lore)))
+        assert commerce not in kept
+        assert lore in kept
+
+
+class TestTransactionWordsNeedAnOfferFrame:
+    """Finding 2: an item noun plus a bare ``trade``/``coin``/``gold``.
+
+    Those three words are not transactions on their own -- they are provenance
+    and craft, which is to say three of the five topics ``_build_trade_block``
+    tells the model to raise INSTEAD of commerce. Beside an item noun they
+    returned True even inside a lore frame, so the prompt asked for provenance
+    and QC punished the model for supplying it.
+
+    Dropping them outright was the wrong repair and the suppression half below
+    is what proves it: "Would you trade me that mail?" is genuine commerce and
+    nothing else in the classifier catches it.
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Did you trade for that mail?",
+            "Do the nomads trade for their gear upriver?",
+            "Did you learn the leather trade here?",
+            "Has that dagger been traded up and down the river?",
+        ],
+    )
+    def test_provenance_around_a_trade_word_survives(self, text):
+        assert _merchant()._is_merchant_commerce_question(text) is False
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # A second-person offer frame: this is the shop, not the story.
+            "Would you trade me that mail?",
+            "Will you trade for this dagger?",
+            # Jean offering his own goods -- no item noun and no transaction
+            # verb, so every item-anchored branch was blind to it.
+            "What will you give me for this?",
+            # Haggling over an amount.
+            "Would you take less coin for the buckles?",
+            "Are you buying or selling today?",
+        ],
+    )
+    def test_genuine_commerce_is_still_suppressed(self, text):
+        assert _merchant()._is_merchant_commerce_question(text) is True
+
+
+class TestMerchantForbiddenTopicsHaveOneSpelling:
+    """Finding 3: the FORBIDDEN half of the merchant rule was prose, twice.
+
+    ``_build_trade_block`` said "budget" and "purchase promise"; llm_client's
+    ``_MERCHANT_OPTION_RULE`` said "stock", "selling" and "discounts". Both are
+    prose for the same model in the same prompt, so the regex/prose defence
+    that keeps the classifier separate does not cover this pair.
+    """
+
+    def test_both_prompts_name_the_same_forbidden_topics(self):
+        from ai.llm_client import MERCHANT_FORBIDDEN_TOPICS, _MERCHANT_OPTION_RULE
+        from src.npc import _chat_llm
+
+        assert _chat_llm.MERCHANT_FORBIDDEN_TOPICS is MERCHANT_FORBIDDEN_TOPICS
+        assert MERCHANT_FORBIDDEN_TOPICS in _merchant()._build_trade_block()
+        assert MERCHANT_FORBIDDEN_TOPICS in _MERCHANT_OPTION_RULE
+
+    def test_every_forbidden_topic_is_actually_suppressed(self):
+        """The mirror of ``test_the_substitute_topics_survive_the_classifier``.
+
+        A topic the prompt forbids and the checker waves through is the same
+        defect as a topic the prompt asks for and the checker punishes, read
+        from the other end. Asserting the shared string alone would pass for
+        any value of it, so every topic is put to the classifier.
+        """
+        from ai.llm_client import MERCHANT_FORBIDDEN_TOPICS
+
+        merchant = _merchant()
+        topics = [
+            t.strip()
+            for t in MERCHANT_FORBIDDEN_TOPICS.replace(" or ", ", ").split(",")
+            if t.strip()
+        ]
+        assert len(topics) >= 6, topics
+        probes = {
+            "price": "What is the price of this cuirass?",
+            "budget": "Do you have a budget for this?",
+            "inventory": "Can I see your inventory of harnesses?",
+            "stock": "What do you have in stock?",
+            "wares": "What are your wares worth these days?",
+            "buying": "Are you buying or selling today?",
+            "selling": "Are you selling that cuirass?",
+            "discounts": "Any discount if I take two sets?",
+            "purchase promises": "Care to make a purchase?",
+        }
+        for topic in topics:
+            probe = probes.get(topic)
+            assert probe is not None, (
+                f"forbidden topic {topic!r} has no probe; add one so the "
+                "classifier is checked against every topic the prompt forbids"
+            )
+            assert merchant._is_merchant_commerce_question(probe), (
+                f"{topic!r} is forbidden to the model but waved through by QC: "
+                f"{probe!r}"
+            )
+
+
+class TestMerchantRegexFragmentsAreSpelledOnce:
+    """Finding 6: fragments that were character-identical in two patterns."""
+
+    @staticmethod
+    def _source():
+        from pathlib import Path
+
+        from src.npc import _chat_llm
+
+        return Path(_chat_llm.__file__).read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        "fragment,readers",
+        [
+            (
+                "_MERCHANT_IT_COST",
+                ("_MERCHANT_PRICE_PATTERN", "_MERCHANT_ITEMLESS_TRADE_PATTERN"),
+            ),
+            (
+                "_MERCHANT_WORTH_QUESTION",
+                (
+                    "_MERCHANT_STOCK_REQUEST_PATTERN",
+                    "_MERCHANT_ITEMLESS_TRADE_PATTERN",
+                ),
+            ),
+            (
+                "_MERCHANT_COIN_FOR",
+                (
+                    "_MERCHANT_ITEMLESS_TRADE_PATTERN",
+                    "_MERCHANT_TRANSACTION_PATTERN",
+                ),
+            ),
+        ],
+    )
+    def test_the_fragment_reaches_every_pattern_that_needs_it(
+        self, fragment, readers
+    ):
+        from src.npc import _chat_llm
+
+        text = getattr(_chat_llm, fragment)
+        for reader in readers:
+            assert text in getattr(_chat_llm, reader).pattern, (fragment, reader)
+
+    @pytest.mark.parametrize(
+        "fragment",
+        ["_MERCHANT_IT_COST", "_MERCHANT_WORTH_QUESTION", "_MERCHANT_COIN_FOR"],
+    )
+    def test_the_fragment_appears_in_the_source_exactly_once(self, fragment):
+        """Interpolating it is only DRY while nobody re-types it beside it."""
+        from src.npc import _chat_llm
+
+        assert self._source().count(getattr(_chat_llm, fragment)) == 1, fragment
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "What is it worth?",
+            "Which is it worth?",
+            "Does it cost more to reinforce?",
+        ],
+    )
+    def test_valuation_questions_are_still_commerce(self, text):
+        assert _merchant()._is_merchant_commerce_question(text) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Is it worth the risk?",
+            "What is the worth of a vow?",
+            "How much do you know about the nomads?",
+        ],
+    )
+    def test_ordinary_uses_of_worth_and_cost_survive(self, text):
+        assert _merchant()._is_merchant_commerce_question(text) is False
+
+    def test_the_shared_shop_nouns_keep_their_different_strengths(self):
+        """Finding 6, third part: ``stock``/``for sale`` sit in two patterns.
+
+        Deliberately, and not merged. ``_MERCHANT_EXPLICIT_PATTERN`` is an
+        unconditional verdict; ``_MERCHANT_ITEM_REQUEST_PATTERN`` is subject to
+        the lore-lead veto. Merging them would have to pick one behaviour for
+        both, and each choice breaks one of these two rows.
+        """
+        from src.npc import _chat_llm
+
+        assert r"for\s+sale" in _chat_llm._MERCHANT_EXPLICIT_PATTERN.pattern
+        assert r"for\s+sale" in _chat_llm._MERCHANT_ITEM_REQUEST_PATTERN.pattern
+
+        npc = chat_npc(
+            name="Kaelen",
+            _chat_char_config=TestWeaponMerchantCommerceQuestions.KAELEN_CONFIG,
+        )
+        assert npc._is_merchant_commerce_question("Where is that spear for sale?")
+        assert not npc._is_merchant_commerce_question(
+            "Where do you keep the good steel?"
+        )
+
+
 class TestMerchantPromptRule:
     def test_merchant_system_prompt_forbids_price_and_stock_talk(self):
         prompt = _merchant()._build_system_prompt(chat_player())

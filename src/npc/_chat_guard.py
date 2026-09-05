@@ -107,20 +107,31 @@ _SENTENCE_PATTERN = re.compile(r"[^.!?]+[.!?]*")
 # hand-written seven times across this module and _chat_llm in four mutually
 # inconsistent variants (`".!?"`, `'.!?"''`, `'"'”’'`, `'.!?"'*'`), which is
 # exactly how curly quotes came to be handled at one site and not its
-# neighbour. Public names: _chat_llm consumes all four, and a private name
-# imported across a module boundary is a contract whichever way it is spelled.
+# neighbour. A name is public here when _chat_llm reads it and private when
+# nothing outside this module does; a private name read across a module
+# boundary is a contract whichever way it is spelled, so the underscore is a
+# signpost rather than a wall.
 #
-# QUOTE_CHARS covers both directions because a token can open a quotation as
+# No count of the shared names is stated, and none should be. Both halves of
+# this pair used to carry one ("all four" here, "four of them" over there),
+# both were wrong, and that is the third hand-kept count in this feature to
+# rot into a lie about its own code. The question has a one-line answer that
+# cannot go stale:
+#
+#     grep -o '_chat_guard\.[A-Za-z_]*' src/npc/_chat_llm.py | sort -u
+#
+# _QUOTE_CHARS covers both directions because a token can open a quotation as
 # well as close one, and is DERIVED from the two directional sets rather than
 # listed a third time — the straight quote and apostrophe belong to both, and a
 # hand-written union sitting in the module whose own comment blames "four
 # mutually inconsistent variants" is that bug queued up again. CLOSING_QUOTES
-# is the subset that can legitimately trail a terminator.
+# is the subset that can legitimately trail a terminator. _QUOTE_CHARS itself
+# is private: its only reader repo-wide is the next line.
 TERMINATORS = ".!?"
 _OPENING_QUOTES = "\"'“‘«"
 CLOSING_QUOTES = "\"'”’»"
-QUOTE_CHARS = "".join(dict.fromkeys(_OPENING_QUOTES + CLOSING_QUOTES))
-SENTENCE_BOUNDARY_CHARS = TERMINATORS + QUOTE_CHARS
+_QUOTE_CHARS = "".join(dict.fromkeys(_OPENING_QUOTES + CLOSING_QUOTES))
+SENTENCE_BOUNDARY_CHARS = TERMINATORS + _QUOTE_CHARS
 
 ALNUM_PATTERN = re.compile(r"[A-Za-z0-9]")
 

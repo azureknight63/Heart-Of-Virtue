@@ -1506,6 +1506,66 @@ class TestAssertClosedOverCatchesEachWayATableCanDrift:
             assert_closed_over(module, "Band", "A_TYPO")
 
 
+def _names_chat_llm_reads_from_chat_guard():
+    """Every ``_chat_guard.X`` attribute ``_chat_llm`` reads, from its source.
+
+    Derived rather than listed, because the prose that used to list it was a
+    count, and the count was wrong in both modules at once: ``_chat_guard``
+    said "_chat_llm consumes all four" and ``_chat_llm`` said "four of them are
+    consumed here" while three character-set names were aliased. That is the
+    third hand-kept count in this feature to rot, so nothing here is kept by
+    hand.
+    """
+    tree = ast.parse(Path(_chat_llm.__file__).read_text(encoding="utf-8"))
+    return {
+        node.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "_chat_guard"
+    }
+
+
+class TestTheChatGuardBoundaryIsWhatItSaysItIs:
+    """The pair of comments either side of this module boundary make one
+    checkable claim between them: what ``_chat_llm`` takes from ``_chat_guard``
+    is public. They used to make a second one -- how many names that is -- and
+    that half is gone, because a number maintained by hand is a number that
+    rots. This asserts the half worth asserting."""
+
+    def test_the_walk_finds_something(self):
+        """Non-vacuity: a derivation that finds nothing asserts nothing."""
+        names = _names_chat_llm_reads_from_chat_guard()
+        assert len(names) >= 3, sorted(names)
+
+    def test_every_name_read_across_the_boundary_exists(self):
+        for name in sorted(_names_chat_llm_reads_from_chat_guard()):
+            assert hasattr(guard, name), name
+
+    def test_every_name_read_across_the_boundary_is_public(self):
+        private = sorted(
+            name
+            for name in _names_chat_llm_reads_from_chat_guard()
+            if name.startswith("_")
+        )
+        assert not private, (
+            "_chat_llm reads a private _chat_guard name; either publish it or "
+            "stop reading it: " + ", ".join(private)
+        )
+
+    def test_the_quote_union_is_private_to_its_own_module(self):
+        """``QUOTE_CHARS`` was public with no reader outside its own next line.
+
+        It is ``_QUOTE_CHARS`` now. The name is checked rather than the value
+        because the value is asserted by the boundary tests above through
+        ``SENTENCE_BOUNDARY_CHARS``, which is the derived name anything outside
+        the module actually wants.
+        """
+        assert not hasattr(guard, "QUOTE_CHARS")
+        assert guard.SENTENCE_BOUNDARY_CHARS == guard.TERMINATORS + guard._QUOTE_CHARS
+        assert set(guard.CLOSING_QUOTES) <= set(guard._QUOTE_CHARS)
+
+
 class TestAssertClosedOverAgainstRealTables:
     """The controls above use a synthetic vocabulary; these two use a live one,
     so the helper is known to work on the shape it was written for."""
