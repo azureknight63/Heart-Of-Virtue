@@ -198,12 +198,25 @@ class TestHandleDurability:
         assert wire_handle(dagger)
         assert ItemSerializer.serialize(dagger)["id"] == wire_handle(dagger)
 
-    def test_find_by_handle_refuses_to_resolve_an_empty_id(self):
-        """An absent id must not silently address the first entity present."""
+    def test_a_lookup_with_no_id_resolves_to_nothing_and_mints_nothing(self):
+        """A falsy id cannot match a 32-hex handle, so the only thing left to
+        get wrong is the cost: scanning would mint a handle onto every entity
+        in the room to answer a question already answered."""
         room = [Slime(), Slime()]
+        for npc in room:
+            npc.__dict__.pop(COMBAT_HANDLE_ATTR, None)
 
         assert find_by_handle(room, "") is None
         assert find_by_handle(room, None) is None
+        assert all(COMBAT_HANDLE_ATTR not in npc.__dict__ for npc in room), (
+            "a lookup with no id minted handles as a side effect"
+        )
+
+    def test_a_lookup_with_an_unknown_id_still_resolves_to_nothing(self):
+        room = [Slime(), Slime()]
+
+        assert find_by_handle(room, "0" * 32) is None
+        assert find_by_handle(room, wire_handle(room[1])) is room[1]
 
 
 # ---------------------------------------------------------------------------
