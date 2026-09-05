@@ -7,6 +7,13 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
+
+# Combatant wire ids are opaque handles since #511, not id()-derived. The
+# enemy_id passed to /api/combat/start below is a *different* scheme -- the
+# room-interaction id game_service still mints with str(id(npc)) -- so only
+# the combat target_ids move to handles here.
+from src.combatant import combatant_handle  # noqa: E402
 
 
 def _post_json(client, url, payload, session_id):
@@ -110,7 +117,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
             {
                 "move_type": "move",
                 "move_id": "Advance",
-                "target_id": f"enemy_{id(enemy)}",
+                "target_id": f"enemy_{combatant_handle(enemy)}",
             },
             session_id,
         )
@@ -208,7 +215,7 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
         move_response = _post_json(
             client,
             "/api/combat/move",
-            {"move_type": "move", "move_id": "Attack", "target_id": f"enemy_{id(enemy)}"},
+            {"move_type": "move", "move_id": "Attack", "target_id": f"enemy_{combatant_handle(enemy)}"},
             session_id,
         )
 
