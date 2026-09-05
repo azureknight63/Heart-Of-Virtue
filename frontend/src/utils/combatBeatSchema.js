@@ -1,10 +1,15 @@
 /**
  * Combat beat streaming protocol — frontend mirror (issue #436).
  *
- * Mirror of src/api/schemas/combat_beat.py (the Python source of truth). The
- * event names, error codes, beat fields, outcomes, and SFX kinds MUST match;
- * the Python test tests/test_combat_beat_schema.py parses this file and asserts
- * parity so the wire contract can't silently drift.
+ * Mirror of src/api/schemas/combat_beat.py (the Python source of truth). EVERY
+ * module-level constant defined there must be exported here with the same
+ * value; the Python test tests/test_combat_beat_schema.py derives that list
+ * from the Python module and parses this file, so a constant added on the
+ * Python side and forgotten here fails the suite rather than drifting quietly.
+ * The handful of deliberate Python-only names live in that test's
+ * _PY_ONLY_CONSTANTS set, each with its reason. The check runs the other way
+ * too: an `export const` here with no Python counterpart fails as well, so
+ * nothing client-only accumulates in this file unannounced.
  *
  * See docs/development/combat-streaming-plan.md.
  */
@@ -85,6 +90,7 @@ export const SFX_KINDS = [
  * truncates the beat's impact emissions at this constant (build_sfx_chain in
  * src/api/schemas/combat_beat.py) and beatToAnimations caps its per-resolution
  * animation fan-out to match — a degenerate payload must not become an
- * unbounded animation storm. Keep the two values identical.
+ * unbounded animation storm. tests/test_combat_beat_schema.py asserts the two
+ * values stay identical.
  */
 export const MAX_BEAT_RESOLUTIONS = 16;
