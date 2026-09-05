@@ -1272,12 +1272,14 @@ def test_both_endings_route_through_the_shared_teardown():
     assert "_teardown_combat_roster" in _method_calls(
         ApiCombatAdapter._handle_victory
     )
-    inner_calls = _method_calls(ApiCombatAdapter._execute_move_inner)
-    assert "_teardown_combat_roster" in inner_calls, (
+    # The defeat tail lives in _handle_defeat, reached from _execute_move_inner.
+    assert "_handle_defeat" in _method_calls(ApiCombatAdapter._execute_move_inner)
+    defeat_calls = _method_calls(ApiCombatAdapter._handle_defeat)
+    assert "_teardown_combat_roster" in defeat_calls, (
         "the defeat tail no longer routes through the shared teardown"
     )
-    assert "_discard_pending_animations" not in inner_calls, (
-        "_execute_move_inner discards directly instead of via the teardown "
+    assert "_discard_pending_animations" not in defeat_calls, (
+        "_handle_defeat discards directly instead of via the teardown "
         "(the defeat-path discard used to hide inside a try that swallowed it)"
     )
 
@@ -1733,11 +1735,20 @@ def test_log_trimmed_since_beat_is_reset_at_each_beats_window_open():
 
     from src.api.combat_adapter import ApiCombatAdapter
 
-    tree = ast.parse(
+    # The beat loop's body is _run_move_beat; the loop itself stays in
+    # _execute_move_inner. Both halves are checked so they cannot drift apart.
+    loop_tree = ast.parse(
         textwrap.dedent(inspect.getsource(ApiCombatAdapter._execute_move_inner))
     )
-    loops = [n for n in ast.walk(tree) if isinstance(n, ast.While)]
+    loops = [n for n in ast.walk(loop_tree) if isinstance(n, ast.While)]
     assert loops, "_execute_move_inner no longer has a beat loop"
+    assert "_run_move_beat" in _method_calls(ApiCombatAdapter._execute_move_inner), (
+        "_execute_move_inner no longer drives the per-beat unit"
+    )
+
+    tree = ast.parse(
+        textwrap.dedent(inspect.getsource(ApiCombatAdapter._run_move_beat))
+    )
 
     def _resets_counter(node):
         return (
@@ -1752,5 +1763,5 @@ def test_log_trimmed_since_beat_is_reset_at_each_beats_window_open():
         )
 
     assert any(
-        _resets_counter(node) for loop in loops for node in ast.walk(loop)
+        _resets_counter(node) for node in ast.walk(tree)
     ), "_log_trimmed_since_beat is not reset to 0 inside the beat loop"

@@ -69,10 +69,12 @@ describe('no component keeps a private copy', () => {
   // and nothing but a scan stops a third one appearing. If they drift, the
   // symptom is animations leading or trailing the revealed text -- which reads
   // as a timing bug and would be looked for anywhere but here.
-  // Paths are relative to src/. The reveal-pacing consumer used to be
-  // LeftPanel.jsx; issue #490 moved it into useCombatLogPlayback, so the scan
-  // follows the consumer rather than the component it used to live in.
-  const consumers = ['components/BattlefieldGrid.jsx', 'hooks/useCombatLogPlayback.js'];
+  // Paths are relative to src/. Both consumers have since moved out of the
+  // components they used to live in: issue #490 moved the reveal-pacing one out
+  // of LeftPanel.jsx into useCombatLogPlayback, and issue #509 moved the
+  // battlefield's one out of BattlefieldGrid.jsx into useBattlefieldAnimations.
+  // The scan follows the consumer, not the component it came from.
+  const consumers = ['hooks/useBattlefieldAnimations.js', 'hooks/useCombatLogPlayback.js'];
 
   it.each(consumers)('%s imports the shared key rather than defining one', (file) => {
     const source = fs.readFileSync(

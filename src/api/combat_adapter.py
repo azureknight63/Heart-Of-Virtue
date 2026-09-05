@@ -2027,96 +2027,14 @@ class ApiCombatAdapter:
             beats_processed = 0
 
             while beats_processed < max_beats:
-                # Synchronize distances at start of beat (just like combat.py)
-                self._synchronize_distances()
-
-                # Set the beat state index for this beat BEFORE processing
-                # so all log messages get tagged with the correct index
-                current_beat_index = len(beat_states)
-                self.current_beat_state_index = current_beat_index
-
-                # Snapshot the log length before this beat's output is captured, so
-                # beat_state["log"] below can be scoped to just this beat's entries
-                # (issue #436 — CombatBeatStreamer reads a beat's animations out of
-                # the beat's own log window via _beat_animations; a cumulative log
-                # let a quiet beat pick up a stale animation from several beats ago,
-                # misattributing e.g. a Whirl Attack wind-up beat to the enemy's
-                # last attack).
-                log_len_before = len(getattr(self.player, "combat_log", []))
-                # The trim rewrites combat_log in place from the front, so this
-                # position can move under us mid-beat. Count what it drops and
-                # correct the slice below rather than losing the whole beat.
-                self._log_trimmed_since_beat = 0
-
-                # Capture output for THIS beat only
-                with self._capture_output():
-                    # Advance all player moves — tag so write() matches the right animation
-                    self.output_capture.active_entity = self.player
-                    for m in self.player.known_moves:
-                        m.advance(self.player)
-                    self.output_capture.active_entity = None
-
-                    # Process NPC turns (each NPC sets active_entity internally)
-                    self._process_npc_turns()
-
-                    # Cycle states
-                    self.player.cycle_states()
-
-                    # Update heat
-                    self._update_heat()
-
-                    # Increment beat
-                    self.player.combat_beat += 1
-
-                # Check for combat events after each beat
-                if self.on_event_callback:
-                    events = self.on_event_callback(self.player)
-                    if events:
-                        # Narrative pause: record events and stop processing beats for now
-                        self._adapter_state()["events_triggered"] = events
-
-                        # Stop processing beats
-                        break
-
-                # Capture state for this beat AFTER processing
-                beat_state = CombatStateSerializer.serialize_combat_state(
-                    self.player,
-                    self.player.combat_list,
-                    round_number=self.player.combat_beat,
-                    allies=self.player.combat_list_allies[1:],
-                )
-
-                # Add log to beat state — only entries added during THIS beat, not
-                # the full cumulative combat log (see log_len_before above).
-                beat_window_start = max(
-                    0, log_len_before - self._log_trimmed_since_beat
-                )
-                beat_state["log"] = list(
-                    getattr(self.player, "combat_log", [])[beat_window_start:]
-                )
-                beat_states.append(beat_state)
-
-                beats_processed += 1
-
-                # Check win/loss conditions inside loop
-                if not self.player.is_alive() or len(self.player.combat_list) == 0:
+                outcome = self._run_move_beat(beat_states)
+                if outcome is None:
+                    # A narrative event interrupted the beat: no beat state
+                    # was appended and it does not count against max_beats.
                     break
-
-                # Check if the current move has finished executing (entered cooldown or
-                # completed). Return control as soon as at least one move is back at
-                # stage 0 — meaning the player has something they can do. Only keep
-                # advancing if every move is still in cooldown (player would have no
-                # available actions), to avoid leaving the player with zero options.
-                if self.player.current_move is None:
-                    # Guard: no moves at all — don't burn remaining max_beats
-                    if not self.player.known_moves:
-                        break
-                    if any(m.current_stage == 0 for m in self.player.known_moves):
-                        break
-                    # All moves still cooling — re-check survival before the next drain beat
-                    if not self.player.is_alive() or len(self.player.combat_list) == 0:
-                        break
-                    # Keep advancing beats until one opens up
+                beats_processed += 1
+                if not outcome:
+                    break
 
         # Capture last move summary from the log entries of this move
         move_logs = [
@@ -2134,33 +2052,7 @@ class ApiCombatAdapter:
 
         # Check win/loss conditions
         if not self.player.is_alive() and not self.player.check_revive():
-            self.player.in_combat = False
-            self.awaiting_input = False
-            self._add_log_entry(
-                self.player.combat_beat, "You have been defeated!", "system"
-            )
-
-            # Set end-of-combat summary for defeat so frontend can show a
-            # game-over dialog. Built plainly — the try/except that used to
-            # wrap this also wrapped the pending-animation discard, so a raise
-            # rebuilt the identical summary and silently skipped the discard.
-            self.player.combat_end_summary = {
-                "id": str(uuid.uuid4()),
-                "status": "defeat",
-                "message": "You have been defeated.",
-                "game_over": True,
-            }
-
-            result = self.get_combat_state()
-            result["beat_states"] = beat_states
-            self._stream_combat_result(result, beat_states, ended=True)
-
-            # Tear the roster down only after the state snapshot, so the defeat
-            # payload shows who killed the player rather than an empty
-            # battlefield.
-            self._teardown_combat_roster()
-
-            return result
+            return self._handle_defeat(beat_states)
 
         # Evaluate all combat events one final time when enemies are defeated
         # This allows events (like reinforcement spawners) to inject new enemies before victory
@@ -2355,6 +2247,120 @@ class ApiCombatAdapter:
                 logger.warning("Failed to emit socket update after process_move: %s", e)
 
         return result
+
+    def _run_move_beat(self, beat_states):
+        """Process one beat of the player's move loop, appending its beat state.
+
+        Extracted verbatim from ``_execute_move_inner``'s ``while`` body so the
+        loop reads as its four exit conditions rather than 90 lines of beat
+        processing. The beat-window arithmetic (``log_len_before`` /
+        ``_log_trimmed_since_beat``) lives here in full — it is what scopes
+        ``beat_state["log"]`` to this beat even when the log trim fires
+        mid-beat (pinned by
+        ``test_a_beat_keeps_its_own_log_window_even_when_the_trim_fires``).
+
+        Returns the caller's loop signal, mirroring the three ways the original
+        body left the ``while``:
+
+        * ``None`` — a narrative event interrupted the beat before it
+          completed. No beat state was appended and the original did not
+          increment ``beats_processed`` on this path either, so the caller
+          breaks without counting it.
+        * ``False`` — the beat completed and is the last one (defeat, empty
+          roster, or a move back at stage 0).
+        * ``True`` — the beat completed; keep advancing.
+        """
+        # Synchronize distances at start of beat (just like combat.py)
+        self._synchronize_distances()
+
+        # Set the beat state index for this beat BEFORE processing
+        # so all log messages get tagged with the correct index
+        current_beat_index = len(beat_states)
+        self.current_beat_state_index = current_beat_index
+
+        # Snapshot the log length before this beat's output is captured, so
+        # beat_state["log"] below can be scoped to just this beat's entries
+        # (issue #436 — CombatBeatStreamer reads a beat's animations out of
+        # the beat's own log window via _beat_animations; a cumulative log
+        # let a quiet beat pick up a stale animation from several beats ago,
+        # misattributing e.g. a Whirl Attack wind-up beat to the enemy's
+        # last attack).
+        log_len_before = len(getattr(self.player, "combat_log", []))
+        # The trim rewrites combat_log in place from the front, so this
+        # position can move under us mid-beat. Count what it drops and
+        # correct the slice below rather than losing the whole beat.
+        self._log_trimmed_since_beat = 0
+
+        # Capture output for THIS beat only
+        with self._capture_output():
+            # Advance all player moves — tag so write() matches the right animation
+            self.output_capture.active_entity = self.player
+            for m in self.player.known_moves:
+                m.advance(self.player)
+            self.output_capture.active_entity = None
+
+            # Process NPC turns (each NPC sets active_entity internally)
+            self._process_npc_turns()
+
+            # Cycle states
+            self.player.cycle_states()
+
+            # Update heat
+            self._update_heat()
+
+            # Increment beat
+            self.player.combat_beat += 1
+
+        # Check for combat events after each beat
+        if self.on_event_callback:
+            events = self.on_event_callback(self.player)
+            if events:
+                # Narrative pause: record events and stop processing beats for now
+                self._adapter_state()["events_triggered"] = events
+
+                # Stop processing beats. No beat state was appended, so the
+                # caller must not count this beat either.
+                return None
+
+        # Capture state for this beat AFTER processing
+        beat_state = CombatStateSerializer.serialize_combat_state(
+            self.player,
+            self.player.combat_list,
+            round_number=self.player.combat_beat,
+            allies=self.player.combat_list_allies[1:],
+        )
+
+        # Add log to beat state — only entries added during THIS beat, not
+        # the full cumulative combat log (see log_len_before above).
+        beat_window_start = max(
+            0, log_len_before - self._log_trimmed_since_beat
+        )
+        beat_state["log"] = list(
+            getattr(self.player, "combat_log", [])[beat_window_start:]
+        )
+        beat_states.append(beat_state)
+
+        # Check win/loss conditions inside loop
+        if not self.player.is_alive() or len(self.player.combat_list) == 0:
+            return False
+
+        # Check if the current move has finished executing (entered cooldown or
+        # completed). Return control as soon as at least one move is back at
+        # stage 0 — meaning the player has something they can do. Only keep
+        # advancing if every move is still in cooldown (player would have no
+        # available actions), to avoid leaving the player with zero options.
+        if self.player.current_move is None:
+            # Guard: no moves at all — don't burn remaining max_beats
+            if not self.player.known_moves:
+                return False
+            if any(m.current_stage == 0 for m in self.player.known_moves):
+                return False
+            # All moves still cooling — re-check survival before the next drain beat
+            if not self.player.is_alive() or len(self.player.combat_list) == 0:
+                return False
+            # Keep advancing beats until one opens up
+
+        return True
 
     def _process_initial_turns(self):
         """Process NPC turns if they go first."""
@@ -2814,6 +2820,41 @@ class ApiCombatAdapter:
         import threading
 
         threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
+
+    def _handle_defeat(self, beat_states):
+        """Handle combat defeat — the mirror of ``_handle_victory``.
+
+        Extracted verbatim from ``_execute_move_inner``. Like the victory tail
+        it publishes the terminal state before ``_teardown_combat_roster``, and
+        returns the result the caller hands straight back.
+        """
+        self.player.in_combat = False
+        self.awaiting_input = False
+        self._add_log_entry(
+            self.player.combat_beat, "You have been defeated!", "system"
+        )
+
+        # Set end-of-combat summary for defeat so frontend can show a
+        # game-over dialog. Built plainly — the try/except that used to
+        # wrap this also wrapped the pending-animation discard, so a raise
+        # rebuilt the identical summary and silently skipped the discard.
+        self.player.combat_end_summary = {
+            "id": str(uuid.uuid4()),
+            "status": "defeat",
+            "message": "You have been defeated.",
+            "game_over": True,
+        }
+
+        result = self.get_combat_state()
+        result["beat_states"] = beat_states
+        self._stream_combat_result(result, beat_states, ended=True)
+
+        # Tear the roster down only after the state snapshot, so the defeat
+        # payload shows who killed the player rather than an empty
+        # battlefield.
+        self._teardown_combat_roster()
+
+        return result
 
     def _handle_victory(self):
         """Handle combat victory."""
