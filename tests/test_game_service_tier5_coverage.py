@@ -21,6 +21,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from src.api.services.game_service import GameService
+from src.combatant import wire_handle
 
 # tests/conftest_game_service.py is not auto-discovered by pytest (it isn't
 # named conftest.py), so pull in its shared fixtures (game_service,
@@ -1153,7 +1154,7 @@ class TestInteractWithTargetExtra:
         session_data = {}
 
         result = game_service.interact_with_target(
-            mock_player, str(id(container)), "loot", session_data=session_data
+            mock_player, wire_handle(container), "loot", session_data=session_data
         )
 
         assert result["success"] is True
@@ -1168,7 +1169,7 @@ class TestInteractWithTargetExtra:
         tile = self._tile(mock_player)
         tile.objects_here = [container]
 
-        result = game_service.interact_with_target(mock_player, str(id(container)), "loot")
+        result = game_service.interact_with_target(mock_player, wire_handle(container), "loot")
 
         assert result["success"] is True
         assert container.state == "closed"
@@ -1184,7 +1185,7 @@ class TestInteractWithTargetExtra:
             game_service, "start_combat", return_value={"combat_id": "abc"}
         ):
             result = game_service.interact_with_target(
-                mock_player, str(id(npc)), "attack"
+                mock_player, wire_handle(npc), "attack"
             )
 
         assert result["success"] is True
@@ -1200,7 +1201,7 @@ class TestInteractWithTargetExtra:
             game_service, "start_combat", return_value={"error": "Already in combat"}
         ):
             result = game_service.interact_with_target(
-                mock_player, str(id(npc)), "attack"
+                mock_player, wire_handle(npc), "attack"
             )
         assert result["success"] is False
 
@@ -1211,7 +1212,7 @@ class TestInteractWithTargetExtra:
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
 
-        result = game_service.interact_with_target(mock_player, str(id(obj)), "dance")
+        result = game_service.interact_with_target(mock_player, wire_handle(obj), "dance")
         assert result["success"] is False
         assert "cannot" in result["message"].lower()
 
@@ -1226,7 +1227,7 @@ class TestInteractWithTargetExtra:
         tile = self._tile(mock_player)
         tile.npcs_here = [npc]
 
-        result = game_service.interact_with_target(mock_player, str(id(npc)), "die")
+        result = game_service.interact_with_target(mock_player, wire_handle(npc), "die")
 
         assert result["success"] is False
         assert "cannot" in result["message"].lower()
@@ -1250,7 +1251,7 @@ class TestInteractWithTargetExtra:
         item.look = MagicMock()
         with patch("inspect.signature") as mock_sig:
             mock_sig.return_value.parameters = {}
-            result = game_service.interact_with_target(mock_player, str(id(item)), "look")
+            result = game_service.interact_with_target(mock_player, wire_handle(item), "look")
 
         assert result["success"] is True
 
@@ -1274,7 +1275,7 @@ class TestInteractWithTargetExtra:
         # the bare module, not src.inventory_utils.
         with patch("src.inventory_utils.transfer_item") as mock_transfer:
             result = game_service.interact_with_target(
-                mock_player, str(id(item)), "take"
+                mock_player, wire_handle(item), "take"
             )
 
         assert result["success"] is True
@@ -1291,7 +1292,7 @@ class TestInteractWithTargetExtra:
         with patch("inspect.signature") as mock_sig:
             mock_sig.return_value.parameters = {}
             result = game_service.interact_with_target(
-                mock_player, str(id(obj)), "take_all"
+                mock_player, wire_handle(obj), "take_all"
             )
 
         assert "collects all" in result["message"].lower()
@@ -1306,7 +1307,7 @@ class TestInteractWithTargetExtra:
 
         with patch("inspect.signature") as mock_sig:
             mock_sig.return_value.parameters = {}
-            result = game_service.interact_with_target(mock_player, str(id(npc)), "talk")
+            result = game_service.interact_with_target(mock_player, wire_handle(npc), "talk")
 
         assert "does not respond" in result["message"]
 
@@ -1331,7 +1332,7 @@ class TestInteractWithTargetExtra:
         ):
             mock_sig.return_value.parameters = {}
             result = game_service.interact_with_target(
-                mock_player, str(id(obj)), "examine", session_data=session_data
+                mock_player, wire_handle(obj), "examine", session_data=session_data
             )
 
         assert result["success"] is True
@@ -1348,7 +1349,7 @@ class TestInteractWithTargetExtra:
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
 
-        result = game_service.interact_with_target(mock_player, str(id(obj)), "examine")
+        result = game_service.interact_with_target(mock_player, wire_handle(obj), "examine")
         assert result["success"] is False
         assert "kaboom" in result["message"]
 
@@ -1377,7 +1378,7 @@ class TestInteractWithTargetExtra:
 
         with patch("inspect.signature") as mock_sig:
             mock_sig.return_value.parameters = {"player": None}
-            result = game_service.interact_with_target(mock_player, str(id(obj)), "use")
+            result = game_service.interact_with_target(mock_player, wire_handle(obj), "use")
 
         assert result["teleported"] is True
 
@@ -1400,7 +1401,7 @@ class TestInteractWithTargetExtra:
 
         with patch("inspect.signature", return_value=precomputed_sig):
             result = game_service.interact_with_target(
-                mock_player, str(id(obj)), "split", quantity=3
+                mock_player, wire_handle(obj), "split", quantity=3
             )
 
         obj.split.assert_called_once()
@@ -1419,7 +1420,7 @@ class TestInteractWithTargetExtra:
             "src.api.services.game_service.check_for_combat", return_value=[enemy]
         ), patch.object(game_service, "_initialize_combat"):
             mock_sig.return_value.parameters = {}
-            result = game_service.interact_with_target(mock_player, str(id(obj)), "trigger")
+            result = game_service.interact_with_target(mock_player, wire_handle(obj), "trigger")
 
         assert result["combat_started"] is True
 
@@ -1475,7 +1476,7 @@ class TestShopSuccessPaths:
             "src.api.serializers.shop_serializer.ShopSerializer.get_effective_sell_modifier",
             return_value=0.5,
         ):
-            result = game_service.shop_sell(mock_player, "merchant_id", str(id(item)), 1)
+            result = game_service.shop_sell(mock_player, "merchant_id", wire_handle(item), 1)
 
         assert result["success"] is True
         assert len(merchant._buyback_ledger) == 1
@@ -1488,7 +1489,7 @@ class TestShopSuccessPaths:
         item.name = "Iron Sword"
         merchant.inventory = [item]
         entry = {
-            "item_id": str(id(item)),
+            "item_id": wire_handle(item),
             "item_name": "Iron Sword",
             "buyback_price": 25,
             "count": 1,
@@ -1509,7 +1510,7 @@ class TestShopSuccessPaths:
             "src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable",
             return_value=[],
         ):
-            result = game_service.shop_buyback(mock_player, "merchant_id", str(id(item)))
+            result = game_service.shop_buyback(mock_player, "merchant_id", wire_handle(item))
 
         assert result["success"] is True
         assert merchant._buyback_ledger == []
@@ -1601,7 +1602,7 @@ class TestShopSuccessPaths:
             "src.api.serializers.shop_serializer.ShopSerializer.get_effective_buy_modifier",
             return_value=1.0,
         ):
-            result = game_service.shop_buy(mock_player, "merchant_id", str(id(item)), 2)
+            result = game_service.shop_buy(mock_player, "merchant_id", wire_handle(item), 2)
 
         assert result["success"] is True
         assert result["gold_spent"] == 20

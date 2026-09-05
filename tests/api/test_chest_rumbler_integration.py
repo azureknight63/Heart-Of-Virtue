@@ -16,6 +16,7 @@ except ImportError:
 from src.universe import Universe
 from src.player import Player
 from src.api.services.game_service import GameService
+from src.combatant import wire_handle
 
 class TestChestRumblerBattleIntegration:
     """Integration test for the complete Chest Rumbler battle narrative sequence."""
@@ -70,7 +71,7 @@ class TestChestRumblerBattleIntegration:
             self.player.current_room = key_tile
             result = self.service.interact_with_target(
                 self.player,
-                str(id(key)),
+                wire_handle(key),
                 "take",
                 session_data=self.session_data
             )
@@ -82,7 +83,7 @@ class TestChestRumblerBattleIntegration:
             self.player.current_room = self.target_tile
             result = self.service.interact_with_target(
                 self.player,
-                str(id(chest)),
+                wire_handle(chest),
                 "unlock",
                 session_data=self.session_data
             )
@@ -93,7 +94,7 @@ class TestChestRumblerBattleIntegration:
         if chest.state == "closed":
             result = self.service.interact_with_target(
                 self.player,
-                str(id(chest)),
+                wire_handle(chest),
                 "open",
                 session_data=self.session_data
             )
@@ -112,7 +113,7 @@ class TestChestRumblerBattleIntegration:
 
             result = self.service.interact_with_target(
                 self.player,
-                str(id(item)),
+                wire_handle(item),
                 "take",
                 session_data=self.session_data
             )

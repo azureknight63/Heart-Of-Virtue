@@ -2,6 +2,8 @@
 
 from typing import Dict, Any, List
 
+from src.combatant import wire_handle
+
 
 class EventSerializer:
     """Serialize game events to JSON-safe dictionaries."""
@@ -20,7 +22,7 @@ class EventSerializer:
             return {}
 
         event_data = {
-            "id": str(id(event)),
+            "id": wire_handle(event),
             "type": type(event).__name__,
             "description": getattr(event, "description", ""),
         }

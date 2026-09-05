@@ -2,6 +2,8 @@
 
 from typing import Dict, Any, List
 
+from src.combatant import wire_handle
+
 
 class ItemSerializer:
     """Serialize Item objects to JSON-safe dictionaries."""
@@ -21,7 +23,7 @@ class ItemSerializer:
 
         # Basic item properties
         item_data = {
-            "id": str(id(item)),
+            "id": wire_handle(item),
             "name": getattr(item, "name", "Unknown"),
             "type": type(item).__name__,
             "description": getattr(item, "description", ""),

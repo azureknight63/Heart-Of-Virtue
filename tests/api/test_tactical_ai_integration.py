@@ -8,6 +8,7 @@ to move execution and status effect display.
 import pytest
 import json
 from unittest.mock import patch, MagicMock
+from src.combatant import wire_handle
 
 
 def create_mock_move(name="Attack"):
@@ -116,7 +117,7 @@ class TestTacticalStrategistIntegration:
             # Start combat
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
@@ -231,7 +232,7 @@ class TestTacticalStrategistIntegration:
 
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
@@ -264,7 +265,7 @@ class TestTacticalStrategistIntegration:
 
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy2))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy2)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
@@ -313,7 +314,7 @@ class TestTacticalStrategistIntegration:
             # Start combat
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
@@ -404,7 +405,7 @@ class TestTacticalStrategistIntegration:
             # Start combat
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
@@ -476,7 +477,7 @@ class TestTacticalStrategistIntegration:
             # Start combat
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
@@ -561,7 +562,7 @@ class TestEnhancedCombatVisualizationIntegration:
             # Start combat
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
@@ -629,7 +630,7 @@ class TestEnhancedCombatVisualizationIntegration:
             # Start combat
             response = client.post(
                 "/api/combat/start",
-                data=json.dumps({"enemy_id": str(id(enemy))}),
+                data=json.dumps({"enemy_id": wire_handle(enemy)}),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )

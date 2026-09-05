@@ -81,6 +81,7 @@ from src.player import Player
 import src.states as states
 from tests._gs_fixtures import GRID_3X3
 from src.narration import capture_narration
+from src.combatant import wire_handle
 
 
 def _assert_contract(payload: dict, contract: dict, label: str):
@@ -1179,7 +1180,7 @@ class TestShopWireContract:
         gs = GameService()
         gs._find_merchant = lambda p, nid: merchant
 
-        result = gs.shop_sell(player, "npc1", str(id(item)), 1)
+        result = gs.shop_sell(player, "npc1", wire_handle(item), 1)
 
         assert result["success"], result.get("error")
         buyback_items = result["shop_state"]["buyback_items"]
@@ -1583,3 +1584,270 @@ class TestAbortableMoveWireContract:
         adapter = ApiCombatAdapter(player)
         state = adapter.get_combat_state()
         assert state["battle_state"]["abortable_move"] is None
+
+
+# ============================================================================
+# Wire id round-trip
+# ============================================================================
+# Every `id` above is only useful if the endpoint that *consumes* it accepts
+# the same string back. That pairing is a wire contract exactly like a field
+# name, and it broke the same silent way: issue #518 moved the serializers to
+# opaque handles (src.combatant.wire_handle) while the lookups still compared
+# str(id(...)), so `interact_with_target` answered "Target not found." for
+# every object in the room — no error, no exception, just a dead UI.
+#
+# These tests deliberately never construct an id. They take the one the real
+# serializer emitted for a real engine object and feed it to the real resolver,
+# so a future change that moves one side has nowhere to hide: a mock id fed to
+# a mock lookup would agree with itself forever (CLAUDE.md, wire-field drift).
+
+#: An id must be opaque. A decimal string is a CPython heap address — the
+#: scheme #511/#518 removed — so its reappearance anywhere is a regression.
+def _assert_opaque(wire_id, label):
+    assert wire_id, f"{label} emitted an empty id"
+    assert not str(wire_id).isdigit(), (
+        f"{label} emitted {wire_id!r} — a decimal heap address. Wire ids are "
+        "opaque handles (src.combatant.wire_handle); see issue #518."
+    )
+
+
+class TestWireIdRoundTrip:
+    """The id a serializer emits is the id its resolver accepts."""
+
+    @staticmethod
+    def _room():
+        from src.items import Longsword
+        from src.objects import Container
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        tile = game_map[(0, 0)]
+        tile.items_here = [Longsword()]
+        tile.npcs_here = [Slime()]
+        chest = Container(name="Chest", inventory=[Longsword()])
+        chest.state = "opened"
+        tile.objects_here = [chest]
+        return player, tile
+
+    def test_a_room_npc_id_resolves_back_through_interact_with_target(self):
+        player, _ = self._room()
+        gs = GameService()
+
+        npc_id = gs.get_current_room(player)["npcs"][0]["id"]
+        _assert_opaque(npc_id, "room npcs[0].id")
+
+        result = gs.interact_with_target(player, npc_id, "look")
+
+        assert result["message"] != "Target not found.", (
+            "the id get_current_room published did not resolve"
+        )
+
+    def test_a_room_npc_id_is_what_start_combat_matches_on(self):
+        """InteractPanel's Attack button posts the room id to /combat/start."""
+        player, tile = self._room()
+        gs = GameService()
+
+        npc_id = gs.get_current_room(player)["npcs"][0]["id"]
+        with capture_narration():
+            result = gs.start_combat(player, npc_id)
+
+        assert "error" not in result, result
+
+    def test_a_room_object_id_resolves_back_through_interact_with_target(self):
+        player, _ = self._room()
+        gs = GameService()
+
+        obj_id = gs.get_current_room(player)["objects"][0]["id"]
+        _assert_opaque(obj_id, "room objects[0].id")
+
+        result = gs.interact_with_target(player, obj_id, "look")
+
+        assert result["message"] != "Target not found."
+
+    def test_a_floor_item_id_resolves_back_through_interact_with_target(self):
+        player, _ = self._room()
+        gs = GameService()
+
+        item_id = gs.get_current_room(player)["items"][0]["id"]
+        _assert_opaque(item_id, "room items[0].id")
+
+        result = gs.interact_with_target(player, item_id, "look")
+
+        assert result["message"] != "Target not found."
+
+    def test_a_container_content_id_resolves_back_through_interact_with_target(self):
+        """Chest contents are serialized by ItemSerializer inside the object
+        payload and resolved by a *separate* branch of interact_with_target."""
+        player, tile = self._room()
+        gs = GameService()
+
+        room_chest = gs.get_current_room(player)["objects"][0]
+        content_id = room_chest["contents"][0]["id"]
+        _assert_opaque(content_id, "room objects[0].contents[0].id")
+
+        result = gs.interact_with_target(player, content_id, "look")
+
+        assert result["message"] != "Target not found."
+
+    def test_a_search_result_id_resolves_back_through_interact_with_target(self):
+        """`search` mints its own found-entry ids, a fourth site that has to
+        agree with the room scheme — the client's very next click after a
+        successful search posts one of these back to /interact.
+
+        A hidden *NPC* rather than a hidden item: an item with hide_factor 0 is
+        auto-taken into the pack by `search`, so it is no longer on the tile for
+        interact_with_target to resolve.
+        """
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        tile = game_map[(0, 0)]
+        lurker = Slime()
+        lurker.hidden = True
+        lurker.hide_factor = 0
+        tile.npcs_here = [lurker]
+        gs = GameService()
+
+        found = gs.search(player)["found"]
+
+        assert found, "fixture: expected the hidden Slime to be uncovered"
+        _assert_opaque(found[0]["id"], "search()['found'][0].id")
+
+        result = gs.interact_with_target(player, found[0]["id"], "look")
+
+        assert result["message"] != "Target not found.", (
+            "the id search() published did not resolve"
+        )
+
+    def test_an_inventory_row_id_resolves_back_through_get_item_and_index(self):
+        from src.api.routes.inventory import get_item_and_index
+        from src.api.serializers.inventory import InventorySerializer
+        from src.items import Longsword
+
+        player = Player()
+        sword = Longsword()
+        player.inventory = [Restorative(), sword]
+
+        rows = InventorySerializer.serialize(player)["items"]
+        row = next(r for r in rows if r["name"] == "Longsword")
+        _assert_opaque(row["id"], "inventory.items[].id")
+
+        item, index = get_item_and_index(player, item_id=row["id"])
+
+        assert item is sword
+        assert index == row["index"]
+
+    def test_an_unknown_inventory_id_resolves_to_nothing(self):
+        """Negative control — the lookup must not fall through to item 0."""
+        from src.api.routes.inventory import get_item_and_index
+        from src.items import Longsword
+
+        player = Player()
+        player.inventory = [Longsword()]
+
+        assert get_item_and_index(player, item_id="no-such-handle") == (None, None)
+
+    def test_the_shop_npc_id_resolves_back_through_find_merchant(self):
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        merchant = Merchant(
+            name="Tester", description="desc", damage=1, aggro=False,
+            exp_award=0, stock_count=0,
+        )
+        merchant.inventory = [Restorative(count=2, merchandise=True)]
+        game_map[(0, 0)].npcs_here = [merchant]
+        gs = GameService()
+
+        npc_id = ShopSerializer.serialize_state(merchant, player, 0)["npc_id"]
+        _assert_opaque(npc_id, "shop_state.npc_id")
+
+        assert gs._find_merchant(player, npc_id) is merchant
+
+    def test_a_stock_item_id_is_what_shop_buy_matches_on(self):
+        from tests._gs_fixtures import live_world, set_player_gold
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        set_player_gold(player, 500)
+        merchant = Merchant(
+            name="Tester", description="desc", damage=1, aggro=False,
+            exp_award=0, stock_count=0,
+        )
+        stock = Restorative(count=2, merchandise=True)
+        merchant.inventory = [stock]
+        game_map[(0, 0)].npcs_here = [merchant]
+        gs = GameService()
+
+        state = ShopSerializer.serialize_state(merchant, player, 0)
+        item_id = state["stock"][0]["id"]
+        _assert_opaque(item_id, "shop_state.stock[0].id")
+
+        result = gs.shop_buy(player, state["npc_id"], item_id, 1)
+
+        assert result["success"], result.get("error")
+
+    def test_a_sell_row_id_is_what_shop_sell_matches_on(self):
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        goods = Restorative()
+        goods.value = 10
+        player.inventory = [goods]
+        merchant = Merchant(
+            name="Tester", description="desc", damage=1, aggro=False,
+            exp_award=0, stock_count=0,
+        )
+        merchant.update_goods()
+        game_map[(0, 0)].npcs_here = [merchant]
+        gs = GameService()
+
+        state = ShopSerializer.serialize_state(merchant, player, 0)
+        sellable = ShopSerializer.serialize_player_sellable(
+            player, state["sell_modifier"]
+        )
+        row = next(r for r in sellable if r["name"] == "Restorative")
+        _assert_opaque(row["id"], "sell_inventory[].id")
+
+        result = gs.shop_sell(player, state["npc_id"], row["id"], 1)
+
+        assert result["success"], result.get("error")
+
+    def test_a_buyback_entry_id_is_what_shop_buyback_matches_on(self):
+        """The buyback id is the one wire id that is *persisted* (on the
+        merchant, into saves), so its round trip spans a sell and a repurchase
+        rather than a single request."""
+        from tests._gs_fixtures import live_world, set_player_gold
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        set_player_gold(player, 500)
+        goods = Restorative()
+        goods.value = 10
+        player.inventory.append(goods)
+        merchant = Merchant(
+            name="Tester", description="desc", damage=1, aggro=False,
+            exp_award=0, stock_count=0,
+        )
+        merchant.update_goods()
+        game_map[(0, 0)].npcs_here = [merchant]
+        gs = GameService()
+
+        npc_id = ShopSerializer.serialize_state(merchant, player, 0)["npc_id"]
+        sold = gs.shop_sell(player, npc_id, wire_handle(goods), 1)
+        assert sold["success"], sold.get("error")
+
+        buyback = sold["shop_state"]["buyback_items"]
+        assert buyback, "fixture: expected the sale to land in the ledger"
+        _assert_opaque(buyback[0]["id"], "shop_state.buyback_items[0].id")
+
+        result = gs.shop_buyback(player, npc_id, buyback[0]["id"])
+
+        assert result["success"], result.get("error")
+
+    def test_no_room_payload_id_is_a_heap_address(self):
+        player, _ = self._room()
+
+        room = GameService().get_current_room(player)
+
+        for key in ("npcs", "items", "objects"):
+            for entry in room[key]:
+                _assert_opaque(entry["id"], f"room {key}[].id")
