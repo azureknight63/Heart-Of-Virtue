@@ -116,18 +116,65 @@ const REGEX_CAN_FOLLOW_KEYWORD =
  * so `(a + b) / 2` stays division).
  */
 export function stripComments(source) {
+    return lexJavaScript(source).code
+}
+
+/**
+ * The comments themselves, which is the other half the same pass already knows.
+ *
+ * Exposed because prose about ANOTHER file is this repo's dominant defect
+ * class, and `test/citations.js` can only hold a comment to its claim if it can
+ * find the comments without also finding the code that quotes a filename in a
+ * string. Sharing the lexer rather than writing a second one is not tidiness:
+ * every trap in the docstring above (a regex literal holding a backtick, an
+ * apostrophe in JSX text, a closing tag read as a regex opener) would have to
+ * be rediscovered by the copy, and the copy fails SILENTLY — a mis-lexed file
+ * yields fewer comments, and fewer comments is fewer claims to check.
+ *
+ * @returns {Array<{text: string, line: number, index: number}>} Comment bodies
+ *   without their delimiters, in source order, each with the 1-based line its
+ *   opener sits on.
+ */
+export function collectComments(source) {
+    return lexJavaScript(source).comments
+}
+
+/**
+ * One pass over JavaScript source, yielding the code with comments removed and
+ * the comments themselves.
+ *
+ * The state machine is the one `stripComments` shipped with; the only addition
+ * is that comment bodies are accumulated rather than discarded. See
+ * `stripComments` for why each state exists.
+ *
+ * A `/` is read as starting a regex when the previous significant character is
+ * one that cannot end an expression (the standard heuristic; `)` and `]` can,
+ * so `(a + b) / 2` stays division).
+ */
+function lexJavaScript(source) {
     let out = ''
+    const comments = []
     let i = 0
     let state = 'code'
     let quote = ''
     let inCharClass = false
     let lastSignificant = ''
+    let commentStart = 0
+    let commentText = ''
+    const endComment = () => {
+        comments.push({
+            text: commentText,
+            line: source.slice(0, commentStart).split('\n').length,
+            index: commentStart,
+        })
+        commentText = ''
+    }
     while (i < source.length) {
         const c = source[i]
         const next = source[i + 1]
         if (state === 'code') {
-            if (c === '/' && next === '/') { state = 'line'; i += 2; continue }
-            if (c === '/' && next === '*') { state = 'block'; i += 2; continue }
+            if (c === '/' && next === '/') { state = 'line'; commentStart = i; i += 2; continue }
+            if (c === '/' && next === '*') { state = 'block'; commentStart = i; i += 2; continue }
             if (c === '/' && (
                 lastSignificant === ''
                 || REGEX_CAN_FOLLOW.has(lastSignificant)
@@ -168,16 +215,21 @@ export function stripComments(source) {
             out += c
             i += 1
         } else if (state === 'line') {
-            if (c === '\n') { state = 'code'; out += c }
+            if (c === '\n') { state = 'code'; out += c; endComment() }
+            else commentText += c
             i += 1
         } else { // block
-            if (c === '*' && next === '/') { state = 'code'; i += 2; continue }
+            if (c === '*' && next === '/') { state = 'code'; endComment(); i += 2; continue }
             // Preserve newlines so reported line numbers stay accurate.
             if (c === '\n') out += c
+            commentText += c
             i += 1
         }
     }
-    return out
+    // A comment that runs to end of file is still a comment: closing it here
+    // keeps a claim written on the last line of a file from being invisible.
+    if (state === 'line' || state === 'block') endComment()
+    return { code: out, comments }
 }
 
 /** Split on commas/whitespace that are not inside parentheses. */

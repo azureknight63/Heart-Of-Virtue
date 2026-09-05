@@ -222,11 +222,13 @@ export function useWorldInteract({
     /**
      * Main interact flow: performs the action, then (on success) applies local
      * object-state patches, locking, a refetch, any directly-returned events,
-     * and finally a background events check chained after.
+     * then a background events check, then the completion callback.
      *
-     * Two of those steps end the flow early and are extracted above so the
-     * order of the rest stays readable: a passageway transition
-     * (`handlePassagewayTransition`) and a teleport.
+     * ONE of those steps ends the flow early and is extracted above: a
+     * passageway transition (`handlePassagewayTransition`). The teleport
+     * exit is still inline. `applyPanelLock` and `pollBackgroundEvents`
+     * are also extracted, but for length rather than control flow —
+     * neither ends the flow.
      *
      * @param {Object} target - The selected room target.
      * @param {string} action - The action keyword to send.

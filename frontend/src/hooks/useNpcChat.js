@@ -11,10 +11,12 @@ import { apiErrorDetail } from '../utils/apiError'
 
 // Re-exported so the panel and its suites keep one import for the whole live
 // chat vocabulary; both are DECLARED in utils/conversationSegment, beside the
-// segment shape whose `speaker` and `reactions` keys they name. That module's
-// docstring records which consumers are meant to come through here and which
-// should import from it directly — two paths to one symbol is a decision, not
-// a convenience, so it is written down in exactly one place.
+// segment shape whose `speaker` and `reactions` keys they name.
+//
+// That module records the POPULATION of importers, derived by
+// conversationSegment.consumers.test.js — not a rule about which path to use.
+// This comment claimed the opposite for a round after the rule was deleted,
+// which is the cross-file defect test/citations.js now exists to catch.
 export { npcCast, JEAN_ID }
 
 /** @typedef {import('../utils/conversationSegment').ConversationSegment} ConversationSegment */
@@ -95,9 +97,10 @@ const AUTO_CLOSE_DELAY_MS = 2000
 // being shown to the player.
 const OPEN_FAILED_MESSAGE = 'Failed to open conversation'
 const RESPOND_FAILED_MESSAGE = 'NPC did not respond'
-// A throttled turn is not a failed one. `npc_chat.py`'s rate limiter answers
-// 429 for a burst of clicks, and showing that as "NPC did not respond" beside
-// a live Retry invited the player to keep clicking straight back into the
+// A throttled turn is not a failed one. `src/api/routes/npc_chat.py`'s rate
+// limiter answers 429 for a burst of clicks, and showing that as "NPC did
+// not respond" beside a live Retry invited the player to keep clicking
+// straight back into the
 // throttle. Still OUR copy, not the server's — see the note above.
 const THROTTLED_MESSAGE = 'Too many messages — give it a moment.'
 
