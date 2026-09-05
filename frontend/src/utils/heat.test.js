@@ -1,20 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import {
+  HEAT_BANDS,
   HEAT_CEILING,
   HEAT_FLOOR,
+  HEAT_GAINS,
+  HEAT_LOSSES,
   HEAT_NEUTRAL,
   METER_MAX,
   METER_MIN,
-  HEAT_BANDS,
-  HEAT_GAINS,
-  HEAT_LOSSES,
   NEUTRAL_MARK_RATIO,
   formatHeatDelta,
   formatMultiplier,
-  isRenderableHeat,
   heatBand,
   heatDelta,
   heatFillRatio,
+  isRenderableHeat,
 } from './heat'
 
 /**

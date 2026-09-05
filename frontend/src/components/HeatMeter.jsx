@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { colors, fonts } from '../styles/theme'
 import {
-  METER_MAX,
-  METER_MIN,
   HEAT_DRIFT_NOTE,
   HEAT_GAINS,
   HEAT_LOSSES,
+  METER_MAX,
+  METER_MIN,
   NEUTRAL_MARK_RATIO,
   formatHeatDelta,
   formatMultiplier,
-  isRenderableHeat,
   heatBand,
   heatDelta,
   heatFillRatio,
+  isRenderableHeat,
 } from '../utils/heat'
 
 /** How long the rise/fall chip stays up after the beat that moved heat. */
