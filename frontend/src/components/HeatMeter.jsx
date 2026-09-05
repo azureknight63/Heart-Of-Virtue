@@ -96,13 +96,16 @@ function HeatMeter({ heat, beat, combatId }) {
         gap: '8px',
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
-          <span style={{
-            fontSize: '0.62rem',
-            color: colors.text.muted,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            fontFamily: MONO,
-          }}>
+          <span
+            data-testid="heat-caption"
+            style={{
+              fontSize: '0.62rem',
+              color: colors.text.muted,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              fontFamily: MONO,
+            }}
+          >
             Heat
           </span>
           <span

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import HeatMeter, { DELTA_HOLD_MS } from './HeatMeter'
 import { heatBand, heatFillRatio, NEUTRAL_MARK_RATIO } from '../utils/heat'
+import { GLOSSARY_ENTRIES } from '../data/combatGlossary'
 
 /**
  * WIRE CONTRACT (guarded server-side by tests/test_wire_field_contract.py):
@@ -220,5 +221,34 @@ describe('HeatMeter — discoverable rules', () => {
     fireEvent.click(screen.getByRole('button'))
     fireEvent.click(screen.getByRole('button'))
     expect(screen.queryByTestId('heat-rules')).toBeNull()
+  })
+})
+
+/**
+ * The stat is called Heat: the engine attribute (`player.heat`), the wire
+ * field, the #507 glossary entry and — since this rename — the interface all
+ * use the one word. Nothing asserted the on-screen wording before, which is
+ * how the meter went on saying "Momentum" after the glossary had already been
+ * written to say Heat. These pin the two strings a player actually receives.
+ */
+describe('HeatMeter — what the player is told the stat is called', () => {
+  it('captions the meter Heat', () => {
+    renderMeter({ heat: 1.62 })
+    expect(screen.getByTestId('heat-caption')).toHaveTextContent(/^Heat$/)
+  })
+
+  it('names the bar Heat for assistive tech too', () => {
+    renderMeter({ heat: 1.62 })
+    expect(screen.getByRole('meter')).toHaveAccessibleName('Combat heat')
+  })
+
+  it('renders the heading the glossary sends the player looking for', () => {
+    // The glossary's heat `tell` quotes this caption, uppercased because CSS
+    // renders it uppercase. Reading it back off the DOM rather than asserting
+    // the literal means the two cannot drift apart in either direction.
+    renderMeter({ heat: 1.62 })
+    const caption = screen.getByTestId('heat-caption').textContent.trim()
+    const entry = GLOSSARY_ENTRIES.find(e => e.id === 'heat')
+    expect(entry.tell).toContain(`${caption.toUpperCase()} meter`)
   })
 })
