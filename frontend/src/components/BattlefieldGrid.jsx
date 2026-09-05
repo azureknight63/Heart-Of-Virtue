@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
-import { colors, spacing, shadows, fonts } from '../styles/theme';
+import { colors, spacing } from '../styles/theme';
 import GameText from './GameText';
 import { strikeFlashFor } from '../utils/animationConfigs';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';

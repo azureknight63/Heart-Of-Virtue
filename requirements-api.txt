@@ -9,6 +9,13 @@ Flask-SocketIO==5.5.1
 # Real-time communication
 python-socketio==5.15.1
 python-engineio==4.12.3
+# The WebSocket transport itself under async_mode="threading" (see wsgi.py):
+# engineio/async_drivers/_websocket_wsgi.py imports simple_websocket at module
+# scope, and without it engineio degrades to long-polling with no error. It
+# arrives transitively via python-engineio today, so pinning it here changes
+# nothing installed -- it just stops a future engineio release from taking dev
+# WebSockets away silently.
+simple-websocket==1.1.0
 
 # Additional utilities
 python-dotenv==1.2.1

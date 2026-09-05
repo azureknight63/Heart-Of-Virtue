@@ -1,7 +1,11 @@
 """WSGI entry point for production deployments.
 
 async_mode="threading" — WebSockets work with Werkzeug (dev) and fall back to
-long-polling behind gunicorn sync workers (acceptable for single-player).
+long-polling behind gunicorn sync workers (acceptable for single-player). The
+dev WebSocket half of that needs `simple-websocket` installed (engineio's
+threading driver imports it at module scope and otherwise degrades to polling
+without an error); it is pinned explicitly in requirements-api.txt rather than
+left to arrive transitively via python-engineio.
 
 Usage (gunicorn, threading mode):
     gunicorn -w 1 --bind "0.0.0.0:${PORT:-5000}" wsgi:app
