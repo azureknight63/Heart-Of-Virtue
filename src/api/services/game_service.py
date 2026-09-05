@@ -517,9 +517,11 @@ class GameService:
         return output_text, segments, conversation
 
     #: The keys :meth:`_apply_staged_payload` writes and
-    #: :meth:`_carry_staged_payload` preserves. A fourth staged part means
-    #: updating this tuple and both helpers together --
-    #: ``test_the_two_helpers_agree_on_the_staged_keys`` guards the pair.
+    #: :meth:`_carry_staged_payload` preserves. Both READ this tuple rather
+    #: than spelling the names, so a fourth staged part means adding it here
+    #: and widening :meth:`_apply_staged_payload`'s parameter list to match --
+    #: ``test_the_two_helpers_agree_on_the_staged_keys`` guards that pair, and
+    #: ``test_no_one_spells_a_staged_key_by_hand`` guards against a third copy.
     _STAGED_PAYLOAD_KEYS = ("output_text", "segments", "conversation")
 
     @classmethod
@@ -1987,6 +1989,12 @@ class GameService:
                             # container's dialog re-opened. Left to itself this
                             # site minted a second UUID for it, and the first
                             # entry stayed pending forever, blocking input.
+                            #
+                            # The key is the container's NAME, not its identity,
+                            # so two same-named containers on one tile would
+                            # share a dialog id. No shipped map has a tile with
+                            # two identically named objects; give them distinct
+                            # names if you ever add one.
                             event_data = self._store_pending_event(
                                 loot_event, event_data, session_data, tile=tile
                             )
@@ -2851,12 +2859,21 @@ class GameService:
             # separate branch rather than a widening of the resume gate below --
             # that gate gets to keep its exact predicate, so the interrupted
             # current_move resume (issue #344) is untouched.
+            #
+            # ``session_data is None`` means the caller cannot see the store,
+            # which is NOT the same as the store being empty -- and reading it
+            # that way would end a fight that is merely mid-ambush, which is
+            # issue #514 all over again. Only a caller that HAS the store and
+            # finds it empty can say the chain is gone. Today the callers
+            # without one are ``GameService.get_combat_state`` and the tests;
+            # the guard is here so the next one is not a regression.
             if (
                 player.in_combat
                 and adapter.awaiting_input
-                and getattr(adapter, "victory_deferred", False)
+                and adapter.victory_deferred
                 and not getattr(player, "combat_list", None)
-                and not (session_data.get("pending_events") if session_data else None)
+                and session_data is not None
+                and not session_data.get("pending_events")
             ):
                 adapter.settle_victory()
 

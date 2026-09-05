@@ -685,6 +685,28 @@ class TestAnAbandonedDeferralIsRescuedByThePoll:
         assert player.in_combat is True
         assert adapter.victory_deferred is False
 
+    def test_a_caller_without_the_session_store_must_not_settle(
+        self, adapter, player
+    ):
+        """No store is "I cannot see", not "there is nothing" (review catch).
+
+        ``GameService.get_combat_state`` calls ``get_combat_status(player)`` with
+        no ``session_data`` at all. Reading that absence as an empty
+        pending-event store would end a fight whose announcement dialog is alive
+        and whose wave has not landed -- issue #514, reintroduced through the
+        very backstop meant to bound it. The rescue must decline to act when it
+        cannot check.
+        """
+        self._defer(adapter, player, wave=[make_npc(Slime, name="Wave1", hp=20)])
+
+        GameService().get_combat_status(player, session_data=None)
+
+        assert player.in_combat is True, (
+            "the poll ended a fight it could not see the pending events of"
+        )
+        assert player.combat_end_summary is None
+        assert adapter.victory_deferred is True
+
     def test_the_interrupted_move_resume_is_untouched(self, adapter, player):
         # Issue #344's path: awaiting_input False with a live roster and a move
         # left mid-execution. The rescue is a separate branch gated on
