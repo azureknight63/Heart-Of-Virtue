@@ -188,3 +188,81 @@ describe('apiErrorDetail', () => {
     });
   });
 });
+
+
+describe('apiErrorMessage is total, because its result is rendered', () => {
+  /**
+   * `apiErrorDetail` was made total in this same round and `apiErrorMessage`
+   * was not — while the module docstring went on saying "the heads agree".
+   * The one left un-total is the more dangerous of the pair:
+   *
+   *   apiErrorDetail  -> four `console.error` sites. A bad value is a bad log.
+   *   apiErrorMessage -> React state, rendered as a CHILD at ShopDialog,
+   *                      InteractPanel, ActionsPanel, AttributePointAllocator
+   *                      and DefeatDialog (`⚠ {error}`). A non-string throws
+   *                      "Objects are not valid as a React child", and there
+   *                      is no ErrorBoundary in this app — so it unmounts the
+   *                      SPA mid-fight rather than printing badly.
+   *
+   * `body.message` and `body.error` are server-controlled and nothing in the
+   * API forbids an object. No route emits one today; that is the same standing
+   * the four out-of-package error minters had, which this module's own comment
+   * describes as having "held by luck for as long as nobody had looked".
+   */
+
+  it('returns a string for a non-string message', () => {
+    const err = { response: { data: { message: { field: 'password' } } } };
+    const out = apiErrorMessage(err, 'fallback');
+    expect(typeof out).toBe('string');
+    expect(out).toContain('password');
+  });
+
+  it('returns a string for a non-string error', () => {
+    const err = { response: { data: { error: ['a', 'b'] } } };
+    expect(typeof apiErrorMessage(err, 'fallback')).toBe('string');
+  });
+
+  it('returns a string for anything at all', () => {
+    // The same battery apiErrorDetail carries, against the export whose
+    // output is rendered rather than logged.
+    const circular = {};
+    circular.self = circular;
+    const odd = [
+      undefined, null, '', 0, false, NaN, Symbol('sym'), 10n,
+      () => {}, [], circular, new Error('boom'),
+      Object.create(null), { message: 0 }, { error: false },
+      { response: { data: { message: {} } } },
+      { response: { data: { error: Object.create(null) } } },
+      { response: { data: { message: circular } } },
+    ];
+
+    for (const value of odd) {
+      const out = apiErrorMessage(value, 'fallback copy');
+      // The RESULT in the assertion message, never the input: String() on a
+      // null-prototype object throws, which would fail the test from inside
+      // its own failure reporting. The apiErrorDetail battery above got this
+      // right and this one copied the idea without the detail.
+      expect(typeof out, String(out)).toBe('string');
+      expect(out.length, String(out)).toBeGreaterThan(0);
+    }
+  });
+
+  it('still prefers the fallback over an absent detail', () => {
+    // The control: making it total must not make it chatty. A server that
+    // said nothing useful still yields the caller's own copy, not "{}" or
+    // "undefined".
+    for (const body of [{}, { message: '' }, { error: null }, { message: null }]) {
+      expect(apiErrorMessage({ response: { data: body } }, 'my copy')).toBe(
+        'my copy'
+      );
+    }
+  });
+
+  it('still prefers message over error', () => {
+    // The precedence this module exists to own, re-pinned because the
+    // normalisation sits directly on top of it.
+    const err = { response: { data: { message: 'the prose', error: 'a_token' } } };
+    expect(apiErrorMessage(err, 'fallback')).toBe('the prose');
+  });
+
+});

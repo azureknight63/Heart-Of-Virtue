@@ -146,7 +146,18 @@ export default function ActionsPanel({ location, onClose }) {
     playSFX('click')
 
     try {
-      const handler = COMMAND_HANDLERS[command.name]
+      // `lookupOr`, not `COMMAND_HANDLERS[command.name]`. `command.name`
+      // arrives off the wire in the server's command list, and this is the
+      // one place in the app where the inherited value is not merely
+      // stringified but CALLED: a command named `constructor`, `toString`,
+      // `valueOf`, `hasOwnProperty` or `propertyIsEnumerable` resolves to a
+      // function from Object.prototype, passes `if (handler)`, and gets
+      // invoked — silently skipping the "unknown command" branch.
+      //
+      // The source audit cannot see this shape: it reports `T[k] || fallback`
+      // and `T[k] ?? fallback`, and `const v = T[k]` followed by `if (v)` is
+      // named as out of scope in its own docstring.
+      const handler = lookupOr(COMMAND_HANDLERS, command.name, null)
       if (handler) {
         await handler()
       } else {

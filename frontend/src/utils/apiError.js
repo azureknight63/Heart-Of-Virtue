@@ -54,11 +54,19 @@
  *
  * TWO EXPORTS, NOT ONE
  * --------------------
- * The heads agree; the tails genuinely differ. {@link apiErrorMessage} ends at
- * the caller's own fixed copy because the alternative — axios's
- * `"Request failed with status code 500"` — is not something to show a player.
- * {@link apiErrorDetail} keeps going, because a log line with nothing in it is
- * worse than a log line with a status code in it.
+ * The heads agree — both take `message` -> `error` and both normalise a
+ * non-string body field through {@link describeBodyField} — and the tails
+ * genuinely differ. {@link apiErrorMessage} ends at the caller's own fixed
+ * copy because the alternative — axios's `"Request failed with status code
+ * 500"` — is not something to show a player. {@link apiErrorDetail} keeps
+ * going, because a log line with nothing in it is worse than a log line with
+ * a status code in it.
+ *
+ * The heads did NOT agree for one round: `apiErrorDetail` was made total and
+ * `apiErrorMessage` was not, while this paragraph went on asserting they were
+ * the same. That was the more dangerous half to leave — `apiErrorDetail`'s
+ * output reaches `console.error`, `apiErrorMessage`'s is rendered as a React
+ * child with no ErrorBoundary behind it.
  */
 
 /**
@@ -106,6 +114,9 @@ function errorBody(source) {
  *   want axios's transport description ("Network Error") ahead of their own
  *   wording — that is a per-site decision, not a house rule.
  * @returns {string} The most player-appropriate description available.
+ *   Always a string: a server that answers a non-string `message`/`error` is
+ *   normalised rather than passed through, because this value is rendered as
+ *   a React child.
  *
  * @example
  * // 429 from rate_limited_response(): the prose, never the token.
@@ -117,7 +128,21 @@ export function apiErrorMessage(errOrBody, fallback) {
     // here.
     if (typeof errOrBody === 'string') return errOrBody.trim() || fallback
     const body = errorBody(errOrBody)
-    return body?.message || body?.error || fallback
+    const detail = body?.message || body?.error
+    if (detail === undefined || detail === null || detail === '') return fallback
+    // `message`/`error` are SERVER-controlled and need not be strings. Nothing
+    // in the API forbids `{"error": {"field": "password"}}` -- and this
+    // function's result is rendered as a React CHILD (ShopDialog,
+    // InteractPanel, ActionsPanel, AttributePointAllocator, DefeatDialog all
+    // do `⚠ {error}`), where a non-string throws "Objects are not valid as a
+    // React child". There is no ErrorBoundary in this app, so that unmounts
+    // the SPA rather than printing badly.
+    //
+    // `apiErrorDetail` was hardened against exactly this and this one was left
+    // -- and it is the more dangerous of the two, because its siblings' output
+    // only reaches console.error. The module docstring said "the heads agree"
+    // while they differed at precisely this point.
+    return typeof detail === 'string' ? detail : describeBodyField(detail)
 }
 
 /**

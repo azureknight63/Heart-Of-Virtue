@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useCapabilities } from '../context/CapabilitiesContext'
+import { AUTH_TOKEN_KEY, clearLocalSession } from '../utils/session'
 import { useEventManager } from '../hooks/useEventManager'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
@@ -47,7 +48,7 @@ export default function GamePage() {
   combatRef.current = combat
 
   useCombatSocket({
-    sessionId: localStorage.getItem('authToken'),
+    sessionId: localStorage.getItem(AUTH_TOKEN_KEY),
     enabled: combatSocketStreaming && inCombat,
     // Accumulate cumulatively via a functional updater: BattlefieldGrid consumes
     // this buffer through an absolute-index cursor, and appending to `prev`
@@ -63,8 +64,14 @@ export default function GamePage() {
     onEnded: applyCombatState,
     onUpdate: applyCombatState,
     onSessionInvalid: () => {
-      localStorage.removeItem('authToken')
-      localStorage.removeItem('username')
+      // The THIRD teardown path. `utils/session.js` says its invariant is
+      // shared by "AuthContext.logout() and the axios 401 interceptor" -- and
+      // there were three, this one carrying its own hand-written key list.
+      // The lists happened to agree, so nothing leaked; the failure mode the
+      // module was written to prevent is a fourth session-scoped key updating
+      // two paths out of three, and the one it misses stranding a credential
+      // or handing the prior account's identifier to the next user.
+      clearLocalSession()
       const baseUrl = import.meta.env.BASE_URL || '/'
       window.location.href = `${baseUrl}login`
     },
