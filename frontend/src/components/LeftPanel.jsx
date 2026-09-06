@@ -529,7 +529,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         {/* Heat — the damage multiplier the engine has always applied
             silently. `combat.player.heat` is the raw float from
             CombatantSerializer; battle_state's own `heat` key is the same
-            quantity as int(heat*100) and is NOT emitted for beat states, so
+            quantity as round(heat*100) and is NOT emitted for beat states, so
             there is one reader and one field here (see utils/heat.js). */}
         {mode === 'combat' && (
           <HeatMeter

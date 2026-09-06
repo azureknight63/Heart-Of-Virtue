@@ -23,8 +23,10 @@ const MONO = fonts.main
 /**
  * HeatMeter — Jean's heat multiplier, made legible.
  *
- * Heat has always been a full damage multiplier (src/moves/_base.py
- * `standard_execute_attack`) and has never been shown to the player. This
+ * Heat scales the engine's canonical damage expression (`resolve_damage` in
+ * src/moves/_base.py) and has never been shown to the player. A few moves run
+ * other damage shapes that apply no heat -- Jab, Reap, Sweep, Halberd Spin --
+ * so "multiplies everything" is not quite true. This
  * renders three things the player needs to steer it:
  *
  *   1. the live multiplier and its named band,

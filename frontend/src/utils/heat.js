@@ -12,16 +12,20 @@ import { colors } from '../styles/theme'
  * FLOAT multiplier (1.62 == +62% damage), rounded to 2dp on the wire.
  *
  * Do NOT read `battle_state.heat`: that key is a different representation of
- * the same quantity — `int(player.heat * 100)`, set by
+ * the same quantity — `round(player.heat * 100)`, set by
  * `ApiCombatAdapter.get_combat_state` — and it is absent from the per-beat
- * states the adapter serializes at combat_adapter.py:1338. One reader, one
+ * states `_run_move_beat` snapshots through
+ * `CombatStateSerializer.serialize_combat_state`. One reader, one
  * field, no `??` chain: mixing the two is exactly the wire-field drift this
  * repo keeps shipping (see CLAUDE.md "Frontend patterns").
  *
  * ENGINE FACTS (all read-only here; the engine owns the arithmetic)
  * ----------------------------------------------------------------
- * - `src/moves/_base.py` standard_execute_attack multiplies final damage by
- *   `player.heat`.
+ * - `src/moves/_base.py` resolve_damage -- the canonical damage expression,
+ *   reached from standard_execute_attack -- multiplies by `player.heat`. It is
+ *   NOT the only damage shape: flat_resisted_damage (Jab) and the flat arc
+ *   line (Reap, Sweep, Halberd Spin) apply no heat at all. See
+ *   resolve_damage's own docstring, which is the authority on that scope.
  * - `src/player/_combat.py` change_heat clamps to [0.5, 10] at 2dp.
  * - `src/api/combat_adapter.py` _update_heat pulls heat 5% toward 1.0 every
  *   beat, so heat is a lease, not a bank.

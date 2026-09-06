@@ -497,9 +497,9 @@ COMBATANT_CONTRACT = {
     # by src/moves/_base.py standard_execute_attack.
     #
     # battle_state carries a SECOND, different representation of the same
-    # quantity under its own top-level `heat` key — int(player.heat * 100), set
+    # quantity under its own top-level `heat` key — round(player.heat * 100), set
     # by ApiCombatAdapter.get_combat_state and absent from the per-beat states
-    # the adapter serializes at combat_adapter.py:1338. Reading that one as a
+    # the adapter snapshots via CombatStateSerializer.serialize_combat_state. Reading that one as a
     # multiplier renders "162.00x"; reading this one is correct. The client has
     # exactly one reader and no `??` chain across the two (see the header
     # comment in frontend/src/utils/heat.js), which is the only reason the
@@ -576,7 +576,7 @@ class TestCombatantWireContract:
         `hit_chance` (bug #4) was this exact failure: two plausible scalings for
         one quantity, and a client that picked the wrong one showed a silently,
         wildly wrong number. Heat has the same hazard — battle_state's own
-        `heat` key is int(heat * 100) — so pin the multiplier form here.
+        `heat` key is round(heat * 100) — so pin the multiplier form here.
 
         The 2dp rounding matters too: ApiCombatAdapter._update_heat's per-beat
         decay does NOT round the way Player.change_heat does, and the client

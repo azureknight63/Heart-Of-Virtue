@@ -364,7 +364,7 @@ describe('LeftPanel', () => {
     it('feeds the heat meter the player heat, beat and fight id from battle_state', () => {
         // These are the exact keys the serializer emits: `player.heat` is the
         // raw float multiplier (CombatantSerializer), NOT battle_state's own
-        // `heat` (which is int(heat*100) and absent from beat states).
+        // `heat` (which is round(heat*100) and absent from beat states).
         const combat = {
             log: [],
             beat: 7,

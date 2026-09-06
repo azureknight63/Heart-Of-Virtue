@@ -185,9 +185,10 @@ export const GLOSSARY_ENTRIES = [
     term: 'Heat',
     category: 'resources',
     patterns: ['heat'],
-    short: 'A multiplier on every point of damage Jean deals. Landing hits pushes it up, getting hit pulls it down, and it drifts back toward neutral every beat.',
+    short: 'A multiplier on most of the damage Jean deals. Landing hits pushes it up, getting hit pulls it down, and it drifts back toward neutral every beat.',
     body: [
-      'A multiplier on every point of damage Jean deals — shown as 1.62×.',
+      'A multiplier on most of the damage Jean deals — shown as 1.62×.',
+      'A few moves land flat and ignore it.',
       'Landing hits, parrying, and making enemies miss push it up; missing, being parried, and taking hits pull it down.',
       `It closes ${ENGINE_CONSTANTS.heatDriftPercentPerBeat}% of the gap back to 1.00× every beat, so it is a lease, not a bank.`,
       `It never leaves the range ${ENGINE_CONSTANTS.heatMin.toFixed(2)}×–${ENGINE_CONSTANTS.heatMax.toFixed(2)}×, and only Jean has one.`,
