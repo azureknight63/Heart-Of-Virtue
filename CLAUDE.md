@@ -156,6 +156,24 @@ after a change; compare against master before assuming a regression.
 
 The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs. **Full-app integration tests that build a real session/universe** (via `create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/` — creating a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests in the default suite. The other route tests avoid this by using a *mocked* `session_manager`.
 
+**Every unseeded RNG-dependent assertion is a latent flake.** `pytest-randomly` (4.1.0)
+is installed and active, and its `pytest_runtest_setup` reseeds the stdlib `random`
+module before *every* test from `run_seed + crc32(nodeid)`, where the run seed is fresh
+per invocation. So a test that draws from `random` without seeding it gets a different
+stream on every run, and its failure rate is set purely by how much margin its assertion
+has. This is why such a test "fails once, then passes twenty times in isolation" — and why
+re-running it is not evidence of anything. Reproduce a specific failure with
+`--randomly-seed=N` (the seed is printed in the run header), and sweep seeds to measure a
+rate: `tests/test_attack_glance_sfx.py::test_keeps_more_body_than_the_parry_ring` failed
+1 run in 960 (seed 897, ratio 1.1954 against a 1.2 threshold) before being seeded.
+Seed the fixture rather than loosening the bound. Where a single seeded draw would pin an
+assertion to an arbitrary point in a wide distribution — that file's glance/parry ratio
+ranges 1.40-1.99 across draws — average over N seeded renders instead, so the assertion
+measures the thing under test rather than one lucky sample. `tests/_combat_fixtures.py`'s
+`seeded(seed=...)` is the established helper, but note it imports `src.items`/`src.npc`/
+`src.player`, whose instantiation mutates module-level registries (see the pollution
+gotcha below) — a test that needs no engine objects should seed locally instead.
+
 **Test-pollution gotcha:** stray root-level scripts (`test_*_fix.py`, `reproduce_*.py`, etc.) that do `sys.modules['flask'] = MagicMock()` at import will poison every Flask test in a full run — pytest collects them from the rootdir, so each later route/serializer test sees a `MagicMock` app and fails (while passing in isolation). `pytest.ini`'s `addopts` ignore-list neutralizes the known ones; add new such scripts there. To find a collection-time culprit, hook `pytest_collection_finish` and check `type(sys.modules['flask'])`.
 
 ## Test Coverage Strategy
