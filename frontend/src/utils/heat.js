@@ -119,8 +119,17 @@ export const HEAT_LOSSES = [
   { label: 'You take a hit', effect: '×(1 − dmg ÷ max HP)' },
 ]
 
+/**
+ * The one line of the expanded tooltip that states engine numbers rather than
+ * naming an action. Built from the constants above, never typed out: the
+ * glossary's heat entry templates the same three figures from the same
+ * constants, so a hardcoded copy here would go on asserting the old numbers
+ * after a balance change moved the glossary — and the glossary is the half the
+ * Python contract test pins, so nothing would fail.
+ */
 export const HEAT_DRIFT_NOTE =
-  'Drifts 5% toward 1.00× every beat. Clamped to 0.50×–10.00×.'
+  `Drifts ${HEAT_DECAY_PER_BEAT * 100}% toward ${HEAT_NEUTRAL.toFixed(2)}× every beat. `
+  + `Clamped to ${HEAT_FLOOR.toFixed(2)}×–${HEAT_CEILING.toFixed(2)}×.`
 
 /** True for a heat value the meter can actually draw. */
 export function isRenderableHeat(heat) {

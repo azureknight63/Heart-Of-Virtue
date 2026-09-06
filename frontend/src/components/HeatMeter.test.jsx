@@ -1,8 +1,8 @@
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import HeatMeter, { DELTA_HOLD_MS } from './HeatMeter'
-import { heatBand, heatFillRatio, NEUTRAL_MARK_RATIO } from '../utils/heat'
+import { HEAT_BANDS, heatBand, heatFillRatio, NEUTRAL_MARK_RATIO } from '../utils/heat'
 import { GLOSSARY_ENTRIES } from '../data/combatGlossary'
 
 /**
@@ -240,6 +240,25 @@ describe('HeatMeter — what the player is told the stat is called', () => {
   it('names the bar Heat for assistive tech too', () => {
     renderMeter({ heat: 1.62 })
     expect(screen.getByRole('meter')).toHaveAccessibleName('Combat heat')
+  })
+
+  it('names every band the meter can put on screen', () => {
+    // Same drift-proof shape as the caption check below: read the label off
+    // the DOM at each band's own floor, then require the glossary to name it.
+    // The `tell` used to list three of the five bands behind an em-dash, which
+    // reads as exhaustive — so a player sitting in BROKEN or PRESSING was told
+    // something the meter beside them contradicted.
+    //
+    // The `tell` now BUILDS its list from HEAT_BANDS, so adding a band cannot
+    // break this. What it catches is the list being typed out again — verified
+    // by re-hardcoding it to the old three names, which fails here.
+    const entry = GLOSSARY_ENTRIES.find(e => e.id === 'heat')
+    for (const band of HEAT_BANDS) {
+      cleanup()
+      renderMeter({ heat: band.min })
+      const shown = screen.getByTestId('heat-band').textContent.trim()
+      expect(entry.tell).toContain(shown)
+    }
   })
 
   it('renders the heading the glossary sends the player looking for', () => {
