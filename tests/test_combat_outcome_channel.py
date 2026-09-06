@@ -949,21 +949,15 @@ def _method_calls(func):
     The positive-property complement to a negative substring check: asserting
     "the old scan's spelling is absent" passes forever once the loop is renamed,
     while asserting "the key index is consulted" keeps meaning something.
-    """
-    import ast
-    import inspect
-    import textwrap
 
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            target = node.func
-            if isinstance(target, ast.Attribute):
-                names.add(target.attr)
-            elif isinstance(target, ast.Name):
-                names.add(target.id)
-    return names
+    One shared implementation (``tests._ast_helpers``), because three files had
+    grown their own copy and the copies were not equivalent — one of them was
+    blind to ``async def``. Its positive control lives in
+    ``tests/test_ast_helpers.py``.
+    """
+    from tests._ast_helpers import called_names
+
+    return called_names(func)
 
 
 def test_the_dedup_consults_the_key_index_not_a_linear_scan():
@@ -1317,20 +1311,9 @@ def test_no_combatant_retains_a_pending_animation_after_defeat():
 
 def _calls_of(func, name):
     """Every ``ast.Call`` of ``self.<name>``/bare ``<name>`` inside ``func``."""
-    import ast
-    import inspect
-    import textwrap
+    from tests._ast_helpers import calls_of
 
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-    return [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and (
-            (isinstance(node.func, ast.Attribute) and node.func.attr == name)
-            or (isinstance(node.func, ast.Name) and node.func.id == name)
-        )
-    ]
+    return calls_of(func, name)
 
 
 def test_every_mid_windup_cancellation_site_routes_through_the_detach_helper():
@@ -1338,21 +1321,28 @@ def test_every_mid_windup_cancellation_site_routes_through_the_detach_helper():
 
     The end-of-move flush's fallback emission is right for a move that ran to
     completion without resolving; for a move CANCELLED mid-wind-up it plays
-    the full animation of a swing that never happened. All three cancellation
-    sites — the event-interrupt branch and the roster-emptied precheck in
-    ``_execute_move_inner``, plus ``abort_current_move`` — must pair the
-    ``current_move`` clear with the channel discard through the ONE helper
-    that encodes the pairing (``_detach_current_move``), not through a
-    re-flush (a phantom emission) or a bare clear (a leaked channel).
+    the full animation of a swing that never happened. All four cancellation
+    sites — the event-interrupt branch, the roster-emptied precheck and the
+    instant-loop iteration bound in ``_execute_move_inner``, plus
+    ``abort_current_move`` — must pair the ``current_move`` clear with the
+    channel discard through the ONE helper that encodes the pairing
+    (``_detach_current_move``), not through a re-flush (a phantom emission) or
+    a bare clear (a leaked channel).
+
+    The iteration bound is the newest of the four: an instant move whose
+    ``advance()`` never releases ``current_move`` used to spin the request
+    thread forever, and abandoning it has to abandon its channel too — the
+    swing it was mid-way through will never resolve.
     """
     from src.api.combat_adapter import ApiCombatAdapter
 
     inner_detaches = _calls_of(
         ApiCombatAdapter._execute_move_inner, "_detach_current_move"
     )
-    assert len(inner_detaches) == 2, (
-        "expected the event-interrupt and roster-emptied sites to detach via "
-        f"_detach_current_move; found {len(inner_detaches)} call(s)"
+    assert len(inner_detaches) == 3, (
+        "expected the event-interrupt, roster-emptied and instant-loop-bound "
+        f"sites to detach via _detach_current_move; found "
+        f"{len(inner_detaches)} call(s)"
     )
     assert len(
         _calls_of(ApiCombatAdapter.abort_current_move, "_detach_current_move")

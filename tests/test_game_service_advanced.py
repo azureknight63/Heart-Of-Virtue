@@ -31,8 +31,12 @@ What this file covers now is the thing its docstring always claimed and nothing
 else in the suite does: **multi-system interactions on real objects**. The shop
 sections in particular assert that gold is *moved, not minted* (the merchant's
 purse falls by exactly what the player gains) and that a reputation discount
-reaches the amount actually charged, not merely the price the client displays —
-CLAUDE.md names displayed-vs-charged drift as this codebase's dominant bug class.
+reaches the amount actually charged, not merely the price the client displays.
+(That is the same *shape* as the bug class CLAUDE.md actually names — wire-field
+-name drift, where the client reads a field the serializer never emits and the
+miss is swallowed by a ``??`` chain — but it is not that class itself, and this
+header used to claim CLAUDE.md named displayed-vs-charged drift as the dominant
+one. It does not.)
 
 Nothing here is mocked. A real ``Player``/``Universe``/``MapTile`` graph costs
 under a millisecond (``tests/_gs_fixtures.live_world``), and a real ``Merchant``

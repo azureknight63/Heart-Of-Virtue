@@ -24,7 +24,6 @@ helper on the day it lands is exactly the state this issue is about.
 """
 
 import ast
-import inspect
 import textwrap
 import types
 
@@ -33,47 +32,91 @@ import pytest
 from src.api.services.game_service import GameService
 from src.events import Event
 from src.narration import narrate
+from tests._ast_helpers import called_names, class_functions
 
 
 def _game_service_functions():
-    """Every ``def`` in :class:`GameService`, by name."""
-    tree = ast.parse(textwrap.dedent(inspect.getsource(GameService)))
-    return {
-        node.name: node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
-    }
+    """Every ``def`` AND ``async def`` in :class:`GameService`, by name.
+
+    Delegated to :func:`tests._ast_helpers.class_functions`. The local copy
+    matched only ``ast.FunctionDef``, which is blind to ``async def`` — so the
+    two "nothing anywhere in the class does this" tests below silently excluded
+    ``save_game``/``load_game``/``list_saves``/``delete_save``, i.e. the four
+    methods most likely to build a payload dict by hand.
+    ``tests/test_ast_helpers.py`` holds the positive control for that.
+    """
+    return class_functions(GameService)
+
+
+def _subscript_targets(node):
+    """Every assignment target in ``node``, unwrapping tuple/list targets."""
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+        targets = [node.target]
+    else:
+        return
+    while targets:
+        target = targets.pop()
+        if isinstance(target, (ast.Tuple, ast.List)):
+            targets.extend(target.elts)
+        else:
+            yield target
+
+
+def _writes_key(node, keys):
+    """Does this AST node put one of ``keys`` into a dict by literal name?
+
+    Deliberately broader than plain ``d["k"] = v``. The narrow scan matched
+    only ``ast.Assign`` to a ``Subscript``, so ``setdefault("k", ...)``,
+    ``{"k": v}``, ``dict(k=v)``, ``d["k"] += v`` and tuple-unpacking targets
+    were all copies it could not see -- while the test built on it claimed a
+    literal staged key "anywhere in GameService is by definition a copy".
+    """
+    for target in _subscript_targets(node):
+        if (
+            isinstance(target, ast.Subscript)
+            and isinstance(target.slice, ast.Constant)
+            and target.slice.value in keys
+        ):
+            return True
+    if isinstance(node, ast.Dict):
+        if any(
+            isinstance(k, ast.Constant) and k.value in keys for k in node.keys
+        ):
+            return True
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "setdefault":
+            if (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value in keys
+            ):
+                return True
+        if isinstance(func, ast.Name) and func.id == "dict":
+            if any(kw.arg in keys for kw in node.keywords if kw.arg):
+                return True
+    return False
 
 
 def _literal_key_writers(keys):
-    """Functions containing a ``something["<key>"] = ...`` for any of ``keys``."""
-    writers = set()
-    for name, node in _game_service_functions().items():
-        for assign in ast.walk(node):
-            if not isinstance(assign, ast.Assign):
-                continue
-            for target in assign.targets:
-                if (
-                    isinstance(target, ast.Subscript)
-                    and isinstance(target.slice, ast.Constant)
-                    and target.slice.value in keys
-                ):
-                    writers.add(name)
-    return writers
+    """Functions that put any of ``keys`` into a dict under its literal name."""
+    return {
+        name
+        for name, node in _game_service_functions().items()
+        for child in ast.walk(node)
+        if _writes_key(child, keys)
+    }
 
 
 def _callers_of(method_name):
     """Functions containing a ``self.<method_name>(...)`` / ``cls.<...>`` call."""
-    callers = set()
-    for name, node in _game_service_functions().items():
-        for call in ast.walk(node):
-            if (
-                isinstance(call, ast.Call)
-                and isinstance(call.func, ast.Attribute)
-                and call.func.attr == method_name
-            ):
-                callers.add(name)
-    return callers
+    return {
+        name
+        for name, node in _game_service_functions().items()
+        if method_name in called_names(node)
+    }
 
 
 def make_room(name="TestRoom"):
@@ -171,6 +214,13 @@ class TestTheStagedKeysTupleIsActuallyRead:
         helper nor the binding test could reach. Both helpers now index by a
         variable read from the tuple, so a literal staged key anywhere in
         ``GameService`` is by definition a copy.
+
+        "Anywhere" means every way a key gets into a dict by literal name —
+        plain and augmented subscript assignment, tuple-unpacking targets,
+        ``setdefault``, a ``{"k": v}`` literal and ``dict(k=v)``. The scan
+        used to see only the first of those, so the claim in this docstring
+        was five-sixths untrue; ``TestTheLiteralKeyScanSeesEveryWriteForm``
+        holds each form down.
         """
         writers = _literal_key_writers(GameService._STAGED_PAYLOAD_KEYS)
         assert writers == set(), (
@@ -251,6 +301,72 @@ class TestTheStagedKeysTupleIsActuallyRead:
         assert [e["name"] for e in triggered] == ["Narrating"]
 
 
+class TestCombatEventsQueueWithTheirTile:
+    """Both of ``trigger_combat_events``' pending writers carry the tile (#327).
+
+    The method resolves ``tile`` at the top and assigns ``event.tile = tile``,
+    then queued the entry with no ``tile=``. A coordinate-less entry is not a
+    crash: on the next ``process_event_input`` round trip the event falls back
+    to ``player.current_room``, which in the API is routinely ``None``, and the
+    event resolves against the wrong tile or none at all. Verbatim the failure
+    mode ``_pending_payload``'s docstring warns about — and
+    ``interact_with_target``'s two writers were fixed while these two were not.
+    """
+
+    @staticmethod
+    def _player(room):
+        return types.SimpleNamespace(
+            combat_events=[],
+            current_room=room,
+            location_x=room.x,
+            location_y=room.y,
+            universe=types.SimpleNamespace(get_tile=lambda x, y: room),
+        )
+
+    @staticmethod
+    def _only_entry(session_data):
+        (entry,) = session_data["pending_events"].values()
+        return entry
+
+    def test_an_event_that_asks_for_input_while_processing_carries_the_tile(
+        self, service
+    ):
+        """The ``_store_pending_event`` site — the wave-announcement path."""
+        room = make_room()
+        player = self._player(room)
+
+        class SilentPrompt(NarratingCombatEvent):
+            def process(self, user_input=None):
+                self.needs_input = True
+                self.input_prompt = "Well?"
+
+        player.combat_events.append(SilentPrompt(player=player, tile=room))
+        session_data = {"pending_events": {}}
+
+        service.trigger_combat_events(player, session_data=session_data)
+
+        entry = self._only_entry(session_data)
+        assert (entry.get("tile_x"), entry.get("tile_y")) == (room.x, room.y), (
+            "the queued combat event has no coordinates; the next "
+            "process_event_input resolves event.tile from player.current_room"
+        )
+
+    def test_an_already_interactive_event_carries_the_tile(self, service):
+        """The ``_queue_interactive_event`` site — a re-triggered open dialog."""
+        room = make_room()
+        player = self._player(room)
+        event = NarratingCombatEvent(player=player, tile=room)
+        event.needs_input = True
+        event.input_prompt = "Well?"
+        player.combat_events.append(event)
+        session_data = {"pending_events": {}}
+
+        service.trigger_combat_events(player, session_data=session_data)
+
+        entry = self._only_entry(session_data)
+        assert (entry.get("tile_x"), entry.get("tile_y")) == (room.x, room.y)
+
+
 # ── Finding 2: one builder for the pending-event entry ─────────────────────
 
 
@@ -272,8 +388,13 @@ class TestThePendingEntryHasOneBuilder:
             "three of four writers"
         )
 
-    def test_the_dedupe_owner_is_the_only_writer_that_mints_ids(self):
+    def test_the_loot_and_passageway_sites_route_through_the_owner(self):
         """The loot and passageway sites route through ``_store_pending_event``.
+
+        Named for what it checks: ROUTING. It says nothing about id minting —
+        ``test_the_rerouted_loot_site_mints_no_id_of_its_own`` is that half,
+        and ``test_the_rerouted_loot_site_dedupes_by_name`` is the behaviour
+        the two together buy.
 
         They minted their own UUIDs, so ``_store_pending_event``'s
         dedupe-by-name rule and the ``_carry_staged_payload`` invariant from
@@ -317,8 +438,8 @@ class TestThePendingEntryHasOneBuilder:
         stored = session_data["pending_events"][event.api_event_id]
         assert "tile_x" not in stored and "tile_y" not in stored
 
-    def test_a_rerouted_writer_now_dedupes_by_name(self, service):
-        """What routing the loot/passageway sites through the owner buys.
+    def test_the_owner_dedupes_by_name(self, service):
+        """The rule itself, at the owner.
 
         Two entries for one dialog is not cosmetic: the first stays pending
         forever and every later request sees a blocking event the player has no
@@ -335,6 +456,63 @@ class TestThePendingEntryHasOneBuilder:
 
         assert len(session_data["pending_events"]) == 1
         assert result["event_id"] == first.api_event_id
+
+    def test_the_rerouted_loot_site_dedupes_by_name(self, service, make_mock_player):
+        """The REROUTED WRITER, driven — not the owner it now delegates to.
+
+        The previous version of this test called ``_store_pending_event``
+        twice by hand, which exercises the dedupe rule and nothing about the
+        loot site's routing: reverting ``interact_with_target``'s loot branch
+        to minting its own UUID left it green. Looting the same container twice
+        is the actual scenario — a player who reopens a dialog — and it is the
+        one that stranded a blocking entry.
+        """
+        from src.combatant import wire_handle
+        from src.objects import Container
+
+        player = make_mock_player()
+        container = Container(name="Chest", start_open=False, locked=False)
+        tile = player.current_room
+        tile.x, tile.y = player.location_x, player.location_y
+        tile.npcs_here, tile.items_here = [], []
+        tile.objects_here = [container]
+        session_data = {}
+        handle = wire_handle(container)
+
+        first = service.interact_with_target(
+            player, handle, "loot", session_data=session_data
+        )
+        second = service.interact_with_target(
+            player, handle, "loot", session_data=session_data
+        )
+
+        assert first["success"] is True and second["success"] is True
+        assert len(session_data["pending_events"]) == 1, (
+            "the loot site minted a second id for the same container's dialog; "
+            "the first entry stays pending forever and blocks every later "
+            "request"
+        )
+        assert (
+            second["events_triggered"][0]["event_id"]
+            == first["events_triggered"][0]["event_id"]
+        )
+
+    def test_the_rerouted_loot_site_mints_no_id_of_its_own(self):
+        """Routing is only half of it: the site must not still mint.
+
+        ``_store_pending_event`` owns id minting *because* it is the only place
+        that can check for an existing entry of the same name first. A caller
+        that mints its own UUID and hands it over has already lost the dedupe,
+        however it then stores the entry — so the absence of a ``uuid4`` call
+        in the rerouted writer is the property, not merely the presence of a
+        ``_store_pending_event`` call.
+        """
+        node = _game_service_functions()["interact_with_target"]
+        assert "uuid4" not in called_names(node), (
+            "interact_with_target mints its own event id again; "
+            "_store_pending_event cannot dedupe an id it was handed"
+        )
+        assert "uuid4" in called_names(_game_service_functions()["_store_pending_event"])
 
 
 # ── Finding 3: the dead assignment ─────────────────────────────────────────
@@ -416,3 +594,45 @@ def test_a_multistage_event_leaves_nothing_behind_under_its_old_id(monkeypatch):
     # The coordinates must ride across the re-key or the next stage resolves
     # event.tile from player.current_room, which is usually None in the API.
     assert (stored["tile_x"], stored["tile_y"]) == (room.x, room.y)
+
+
+# ── Controls for the widened literal-key scan ──────────────────────────────
+
+
+class TestTheLiteralKeyScanSeesEveryWriteForm:
+    """One control per form the widened scan claims to catch.
+
+    The narrow version matched ``ast.Assign`` to a subscript and nothing else,
+    so five of these six snippets sailed past a test whose message said a
+    literal staged key "anywhere" in ``GameService`` is a copy.
+    """
+
+    @staticmethod
+    def _hits(source):
+        tree = ast.parse(textwrap.dedent(source))
+        return any(_writes_key(node, {"output_text"}) for node in ast.walk(tree))
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'payload["output_text"] = prose',
+            'payload["output_text"] += prose',
+            'first, payload["output_text"] = 1, prose',
+            'payload.setdefault("output_text", prose)',
+            'payload = {"output_text": prose}',
+            "payload = dict(output_text=prose)",
+        ],
+    )
+    def test_it_catches(self, source):
+        assert self._hits(source), f"the scan cannot see: {source}"
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'value = payload["output_text"]',
+            "payload[key] = prose",
+            'payload["segments_other"] = prose',
+        ],
+    )
+    def test_it_does_not_flag_a_read_or_an_indirect_write(self, source):
+        assert not self._hits(source), f"the scan false-positives on: {source}"

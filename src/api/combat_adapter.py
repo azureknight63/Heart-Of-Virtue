@@ -180,6 +180,13 @@ COMBAT_LOG_TRIM_SLACK = 100
 #: see _next_animation_seq.
 MAX_ANIMATION_SEQ = 1_000_000
 
+#: Ceiling on the stage-advance loop an instant move runs in one request, and
+#: the twin of ``max_beats`` in the multi-beat loop. An instant move resolves
+#: every stage inside one call, so the only way to exceed a handful is an
+#: advance() that never releases ``player.current_move`` — which would park the
+#: request thread (holding ``_beat_lock``) forever.
+MAX_INSTANT_STAGES = 20
+
 
 def _dedup_key(message, round_num, source_id):
     """The identity ``_add_log_entry`` collapses duplicate log entries on.
@@ -427,13 +434,23 @@ class ApiCombatAdapter:
         # below is what makes that interleaving impossible.
         self._executing_move = False
 
-        # Serializes the two entry points that drive combat state on this
-        # adapter: _execute_move and initialize_combat. app.py builds SocketIO
+        # Serializes every entry point that drives combat state on this
+        # adapter: _execute_move, initialize_combat and the settle_victory /
+        # settle_defeat pair that ends a fight. app.py builds SocketIO
         # with async_mode="threading", so an in-flight POST /api/combat/move
         # really can overlap the next scheduled GET /api/combat/status —
         # game_service's status poll calls adapter._execute_move(
         # player.current_move) on the resume branch, against the same Move
         # object the first request is mid-advance() on.
+        #
+        # The settle pair needs it for a second reason: three of its four call
+        # sites are in game_service (the status poll and the event-resolution
+        # path), OUTSIDE any lock the move loop holds. _handle_victory reads
+        # then zeroes player.combat_exp non-atomically, so an unserialized
+        # second pass rewrites combat_end_summary with exp_gained={} and
+        # level_ups=[] — the player silently loses the exp and level-up
+        # display — and _teardown_combat_roster mutates a roster a concurrent
+        # _execute_move_inner may be iterating.
         #
         # REENTRANT on purpose: the legitimate same-thread nesting is real and
         # load-bearing (_execute_move -> Move.advance -> functions.
@@ -675,11 +692,16 @@ class ApiCombatAdapter:
         ``combat_wave_pending`` signal cannot say that: it is gone by the time
         the next request arrives.
         """
-        return self.player.combat_adapter_state.get("victory_deferred", False)
+        return self._adapter_state().get("victory_deferred", False)
 
     @victory_deferred.setter
     def victory_deferred(self, value):
-        self.player.combat_adapter_state["victory_deferred"] = value
+        # Through _adapter_state(), not player.combat_adapter_state directly:
+        # _teardown_combat_roster clears this flag, and a player whose adapter
+        # state was never created (a test double, or a fight torn down before
+        # the first get_combat_state) would raise AttributeError on the way out
+        # of a fight it had otherwise finished cleanly.
+        self._adapter_state()["victory_deferred"] = value
 
     @property
     def input_type(self):
@@ -1089,6 +1111,26 @@ class ApiCombatAdapter:
         try:
             # Import here to avoid circular dependencies
 
+            # Both arms want these two, for related but distinct reasons, so
+            # they are hoisted rather than spelled twice:
+            #
+            # * A fresh fight starts with no prior summary and no outstanding
+            #   wave/deferral (issues #514, #519).
+            # * A wave joining an ONGOING fight means that fight has not ended,
+            #   so any end-of-combat summary an earlier terminal beat left
+            #   behind is stale (get_combat_state only publishes it while
+            #   in_combat is False, which the reinit is about to flip back to
+            #   True, so the staleness is latent — but it must not survive the
+            #   transition), and the wave this reinit carries is exactly what
+            #   the deferral was held open for, so the deferral is resolved.
+            #
+            # combat_wave_pending is deliberately NOT cleared on the reinit
+            # path: _execute_move_inner consumes it on the transition it
+            # covers, and clearing it here would consume the arming of a wave
+            # that has only just enrolled.
+            self.player.combat_end_summary = None
+            self.victory_deferred = False
+
             if not reinit:
                 self.player.combat_beat = 1  # Start at beat 1 for synchronization
                 self._terminal_event_emitted = False
@@ -1107,26 +1149,11 @@ class ApiCombatAdapter:
                 # Defence in depth for issue #506: a combat-effect event armed
                 # in another room must not get a chance to fire in this fight.
                 purge_orphaned_combat_events(self.player)
-                # Clear any prior end-of-combat summary/drops from previous encounters
-                self.player.combat_end_summary = None
                 self.player.combat_drops = []
-                # Waves are per-fight state as well (issue #514), and so is an
-                # outstanding deferral of the victory they hold open (#519).
-                self.player.combat_wave_pending = False
-                self.victory_deferred = False
+                # Waves are per-fight state as well (issues #514, #519).
+                self._clear_wave_state()
                 self.output_capture.clear()  # Clear captured output
                 self.current_beat_state_index = 0  # Reset beat state tracking
-            else:
-                # A wave joining an ongoing fight means that fight has not
-                # ended, so any end-of-combat summary an earlier terminal beat
-                # left behind is stale. get_combat_state only publishes it while
-                # in_combat is False, which the reinit is about to flip back to
-                # True, so the staleness is latent — but it must not survive the
-                # transition (issue #514).
-                self.player.combat_end_summary = None
-                # The wave this reinit carries is what the deferral was held
-                # open for, so the deferral is resolved (issue #519).
-                self.victory_deferred = False
 
             # Initialize combat_proximity if it doesn't exist
             if not hasattr(self.player, "combat_proximity"):
@@ -2091,8 +2118,26 @@ class ApiCombatAdapter:
         if is_instant:
             with self._capture_output():
                 self.output_capture.active_entity = self.player
+                # Bounded for the same reason the multi-beat loop below is: a
+                # move whose advance() never clears current_move would park
+                # this request thread forever, holding _beat_lock, and every
+                # later poll behind it. Same ceiling as max_beats — an instant
+                # move has a handful of stages, so tripping this is a bug in
+                # the move, not a long move.
+                stages_advanced = 0
                 while self.player.current_move == move:
+                    if stages_advanced >= MAX_INSTANT_STAGES:
+                        logger.error(
+                            "Instant move '%s' did not release current_move "
+                            "after %d advances; abandoning it to avoid an "
+                            "unbounded beat loop",
+                            getattr(move, "name", "?"),
+                            MAX_INSTANT_STAGES,
+                        )
+                        self._detach_current_move(self.player)
+                        break
                     move.advance(self.player)
+                    stages_advanced += 1
                     if self.player.current_move is None:
                         break
                 self.output_capture.active_entity = None
@@ -2196,19 +2241,18 @@ class ApiCombatAdapter:
         event_just_triggered = "events_triggered" in self._adapter_state()
 
         # Is this beat a wave transition rather than the end of the fight?
-        # functions.signal_combat_wave_pending arms combat_wave_pending from two
-        # places: add_enemies_to_combat, once a wave has joined the roster, and
-        # GameService.trigger_combat_events, when a combat_effect event passes
-        # check_combat_conditions asking for input. The second is what covers
-        # the FIRST roster wipe of a chain, which no enrolment precedes. Either
-        # way, a fight that is mid-ambush says so before the roster empties.
-        # Combined with a queued combat event holding this beat — the
-        # announcement stage that spawns the next wave a stage later — the empty
-        # combat_list means "the wave has not arrived yet", not "the fight is
-        # over" (issue #514). The signal is consumed here so one arming covers
-        # exactly one transition: if the queued event resolves without enrolling
-        # anything, settle_victory ends the fight on that request, and the next
-        # roster wipe ends it normally.
+        # A fight that is mid-ambush says so before the roster empties, by
+        # arming combat_wave_pending — functions.signal_combat_wave_pending is
+        # the one arming site and its docstring is the one description of the
+        # two-flag state machine; do not re-enumerate its sites here. Combined
+        # with a queued combat event holding this beat — the announcement stage
+        # that spawns the next wave a stage later — the empty combat_list means
+        # "the wave has not arrived yet", not "the fight is over" (issue #514).
+        #
+        # THIS is the consumption site, so one arming covers exactly one
+        # transition: if the queued event resolves without enrolling anything,
+        # settle_victory ends the fight on that request, and the next roster
+        # wipe ends it normally.
         wave_transition = (
             len(self.player.combat_list) == 0
             and self.player.in_combat
@@ -2896,47 +2940,73 @@ class ApiCombatAdapter:
 
         threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
 
-    def settle_defeat(self, beat_states) -> Dict[str, Any]:
+    def settle_defeat(self, beat_states=None) -> Dict[str, Any]:
         """End the fight in defeat, publish the terminal stream, and return it.
 
-        The COMPLETE defeat path, and the exact mirror of :meth:`settle_victory`
-        — same ``(beat_states) -> result`` shape, same guarantee that the
-        seq-guarded ``combat:ended`` stream goes out with the summary. It was
-        called ``_handle_defeat``, which read as one half of a pair with
-        ``_handle_victory``; it never was. ``_handle_victory`` is the exp and
-        summary half ALONE and publishes nothing, so the matching name invited a
-        new exit path to reach for it and silently ship a victory the client is
-        never told to end on (issue #520). The ``settle_*`` pair is now the pair,
-        and ``_handle_victory`` is private and named unlike either of them.
+        The COMPLETE defeat path, and interchangeable with
+        :meth:`settle_victory` at the call site — same
+        ``(beat_states=None) -> result`` signature, same reentrant
+        ``_beat_lock``, same idempotent early return once the fight is over,
+        and the same guarantee that the seq-guarded ``combat:ended`` stream
+        goes out with the summary (both publish it through
+        :meth:`_publish_terminal_state`). It was called ``_handle_defeat``,
+        which read as one half of a pair with ``_handle_victory``; it never
+        was. ``_handle_victory`` is the exp and summary half ALONE and
+        publishes nothing, so the matching name invited a new exit path to
+        reach for it and silently ship a victory the client is never told to
+        end on (issue #520). The ``settle_*`` pair is now the pair, and
+        ``_handle_victory`` is private and named unlike either of them.
+
+        It is NOT an exact mirror, and the two remaining differences are
+        deliberate rather than drift:
+
+        * **Teardown order.** This method tears the roster down *after* the
+          state snapshot, so the defeat payload shows who killed the player
+          rather than an empty battlefield. ``settle_victory`` tears down
+          inside :meth:`_handle_victory`, i.e. *before* its snapshot — the
+          victory payload is about exp and drops, not about who is still
+          standing.
+        * **Engine state.** Victory awards exp, recharges equip states, resets
+          fatigue and fires the drop/level-up summary; defeat writes a
+          four-key game-over summary and nothing else.
         """
-        self.player.in_combat = False
-        self.awaiting_input = False
-        self.victory_deferred = False
-        self._add_log_entry(
-            self.player.combat_beat, "You have been defeated!", "system"
-        )
+        with self._beat_lock:
+            beat_states = [] if beat_states is None else beat_states
+            if not self.player.in_combat:
+                # Already settled. Three of the four settle_* call sites are in
+                # game_service — two of them on the 3-second status poll — so a
+                # poll really can arrive on a fight the move loop just ended.
+                # Re-running the body would re-log the defeat line and mint a
+                # second combat_end_summary id; hand back the terminal state
+                # instead.
+                return self._terminal_state_snapshot(beat_states)
 
-        # Set end-of-combat summary for defeat so frontend can show a
-        # game-over dialog. Built plainly — the try/except that used to
-        # wrap this also wrapped the pending-animation discard, so a raise
-        # rebuilt the identical summary and silently skipped the discard.
-        self.player.combat_end_summary = {
-            "id": str(uuid.uuid4()),
-            "status": "defeat",
-            "message": "You have been defeated.",
-            "game_over": True,
-        }
+            self.player.in_combat = False
+            self.awaiting_input = False
+            self.victory_deferred = False
+            self._add_log_entry(
+                self.player.combat_beat, "You have been defeated!", "system"
+            )
 
-        result = self.get_combat_state()
-        result["beat_states"] = beat_states
-        self._stream_combat_result(result, beat_states, ended=True)
+            # Set end-of-combat summary for defeat so frontend can show a
+            # game-over dialog. Built plainly — the try/except that used to
+            # wrap this also wrapped the pending-animation discard, so a raise
+            # rebuilt the identical summary and silently skipped the discard.
+            self.player.combat_end_summary = {
+                "id": str(uuid.uuid4()),
+                "status": "defeat",
+                "message": "You have been defeated.",
+                "game_over": True,
+            }
 
-        # Tear the roster down only after the state snapshot, so the defeat
-        # payload shows who killed the player rather than an empty
-        # battlefield.
-        self._teardown_combat_roster()
+            result = self._publish_terminal_state(beat_states)
 
-        return result
+            # Tear the roster down only after the state snapshot, so the defeat
+            # payload shows who killed the player rather than an empty
+            # battlefield.
+            self._teardown_combat_roster()
+
+            return result
 
     def _handle_victory(self):
         """Award exp and write ``combat_end_summary``. Publishes NOTHING.
@@ -3141,38 +3211,93 @@ class ApiCombatAdapter:
 
         self._teardown_combat_roster()
 
+    def _terminal_state_snapshot(self, beat_states) -> Dict[str, Any]:
+        """The end-of-fight state dict, with the beats and the event payload.
+
+        ``get_combat_state()`` CONSUMES ``events_triggered`` — it pops the
+        payload out of adapter state. A post-combat event queued on the killing
+        beat would be dropped on the floor for any caller that does not hand
+        this result straight back to the API, so put it back.
+        """
+        state = self.get_combat_state()
+        state["beat_states"] = beat_states
+        triggered_events = state.get("events_triggered")
+        if triggered_events:
+            self._adapter_state()["events_triggered"] = triggered_events
+        return state
+
+    def _publish_terminal_state(self, beat_states) -> Dict[str, Any]:
+        """Snapshot the terminal state and publish the ``combat:ended`` stream.
+
+        The tail both :meth:`settle_victory` and :meth:`settle_defeat` end on —
+        they carried a verbatim copy of it each, and the copies had already
+        drifted once (only the victory one restored ``events_triggered``, so a
+        post-combat event queued before the defeat check at the top of the
+        win/loss block was silently lost).
+        """
+        state = self._terminal_state_snapshot(beat_states)
+        self._stream_combat_result(state, beat_states, ended=True)
+        return state
+
     def settle_victory(self, beat_states=None) -> Dict[str, Any]:
         """End the fight in victory and publish the terminal state.
 
         Ending a fight is always both halves: ``_handle_victory`` awards exp and
         writes ``combat_end_summary``, and the client needs the seq-guarded
         ``combat:ended`` stream that goes with it or it can be shown victory
-        state it was never told to end on. EVERY victory exit goes through here
-        — the move loop, the status poll, and the event-resolution path that
-        settles a deferred wave transition (issue #514). The move loop used to
-        carry its own inline copy of the pair, differing only by the beats it
-        injects and the ``events_triggered`` restore; both of those live here
-        now (issue #520), so there is one victory tail rather than two that can
-        drift apart.
+        state it was never told to end on. EVERY victory exit goes through here.
+        There are four: the move loop, the status poll's "all enemies defeated
+        after an event" branch, the status poll's abandoned-deferral rescue
+        (issue #519), and ``process_event_input``'s settle of a deferred wave
+        transition that resolved without enrolling anything (issue #514). The
+        move loop used to carry its own inline copy of the pair, differing only
+        by the beats it injects and the ``events_triggered`` restore; both of
+        those live here now (issue #520), so there is one victory tail rather
+        than two that can drift apart.
+
+        All four are serialized on ``_beat_lock`` and only ONE of them (the move
+        loop) already holds it — hence the lock here rather than at the call
+        sites, and hence the early return: two of the outside callers are on the
+        3-second status poll, which genuinely races a player action. A second
+        pass through ``_handle_victory`` reads an already-zeroed
+        ``combat_exp`` and rewrites ``combat_end_summary`` with
+        ``exp_gained={}``/``level_ups=[]``, so the player silently loses the
+        exp and level-up display.
 
         ``beat_states`` are the per-beat snapshots of the move that ended the
         fight, empty for the exits that end one between requests.
 
         Returns the terminal combat state the stream was built from.
         """
-        beat_states = [] if beat_states is None else beat_states
-        self._handle_victory()
-        terminal_state = self.get_combat_state()
-        terminal_state["beat_states"] = beat_states
-        self._stream_combat_result(terminal_state, beat_states, ended=True)
-        # get_combat_state() CONSUMES events_triggered — it pops the payload out
-        # of adapter state. A post-combat event queued on this beat would be
-        # dropped on the floor for any caller that does not hand this result
-        # straight back to the API, so put it back.
-        triggered_events = terminal_state.get("events_triggered")
-        if triggered_events:
-            self.player.combat_adapter_state["events_triggered"] = triggered_events
-        return terminal_state
+        with self._beat_lock:
+            beat_states = [] if beat_states is None else beat_states
+            if not self.player.in_combat:
+                # The fight is already over: hand back the terminal state
+                # without re-awarding exp, re-minting the summary id or
+                # re-publishing the ended stream.
+                return self._terminal_state_snapshot(beat_states)
+            self._handle_victory()
+            return self._publish_terminal_state(beat_states)
+
+    def _clear_wave_state(self):
+        """Zero both halves of the wave/deferral state machine.
+
+        ``player.combat_wave_pending`` says "this roster wipe is a gap in an
+        ongoing fight, not the end of it" (issue #514); ``self.victory_deferred``
+        records that a fight is currently holding an emptied roster open on the
+        strength of that signal (issue #519). They are two flags of one state
+        machine and every site that ends or restarts a fight has to clear both,
+        so there is one place that spells it: :func:`functions.signal_combat_wave_pending`
+        arms, this clears, and ``_execute_move_inner`` consumes the arming on
+        the one transition it covers.
+
+        Called from :meth:`_teardown_combat_roster` (victory and defeat), from
+        the fresh-fight branch of ``initialize_combat``, and from
+        ``GameService.flee_combat`` — the exit that tears a fight down without
+        going through either.
+        """
+        self.player.combat_wave_pending = False
+        self.victory_deferred = False
 
     def _teardown_combat_roster(self):
         """End-of-combat roster reset, shared by the victory and defeat tails.
@@ -3201,9 +3326,8 @@ class ApiCombatAdapter:
         """
         self._discard_pending_animations()
 
-        # The fight is over, so no wave is outstanding: the next one to empty a
-        # roster must not inherit this fight's continuation signal (issue #514).
-        self.player.combat_wave_pending = False
+        # The fight is over, so no wave is outstanding.
+        self._clear_wave_state()
 
         # Drop combat-effect events armed in rooms the player has since left.
         # player.combat_events is process-wide and no teardown path cleared it,
