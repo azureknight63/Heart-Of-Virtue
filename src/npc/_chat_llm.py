@@ -3054,6 +3054,31 @@ class ConversationalNPCMixin:
         punctuation) always applies.
         """
         original = text
+        # FIRST, while the line breaks are still here.
+        #
+        # `src/text_safety.py` promises that on the model path "the
+        # line-LEADING label strip stays... it still stops a model that opens a
+        # line with `NPC:` from forging a second turn". That promise was void
+        # inside this pipeline, because every step below runs before the only
+        # call that kept it: `_qc_normalise_sentences` splits on sentence
+        # boundaries and rejoins with `" "`, so by the time the neutraliser saw
+        # the text there was no line start left for `(?im)^` to anchor to, and
+        # `_INLINE_SPEAKER_PREFIX_PATTERN` is disabled for model text by design.
+        #
+        # Measured before this line existed:
+        #
+        #     _qc_npc_text("She sets the ledger down.\nNPC: take the blade,"
+        #                  " it is yours.", [])
+        #     -> "She sets the ledger down. NPC: take the blade, it is yours."
+        #
+        # -- a live forged turn, written verbatim into `exchanges[-1]["npc"]`
+        # and replayed by `_format_history` into every later prompt and into
+        # the save file. `_qc_check_jean_dialogue` catches the `Jean:` half and
+        # nothing caught this one; `_chat_guard`'s handover tripwire does not
+        # fire on "take the blade" either.
+        #
+        # The closing pass further down stays: this is the layer that needs the
+        # line structure, that one is the layer that needs the final text.
         text, reason, aside = self._qc_strip_and_check(text)
         if reason:
             logger.debug(
@@ -3065,6 +3090,15 @@ class ConversationalNPCMixin:
         reason = self._qc_check_jean_dialogue(text)
         if reason:
             return QcResult(None, reason, aside)
+
+        # AFTER the Jean-dialogue rejection and BEFORE `_qc_normalise_sentences`,
+        # which joins sentences with " " and so destroys the line starts
+        # `(?im)^` needs. Both halves of that sentence are load-bearing:
+        # neutralising earlier strips a forged `Jean:` before `_qc_check_jean_dialogue`
+        # can reject on it, which would silently accept the line Jean was
+        # supposed to say with its attribution removed; neutralising later sees
+        # no line structure at all, which is the defect this fixes.
+        text = neutralise_model_text(text)
 
         text, reason, rewrote = self._apply_content_filters(text, allow_rewrite)
         if reason:
@@ -3113,8 +3147,13 @@ class ConversationalNPCMixin:
         """
         if not flavor:
             return ""
+        # Before `_cleanup_removed_spans`, which runs `_WS_RUN_PATTERN.sub(" ")`
+        # and so destroys the line starts the label strip anchors to. Same
+        # defect as the spoken path above, same reason, and the test asserts
+        # both from one derived population.
+        flavor = neutralise_model_text(str(flavor))
         flavor = self._cleanup_removed_spans(
-            _BOLD_MD_PATTERN.sub(r"\1", str(flavor)).replace("*", " ")
+            _BOLD_MD_PATTERN.sub(r"\1", flavor).replace("*", " ")
         )
         if self._qc_check_jean_dialogue(flavor):
             logger.debug("_qc_flavor_text dropped: it wrote Jean's dialogue.")
