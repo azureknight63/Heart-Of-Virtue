@@ -389,8 +389,11 @@ def _fuzz_combat(seed, i, rng, findings):
           lambda: CombatantSerializer.serialize_combatant(npc1, reference=reference), findings)
     _call(seed, i, "CombatantSerializer.serialize_combatant_list",
           lambda: CombatantSerializer.serialize_combatant_list([player, npc1, npc2]), findings)
-    _call(seed, i, "CombatantSerializer.serialize_health_bar",
-          lambda: CombatantSerializer.serialize_health_bar(npc1), findings)
+    # serialize_health_bar is gone. It read `combatant.health`/`max_health`,
+    # names no engine object has ever carried, so every real combatant came
+    # back as 0/100 "critical" -- and it had no production caller. The live
+    # health block is `serialize_combatant`'s, from the engine's hp/maxhp,
+    # and it is fuzzed by the two calls above.
 
     _call(seed, i, "CombatStateSerializer.serialize_combat_state",
           lambda: CombatStateSerializer.serialize_combat_state(

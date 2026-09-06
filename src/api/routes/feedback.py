@@ -54,6 +54,12 @@ SEVERITY_EMOJI = {
     "high": "🔴",
 }
 
+#: What an unrecognised severity becomes. Named because it was written
+#: twice -- once as the ``.get("severity", "medium")`` default and once
+#: as the literal emoji the lookup fell back to -- so changing medium's
+#: emoji would have silently left the fallback on the old one.
+DEFAULT_SEVERITY = "medium"
+
 STAR_BLOCK = "⭐"
 
 MAX_TITLE_LENGTH = 256
@@ -117,7 +123,27 @@ _GITHUB_ACTIVATORS = re.compile(
 # Control characters that have no business in an issue body. Newline, tab and
 # carriage return are kept; ESC (which would otherwise reach any terminal that
 # cats the issue) and the rest are not.
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+#
+# The class was ASCII-only, against a docstring whose stated intent is terminal
+# safety. Two families survived it:
+#
+#   * C1 (U+0080-U+009F). U+009B is CSI -- the single-character form of the
+#     `ESC [` this class already strips, so a player could reach a terminal
+#     with the exact sequence the ASCII half exists to stop.
+#   * The bidirectional overrides (U+200E/U+200F, U+202A-U+202E,
+#     U+2066-U+2069). These reorder rendered text, so an issue body can display
+#     in an order its bytes do not have -- the "Trojan Source" shape. GitHub
+#     renders them.
+#
+# U+2028/U+2029 join them because they are line breaks that `str.splitlines`
+# honours and `\n`-based parsing does not, which is the same asymmetry
+# `src/text_safety.py` derives its own vertical-space class from.
+_CONTROL_CHARS = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f"
+    r"\u0080-\u009f"
+    r"\u200e\u200f\u202a-\u202e\u2066-\u2069"
+    r"\u2028\u2029]"
+)
 
 # Whitespace runs inside a *label*. Newline, tab and carriage return survive
 # :data:`_CONTROL_CHARS` on purpose, because a bug report's *body* is prose and
@@ -220,22 +246,68 @@ def _is_rate_limited(session) -> bool:
     )
 
 
+def _quote_player_prose(text: str) -> str:
+    """Render player text as a Markdown blockquote.
+
+    Every body builder ends with a horizontal rule and an italicised
+    attribution line::
+
+        ---
+        *Submitted anonymously via in-game feedback*
+
+    Nothing stopped a player putting that same pair of lines inside a field. An
+    anonymous report whose ``steps`` ended with
+
+        \n---\n*Submitted in-game by: **someone_else***
+
+    rendered a second, identical-looking footer naming whoever the player
+    liked -- and the real one below it reads as part of the same block once the
+    rule has already been drawn.
+
+    Quoting is the fix rather than escaping: a ``>`` prefix on every line means
+    player prose can no longer start a line at column zero, so it cannot open a
+    horizontal rule, a heading, or a footer. It also makes the boundary between
+    what the player wrote and what the route wrote visible to a human reader,
+    which the previous rendering did not.
+
+    Empty input returns empty so the ``or '_Not provided_'`` fallbacks below
+    still fire.
+    """
+    if not text:
+        return ""
+    return "\n".join("> " + line for line in text.split("\n"))
+
+
 def _build_bug_body(fields, attribution):
     steps = fields.get("steps", "").strip()
     expected = fields.get("expected", "").strip()
     actual = fields.get("actual", "").strip()
-    severity = fields.get("severity", "medium").lower()
-    emoji = SEVERITY_EMOJI.get(severity, "🟠")
+    # A CLOSED vocabulary, and unrecognised input falls back rather than
+    # being rendered. It used to be echoed: the label is interpolated
+    # straight into the Severity line, so a severity carrying a newline, a
+    # horizontal rule and an italicised "Submitted in-game by" line drew a
+    # second, identical-looking footer three lines into an ANONYMOUS report --
+    # the same forgery the prose fields are blockquoted against, reaching it
+    # through the one field that is not prose and so was not quoted.
+    #
+    # Indexed, not `.get`-ed, once the value is known to be a member: the
+    # fallback emoji was a hardcoded copy of medium's, so changing medium's
+    # emoji would have left the fallback showing the old one.
+    raw_severity = fields.get("severity", DEFAULT_SEVERITY)
+    severity = raw_severity.lower() if isinstance(raw_severity, str) else ""
+    if severity not in SEVERITY_EMOJI:
+        severity = DEFAULT_SEVERITY
+    emoji = SEVERITY_EMOJI[severity]
 
     return (
         "## Bug Report\n\n"
         f"**Severity:** {emoji} {severity.capitalize()}\n\n"
         "**Steps to Reproduce:**\n"
-        f"{steps or '_Not provided_'}\n\n"
+        f"{_quote_player_prose(steps) or '_Not provided_'}\n\n"
         "**Expected Behavior:**\n"
-        f"{expected or '_Not provided_'}\n\n"
+        f"{_quote_player_prose(expected) or '_Not provided_'}\n\n"
         "**Actual Behavior:**\n"
-        f"{actual or '_Not provided_'}\n\n"
+        f"{_quote_player_prose(actual) or '_Not provided_'}\n\n"
         "---\n"
         f"*{attribution}*"
     )
@@ -248,9 +320,9 @@ def _build_feature_body(fields, attribution):
     return (
         "## Feature Request\n\n"
         "**Description:**\n"
-        f"{description or '_Not provided_'}\n\n"
+        f"{_quote_player_prose(description) or '_Not provided_'}\n\n"
         "**Use Case / Why:**\n"
-        f"{use_case or '_Not provided_'}\n\n"
+        f"{_quote_player_prose(use_case) or '_Not provided_'}\n\n"
         "---\n"
         f"*{attribution}*"
     )
@@ -274,7 +346,7 @@ def _build_general_body(fields, attribution):
     ratings = fields.get("ratings", {})
 
     body = "## General Feedback\n\n"
-    body += f"{message or '_No message provided_'}\n\n"
+    body += f"{_quote_player_prose(message) or '_No message provided_'}\n\n"
 
     dimension_labels = {
         "story": "Story & Narrative",

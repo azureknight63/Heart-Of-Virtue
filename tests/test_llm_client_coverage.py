@@ -1880,8 +1880,16 @@ class TestNpcChatLLMAdapterAvailable:
 
     @staticmethod
     def _no_credentials(monkeypatch):
-        for var in ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_BASE_URL"):
+        for var in ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY"):
             monkeypatch.delenv(var, raising=False)
+        # Ollama is not credentialed and never was: an UNSET OLLAMA_BASE_URL
+        # means "the default port", the address __init__ has always pointed
+        # self.base_url at. "There is no local host here" is spelled with an
+        # explicit blank -- which is also what tests/conftest.py assigns for
+        # the whole suite. Deleting it here used to read as "no ollama" only
+        # because _provider_credential defaulted to "" where __init__
+        # defaulted to localhost; see _ollama_base_url.
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
 
     def test_chain_provider_with_its_key_is_available(self, monkeypatch):
         # The exact configuration HOV_LIVE_ONLY=groq creates: groq keyed,
@@ -2760,6 +2768,51 @@ def _personality_seed(**overrides):
     }
     seed.update(overrides)
     return seed
+
+
+class TestThePersonalityPromptNamesEveryRequiredField:
+    """``_PERSONALITY_FIELDS`` says the prompt reads it. The prompt does not.
+
+    The comment on the constant reads "Both the prompt text and the validator
+    read these ... so the description the model is given and the check it is
+    measured against must not be able to drift apart." The validator does read
+    it. ``generate_personality``'s user prompt hand-writes all six key names as
+    string literals instead -- while interpolating every OTHER bound in the
+    same prompt from its constant (``_MAX_KNOWLEDGE_TOPICS``,
+    ``_NPC_ATTITUDES``, ``LOQUACITY_BASE_BOUNDS``). The field names are the one
+    half nobody wired up, so they are exactly the pair that CAN drift.
+
+    The failure would be silent and total: add a seventh name to the frozenset
+    and the prompt never asks for it, so ``issubset`` rejects EVERY generated
+    seed and every nomad falls back to an authored personality -- no exception,
+    and no log line naming the cause.
+
+    Deliberately a guard rather than a prompt edit: .claude/rules/llm-prompts.md
+    says a prompt change is a behaviour change that needs a live A/B, which no
+    unit test stands in for. The expectation here is read off the PROMPT the
+    adapter actually builds, not off a second copy of the field list.
+    """
+
+    def test_every_required_field_is_named_in_the_prompt(self):
+        sent = {}
+
+        def _capture(system, user, **kwargs):
+            sent["user"] = user
+            return None
+
+        adapter = make_chat_adapter(
+            api_key=None,
+            _world_facts={"allowed_proper_nouns": ["Jean"]},
+            _call_llm=_capture,
+        )
+        adapter.generate_personality("nomad")
+
+        for field in llm_client._PERSONALITY_FIELDS:
+            assert '"%s"' % field in sent["user"], (
+                "generate_personality requires %r via _PERSONALITY_FIELDS but "
+                "never asks the model for it, so the seed can only ever be "
+                "rejected." % field
+            )
 
 
 class TestGeneratePersonalityValidatesEveryField:

@@ -30,10 +30,12 @@ class NPCSerializer:
         # Combat stats
         if hasattr(npc, "hp"):
             npc_data["health"] = npc.hp
+        # `maxhp` is the engine's name (src/combatant.py). The `max_hp` branch
+        # that used to follow was unreachable: no class under src/ defines
+        # `max_hp` and nothing assigns it, so it could only have hidden a
+        # genuinely broken object behind a plausible value.
         if hasattr(npc, "maxhp"):
             npc_data["max_health"] = npc.maxhp
-        elif hasattr(npc, "max_hp"):
-            npc_data["max_health"] = npc.max_hp
 
         # Hostility — the real model has no `is_hostile` flag; derive it from
         # `aggro` (will attack on sight) and `friend` (never hostile to Jean).

@@ -21,6 +21,8 @@ No provider calls: every test drives the deterministic QC/prompt/loquacity paths
 """
 
 import re
+from pathlib import Path
+
 import pytest
 
 from src.npc._chat_llm import (
@@ -1290,9 +1292,41 @@ LORE_CORPUS = [
 #: could not reliably call it either. It currently classifies as commerce. The
 #: limitation is written down here so the next reviewer finds a decision rather
 #: than a bug.
+#:
+#: "What do you want for supper?" is the price frame with a non-goods object,
+#: and the offer tier is self-sufficient by design -- it is consulted before
+#: every veto, precisely so that "How much for X?" cannot be gated on a noun
+#: list again. Widening the frame's auxiliaries (round 14) therefore made this
+#: sentence commerce as well. Accepted: a merchant asked what he wants for
+#: supper is a rarer line than a player asking what he wants for the sword, and
+#: the alternative -- gating the frame on its object -- is the mistake this
+#: classifier has already made four times.
 KNOWN_AMBIGUOUS = [
     "Do you have a favourite blade?",
+    "What do you want for supper?",
 ]
+
+
+class TestTheDocumentedAmbiguitiesStayDocumented:
+    """A list of known-ambiguous sentences that nothing asserts is prose.
+
+    These rows exist so the next reviewer finds a decision instead of a bug, so
+    the verdict they record has to be the verdict the code gives. If one flips,
+    somebody has changed the classifier's mind about it -- deliberately, in
+    which case move the row into the corpus it now belongs to, or accidentally,
+    in which case this is the only thing that would have said so.
+    """
+
+    def test_the_list_is_not_empty(self):
+        assert len(KNOWN_AMBIGUOUS) >= 2
+
+    @pytest.mark.parametrize("text", KNOWN_AMBIGUOUS)
+    def test_each_row_still_classifies_as_the_note_says(self, text):
+        for cls in _conversational_merchants():
+            assert cls()._is_merchant_commerce_question(text) is True, (
+                cls.__name__,
+                text,
+            )
 
 
 class TestTheAccumulatedCorpus:
@@ -1821,4 +1855,840 @@ class TestTheLoquacityIndexPointsAtRealThings:
             "the loquacity index names things that no longer exist: %s. "
             "Rename them there or delete the entries -- an index a reader "
             "trusts and cannot follow is worse than no index." % missing
+        )
+
+
+
+# ---------------------------------------------------------------------------
+# Round 14. Five defects from an adversarial re-grade, and the guards each
+# needed. Every class below was checked non-vacuous by reverting its fix.
+# ---------------------------------------------------------------------------
+
+
+def _conversational_hosts():
+    """Every class in ``src.npc`` that mixes in ``ConversationalNPCMixin``.
+
+    The host-side twin of :func:`_conversational_merchants`, and derived the
+    same way and for the same reason: by walking every module in the package
+    for subclasses, not by naming eleven classes. ``src/npc/__init__.py``
+    re-exports by hand, so the package namespace is not the roster -- a host
+    added to ``_friends.py`` and forgotten there would be invisible to a walk
+    that trusted it.
+    """
+    import importlib
+    import inspect
+    import pkgutil
+
+    import src.npc as npc_pkg
+    from src.npc._chat_llm import ConversationalNPCMixin
+
+    found = {}
+    for info in pkgutil.iter_modules(npc_pkg.__path__):
+        module = importlib.import_module("src.npc." + info.name)
+        for obj in vars(module).values():
+            if (
+                inspect.isclass(obj)
+                and issubclass(obj, ConversationalNPCMixin)
+                and obj is not ConversationalNPCMixin
+            ):
+                found[obj.__name__] = obj
+    return [found[name] for name in sorted(found)]
+
+
+def _host_attributes_read_by_the_mixin():
+    """Every attribute ``_chat_llm.py`` reads off ``self``, with its line.
+
+    The other half of :func:`_player_attributes_read_by_the_mixin`, which has
+    existed for two rounds and covers only the ``player`` side. Nothing checked
+    the HOST side, which is how the module docstring came to declare
+    ``self.wisdom`` a required host attribute that nine of the eleven real
+    hosts do not have.
+
+    Two spellings are collected, because the module uses both:
+
+    * ``getattr(self, "x", default)`` -- the deliberate optional read;
+    * a bare ``self.x`` load that the mixin neither assigns anywhere nor
+      defines on the class, which can only be a host attribute.
+
+    A bare load the mixin DOES assign (``self.loquacity_max``) is the mixin's
+    own state and says nothing about hosts, so it is excluded; so is anything
+    resolvable on ``ConversationalNPCMixin`` itself, which is every method.
+    """
+    import ast
+
+    from src.npc._chat_llm import ConversationalNPCMixin
+
+    source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    constants = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            if isinstance(node.value.value, str):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        constants[target.id] = node.value.value
+
+    assigned = set()
+    bare_loads = {}
+    found = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if node.value.id == "self":
+                if isinstance(node.ctx, (ast.Store, ast.Del)):
+                    assigned.add(node.attr)
+                else:
+                    bare_loads.setdefault(node.attr, node.lineno)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id != "getattr" or len(node.args) < 2:
+                continue
+            target, key = node.args[0], node.args[1]
+            if not (isinstance(target, ast.Name) and target.id == "self"):
+                continue
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                found.setdefault(key.value, node.lineno)
+            elif isinstance(key, ast.Name) and key.id in constants:
+                found.setdefault(constants[key.id], node.lineno)
+
+    on_the_mixin = set(dir(ConversationalNPCMixin))
+    for name, line in bare_loads.items():
+        if name not in assigned and name not in on_the_mixin:
+            found.setdefault(name, line)
+    return found
+
+
+#: Attributes only SOME hosts carry. Each needs a reason, because "only some
+#: hosts have it" and "somebody mistyped it" look identical from here -- which
+#: is exactly how ``player.allies`` and ``player.equipped`` survived on the
+#: other side of this mixin.
+#:
+#: An entry here is not an excuse: the guard still requires the attribute to
+#: exist on at least one REAL host, so a typo has nowhere to hide.
+_HOST_SPECIFIC = {
+    "wisdom": (
+        "Only NomadBoy and NomadGirl set it, both to 8; the other nine hosts "
+        "take the _LOQUACITY_STAT_BASELINE default. The recovery term that "
+        "reads it cannot move off its floor below wisdom 24, and cannot move "
+        "the SCALED result below wisdom 80, so it is dead at every value the "
+        "game contains -- see TestTheWisdomTermIsInert and the note beside "
+        "_LOQUACITY_RECOVERY_WISDOM_DIVISOR."
+    ),
+    "level": (
+        "Allies only. Merchant hosts have no progression track, so the ally "
+        "gating in _build_combat_block reads a default for them and skips."
+    ),
+    "growth_profile": (
+        "Allies only, for the same reason as level -- it is the ally "
+        "progression table, and a shopkeeper does not have one."
+    ),
+    "always_stock": (
+        "Merchants only. This is one of the duck-typed merchant-context "
+        "probes (_MERCHANT_TRUTHY_ATTRS); its absence on a friend is the "
+        "signal, not an omission."
+    ),
+    "specialties": (
+        "Merchants only, read alongside always_stock when deriving this "
+        "host's merchandise vocabulary; a friend has no counter to derive."
+    ),
+}
+
+
+class TestTheMixinOnlyReadsAttributesItsHostsHave:
+    """The host-side twin of ``TestTheMixinOnlyReadsAttributesAPlayerHas``.
+
+    That guard derives every attribute the mixin reads off ``player`` and
+    checks each against a real ``Player``. There was no equivalent for the
+    HOST, and the consequence was sitting in the module docstring the whole
+    time: ``self.wisdom  int (used for loquacity recovery calculation)``,
+    declared as a required host attribute, absent from nine of the eleven
+    classes that mix this in, and driving a term that cannot change its own
+    output at any value in the game.
+
+    A hand-written list of host attributes would have been written by whoever
+    wrote the docstring, and would have carried the same claim.
+    """
+
+    def test_the_scan_finds_the_reads(self):
+        """Non-vacuity: an empty scan approves of every attribute name."""
+        found = _host_attributes_read_by_the_mixin()
+        assert len(found) >= 12, found
+
+    def test_the_roster_is_the_whole_game(self):
+        """Non-vacuity: an empty roster makes every check below hold."""
+        hosts = _conversational_hosts()
+        assert len(hosts) >= 11, [c.__name__ for c in hosts]
+
+    def test_every_read_exists_on_every_host_or_is_declared(self):
+        hosts = [cls() for cls in _conversational_hosts()]
+        missing = {}
+        for name, line in sorted(_host_attributes_read_by_the_mixin().items()):
+            if name in _HOST_SPECIFIC:
+                continue
+            absent = [
+                type(h).__name__ for h in hosts if not hasattr(h, name)
+            ]
+            if absent:
+                missing[name] = (line, absent)
+        assert missing == {}, (
+            "src/npc/_chat_llm.py reads these off `self`, and these real host "
+            "classes do not have them: %s\n\n"
+            "This is how the module docstring came to declare `self.wisdom` a "
+            "host attribute nine of eleven hosts lack. If only some hosts "
+            "legitimately carry it, add it to _HOST_SPECIFIC with the reason "
+            "-- and check whether the default it falls back to makes the "
+            "branch dead, which is what happened to wisdom." % missing
+        )
+
+    def test_every_declared_exception_is_actually_read(self):
+        """The other direction. An exemption for an attribute nobody reads is a
+        licence waiting to excuse a typo."""
+        stale = sorted(set(_HOST_SPECIFIC) - set(_host_attributes_read_by_the_mixin()))
+        assert stale == [], stale
+
+    def test_every_declared_exception_exists_on_a_real_host(self):
+        """The teeth. Without this, `_HOST_SPECIFIC` is a fail-open table: a
+        misspelled attribute could be waved through by writing a paragraph
+        about it, which is precisely the shape of the two `player` bugs."""
+        hosts = [cls() for cls in _conversational_hosts()]
+        nowhere = sorted(
+            name
+            for name in _HOST_SPECIFIC
+            if not any(hasattr(h, name) for h in hosts)
+        )
+        assert nowhere == [], (
+            "declared host-specific, but no host in the game has it: %s" % nowhere
+        )
+
+    def test_every_declared_exception_carries_a_reason(self):
+        thin = sorted(
+            name
+            for name, reason in _HOST_SPECIFIC.items()
+            if len(reason.split()) < 8
+        )
+        assert thin == [], thin
+
+    def test_a_misspelled_host_attribute_would_be_caught(self):
+        """The control. The scan and the roster are only worth having if a
+        wrong name actually fails, so introduce one and check that it does."""
+        hosts = [cls() for cls in _conversational_hosts()]
+        for invented in ("wisdomm", "charimsa", "alway_stock"):
+            assert not any(hasattr(h, invented) for h in hosts), invented
+            assert invented not in _HOST_SPECIFIC, invented
+
+
+class TestTheWisdomTermIsInert:
+    """``loquacity_recovery`` is the same number for every NPC in the game.
+
+    Pinned rather than rebalanced, the way
+    ``test_the_favourable_equipment_vocabulary_is_honest`` pins the crucifix
+    modifier: making the wisdom term live means changing the divisor or the
+    floor, and that changes how fast every conversational NPC regains patience
+    -- a designer's call, not a scrub's.
+
+    What this class buys is that the dead branch cannot go on being described
+    as a live one. The constant's note said "Recovery per beat is
+    wisdom-driven" while being wrong at every wisdom value the game contains.
+    """
+
+    def _recoveries(self):
+        hosts = _conversational_hosts()
+        assert len(hosts) >= 11, [c.__name__ for c in hosts]
+        out = {}
+        for cls in hosts:
+            npc = cls()
+            npc.loquacity_max = 0
+            npc._compute_loquacity(chat_player())
+            out[cls.__name__] = npc.loquacity_recovery
+        return out
+
+    def test_every_npc_in_the_game_recovers_at_the_same_rate(self):
+        from src.npc._chat_llm import _DEFAULT_LOQUACITY_RECOVERY
+
+        recoveries = self._recoveries()
+        assert set(recoveries.values()) == {_DEFAULT_LOQUACITY_RECOVERY}, (
+            "loquacity_recovery is no longer constant across the roster: %s. "
+            "If the wisdom term has been made live -- or a wise NPC has been "
+            "authored -- the note beside _LOQUACITY_RECOVERY_WISDOM_DIVISOR "
+            "says the opposite and must be rewritten." % recoveries
+        )
+
+    def test_the_authored_wisdom_values_cannot_reach_the_term(self):
+        """Derived, not asserted from memory.
+
+        The threshold at which wisdom could change the stored number is solved
+        from the module's own arithmetic; the wisdom values are read out of the
+        real host classes. Neither half is a number typed into this test.
+        """
+        from src.npc._chat_llm import (
+            _LOQUACITY_RECOVERY_FLOOR,
+            _LOQUACITY_RECOVERY_WISDOM_DIVISOR,
+            _LOQUACITY_STAT_BASELINE,
+            scale_loquacity,
+        )
+
+        floor_result = scale_loquacity(_LOQUACITY_RECOVERY_FLOOR)
+        wisdom_that_would_matter = next(
+            (
+                w
+                for w in range(1, 10000)
+                if scale_loquacity(
+                    max(
+                        _LOQUACITY_RECOVERY_FLOOR,
+                        w // _LOQUACITY_RECOVERY_WISDOM_DIVISOR,
+                    )
+                )
+                != floor_result
+            ),
+            None,
+        )
+        assert wisdom_that_would_matter is not None, "the term can never fire"
+
+        authored = {
+            cls.__name__: getattr(cls(), "wisdom", _LOQUACITY_STAT_BASELINE)
+            for cls in _conversational_hosts()
+        }
+        live = {
+            name: w for name, w in authored.items() if w >= wisdom_that_would_matter
+        }
+        assert live == {}, (
+            "these hosts are wise enough to move loquacity_recovery (the "
+            "threshold is wisdom %d): %s. The wisdom term is no longer dead; "
+            "update the note beside _LOQUACITY_RECOVERY_WISDOM_DIVISOR and "
+            "the mixin's module docstring."
+            % (wisdom_that_would_matter, live)
+        )
+
+    def test_the_module_no_longer_claims_the_term_is_live(self):
+        """The false comment is the defect. A pin on behaviour that leaves the
+        prose saying the opposite fixes nothing a reader can see."""
+        source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+        assert "#: Recovery per beat is wisdom-driven, with a floor" not in source
+        assert "self.wisdom              int (used for loquacity" not in source
+
+
+class TestSavedPersonalityValidationCannotFailOpen:
+    """``_validate_restored_personality`` used a fail-open required-field table.
+
+    ``getattr(module, "_PERSONALITY_FIELDS", frozenset())`` -- and
+    ``frozenset().issubset(anything)`` is ``True``, so an authority that had
+    been renamed away would not raise, not log, and not reject. It would
+    silently switch the whole required-field check off and hand every
+    malformed save straight to ``_validate_personality``, a different and much
+    narrower gate.
+    """
+
+    @staticmethod
+    def _seed():
+        return {
+            "given_name": "Ren",
+            "voice": "sparse and direct",
+            "knowledge": ["river crossings"],
+            "attitude_to_strangers": "wary",
+            "speech_sample": "The ford is shallow.",
+            "loquacity_base": 60,
+        }
+
+    @staticmethod
+    def _double(with_fields):
+        """A stand-in for ``ai.llm_client`` with a working validator."""
+
+        class _Adapter:
+            @staticmethod
+            def _validate_personality(parsed):
+                return dict(parsed)
+
+        namespace = type("_LLMDouble", (), {"NpcChatLLMAdapter": _Adapter})
+        if with_fields:
+            namespace._PERSONALITY_FIELDS = frozenset({"given_name", "voice"})
+        return namespace
+
+    def test_a_present_authority_still_validates(self, monkeypatch):
+        """Non-vacuity: if the double never validated anything, the test below
+        would pass against a hole rather than against the fix."""
+        from src.npc import _chat_llm
+
+        monkeypatch.setattr(
+            _chat_llm, "_load_llm_client_module", lambda _p: self._double(True)
+        )
+        assert _chat_llm._validate_restored_personality(self._seed()) is not None
+
+    def test_a_present_authority_still_rejects_a_missing_field(self, monkeypatch):
+        from src.npc import _chat_llm
+
+        monkeypatch.setattr(
+            _chat_llm, "_load_llm_client_module", lambda _p: self._double(True)
+        )
+        seed = self._seed()
+        del seed["voice"]
+        assert _chat_llm._validate_restored_personality(seed) is None
+
+    def test_an_absent_authority_refuses_rather_than_approving(self, monkeypatch):
+        """The defect. With no ``_PERSONALITY_FIELDS`` the old code approved a
+        personality with NO fields at all."""
+        from src.npc import _chat_llm
+
+        monkeypatch.setattr(
+            _chat_llm, "_load_llm_client_module", lambda _p: self._double(False)
+        )
+        assert _chat_llm._validate_restored_personality({}) is None
+        assert _chat_llm._validate_restored_personality(self._seed()) is None
+
+    def test_the_real_authority_is_where_the_module_looks_for_it(self):
+        """The other direction: the guard above is only tolerable because the
+        attribute really does exist under that name. If it is ever renamed,
+        every restored personality falls back to an authored one -- silently
+        before this fix, loudly after it, but still worth catching here."""
+        from src.npc._chat_llm import _AI_DIR, _load_llm_client_module
+
+        module = _load_llm_client_module(_AI_DIR / "llm_client.py")
+        assert module is not None, "ai/llm_client.py is not importable"
+        fields = getattr(module, "_PERSONALITY_FIELDS", None)
+        assert fields, "ai.llm_client._PERSONALITY_FIELDS is gone or empty"
+
+
+def _split_top_level(pattern):
+    """Split a regex source on the ``|`` that are not inside a group."""
+    parts, depth, current = [], 0, []
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\":
+            current.append(pattern[index : index + 2])
+            index += 2
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "|" and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    parts.append("".join(current))
+    return parts
+
+
+def _non_goods_inflection_pairs():
+    """Every (singular, plural) phrase ``_MERCHANT_NON_GOODS_OBJECT`` should veto.
+
+    Expanded out of the compiled pattern itself, IN ITS OWN CONTEXT, so the
+    population is whatever the pattern lists rather than whatever a list beside
+    this test says -- and so a noun that only vetoes inside a frame
+    ("my advice", "at the siege") is probed inside that frame instead of being
+    ripped out of it and asserted about bare, which is a different claim the
+    pattern never made.
+
+    The object of a branch is its LAST word-alternation group; the branches
+    with none (``name for``, ``as a``) have nothing to inflect and are skipped.
+    Deliberately NOT keyed on the presence of ``_MERCHANT_PLURAL``: keying the
+    population on the fix would make this expansion shrink to nothing the
+    moment the fix was reverted, and a guard that goes vacuous exactly when
+    its subject regresses is the shape this file keeps finding elsewhere.
+    """
+    from src.npc._chat_llm import _MERCHANT_NON_GOODS_OBJECT, _MERCHANT_PLURAL
+
+    # `[a-z|]+` deliberately: it matches a group of plain word alternatives
+    # and nothing else, so the `(?:e?s)?` suffix group is not mistaken for one.
+    group = re.compile(r"\(\?:([a-z|]+)\)")
+
+    def _literal(text):
+        text = text.replace(_MERCHANT_PLURAL, "")
+        return (
+            text.replace(r"\b", "").replace(r"\s+", " ").replace(r"\s", " ").strip()
+        )
+
+    pairs = []
+    for branch in _split_top_level(_MERCHANT_NON_GOODS_OBJECT.pattern):
+        groups = list(group.finditer(branch))
+        if not groups:
+            continue
+        target = groups[-1]
+        for noun in target.group(1).split("|"):
+            plural = noun + ("es" if noun.endswith(("s", "x", "ch", "sh")) else "s")
+            for form in (noun, plural):
+                rendered, cursor = [], 0
+                for g in groups:
+                    rendered.append(_literal(branch[cursor : g.start()]))
+                    rendered.append(
+                        form if g is target else g.group(1).split("|")[0]
+                    )
+                    cursor = g.end()
+                rendered.append(_literal(branch[cursor:]))
+                pairs.append(" ".join(x for x in rendered if x))
+    return pairs
+
+class TestTheNonGoodsVetoIsClosedUnderInflection:
+    """A closed set is only closed if it is closed under inflection.
+
+    ``_MERCHANT_NON_GOODS_OBJECT`` is the module's one deliberately enumerated
+    list -- the argument beside it is that "what you can idiomatically take or
+    have that is not goods" is a CLOSED set, unlike "what a merchant sells".
+    Every entry was spelled in the singular only, so "I'll take my chances." --
+    the plural is the only form anybody says that idiom in -- classified as a
+    purchase, two lines from "I'll take the risk." sitting in LORE_CORPUS
+    passing green.
+
+    The phrases are expanded out of the pattern, so this cannot become the same
+    list written twice.
+    """
+
+    def test_the_expansion_finds_the_phrases(self):
+        """Non-vacuity: an empty expansion asserts nothing below."""
+        pairs = _non_goods_inflection_pairs()
+        assert len(pairs) >= 40, pairs
+
+    def test_the_veto_covers_both_numbers(self):
+        from src.npc._chat_llm import _MERCHANT_NON_GOODS_OBJECT
+
+        missed = [
+            phrase
+            for phrase in _non_goods_inflection_pairs()
+            if not _MERCHANT_NON_GOODS_OBJECT.search(phrase)
+        ]
+        assert missed == [], (
+            "the non-goods veto knows the singular and not the plural (or the "
+            "reverse) for: %s. The list is only closed if it is closed under "
+            "inflection -- see _MERCHANT_PLURAL." % missed
+        )
+
+    def test_the_expansion_would_notice_a_singular_only_entry(self):
+        """The control. Strip the plural suffix and the expansion must go red,
+        or this guard is checking a pattern against its own spelling."""
+        from src.npc._chat_llm import (
+            _MERCHANT_NON_GOODS_OBJECT,
+            _MERCHANT_PLURAL,
+        )
+
+        branches = _split_top_level(_MERCHANT_NON_GOODS_OBJECT.pattern)
+        stripped = [b.replace(_MERCHANT_PLURAL, "") for b in branches]
+        assert stripped != branches, "no branch carries the plural suffix"
+        singular_only = re.compile("|".join(stripped), re.IGNORECASE)
+        missed = [
+            phrase
+            for phrase in _non_goods_inflection_pairs()
+            if not singular_only.search(phrase)
+        ]
+        assert missed, (
+            "stripping _MERCHANT_PLURAL changed nothing, so the guard above "
+            "is checking the pattern against its own spelling"
+        )
+
+    @pytest.mark.parametrize(
+        "text,commerce",
+        [
+            # The bug report and the corpus row it contradicted, driven through
+            # the classifier rather than the pattern.
+            ("I'll take my chances.", False),
+            ("I'll take the risk.", False),
+            ("I'll take the back roads.", False),
+            ("Can I have a few moments?", False),
+            # The other direction: the veto must not have swallowed a purchase.
+            ("I'll take the shortsword.", True),
+            ("Can I have that helm?", True),
+        ],
+    )
+    def test_the_object_gated_frames_still_split_the_two(self, text, commerce):
+        assert _merchant()._is_merchant_commerce_question(text) is commerce
+
+
+def _offer_auxiliaries():
+    """The auxiliaries ``_MERCHANT_OFFER_AUX`` admits, read out of it."""
+    from src.npc._chat_llm import _MERCHANT_OFFER_AUX
+
+    match = re.search(r"\(\?:([a-z|]+)\)", _MERCHANT_OFFER_AUX)
+    assert match, _MERCHANT_OFFER_AUX
+    return sorted(match.group(1).split("|"))
+
+
+class TestTheOfferFrameTakesEveryAuxiliary:
+    """``_MERCHANT_DIRECT_TRADE_PATTERN`` carried two frames of one speech act.
+
+    "What <aux> you give me for this?" (Jean selling) took four auxiliaries.
+    "What <aux> you want/take/charge for that?" (Jean buying) took ``would``
+    alone -- so "What do you want for the sword?" and "What will you take for
+    the shield?", which are what a player types at a counter, were not
+    commerce while their ``give me`` twins were.
+
+    The two frames now interpolate one fragment. The probes below are built
+    from that fragment rather than typed out, so adding an auxiliary in one
+    place tests it in both, and removing one cannot leave a passing test
+    behind.
+    """
+
+    def test_the_fragment_is_spelled_once_and_reaches_both_frames(self):
+        from src.npc import _chat_llm
+
+        source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+        assert source.count("_MERCHANT_OFFER_AUX = ") == 1
+        assert source.count("+ _MERCHANT_OFFER_AUX +") == 2
+        assert (
+            _chat_llm._MERCHANT_OFFER_AUX
+            in _chat_llm._MERCHANT_DIRECT_TRADE_PATTERN.pattern
+        )
+
+    def test_the_scan_finds_the_auxiliaries(self):
+        """Non-vacuity."""
+        assert len(_offer_auxiliaries()) >= 4, _offer_auxiliaries()
+
+    def test_every_auxiliary_works_in_both_halves_of_the_speech_act(self):
+        merchants = [cls() for cls in _conversational_merchants()]
+        assert merchants, "no conversational merchants on the roster"
+        missed = []
+        for aux in _offer_auxiliaries():
+            probes = [
+                "What %s you take for the sword?" % aux,
+                "What %s you want for the sword?" % aux,
+                "What %s you charge for the sword?" % aux,
+                "What %s you give me for this?" % aux,
+            ]
+            for probe in probes:
+                for merchant in merchants:
+                    if not merchant._is_merchant_commerce_question(probe):
+                        missed.append((type(merchant).__name__, probe))
+        assert missed == [], (
+            "one half of the offer speech act accepts an auxiliary the other "
+            "rejects: %s" % missed
+        )
+
+    @pytest.mark.parametrize("apostrophe", ["'", "\u2019"])
+    def test_the_fused_contraction_is_accepted_in_both_spellings(self, apostrophe):
+        """Models and players both emit U+2019; every corpus row above uses
+        U+0027, which is what hid the same class of miss twice already."""
+        merchant = _merchant()
+        for verb in ("take", "want", "charge"):
+            probe = "What%sll you %s for the sword?" % (apostrophe, verb)
+            assert merchant._is_merchant_commerce_question(probe) is True, probe
+        assert merchant._is_merchant_commerce_question(
+            "What%sll you give me for this?" % apostrophe
+        )
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Would you take twenty for the dagger?",
+            "Will you take twenty for the dagger?",
+            "Would you take twenty for it?",
+        ],
+    )
+    def test_the_money_noun_may_be_elided(self, text):
+        """The corpus already held "Would you take fifty coin for it?"; drop
+        the money noun -- which is how it is actually said -- and it was not
+        commerce."""
+        assert _merchant()._is_merchant_commerce_question(text) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Would you take him for a fool?",
+            "Would you take that for granted?",
+            "Would you take this for me?",
+            "Would you take the west road for the crossing?",
+            "Will you take my word for it?",
+        ],
+    )
+    def test_the_elided_offer_does_not_swallow_the_idioms(self, text):
+        """The other direction, which is where four previous rounds of this
+        classifier went wrong. This tier is consulted before every veto, so a
+        loose frame here has no net under it."""
+        assert _merchant()._is_merchant_commerce_question(text) is False
+
+
+class TestEveryLiteralPatternIsCompiledAtImport:
+    """The module states the convention and had one exception.
+
+    ``_is_lore_frame`` ran ``re.search`` with a literal pattern -- recompiled
+    for every sentence of every option of every merchant turn -- while the
+    comment above the span-repair patterns says the module's convention is
+    "compiled once at import rather than on every call".
+
+    Derived from the source, not from a list of known offenders: any future
+    call-time compile of a constant string fails this, and the two legitimate
+    runtime compiles (which build an alternation out of per-host data) are
+    identified by the shape of their argument rather than by name.
+    """
+
+    #: ``re`` module functions whose FIRST argument is the pattern. All of
+    #: them, from the module's own ``re`` -- not the three this file happened
+    #: to know about, which is how a scan quietly stops covering the call
+    #: somebody actually writes next.
+    _PATTERN_FIRST = (
+        "search",
+        "match",
+        "fullmatch",
+        "split",
+        "findall",
+        "finditer",
+        "sub",
+        "subn",
+        "compile",
+    )
+
+    @classmethod
+    def _is_literal(cls, node):
+        """True for a constant string, or any ``+`` chain of them.
+
+        Implicit concatenation is already folded by the parser; explicit ``+``
+        is not, and every long pattern in this module is written that way.
+        """
+        import ast
+
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return cls._is_literal(node.left) and cls._is_literal(node.right)
+        return False
+
+    def _offenders(self):
+        """Every ``re.<fn>("literal", ...)`` that is not evaluated at import.
+
+        A module-level assignment IS the convention, so a call inside one is
+        fine; anything else runs per call. The two legitimate runtime compiles
+        (``_prohibited_patterns`` and ``_host_merchandise_pattern``) build their
+        alternation out of per-host data, so their first argument is not a
+        literal and they are excluded by shape rather than by name -- a
+        blocklist of known-good sites is the thing that goes stale.
+        """
+        import ast
+
+        source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        def _at_module_scope(line):
+            return any(
+                stmt.lineno <= line <= (stmt.end_lineno or stmt.lineno)
+                for stmt in tree.body
+                if isinstance(stmt, (ast.Assign, ast.AnnAssign))
+            )
+
+        offenders = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute):
+                continue
+            if not (isinstance(func.value, ast.Name) and func.value.id == "re"):
+                continue
+            if func.attr not in self._PATTERN_FIRST or not node.args:
+                continue
+            if not self._is_literal(node.args[0]):
+                continue
+            if _at_module_scope(node.lineno):
+                continue
+            offenders.append((func.attr, node.lineno))
+        return sorted(offenders, key=lambda item: item[1])
+
+    def test_the_scan_can_see_the_module(self):
+        """Non-vacuity: the scan must find the module's `re` calls at all."""
+        import ast
+
+        source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+        calls = [
+            n
+            for n in ast.walk(ast.parse(source))
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Name)
+            and n.func.value.id == "re"
+        ]
+        assert len(calls) >= 30, len(calls)
+
+    def test_no_literal_pattern_is_compiled_at_call_time(self):
+        offenders = self._offenders()
+        assert offenders == [], (
+            "src/npc/_chat_llm.py compiles a constant pattern per call at "
+            "%s. The module's own convention (see the note above "
+            "_WS_RUN_PATTERN) is module-level compilation; hoist it to a "
+            "named constant beside its siblings." % offenders
+        )
+
+    def test_the_lore_frame_pattern_is_a_module_constant(self):
+        from src.npc import _chat_llm
+
+        assert isinstance(
+            _chat_llm._MERCHANT_LORE_FRAME_PATTERN, re.Pattern
+        )
+        merchant = _merchant()
+        assert merchant._is_lore_frame("Do you remember the siege?") is True
+        assert merchant._is_lore_frame("How much for the sword?") is False
+
+
+class TestOnePersistedFieldHasOneRescaler:
+    """``loquacity_scale`` is written here and was read only in the API.
+
+    ``_save_exchange_to_persistence`` stamps every row it writes with
+    ``loquacity_scale``. ``GameService._recover_npc_loquacity`` reads that
+    marker. ``_rescale_persisted_loquacity`` -- in the module that writes it --
+    did not: it keyed on ``stored_max > loquacity_max``, and that comparison is
+    true for a second reason entirely.
+
+    The computed maximum MOVES with reputation. Vespera computes 18 at
+    reputation +1 and 12 at -1, so a save written on good terms and loaded on
+    bad ones looked exactly like an old-scale row: 9 of 18 came back as 6 of 12
+    rather than the flat 9. The player's remaining patience was
+    re-proportioned for a reputation swing that has nothing to do with the 15%
+    migration the branch was written for.
+    """
+
+    def _host(self, maximum):
+        npc = chat_npc()
+        npc.loquacity_max = maximum
+        return npc
+
+    def test_a_marked_row_is_clamped_not_rescaled(self):
+        """The regression. A row this version wrote is already at this scale,
+        whatever has happened to the computed maximum since."""
+        npc = self._host(12)
+        restored = npc._rescale_persisted_loquacity(9, 18, LOQUACITY_SCALE_PERCENT)
+        assert restored == 9, (
+            "a current-scale row was re-proportioned because the pool shrank "
+            "-- which is what a reputation swing does, not a scale migration"
+        )
+
+    def test_an_unmarked_old_scale_row_is_still_migrated(self):
+        """The control, and the reason the branch exists at all. Without it a
+        pre-scale save hands the player a full old-scale conversation."""
+        npc = self._host(12)
+        restored = npc._rescale_persisted_loquacity(72, 80, None)
+        assert 0 < restored < 72
+        assert restored <= 12
+
+    def test_an_unmarked_row_keeps_its_fraction(self):
+        """Half of the old pool is half of the new one -- an NPC halfway to
+        exhaustion stays halfway."""
+        npc = self._host(12)
+        assert npc._rescale_persisted_loquacity(40, 80, None) == 6
+
+    def test_a_marked_row_is_still_clamped_into_the_pool(self):
+        """Not rescaling is not the same as not bounding: a marked row larger
+        than the current pool must still come back inside it."""
+        npc = self._host(12)
+        assert npc._rescale_persisted_loquacity(30, 18, LOQUACITY_SCALE_PERCENT) == 12
+
+    def test_a_persisted_zero_survives(self):
+        """Patience exhausted is a real value, not an absent one."""
+        npc = self._host(12)
+        assert npc._rescale_persisted_loquacity(0, 18, LOQUACITY_SCALE_PERCENT) == 0
+
+    def test_the_marker_this_module_writes_is_the_one_it_reads(self):
+        """The two halves of the same field, checked against each other.
+
+        `_save_exchange_to_persistence` stamps the row; this asserts the value
+        it stamps is exactly what `_rescale_persisted_loquacity` recognises, so
+        the writer and the reader cannot drift into two markers again.
+        """
+        npc = _merchant()
+        npc._compute_loquacity(chat_player(charisma=10))
+        npc._chat_npc_key = "Vespera"
+        player = chat_player(npc_chat_histories={})
+        npc._save_exchange_to_persistence(player, "Line.", "", 1, "1")
+        entry = player.npc_chat_histories["Vespera"]
+
+        assert entry["loquacity_scale"] == LOQUACITY_SCALE_PERCENT
+        # And a row carrying that stamp is not migrated.
+        npc.loquacity_max = 12
+        assert (
+            npc._rescale_persisted_loquacity(9, 18, entry["loquacity_scale"]) == 9
         )

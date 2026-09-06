@@ -1900,7 +1900,22 @@ class TestAllocateLevelUpPointsExtra:
         assert mock_player.pending_attribute_points == 0
         assert mock_player.pending_level_ups == []
 
-    def test_refresh_stat_bonuses_exception_swallowed(self, game_service, mock_player):
+    def test_refresh_stat_bonuses_failure_is_reported_not_swallowed(
+        self, game_service, mock_player
+    ):
+        """This used to assert ``success is True``, and that was the defect.
+
+        ``refresh_stat_bonuses`` recomputes every live stat from its ``*_base``
+        value -- it is the step that makes the points the player just spent
+        actually count. Swallowing its failure returned ``success: True``
+        alongside a ``stats`` block computed from a player whose bonuses had
+        not been recomputed: the allocation accepted, the numbers unchanged,
+        nothing said.
+
+        Same mechanism as the combat-exit bug -- skip the refresh and the stat
+        stays wrong with nothing to put it right -- so it now answers failure
+        and logs the exception for the operator.
+        """
         mock_player.pending_attribute_points = 3
         mock_player.strength_base = 10
 
@@ -1909,7 +1924,10 @@ class TestAllocateLevelUpPointsExtra:
         ), patch.object(game_service, "get_player_stats", return_value={}):
             result = game_service.allocate_level_up_points(mock_player, "strength_base", 1)
 
-        assert result["success"] is True
+        assert result["success"] is False
+        # And no stats block, because the one it could have built is the stale
+        # one the player must not be shown as though it were the new total.
+        assert "stats" not in result
 
 
 # ============================================================================

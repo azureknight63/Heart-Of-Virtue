@@ -9,6 +9,7 @@ from unittest.mock import patch
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
 from src.functions import check_for_combat, end_combat_cleanup
+from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 
 #: Manual saves one player may keep. Autosaves are not counted against it.
 #: Named because the number was written twice -- once in the check and once in
@@ -36,6 +37,28 @@ from src.moves._base import display_name_of
 from src.api.utils.inventory import get_inventory_list
 
 _log = logging.getLogger(__name__)
+
+
+def _warn(message):
+    """Report a handled failure through the app logger, without ever raising.
+
+    These call sites all sit inside an ``except`` block, and they used to call
+    ``print``. ``print`` is not exception-free -- ``UnicodeEncodeError`` on a
+    cp1252 Windows console, ``ValueError`` on a stdout a WSGI server has closed
+    -- so a diagnostic could escape the very handler written to swallow the
+    fault it was describing.
+
+    The logger, not stdout, for the second half of the same reason: every
+    handler this app installs carries ``_RedactSecretsFilter`` (see
+    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    that reason and these were left behind.
+    """
+    try:
+        _log.warning("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
 
 # Internal LLM diagnostic strings that must never reach the UI.
 # Originate from ai/llm_client.py logger calls captured via redirect_stdout,
@@ -153,26 +176,24 @@ class GameService:
         or a wrong type, and entries that are not real ``State`` objects — a
         corrupt save must not 500 the request (issue #295). Fields are coerced to
         JSON-safe primitives.
+
+        DELEGATED, because this used to be a second State->wire translation and
+        the two had diverged: this one filtered ``hidden`` and
+        ``StateEffectSerializer`` did not, so ``Dodging`` and ``Parrying`` --
+        the engine's only two hidden states -- were suppressed on the
+        player-status wire and published on the combat wire. They also
+        disagreed on the field name (``status_type`` here, ``type`` there) and
+        on whether ``beats_left`` was coerced.
+
+        The serializer now owns the filter, the coercion and both field names,
+        so this is a call rather than a copy. Its output is a strict superset
+        of what this returned, with identical values on the three shared keys.
         """
-        states = getattr(combatant, "states", None)
-        if not isinstance(states, (list, tuple)):
-            return []
-        result = []
-        for s in states:
-            try:
-                if getattr(s, "hidden", False):
-                    continue
-                beats = getattr(s, "beats_left", 0)
-                if not isinstance(beats, (int, float)) or isinstance(beats, bool):
-                    beats = 0
-                result.append({
-                    "name": str(getattr(s, "name", "Unknown")),
-                    "status_type": str(getattr(s, "statustype", "generic")),
-                    "beats_left": beats,
-                })
-            except Exception:  # noqa: BLE001 - skip an unserializable state
-                continue
-        return result
+        from src.api.serializers.combat import StateEffectSerializer
+
+        return StateEffectSerializer.serialize_state_list(
+            getattr(combatant, "states", None)
+        )
 
     def _get_event_target_modules(
         self, event, include_animations: bool = True
@@ -3201,16 +3222,11 @@ class GameService:
             Dictionary with result. On success: {"success": True,
             "remaining_points": int, "stats": {...}}.
         """
-        allowed = {
-            "strength_base",
-            "finesse_base",
-            "speed_base",
-            "endurance_base",
-            "charisma_base",
-            "intelligence_base",
-            "faith_base",
-            "randomize",
-        }
+        # Derived from the engine, not retyped. This set and the list below
+        # were two more copies of `LEVEL_UP_ATTRIBUTES`, so an attribute added
+        # to the engine was silently refused here as "Invalid attribute" --
+        # the API deciding a rule the engine owns.
+        allowed = set(LEVEL_UP_ATTRIBUTE_NAMES) | {"randomize"}
 
         if attribute not in allowed:
             return {"success": False, "error": "Invalid attribute"}
@@ -3223,15 +3239,7 @@ class GameService:
 
             import random
 
-            attributes_list = [
-                "strength_base",
-                "finesse_base",
-                "speed_base",
-                "endurance_base",
-                "charisma_base",
-                "intelligence_base",
-                "faith_base",
-            ]
+            attributes_list = list(LEVEL_UP_ATTRIBUTE_NAMES)
             weights = [random.random() for _ in attributes_list]
             remaining_points = remaining
             for idx, attr in enumerate(attributes_list):
@@ -3275,12 +3283,29 @@ class GameService:
         ):
             player.pending_level_ups = []
 
+        # NOT swallowed. `refresh_stat_bonuses` recomputes every live stat from
+        # its `*_base` value, so it is the step that makes the points the
+        # player just spent actually count. `except Exception: pass` here meant
+        # a failure returned `success: True` alongside a `stats` block computed
+        # from a player whose bonuses had not been recomputed — the player sees
+        # the allocation accepted and the numbers unchanged, with nothing said.
+        #
+        # That is the same mechanism as the combat-exit bug: skipping the
+        # refresh leaves the stat wrong and nothing ever puts it right.
         try:
             from src import functions
 
             functions.refresh_stat_bonuses(player)
         except Exception:
-            pass
+            _log.exception(
+                "refresh_stat_bonuses failed after allocating %s; the points "
+                "are spent but the stats are stale",
+                attribute,
+            )
+            return {
+                "success": False,
+                "error": "Could not apply the allocation. Please try again.",
+            }
 
         return {
             "success": True,
@@ -3579,7 +3604,7 @@ class GameService:
 
             return player
         except Exception as e:
-            print(f"Error loading save {save_id}: {e}")
+            _warn(f"Error loading save {save_id}: {e}")
             return None
 
     async def list_saves(
@@ -3880,7 +3905,11 @@ class GameService:
         maximum/recovery pair must not receive an old-scale recovery increment.
         """
         try:
-            from src.npc._chat_llm import LOQUACITY_SCALE_PERCENT, scale_loquacity
+            from src.npc._chat_llm import (
+                _DEFAULT_LOQUACITY_RECOVERY,
+                LOQUACITY_SCALE_PERCENT,
+                scale_loquacity,
+            )
 
             if player.__dict__.get("_active_chat_npc_id"):
                 return
@@ -3894,7 +3923,19 @@ class GameService:
                 loq_cur = entry.get("loquacity_current", 0)
                 if not loq_max:
                     continue
-                recovery = entry.get("loquacity_recovery", 2) or 2
+                # `_DEFAULT_LOQUACITY_RECOVERY`, not a literal 2. The mixin's
+                # default is `scale_loquacity(2)`, which is 1 -- so an entry
+                # written without an explicit recovery regenerated at TWICE
+                # the live rate while the player was elsewhere. And since the
+                # wisdom term is inert (see `_LOQUACITY_RECOVERY_*`), 1 is the
+                # live rate for every NPC in the game, so it was exactly 2x for
+                # every such row.
+                #
+                # `or _DEFAULT...` is kept off deliberately: a persisted 0 is a
+                # real value, and the old `or 2` silently promoted it.
+                recovery = entry.get("loquacity_recovery")
+                if recovery is None:
+                    recovery = _DEFAULT_LOQUACITY_RECOVERY
                 # Entries written by this version carry an explicit scale marker.
                 # Only unmarked rows with an old-scale-sized maximum are migrated;
                 # otherwise a current 15% row would be scaled a second time.

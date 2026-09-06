@@ -94,6 +94,14 @@ const CITATIONS = [
         claim: 'npc_chat_end is what releases the server-side conversation',
     }),
     cite({
+        where: 'hooks/useNpcChat.js',
+        about: 'src/npc/_chat_llm.py',
+        anchor: 'def _base_payload',
+        claim:
+            'both endpoint bodies are built through one payload builder, which is'
+            + ' where conversation_ended is set',
+    }),
+    cite({
         where: 'styles/keyframes.test.js',
         about: 'tests/test_security_headers.py',
         anchor: '_STYLE_INJECTORS',

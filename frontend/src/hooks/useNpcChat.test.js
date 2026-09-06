@@ -973,6 +973,132 @@ describe('useNpcChat', () => {
     })
   })
 
+  // -------------------------------------------------------------------------
+  // `conversation_ended`, on every endpoint that can send it
+  //
+  // The flag is not a `/respond` field. The engine builds both response bodies
+  // through one `_base_payload` (src/npc/_chat_llm.py), and `chat_open`'s
+  // loquacity cutoff is a real `/open` sender of it: the NPC brushes Jean off,
+  // returns no options, and `npc_chat_open` pops `_active_chat_npc_id` on the
+  // spot. The hook honoured it on `/respond` only, so that cutoff parked the
+  // player on a dead line with an empty option list, no "Conversation ended."
+  // and no auto-close.
+  //
+  // Every fixture in this file carrying the flag was a `/respond` mock, which
+  // is why the suite agreed. The population is derived from the engine below
+  // rather than listed here, so a THIRD sender added in Python fails this
+  // suite as unhandled instead of quietly repeating the same half-coverage.
+  // -------------------------------------------------------------------------
+  describe('conversation_ended', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    /**
+     * Every endpoint whose response body can carry `conversation_ended`, read
+     * out of the engine.
+     *
+     * `_base_payload` is the one builder that emits the field; the wrappers
+     * that call it each name the endpoint they assemble in their first
+     * docstring line. So the population is: every `_*_payload` helper that
+     * delegates to `_base_payload`, keyed by the path it says it builds.
+     */
+    const enginePathsCarryingTheFlag = () => {
+      const source = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..',
+          'src', 'npc', '_chat_llm.py'),
+        'utf8'
+      )
+      // The field really is minted in the shared builder, not per wrapper --
+      // if that stops being true this derivation is measuring the wrong thing.
+      const base = source.match(/def _base_payload\([\s\S]*?\n\s+return \{([\s\S]*?)\n\s+\}/)
+      expect(base, 'could not find _base_payload in src/npc/_chat_llm.py').toBeTruthy()
+      expect(base[1]).toContain('"conversation_ended"')
+
+      const paths = []
+      for (const chunk of source.split('\n    def ').slice(1)) {
+        const name = chunk.slice(0, chunk.indexOf('('))
+        if (!/^_\w+_payload$/.test(name) || name === '_base_payload') continue
+        if (!chunk.includes('self._base_payload(')) continue
+        const endpoint = chunk.match(/Assemble the (\/\w+) response body/)
+        expect(
+          endpoint,
+          `${name} in src/npc/_chat_llm.py builds on _base_payload but its docstring `
+          + 'does not name the endpoint it assembles, so this suite cannot tell '
+          + 'which client call sends it'
+        ).toBeTruthy()
+        paths.push(endpoint[1])
+      }
+      return paths
+    }
+
+    /**
+     * How this hook is driven into each of those endpoints, with the server
+     * reporting the conversation over. Keys are matched against the engine's.
+     */
+    const drivers = {
+      '/open': async () => {
+        npcChat.open.mockResolvedValue({
+          data: makeNpcChatOpen({
+            npc_opening: 'Not now. Ask me again later.',
+            jean_options: [],
+            conversation_ended: true,
+          }),
+        })
+        const rendered = mount()
+        await act(async () => {})
+        return rendered
+      },
+      '/respond': async () => {
+        npcChat.respond.mockResolvedValue({
+          data: makeNpcChatRespond({
+            npc_response: 'Farewell.',
+            jean_options: [],
+            conversation_ended: true,
+          }),
+        })
+        const rendered = mount()
+        await act(async () => {})
+        await act(async () => {
+          await rendered.result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        })
+        return rendered
+      },
+    }
+
+    it('is driven from every engine endpoint that can send it', () => {
+      const paths = enginePathsCarryingTheFlag()
+      // Guard-the-guard: an empty derivation would make the per-endpoint case
+      // below iterate over nothing and pass for any hook at all.
+      expect(paths.length).toBeGreaterThan(1)
+      // Both directions: a new engine sender is unhandled here, and a driver
+      // for an endpoint the engine no longer has is stale.
+      expect([...paths].sort()).toEqual(Object.keys(drivers).sort())
+    })
+
+    for (const path of ['/open', '/respond']) {
+      it(`ends the conversation when ${path} reports it over`, async () => {
+        const { result } = await drivers[path]()
+
+        // The phase IS the affordance: NpcChatPanel keys "Conversation ended."
+        // and the suppression of the option list on it.
+        expect(
+          result.current.phase,
+          `useNpcChat.js left the panel in "${result.current.phase}" after ${path} `
+          + 'reported conversation_ended -- no end affordance, no auto-close'
+        ).toBe('ended')
+        expect(result.current.currentOptions).toEqual([])
+
+        // ...and the auto-close actually arms.
+        await act(async () => { vi.advanceTimersByTime(2000) })
+        expect(onClose).toHaveBeenCalledTimes(1)
+
+        // The server already popped `_active_chat_npc_id` for this case, so
+        // the way out must not spend a request re-ending it.
+        expect(npcChat.end).not.toHaveBeenCalled()
+      })
+    }
+  })
+
   describe('unmount safety', () => {
     it('ends the conversation an /open opened for a panel that is already gone', async () => {
       // The last door left open to a leaked `_active_chat_npc_id`. The panel is

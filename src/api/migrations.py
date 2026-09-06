@@ -5,6 +5,27 @@ from src.api.db import db
 logger = logging.getLogger(__name__)
 
 
+def _warn(message):
+    """Report a handled failure through the app logger, without ever raising.
+
+    These call sites all sit inside an ``except`` block, and they used to call
+    ``print``. ``print`` is not exception-free -- ``UnicodeEncodeError`` on a
+    cp1252 Windows console, ``ValueError`` on a stdout a WSGI server has closed
+    -- so a diagnostic could escape the very handler written to swallow the
+    fault it was describing.
+
+    The logger, not stdout, for the second half of the same reason: every
+    handler this app installs carries ``_RedactSecretsFilter`` (see
+    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    that reason and these were left behind.
+    """
+    try:
+        logger.warning("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
+
 async def init_db():
     statements = [
         """
@@ -71,7 +92,7 @@ async def init_db():
 
         print("Database initialized successfully.")
     except Exception as e:
-        print(f"Error initializing database: {e}")
+        _warn(f"Error initializing database: {e}")
     finally:
         await db.close()
 

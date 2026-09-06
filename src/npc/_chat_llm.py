@@ -9,8 +9,26 @@ and graceful fallback to deterministic dialogue pools when LLM is unavailable.
 Attributes expected on the host class (set before or during __init__):
     self.name                str
     self.charisma            int
-    self.wisdom              int (used for loquacity recovery calculation)
     self.keywords            list[str] (must already include "talk")
+    self.talk                method -- read through `hasattr` in `chat()`, so
+                             strictly it is optional, but all eleven real hosts
+                             have it and the fallback is a "nothing to say" line
+
+Optional host attributes, read with a default. Each is absent on at least one
+of the eleven real hosts, so the default is the live path there -- see
+``_HOST_SPECIFIC`` in tests/test_npc_chat_merchant_and_loquacity.py, which
+derives this list from the source and makes every entry carry a reason:
+    self.wisdom              int, and only NomadBoy and NomadGirl set it (both
+                             to 8). This line used to sit above with the
+                             required attributes, claiming wisdom drove
+                             loquacity recovery; nine of the eleven hosts do
+                             not have it and the term is inert at every value
+                             the game contains -- see
+                             _LOQUACITY_RECOVERY_WISDOM_DIVISOR.
+    self.level               int (allies only; merchants have no progression)
+    self.growth_profile      dict (allies only)
+    self.always_stock        list (merchants only)
+    self.specialties         list (merchants only)
 
 Optional setup (for story NPCs only):
     self._chat_config_path   str | None (path to character JSON config)
@@ -800,6 +818,30 @@ _MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
 # constant.
 _APO = r"['\u2019]"
 
+# The auxiliaries an offer question is framed with, plus the fused
+# contraction. Named because ``_MERCHANT_DIRECT_TRADE_PATTERN`` carries TWO
+# frames of the identical speech act -- "What <aux> you give me for this?"
+# (Jean selling) and "What <aux> you want/take/charge for that?" (Jean buying)
+# -- and they were written a round apart with different auxiliary lists: the
+# selling frame took four, the buying frame took ``would`` alone. So "What do
+# you want for the sword?" and "What will you take for the shield?" -- the
+# plainest price questions a player types at a counter -- were not commerce,
+# while their `give me` twins were. One fragment, interpolated into both, is
+# what stops the two halves of one speech act drifting again;
+# ``TestTheOfferFrameTakesEveryAuxiliary`` derives its probes from this string
+# rather than restating it.
+#
+# The contraction is fused to ``what`` ("What'll you take for it?"), not a
+# separate word, which is why this fragment starts at the whitespace rather
+# than after it.
+_MERCHANT_OFFER_AUX = (
+    r"(?:\s+(?:will|would|can|could|do)|" + _APO + r"ll)\s+you\s+"
+)
+
+#: Regular plural suffix for a noun spelled in the singular. ``e?`` so the
+#: sibilant stems ("guess", "pass") pluralise correctly too.
+_MERCHANT_PLURAL = r"(?:e?s)?"
+
 #: Exchanges kept in the save.
 #:
 #: The prompts read at most the last 8 (``_format_history``) and the last 4
@@ -1009,15 +1051,24 @@ _MERCHANT_DIRECT_TRADE_PATTERN = re.compile(
     # Jean offering his own goods: no item noun, no transaction verb, and
     # so invisible to every other branch. "What will you give me for
     # this?" is the plainest sell offer in the language.
-    r"\bwhat\s+(?:will|would|can|could)\s+you\s+give\s+me\s+for\b|"
+    r"\bwhat" + _MERCHANT_OFFER_AUX + r"give\s+me\s+for\b|"
     r"\bin\s+the\s+market\s+for\b|"
     # Frames found by testing against sentences NOBODY had reported — the
     # held-out half of the corpus. Every previous version of this classifier
     # was tuned only on the rows from a bug report, which is why each fix was
     # correct on those rows and wrong one word away.
-    r"\bwhat\s+would\s+you\s+(?:want|take|charge)\s+for\b|"
+    r"\bwhat" + _MERCHANT_OFFER_AUX + r"(?:want|take|charge)\s+for\b|"
     r"\b(?:can|could|may)\s+i\s+(?:buy|purchase)\b|"
     r"\bwould\s+you\s+take\s+\w+\s+(?:gold|coin|silver|pieces?)\b|"
+    # The same haggling offer with the money noun elided, which is how it is
+    # usually said out loud: "Would you take twenty for the dagger?". Tight
+    # rather than general, because this tier is consulted before every veto:
+    # exactly ONE word between the verb and `for` (so "Would you take the west
+    # road for the crossing?" cannot reach it) and a determiner after `for` (so
+    # "Would you take him for a fool?" and "Would you take that for granted?"
+    # cannot either).
+    r"\b(?:would|will)\s+you\s+take\s+\w+\s+for\s+"
+    r"(?:the|this|that|these|those|my|your|it)\b|"
     r"\bwould\s+you\s+(?:buy|sell|trade)\s+me\b|"
     r"\bany\s+chance\s+of\s+a\s+(?:discount|deal|bargain)\b|"
     # Declarative commerce. The classifier used to require a question mark or
@@ -1071,14 +1122,42 @@ _MERCHANT_OBJECT_GATED_TRADE_PATTERN = re.compile(
 # have that is not goods" is CLOSED — a word, a look, a moment, a risk, a road.
 # Enumerating the closed half is the only kind of list that stays right, and it
 # is the same asymmetry the nominal price frame already uses.
+# Every noun below is spelled in the singular and suffixed with
+# :data:`_MERCHANT_PLURAL`. Without it the list was half a veto: "I'll take my
+# chances." -- a stock idiom, and the plural is the ONLY form anybody says it
+# in -- classified as a purchase, while its singular twin "I'll take the risk."
+# sat in the lore corpus passing green two lines away. A closed set is only
+# closed if it is closed under inflection, and this one is checked that way by
+# ``TestTheNonGoodsVetoIsClosedUnderInflection``, which derives the nouns from
+# this pattern rather than from a list beside it.
 _MERCHANT_NON_GOODS_OBJECT = re.compile(
-    r"\b(?:word|look|moment|minute|guess|turn|seat|rest|breath)\b"
-    r"|\b(?:risk|blame|lead|chance|credit|hint|point)\b"
-    r"|\b(?:your|his|her|their|my)\s+(?:name|word|leave|meaning|advice)\b"
-    r"|\b(?:road|path|trail|route|pass|way)\b"
+    r"\b(?:word|look|moment|minute|guess|turn|seat|rest|breath)" + _MERCHANT_PLURAL
+    + r"\b"
+    r"|\b(?:risk|blame|lead|chance|credit|hint|point)" + _MERCHANT_PLURAL + r"\b"
+    r"|\b(?:your|his|her|their|my)\s+(?:name|word|leave|meaning|advice)"
+    + _MERCHANT_PLURAL + r"\b"
+    r"|\b(?:road|path|trail|route|pass|way)" + _MERCHANT_PLURAL + r"\b"
     r"|\bname\s+for\b"
     r"|\bas\s+a\b"
-    r"|\bat\s+the\s+(?:siege|war|battle|crossing)\b",
+    r"|\bat\s+the\s+(?:siege|war|battle|crossing)" + _MERCHANT_PLURAL + r"\b",
+    re.IGNORECASE,
+)
+
+# History, ritual and biography vocabulary. The second veto on the ambiguous
+# stock frame (see :meth:`_is_stock_request`): "Do you have any memories of
+# the old siege?" wears the stock frame around a war story.
+#
+# Module level, like every sibling above it. This was the module's only
+# call-time ``re.search`` against a literal pattern -- recompiled for every
+# sentence of every option of every merchant turn, and against the convention
+# stated beside the span-repair patterns ("compiled once at import rather than
+# on every call"). The two runtime ``re.compile`` calls that remain
+# (``_prohibited_patterns`` and ``_host_merchandise_pattern``) build their
+# alternation out of per-host DATA and cannot be hoisted; this one was a
+# constant string.
+_MERCHANT_LORE_FRAME_PATTERN = re.compile(
+    r"\b(?:old|war|siege|history|memories?|story|symbolize|symbol|"
+    r"rite|region|empire|freedom|learn|learned|taught)\b",
     re.IGNORECASE,
 )
 
@@ -1255,8 +1334,35 @@ _LOQUACITY_PARTY_MOD = 10
 #: the second is why the note names the file now.
 _LOQUACITY_FAVOURABLE_EQUIPMENT = ("crucifix", "religious token", "nomad gear")
 
-#: Recovery per beat is wisdom-driven, with a floor so an unwise NPC still
-#: recovers at all.
+#: Recovery per beat. THE WISDOM TERM IS INERT AT EVERY VALUE THE GAME
+#: CONTAINS, and this note used to say the opposite ("Recovery per beat is
+#: wisdom-driven"), which is the same kind of false comment that let the
+#: crucifix modifier above look alive for four rounds.
+#:
+#: Two floors, either of which alone would flatten it:
+#:
+#: * ``wisdom // 8`` only exceeds :data:`_LOQUACITY_RECOVERY_FLOOR` at wisdom
+#:   24 and above;
+#: * :func:`scale_loquacity` only moves off 1 at an unscaled 10 and above, so
+#:   the wisdom term would have to reach 10 -- wisdom 80 -- to change the
+#:   number that is actually stored.
+#:
+#: Authored wisdom in this game is 8, on NomadBoy and NomadGirl; the other nine
+#: hosts do not set the attribute at all, so they take
+#: :data:`_LOQUACITY_STAT_BASELINE` (10). Every conversational NPC therefore
+#: recovers exactly ``scale_loquacity(2) == 1`` per beat, which is
+#: :data:`_DEFAULT_LOQUACITY_RECOVERY` -- the "pre-computation placeholder"
+#: that computation never moves.
+#:
+#: LEFT AS IS DELIBERATELY. Making the term live means changing the divisor or
+#: the floor, and either doubles or halves how fast every NPC in the game
+#: regains patience: at divisor 1 a wisdom-8 NPC recovers 1 and a wisdom-10 NPC
+#: recovers 2, so the nine hosts that do not declare wisdom would silently
+#: overtake the two that do. That is a balance decision for the designer, not
+#: a scrub. Documented instead, the way
+#: :data:`_LOQUACITY_FAVOURABLE_EQUIPMENT` above is, and pinned by
+#: ``TestTheWisdomTermIsInert`` so that authoring a wise NPC -- or changing
+#: either constant -- turns a test red and makes somebody revisit this note.
 _LOQUACITY_RECOVERY_FLOOR = 2
 _LOQUACITY_RECOVERY_WISDOM_DIVISOR = 8
 
@@ -1415,7 +1521,23 @@ def _validate_restored_personality(raw: Any) -> Optional[Dict[str, Any]]:
             "validated; falling back to an authored one."
         )
         return None
-    required = getattr(module, "_PERSONALITY_FIELDS", frozenset())
+    # NOT `getattr(module, "_PERSONALITY_FIELDS", frozenset())`. An empty
+    # default is a fail-open table: `frozenset().issubset(anything)` is True
+    # for every input, so an authority that had been renamed or removed would
+    # not raise, not log, and not reject -- it would silently switch the
+    # required-field check off and wave every malformed save through to
+    # `validate`, which is a different and much narrower gate. The absence of
+    # the authority is exactly the case where the seed CANNOT be trusted, so it
+    # is treated like the missing validator above: refuse, and fall back to an
+    # authored personality.
+    required = getattr(module, "_PERSONALITY_FIELDS", None)
+    if not required:
+        logger.warning(
+            "ai.llm_client does not define _PERSONALITY_FIELDS, so the required "
+            "fields of a saved personality cannot be checked; falling back to "
+            "an authored one."
+        )
+        return None
     if not required.issubset(raw.keys()):
         logger.warning(
             "Saved personality is missing %s.", sorted(set(required) - set(raw))
@@ -1773,6 +1895,12 @@ class ConversationalNPCMixin:
             scale_loquacity(_LOQUACITY_THRESHOLD_FLOOR),
             loquacity_max // _LOQUACITY_THRESHOLD_DIVISOR,
         )
+        # The wisdom half of this is currently dead in both directions --
+        # nine of the eleven hosts have no `wisdom` at all, and neither the
+        # baseline nor the two authored 8s can clear either floor. The long
+        # note beside `_LOQUACITY_RECOVERY_WISDOM_DIVISOR` says why it is
+        # written out rather than folded away, and `TestTheWisdomTermIsInert`
+        # fails if that stops being true.
         self.loquacity_recovery = scale_loquacity(
             max(
                 _LOQUACITY_RECOVERY_FLOOR,
@@ -1849,33 +1977,52 @@ class ConversationalNPCMixin:
         stored_loquacity = entry.get("loquacity_current")
         if stored_loquacity is not None:
             self.loquacity_current = self._rescale_persisted_loquacity(
-                stored_loquacity, entry.get("loquacity_max")
+                stored_loquacity,
+                entry.get("loquacity_max"),
+                entry.get("loquacity_scale"),
             )
 
-    def _rescale_persisted_loquacity(self, stored_current, stored_max) -> int:
+    def _rescale_persisted_loquacity(
+        self, stored_current, stored_max, stored_scale=None
+    ) -> int:
         """Bring a persisted ``loquacity_current`` onto the current scale.
 
         Saves written before the 15% scale (see :func:`scale_loquacity`) hold
         old-scale numbers — a current of 72 against a stored maximum of 80 —
         and restoring one verbatim would hand the player a full old-scale
         conversation out of a pool of 12, which is exactly the generosity the
-        scale exists to remove. The stored maximum is the scale marker: when it
-        is larger than the maximum computed for this NPC now, the remaining
-        patience is carried across as the same *fraction* of the new pool rather
-        than being clamped flat, so an NPC halfway to exhaustion stays halfway.
+        scale exists to remove.
 
-        Anything else is clamped into ``[0, loquacity_max]``. ``loquacity_max``
-        is read with ``getattr`` and a 0 default because this method also runs
-        for hosts that never called ``_compute_loquacity`` (the mixin's own
-        ``_load_turn_state`` computes first, but tests and API fallbacks load
-        directly), and with no computed pool there is nothing to rescale against.
+        THE MARKER IS ``loquacity_scale``, not the size of the stored maximum.
+        This used to migrate whenever ``stored_max`` exceeded the maximum
+        computed now, and that comparison is true for a second reason that has
+        nothing to do with the migration: the computed maximum MOVES with
+        reputation. Vespera computes 18 at reputation +1 and 12 at −1, so a
+        save written on good terms and loaded on bad ones was treated as an
+        old-scale row — 9 of 18 came back as 6 of 12 rather than the flat 9,
+        re-proportioning the player's remaining patience for a reputation swing.
+
+        ``game_service._recover_npc_loquacity`` already keyed on the marker
+        this module WRITES (``_save_exchange_to_persistence``) and this method
+        did not read, so one persisted field had two rescalers keyed two ways.
+        Now both ask the marker, and an unmarked row is migrated exactly once.
+
+        A migrated row carries its remaining patience across as the same
+        *fraction* of the new pool, so an NPC halfway to exhaustion stays
+        halfway. Everything else is clamped into ``[0, loquacity_max]``.
+        ``loquacity_max`` is read with ``getattr`` and a 0 default because this
+        also runs for hosts that never called ``_compute_loquacity`` (the
+        mixin's own ``_load_turn_state`` computes first, but tests and API
+        fallbacks load directly), and with no computed pool there is nothing to
+        rescale against.
         """
         current = _coerce_int(stored_current, 0)
         max_now = _coerce_int(getattr(self, "loquacity_max", 0), 0)
         if max_now <= 0:
             return current
         old_max = _coerce_int(stored_max, 0)
-        if old_max > max_now and current > 0:
+        already_current_scale = stored_scale == LOQUACITY_SCALE_PERCENT
+        if not already_current_scale and old_max > max_now and current > 0:
             # Half-up rounding, integer arithmetic (same rule as scale_loquacity).
             current = (current * max_now + old_max // 2) // old_max
         return max(0, min(max_now, current))
@@ -2886,14 +3033,7 @@ class ConversationalNPCMixin:
 
     def _is_lore_frame(self, text: str) -> bool:
         """True when the sentence reads as history, ritual, or biography."""
-        return bool(
-            re.search(
-                r"\b(?:old|war|siege|history|memories?|story|symbolize|symbol|"
-                r"rite|region|empire|freedom|learn|learned|taught)\b",
-                text,
-                re.IGNORECASE,
-            )
-        )
+        return bool(_MERCHANT_LORE_FRAME_PATTERN.search(text))
 
     def _qc_merchant_commerce(
         self, text: str, allow_rewrite: bool

@@ -1,5 +1,6 @@
 """Session management for player persistence."""
 
+import logging
 import os
 import uuid
 import configparser
@@ -7,6 +8,50 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Tuple, Any
 from src.config_manager import ConfigManager
+
+_log = logging.getLogger(__name__)
+
+
+def _warn(message):
+    """Report a handled failure through the app logger, without ever raising.
+
+    These call sites all sit inside an ``except`` block, and they used to call
+    ``print``. ``print`` is not exception-free -- ``UnicodeEncodeError`` on a
+    cp1252 Windows console, ``ValueError`` on a stdout a WSGI server has closed
+    -- so a diagnostic could escape the very handler written to swallow the
+    fault it was describing.
+
+    The logger, not stdout, for the second half of the same reason: every
+    handler this app installs carries ``_RedactSecretsFilter`` (see
+    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    that reason and these were left behind.
+    """
+    try:
+        _log.warning("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
+
+def _fault(message):
+    """Log a handled exception WITH its traceback, without ever raising.
+
+    The companion to :func:`_warn`, for the sites that used
+    ``traceback.print_exc()``. That call writes to stderr directly, so the
+    traceback -- the part most likely to contain a path, a connection string
+    or an interpolated secret -- was the one thing bypassing
+    ``_RedactSecretsFilter``. ``exc_info=True`` routes it through the logger
+    instead. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    exactly this reason; these were left behind.
+
+    Call only from inside an ``except`` block: ``exc_info`` needs a live
+    exception to describe.
+    """
+    try:
+        _log.exception("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
 
 # Minimum seconds between opportunistic sweeps of expired sessions. Keeps the
 # O(n) cleanup off the hot per-request path while still bounding memory growth.
@@ -337,13 +382,9 @@ class SessionManager:
                             flush=True,
                         )
             except Exception as e:
-                import traceback
-
-                print(
-                    f"[SessionManager] [ERROR] Error loading config: {e}",
-                    flush=True,
+                _fault(
+                    f"[SessionManager] [ERROR] Error loading config: {e}"
                 )
-                traceback.print_exc()
         else:
             print(
                 "[SessionManager] CONFIG_FILE environment variable not set",
@@ -388,13 +429,9 @@ class SessionManager:
                             flush=True,
                         )
             except Exception as e:
-                import traceback
-
-                print(
-                    f"[SessionManager] [ERROR] Error loading starting_items config: {e}",
-                    flush=True,
+                _fault(
+                    f"[SessionManager] [ERROR] Error loading starting_items config: {e}"
                 )
-                traceback.print_exc()
 
     def _load_starting_equipment_from_config(self):
         """Load starting_equipment specs from config file."""
@@ -420,9 +457,8 @@ class SessionManager:
                         flush=True,
                     )
         except Exception as e:
-            print(
+            _warn(
                 f"[SessionManager] [ERROR] Error loading starting_equipment config: {e}",
-                flush=True,
             )
 
     def _load_starting_gold_from_config(self):
@@ -446,9 +482,8 @@ class SessionManager:
                         flush=True,
                     )
         except Exception as e:
-            print(
+            _warn(
                 f"[SessionManager] [ERROR] Error loading starting_gold config: {e}",
-                flush=True,
             )
 
     def _load_game_config(self):
@@ -480,13 +515,9 @@ class SessionManager:
                         flush=True,
                     )
             except Exception as e:
-                import traceback
-
-                print(
-                    f"[SessionManager] [ERROR] Error loading game config: {e}",
-                    flush=True,
+                _fault(
+                    f"[SessionManager] [ERROR] Error loading game config: {e}"
                 )
-                traceback.print_exc()
 
     def _create_items_from_config(self):
         """Create item instances from config item types.
@@ -520,14 +551,12 @@ class SessionManager:
                             flush=True,
                         )
                 except Exception as e:
-                    print(
+                    _warn(
                         f"[SessionManager] [ERROR] Error creating item {item_type}: {e}",
-                        flush=True,
                     )
         except Exception as e:
-            print(
+            _warn(
                 f"[SessionManager] [ERROR] Error importing items module: {e}",
-                flush=True,
             )
 
         return items
@@ -603,9 +632,8 @@ class SessionManager:
                                 setattr(player, attr, value)
                                 stats_applied.append(f"{attr}={value}")
                     except (ValueError, TypeError) as e:
-                        print(
+                        _warn(
                             f"[SessionManager] [WARN] Could not parse {config_key}={player_section.get(config_key)}: {e}",
-                            flush=True,
                         )
 
             if stats_applied:
@@ -614,9 +642,8 @@ class SessionManager:
                     flush=True,
                 )
         except Exception as e:
-            print(
+            _warn(
                 f"[SessionManager] [ERROR] Error applying player stats from config: {e}",
-                flush=True,
             )
 
     def _apply_starting_equipment(self, player) -> None:
@@ -641,9 +668,8 @@ class SessionManager:
                     try:
                         item = item_class(enchantment_level=enchantment_level)
                     except Exception as e:
-                        print(
+                        _warn(
                             f"[SessionManager] [ERROR] Could not create {item_class_name}: {e}",
-                            flush=True,
                         )
                         continue
                     new_maintype = getattr(item, "maintype", None)
@@ -682,9 +708,8 @@ class SessionManager:
                     try:
                         item.on_equip(player)
                     except Exception as _equip_err:
-                        print(
+                        _warn(
                             f"[SessionManager] [WARN] on_equip raised for {item_class_name}: {_equip_err}",
-                            flush=True,
                         )
                     print(
                         f"[SessionManager] [OK] Applied starting equipment: {item_class_name} (enchant {enchantment_level})",
@@ -700,14 +725,12 @@ class SessionManager:
                 import src.functions as _functions
                 _functions.refresh_stat_bonuses(player)
             except Exception as e:
-                print(
+                _warn(
                     f"[SessionManager] [ERROR] Error refreshing stats after starting equipment: {e}",
-                    flush=True,
                 )
         except Exception as e:
-            print(
+            _warn(
                 f"[SessionManager] [ERROR] Error applying starting equipment: {e}",
-                flush=True,
             )
 
     def _apply_starting_party_members(self, player) -> None:
@@ -739,9 +762,8 @@ class SessionManager:
             try:
                 ally = tile.spawn_npc(npc_type, delay=0)
             except Exception as e:
-                print(
+                _warn(
                     f"[SessionManager] [ERROR] Could not spawn starting party member {npc_type}: {e}",
-                    flush=True,
                 )
                 continue
             ally.friend = True
@@ -813,9 +835,8 @@ class SessionManager:
                     flush=True,
                 )
             except (ImportError, Exception) as e:
-                print(
+                _warn(
                     f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer",
-                    flush=True,
                 )
                 player = MinimalPlayer(username)
 
@@ -836,9 +857,8 @@ class SessionManager:
                             flush=True,
                         )
                     except Exception as e:
-                        print(
+                        _warn(
                             f"[SessionManager] [ERROR] apply_starting_experience failed: {e}",
-                            flush=True,
                         )
                 if self.game_config.learn_all_skills:
                     try:
@@ -850,9 +870,8 @@ class SessionManager:
                             flush=True,
                         )
                     except Exception as e:
-                        print(
+                        _warn(
                             f"[SessionManager] [ERROR] learn_all_skills failed: {e}",
-                            flush=True,
                         )
                 # god_mode (dev/testing): pump Jean's stats so combat is trivial.
                 if getattr(self.game_config, "god_mode", False) and hasattr(
@@ -865,9 +884,8 @@ class SessionManager:
                             flush=True,
                         )
                     except Exception as e:
-                        print(
+                        _warn(
                             f"[SessionManager] [ERROR] supersaiyan (god_mode) failed: {e}",
-                            flush=True,
                         )
 
             # Apply starting gold
@@ -883,9 +901,8 @@ class SessionManager:
                             flush=True,
                         )
                 except Exception as e:
-                    print(
+                    _warn(
                         f"[SessionManager] [ERROR] Error applying starting_gold: {e}",
-                        flush=True,
                     )
 
             # Set starting position — validate it exists in the chosen map; fall back to first valid tile
@@ -925,7 +942,7 @@ class SessionManager:
 
             return player
         except Exception as e:
-            print(f"[SessionManager] Error creating player: {e}", flush=True)
+            _warn(f"[SessionManager] Error creating player: {e}")
             # Fallback to minimal player
             player = MinimalPlayer(username)
 
@@ -937,9 +954,8 @@ class SessionManager:
             if config_items:
                 if hasattr(player, "inventory") and isinstance(player.inventory, list):
                     player.inventory.extend(config_items)
-                    print(
+                    _warn(
                         f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory",
-                        flush=True,
                     )
 
             # Apply starting gold

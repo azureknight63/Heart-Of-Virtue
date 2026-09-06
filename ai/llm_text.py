@@ -137,10 +137,33 @@ class _JSONTools:
 
         A response truncated by the token cap has no closing brace, so both the
         direct parse and the ``{...}`` extraction fail and the entire payload —
-        including fields that arrived intact — used to be discarded. This closes
-        an unterminated string, drops a trailing partial member, appends the
-        missing closers, and retries; on failure it chops back to the previous
-        comma and tries again a few times.
+        including fields that arrived intact — used to be discarded. This drops
+        the trailing partial member, appends the missing closers, and retries;
+        on failure it chops back to the previous comma and tries again a few
+        times.
+
+        DROP THE INCOMPLETE MEMBER FIRST; close an unterminated string only
+        when there is nothing left to drop. The order is the whole point. This
+        used to append the missing ``"`` before anything else, which *keeps*
+        the member the token cap cut in half: a reply truncated inside a
+        ``"text"`` value came back as
+        ``{"tone": "direct", "text": "Ask her how deep the ford ru"}`` — a
+        mid-word amputation that is under ``MAX_OPTION_CHARS``, over
+        ``_MIN_OPTION_CHARS`` and matches no meta pattern, so
+        ``_clean_jean_options`` and ``_qc_jean_options`` both waved it through
+        and the player was offered it as a button. ``_clean_option_text`` trims
+        an over-long option back to a word boundary and ``_qc_jean_options``
+        drops one it cannot trim precisely so that this never ships; salvage
+        had been quietly manufacturing the thing they exist to prevent.
+
+        Chopping to the last comma OUTSIDE a string, not the last comma
+        anywhere: a comma inside the unterminated value is not a member
+        boundary, and cutting there left the fragment in place (one word
+        shorter) for the next pass to close.
+
+        The close-the-string last resort remains for the case with no member
+        to drop — a single-field reply such as ``{"description": "half a li``,
+        where the alternative is discarding the answer entirely.
         """
         start = s.find("{")
         if start == -1:
@@ -150,7 +173,8 @@ class _JSONTools:
             stack: List[str] = []
             in_str = False
             esc = False
-            for ch in candidate:
+            last_comma = -1
+            for i, ch in enumerate(candidate):
                 if in_str:
                     if esc:
                         esc = False
@@ -164,6 +188,13 @@ class _JSONTools:
                     stack.append(ch)
                 elif ch in "}]" and stack:
                     stack.pop()
+                elif ch == ",":
+                    last_comma = i
+            if in_str and last_comma > 0:
+                # Truncated mid-string with an earlier member to fall back on:
+                # drop the fragment rather than closing a quote around it.
+                candidate = candidate[:last_comma]
+                continue
             attempt = candidate + ('"' if in_str else "")
             attempt = re.sub(r"[,\s]+$", "", attempt)
             attempt = re.sub(r'"[^"]*"\s*:\s*$', "", attempt)  # dangling key
@@ -175,7 +206,7 @@ class _JSONTools:
                 )
                 return parsed if isinstance(parsed, dict) else None
             except Exception:
-                cut = candidate.rfind(",")
+                cut = last_comma
                 if cut <= 0:
                     return None
                 candidate = candidate[:cut]

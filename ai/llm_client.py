@@ -148,11 +148,35 @@ _OPENAI_COMPATIBLE_PROVIDERS = {
     },
 }
 
-#: The address that decides whether the local host is dialable at all. Not a
-#: credential in the secret sense -- Ollama needs none -- but it occupies the
-#: same slot in :func:`_provider_credential`: the one environment variable
-#: whose absence means "this provider is not configured".
+#: Where an Ollama host lives when nobody said otherwise. Read by
+#: :func:`_ollama_base_url`, which is the ONE place that answers "what address
+#: would we dial" -- ``GenericLLMClient.__init__`` and
+#: :func:`_provider_credential` both go through it rather than spelling the
+#: default twice. They used to spell it once each, differently: ``__init__``
+#: defaulted to this URL while ``_provider_credential`` defaulted to ``""``, so
+#: an operator running Ollama on the standard port with no ``OLLAMA_BASE_URL``
+#: set had a client that would happily POST to localhost and a
+#: ``_provider_chain`` that refused to put it in the chain.
+_OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434"
+
+#: The address OVERRIDE. Ollama needs no credential, so unlike every
+#: ``*_API_KEY`` in the registry above, this variable's *absence* does not mean
+#: "not configured" -- it means "the default port". What means "there is no
+#: local host here" is an explicitly EMPTY value, which is also what
+#: ``tests/llm_doubles.blank_outbound_env`` and ``tests/conftest.py`` assign to
+#: keep a unit test off a developer's running Ollama.
 _OLLAMA_BASE_URL_ENV = "OLLAMA_BASE_URL"
+
+
+def _ollama_base_url() -> str:
+    """The Ollama address this process would dial, or ``""`` for "none here".
+
+    Unset falls back to :data:`_OLLAMA_DEFAULT_BASE_URL`; a set-but-blank value
+    stays blank, because assigning ``""`` is how the test harness and an
+    operator both say "no local host". ``.strip()`` after the default, so
+    whitespace reads as blank too.
+    """
+    return os.getenv(_OLLAMA_BASE_URL_ENV, _OLLAMA_DEFAULT_BASE_URL).strip()
 
 
 def _provider_credential(name: str) -> str:
@@ -175,9 +199,18 @@ def _provider_credential(name: str) -> str:
     secret; ``_call_openai_compatible`` can never see that value, because it
     returns early on a provider absent from ``_OPENAI_COMPATIBLE_PROVIDERS``
     and ollama is not in it.
+
+    And it is answered through :func:`_ollama_base_url`, the same function
+    ``__init__`` sets ``self.base_url`` from, so "is ollama configured" and
+    "what would we POST to" cannot give different answers. They did: this read
+    the env with an empty default while ``__init__`` read it with a localhost
+    one, so ``_provider_chain`` omitted the local fallback from every chain on
+    a box where ``_call_ollama`` would have been served -- and
+    ``NpcChatLLMAdapter.available``'s docstring said the opposite of this
+    function's in as many words.
     """
     if name == "ollama":
-        return os.getenv(_OLLAMA_BASE_URL_ENV, "").strip()
+        return _ollama_base_url()
     cfg = _OPENAI_COMPATIBLE_PROVIDERS.get(name)
     return os.getenv(cfg["key_env"], "").strip() if cfg else ""
 
@@ -712,7 +745,10 @@ class GenericLLMClient:
         # then. See _resolve_provider.
         self.enabled = self._resolve_enabled()
         self._resolve_provider()
-        self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip()
+        # Through _ollama_base_url, not a second os.getenv with its own
+        # default: _provider_credential("ollama") answers "is this provider
+        # configured" from the same function, and the two defaults had drifted.
+        self.base_url = _ollama_base_url()
 
         # OpenRouter specific configuration
         self._openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -1452,6 +1488,7 @@ class GenericLLMClient:
         user: str,
         max_tokens: int,
         temperature: float,
+        json_mode: bool,
     ) -> Dict[str, Any]:
         """The ``/api/chat`` body both Ollama transports in this file send.
 
@@ -1477,11 +1514,29 @@ class GenericLLMClient:
         calls; the union is the correct set, and the divergence -- not the
         duplication -- is what was costing anything.
 
+        ``json_mode`` is the third field that was missing, and it was missing
+        from BOTH call sites rather than one -- the same defect
+        :meth:`_chat_payload` records for ``generate_structured``, on the
+        provider that is the *default*. Every caller that reaches Ollama parses
+        the reply as JSON (``_ollama_chat(structured=True)`` through
+        ``try_parse_json``; both of ``_call_llm``'s callers through
+        ``_parse_or_penalize`` or ``extract_json_list``), and none of them ever
+        asked the API to enforce it -- the prompt said "return JSON" and that
+        was the whole guarantee. ``/api/chat`` takes a TOP-LEVEL ``"format":
+        "json"``, not an entry in ``options``, which is part of why it was easy
+        to leave out next to ``num_predict`` and ``num_ctx``.
+
+        The cost of not sending it is not a bad turn, it is a benched model: a
+        local model answering prose trips ``_parse_or_penalize`` ->
+        ``_penalize_unparseable``, ``_call_ollama`` then short-circuits on the
+        bench it recorded, and an Ollama-only box is on canned dialogue after
+        one prose reply.
+
         Keyword-only for the same reason as :meth:`_chat_payload`: ``model``,
         ``system`` and ``user`` are three adjacent strings, and a transposition
         of the last two raises nothing and reads as a subtly wrong conversation.
         """
-        return {
+        payload: Dict[str, Any] = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system},
@@ -1495,6 +1550,9 @@ class GenericLLMClient:
                 "num_ctx": _OLLAMA_NUM_CTX,
             },
         }
+        if json_mode:
+            payload["format"] = "json"
+        return payload
 
     @staticmethod
     def _extract_chat_content(data: Any) -> Optional[str]:
@@ -1590,6 +1648,10 @@ class GenericLLMClient:
             user=user_prompt,
             max_tokens=_STRUCTURED_MAX_TOKENS if structured else _PLAIN_MAX_TOKENS,
             temperature=_DEFAULT_TEMPERATURE,
+            # The same flag that decides which budget to send decides whether
+            # the host is asked to enforce JSON: this method parses the reply
+            # with try_parse_json when structured, and asks for prose when not.
+            json_mode=structured,
         )
         logger.info("_ollama_chat start model=%s structured=%s url=%s", self.model, structured, url)
         r = None
@@ -2992,7 +3054,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # An ollama-primary adapter gets the base class's real reachability
         # probe. _call_ollama falls back to a default base_url, so there is no
         # env var whose absence means "not configured" -- only an HTTP round
-        # trip can answer.
+        # trip can answer. `_provider_credential("ollama")` now says the same
+        # thing (both read `_ollama_base_url`); it used to say the opposite,
+        # and this comment and that one were the two halves of the divergence.
         if self.provider == "ollama":
             # Drop the cache first, or this returns whatever an unrelated
             # OpenRouter validation during __init__ left in _available -- the
@@ -3915,6 +3979,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 continue
             if _provider_credential(name):
                 chain.append(name)
+        # The local host joins on the DEFAULT port too. `_provider_credential`
+        # used to answer this from a bare `os.getenv(..., "")`, so the free,
+        # never-leaves-the-machine fallback the chain exists to provide was
+        # withheld from everyone who had not set an override they did not need
+        # -- while `__init__` had already pointed `self.base_url` at localhost.
+        # An explicitly blank OLLAMA_BASE_URL still means "no local host".
         if "ollama" not in chain and _provider_credential("ollama"):
             chain.append("ollama")
 
@@ -4116,6 +4186,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 user=user,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                # Both of _call_llm's callers parse this reply as JSON
+                # (_parse_or_penalize, extract_json_list), so ask the host to
+                # enforce it -- exactly as _call_openrouter does one method
+                # down. Prose here is not a bad turn, it is a bench.
+                json_mode=True,
             )
             r = requests.post(
                 self.base_url + "/api/chat",

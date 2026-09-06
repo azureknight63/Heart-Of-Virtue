@@ -493,7 +493,15 @@ export function makeRelationship(overrides = {}) {
   )
 }
 
-/** POST /api/npc/chat/open response body. */
+/**
+ * POST /api/npc/chat/open response body.
+ *
+ * `conversation_ended` defaults to false because a normal opening turn is not
+ * over — but `/open` is a genuine sender of `true`: `chat_open`'s loquacity
+ * cutoff returns the NPC's brush-off line with no options and the flag set.
+ * Both builders go through `_base_payload`, so every field here that
+ * `makeNpcChatRespond` also carries takes the same range of values on both.
+ */
 export function makeNpcChatOpen(overrides = {}) {
   return merge(
     {

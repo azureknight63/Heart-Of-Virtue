@@ -98,11 +98,17 @@ for _key_env in CREDENTIAL_ENVS:
 # non-conforming name is on the list and why the NPC_CHAT_TEMP_* five are not.
 #
 # The one that was actually live: OLLAMA_BASE_URL. _provider_chain() appends
-# ollama to the fallback chain whenever it is set and _provider_available()
-# reads nothing else, so a developer running a local Ollama had unit tests
-# dialling it -- while tests/integration/conftest.py, the suite that is
-# *allowed* to reach a provider, had blanked it for exactly that reason. The
-# opt-in suite was better protected than the default one.
+# ollama to the fallback chain unless this is explicitly BLANK, and
+# _provider_available() reads nothing else, so a developer running a local
+# Ollama had unit tests dialling it -- while tests/integration/conftest.py, the
+# suite that is *allowed* to reach a provider, had blanked it for exactly that
+# reason. The opt-in suite was better protected than the default one.
+#
+# "Unless blank" and not "whenever set": ollama needs no credential, so
+# ai.llm_client._ollama_base_url reads an UNSET variable as the default
+# localhost port -- the address __init__ has always assigned to self.base_url.
+# The assignment two lines down is therefore the whole control; deleting the
+# name would arm the local host rather than disarm it.
 #
 # Assigned "" rather than popped, for the reason spelled out above: a deleted
 # key is refilled from .env, an assigned empty one is not. Empty reads as unset

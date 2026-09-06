@@ -420,12 +420,21 @@ class TestComputeLoquacity:
         assert npc.loquacity_max == scale_loquacity(60)
 
     def test_compute_loquacity_recovery_from_wisdom(self):
-        """Test recovery rate derived from wisdom."""
+        """Recovery at wisdom 16 -- which is the same as at every other wisdom.
+
+        THIS TEST DOES NOT COVER THE WISDOM TERM, and its name says it does.
+        `scale_loquacity(max(2, w // 8))` is 1 for every `w` below 80, so this
+        assertion holds with `wisdom=16` replaced by 0, 8 or 79. It is kept as
+        a plain regression on the recovery value; the term itself is pinned as
+        the dead branch it is by `TestTheWisdomTermIsInert` in
+        tests/test_npc_chat_merchant_and_loquacity.py, which drives the eleven
+        real host classes instead of a double that invents a wisdom no NPC in
+        the game has.
+        """
         npc = chat_npc(wisdom=16)
         player = chat_player(charisma=10, combat_list_allies=[])
 
         npc._compute_loquacity(player)
-        # Wisdom 16 gives recovery = 16 // 8 = 2 before the 15% scale.
         assert npc.loquacity_recovery == scale_loquacity(2)
 
     def test_compute_loquacity_min_threshold(self):

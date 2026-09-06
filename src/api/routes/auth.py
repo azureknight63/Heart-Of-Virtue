@@ -62,6 +62,44 @@ _ip_limiter = limiter_from_env(
 )
 
 
+# Third login tier, and the one that counts EVERY attempt rather than every
+# failure.
+#
+# Both tiers above are spent by `_record_failed_login`, which runs only under
+# `if not user`. So a caller holding ONE valid credential never touches either
+# budget, and can replay that login without limit -- each request costing a
+# full Argon2id verify at the configured memory cost, on a synchronous worker.
+# The two failure tiers are the right shape for credential guessing and the
+# wrong shape for this: guessing is bounded by wrong answers, and this attack
+# never gives one.
+#
+# Keyed on the source alone, because the account is not the thing being abused
+# -- the hasher is. Set far above any human login rate (a shared NAT'd office
+# does not log in 120 times in fifteen minutes) so it is a cost ceiling rather
+# than a per-account gate, and NOT disableable, for the same reason as its two
+# siblings: its absence is an unauthenticated way to spend the server's memory
+# budget.
+_LOGIN_ATTEMPT_RATE_LIMIT = 120
+_LOGIN_ATTEMPT_RATE_WINDOW = 900  # 15 minutes
+_login_attempt_limiter = limiter_from_env(
+    "LOGIN_ATTEMPT_RATE_LIMIT_PER_15_MIN",
+    _LOGIN_ATTEMPT_RATE_LIMIT,
+    _LOGIN_ATTEMPT_RATE_WINDOW,
+    allow_disable=False,
+)
+
+
+def _is_login_attempt_rate_limited() -> bool:
+    """True if this source has spent its total login-attempt budget.
+
+    ``RateLimiter.check`` counts the call unless already limited, which is what
+    makes this tier count successes too -- the distinction from
+    :func:`_is_login_rate_limited`, which only ever sees what
+    ``_record_failed_login`` has spent.
+    """
+    return RateLimiter.check(_login_attempt_limiter, client_ip())
+
+
 # Third tier, on the *other* credential-path endpoint. `/auth/register` had no
 # throttle at all, which mattered twice over: account creation is unbounded
 # work against the DB (bcrypt per attempt), and a fresh account is a fresh
@@ -425,6 +463,14 @@ async def login():
         if _is_login_rate_limited(rate_key):
             return rate_limited_response(
                 "Too many failed login attempts. Please try again later."
+            )
+
+        # Spent on EVERY attempt, and checked before `authenticate_user` so the
+        # Argon2 verify is what it bounds. The two tiers above are failure
+        # counters and a valid credential never touches them.
+        if _is_login_attempt_rate_limited():
+            return rate_limited_response(
+                "Too many login attempts. Please try again later."
             )
 
         # Authenticate using auth_service

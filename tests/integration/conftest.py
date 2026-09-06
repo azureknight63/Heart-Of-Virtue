@@ -135,8 +135,10 @@ def _apply_single_provider_isolation():
     for name, provider_cfg in _OPENAI_COMPATIBLE_PROVIDERS.items():
         if name != only:
             os.environ[provider_cfg["key_env"]] = ""
-    # _provider_chain appends ollama whenever OLLAMA_BASE_URL is set, so a
-    # local Ollama would quietly serve the calls this run exists to expose.
+    # _provider_chain appends ollama unless OLLAMA_BASE_URL is explicitly
+    # BLANK -- unset means the default localhost port, the address __init__
+    # dials -- so a local Ollama would otherwise quietly serve the calls this
+    # run exists to expose.
     os.environ["OLLAMA_BASE_URL"] = ""
 
     # Each feature is pinned through its own first-choice variable, because

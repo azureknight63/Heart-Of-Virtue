@@ -261,6 +261,16 @@ export function useNpcChat(npcId, npcName, onClose) {
   // overlay click and Escape all route through `handleEndConversation` instead
   // of dismissing instantly. That opens a window a second click can land in.
   const endingRef = useRef(false)
+  // The caller's latest `onClose`. The auto-close timer is now armed from the
+  // mount effect as well as from a click, and that effect's closure is frozen
+  // at the render it ran in — so without this an `/open` that ends the
+  // conversation would, two seconds later, call whichever `onClose` existed on
+  // mount. InteractPanel builds a fresh one per render around its own
+  // `onRefetch` prop, so that is a real identity, not a hypothetical.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   /** True while `seq` is still the conversation on screen (and we are mounted). */
   const isCurrentTurn = (seq) => isMountedRef.current && turnSeqRef.current === seq
@@ -303,6 +313,42 @@ export function useNpcChat(npcId, npcName, onClose) {
     setCurrentOptions(options)
     setRelationship(data.relationship || null)
     return options
+  }
+
+  /**
+   * Land a served turn on the phase it calls for: over, or Jean's move.
+   *
+   * `conversation_ended` is a field of the payload BOTH endpoints share — the
+   * engine builds `/open` and `/respond` bodies through one `_base_payload`
+   * (src/npc/_chat_llm.py), which is where the flag is set — so both callers
+   * have to honour it, and honour it the same way.
+   *
+   * They did not. `/respond` had this block inline and `/open` had a bare
+   * `setPhase(WAITING_JEAN)`, so `chat_open`'s loquacity cutoff — which returns
+   * the NPC's brush-off line, NO options and `conversation_ended: true` — left
+   * the player parked on a dead line with an empty option list, no "Conversation
+   * ended." and no auto-close, because those all key on the ENDED phase. Writing
+   * the rule once is what makes the two paths agree by construction rather than
+   * by two people remembering.
+   *
+   * Clearing `openNpcKeyRef` is the load-bearing half: `npc_chat_open` and
+   * `npc_chat_respond` (src/api/services/game_service.py) BOTH pop
+   * `_active_chat_npc_id` when they end a conversation, so firing `/end` on the
+   * way out would clear a marker that is already gone — and, after the player
+   * has walked to the next NPC, possibly that one's.
+   *
+   * @param {boolean} conversationEnded - The payload's `conversation_ended`.
+   */
+  const settleTurnPhase = (conversationEnded) => {
+    if (!conversationEnded) {
+      setPhase(CHAT_PHASES.WAITING_JEAN)
+      return
+    }
+    openNpcKeyRef.current = null
+    setPhase(CHAT_PHASES.ENDED)
+    endTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current) onCloseRef.current()
+    }, AUTO_CLOSE_DELAY_MS)
   }
 
   // On mount (and whenever the panel is pointed at a different NPC), open the
@@ -382,7 +428,7 @@ export function useNpcChat(npcId, npcName, onClose) {
           setConversationSegments([])
         }
 
-        setPhase(CHAT_PHASES.WAITING_JEAN)
+        settleTurnPhase(data.conversation_ended)
       } catch (err) {
         if (cancelled || !isMountedRef.current) return
         console.error('[npcChat] open failed:', apiErrorDetail(err))
@@ -449,19 +495,8 @@ export function useNpcChat(npcId, npcName, onClose) {
       // portraits the next turn will need.
       preloadTurnPortraits(npcId, applyTurnPayload(data))
 
-      // Check if conversation ended
-      if (data.conversation_ended) {
-        // `npc_chat_respond` already popped `_active_chat_npc_id` server-side
-        // for exactly this case, so the auto-close below must not also fire an
-        // `/end` on the way out.
-        openNpcKeyRef.current = null
-        setPhase(CHAT_PHASES.ENDED)
-        endTimeoutRef.current = setTimeout(() => {
-          if (isMountedRef.current) onClose()
-        }, AUTO_CLOSE_DELAY_MS)
-      } else {
-        setPhase(CHAT_PHASES.WAITING_JEAN)
-      }
+      // Over, or Jean's move — the same rule `/open` lands on.
+      settleTurnPhase(data.conversation_ended)
     } catch (err) {
       if (!isCurrentTurn(seq)) return
       console.error('[npcChat] respond failed:', apiErrorDetail(err))

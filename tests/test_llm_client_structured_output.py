@@ -24,7 +24,7 @@ import pytest
 
 import ai.llm_client as llm
 from ai.llm_client import GenericLLMClient, NpcChatLLMAdapter
-from tests.llm_doubles import Resp, make_chat_adapter
+from tests.llm_doubles import Resp, make_chat_adapter, make_generic_client
 
 # Before this file adopted the shared fixture it reset nothing: nine of its
 # classes hand-rolled a setup_method/teardown_method pair, three called
@@ -571,16 +571,20 @@ class TestProviderChain:
         assert chain[0] == "groq"
 
     def test_providers_without_credentials_are_never_contacted(self, monkeypatch):
+        # OLLAMA_BASE_URL is BLANKED, not deleted. Unset means "the default
+        # port" -- the address __init__ has always dialled -- so an empty
+        # value is how "there is no local host here" is spelled. See
+        # TestOllamaIsConfiguredByAddressNotByCredential below.
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
         chain = self._adapter_for_provider("openrouter")._provider_chain()
         assert chain == ["openrouter"]
 
     def test_credentialed_providers_join_the_chain(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("CEREBRAS_API_KEY", "c")
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
         chain = self._adapter_for_provider("openrouter")._provider_chain()
         assert chain[0] == "openrouter"
         assert set(chain) == {"openrouter", "groq", "cerebras"}
@@ -588,7 +592,7 @@ class TestProviderChain:
     def test_blank_key_does_not_count_as_configured(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "   ")
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
         assert self._adapter_for_provider("openrouter")._provider_chain() == ["openrouter"]
 
     def test_local_ollama_joins_when_configured(self, monkeypatch):
@@ -601,9 +605,161 @@ class TestProviderChain:
     def test_no_duplicate_when_configured_provider_also_has_a_key(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
         chain = self._adapter_for_provider("groq")._provider_chain()
         assert chain.count("groq") == 1
+
+
+class TestOllamaIsConfiguredByAddressNotByCredential:
+    """"Is ollama configured?" was answered twice, and the answers disagreed.
+
+    ``GenericLLMClient.__init__`` pointed ``self.base_url`` at the default
+    localhost port whenever ``OLLAMA_BASE_URL`` was unset, so the transport
+    would happily POST there. ``_provider_credential("ollama")`` read the same
+    variable with an EMPTY default and reported "not configured", so
+    ``_provider_chain`` withheld the free, never-leaves-the-machine fallback
+    from every operator who had not set an override they did not need --
+    while ``NpcChatLLMAdapter.available``'s own comment stated, in as many
+    words, that no env var's absence means that. Three statements, two rules.
+
+    The expectation below is DERIVED rather than restated: the authority is the
+    address a real, ordinarily-constructed client would dial, read back off
+    ``client.base_url``. A test that hand-wrote ``"http://localhost:11434"``
+    would be the same opinion written twice and would still pass if both sides
+    drifted together.
+    """
+
+    @staticmethod
+    def _dialled_base_url(monkeypatch):
+        """The address the transport would POST to, from a real ``__init__``.
+
+        The gate is pinned off so ``__init__`` skips discovery; ``base_url`` is
+        assigned before that branch either way.
+        """
+        monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
+        return GenericLLMClient().base_url
+
+    @pytest.mark.parametrize(
+        "value", [None, "http://10.0.0.4:11434", "", "   "],
+        ids=["unset", "override", "blank", "whitespace"],
+    )
+    def test_configured_agrees_with_the_address_the_transport_dials(
+        self, monkeypatch, value
+    ):
+        if value is None:
+            monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        else:
+            monkeypatch.setenv("OLLAMA_BASE_URL", value)
+
+        assert llm._provider_credential("ollama") == self._dialled_base_url(monkeypatch)
+
+    def test_the_local_fallback_joins_the_chain_on_the_default_port(self, monkeypatch):
+        """The behaviour the divergence cost: no override, no local fallback.
+
+        An operator running Ollama on the standard port and pointing chat at a
+        remote host got ``[groq]`` -- so a spent remote quota meant canned
+        dialogue with a working local model idle on the same box.
+        """
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+        adapter = NpcChatLLMAdapter()
+
+        # There IS an address to dial -- established independently, from
+        # __init__ -- so the chain has no business omitting it.
+        assert self._dialled_base_url(monkeypatch)
+        assert "ollama" in adapter._provider_chain()
+
+    def test_an_explicitly_blank_address_still_means_no_local_host(self, monkeypatch):
+        """The other direction, and the harness's kill switch.
+
+        ``tests/conftest.py`` and ``llm_doubles.blank_outbound_env`` ASSIGN
+        ``""`` rather than deleting (a deleted key is refilled from ``.env``),
+        and that is what keeps a unit test off a developer's running Ollama. If
+        blank stopped reading as "nothing here", the suite would start dialling
+        localhost.
+        """
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+
+        assert self._dialled_base_url(monkeypatch) == ""
+        assert "ollama" not in NpcChatLLMAdapter()._provider_chain()
+
+
+class TestOllamaAsksTheHostToEnforceJson:
+    """The default provider never asked for JSON mode.
+
+    Point 2 of this file's header, on the one provider it was never applied to.
+    ``_chat_payload`` grew ``json_mode`` because ``generate_structured``
+    "demanded JSON in prose and never once asked the API to enforce it".
+    ``_ollama_payload`` had no equivalent -- on the DEFAULT provider, where
+    ``_ollama_chat(structured=True)`` parses with ``try_parse_json`` and both
+    of ``_call_llm``'s callers parse with ``_parse_or_penalize`` or
+    ``extract_json_list``. Ollama's ``/api/chat`` takes a TOP-LEVEL
+    ``"format": "json"``.
+
+    The cost was not one bad turn: prose trips ``_penalize_unparseable``,
+    ``_call_ollama`` then short-circuits on the bench it recorded, and an
+    ollama-only box is on canned dialogue after a single prose reply.
+
+    Asserted at the CALL SITES rather than on the builder -- a ``json_mode``
+    parameter no caller passes is the same defect with a keyword in it -- and
+    in BOTH directions, since a flag that is always True is a constant.
+    """
+
+    @staticmethod
+    def _capture_post(monkeypatch):
+        """Record the body sent to ``/api/chat``. No socket is opened."""
+        sent = {}
+
+        def _post(url, json=None, **kwargs):
+            sent["url"] = url
+            sent["body"] = json
+            return Resp(payload={"message": {"content": '{"npc_text": "Aye."}'}})
+
+        monkeypatch.setattr(llm.requests, "post", _post)
+        return sent
+
+    @staticmethod
+    def _local_client(factory):
+        return factory(
+            provider="ollama",
+            model="local",
+            api_key=None,
+            base_url="http://localhost:11434",
+        )
+
+    def test_the_chat_adapter_asks_ollama_to_enforce_json(self, monkeypatch):
+        sent = self._capture_post(monkeypatch)
+        adapter = self._local_client(make_chat_adapter)
+
+        adapter._call_ollama("sys", "user", 256, 0.7)
+
+        assert sent["url"].endswith("/api/chat")
+        assert sent["body"].get("format") == "json"
+
+    def test_a_structured_generic_call_asks_ollama_to_enforce_json(self, monkeypatch):
+        sent = self._capture_post(monkeypatch)
+
+        self._local_client(make_generic_client)._ollama_chat(
+            "sys", "user", structured=True
+        )
+
+        assert sent["body"].get("format") == "json"
+
+    def test_a_plain_generic_call_does_not(self, monkeypatch):
+        """The other direction. ``generate_plain`` wants prose, and a host
+        pinned to JSON would answer a quoted string or a stray object."""
+        sent = self._capture_post(monkeypatch)
+
+        self._local_client(make_generic_client)._ollama_chat(
+            "sys", "user", structured=False
+        )
+
+        assert "format" not in sent["body"]
 
 
 class TestProviderChainNeedsAnExplicitProvider:
@@ -804,7 +960,7 @@ class TestCallLlmFallsThrough:
         a._call_openai_compatible = _compat
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.setenv("CEREBRAS_API_KEY", "c")
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
         return a
 
     def test_exhausted_provider_falls_through_to_the_next(self, monkeypatch):
@@ -1394,7 +1550,7 @@ class TestChainSkipsSaturatedProviders:
     def test_spent_provider_drops_out_of_the_chain(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "g")
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
         GenericLLMClient._record_provider_usage(
             "openrouter",
             Resp(headers={"x-ratelimit-limit": "50", "x-ratelimit-remaining": "0"}),
@@ -1405,7 +1561,7 @@ class TestChainSkipsSaturatedProviders:
         """A spent chain still tries: a stale reading must not mute the game."""
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
         monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.setenv("OLLAMA_BASE_URL", "")
         GenericLLMClient._record_provider_usage(
             "openrouter",
             Resp(headers={"x-ratelimit-limit": "50", "x-ratelimit-remaining": "0"}),

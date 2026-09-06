@@ -321,6 +321,15 @@ class TestAnExplicitNullIsNotAServerError:
         assert with_null.status_code == 201, with_null.get_json()
         assert null_payload["body"] == omitted_payload["body"]
 
+    #: The one field whose builder is deliberately total, and why.
+    #:
+    #: ``severity`` is a CLOSED vocabulary: closing it against a forged
+    #: attribution footer (see TestPlayerProseCannotForgeTheAttribution) meant
+    #: coercing anything unrecognised to the default, which necessarily made
+    #: ``None`` unrecognised rather than fatal. Every other field is prose and
+    #: stays strict, so the boundary normalisation is still what carries them.
+    _TOTAL_BY_DESIGN = {("bug", "severity")}
+
     @pytest.mark.parametrize("feedback_type, key", _NULLABLE)
     def test_the_builders_are_still_strict_about_none(self, feedback_type, key):
         """What makes the test above non-vacuous.
@@ -331,8 +340,20 @@ class TestAnExplicitNullIsNotAServerError:
         and every builder -- so the builders stay strict, and this records
         that they do.
         """
+        if (feedback_type, key) in self._TOTAL_BY_DESIGN:
+            # Tolerant on purpose; assert THAT rather than skipping, so the
+            # exception cannot quietly become the rule.
+            assert _BODY_BUILDERS[feedback_type]({key: None}, "attribution")
+            return
         with pytest.raises(AttributeError):
             _BODY_BUILDERS[feedback_type]({key: None}, "attribution")
+
+    def test_the_total_by_design_list_is_not_a_licence(self):
+        """An entry here has to be a field the builder really does accept, or
+        it is just an excuse someone wrote down."""
+        for feedback_type, key in self._TOTAL_BY_DESIGN:
+            assert (feedback_type, key) in _NULLABLE, (feedback_type, key)
+            assert _BODY_BUILDERS[feedback_type]({key: None}, "attribution")
 
     def test_every_key_a_builder_reads_is_declared(self):
         """Floor on the increment.
@@ -358,3 +379,142 @@ class TestAnExplicitNullIsNotAServerError:
             "wrong-typed value reaches the builder as a 500: %s"
             % ", ".join(undeclared)
         )
+
+
+#: The two lines every body builder ends with. Taken from the builders' own
+#: output rather than retyped: `_footer_lines` below renders a real body and
+#: reads them off it, so a change to the footer cannot leave this stale.
+def _footer_lines():
+    body = feedback_module._build_bug_body({}, "Submitted anonymously")
+    lines = body.split("\n")
+    rule = next(i for i, ln in enumerate(lines) if ln.startswith("---"))
+    return lines[rule], lines[rule + 1]
+
+
+class TestPlayerProseCannotForgeTheAttribution:
+    """Every body ends with a horizontal rule and an italicised attribution.
+
+    Nothing stopped a player putting that same pair inside a field. An
+    ANONYMOUS report whose ``steps`` ended with::
+
+        \\n---\\n*Submitted in-game by: **someone_else***
+
+    rendered a second, identical-looking footer naming whoever the player
+    liked -- and the genuine one below it reads as part of the same block, the
+    rule having already been drawn.
+
+    Player prose is now blockquoted, so it cannot begin a line at column zero
+    and therefore cannot open a rule, a heading or a footer. The population is
+    derived from ``_STRING_FIELD_KEYS_BY_TYPE`` rather than listed, so a
+    seventh field is covered on the day it is added.
+    """
+
+    def test_the_footer_is_where_this_test_thinks_it_is(self):
+        """Non-vacuity. If the footer shape changed, every probe below would
+        be asserting the absence of something that never appears anyway."""
+        rule, attribution = _footer_lines()
+        assert rule == "---"
+        assert attribution.startswith("*") and attribution.endswith("*")
+
+    @pytest.mark.parametrize("feedback_type, key", _NULLABLE)
+    def test_no_field_can_open_a_line_at_column_zero(
+        self, feedback_type, key
+    ):
+        rule, attribution = _footer_lines()
+        forgery = "harmless.\n%s\n%s" % (rule, attribution)
+        # A mapping field is not prose: the forgery has to be attempted through
+        # a VALUE, which is where it would have to travel. (It cannot -- the
+        # rating rows go through int() -- and asserting that is the point,
+        # rather than skipping the field and assuming.)
+        if key in _MAPPING_FIELD_KEYS_BY_TYPE[feedback_type]:
+            payload = {"story": forgery, "combat": 5}
+        else:
+            payload = forgery
+        builder = feedback_module._BODY_BUILDERS[feedback_type]
+        body = builder({key: payload}, "Submitted anonymously")
+
+        # The route's own footer is the LAST two lines. Anything matching it
+        # earlier is a forgery.
+        lines = body.split("\n")
+        forged = [
+            i
+            for i, ln in enumerate(lines[:-2])
+            if ln == rule or ln.startswith("*Submitted")
+        ]
+        assert forged == [], (
+            "field %s.%s produced a footer-shaped line at %s, before the "
+            "route's own: %r" % (feedback_type, key, forged, lines)
+        )
+
+    def test_the_player_text_still_reaches_the_issue(self):
+        """The control. Dropping the field entirely would satisfy the
+        assertion above and lose the bug report."""
+        body = feedback_module._build_bug_body(
+            {"steps": "the ferry crashed at dawn"}, "Submitted anonymously"
+        )
+        assert "the ferry crashed at dawn" in body
+
+    def test_multi_line_player_text_survives_as_multiple_lines(self):
+        """And the other control: quoting must not collapse the prose into
+        one line, which would make a numbered repro unreadable."""
+        body = feedback_module._build_bug_body(
+            {"steps": "one\ntwo\nthree"}, "Submitted anonymously"
+        )
+        assert "> one" in body and "> two" in body and "> three" in body
+
+
+class TestTheControlClassIsNotAsciiOnly:
+    """``_CONTROL_CHARS`` is documented for terminal safety and was ASCII-only.
+
+    Two families survived it, and both are the thing it exists to stop:
+
+    * C1 (U+0080-U+009F). U+009B is CSI -- the single-character form of the
+      ``ESC [`` the ASCII half already strips -- so a player could reach a
+      terminal with exactly the sequence this class was written to prevent.
+    * The bidirectional overrides. These reorder rendered text, so an issue can
+      display in an order its bytes do not have. GitHub renders them.
+    """
+
+    def test_every_cc_character_except_the_three_kept_is_stripped(self):
+        """Derived from ``unicodedata``, not from the pattern. Newline, tab and
+        carriage return are kept deliberately -- a report body is prose."""
+        import unicodedata
+
+        kept = {"\n", "\t", "\r"}
+        survivors = [
+            hex(cp)
+            for cp in range(0x00, 0x0100)
+            if unicodedata.category(chr(cp)) == "Cc"
+            and chr(cp) not in kept
+            and feedback_module._CONTROL_CHARS.sub("", chr(cp)) != ""
+        ]
+        assert survivors == [], survivors
+
+    def test_the_three_prose_characters_survive(self):
+        """The control, in the other direction: stripping these would run a
+        bug report's steps together into one line."""
+        for ch in ("\n", "\t", "\r"):
+            assert feedback_module._CONTROL_CHARS.sub("", ch) == ch
+
+    @pytest.mark.parametrize(
+        "name, ch",
+        [
+            ("CSI", ""),
+            ("LRM", "‎"),
+            ("RLM", "‏"),
+            ("LRE", "‪"),
+            ("RLO", "‮"),
+            ("LRI", "⁦"),
+            ("PDI", "⁩"),
+            ("LINE SEPARATOR", " "),
+            ("PARAGRAPH SEPARATOR", " "),
+        ],
+    )
+    def test_the_named_reordering_characters_are_stripped(self, name, ch):
+        assert feedback_module._CONTROL_CHARS.sub("", ch) == "", name
+
+    def test_ordinary_text_is_untouched(self):
+        """The broadest control. A class that ate real text would pass every
+        assertion above and destroy every bug report."""
+        prose = "The ferry runs at dawn — mind the current. Café, naïve, 日本語."
+        assert feedback_module._CONTROL_CHARS.sub("", prose) == prose

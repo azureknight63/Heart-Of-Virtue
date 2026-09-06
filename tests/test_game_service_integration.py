@@ -277,11 +277,35 @@ class TestResolveBgm:
 class TestSerializeActiveStates:
     """``_serialize_active_states`` must never 500 on a degraded save (#295)."""
 
+    #: The keys this service's callers actually read. `_serialize_active_states`
+    #: now DELEGATES to StateEffectSerializer -- the single owner of
+    #: State->wire translation -- whose output is a strict superset (it also
+    #: carries the mapped `type`, a description, and a severity for the combat
+    #: wire). Asserting the exact dict would pin the superset's shape here as
+    #: well, which is how a second copy of the contract starts.
+    SHARED_KEYS = ("name", "status_type", "beats_left")
+
+    def _shared(self, row):
+        return {k: row[k] for k in self.SHARED_KEYS}
+
     def test_states_are_serialized_to_json_safe_primitives(self, game_service, player):
         player.states = [_State("Poisoned", "damage", 3)]
-        assert game_service._serialize_active_states(player) == [
+        rows = game_service._serialize_active_states(player)
+        assert [self._shared(r) for r in rows] == [
             {"name": "Poisoned", "status_type": "damage", "beats_left": 3}
         ]
+
+    def test_the_delegated_serializer_still_carries_the_shared_keys(
+        self, game_service, player
+    ):
+        """Non-vacuity for `_shared`: a superset missing one of these would
+        raise a KeyError above rather than failing informatively, and a
+        serializer that dropped all three would make every assertion here
+        vacuous."""
+        player.states = [_State("Poisoned", "damage", 3)]
+        row = game_service._serialize_active_states(player)[0]
+        for key in self.SHARED_KEYS:
+            assert key in row, key
 
     def test_hidden_states_are_omitted(self, game_service, player):
         player.states = [_State("Poisoned"), _State("SecretCurse", hidden=True)]
@@ -306,9 +330,16 @@ class TestSerializeActiveStates:
         assert game_service._serialize_active_states(player)[0]["beats_left"] == 0
 
     def test_missing_fields_get_defaults(self, game_service, player):
+        """The placeholder is "Unknown Effect", the serializer's.
+
+        This service used to say "Unknown" and the serializer "Unknown
+        Effect" -- two names for the same degraded state on two wires, which
+        is the divergence delegation exists to end. One owner, one name.
+        """
         player.states = [object()]
-        assert game_service._serialize_active_states(player) == [
-            {"name": "Unknown", "status_type": "generic", "beats_left": 0}
+        rows = game_service._serialize_active_states(player)
+        assert [self._shared(r) for r in rows] == [
+            {"name": "Unknown Effect", "status_type": "generic", "beats_left": 0}
         ]
 
 

@@ -431,6 +431,30 @@ class TestJeanOptionTopUp:
 
 
 class TestTruncatedJsonRepair:
+    #: A reply cut off by the token cap INSIDE a ``"text"`` value. The shape
+    #: every test below is built from, so none of them can drift onto a
+    #: payload where the property under test cannot fail:
+    #: ``test_truncated_mid_string_recovers_complete_fields`` truncates inside
+    #: a ``"tone"``, which means the salvaged member has no ``"text"`` key and
+    #: is dropped for an unrelated reason.
+    TRUNCATED_MID_OPTION = (
+        '{"npc_text": "The ford is high.", "conversation_quality": "neutral", '
+        '"jean_options": [{"tone": "direct", '
+        '"text": "Ask her how deep the ford ru'
+    )
+
+    @staticmethod
+    def _string_values(node):
+        """Every string VALUE anywhere in a parsed reply. Keys excluded."""
+        if isinstance(node, dict):
+            for value in node.values():
+                yield from TestTruncatedJsonRepair._string_values(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from TestTruncatedJsonRepair._string_values(value)
+        elif isinstance(node, str):
+            yield node
+
     def test_truncated_mid_string_recovers_complete_fields(self):
         raw = (
             '{"npc_text": "The road is long.", "conversation_quality": "neutral", '
@@ -440,6 +464,55 @@ class TestTruncatedJsonRepair:
         assert parsed is not None
         assert parsed["npc_text"] == "The road is long."
         assert parsed["conversation_quality"] == "neutral"
+
+    def test_no_value_is_a_string_the_model_never_closed(self):
+        """Salvage must not invent the quote that ends a half-written value.
+
+        ``_repair_truncated_json`` used to append the missing ``"`` BEFORE it
+        tried chopping back to the previous comma, which keeps the member the
+        token cap cut in half instead of dropping it. The fragment then passes
+        every downstream gate -- under ``MAX_OPTION_CHARS``, over
+        ``_MIN_OPTION_CHARS``, no meta pattern -- and the player is offered a
+        mid-word button.
+
+        The expectation is DERIVED from the raw payload, not from a copy of
+        what the repair happens to return: a string the MODEL finished appears
+        in ``raw`` with its terminating quote, and one the repair terminated on
+        the model's behalf does not. That holds for any payload, so this cannot
+        be satisfied by listing the fields that survive.
+        """
+        raw = self.TRUNCATED_MID_OPTION
+        parsed = _JSONTools.try_parse_json(raw)
+
+        assert parsed is not None
+        assert parsed["npc_text"] == "The ford is high."
+        for value in self._string_values(parsed):
+            assert '"%s"' % value in raw, (
+                "_repair_truncated_json (ai/llm_text.py) closed a string the "
+                "model never terminated: %r. That is a mid-word amputation, "
+                "not a field." % value
+            )
+
+    def test_the_amputated_option_never_reaches_the_players_buttons(self):
+        """The same property one layer down, on the path that ships.
+
+        ``_clean_jean_options`` word-boundary-trims an over-long option and
+        ``_qc_jean_options`` drops one it cannot trim -- both exist so a
+        mid-word fragment is never a button. Salvage was manufacturing exactly
+        that fragment upstream of both, under their length limits, where
+        neither had anything to catch.
+        """
+        raw = self.TRUNCATED_MID_OPTION
+        parsed = _JSONTools.try_parse_json(raw)
+        cleaned = NpcChatLLMAdapter._clean_jean_options(parsed.get("jean_options"))
+
+        kept = _qc_host()._qc_jean_options(cleaned)
+
+        for option in kept:
+            assert '"%s"' % option["text"] in raw, (
+                "an option the model never finished writing reached the "
+                "player: %r" % option["text"]
+            )
 
     def test_truncated_after_key_recovers_prior_fields(self):
         raw = '{"npc_text": "Storm tonight.", "loquacity_delta":'

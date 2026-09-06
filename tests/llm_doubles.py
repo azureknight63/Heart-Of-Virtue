@@ -409,10 +409,18 @@ def llm_gate_envs(names: Iterable[str]) -> Tuple[str, ...]:
 #: suite tests:
 #:
 #: * ``OLLAMA_BASE_URL`` -- the one that actually reaches the network.
-#:   ``_provider_chain`` appends ollama whenever it is set and
+#:   ``_provider_chain`` appends ollama unless this is explicitly BLANK, and
 #:   ``_provider_available("ollama")`` reads nothing else, so a developer with
 #:   a local Ollama gets unit tests dialling it. This is the "host" the
 #:   blanking comment in tests/conftest.py always claimed to cover.
+#:
+#:   Blank is load-bearing here, and more so than it used to be. Ollama needs
+#:   no credential, so ``_ollama_base_url`` reads an UNSET variable as "the
+#:   default localhost port" -- the address ``GenericLLMClient.__init__`` has
+#:   always pointed ``self.base_url`` at. Assigning ``""`` is therefore the
+#:   only way to say "there is no local host here", and it is the assignment
+#:   below, not the mere absence of the name, that keeps the suite off a
+#:   running Ollama.
 #: * ``NPC_CHAT_LLM_TIMEOUT`` -- feeds ``_turn_deadline``. A large ``.env``
 #:   value spends the whole per-round budget on attempt 1, so the QC retry and
 #:   the state-guard revision call never run and their tests pass for the
@@ -583,6 +591,7 @@ _NON_SECRET_GROUPS = (
         (
             "BROWSER_LOG_RATE_LIMIT_PER_MINUTE",
             "FEEDBACK_RATE_LIMIT_PER_HOUR",
+            "LOGIN_ATTEMPT_RATE_LIMIT_PER_15_MIN",
             "LOGIN_IP_RATE_LIMIT_PER_15_MIN",
             "LOGIN_RATE_LIMIT_PER_15_MIN",
             "NPC_CHAT_IP_RATE_LIMIT_PER_MINUTE",

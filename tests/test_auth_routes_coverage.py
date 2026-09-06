@@ -908,3 +908,108 @@ class TestAHostileBodyWritesNoTraceback:
                     )
         assert rv.status_code == 500
         assert [r for r in caplog.records if r.exc_info]
+
+
+class TestASuccessfulLoginAlsoCostsSomething:
+    """The two original login tiers are FAILURE counters, and that left a hole.
+
+    ``_record_failed_login`` runs only under ``if not user``, so a caller
+    holding one valid credential never touches either budget and can replay
+    that login without limit -- each request costing a full Argon2id verify at
+    the configured memory cost, on a synchronous worker. Credential guessing is
+    bounded by wrong answers; this attack never gives one.
+
+    The property asserted here is the one that was missing, and it is stated
+    against the limiter's own configured ceiling rather than a number written
+    here: a source that keeps logging in SUCCESSFULLY eventually gets a 429.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate_limiters(self):
+        from src.api.routes.auth import (
+            _ip_limiter,
+            _login_attempt_limiter,
+            _login_limiter,
+        )
+
+        for limiter in (_login_limiter, _ip_limiter, _login_attempt_limiter):
+            limiter.clear_all()
+        yield
+        for limiter in (_login_limiter, _ip_limiter, _login_attempt_limiter):
+            limiter.clear_all()
+
+    @pytest.fixture
+    def app(self, auth_app):
+        return auth_app()
+
+    def _login_ok(self, client):
+        return client.post(
+            "/auth/login", json={"username": "Jean", "password": "secret"}
+        )
+
+    def test_the_ceiling_is_a_real_one(self):
+        """Non-vacuity in both directions: a limit of 0 would make the loop
+        below trivially true, and an enormous one would make it untestable."""
+        from src.api.routes.auth import _login_attempt_limiter
+
+        assert 1 < _login_attempt_limiter.limit <= 10_000
+
+    def test_repeated_successful_logins_are_eventually_throttled(self, app):
+        from src.api.routes.auth import _login_attempt_limiter
+
+        ceiling = _login_attempt_limiter.limit
+        mock_user = {"id": "user_001", "username": "Jean", "timezone": "UTC"}
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                statuses = [self._login_ok(c).status_code for _ in range(ceiling + 2)]
+
+        assert 200 in statuses, "no login succeeded; the probe is vacuous"
+        assert 429 in statuses, (
+            "%d consecutive SUCCESSFUL logins from one source were all "
+            "accepted. Every one of them paid for an Argon2 verify, and "
+            "neither failure-counting tier can ever see them."
+            % (ceiling + 2)
+        )
+        # And the throttle arrives at the ceiling, not somewhere arbitrary.
+        assert statuses.index(429) >= ceiling - 1, statuses.index(429)
+
+    def test_the_failure_tiers_are_untouched(self, app):
+        """The control. Adding a third tier must not have moved the behaviour
+        the first two own: a wrong password still trips the failed-attempt
+        counter with its own message."""
+        from src.api.routes.auth import _login_limiter
+
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            with app.test_client() as c:
+                seen = set()
+                for _ in range(_login_limiter.limit + 2):
+                    rv = c.post(
+                        "/auth/login",
+                        json={"username": "Jean", "password": "wrong"},
+                    )
+                    seen.add(rv.status_code)
+                    if rv.status_code == 429:
+                        assert "failed login" in rv.get_json()["message"].lower()
+                        break
+        assert 401 in seen
+        assert 429 in seen
+
+    def test_one_ordinary_login_is_not_throttled(self, app):
+        """The other control: a cost ceiling that refused the first login
+        would satisfy the assertions above and lock everybody out."""
+        mock_user = {"id": "user_001", "username": "Jean", "timezone": "UTC"}
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                assert self._login_ok(c).status_code == 200

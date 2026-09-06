@@ -46,6 +46,47 @@ ABORTABLE_MIN_PREP_BEATS = 8
 logger = logging.getLogger(__name__)
 
 
+def _warn(message):
+    """Report a handled failure through the app logger, without ever raising.
+
+    These call sites all sit inside an ``except`` block, and they used to call
+    ``print``. ``print`` is not exception-free -- ``UnicodeEncodeError`` on a
+    cp1252 Windows console, ``ValueError`` on a stdout a WSGI server has closed
+    -- so a diagnostic could escape the very handler written to swallow the
+    fault it was describing.
+
+    The logger, not stdout, for the second half of the same reason: every
+    handler this app installs carries ``_RedactSecretsFilter`` (see
+    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    that reason and these were left behind.
+    """
+    try:
+        logger.warning("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
+
+def _fault(message):
+    """Log a handled exception WITH its traceback, without ever raising.
+
+    The companion to :func:`_warn`, for the sites that used
+    ``traceback.print_exc()``. That call writes to stderr directly, so the
+    traceback -- the part most likely to contain a path, a connection string
+    or an interpolated secret -- was the one thing bypassing
+    ``_RedactSecretsFilter``. ``exc_info=True`` routes it through the logger
+    instead. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    exactly this reason; these were left behind.
+
+    Call only from inside an ``except`` block: ``exc_info`` needs a live
+    exception to describe.
+    """
+    try:
+        logger.exception("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
+
 def _strip_combatant_prefix(target_id: str) -> str:
     """Strip 'enemy_' or 'ally_' prefix and return the raw Python id string."""
     for prefix in ("enemy_", "ally_"):
@@ -435,7 +476,7 @@ class ApiCombatAdapter:
                         room = f"combat_{self.session_id}"
                         current_app.socketio.emit("combat:log", entry, room=room)
                 except Exception as e:
-                    print(f"[SOCKET ERROR] Failed to emit log: {e}")
+                    _warn(f"[SOCKET ERROR] Failed to emit log: {e}")
 
     def _emit_animation_log(self, beat, animation_data):
         """Add the fallback log entry for an animation without impact text."""
@@ -544,7 +585,7 @@ class ApiCombatAdapter:
                     grid_height=grid_h,
                 )
             except Exception as e:
-                print(f"Warning: Position initialization failed: {e}")
+                _warn(f"Warning: Position initialization failed: {e}")
                 # Fallback to old proximity system
                 for ally in self.player.combat_list_allies:
                     if not hasattr(ally, "combat_proximity"):
@@ -669,18 +710,14 @@ class ApiCombatAdapter:
                             room=f"combat_{self.session_id}",
                         )
                 except Exception:
-                    import traceback
-
-                    traceback.print_exc()
+                    _fault("failed to emit the battle state over the socket")
             return result
 
         except Exception as e:
-            import traceback
-
-            error_msg = (
-                f"Combat initialization error: {str(e)}\n{traceback.format_exc()}"
-            )
-            print(error_msg)
+            # `_fault` carries the traceback via exc_info, so it is no
+            # longer formatted into the message by hand.
+            error_msg = f"Combat initialization error: {e}"
+            _fault(error_msg)
             return {
                 "error": "Failed to initialize combat",
                 "details": str(e),
@@ -2514,11 +2551,17 @@ class ApiCombatAdapter:
                     "name": enemy.name,
                     "distance": distance,
                     "is_ally": False,
+                    # No `health`/`max_health` secondary fallback. Those names
+                    # exist on no engine object -- not on Player, NPC or
+                    # Combatant, and assigned nowhere in src/ -- so the inner
+                    # getattr could only ever return its own default. It is the
+                    # same rot that made `serialize_health_bar` report every
+                    # combatant as 0/100 "critical"; harmless here because the
+                    # primary `hp`/`maxhp` always resolves, and removed because
+                    # a fallback that cannot fire reads as though it can.
                     "health": {
-                        "current": getattr(enemy, "hp", getattr(enemy, "health", 0)),
-                        "max": getattr(
-                            enemy, "maxhp", getattr(enemy, "max_health", 100)
-                        ),
+                        "current": getattr(enemy, "hp", 0),
+                        "max": getattr(enemy, "maxhp", 100),
                     },
                 }
 

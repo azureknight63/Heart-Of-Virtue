@@ -721,13 +721,20 @@ class TestCombatantSerializer:
         assert result["status_effects"] == [
             {
                 "name": "Poisoned",
+                # `type` is this layer's UI polarity vocabulary; `status_type`
+                # is the engine's own `statustype`, which the frontend matches
+                # on directly. Both are on the wire so the player-status path
+                # in GameService can delegate here instead of keeping its own
+                # copy of the translation.
                 "type": "ailment",
+                "status_type": poison.statustype,
                 "description": poison.description,
                 "tactical_mechanics": poison.tactical_mechanics,
                 "severity": "severe",
                 "beats_left": 5,
             }
         ]
+        assert poison.statustype == "poison"
         # Not vacuous: the state really does declare one, and it really does
         # quote the interval effect() runs at.
         assert "every 5 beats" in poison.tactical_mechanics
