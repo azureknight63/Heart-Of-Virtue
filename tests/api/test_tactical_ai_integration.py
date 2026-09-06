@@ -9,6 +9,7 @@ import pytest
 import json
 from unittest.mock import patch, MagicMock
 from src.combatant import wire_handle
+from src.api.serializers.combat import CombatantSerializer
 
 
 def create_mock_move(name="Attack"):
@@ -152,7 +153,7 @@ class TestTacticalStrategistIntegration:
                 data=json.dumps({
                     "move_type": "move",
                     "move_id": "Attack",
-                    "target_id": f"enemy_{id(enemy)}"
+                    "target_id": CombatantSerializer.stream_id(enemy)
                 }),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
@@ -334,7 +335,7 @@ class TestTacticalStrategistIntegration:
                 data=json.dumps({
                     "move_type": "select_move_and_target",
                     "move_id": "Attack",
-                    "target_id": f"enemy_{id(enemy)}"
+                    "target_id": CombatantSerializer.stream_id(enemy)
                 }),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
@@ -501,7 +502,7 @@ class TestTacticalStrategistIntegration:
                 data=json.dumps({
                     "move_type": "move",
                     "move_id": "Attack",
-                    "target_id": f"enemy_{id(enemy)}"
+                    "target_id": CombatantSerializer.stream_id(enemy)
                 }),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
@@ -655,7 +656,7 @@ class TestEnhancedCombatVisualizationIntegration:
                 data=json.dumps({
                     "move_type": "move",
                     "move_id": "Attack",
-                    "target_id": f"enemy_{id(enemy)}"
+                    "target_id": CombatantSerializer.stream_id(enemy)
                 }),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}

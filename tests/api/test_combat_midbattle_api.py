@@ -8,6 +8,7 @@ import pytest
 from src.moves import Move
 from src.narration import narrate
 from src.combatant import wire_handle
+from src.api.serializers.combat import CombatantSerializer
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -271,7 +272,7 @@ def test_reinforcements_do_not_reset_battle(app, client, authenticated_session):
         move_response = _post_json(
             client,
             "/api/combat/move",
-            {"move_type": "move", "move_id": "Advance", "target_id": f"enemy_{id(enemy)}"},
+            {"move_type": "move", "move_id": "Advance", "target_id": CombatantSerializer.stream_id(enemy)},
             session_id,
         )
         assert move_response.status_code == 200
@@ -330,7 +331,7 @@ def test_enemy_move_can_spawn_enemies(app, client, authenticated_session):
         move_response = _post_json(
             client,
             "/api/combat/move",
-            {"move_type": "move", "move_id": "Advance", "target_id": f"enemy_{id(enemy)}"},
+            {"move_type": "move", "move_id": "Advance", "target_id": CombatantSerializer.stream_id(enemy)},
             session_id,
         )
         assert move_response.status_code == 200
