@@ -112,14 +112,30 @@ def check_for_combat(
 def signal_combat_wave_pending(player):
     """Arm the continuation signal for the fight ``player`` is currently in.
 
-    ``player.combat_wave_pending`` is the single signal that tells the combat
-    adapter "this roster wipe is a gap in an ongoing fight, not the end of it"
-    (issue #514). It is deliberately ONE flag with ONE consumption rule -- the
-    adapter clears it on the transition it covers, on a genuinely new fight and
-    on roster teardown. A second, differently-scoped continuation flag would
-    inevitably miss one of those clear sites and strand a fight the way a
-    never-cleared ``player.combat_events`` stranded one in issue #506, so every
-    arming site routes through here instead of inventing its own.
+    ``player.combat_wave_pending`` is the signal that tells the combat adapter
+    "this roster wipe is a gap in an ongoing fight, not the end of it" (issue
+    #514). This is the ONE arming site: every caller routes through here rather
+    than setting the attribute itself, because a second, differently-scoped
+    continuation signal is exactly how a fight gets stranded the way a
+    never-cleared ``player.combat_events`` stranded one in issue #506.
+
+    It is half of a two-flag state machine, and the halves are not
+    interchangeable:
+
+    * ``player.combat_wave_pending`` is the ARMING — "a wave is expected". It is
+      consumed by ``ApiCombatAdapter._execute_move_inner`` on the one transition
+      it covers, so one arming buys exactly one deferral.
+    * ``ApiCombatAdapter.victory_deferred`` is the CONSEQUENCE — "this fight is
+      currently holding an emptied roster open on the strength of that arming"
+      (issue #519). It lives on adapter state because only the status poll needs
+      to read it, to tell an abandoned deferral from a fight merely waiting on
+      the player.
+
+    The second flag is safe only because it never got its own clear sites:
+    ``ApiCombatAdapter._clear_wave_state`` zeroes both together, and every path
+    that ends or restarts a fight — victory/defeat teardown, a fresh
+    ``initialize_combat``, and ``GameService.flee_combat`` — goes through it.
+    Do not add a third flag, and do not clear either one by hand.
 
     Two sites arm it:
 

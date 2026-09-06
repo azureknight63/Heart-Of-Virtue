@@ -551,8 +551,13 @@ class GameService:
         spelled out again, so the tuple is the authority both helpers answer to
         instead of a third copy that happens to agree with them today.
         """
+        # strict=True: the tuple is the authority for the key names, so a
+        # fourth staged key added there without widening this parameter list
+        # must fail loudly rather than silently never being written.
         for key, value in zip(
-            cls._STAGED_PAYLOAD_KEYS, (clean_output, segments, conversation)
+            cls._STAGED_PAYLOAD_KEYS,
+            (clean_output, segments, conversation),
+            strict=True,
         ):
             if value:
                 target[key] = value
@@ -607,6 +612,66 @@ class GameService:
             payload["tile_x"] = tile_x
             payload["tile_y"] = tile_y
         return payload
+
+    @staticmethod
+    def _visible_pending_events(
+        session_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """The pending-event store as a dict — empty when the caller has none.
+
+        The permissive reading: a caller with no ``session_data`` is treated
+        the same as one whose store is empty. That is right for gating work
+        that is merely *held up* by an outstanding dialog (the resume gate),
+        and wrong for concluding that a chain has *ended* — see
+        :meth:`_pending_chain_is_gone`, which is the same question asked
+        strictly.
+        """
+        return (session_data or {}).get("pending_events") or {}
+
+    @staticmethod
+    def _pending_chain_is_gone(session_data: Optional[Dict[str, Any]]) -> bool:
+        """True only when the caller CAN see the store and finds it empty.
+
+        ``session_data is None`` means the caller cannot see the store, which
+        is NOT the same as the store being empty; reading it that way would
+        conclude a fight is over when it is merely mid-ambush, which is issue
+        #514 all over again. Only a caller that HAS the store may say the chain
+        is gone. The invariant, rather than an enumeration of today's
+        store-less callers: **any** caller that reaches this without
+        ``session_data`` gets "the chain may still be alive", and that is the
+        safe answer for every one of them.
+        """
+        return session_data is not None and not session_data.get("pending_events")
+
+    @classmethod
+    def _deferral_abandoned(cls, player, adapter, session_data) -> bool:
+        """Is a deferred victory stranded with nothing left to resolve it?
+
+        The move loop declines to end a fight whose roster emptied mid-ambush
+        (issue #514) and leaves ``awaiting_input`` True — the dialog holding
+        that beat has not been dismissed — so the resume gate in
+        :meth:`get_combat_status`, which fires only when nothing is
+        outstanding, can never reach it. Normal play always resolves that
+        dialog through :meth:`process_event_input`, which settles the victory
+        itself. A session dropped mid-dialog does not: the player comes back to
+        an empty battlefield with nothing to dismiss and no way forward, which
+        is issue #519.
+
+        All four conjuncts have to hold before the status poll may end the
+        fight itself: a deferral is outstanding, the fight is waiting on the
+        player, the roster is empty, and no pending event survives in the
+        session store to enroll a wave. This is deliberately a separate
+        predicate rather than a widening of the resume gate — that gate keeps
+        its exact condition, so the interrupted ``current_move`` resume (issue
+        #344) is untouched.
+        """
+        return bool(
+            player.in_combat
+            and adapter.awaiting_input
+            and adapter.victory_deferred
+            and not getattr(player, "combat_list", None)
+            and cls._pending_chain_is_gone(session_data)
+        )
 
     def _store_pending_event(
         self,
@@ -1998,9 +2063,12 @@ class GameService:
                             #
                             # The key is the container's NAME, not its identity,
                             # so two same-named containers on one tile would
-                            # share a dialog id. No shipped map has a tile with
-                            # two identically named objects; give them distinct
-                            # names if you ever add one.
+                            # share a dialog id — opening the second would hand
+                            # back the first's contents. That is a property of
+                            # the CONTENT, not of this code, so it is enforced
+                            # rather than asserted: tests/
+                            # test_map_object_names_unique.py scans every
+                            # shipped map for a tile that breaks it.
                             event_data = self._store_pending_event(
                                 loot_event, event_data, session_data, tile=tile
                             )
@@ -2287,6 +2355,7 @@ class GameService:
                     event,
                     event_data,
                     session_data,
+                    tile=tile,
                 )
                 if queued_event:
                     events_triggered.append(queued_event)
@@ -2372,6 +2441,7 @@ class GameService:
                                 event,
                                 event_data,
                                 session_data,
+                                tile=tile,
                             )
 
                 except Exception as e:
@@ -2844,45 +2914,16 @@ class GameService:
                 }
             adapter = player._combat_adapter
 
-            # An abandoned deferral has no other rescue (issue #519). The move
-            # loop declines to end a fight whose roster emptied mid-ambush and
-            # leaves awaiting_input True -- the dialog holding that beat has not
-            # been dismissed -- so the resume block below, which fires only when
-            # nothing is outstanding, can never reach it. Normal play always
-            # resolves that dialog through process_event_input, which settles
-            # the victory itself. A session dropped mid-dialog does not: the
-            # player comes back to an empty battlefield with nothing to dismiss.
-            #
-            # Settle it here when all three say the fight is over: a deferral is
-            # outstanding, the roster is empty, and no pending event survives in
-            # the session store to enroll a wave. This is deliberately a
-            # separate branch rather than a widening of the resume gate below --
-            # that gate gets to keep its exact predicate, so the interrupted
-            # current_move resume (issue #344) is untouched.
-            #
-            # ``session_data is None`` means the caller cannot see the store,
-            # which is NOT the same as the store being empty -- and reading it
-            # that way would end a fight that is merely mid-ambush, which is
-            # issue #514 all over again. Only a caller that HAS the store and
-            # finds it empty can say the chain is gone. Today the callers
-            # without one are ``GameService.get_combat_state`` and the tests;
-            # the guard is here so the next one is not a regression.
-            if (
-                player.in_combat
-                and adapter.awaiting_input
-                and adapter.victory_deferred
-                and not getattr(player, "combat_list", None)
-                and session_data is not None
-                and not session_data.get("pending_events")
-            ):
+            # An abandoned deferral has no other rescue (issue #519) -- see
+            # _deferral_abandoned for why this is a separate branch and not a
+            # widening of the resume gate below.
+            if self._deferral_abandoned(player, adapter, session_data):
                 adapter.settle_victory()
 
             # Resume logic: If battle is active but not awaiting input, check why
             # This handles cases where combat was paused for narrative events
             if player.in_combat and not adapter.awaiting_input:
-                blocking_events = (
-                    session_data.get("pending_events", {}) if session_data else {}
-                )
+                blocking_events = self._visible_pending_events(session_data)
                 if not blocking_events:
                     # No pending events, we should be resuming or finishing
                     if len(player.combat_list) == 0:
@@ -3909,6 +3950,20 @@ class GameService:
         player.states = [
             s for s in getattr(player, "states", []) if getattr(s, "persistent", True)
         ]
+
+        # Fleeing is the THIRD spelling of end-of-fight state reset (the settle
+        # pair's _teardown_combat_roster and initialize_combat's fresh-fight
+        # branch are the other two), so it owes the wave/deferral state machine
+        # the same clear they do — see ApiCombatAdapter._clear_wave_state.
+        # Latent today (the only consumer of combat_wave_pending sits inside
+        # _execute_move, which requires in_combat, and the next fresh fight
+        # clears it first), but this path survived only by accident: it happens
+        # to take victory_deferred with combat_adapter_state below.
+        adapter = getattr(player, "_combat_adapter", None)
+        if adapter is not None:
+            adapter._clear_wave_state()
+        else:
+            player.combat_wave_pending = False
 
         if hasattr(player, "_combat_adapter"):
             del player._combat_adapter

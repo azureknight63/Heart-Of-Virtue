@@ -32,35 +32,26 @@ the property under test is "exactly one terminal stream per fight ending", and
 a mocked adapter would only ever prove that the mock was called.
 """
 
-import ast
 import inspect
-import textwrap
 import types
 
 import pytest
 
 from src.api.combat_adapter import ApiCombatAdapter
 from src.npc import Slime
+from tests._ast_helpers import called_names as _method_calls, source_calls
 from tests._combat_fixtures import engage, make_npc, make_player
 
-
-def _method_calls(func):
-    """Names of every ``self.<name>(...)``/bare ``<name>(...)`` call in ``func``.
-
-    An ``ast.Call`` walk, not a source-substring search: a docstring or comment
-    naming a method would satisfy a text match without ever invoking it, and
-    both docstrings here name every method in the table above.
-    """
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            target = node.func
-            if isinstance(target, ast.Attribute):
-                names.add(target.attr)
-            elif isinstance(target, ast.Name):
-                names.add(target.id)
-    return names
+#: Every module that may reach an end-of-fight entry point. The adapter is not
+#: enough on its own: three of settle_victory's four call sites live in
+#: game_service, so a scan of ``vars(ApiCombatAdapter)`` alone would stay green
+#: while a new exit path in the service called ``_handle_victory`` directly --
+#: which is exactly the mistake issue #520 is about.
+END_OF_FIGHT_MODULES = (
+    "src/api/combat_adapter.py",
+    "src/api/services/game_service.py",
+    "src/api/routes/combat.py",
+)
 
 
 def _wait_move(player):
@@ -146,15 +137,44 @@ class TestTheFoldedTailKeptEverythingTheInlineCopyDid:
     def test_the_victory_result_carries_the_beats_of_the_move_that_ended_it(
         self, adapter, player
     ):
+        """The KILLING move's beats, not merely *a* list.
+
+        ``settle_victory`` always sets the key (``[]`` when it is handed
+        nothing), so "the key is present and is a list" is satisfied by a fold
+        that forgot to pass ``beat_states`` through at all — which is precisely
+        the regression the message claims to catch. Pinned instead to what the
+        publisher was handed: the result and the stream carry the same,
+        non-empty beats.
+        """
+        streamed = record_streams(adapter)
         player.combat_list.clear()
 
         result = adapter._execute_move(_wait_move(player))
 
-        assert "beat_states" in result, (
+        (published_beats, ended), = streamed
+        assert ended is True
+        assert published_beats, (
+            "the killing move produced no beat snapshots at all, so this test "
+            "can no longer tell a dropped beat_states from an empty one"
+        )
+        assert result["beat_states"] == published_beats, (
             "the folded tail dropped beat_states; the client replays the "
             "killing beat from this key"
         )
-        assert isinstance(result["beat_states"], list)
+
+    def test_the_defeat_result_carries_the_beats_of_the_move_that_ended_it(
+        self, adapter, player
+    ):
+        """The same pin on the defeat half — it folds the same tail."""
+        streamed = record_streams(adapter)
+        player.hp = 0
+
+        result = adapter._execute_move(_wait_move(player))
+
+        (published_beats, ended), = streamed
+        assert ended is True
+        assert published_beats
+        assert result["beat_states"] == published_beats
 
     def test_the_beats_reach_the_stream_and_not_just_the_result(
         self, adapter, player
@@ -194,16 +214,27 @@ class TestTheFoldedTailKeptEverythingTheInlineCopyDid:
     def test_the_restore_reaches_the_between_requests_exits_too(
         self, adapter, player
     ):
-        # settle_victory's other callers discard its return value, so without
-        # the restore living inside the helper the event is dropped on the floor.
+        """settle_victory's other callers discard its return value.
+
+        Without the restore living inside the helper the event is dropped on
+        the floor for all three of them.
+
+        Asserted against the RETURNED state as well as the store: writing the
+        literal key and then reading the same literal back would keep passing
+        after a rename of the source key, since the test would be checking its
+        own write rather than anything the adapter produced.
+        """
         player.combat_list.clear()
         player.combat_adapter_state["events_triggered"] = [{"name": "AfterTheFight"}]
 
-        adapter.settle_victory()
+        state = adapter.settle_victory()
 
-        assert player.combat_adapter_state.get("events_triggered") == [
-            {"name": "AfterTheFight"}
-        ]
+        assert state.get("events_triggered") == [{"name": "AfterTheFight"}], (
+            "settle_victory's own result no longer carries the queued event"
+        )
+        assert player.combat_adapter_state.get("events_triggered") == state.get(
+            "events_triggered"
+        ), "the queued post-combat event was consumed and never restored"
 
 
 class TestThereIsOnlyOneVictoryTail:
@@ -226,18 +257,33 @@ class TestThereIsOnlyOneVictoryTail:
             "that is the inline second victory tail issue #520 removed"
         )
 
-    def test_settle_victory_is_the_only_caller_of_the_exp_half(self):
+    def test_settle_victory_is_the_only_caller_of_the_exp_half_anywhere(self):
+        """Scanned across every module that can end a fight, not just the class.
+
+        Three of the four victory exits live in ``game_service``, so a scan of
+        ``vars(ApiCombatAdapter)`` alone stays green while a new service-side
+        exit calls ``adapter._handle_victory()`` — the exact mistake #520 is
+        about, one file away from where the old scan was looking.
+        """
         assert "_handle_victory" in _method_calls(ApiCombatAdapter.settle_victory)
-        callers = [
-            name
-            for name, member in vars(ApiCombatAdapter).items()
-            if inspect.isfunction(member)
-            and name != "settle_victory"
-            and "_handle_victory" in _method_calls(member)
-        ]
-        assert callers == [], (
-            f"{callers} call _handle_victory directly; it publishes no terminal "
-            "stream, so every exit path must go through settle_victory"
+        callers = {
+            f"{module}::{func}"
+            for module in END_OF_FIGHT_MODULES
+            for func in source_calls(module, "_handle_victory")
+            if func != "settle_victory"
+        }
+        assert callers == set(), (
+            f"{sorted(callers)} call _handle_victory directly; it publishes no "
+            "terminal stream, so every exit path must go through settle_victory"
+        )
+
+    def test_that_cross_module_scan_can_actually_see_the_other_modules(self):
+        """Positive control — an empty result must not be able to mean 'no scan'."""
+        assert source_calls(
+            "src/api/services/game_service.py", "settle_victory"
+        ), (
+            "the cross-module scan finds no settle_victory caller in "
+            "game_service, so its empty _handle_victory result proves nothing"
         )
 
     def test_the_move_loop_ends_a_defeat_through_settle_defeat(self):
@@ -264,10 +310,39 @@ class TestTheSettlePairHasOneShape:
     """
 
     def test_both_settle_methods_take_beat_states_and_return_the_result(self):
+        """FULL signatures, defaults included.
+
+        Parameter names alone let the two drift where it matters most: the
+        defeat half took ``beat_states`` as REQUIRED while the victory half
+        defaulted it, so ``settle_defeat()`` raised ``TypeError`` at a call
+        site where ``settle_victory()`` worked — for a pair whose whole job is
+        to be interchangeable, and whose docstring called them exact mirrors.
+        """
         victory = inspect.signature(ApiCombatAdapter.settle_victory)
         defeat = inspect.signature(ApiCombatAdapter.settle_defeat)
-        assert list(victory.parameters) == ["self", "beat_states"]
-        assert list(defeat.parameters) == ["self", "beat_states"]
+        assert (
+            str(victory) == str(defeat) == "(self, beat_states=None) -> Dict[str, Any]"
+        ), (
+            f"settle_victory{victory} and settle_defeat{defeat} are no longer "
+            "interchangeable at the call site"
+        )
+
+    def test_both_settle_methods_can_be_called_with_no_beats(self, adapter, player):
+        """The signature check above, exercised. A default that is never
+        called is a default that can be removed without anything failing."""
+        record_streams(adapter)
+        player.combat_list.clear()
+        assert adapter.settle_victory()["combat_active"] is False
+
+        fresh_player = make_player()
+        slime = make_npc(Slime, name="Test Slime", hp=20, maxhp=20)
+        engage(fresh_player, [slime])
+        fresh = ApiCombatAdapter(fresh_player)
+        fresh.initialize_combat([slime])
+        fresh_player._combat_adapter = fresh
+        record_streams(fresh)
+
+        assert fresh.settle_defeat()["combat_active"] is False
 
     def test_the_incomplete_half_is_private_and_not_named_like_the_pair(self):
         # Every method whose name claims an end-of-fight outcome. The unrelated
@@ -313,8 +388,21 @@ class TestTheSettlePairHasOneShape:
 
 
 def test_no_caller_anywhere_still_reaches_for_the_old_defeat_name():
-    """``_handle_defeat`` is gone from the class, not merely aliased."""
+    """``_handle_defeat`` is gone from the class AND unreferenced by any caller.
+
+    ``not hasattr`` alone is a rename check, not a caller check: a service-side
+    exit could still spell ``adapter._handle_defeat(beats)`` and fail only at
+    runtime, on the defeat path, which no route test drives.
+    """
     assert not hasattr(ApiCombatAdapter, "_handle_defeat")
     assert isinstance(
         inspect.getattr_static(ApiCombatAdapter, "settle_defeat"), types.FunctionType
+    )
+    stragglers = {
+        f"{module}::{func}"
+        for module in END_OF_FIGHT_MODULES
+        for func in source_calls(module, "_handle_defeat")
+    }
+    assert stragglers == set(), (
+        f"{sorted(stragglers)} still call the removed _handle_defeat name"
     )
