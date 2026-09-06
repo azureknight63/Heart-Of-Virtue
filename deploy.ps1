@@ -36,12 +36,19 @@ $remoteTar    = "~/hov_dist.tar"
 # .env. Commented-out entries are the normal shape of this repo's env files
 # (see .env.example, where nearly everything ships commented), so this was not
 # a hypothetical line.
+#
+# Held in a SCRIPT variable, not in $env:. A process-scope environment
+# variable is copied into every child process this script starts -- which
+# includes `npm ci` and `npm run build` below, and therefore every install
+# and build lifecycle script in the whole dependency tree. A shell variable
+# is not: PowerShell only exports the Env: drive.
 $envFile = ".env"
+$nexusPass = $null
 if (Test-Path $envFile) {
     $envContent = Get-Content $envFile
     foreach ($line in $envContent) {
         if ($line -match '^\s*NEXUS_PASS\s*=\s*(.*)$') {
-            $env:NEXUS_PASS = $matches[1].Trim()
+            $nexusPass = $matches[1].Trim()
             break
         }
     }
@@ -50,7 +57,7 @@ if (Test-Path $envFile) {
     exit 1
 }
 
-if (-not $env:NEXUS_PASS) {
+if (-not $nexusPass) {
     Write-Error "NEXUS_PASS not found in .env"
     exit 1
 }
@@ -80,8 +87,13 @@ function Invoke-Remote {
         it is one argument to ssh, to be interpreted by the *remote* shell.
 
     .NOTES
-        Not tested against the real server from here, and deliberately so; what
-        it does is verified only against PowerShell's own argument handling.
+        Not tested against the real server from here, and deliberately so.
+        What IS verified locally, against PowerShell itself: that a native exe
+        receives an argument array one argv entry at a time; that a child
+        process started outside this function sees no SSHPASS while sshpass
+        inside it does; that the `finally` clears SSHPASS even when the call
+        throws; and that `finally` does not clobber $LASTEXITCODE, which every
+        error check below depends on.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
@@ -89,19 +101,36 @@ function Invoke-Remote {
     )
 
     if (Get-Command sshpass -ErrorAction SilentlyContinue) {
-        & sshpass -e $Exe @Arguments
+        # sshpass takes the password from the SSHPASS environment variable
+        # with -e rather than from argv with -p. `sshpass -p $pass ...` put
+        # the production SSH password in this process's command line, where
+        # any local `Get-CimInstance Win32_Process` / `ps` could read it for
+        # as long as the call ran.
+        #
+        # The first fix for that set $env:SSHPASS once, at PROCESS scope,
+        # above the `npm ci` / `npm run build` steps -- and a process-scope
+        # environment variable is inherited by every child process. That
+        # handed the production SSH password to npm and to every install and
+        # build lifecycle script in the dependency tree: a wider audience
+        # than the argv exposure it replaced, and for longer. "The
+        # environment is readable by far fewer things" is true of other
+        # users on the box and false of one's own children.
+        #
+        # So it is set here, around the one call that needs it, and removed
+        # in `finally` so it does not outlive that call even if ssh throws.
+        # Remove-Item rather than = "": sshpass -e with an empty SSHPASS
+        # sends an empty password rather than falling back to a prompt.
+        $env:SSHPASS = $script:nexusPass
+        try {
+            & sshpass -e $Exe @Arguments
+        } finally {
+            Remove-Item Env:SSHPASS -ErrorAction SilentlyContinue
+        }
     } else {
         # No sshpass: ssh/scp prompt for the password themselves.
         & $Exe @Arguments
     }
 }
-
-# sshpass takes the password from the SSHPASS environment variable with -e,
-# rather than from argv with -p. `sshpass -p $env:NEXUS_PASS ...` put the
-# production SSH password in this process's command line, where any local
-# `Get-CimInstance Win32_Process` / `ps` can read it for as long as the call
-# runs. The environment is readable by far fewer things and is not echoed.
-$env:SSHPASS = $env:NEXUS_PASS
 
 # ── 1. Build frontend ───────────────────────────────────────────────────────
 Write-Host "Building frontend..." -ForegroundColor Cyan

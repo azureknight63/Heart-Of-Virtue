@@ -47,6 +47,24 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Never let the fuzzer reach a provider, a database, a mailbox or GitHub.
+#
+# This file imports src.npc, which reaches ai.llm_client, and it drives real
+# combat rounds -- the tactical advisor and Mynx ambient behaviour both dial a
+# provider from inside that loop when their gates are set, and this branch's
+# .env sets them. It also builds a real app via create_app(TestingConfig),
+# which loads .env through src/api/db.py.
+#
+# ORDERING: the import below pulls in ai.llm_client, whose module body calls
+# load_project_env() -- so the real .env is fully loaded by the time the sweep
+# runs. That is deliberate: blank_outbound_env ASSIGNS "" rather than popping,
+# and load_dotenv(override=False) skips keys that are already present, so an
+# assigned blank survives every later loader while a popped one would be
+# refilled. See blank_outbound_env's docstring.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
+
+blank_outbound_env()
+
 # Findings in these categories are genuine invariant breaches (must be zero).
 # Everything else is an informational in-game rejection (not a breach).
 _SECURITY_CATEGORIES = frozenset({

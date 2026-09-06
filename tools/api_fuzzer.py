@@ -34,6 +34,26 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Never let the fuzzer reach a provider, a database, a mailbox or GitHub.
+#
+# This one is not theoretical. The fuzzer auto-enumerates EVERY route in the
+# URL map and skips only /api/test/ and /socket.io -- so POST /api/feedback is
+# in scope, and routes/feedback.py's _create_github_issue() has no TESTING
+# guard by design. That is the same path that filed 20 real issues from
+# bug_hunt.py. POST /api/auth/register is in scope too, and
+# auth_service.create_user has no guard either; that one wrote real rows to the
+# production Turso database. Both credentials were live here until this sweep.
+#
+# ORDERING: the import below pulls in ai.llm_client, whose module body calls
+# load_project_env() -- so the real .env is fully loaded by the time the sweep
+# runs. That is deliberate: blank_outbound_env ASSIGNS "" rather than popping,
+# and load_dotenv(override=False) skips keys that are already present, so an
+# assigned blank survives every later loader while a popped one would be
+# refilled. See blank_outbound_env's docstring.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
+
+blank_outbound_env()
+
 _SECURITY_CATEGORIES = frozenset({
     "server-error", "stacktrace-leak", "auth-crash", "auth-bypass",
     "harness-error",

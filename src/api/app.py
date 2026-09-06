@@ -10,6 +10,7 @@ from typing import NamedTuple, Tuple
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
+from werkzeug.exceptions import ClientDisconnected
 from werkzeug.http import parse_set_header
 from src.api.config import Config, DevelopmentConfig
 from src.api.security_headers import _register_security_headers
@@ -859,6 +860,17 @@ def _register_request_limits(app):
         # block on a POST that was already complete. Tested for with Werkzeug's
         # own parser, since this is the same condition that made
         # ``request.content_length`` None a few lines up.
+        #
+        # AND-ed with the method, because the chunked test alone put a body
+        # read on EVERY path. ``GET /health`` with ``Transfer-Encoding:
+        # chunked`` and a body that arrives slowly held the single gunicorn
+        # worker for as long as the client cared to dawdle — an unauthenticated
+        # denial of service on the one route a monitor polls. As a conjunction
+        # it cannot reintroduce the hang described above: that needs a
+        # length-less POST *without* the chunked header, and this branch still
+        # requires the header.
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return None
         if "chunked" not in parse_set_header(
             request.headers.get("Transfer-Encoding") or ""
         ):
@@ -868,7 +880,20 @@ def _register_request_limits(app):
         # nothing to bound. (``get_input_stream``'s "safe fallback".)
         if "wsgi.input_terminated" not in request.environ:
             return None
-        if len(request.get_data(cache=True)) >= limit:
+        try:
+            body = request.get_data(cache=True)
+        except ClientDisconnected:
+            # The client hung up mid-chunk. Werkzeug raises this out of the
+            # read, and out of ``before_request`` it has no handler: it lands
+            # in ``generic_error`` as a 500 plus a ``logger.exception``
+            # traceback, on any path, from an unauthenticated request, against
+            # a rotating LOG_FILE — so anyone who can open a socket can fill
+            # the log with stack traces by disconnecting mid-body. There is
+            # nobody left to answer, so answer nothing and let normal dispatch
+            # take it: whatever the route does with a body that never arrived,
+            # it does without a traceback and without this hook's opinion.
+            return None
+        if len(body) >= limit:
             return _too_large(limit)
         return None
 

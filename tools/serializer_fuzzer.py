@@ -35,6 +35,22 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Never let the fuzzer reach a provider, a database, a mailbox or GitHub.
+#
+# It imports src.api.services.game_service (which pulls src/api/db.py and its
+# import-time load_project_env()) and serializes real NPCs, whose chat adapter
+# is gated on NPC_CHAT_LLM_ENABLED -- set to 1 in this branch's .env.
+#
+# ORDERING: the import below pulls in ai.llm_client, whose module body calls
+# load_project_env() -- so the real .env is fully loaded by the time the sweep
+# runs. That is deliberate: blank_outbound_env ASSIGNS "" rather than popping,
+# and load_dotenv(override=False) skips keys that are already present, so an
+# assigned blank survives every later loader while a popped one would be
+# refilled. See blank_outbound_env's docstring.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
+
+blank_outbound_env()
+
 from src.player import Player  # noqa: E402
 from src.npc import NPC, Merchant  # noqa: E402
 from src.items import Longsword, LeatherArmor, GoldRing, Restorative, Gold  # noqa: E402

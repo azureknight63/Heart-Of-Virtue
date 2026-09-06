@@ -46,6 +46,32 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+# Never let the measurement reach a provider, a database, a mailbox or GitHub.
+#
+# This script builds adapters with ``enabled = True`` and
+# ``provider = "openrouter"`` and drives their real generate_* methods; only the
+# ``_patched`` transport stubs stand between that and a live, billed call, and
+# one missed stub in a future measurement path would spend real quota silently.
+#
+# It used to derive its own, smaller list here -- a loop over
+# ``llm._OPENAI_COMPATIBLE_PROVIDERS.values()`` -- with a comment claiming the
+# shared vocabulary was something "tools/ cannot import". That claim was false
+# (tools/bug_hunt.py imports exactly it), and the smaller list was wrong in the
+# way a second derivation always is: the provider registry does not carry
+# ANTHROPIC_API_KEY or OPENAI_API_KEY, so those stayed live, along with
+# OLLAMA_BASE_URL -- the one variable that puts this process on the network by
+# itself -- GITHUB_TOKEN, TURSO_* and the LLM gate trio.
+#
+# ORDERING: the import below pulls in ai.llm_client, whose module body calls
+# load_project_env() -- so the real .env is fully loaded by the time the sweep
+# runs. That is deliberate: blank_outbound_env ASSIGNS "" rather than popping,
+# and load_dotenv(override=False) skips keys that are already present, so an
+# assigned blank survives every later loader while a popped one would be
+# refilled. See blank_outbound_env's docstring.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
+
+blank_outbound_env()
+
 _ENCODING = None
 
 
@@ -117,28 +143,6 @@ def record(rows, path, call, system, user, max_tokens, key, note=""):
 # the exact mutually-unaware-copies bug issue #380 fixed in the engine.
 # ---------------------------------------------------------------------------
 import ai.llm_client as llm  # noqa: E402
-
-# ``ai.llm_client`` calls ``load_project_env()`` in its module body, so the
-# real ``.env`` -- provider API keys included -- is now in ``os.environ``. This
-# script then builds adapters with ``enabled = True`` and
-# ``provider = "openrouter"`` and drives their real generate_* methods; only the
-# ``_patched`` transport stubs stand between that and a live, billed call. One
-# missed stub in a future measurement path would spend real quota silently, so
-# blank the credentials too: ``_provider_chain`` treats a *present* key as
-# dialable, and every read is an ``os.getenv`` at call time.
-#
-# Derived from the provider registry rather than transcribed -- a hand-written
-# list stops covering the chain the moment a fourth provider is registered,
-# which is the failure this exists to prevent (same reasoning as
-# ``tests/llm_doubles.PROVIDER_KEY_ENVS``, which tools/ cannot import).
-#
-# ASSIGNED "", never ``del``/``.pop()``: ``load_project_env`` runs
-# ``load_dotenv(override=False)``, which skips keys already *present* regardless
-# of value but refills ones that are *absent* -- so a deleted key comes straight
-# back from .env at the next import that loads it. (The GITHUB_TOKEN lesson;
-# see tools/bug_hunt.py.)
-for _cfg in llm._OPENAI_COMPATIBLE_PROVIDERS.values():
-    os.environ[_cfg["key_env"]] = ""
 
 from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
 import src.npc._chat_guard as chat_guard  # noqa: E402

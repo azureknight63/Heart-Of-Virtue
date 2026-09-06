@@ -18,7 +18,6 @@ Exit codes:
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -53,24 +52,14 @@ if str(ROOT) not in sys.path:
 # runs. That is deliberate and is what makes assignment work: db.py's later
 # load_dotenv(override=False) skips keys already *present*, so an assigned
 # empty value survives while a popped one would be silently refilled.
-from tests.llm_doubles import (  # noqa: E402
-    CREDENTIAL_ENVS,
-    LLM_SETTING_ENVS,
-    llm_gate_envs,
-)
+# The sweep itself lives in tests/llm_doubles.py, with the pins, so that the
+# six tools that need it cannot drift apart -- which is what happened when
+# tools/measure_llm_tokens.py grew a second, smaller derivation of its own and
+# left ANTHROPIC_API_KEY, OPENAI_API_KEY, OLLAMA_BASE_URL, GITHUB_TOKEN and
+# TURSO_* live.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
 
-for _llm_env in (
-    CREDENTIAL_ENVS + llm_gate_envs(os.environ) + LLM_SETTING_ENVS
-):
-    os.environ[_llm_env] = ""
-
-# The explicit pins, applied after the sweep so it cannot blank them. "none" is
-# PROVIDER_DISABLED and is stronger than empty: empty falls through to
-# DEFAULT_PROVIDER ("ollama"), leaving a local Ollama to be probed.
-os.environ["MYNX_LLM_ENABLED"] = "0"
-os.environ["MYNX_LLM_PROVIDER"] = "none"
-os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
-os.environ["MYNX_FALLBACK_DELAY"] = "0"
+blank_outbound_env()
 
 # GITHUB_TOKEN and TURSO_* used to be blanked here by name, a paragraph each.
 # Both are in OUTBOUND_CREDENTIAL_ENVS now, so the sweep above covers them:

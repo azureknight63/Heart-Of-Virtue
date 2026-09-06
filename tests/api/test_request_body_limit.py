@@ -191,31 +191,44 @@ class TestAChunkedBodyIsRefusedToo:
         assert rv.status_code == 413
         assert opened == []
 
-    def test_the_body_is_not_buffered_past_the_cap(self, client, monkeypatch):
+    def test_the_body_is_not_read_past_the_cap(self, client, monkeypatch):
         """The DoS half, asserted rather than assumed.
 
         A hook that read the whole stream to measure it would answer 413 and
         satisfy every test above while doing the exact thing the cap exists to
-        prevent. ``request.stream`` is the one place the bytes can arrive, so
-        count them there.
+        prevent.
+
+        So count bytes where they actually arrive. This used to wrap
+        ``Request.get_data`` and measure its RETURN VALUE, which proves nothing
+        about consumption: a hook that read ten megabytes and returned the
+        first one would have passed. ``LimitedStream.readinto`` is the single
+        point every byte of a bounded body passes through -- ``get_data`` calls
+        ``readall``, which loops on ``read``, which is ``RawIOBase.read``
+        delegating to ``readinto`` -- so the sum of what it returns is the
+        number of bytes that came off the socket, whatever reads them and
+        however many times.
         """
-        from werkzeug.wrappers import Request
+        from werkzeug.wsgi import LimitedStream
 
-        read_total = []
-        real_get_data = Request.get_data
+        read = []
+        real_readinto = LimitedStream.readinto
 
-        def _counting_get_data(self, *args, **kwargs):
-            rv = real_get_data(self, *args, **kwargs)
-            read_total.append(len(rv))
-            return rv
+        def _counting_readinto(self, b):
+            n = real_readinto(self, b)
+            read.append(n or 0)
+            return n
 
-        monkeypatch.setattr(Request, "get_data", _counting_get_data)
+        monkeypatch.setattr(LimitedStream, "readinto", _counting_readinto)
         rv = _post_chunked(
             client, _LOGS, _body_of_size(Config.MAX_CONTENT_LENGTH * 4)
         )
         assert rv.status_code == 413
-        assert read_total, "the hook never read the body"
-        assert max(read_total) <= Config.MAX_CONTENT_LENGTH
+        assert sum(read) > 0, "the hook never read the body"
+        assert sum(read) <= Config.MAX_CONTENT_LENGTH, (
+            "%d bytes were read off a %d-byte cap. The cap is meant to bound "
+            "what a single request can make this process hold."
+            % (sum(read), Config.MAX_CONTENT_LENGTH)
+        )
 
 
 class TestALegitimateBodyStillPasses:
@@ -365,3 +378,89 @@ class TestABodylessPostIsNotRead:
         # The route answers on its own terms (no logs in an empty body).
         assert status.startswith("400")
         assert reads == []
+
+
+class TestTheChunkedReadStaysOnItsOwnPath:
+    """The two edges of reading a body inside ``before_request``.
+
+    That hook runs for EVERY request, so anything it does to a chunked body it
+    does on every path -- including the unauthenticated ones, and including the
+    methods that have no body at all.
+    """
+
+    def test_a_chunked_GET_is_not_read_at_all(self, client, monkeypatch):
+        """``GET /health`` must not have its body read, however it is framed.
+
+        The chunked test used to stand alone, so any request carrying
+        ``Transfer-Encoding: chunked`` had its body read to completion before
+        dispatch -- on every route, method-independent. This deployment runs a
+        single gunicorn worker with nothing in front of it, so a GET whose
+        chunks arrive slowly occupies that worker until the server's timeout,
+        from an unauthenticated client, against the one route a monitor polls.
+
+        Conjoining the method with the chunked test cannot bring back the hang
+        the docstring warns about: that needs a length-less POST *without* the
+        header, and this branch still requires the header.
+        """
+        from werkzeug.wsgi import LimitedStream
+
+        reads = []
+        real_readinto = LimitedStream.readinto
+
+        def _counting_readinto(self, b):
+            n = real_readinto(self, b)
+            reads.append(n or 0)
+            return n
+
+        monkeypatch.setattr(LimitedStream, "readinto", _counting_readinto)
+        rv = client.get(
+            "/health",
+            data=_body_of_size(Config.MAX_CONTENT_LENGTH * 2),
+            headers={"Transfer-Encoding": "chunked"},
+            environ_overrides={"wsgi.input_terminated": True},
+        )
+        assert rv.status_code == 200, rv.get_data(as_text=True)[:400]
+        assert sum(reads) == 0, (
+            "the hook read %d bytes off a GET. A body-less method's stream is "
+            "not this hook's business, and reading it is how a slow client "
+            "holds the only worker." % sum(reads)
+        )
+
+    def test_a_disconnect_mid_body_is_not_an_unauthenticated_500(
+        self, client, monkeypatch, tmp_path
+    ):
+        """A client that hangs up mid-chunk must not produce a traceback.
+
+        Werkzeug raises ``ClientDisconnected`` out of the read. Out of
+        ``before_request`` it has no handler of its own, so it reaches
+        ``generic_error`` -- a 500 and a ``logger.exception`` stack trace, on
+        any path, for an unauthenticated request, written to a rotating
+        LOG_FILE. Anyone able to open a socket could fill that log by
+        disconnecting.
+
+        The first read raises and the rest behave, which is what a mid-body
+        disconnect looks like from the app's side: the hook has to swallow it
+        and let normal dispatch continue, so this asserts both that there is no
+        500 and that the request still went somewhere sensible.
+        """
+        from unittest.mock import patch
+
+        from werkzeug.exceptions import ClientDisconnected
+        from werkzeug.wrappers import Request
+
+        real_get_data = Request.get_data
+        raised = []
+
+        def _disconnect_once(self, *args, **kwargs):
+            if not raised:
+                raised.append(True)
+                raise ClientDisconnected()
+            return real_get_data(self, *args, **kwargs)
+
+        monkeypatch.setattr(Request, "get_data", _disconnect_once)
+        body = _body_of_size(Config.MAX_CONTENT_LENGTH - _OVER)
+        with patch("src.api.routes.logs.LOGS_DIR", tmp_path):
+            rv = _post_chunked(client, _LOGS, body)
+        assert raised, "the hook never reached the read, so nothing was proved"
+        assert rv.status_code != 500, rv.get_data(as_text=True)[:400]
+        assert rv.status_code == 200, rv.get_data(as_text=True)[:400]

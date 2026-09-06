@@ -28,6 +28,8 @@ This is a plain module, not a ``conftest.py``, so nothing here is auto-injected;
 docstring). Sibling harness for the NPC/chat mixin: ``tests/_npc_fixtures.py``.
 """
 
+import ast
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Type, TypeVar
 
@@ -49,10 +51,13 @@ __all__ = [
     "LOCAL_ONLY_SECRET_ENVS",
     "NON_SECRET_ENVS",
     "declared_env_names",
+    "env_names_read_under",
     "classify_env_name",
     "LLM_GATE_SUFFIXES",
     "LLM_SETTING_ENVS",
     "llm_gate_envs",
+    "HARNESS_ENV_PINS",
+    "blank_outbound_env",
     "Resp",
     "make_chat_adapter",
     "make_generic_client",
@@ -107,6 +112,18 @@ OUTBOUND_CREDENTIAL_ENVS = PROVIDER_KEY_ENVS + (
     # reads the env files rather than trusting this tuple.
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
+    # tools/inquisitor/email_reporter.py mails the findings report through a
+    # real SMTP server. These four were read by that module and DECLARED
+    # NOWHERE, so no scan that starts from the env files could ever have seen
+    # them; test_every_env_name_the_code_reads_is_declared found them by
+    # starting from the code instead. REPORT_EMAIL is the gate (unset =>
+    # send_report returns before touching SMTP), FROM_EMAIL/HOST address
+    # something off this box, and PASSWORD/USER authenticate to it.
+    "INQUISITOR_FROM_EMAIL",
+    "INQUISITOR_REPORT_EMAIL",
+    "INQUISITOR_SMTP_HOST",
+    "INQUISITOR_SMTP_PASSWORD",
+    "INQUISITOR_SMTP_USER",
 )
 
 #: Secrets that are local-only, and why each is safe to leave alone.
@@ -128,6 +145,15 @@ LOCAL_ONLY_SECRET_ENVS = (
 CREDENTIAL_ENVS = OUTBOUND_CREDENTIAL_ENVS
 
 
+#: What a variable name can look like, and the ONLY filter
+#: :func:`declared_env_names` applies. Deliberately the POSIX shell identifier
+#: shape rather than anything about capitalisation or wording: ``sh`` and
+#: ``python-dotenv`` both accept lowercase names, and so do the libraries that
+#: read them (see the docstring below on ``https_proxy``). Its whole job is to
+#: tell a declaration from a sentence that happens to contain an "=".
+_ENV_NAME_SHAPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
 def declared_env_names(*paths):
     """Every variable name declared in the given env files. No filtering.
 
@@ -147,11 +173,22 @@ def declared_env_names(*paths):
     test on the network by itself -- matched none of those stems and was
     covered only because somebody had hand-listed it elsewhere.
 
-    So the question is asked with no filter at all: every declared name must be
+    Removing it left a smaller filter of the same kind behind, which is worth
+    naming rather than glossing: the shape test below also required
+    ``name.isupper()``. Convention is not a rule -- ``requests`` resolves
+    proxies through ``urllib.request.getproxies()``, which reads the LOWERCASE
+    ``https_proxy``/``http_proxy``/``all_proxy``, so a declared
+    ``https_proxy=http://user:pass@corp/`` is a credential-bearing URL that
+    routes ``feedback.py``'s GitHub POST and every LLM call through a third
+    party -- and it was dropped here, before the classifier ever saw it. The
+    case requirement is gone with the stems.
+
+    What remains is a shape test that decides nothing about *what a credential
+    is called*: it only asks whether the text left of the ``=`` is a variable
+    name at all, so that prose in a comment ("...see notes.md, where x=y") does
+    not arrive as a declaration. Every name that survives it must be
     classified, and the non-credentials are the ones that need a written reason
-    (:data:`NON_SECRET_ENVS`). Widening the regex would have been the same
-    shape with a longer list; this shape cannot have a blind spot, only a
-    backlog.
+    (:data:`NON_SECRET_ENVS`).
     """
     names = set()
     for path in paths:
@@ -165,10 +202,173 @@ def declared_env_names(*paths):
             if not sep:
                 continue
             name = name.strip()
-            if not name.isupper() or not name.replace("_", "").isalnum():
+            if not _ENV_NAME_SHAPE.match(name):
                 continue
             names.add(name)
     return names
+
+
+def _env_name_argument(node):
+    """The AST node naming the variable, if ``node`` is a direct env read.
+
+    Covers the four spellings this repo actually uses: ``os.environ[X]``,
+    ``os.environ.get/pop/setdefault(X, ...)`` and ``os.getenv(X, ...)``.
+    """
+    if (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "environ"
+    ):
+        return node.slice
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.args
+    ):
+        if node.func.attr == "getenv":
+            return node.args[0]
+        if (
+            node.func.attr in ("get", "pop", "setdefault")
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "environ"
+        ):
+            return node.args[0]
+    return None
+
+
+def _env_reader_functions(trees):
+    """``{function name: {argument index that names a variable}}``.
+
+    DERIVED from what the functions do, not from a list of helper names. A
+    function qualifies if one of its own parameters reaches an environment read
+    -- directly, or through another function that already qualifies. The loop
+    runs to a fixed point because the indirection is layered in this repo:
+    ``limiter_from_env`` never touches ``os.environ`` itself, it forwards to
+    ``_parse_env_limit``, which does.
+
+    Without this, a scan of literal ``os.environ[...]`` arguments alone reports
+    that ``FEEDBACK_RATE_LIMIT_PER_HOUR`` is never read, and misses
+    ``INQUISITOR_SMTP_PASSWORD`` entirely -- both of which reach the
+    environment through exactly one such helper.
+    """
+    functions = [
+        node
+        for tree in trees
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    readers = {}
+    changed = True
+    while changed:
+        changed = False
+        for fn in functions:
+            params = [
+                a.arg
+                for a in fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs
+            ]
+            found = set()
+            for node in ast.walk(fn):
+                arg = _env_name_argument(node)
+                if arg is None and isinstance(node, ast.Call):
+                    called = (
+                        node.func.attr
+                        if isinstance(node.func, ast.Attribute)
+                        else getattr(node.func, "id", None)
+                    )
+                    for index in readers.get(called, ()):
+                        if index < len(node.args):
+                            arg = node.args[index]
+                            break
+                if isinstance(arg, ast.Name) and arg.id in params:
+                    found.add(params.index(arg.id))
+            if found - readers.get(fn.name, set()):
+                readers.setdefault(fn.name, set()).update(found)
+                changed = True
+    return readers
+
+
+def _module_level_string_constants(tree):
+    """``{NAME: "value"}`` for module-level ``NAME = "literal"`` assignments.
+
+    ``src/save_format.py`` reads ``os.environ.get(SAVE_V2_ENV_VAR, ...)``. One
+    hop of constant folding is the difference between seeing ``HOV_SAVE_V2``
+    and seeing nothing.
+    """
+    out = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    out[target.id] = node.value.value
+    return out
+
+
+def env_names_read_under(*roots):
+    """``{variable name: {file, ...}}`` for every env name the code READS.
+
+    The mirror of :func:`declared_env_names`, and the direction that catches
+    what an env-file scan structurally cannot: a variable the code reads but
+    nobody wrote down is invisible to every list, every classifier and every
+    blanking sweep in this repo, because all of them start from the files.
+    ``INQUISITOR_SMTP_PASSWORD`` was exactly that.
+
+    Resolves one hop of constant indirection (``os.getenv(SAVE_V2_ENV_VAR)``)
+    and the derived helper closure from :func:`_env_reader_functions`.
+
+    NOT resolved, deliberately: a name that is computed rather than written
+    (``os.getenv(prefix + suffix)``) or read through a helper whose argument
+    comes from a variable. Those exist -- ``GenericLLMClient._first_env`` takes
+    a tuple built by its callers -- and the answer for them is the OTHER
+    direction: they are swept by suffix (:func:`llm_gate_envs`) and asserted
+    from the env files by ``tests/test_credential_blanking.py``. Neither scan
+    is complete alone; between them a name has to be missing from BOTH the
+    files and every literal read site to stay unclassified.
+    """
+    paths = [
+        path
+        for root in roots
+        for path in sorted(Path(root).rglob("*.py"))
+        if "__pycache__" not in path.parts
+    ]
+    trees = {}
+    for path in paths:
+        try:
+            trees[path] = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, SyntaxError):
+            continue
+    readers = _env_reader_functions(trees.values())
+
+    found = {}
+    for path, tree in trees.items():
+        constants = _module_level_string_constants(tree)
+
+        def literal(node):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return node.value
+            if isinstance(node, ast.Name):
+                return constants.get(node.id)
+            return None
+
+        for node in ast.walk(tree):
+            arg = _env_name_argument(node)
+            if arg is None and isinstance(node, ast.Call):
+                called = (
+                    node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else getattr(node.func, "id", None)
+                )
+                for index in readers.get(called, ()):
+                    if index < len(node.args):
+                        arg = node.args[index]
+                        break
+            name = literal(arg) if arg is not None else None
+            if name and _ENV_NAME_SHAPE.match(name):
+                found.setdefault(name, set()).add(path.as_posix())
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +442,76 @@ LLM_SETTING_ENVS = (
     "OPENROUTER_SITE",
     "OPENROUTER_SITE_TITLE",
 ) + PROVIDER_MODEL_ENVS
+
+
+#: Applied AFTER :func:`blank_outbound_env`'s sweep, because the sweep would
+#: otherwise blank them. Blank is not the same as off for these two:
+#:
+#: * ``MYNX_LLM_PROVIDER`` — "none" is ``PROVIDER_DISABLED``. Empty falls
+#:   through to ``DEFAULT_PROVIDER`` ("ollama"), leaving a local Ollama to be
+#:   probed.
+#: * ``MYNX_FALLBACK_DELAY`` — read through ``float()`` with a default, so
+#:   pinning 0 is what removes the sleep rather than merely neutralising it.
+#:
+#: The two ``*_ENABLED`` pins are belt to the sweep's braces: the sweep already
+#: blanks every ``_LLM_ENABLED`` it finds set, and an unset one reads as off.
+HARNESS_ENV_PINS = {
+    "MYNX_LLM_ENABLED": "0",
+    "MYNX_LLM_PROVIDER": "none",
+    "NPC_CHAT_LLM_ENABLED": "0",
+    "MYNX_FALLBACK_DELAY": "0",
+}
+
+
+def blank_outbound_env(**pins):
+    """Make this process unable to reach a provider, a database or a mailbox.
+
+    THE one sweep. Every ``tools/`` entry point whose import graph reaches a
+    module that loads ``.env`` calls this before it imports the engine, and
+    ``tests/test_credential_blanking.py`` proves that per tool, by running the
+    import with fake credentials set and checking they come back blank.
+
+    It is three parts because the vocabulary is three shapes, and each part is
+    DERIVED:
+
+    * :data:`CREDENTIAL_ENVS` — everything that authenticates to, or addresses,
+      something off this machine.
+    * :func:`llm_gate_envs` over the LIVE ``os.environ`` — the
+      ``<FEATURE>_LLM_ENABLED/_PROVIDER/_MODEL`` trio, swept by suffix so an
+      adapter added tomorrow is covered without anyone editing a list.
+    * :data:`LLM_SETTING_ENVS` — the LLM settings that do not follow that
+      convention, ``OLLAMA_BASE_URL`` chief among them.
+
+    Any one of the three alone has been enough to spend real money: the
+    harness has filed 20 real GitHub issues, written real rows to the
+    production Turso database, and shipped harness-authored dialogue to a paid
+    provider, each on a different one of these parts being the one that was
+    missing.
+
+    ASSIGNED "", never ``del``/``.pop()``. ``load_project_env`` runs
+    ``load_dotenv(override=False)``, which skips keys already *present*
+    regardless of value but refills ones that are *absent* — so a deleted key
+    comes straight back from ``.env`` at the next import that loads it. This is
+    also why calling this AFTER ``.env`` has been read is fine, and why every
+    caller can simply put it at the top of the file.
+
+    ``pins`` override :data:`HARNESS_ENV_PINS` for the rare caller that needs a
+    different value; passing ``None`` for a key drops that pin entirely.
+    Returns the sorted names it blanked.
+    """
+    import os
+
+    blanked = tuple(
+        sorted(set(CREDENTIAL_ENVS + llm_gate_envs(os.environ) + LLM_SETTING_ENVS))
+    )
+    for name in blanked:
+        os.environ[name] = ""
+    merged = dict(HARNESS_ENV_PINS)
+    merged.update(pins)
+    for name, value in merged.items():
+        if value is not None:
+            os.environ[name] = value
+    return blanked
 
 
 #: Declared variables that are NOT credentials, and why each one is not.
@@ -340,6 +610,15 @@ _NON_SECRET_GROUPS = (
         "bound it does not control lives in LLM_LOG_RAW_BODIES, which is in "
         "LLM_SETTING_ENVS and blanked.",
         ("MYNX_LLM_DEBUG",),
+    ),
+    (
+        "The half of the Inquisitor's SMTP settings that cannot reach anything "
+        "on their own. A port with no host addresses nothing, and the TLS "
+        "switch is read as `!= \"0\"`, so a blank keeps STARTTLS on -- the "
+        "safe direction. Blanking the port would be actively worse: it is read "
+        "through int(), which raises on an empty string. The four that DO "
+        "reach out are in OUTBOUND_CREDENTIAL_ENVS.",
+        ("INQUISITOR_SMTP_PORT", "INQUISITOR_SMTP_TLS"),
     ),
     (
         "Sampling temperatures. Deliberately NOT blanked -- read as a bare "
