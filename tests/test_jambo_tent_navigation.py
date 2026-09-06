@@ -99,11 +99,23 @@ _ACTION_KEYWORDS_JS = Read(
 _CHAT_KEYWORDS = frozenset({"talk", "chat"})
 
 #: The drop rules :func:`_displayed_actions` implements, by the ids
-#: :func:`_javascript_drop_rules` assigns. Asserted equal to what the JSX
-#: actually contains, so a rule added there and not here fails a test rather
-#: than quietly rendering a button set no Python check predicts.
-_MIRRORED_RULES = frozenset(
-    {"container-loot", "action-aliases", "chat-collapse", "case-folded-dedupe"}
+#: :func:`_javascript_drop_rules` assigns, IN THE ORDER ``actionKeywords``
+#: applies them. Asserted equal to what the JSX actually contains, so a rule
+#: added there and not here fails a test rather than quietly rendering a button
+#: set no Python check predicts.
+#:
+#: A sequence rather than a set, because the prose beside the mirror claims the
+#: frontend's rules in the frontend's order and a set comparison checked
+#: neither -- not how many rules there are, not what order they run in. That is
+#: the same shape as the transposed-bullet claim
+#: :meth:`TestTheMirrorTracksTheFrontend
+#: .test_the_docstring_names_every_rule_the_function_applies` was written to
+#: close; a claim nothing counts is a claim that goes wrong quietly.
+_MIRRORED_RULES = (
+    "container-loot",
+    "action-aliases",
+    "chat-collapse",
+    "case-folded-dedupe",
 )
 
 
@@ -129,11 +141,13 @@ def _displayed_actions(obj):
 def _render_buttons(target):
     """``actionKeywords(target)``, in Python, over a *serialized* object.
 
-    The four drop rules below are the frontend's, in its order.
+    The drop rules below are the frontend's, in the frontend's order.
     :meth:`TestTheMirrorTracksTheFrontend
-    .test_the_python_mirror_implements_every_javascript_rule` parses that set
-    out of the JSX and compares it with :data:`_MIRRORED_RULES`, so a fifth
-    rule appearing there fails here instead of silently going unmirrored.
+    .test_the_python_mirror_implements_every_javascript_rule` parses that
+    sequence out of the JSX and compares it with :data:`_MIRRORED_RULES` as a
+    sequence, so a rule added, removed or reordered there fails here instead of
+    silently going unmirrored. Neither the count nor the order is written down
+    in this prose: the tuple carries both, and the tuple is checked.
     """
     keywords = target.get("keywords") or []
     aliases = target.get("action_aliases") or []
@@ -209,14 +223,16 @@ _DROP_RULE_RE = re.compile(r"if\s*\((.*?)\)\s*\{?\s*return false", re.DOTALL)
 def _javascript_drop_rules():
     """Every ``if (...) return false`` in ``actionKeywords``, as a rule id.
 
-    Returns ``(ids, unrecognised, raw clauses, body)``. A clause matching no
-    signature -- or more than one -- is reported rather than dropped: a parse
-    that silently skipped the rule it could not classify would pass on exactly
-    the change this test exists to catch.
+    Returns ``(ids, unrecognised, raw clauses, body)``, where ``ids`` is a LIST
+    in source order -- ``findall`` yields the clauses in the order the function
+    applies them, and a set threw that away along with the count. A clause
+    matching no signature -- or more than one -- is reported rather than
+    dropped: a parse that silently skipped the rule it could not classify would
+    pass on exactly the change this test exists to catch.
     """
     body = _action_keywords_body()
     clauses = _DROP_RULE_RE.findall(body)
-    rules = set()
+    rules = []
     unrecognised = []
     for clause in clauses:
         matched = [
@@ -225,7 +241,7 @@ def _javascript_drop_rules():
             if all(token in clause for token in tokens)
         ]
         if len(matched) == 1:
-            rules.add(matched[0])
+            rules.append(matched[0])
         else:
             unrecognised.append((clause.strip(), matched))
     return rules, unrecognised, clauses, body
@@ -293,9 +309,12 @@ class TestTheMirrorTracksTheFrontend:
             "here predicts a button set the player never sees. Implement it "
             "and add its signature to _RULE_SIGNATURES."
         )
-        assert rules == _MIRRORED_RULES, (
-            f"the frontend applies {sorted(rules)}; this module mirrors "
-            f"{sorted(_MIRRORED_RULES)}"
+        assert rules == list(_MIRRORED_RULES), (
+            f"the frontend applies {rules}; this module mirrors "
+            f"{list(_MIRRORED_RULES)}. Compared as a SEQUENCE, not a set: "
+            "_render_buttons' docstring claims the frontend's rules in the "
+            "frontend's order, and a set comparison checked neither how many "
+            "there are nor what order they run in."
         )
 
     def test_the_docstring_names_every_rule_the_function_applies(self):

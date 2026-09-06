@@ -94,6 +94,21 @@ const CITATIONS = [
         claim: 'npc_chat_end is what releases the server-side conversation',
     }),
     cite({
+        where: 'styles/keyframes.test.js',
+        about: 'tests/test_security_headers.py',
+        anchor: '_STYLE_INJECTORS',
+        claim: 'the Python side pins the same injector population by reflection',
+    }),
+    cite({
+        // Registering the citation above made this file participate, so its
+        // other cross-file claim needs an anchor too — which is the
+        // completeness floor doing its job rather than an unrelated chore.
+        where: 'styles/keyframes.test.js',
+        about: 'styles/index.css',
+        anchor: '@keyframes blink',
+        claim: 'the stylesheet owns the name a component used to redeclare',
+    }),
+    cite({
         where: 'utils/eventIds.js',
         about: 'src/events.py',
         anchor: 'class PassagewayTransitionEvent',

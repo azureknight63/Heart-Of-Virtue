@@ -48,10 +48,14 @@ _index_cache: Optional[Dict[str, List[str]]] = None
 def _under_a_search_root(path: str) -> bool:
     """Whether an absolute path sits inside one of :data:`_SEARCH_ROOTS`.
 
-    Applied to the repo-relative spelling as well as to the basename lookup,
-    so the two resolution paths honour the same boundary. Without this a
-    citation naming ``frontend/node_modules/...`` resolved perfectly well,
-    which the comment above says it must not.
+    Called on the DIRECT branch of :meth:`Read.path` only -- the branch that
+    joins a citation's spelling onto the repo root, where nothing else
+    constrains where it lands. The basename branch needs no call: :func:`_index`
+    is built by walking those same roots, so every candidate it can return is
+    already inside one, and the boundary holds there structurally rather than by
+    a second check. Without the direct-branch gate a citation naming
+    ``frontend/node_modules/...`` resolved perfectly well, which the comment
+    above says it must not.
     """
     relative = os.path.relpath(path, _REPO_ROOT)
     if relative.startswith(os.pardir):

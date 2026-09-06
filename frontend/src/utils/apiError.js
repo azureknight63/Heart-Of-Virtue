@@ -8,8 +8,11 @@
  *
  *   prose-in-`error`   `{success: false, error: "Not enough gold — need 5 more"}`
  *                      and no `message` at all. This is what nearly every
- *                      route emits, and it is why ~25 call sites grew the
- *                      habit of reading `error` first.
+ *                      route emits, and it is why the habit of reading `error`
+ *                      first spread across the client. (How many sites that is
+ *                      was written here as a number once; nothing counted it,
+ *                      so it was a fact with a shelf life. The habit is the
+ *                      point, not its population.)
  *   token-in-`error`   `{success: false, error: "rate_limited",
  *                        message: "Slow down — too many messages."}` — a
  *                      MACHINE token in `error`, the human half in `message`.

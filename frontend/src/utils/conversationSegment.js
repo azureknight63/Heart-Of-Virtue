@@ -4,8 +4,10 @@
  *
  * WHY THIS MODULE EXISTS
  * ----------------------
- * The shape has two producers and three consumers and used to be declared in
- * none of them:
+ * The shape is written on both sides of the wire and read by every surface
+ * that renders a beat, and it used to be declared in none of them. Who those
+ * are, without a count in front of them — a hand-written total is a second
+ * thing to keep true, and nothing here derives one:
  *
  *   producers   this module's own `conversationSegment` factory (live LLM
  *               chat — hooks/useNpcChat.js calls it once per beat), and the

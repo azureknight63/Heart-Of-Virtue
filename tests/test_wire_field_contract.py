@@ -193,7 +193,7 @@ BATTLE_STATE_CONTRACT = {
     # as displayState alternated shape. Cite the component that actually reads
     # the payload, not the one that ends up using the value.
     "combat_id": Read("Battlefield.jsx", "combat?.combat_id"),
-    # map_size was the sixth instance of the drift bug and this dict is why it
+    # map_size was another instance of the drift bug, and this dict is why it
     # survived: the adapter emitted it at the TOP LEVEL, transformCombatData's
     # whitelist does not list it, and neither contract dict declared it — so
     # `combat?.map_size` was permanently undefined and BattlefieldGrid fell
@@ -1766,6 +1766,34 @@ ALL_READS = tuple(_all_reads())
 EXPECTED_UNVERIFIABLE = 4
 
 
+def _citation_count_mismatch(reached: int, written: int) -> str:
+    """Why the two ``Read`` counts disagree -- which depends on the direction.
+
+    The assertion they feed is an equality, so it fires both ways, and the two
+    ways have opposite causes and opposite fixes. Describing only one of them
+    left the other rendered as its own mirror image ("5 Read(...) calls are
+    written in this file but only 30 reached the guards"), which is nonsense at
+    the moment somebody most needs the message to be readable.
+    """
+    if written > reached:
+        return (
+            f"{written} Read(...) calls are written in this file but only "
+            f"{reached} reached the guards. A citation that is not in a "
+            "module-level `*_CONTRACT` dict is checked by nothing."
+        )
+    return (
+        f"{reached} Read(...) citations reached the guards but only {written} "
+        "Read(...) call(s) are written in this file. "
+        "`_reads_written_in_this_file` counts call SITES, so one site "
+        "standing for many citations lands here: a Read built inside a loop, a "
+        "comprehension or a helper that a contract dict then spreads. Write "
+        "the citations out one per field -- a generated citation names "
+        "whatever the generator was handed rather than a consumer somebody "
+        "checked -- or teach that counter to see the construct and say here "
+        "why it is trustworthy."
+    )
+
+
 def _contracts_declared_in_this_file():
     """The ``*_CONTRACT = {...}`` names this file's own source assigns."""
     return {
@@ -1797,10 +1825,8 @@ class TestCitationProvenance:
             "no citations to either guard below."
         )
         written = _reads_written_in_this_file()
-        assert len(ALL_READS) == written, (
-            f"{written} Read(...) calls are written in this file but only "
-            f"{len(ALL_READS)} reached the guards. A citation that is not in a "
-            "module-level `*_CONTRACT` dict is checked by nothing."
+        assert len(ALL_READS) == written, _citation_count_mismatch(
+            len(ALL_READS), written
         )
 
     def test_every_anchored_citation_still_finds_its_anchor(self):

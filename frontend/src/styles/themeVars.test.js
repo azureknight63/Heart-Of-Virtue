@@ -44,18 +44,38 @@ function normalise(value) {
     return value.trim().toLowerCase().replace(/\s+/g, '')
 }
 
+/** The body of index.css's `:root` block, or `''` when it no longer parses. */
+function rootBlock() {
+    const block = INDEX_CSS.match(/:root\s*\{([\s\S]*?)\n\}/)
+    // Returns empty rather than asserting: this runs at describe-collection
+    // time, where a thrown expectation surfaces as a collection error with no
+    // test name on it. The emptiness is what the guard test below reports.
+    return block ? block[1] : ''
+}
+
+/**
+ * How many custom properties the `:root` block declares, counted the crudest
+ * way that still cannot miss one: a line opening with `--`.
+ *
+ * This is the floor on the INCREMENT rather than the base, and it is the half
+ * `declarations.length > 2` cannot give. That floor is satisfied by the
+ * declarations already parsed, so a `rootDeclarations` regex that stopped
+ * matching two of them — Prettier wrapping one long value onto a second line is
+ * all it takes — costs nothing, and BOTH direction checks below silently narrow
+ * to whatever survived. A `--` in leading position is what a custom property
+ * IS, whatever shape its value is written in.
+ */
+function customPropertyLines() {
+    return rootBlock().split('\n').filter((line) => /^\s*--/.test(line)).length
+}
+
 /**
  * Every `--custom-property` declared in index.css's `:root`, with the theme.js
  * path its trailing annotation names (or `null` where there is none).
  */
 function rootDeclarations() {
-    const block = INDEX_CSS.match(/:root\s*\{([\s\S]*?)\n\}/)
-    // Returns empty rather than asserting: this runs at describe-collection
-    // time, where a thrown expectation surfaces as a collection error with no
-    // test name on it. The emptiness is what the guard test below reports.
-    if (!block) return []
     const declarations = []
-    for (const line of block[1].split('\n')) {
+    for (const line of rootBlock().split('\n')) {
         const m = line.match(/^\s*(--[\w-]+)\s*:\s*([^;]+);\s*(?:\/\*\s*theme:\s*([\w.]+)\s*\*\/)?/)
         if (m) declarations.push({ property: m[1], value: m[2], themePath: m[3] || null })
     }
@@ -91,7 +111,19 @@ describe('index.css :root mirrors styles/theme.js', () => {
         expect(INDEX_CSS, 'index.css declares no parseable :root block').toMatch(
             /:root\s*\{[\s\S]*?\n\}/
         )
+        // Base: the block is not empty. Increment: every property in it was
+        // parsed — see customPropertyLines for why the base alone is not
+        // enough, and why the count is taken from the matched block rather
+        // than written down here.
         expect(declarations.length).toBeGreaterThan(2)
+        const declared = customPropertyLines()
+        expect(
+            declarations.length,
+            `the :root block opens ${declared} lines with \`--\` but ` +
+            `rootDeclarations parsed ${declarations.length} of them — the parse is ` +
+            'broken, not the stylesheet, and every check below is vacuous for ' +
+            'whatever it stopped seeing'
+        ).toBe(declared)
         expect(annotated.length).toBeGreaterThan(1)
     })
 

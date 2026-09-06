@@ -9,6 +9,32 @@ import {
 } from '../test/keyframeAudit'
 
 /**
+ * The components that declare a keyframe no global stylesheet declares — i.e.
+ * the ones whose inline `<style>` block is the reason `style-src` still carries
+ * `'unsafe-inline'`.
+ *
+ * Pinned as a set and compared in BOTH directions below, rather than named in a
+ * comment. The comment version listed exactly these and asserted nothing about
+ * the population: the suite checked that each local-only NAME is declared once,
+ * which a fifth injector satisfies as happily as the fourth, so the list could
+ * go stale with everything green. Now a new injector fails as unlisted and one
+ * whose keyframes moved into `styles/` fails as stale.
+ *
+ * tests/test_security_headers.py pins the same four filenames on the Python
+ * side, from a scan that asks a different question — anything that puts a
+ * stylesheet into the document, versus anything that declares a keyframe
+ * nothing global declares. They agree today, which is worth knowing and is not
+ * a reason to derive either from the other; a component could inject a `<style>`
+ * holding no `@keyframes` at all and only one of the two would move.
+ */
+const LOCAL_KEYFRAME_INJECTORS = [
+    'components/GameOverScreen.jsx',
+    'components/HeroPanel.jsx',
+    'components/InteractPanel.jsx',
+    'context/ToastContext.jsx',
+]
+
+/**
  * Every animation name used in `src` must resolve to a `@keyframes` that is
  * actually reachable from where it is used, and no name a global stylesheet
  * owns may be declared a second time anywhere.
@@ -71,19 +97,29 @@ describe('animation names resolve to a reachable @keyframes', () => {
         // components declare the same one, which `shadowed` deliberately does
         // not cover (it is scoped to names a global stylesheet owns).
         //
-        // The remaining injectors (GameOverScreen, HeroPanel, ToastContext,
-        // InteractPanel) are legitimate ONLY because each uses the name it
-        // declares. This asserts the containment rather than trusting it: if a
-        // fifth component starts using `slideIn` or `hero-heartbeat`, the
-        // audit above goes red and this comment explains why.
+        // Such an injector is legitimate ONLY because it uses the name it
+        // declares — if another component starts using `slideIn` or
+        // `hero-heartbeat`, the audit above goes red and this comment explains
+        // why.
         const localOnly = [...audit.declaredIn.entries()]
             .filter(([, paths]) => paths.every((p) => !p.startsWith('styles/')))
-            .map(([name]) => name)
 
         expect(localOnly.length).toBeGreaterThan(0) // otherwise this is vacuous
-        for (const name of localOnly) {
-            expect(audit.declaredIn.get(name)).toHaveLength(1)
+        for (const [name, paths] of localOnly) {
+            expect(paths, `${name} is declared in ${paths.join(' and ')}`).toHaveLength(1)
         }
+
+        // WHICH components those are, derived rather than described. Without
+        // this the check above is satisfied by any number of injectors, so the
+        // population could grow with nothing to say so — and the population is
+        // the whole justification for style-src 'unsafe-inline'.
+        const injectors = [...new Set(localOnly.flatMap(([, paths]) => paths))].sort()
+        expect(
+            injectors,
+            'the set of components declaring their own @keyframes has changed, so '
+            + "LOCAL_KEYFRAME_INJECTORS and test_security_headers.py's _STYLE_INJECTORS "
+            + 'both need re-checking'
+        ).toEqual(LOCAL_KEYFRAME_INJECTORS)
     })
 })
 
