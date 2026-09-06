@@ -274,7 +274,13 @@ class TestCombatErrorCases:
         assert response.status_code == 401
 
     def test_start_combat_malformed_json(self, client, authenticated_session):
-        """Test start_combat with malformed JSON."""
+        """Malformed JSON is a 400 from the missing-field check, never a 500.
+
+        Both routes read the body with ``get_json(silent=True)``, so an
+        unparseable body is indistinguishable from an empty one and lands on
+        the required-field check. ``>= 400`` was satisfied by the 500 these
+        tests exist to catch.
+        """
         session_id, _, _ = authenticated_session
         response = client.post(
             "/api/combat/start",
@@ -282,10 +288,13 @@ class TestCombatErrorCases:
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
         )
-        assert response.status_code >= 400
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert data["error"] == "Missing enemy_id"
 
     def test_combat_move_malformed_json(self, client, authenticated_session):
-        """Test combat_move with malformed JSON."""
+        """Malformed JSON on the move route is likewise a 400."""
         session_id, _, _ = authenticated_session
         response = client.post(
             "/api/combat/move",
@@ -293,4 +302,7 @@ class TestCombatErrorCases:
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
         )
-        assert response.status_code >= 400
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert data["error"] == "Missing move_type"

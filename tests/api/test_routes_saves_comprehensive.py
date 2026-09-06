@@ -424,17 +424,23 @@ class TestLoadSaveRoute:
     """Test POST /saves/<id>/load endpoint."""
 
     def test_load_save_missing_id(self, client, authenticated_session):
-        """Test load save without ID in path."""
+        """Test load save without ID in path.
+
+        ``/api/saves/load`` matches the ``/api/saves/<save_id>`` rule, which
+        is DELETE-only, so a POST there is a 405 -- not the 404 the old
+        ``>= 400`` assertion left ambiguous.
+        """
         session_id, _, _ = authenticated_session
-        # Try to POST to /saves/load without an ID
         response = client.post(
             "/api/saves/load",
             data=json.dumps({}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
         )
-        # Should fail (404 or 405)
-        assert response.status_code >= 400
+        assert response.status_code == 405
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert data["error"] == "Method not allowed"
 
     def test_load_save_no_auth(self, client):
         """Test load save without authentication."""
