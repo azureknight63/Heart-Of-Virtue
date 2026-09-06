@@ -1,18 +1,87 @@
 """Combat beat streaming protocol — Python source of truth (issue #436).
 
 Defines the payload shapes for the SocketIO events the engine streams during
-combat, plus pure builders/validators. The frontend mirror lives at
+combat, the machine-readable codes its ``error`` event carries, plus pure
+builders/validators. The frontend mirror lives at
 ``frontend/src/utils/combatBeatSchema.js``; ``tests/test_combat_beat_schema.py``
 asserts the two stay in parity so the wire contract can't silently drift.
 
 See docs/development/combat-streaming-plan.md.
 """
 
-# Event names.
+# ── Event names ─────────────────────────────────────────────────────────────
+#
+# EVERY socket event name that crosses the Python/JS boundary belongs here, not
+# just the beat stream. A constants module holding *some* of them is worse than
+# one holding none: it tells the reader the parity guard is complete when it is
+# not. Each constant must be declared on its own line -- the guard in
+# tests/test_combat_beat_schema.py walks module-level ``ast.Assign`` nodes with
+# an ``ast.Name`` target, so ``A, B = "x", "y"`` would slip past it silently.
+#
+# Defining a name here is only half the job: the guard checks that a constant
+# exists and that its value matches the mirror, never that anybody uses it. A
+# constant nobody imports is decoration. Replace the literal at the emit/listen
+# site too.
+
+# The ordered beat stream (server -> client).
 BEAT_EVENT = "combat:beat"
 RESOLVED_EVENT = "combat:resolved"
 ENDED_EVENT = "combat:ended"
 SUGGESTIONS_EVENT = "combat:suggestions"
+ERROR_EVENT = "error"
+
+# Room membership handshake. ``JOINED_EVENT`` is what resets the client's
+# re-handshake budget (``rehandshakes = 0`` in useCombatSocket.js), so renaming
+# it server-side does not fail loudly -- the client simply never hears the ack,
+# burns its three retries and degrades to the 8s HTTP poll for the rest of the
+# session, which looks like "streaming is a bit laggy" rather than a break.
+JOIN_EVENT = "join_combat"
+JOINED_EVENT = "joined_combat"
+
+# Legacy recovery channel: a full serialized battle state, emitted only when no
+# beat streamer is attached. It carries at least as much as a beat does, so it
+# is as much a contract as BEAT_EVENT is.
+UPDATE_EVENT = "combat:update"
+
+# Server-only emitters and handlers below. Nothing in frontend/src listens for
+# or emits any of these today; they are named here anyway so this module is the
+# whole vocabulary rather than a subset, and they are listed in that test's
+# _PY_ONLY_CONSTANTS with the same reason. If a client consumer ever appears,
+# mirror the constant in combatBeatSchema.js and drop it from that set.
+STARTED_EVENT = "combat:started"
+LOG_EVENT = "combat:log"
+TURN_EVENT = "combat:turn"
+LEAVE_EVENT = "leave_combat"
+LEFT_EVENT = "left_combat"
+PING_EVENT = "ping_combat"
+PONG_EVENT = "pong_combat"
+
+# ── ``error`` payload codes ─────────────────────────────────────────────────
+#
+# The socket ``error`` payload carries BOTH a human-readable ``message`` and
+# one of these codes; the client keys its behaviour off the code and never off
+# the prose. It used to have no choice but the prose, and substring-matching it
+# conflated two conditions that call for opposite responses:
+#
+# * ``ERROR_SESSION_MISSING`` — the handshake carried no credential at all.
+#   That is a *transport* failure, not an authentication one: the cookie is
+#   ``Path=/`` precisely because the handshake is served from ``/socket.io/``
+#   outside the SPA's base path (see src/api/session_cookie.py), so a path
+#   scoping regression, a proxy that drops the header, or a cross-origin dev
+#   setup where SameSite withholds it all produce this while every HTTP request
+#   keeps working. Logging the player out over it would throw them to the login
+#   screen out of a live fight for a fault that costs nothing but animation.
+# * ``ERROR_SESSION_INVALID`` — a credential arrived and names no live session
+#   (expired, or dropped by a server restart). The player really is signed out.
+#
+# Before the codes existed, the two messages were "Missing or invalid session
+# credentials" (since reworded) and "Invalid session" (still the wording for
+# ERROR_SESSION_INVALID). Note that the FIRST contains the substring "invalid
+# session", so the client's prose test matched it through the wrong clause.
+# Keep any future wording free of that kind of accident — but the codes, not
+# the wording, are the contract.
+ERROR_SESSION_MISSING = "session_missing"
+ERROR_SESSION_INVALID = "session_invalid"
 
 # Top-level ``combat:beat`` fields (this tuple documents the shape).
 BEAT_FIELDS = (

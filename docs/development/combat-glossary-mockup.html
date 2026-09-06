@@ -96,7 +96,7 @@ h3{font-size:.8rem;color:var(--primary);margin:26px 0 10px;letter-spacing:.1em;t
   background:rgba(255,170,0,.05);box-shadow:var(--shadow-glow)}
 .vital.fp i{display:block;width:100%;height:44%;background:var(--secondary);border-radius:0 11px 11px 0}
 
-/* momentum + cooldown tray stand-ins */
+/* heat + cooldown tray stand-ins */
 .tray{border-top:1px solid rgba(0,255,136,.15);padding-top:8px}
 .tray-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .tray-head .lbl{font-size:.62rem;color:var(--text-muted);letter-spacing:.12em;text-transform:uppercase}
@@ -243,6 +243,20 @@ h3{font-size:.8rem;color:var(--primary);margin:26px 0 10px;letter-spacing:.1em;t
   font-family:var(--mono);font-size:.8rem;
 }
 .gl-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 2px}
+/* Horizontally scrolling filter row (mobile): the tabs overflow, so the edge has
+   to say so. A fade plus a chevron on the right, both hidden once the row is
+   scrolled to its end -- a static fade reads as a visual bug at the end of travel. */
+.tabs-scroll{position:relative}
+.tabs-scroll .gl-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.tabs-scroll .gl-tabs::-webkit-scrollbar{display:none}
+.tabs-scroll::after{
+  content:'';position:absolute;top:0;right:0;bottom:0;width:34px;pointer-events:none;
+  background:linear-gradient(to right,rgba(10,10,10,0),rgba(10,10,10,.92));
+}
+.tabs-scroll .cue{
+  position:absolute;right:5px;top:50%;transform:translateY(-50%);pointer-events:none;
+  color:var(--secondary);font-size:.75rem;line-height:1;text-shadow:0 0 4px rgba(0,0,0,.9);
+}
 .gl-tabs .tab{
   font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;
   border-radius:3px;border:1px solid;background:rgba(0,0,0,.4);cursor:pointer;
@@ -346,7 +360,7 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
 
         <div class="tray">
           <div class="tray-head">
-            <span class="lbl">Momentum</span>
+            <span class="lbl">Heat</span>
             <span style="font-size:.72rem;color:var(--secondary);font-weight:bold">1.62×</span>
           </div>
           <div style="font-size:.6rem;color:var(--secondary);letter-spacing:.1em">FERVENT</div>
@@ -462,7 +476,7 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
         <div class="t">Beat</div>
         <div class="d">The unit of combat time. Fights are measured in beats, not turns.
           On every beat, each move in play advances one step, the enemies act,
-          status effects tick down, and momentum drifts back toward neutral.</div>
+          status effects tick down, and heat drifts back toward neutral.</div>
         <div class="tell">You'll know a beat has passed when the <b>BEAT 14</b> counter above the
           battlefield ticks up and the timeline strip slides one column left.</div>
         <div class="more">? Open glossary for the rest →</div>
@@ -609,7 +623,7 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
           <span class="cat c-time">Time</span></div>
         <div class="body">The unit of combat time. Fights are measured in beats, not turns. On every
           beat, each move in play advances one step, the enemies act, status effects tick down, and
-          momentum drifts back toward neutral.</div>
+          heat drifts back toward neutral.</div>
         <div class="tell">You'll know a beat has passed when the <b>BEAT</b> counter above the
           battlefield ticks up. Outside combat, effects count down in <i>steps</i> — one per room you
           walk into — instead.</div>
@@ -618,10 +632,11 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
       <div class="entry">
         <div class="hd"><span class="term-name" style="color:var(--primary)">The four stages</span>
           <span class="cat c-moves">Moves</span></div>
-        <div class="body">Every move runs through four stages, each lasting a set number of beats.
-          <b style="color:var(--accent)">Prep</b> — winding up; nothing has happened yet and you can still break off.
-          <b style="color:var(--primary)">Execute</b> — the move lands.
-          <b style="color:var(--danger)">Recoil</b> — recovering; the move is over but you are still committed.
+        <div class="body">Every move runs through four stages, each lasting a set number of beats.<br>
+          <b style="color:var(--accent)">Prep</b> — winding up; nothing has happened yet and you can still break off.<br>
+          <b style="color:var(--primary)">Execute</b> — the move lands.<br>
+          <b style="color:var(--danger)">Recoil</b> — the backswing: the hit has landed, but you are still
+          committed and cannot act until it finishes.<br>
           <b style="color:var(--text-muted)">Cooldown</b> — you are free to act again, but <i>this</i> move is locked out.</div>
         <div class="tell">The four-segment bar on a move card is those stages, in that order. Its
           length compares that move's total commitment against the heaviest move in the list.</div>
@@ -642,22 +657,20 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
       <div class="entry">
         <div class="hd"><span class="term-name" style="color:var(--secondary)">Fatigue (FP)</span>
           <span class="cat c-res">Resources</span></div>
-        <div class="body">The orange bar — what moves are paid for with, starting at 150. A move whose
-          cost you cannot meet greys out with "Not enough fatigue". It does <b>not</b> regenerate on its
-          own during a fight: Rest recovers about 40% of your maximum, some items restore it, and
-          winning the fight refills it completely.</div>
+        <div class="body">The orange bar — that which pays for moves. It does <b>not</b>
+          regenerate on its own during a fight.</div>
         <div class="tell">Endurance raises your maximum fatigue; carrying too much weight lowers it.
           "Jean recovered 60 FP!" in the log is fatigue points.</div>
       </div>
 
       <div class="entry">
-        <div class="hd"><span class="term-name" style="color:var(--secondary)">Momentum</span>
+        <div class="hd"><span class="term-name" style="color:var(--secondary)">Heat</span>
           <span class="cat c-res">Resources</span></div>
         <div class="body">A multiplier on every point of damage Jean deals — shown as
           <code>1.62×</code>. Landing hits, parrying, and making enemies miss push it up; missing,
           being parried, and taking hits pull it down. It drifts 5% back toward 1.00× every beat, so
           it is a lease, not a bank. It never leaves the range 0.50×–10.00×, and only Jean has one.</div>
-        <div class="tell">The <b>MOMENTUM</b> meter on the left panel names the band you are in and
+        <div class="tell">The <b>HEAT</b> meter on the left panel names the band you are in and
           lists exactly what raises and lowers it.</div>
       </div>
 
@@ -666,9 +679,10 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
           <span class="cat c-pos">Position</span></div>
         <div class="body">The battlefield is a grid where one square is about one foot, and the
           "18 ft" under an enemy is the straight-line distance to them. Every move has a minimum and a
-          maximum reach in feet; a target outside it greys the move out with "Enemy out of range (too
-          far)". Advancing or withdrawing covers roughly one to three feet per beat, depending on how
-          much faster you are than what you are chasing.</div>
+          maximum reach in feet; when nothing is inside that band &mdash; too far off, or drawn in too
+          close for a long weapon &mdash; the move greys out with a range reason such as "Enemy out of
+          range (too far)". Advancing covers roughly one to three feet per beat and withdrawing one to
+          two, depending on how much faster you are than what you are chasing.</div>
         <div class="tell">Moves that reach further than a sword draw their range as a ring around Jean.</div>
       </div>
 
@@ -677,7 +691,7 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
           <span class="cat c-dmg">Damage</span></div>
         <div class="body">A blow's power is first scaled by the target's <b>resistance</b> to that kind
           of damage (1.0 is neutral; lower resists more), then their <b>protection</b> is subtracted as
-          a flat amount, and momentum is applied to what is left. Protection appears as "Defense" on the
+          a flat amount, and heat is applied to what is left. Protection appears as "Defense" on the
           stat panel.</div>
         <div class="tell">A blow that never gets past protection reads as "struck … but did no damage".</div>
       </div>
@@ -776,7 +790,7 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
         <div class="tip" style="position:relative;left:0;top:0;width:100%">
           <div class="t">Beat</div>
           <div class="d">The unit of combat time. On every beat, each move in play advances one step,
-            the enemies act, effects tick down, and momentum drifts.</div>
+            the enemies act, effects tick down, and heat drifts.</div>
           <div class="tell">You'll know one passed when the <b>BEAT</b> counter at the top ticks up.</div>
           <div class="more">? Open glossary →</div>
         </div>
@@ -810,17 +824,21 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
         <div class="gl-search" style="margin:8px 12px 0;padding:9px 10px">
           <span>⌕</span><input placeholder="Filter terms…" readonly>
         </div>
-        <div class="gl-tabs" style="padding:8px 12px 2px;flex-wrap:nowrap;overflow-x:auto">
-          <span class="tab all">All</span><span class="tab time">Time</span>
-          <span class="tab moves">Moves</span><span class="tab res">Resources</span>
-          <span class="tab pos">Position</span>
+        <div class="tabs-scroll">
+          <div class="gl-tabs" style="padding:8px 12px 2px">
+            <span class="tab all">All</span><span class="tab time">Time</span>
+            <span class="tab moves">Moves</span><span class="tab res">Resources</span>
+            <span class="tab pos">Position</span><span class="tab dmg">Damage</span>
+            <span class="tab eff">Effects</span>
+          </div>
+          <span class="cue">›</span>
         </div>
         <div class="gl-list" style="padding:8px 12px 10px">
           <div class="entry">
             <div class="hd"><span class="term-name" style="color:var(--accent);font-size:.78rem">Beat</span>
               <span class="cat c-time">Time</span></div>
             <div class="body" style="font-size:.7rem">The unit of combat time. On every beat, each move
-              in play advances one step, enemies act, effects tick down, and momentum drifts.</div>
+              in play advances one step, enemies act, effects tick down, and heat drifts.</div>
             <div class="tell" style="font-size:.66rem">The <b>BEAT</b> counter above the battlefield ticks up.</div>
           </div>
           <div class="entry">
@@ -896,7 +914,7 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
 <td>Endurance adds +2 per point above 10; carry weight raises it 25% under half capacity, penalises overweight.</td>
 <td class="src">src/functions.py:339–343, 369–385</td></tr>
 
-<tr><td class="tm">Momentum (heat)</td>
+<tr><td class="tm">Heat</td>
 <td>Full damage multiplier on Jean's blows; clamped 0.50×–10.00×; drifts 5% toward 1.00× each beat; Jean only.</td>
 <td class="src">src/moves/_base.py:525–600 (resolve_damage)<br>src/player/_combat.py:24–39 (change_heat)<br>src/api/combat_adapter.py:2470–2481 (_update_heat)<br>src/api/serializers/combat.py:342</td></tr>
 
@@ -905,15 +923,15 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
 <td class="src">src/positions.py:10–22, 294–311</td></tr>
 
 <tr><td class="tm">Reach / out of range</td>
-<td>Each move carries <code>mvrange</code> (min, max) in feet; nothing in band → "Enemy out of range (too far)".</td>
-<td class="src">src/api/combat_adapter.py:3072–3086<br>src/api/combat_adapter.py:43 (MELEE_REACH_FT = 6, ring threshold)</td></tr>
+<td>Each move carries <code>mvrange</code> (min, max) in feet. Nothing inside that band — whether every enemy is beyond <code>range_max</code> or inside <code>range_min</code> — greys the move out, with <b>one of two</b> strings: "Enemy out of range (too far)" only when <code>range_max &lt;= 5</code>, otherwise "No valid target in range".</td>
+<td class="src">src/api/combat_adapter.py:3415–3424<br>src/api/combat_adapter.py:55 (MELEE_REACH_FT = 6, ring threshold)</td></tr>
 
 <tr><td class="tm">Advance / Withdraw</td>
-<td>Roughly 1–3 ft per beat: <code>max(1, (rand(0,30) + speed − target.speed) // 10)</code>, capped at 3.</td>
-<td class="src">src/moves/_movement.py:260–264</td></tr>
+<td>The two moves have <b>different</b> caps. Advance: <code>max(1, (rand(0,30) + speed − target.speed) // 10)</code>, capped at 3 ft. Withdraw: <code>max(1, (rand(0,35) + speed − threat.speed) // 20)</code>, capped at <b>2</b> ft. (BullCharge, TacticalRetreat and FlankingManeuver roll their own ranges again — there is no shared movement cap.)</td>
+<td class="src">src/moves/_movement.py:263–264 (Advance)<br>src/moves/_movement.py:428–429 (Withdraw)</td></tr>
 
 <tr><td class="tm">Protection ("Defense")</td>
-<td>Flat subtraction, applied after resistance and before momentum: <code>((power × resistance) − protection) × heat × variance</code>.</td>
+<td>Flat subtraction, applied after resistance and before heat: <code>((power × resistance) − protection) × heat × variance</code>.</td>
 <td class="src">src/moves/_base.py:525–600<br>src/api/serializers/combat.py:555–577</td></tr>
 
 <tr><td class="tm">Resistance</td>
@@ -946,31 +964,35 @@ td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
 </table>
 </div>
 
-<h3 class="flag" style="color:var(--gold)">Flagged — engine meaning genuinely unclear</h3>
+<h3 class="flag" style="color:var(--primary)">Confirmed by the maintainer (2026-09-05)</h3>
+<p class="note" style="border-left-color:rgba(0,255,136,.5)">
+  <b>The displayed cooldown number being one larger than the engine's stage length is intended.</b>
+  <code>cooldown_remaining = beats_left + 1</code> and <code>cooldown_max = stage_beat[3] + 1</code>
+  (<code>combat_adapter.py:3053–3058</code>), because draining to zero does not itself advance the
+  stage — the next beat does. The glossary states the player-facing number, which is the right one to
+  state; it simply is not the move's declared cooldown stage.<br><br>
+  <b>Recoil is a real, intended stage.</b> It represents the time between a hit landing and cooldown
+  starting — the weapon's backswing. The four-stages entry now says so in those terms. Worth noting
+  the UI still never names recoil outside the commitment-bar hover title, so the glossary is currently
+  the only place a player can learn the word.<br><br>
+  <b>Fatigue does not regenerate during a fight.</b> The engine never states this — an exhaustive
+  grep finds only Rest, items, a mastery skill and <code>_handle_victory</code> ever adding fatigue,
+  so it was an inferred negative rather than a written rule. Confirmed as intended, and the Fatigue
+  entry now says so outright.<br><br>
+  <b>Heat is the name, in the UI and on the wire.</b> The earlier draft called it Momentum in
+  player-facing text while the engine called it <code>heat</code>; that split is gone — everything
+  reads Heat now, so no alias entry is needed.
+</p>
+
+<h3 class="flag" style="color:var(--gold)">Still flagged — engine meaning genuinely unclear</h3>
 <p class="note" style="border-left-color:rgba(255,204,0,.5)">
   <b>1. A beat has no in-fiction duration.</b> Nothing in the engine maps a beat to seconds or to any
   narrative unit. Every definition above is deliberately mechanical ("the unit of combat time"); if the
   maintainer wants a fictional gloss ("about one heartbeat"), that is a <i>writing</i> decision, not a
   fact to be read out of the code.<br><br>
-  <b>2. The displayed cooldown number is one larger than the engine's stage length.</b>
-  <code>cooldown_remaining = beats_left + 1</code> and <code>cooldown_max = stage_beat[3] + 1</code>
-  (<code>combat_adapter.py:3053–3058</code>), because draining to zero does not itself advance the
-  stage — the next beat does. The wording above ("beats remaining before it can be chosen again")
-  matches what the player sees, but it is not the same number as the move's declared cooldown stage.
-  Worth confirming this is intended before the glossary states a formula next to a differing on-screen count.<br><br>
-  <b>3. Recoil vs. cooldown is real but unlabelled.</b> At stage 3 <code>user.current_move</code> is
-  cleared, so Jean can act; during stage 2 (recoil) he cannot. That distinction is what makes the two
-  stages different, yet outside the commitment-bar hover title the UI never names recoil at all. The
-  glossary entry above states it — please confirm it matches design intent.<br><br>
-  <b>4. "Fatigue does not regenerate during a fight" is an inferred negative.</b> It comes from an
-  exhaustive grep (only Rest, items, a mastery skill and <code>_handle_victory</code> ever add fatigue),
-  not from an explicit rule. If a per-beat trickle is planned, this sentence has to change.<br><br>
-  <b>5. Advance/Withdraw distance is a roll, not a constant.</b> "One to three feet per beat" describes
+  <b>2. Advance/Withdraw distance is a roll, not a constant.</b> "One to three feet per beat" describes
   the clamped range of <code>max(1, (rand(0,30) + speed − target.speed) // 10)</code>; the typical value
-  depends on the speed gap. Stated as a range on purpose.<br><br>
-  <b>6. Momentum's UI name and wire name differ.</b> The engine calls it <code>heat</code>; the UI calls
-  it Momentum. The glossary uses the UI name only — if <code>heat</code> ever surfaces in player-facing
-  text, it needs its own alias entry.
+  depends on the speed gap. Stated as a range on purpose.
 </p>
 </section>
 

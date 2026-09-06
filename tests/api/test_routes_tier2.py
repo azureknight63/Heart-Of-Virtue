@@ -1,23 +1,54 @@
 """
 API Route Integration Tests - Tier 2
 
-Comprehensive coverage of ALL API routes across all modules:
+Coverage of the API routes that exist, across all modules:
 - Auth routes (register, login, logout, validate, settings)
-- NPC routes (state, dialogue, profile, quests)
+- NPC chat routes (open, respond, end, history)
 - Shop routes (buy, sell, buyback, state)
 - World routes (tile manipulation, events, movement)
 - Player routes (status, stats, skills, progression)
 - Equipment/Inventory routes (equip, unequip, use, drop)
-- Quest routes (progress, awards)
+- Quest routes (xfailed -- see NO_QUEST_SYSTEM below)
 - Logs routes (browser logging)
 
-Target coverage: 50%+ of /api/routes/
+Every request must name a URL that exists in ``app.url_map``; an assertion
+like ``status_code in [200, 404]`` against a URL with no route is satisfied by
+the 404 and tests nothing. Every URL literal in this file is contract-checked
+by ``tests/api/test_route_prefix_contract.py``, which fails on a routeless URL
+and on a request whose verb the matching rule does not serve.
+
+Two families of tests were deleted rather than repointed, because the feature
+they name does not exist and has no design anywhere in the tree:
+``/api/npc/<id>/profile`` (NPC detail ships inside the room payload) and the
+``/api/npcs/*`` + ``/api/locations/*`` NPC-availability/scheduling endpoints.
+
+Range assertions
+----------------
+
+The route-contract guard cannot see a range assertion on a URL that *does*
+route: the request resolves, so nothing structural is wrong and the range
+simply under-claims. Every such assertion on a deterministic route has now
+been pinned to the single status it really returns, together with the error
+message that names the field the route wanted -- several of them were sending
+the wrong field name and passing on the 400 that produced.
+
+Three are deliberately left as ranges, and they are the only ones in this
+file: ``test_auth_register_success``, ``test_auth_register_duplicate`` and
+``test_auth_login_success``. Those talk to the cloud user store, whose
+availability decides between 200/201, 400/409 and 503; the
+outcome is a property of the environment, not of the route, so pinning them
+here would make the file fail on a machine with no database rather than
+report a real defect. The quest family's ``!= 404`` assertions are the other
+exception -- they are xfail bodies (see NO_QUEST_SYSTEM) and are paired with
+``< 500`` so a fault cannot satisfy them once the marker comes off.
 """
 
 import sys
 from pathlib import Path
 import json
 import pytest
+
+from ._marks import NO_QUEST_SYSTEM
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -96,7 +127,7 @@ class TestAuthRoutesTier2:
         assert response.status_code in [200, 201, 400, 503]
 
     def test_auth_logout_success(self, app_and_client):
-        """Test successful logout."""
+        """Logout is unconditionally 200 (issue #493), never 204."""
         client = app_and_client["client"]
         session_manager = app_and_client["session_manager"]
 
@@ -108,7 +139,8 @@ class TestAuthRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 204]
+        assert response.status_code == 200
+        assert response.get_json()["success"] is True
 
     def test_auth_validate_valid_session(self, app_and_client):
         """Test validating a valid session."""
@@ -139,8 +171,13 @@ class TestAuthRoutesTier2:
 
         assert response.status_code == 401
 
-    def test_auth_settings_get(self, app_and_client):
-        """Test getting auth settings."""
+    # /api/auth/settings reads and writes a *registered account's* row, so it
+    # requires session.db_user_id. A session made straight off SessionManager
+    # (the QA/test bypass — see CLAUDE.md, "How auth works") has none, so the
+    # route refuses it rather than silently editing nothing.
+
+    def test_auth_settings_get_without_db_user_is_unauthorized(self, app_and_client):
+        """GET settings on a session with no db_user_id is refused."""
         client = app_and_client["client"]
         session_manager = app_and_client["session_manager"]
 
@@ -152,10 +189,13 @@ class TestAuthRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404, 500]
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Unauthorized"
 
-    def test_auth_settings_put(self, app_and_client):
-        """Test updating auth settings."""
+    def test_auth_settings_put_without_db_user_is_unauthorized(self, app_and_client):
+        """PUT settings on a session with no db_user_id is refused."""
         client = app_and_client["client"]
         session_manager = app_and_client["session_manager"]
 
@@ -164,16 +204,53 @@ class TestAuthRoutesTier2:
 
         response = client.put(
             "/api/auth/settings",
-            json={"setting_key": "setting_value"},
+            json={"timezone": "Europe/Berlin"},
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404, 500]
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Unauthorized"
+
+    def test_auth_settings_get_returns_the_sessions_timezone(self, app_and_client):
+        """With a db_user_id present the route serves the session's timezone."""
+        client = app_and_client["client"]
+        session_manager = app_and_client["session_manager"]
+
+        session_id, _ = session_manager.create_session("testuser_settings_ok")
+        session = session_manager.get_session(session_id)
+        session.db_user_id = "db-user-1"
+        session.data["timezone"] = "Europe/Berlin"
+
+        response = client.get(
+            "/api/auth/settings",
+            headers=self.get_auth_header(session_id),
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        assert data["data"]["timezone"] == "Europe/Berlin"
 
 
+@NO_QUEST_SYSTEM
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
-class TestNPCRoutesTier2:
-    """Test NPC-related routes."""
+class TestNPCQuestRoutesTier2:
+    """The NPC-facing half of the quest family: /api/npc/quests/*.
+
+    Every test asserts the endpoint a quest feature would expose, and all of
+    them xfail today. The class previously also held a
+    ``GET /api/npc/<id>/profile`` test that passed only because it accepted
+    404; that route does not exist and no NPC-profile feature is designed
+    (NPC detail ships inside the room payload from ``GET /api/world``), so the
+    test was deleted rather than marked.
+
+    Every id these tests send is deliberately unknown, so a landed feature
+    could legitimately answer either 200 or 400: the only claim each
+    assertion makes is that the route exists and does not fault. Stated once
+    here rather than as a comment above every assertion.
+    """
 
     @pytest.fixture
     def app_and_client(self):
@@ -196,22 +273,6 @@ class TestNPCRoutesTier2:
         """Get authorization header for session."""
         return {"Authorization": f"Bearer {session_id}"}
 
-
-    def test_npc_get_profile(self, app_and_client):
-        """Test GET /npc/<npc_id>/profile."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.get(
-            "/api/npc/gorran/profile",
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 404]
-        if response.status_code == 200:
-            data = response.get_json()
-            assert "profile" in data or "success" in data
 
     def test_npc_get_active_quests(self, app_and_client):
         """Test GET /npc/quests/active."""
@@ -237,7 +298,8 @@ class TestNPCRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_npc_update_quest_progress(self, app_and_client):
         """Test POST /npc/quests/<quest_id>/progress."""
@@ -251,7 +313,8 @@ class TestNPCRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_npc_get_quest_status(self, app_and_client):
         """Test GET /npc/quests/<quest_id>/status."""
@@ -264,7 +327,8 @@ class TestNPCRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
 
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
@@ -293,7 +357,7 @@ class TestShopRoutesTier2:
         return {"Authorization": f"Bearer {session_id}"}
 
     def test_shop_get_state(self, app_and_client):
-        """Test GET /shop/state."""
+        """GET /shop/state without an npc_id is a 400 naming the field."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -303,10 +367,11 @@ class TestShopRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing npc_id query parameter"
 
     def test_shop_buy_item(self, app_and_client):
-        """Test POST /shop/buy."""
+        """POST /shop/buy without an npc_id is a 400 naming the field."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -317,10 +382,11 @@ class TestShopRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing required fields: npc_id"
 
     def test_shop_sell_item(self, app_and_client):
-        """Test POST /shop/sell."""
+        """POST /shop/sell without an npc_id is a 400 naming the field."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -331,10 +397,11 @@ class TestShopRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing required fields: npc_id"
 
     def test_shop_buyback_item(self, app_and_client):
-        """Test POST /shop/buyback."""
+        """POST /shop/buyback without an npc_id is a 400 naming the field."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -345,12 +412,20 @@ class TestShopRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing required fields: npc_id"
 
 
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
 class TestPlayerRoutesTier2:
-    """Test player-related routes."""
+    """Test player-related routes.
+
+    The player blueprint is mounted at the API root -- ``/api/status``,
+    ``/api/stats``, ``/api/full-state``, ``/api/skills``,
+    ``/api/skills/learn``, ``/api/level-up/allocate``. There is no
+    ``/api/player`` prefix, so every test here used to request a URL with no
+    route and pass on the 404.
+    """
 
     @pytest.fixture
     def app_and_client(self):
@@ -374,89 +449,142 @@ class TestPlayerRoutesTier2:
         return {"Authorization": f"Bearer {session_id}"}
 
     def test_player_get_status(self, app_and_client):
-        """Test GET /player/status."""
+        """Test GET /status."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.get(
-            "/api/player/status",
+            "/api/status",
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        status = data["status"]
+        assert status["name"]
+        assert status["hp"] <= status["max_hp"]
+        assert status["level"] >= 1
 
     def test_player_get_full_state(self, app_and_client):
-        """Test GET /player/full-state."""
+        """Test GET /full-state."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.get(
-            "/api/player/full-state",
+            "/api/full-state",
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        # One request the client can draw the whole sheet from.
+        for section in ("status", "stats", "skills", "inventory", "equipment"):
+            assert section in data
 
     def test_player_get_stats(self, app_and_client):
-        """Test GET /player/stats."""
+        """Test GET /stats."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.get(
-            "/api/player/stats",
+            "/api/stats",
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        stats = data["stats"]
+        for attribute in ("strength", "finesse", "speed", "endurance"):
+            assert isinstance(stats[attribute], (int, float))
 
     def test_player_get_skills(self, app_and_client):
-        """Test GET /player/skills."""
+        """Test GET /skills."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.get(
-            "/api/player/skills",
+            "/api/skills",
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        skills = data["skills"]
+        assert isinstance(skills["known_moves"], list)
+        assert skills["known_moves"], "a new player knows at least one move"
+        assert all("name" in move for move in skills["known_moves"])
 
     def test_player_learn_skill(self, app_and_client):
-        """Test POST /player/skills/learn."""
+        """Learning a skill needs a name *and* a category."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.post(
-            "/api/player/skills/learn",
-            json={"skill_id": "test_skill"},
+            "/api/skills/learn",
+            json={"skill_name": "test_skill"},
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Missing skill_name or category"
 
     def test_player_allocate_level_up(self, app_and_client):
-        """Test POST /player/level-up/allocate."""
+        """Allocation names a ``*_base`` attribute and an ``amount``.
+
+        This test used to send ``{"stat": ..., "points": ...}``, neither of
+        which the route reads, to a URL that did not exist.
+        """
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.post(
-            "/api/player/level-up/allocate",
-            json={"stat": "strength", "points": 1},
+            "/api/level-up/allocate",
+            json={"attribute": "strength", "amount": 1},
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Invalid attribute"
+
+        # A well-named attribute gets past validation and is refused for the
+        # real reason: a level-1 player has no pending points to spend.
+        response = client.post(
+            "/api/level-up/allocate",
+            json={"attribute": "strength_base", "amount": 1},
+            headers=headers,
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Not enough points"
 
 
+@NO_QUEST_SYSTEM
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
 class TestQuestRewardRoutesTier2:
-    """Test quest reward routes."""
+    """Test quest reward routes.
+
+    Every test asserts the endpoint a quest feature would expose, and
+    all of them xfail today. Before the class-level marker, only
+    ``test_quest_get_progression`` said so: the other seven accepted
+    404 and passed against nothing.
+
+    Every id these tests send is deliberately unknown, so a landed feature
+    could legitimately answer either 200 or 400: the only claim each
+    assertion makes is that the route exists and does not fault. Stated once
+    here rather than as a comment above every assertion.
+    """
 
     @pytest.fixture
     def app_and_client(self):
@@ -490,7 +618,8 @@ class TestQuestRewardRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_complete(self, app_and_client):
         """Test POST /quests/<quest_id>/complete."""
@@ -504,7 +633,8 @@ class TestQuestRewardRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_complete_invalid_difficulty(self, app_and_client):
         """Test quest completion with invalid difficulty."""
@@ -518,7 +648,8 @@ class TestQuestRewardRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_award_gold(self, app_and_client):
         """Test POST /quests/award-gold."""
@@ -532,7 +663,8 @@ class TestQuestRewardRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_award_experience(self, app_and_client):
         """Test POST /quests/award-experience."""
@@ -546,7 +678,8 @@ class TestQuestRewardRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_award_item(self, app_and_client):
         """Test POST /quests/award-item."""
@@ -560,7 +693,8 @@ class TestQuestRewardRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_award_reputation(self, app_and_client):
         """Test POST /quests/award-reputation."""
@@ -574,7 +708,8 @@ class TestQuestRewardRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_get_progression(self, app_and_client):
         """Test GET /quests/progression."""
@@ -644,7 +779,12 @@ class TestWorldRoutesTier2:
         assert response.status_code == 200
 
     def test_world_move_player(self, app_and_client):
-        """Test POST /world/move."""
+        """POST /world/move north from the starting tile is refused.
+
+        dark-grotto (1, 1) advertises south and east only, so north is a 400
+        naming the direction -- see test_routes_critical.py's
+        ``_assert_move_refused`` for the same claim against the room payload.
+        """
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -655,10 +795,11 @@ class TestWorldRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Cannot go north from here"
 
     def test_world_submit_event_input(self, app_and_client):
-        """Test POST /world/events/input."""
+        """POST /world/events/input with no event_id is a 400."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -669,10 +810,14 @@ class TestWorldRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing event_id or user_input"
 
     def test_world_get_tile(self, app_and_client):
-        """Test GET /world/tile."""
+        """GET /world/tile for a coordinate off the map is a 404.
+
+        dark-grotto has no (0, 0): its tiles start at (1, 1).
+        """
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -682,7 +827,8 @@ class TestWorldRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code == 404
+        assert response.get_json()["error"] == "Tile not found"
 
     def test_world_get_explored_tiles(self, app_and_client):
         """Test GET /world/explored."""
@@ -698,7 +844,11 @@ class TestWorldRoutesTier2:
         assert response.status_code == 200
 
     def test_world_get_tiles_batch(self, app_and_client):
-        """Test POST /world/tiles/batch."""
+        """POST /world/tiles/batch reads `coordinates`, not `tiles`.
+
+        The body below names the wrong field, so the route answers a 400 that
+        says which one it wanted.
+        """
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -709,7 +859,8 @@ class TestWorldRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing coordinates array"
 
     def test_world_get_commands(self, app_and_client):
         """Test GET /world/commands."""
@@ -725,7 +876,7 @@ class TestWorldRoutesTier2:
         assert response.status_code == 200
 
     def test_world_interact(self, app_and_client):
-        """Test POST /world/interact."""
+        """POST /world/interact needs an action as well as a target_id."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -736,10 +887,11 @@ class TestWorldRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing target_id or action"
 
     def test_world_trigger_events(self, app_and_client):
-        """Test POST /world/events."""
+        """POST /world/events returns the (empty) event list for the tile."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -750,7 +902,10 @@ class TestWorldRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        assert isinstance(data["events"], list)
 
 
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
@@ -794,7 +949,11 @@ class TestInventoryEquipmentRoutesTier2:
         assert "inventory" in data or "items" in data
 
     def test_inventory_examine(self, app_and_client):
-        """Test GET /inventory/examine."""
+        """GET /inventory/examine addresses items by index, not item_id.
+
+        The query below names the wrong parameter, so the route answers a 400
+        that says which one it wanted.
+        """
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -804,10 +963,11 @@ class TestInventoryEquipmentRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing index parameter"
 
     def test_inventory_drop(self, app_and_client):
-        """Test POST /inventory/drop."""
+        """POST /inventory/drop for an item Jean does not carry is a 400."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -818,7 +978,8 @@ class TestInventoryEquipmentRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Item not found in inventory"
 
     def test_equipment_get(self, app_and_client):
         """Test GET /equipment."""
@@ -834,7 +995,7 @@ class TestInventoryEquipmentRoutesTier2:
         assert response.status_code == 200
 
     def test_inventory_equip(self, app_and_client):
-        """Test POST /inventory/equip."""
+        """POST /inventory/equip for an item Jean does not carry is a 400."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -845,10 +1006,11 @@ class TestInventoryEquipmentRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Item not found in inventory"
 
     def test_inventory_use(self, app_and_client):
-        """Test POST /inventory/use."""
+        """POST /inventory/use for an item Jean does not carry is a 400."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -859,10 +1021,15 @@ class TestInventoryEquipmentRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Item not found in inventory"
 
     def test_inventory_unequip(self, app_and_client):
-        """Test POST /inventory/unequip."""
+        """POST /inventory/unequip addresses the item, not the slot.
+
+        The body below names `slot`, so the route answers a 400 that says
+        which field it wanted.
+        """
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -873,10 +1040,15 @@ class TestInventoryEquipmentRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing item_id or item_index"
 
     def test_inventory_compare(self, app_and_client):
-        """Test GET /inventory/compare."""
+        """GET /inventory/compare addresses the candidate by index.
+
+        The query below names `item_id`, so the route answers a 400 that says
+        which parameter it wanted.
+        """
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
@@ -886,7 +1058,8 @@ class TestInventoryEquipmentRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Missing candidate_index parameter"
 
     def test_inventory_stats(self, app_and_client):
         """Test GET /inventory/stats."""
@@ -920,7 +1093,7 @@ class TestLogsRoutesTier2:
         }
 
     def test_logs_receive_browser_logs(self, app_and_client):
-        """Test POST /logs/browser."""
+        """POST /logs/browser writes the batch and names the file it wrote."""
         client = app_and_client["client"]
 
         response = client.post(
@@ -928,7 +1101,10 @@ class TestLogsRoutesTier2:
             json={"logs": ["test log"]},
         )
 
-        assert response.status_code in [200, 400, 500]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["message"] == "Successfully wrote 1 log entries"
+        assert data["file"].endswith(".jsonl")
 
     def test_logs_list_files(self, app_and_client):
         """Test GET /logs/browser/files."""
@@ -941,14 +1117,17 @@ class TestLogsRoutesTier2:
         assert response.status_code == 200
 
     def test_logs_cleanup(self, app_and_client):
-        """Test POST /logs/browser/cleanup."""
+        """POST /logs/browser/cleanup reports what it deleted."""
         client = app_and_client["client"]
 
         response = client.post(
             "/api/logs/browser/cleanup",
         )
 
-        assert response.status_code in [200, 204]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["message"] == "Cleanup completed"
+        assert "total_deleted_count" in data["result"]
 
     def test_logs_get_stats(self, app_and_client):
         """Test GET /logs/browser/stats."""
@@ -961,9 +1140,20 @@ class TestLogsRoutesTier2:
         assert response.status_code == 200
 
 
+@NO_QUEST_SYSTEM
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
 class TestQuestChainsRoutesTier2:
-    """Test quest chains routes."""
+    """The quest-chain half of the quest family: /api/quest-chains/*.
+
+    Every test asserts the endpoint a quest-chain feature would expose, and
+    all of them xfail today. Note the id in the URL is a *chain* id, not a
+    quest id -- the comment these tests used to carry said "quest id".
+
+    Every id these tests send is deliberately unknown, so a landed feature
+    could legitimately answer either 200 or 400: the only claim each
+    assertion makes is that the route exists and does not fault. Stated once
+    here rather than as a comment above every assertion.
+    """
 
     @pytest.fixture
     def app_and_client(self):
@@ -1010,7 +1200,8 @@ class TestQuestChainsRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_chains_advance(self, app_and_client):
         """Test POST /quest-chains/<chain_id>/advance."""
@@ -1023,7 +1214,8 @@ class TestQuestChainsRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404, 500]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_chains_complete(self, app_and_client):
         """Test POST /quest-chains/<chain_id>/complete."""
@@ -1036,7 +1228,8 @@ class TestQuestChainsRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
     def test_quest_chains_check_prerequisites(self, app_and_client):
         """Test POST /quest-chains/<chain_id>/prerequisites."""
@@ -1049,12 +1242,18 @@ class TestQuestChainsRoutesTier2:
             headers=headers,
         )
 
-        assert response.status_code in [200, 404, 500]
+        assert response.status_code != 404
+        assert response.status_code < 500
 
 
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
 class TestNPCChatRoutesTier2:
-    """Test NPC chat routes."""
+    """Test NPC chat routes.
+
+    The blueprint is mounted at ``/api/npc/chat/*``, not ``/api/npc-chat/*``:
+    every test in this class used to request the hyphenated prefix, get a 404
+    and pass on it.
+    """
 
     @pytest.fixture
     def app_and_client(self):
@@ -1078,156 +1277,116 @@ class TestNPCChatRoutesTier2:
         return {"Authorization": f"Bearer {session_id}"}
 
     def test_npc_chat_open(self, app_and_client):
-        """Test POST /npc-chat/open."""
+        """Opening chat keys on ``npc_id``; ``npc_key`` alone is a 400."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.post(
-            "/api/npc-chat/open",
+            "/api/npc/chat/open",
             json={"npc_key": "gorran"},
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "npc_id is required"
 
-    def test_npc_chat_respond(self, app_and_client):
-        """Test POST /npc-chat/respond."""
+    def test_npc_chat_open_npc_not_present(self, app_and_client):
+        """An NPC that is not in the room is refused by name."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.post(
-            "/api/npc-chat/respond",
+            "/api/npc/chat/open",
+            json={"npc_id": "gorran"},
+            headers=headers,
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "NPC 'gorran' not found"
+
+    def test_npc_chat_respond(self, app_and_client):
+        """Responding needs Jean's line; the field is ``jean_text``."""
+        client = app_and_client["client"]
+        session_id = app_and_client["session_id"]
+        headers = self.get_auth_header(session_id)
+
+        response = client.post(
+            "/api/npc/chat/respond",
             json={"npc_key": "gorran", "response": "hello"},
             headers=headers,
         )
 
-        assert response.status_code in [200, 400, 404]
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "jean_text is required"
 
     def test_npc_chat_end(self, app_and_client):
-        """Test POST /npc-chat/end."""
+        """Ending a conversation that was never opened still succeeds."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.post(
-            "/api/npc-chat/end",
+            "/api/npc/chat/end",
             json={"npc_key": "gorran"},
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["success"] is True
+        assert data["data"]["conversation_count"] == 0
+
+    def test_npc_chat_end_missing_key(self, app_and_client):
+        """Ending with no npc_key is a 400."""
+        client = app_and_client["client"]
+        session_id = app_and_client["session_id"]
+        headers = self.get_auth_header(session_id)
+
+        response = client.post(
+            "/api/npc/chat/end",
+            json={},
+            headers=headers,
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "npc_key is required"
 
     def test_npc_chat_history(self, app_and_client):
-        """Test GET /npc-chat/history/<npc_key>."""
+        """History for an NPC never spoken to is a 400, not an empty 200."""
         client = app_and_client["client"]
         session_id = app_and_client["session_id"]
         headers = self.get_auth_header(session_id)
 
         response = client.get(
-            "/api/npc-chat/history/gorran",
+            "/api/npc/chat/history/gorran",
             headers=headers,
         )
 
-        assert response.status_code in [200, 404]
-
-
-@pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
-class TestNPCAvailabilityRoutesTier2:
-    """Test NPC availability routes."""
-
-    @pytest.fixture
-    def app_and_client(self):
-        """Create Flask app with test client."""
-        app, socketio = create_app(TestingConfig)
-        app.config["TESTING"] = True
-        client = app.test_client()
-
-        session_manager = app.session_manager
-        session_id, _ = session_manager.create_session("test_player_npc_avail")
-
-        yield {
-            "app": app,
-            "client": client,
-            "session_id": session_id,
-            "session_manager": session_manager,
-        }
-
-    def get_auth_header(self, session_id):
-        """Get authorization header for session."""
-        return {"Authorization": f"Bearer {session_id}"}
-
-    def test_npc_availability_get_status(self, app_and_client):
-        """Test GET /npcs/<npc_id>/status."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.get(
-            "/api/npcs/gorran/status",
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 404]
-
-    def test_npc_availability_get_at_location(self, app_and_client):
-        """Test GET /locations/<location_id>/npcs."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.get(
-            "/api/locations/test_location/npcs",
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 404]
-
-    def test_npc_availability_check(self, app_and_client):
-        """Test POST /npcs/<npc_id>/check-availability."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.post(
-            "/api/npcs/gorran/check-availability",
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 404, 500]
-
-    def test_npc_availability_update_location(self, app_and_client):
-        """Test POST /npcs/<npc_id>/location."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.post(
-            "/api/npcs/gorran/location",
-            json={"location": "test_location"},
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 400, 404]
-
-    def test_npc_availability_get_timeline(self, app_and_client):
-        """Test GET /npcs/<npc_id>/timeline."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.get(
-            "/api/npcs/gorran/timeline",
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 404]
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "No chat history available"
 
 
 @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not installed")
 class TestMissingAuthErrorHandling:
-    """Test error handling for missing or invalid auth."""
+    """Test error handling for missing or invalid auth.
+
+    These probed ``/api/player/status``, which has no route, so all three got
+    the same 404 and would have passed with authentication removed entirely.
+    They now use ``/api/status`` and assert the specific 401 body the
+    middleware emits for each credential state.
+    """
 
     @pytest.fixture
     def app_and_client(self):
@@ -1242,32 +1401,40 @@ class TestMissingAuthErrorHandling:
         }
 
     def test_missing_auth_header(self, app_and_client):
-        """Test request without auth header returns 401 or 404."""
+        """A protected endpoint with no credential is a 401."""
         client = app_and_client["client"]
 
-        # Try to access a protected endpoint without auth
-        response = client.get("/api/player/status")
+        response = client.get("/api/status")
 
-        assert response.status_code in [401, 404]
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Missing or invalid session credentials"
 
     def test_invalid_auth_header(self, app_and_client):
-        """Test request with invalid auth header returns 401."""
+        """A Bearer naming no live session is a 401."""
         client = app_and_client["client"]
 
         response = client.get(
-            "/api/player/status",
+            "/api/status",
             headers={"Authorization": "Bearer invalid_session"},
         )
 
-        assert response.status_code in [401, 404]
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Invalid or expired session"
 
     def test_malformed_auth_header(self, app_and_client):
-        """Test request with malformed auth header returns 401."""
+        """An Authorization header that is not a Bearer is a 401."""
         client = app_and_client["client"]
 
         response = client.get(
-            "/api/player/status",
+            "/api/status",
             headers={"Authorization": "NotBearer something"},
         )
 
-        assert response.status_code in [401, 404]
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Missing or invalid session credentials"

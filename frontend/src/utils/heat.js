@@ -1,7 +1,7 @@
 import { colors } from '../styles/theme'
 
 /**
- * Momentum ("heat") — presentation rules for Jean's damage multiplier.
+ * Heat — presentation rules for Jean's damage multiplier.
  *
  * WIRE CONTRACT
  * -------------
@@ -12,19 +12,23 @@ import { colors } from '../styles/theme'
  * FLOAT multiplier (1.62 == +62% damage), rounded to 2dp on the wire.
  *
  * Do NOT read `battle_state.heat`: that key is a different representation of
- * the same quantity — `int(player.heat * 100)`, set by
+ * the same quantity — `round(player.heat * 100)`, set by
  * `ApiCombatAdapter.get_combat_state` — and it is absent from the per-beat
- * states the adapter serializes at combat_adapter.py:1338. One reader, one
+ * states `_run_move_beat` snapshots through
+ * `CombatStateSerializer.serialize_combat_state`. One reader, one
  * field, no `??` chain: mixing the two is exactly the wire-field drift this
  * repo keeps shipping (see CLAUDE.md "Frontend patterns").
  *
  * ENGINE FACTS (all read-only here; the engine owns the arithmetic)
  * ----------------------------------------------------------------
- * - `src/moves/_base.py` standard_execute_attack multiplies final damage by
- *   `player.heat`.
+ * - `src/moves/_base.py` resolve_damage -- the canonical damage expression,
+ *   reached from standard_execute_attack -- multiplies by `player.heat`. It is
+ *   NOT the only damage shape: flat_resisted_damage (Jab) and the flat arc
+ *   line (Reap, Sweep, Halberd Spin) apply no heat at all. See
+ *   resolve_damage's own docstring, which is the authority on that scope.
  * - `src/player/_combat.py` change_heat clamps to [0.5, 10] at 2dp.
  * - `src/api/combat_adapter.py` _update_heat pulls heat 5% toward 1.0 every
- *   beat, so momentum is a lease, not a bank.
+ *   beat, so heat is a lease, not a bank.
  */
 
 /** Neutral heat. Damage as written; the per-beat decay pulls toward this. */
@@ -61,7 +65,7 @@ export const METER_MAX = 3.5
  * re-label the meter every beat, PRESSING covers the ordinary attack cadence,
  * FERVENT the fast-move cadence, and RIGHTEOUS the ceiling of real play.
  */
-export const MOMENTUM_BANDS = [
+export const HEAT_BANDS = [
   {
     key: 'broken',
     label: 'BROKEN',
@@ -104,7 +108,7 @@ export const MOMENTUM_BANDS = [
  * `change_heat` multipliers from src/moves/_base.py — if those call sites
  * change, this table is wrong and the tooltip lies, so keep them in step.
  */
-export const MOMENTUM_GAINS = [
+export const HEAT_GAINS = [
   { label: 'Land a hit', effect: '×1.25' },
   { label: 'Parry an attack', effect: '×1.40' },
   { label: 'Absorb an attack', effect: '×1.25' },
@@ -112,15 +116,24 @@ export const MOMENTUM_GAINS = [
   { label: '…while Dodging', effect: '×1.25 more' },
 ]
 
-export const MOMENTUM_LOSSES = [
+export const HEAT_LOSSES = [
   { label: 'Your attack misses', effect: '×0.85' },
   { label: 'Your attack is parried', effect: '×0.75' },
   { label: 'Your attack is absorbed', effect: '×0.75' },
   { label: 'You take a hit', effect: '×(1 − dmg ÷ max HP)' },
 ]
 
-export const MOMENTUM_DRIFT_NOTE =
-  'Drifts 5% toward 1.00× every beat. Clamped to 0.50×–10.00×.'
+/**
+ * The one line of the expanded tooltip that states engine numbers rather than
+ * naming an action. Built from the constants above, never typed out: the
+ * glossary's heat entry templates the same three figures from the same
+ * constants, so a hardcoded copy here would go on asserting the old numbers
+ * after a balance change moved the glossary — and the glossary is the half the
+ * Python contract test pins, so nothing would fail.
+ */
+export const HEAT_DRIFT_NOTE =
+  `Drifts ${HEAT_DECAY_PER_BEAT * 100}% toward ${HEAT_NEUTRAL.toFixed(2)}× every beat. `
+  + `Clamped to ${HEAT_FLOOR.toFixed(2)}×–${HEAT_CEILING.toFixed(2)}×.`
 
 /** True for a heat value the meter can actually draw. */
 export function isRenderableHeat(heat) {
@@ -132,10 +145,10 @@ export function isRenderableHeat(heat) {
  * than returning null, so every caller gets a band object and no consumer
  * needs its own fallback branch; gate rendering on `isRenderableHeat` instead.
  */
-export function momentumBand(heat) {
+export function heatBand(heat) {
   const value = isRenderableHeat(heat) ? heat : HEAT_NEUTRAL
-  let band = MOMENTUM_BANDS[0]
-  for (const candidate of MOMENTUM_BANDS) {
+  let band = HEAT_BANDS[0]
+  for (const candidate of HEAT_BANDS) {
     if (value >= candidate.min) band = candidate
   }
   return band
@@ -150,14 +163,14 @@ export function momentumBand(heat) {
  * same ×1.25 taking 2.0→2.5, and the meter would read as if low heat barely
  * moves. Log scale makes "one landed hit" a constant nudge everywhere.
  */
-export function momentumFillRatio(heat) {
+export function heatFillRatio(heat) {
   if (!isRenderableHeat(heat)) return 0
   const clamped = Math.min(Math.max(heat, METER_MIN), METER_MAX)
   return Math.log(clamped / METER_MIN) / Math.log(METER_MAX / METER_MIN)
 }
 
 /** Where the neutral (1.00×) reference tick sits on the same scale. */
-export const NEUTRAL_MARK_RATIO = momentumFillRatio(HEAT_NEUTRAL)
+export const NEUTRAL_MARK_RATIO = heatFillRatio(HEAT_NEUTRAL)
 
 /** "1.62×" — the multiplier as the player reads it. */
 export function formatMultiplier(heat) {
@@ -166,7 +179,7 @@ export function formatMultiplier(heat) {
 }
 
 /** "+0.31" / "−0.22"; empty string for no change, so callers can skip rendering. */
-export function formatMomentumDelta(delta) {
+export function formatHeatDelta(delta) {
   if (!isRenderableHeat(delta)) return ''
   const rounded = Math.round(delta * 100) / 100
   if (rounded === 0) return ''
@@ -174,7 +187,7 @@ export function formatMomentumDelta(delta) {
 }
 
 /** Difference between two heat readings, rounded to the wire's 2dp. */
-export function momentumDelta(current, previous) {
+export function heatDelta(current, previous) {
   if (!isRenderableHeat(current) || !isRenderableHeat(previous)) return 0
   return Math.round((current - previous) * 100) / 100
 }

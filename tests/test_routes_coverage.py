@@ -202,6 +202,127 @@ class TestSavesRoutes:
             rv = c.post("/api/saves", headers=AUTH, json={"name": "X"})
         assert rv.status_code == 500
 
+    # ---- create_save: name validation (issue #523) ----
+    #
+    # The comprehensive version of this contract lives in
+    # tests/api/test_routes_saves_comprehensive.py, but tests/api/ is excluded
+    # from the default pytest run (and from the pre-commit hook), so the rules
+    # are re-asserted here against the mocked-session_manager app. Without
+    # this, a regression in validate_save_name would only surface in the
+    # separate CI job that walks tests/api/ one file per process.
+
+    @pytest.mark.parametrize(
+        "bad_name", ["", "   ", "\t\n ", "\x00", "\u200b", "\ufeff", "  \x00  "]
+    )
+    def test_create_save_blank_name_rejected(self, client, bad_name):
+        """Blank names 400 rather than being auto-named.
+
+        "Blank" is visibility-based, not whitespace-based: NUL, U+200B and the
+        BOM all survive ``.strip()`` yet still render as the empty load-list row
+        issue #523 reports.
+        """
+        rv = client.post("/api/saves", headers=AUTH, json={"name": bad_name})
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Save name is required"
+
+    @pytest.mark.parametrize("bad_name", [None, 42, 3.5, True, ["a"], {"a": 1}])
+    def test_create_save_non_string_name_rejected(self, client, bad_name):
+        """Non-string names 400 -- no coercion.
+
+        ``None`` in particular used to be stored verbatim and then rendered by
+        ``list_saves`` (which does ``str(row[1])``) as the literal "None".
+        """
+        rv = client.post("/api/saves", headers=AUTH, json={"name": bad_name})
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+        assert data["error"] == "Save name must be a string"
+
+    def test_create_save_over_max_length_rejected_not_truncated(self, client, app):
+        """A too-long name 400s and nothing is written.
+
+        Truncating would silently discard the player's intent, so the route
+        refuses; asserting ``save_game`` was never awaited is what proves no
+        truncated row reached the database.
+        """
+        from src.api.routes.saves import MAX_SAVE_NAME_LENGTH
+
+        rv = client.post(
+            "/api/saves",
+            headers=AUTH,
+            json={"name": "a" * (MAX_SAVE_NAME_LENGTH + 1)},
+        )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+        assert str(MAX_SAVE_NAME_LENGTH) in data["error"]
+        app._test_gs.save_game.assert_not_awaited()
+
+    def test_create_save_at_max_length_accepted(self, client):
+        """Exactly MAX_SAVE_NAME_LENGTH characters is allowed (boundary)."""
+        from src.api.routes.saves import MAX_SAVE_NAME_LENGTH
+
+        rv = client.post(
+            "/api/saves",
+            headers=AUTH,
+            json={"name": "a" * MAX_SAVE_NAME_LENGTH},
+        )
+        assert rv.status_code == 201
+
+    def test_create_save_strips_name_before_storing(self, client, app):
+        """Surrounding whitespace is removed before validating and storing."""
+        rv = client.post("/api/saves", headers=AUTH, json={"name": "  Padded  "})
+        assert rv.status_code == 201
+        assert rv.get_json()["message"] == "Game saved: Padded"
+        # The stored name is the stripped one, not what the client sent.
+        assert app._test_gs.save_game.await_args.args[1] == "Padded"
+
+    def test_an_unnamed_autosave_is_not_labelled_a_manual_save(self, client, app):
+        """The default name must match the kind of save actually written.
+
+        A body of just ``{"is_autosave": true}`` carries the flag through to
+        ``save_game``, so naming it "Manual Save" put a row in the load list
+        describing itself as the opposite of what it is -- the same class of
+        bogus save-list label this validation work set out to remove.
+        """
+        from src.api.routes.saves import DEFAULT_AUTOSAVE_NAME, DEFAULT_SAVE_NAME
+
+        rv = client.post("/api/saves", headers=AUTH, json={"is_autosave": True})
+        assert rv.status_code == 201
+        name = app._test_gs.save_game.await_args.args[1]
+        assert name == DEFAULT_AUTOSAVE_NAME
+        assert name != DEFAULT_SAVE_NAME
+        assert app._test_gs.save_game.await_args.kwargs["is_autosave"] is True
+
+    def test_create_save_autosave_name_survives_validation(self, client, app):
+        """The literal name useAutosave sends is never rejected.
+
+        ``frontend/src/hooks/useApi.js`` posts ``{"name": "Autosave",
+        "is_autosave": true}``; that is the only save written during active
+        play, so validation must not be able to refuse it.
+        """
+        rv = client.post(
+            "/api/saves", headers=AUTH, json={"name": "Autosave", "is_autosave": True}
+        )
+        assert rv.status_code == 201
+        assert app._test_gs.save_game.await_args.args[1] == "Autosave"
+
+    def test_create_save_absent_name_uses_default(self, client, app):
+        """A manual save with no "name" key gets the server's own name.
+
+        A server-generated name bypasses validation by construction, which is
+        what keeps the rules from being able to reject a save the client did
+        not name. The autosave branch has its own default -- see
+        test_an_unnamed_autosave_is_not_labelled_a_manual_save.
+        """
+        from src.api.routes.saves import DEFAULT_SAVE_NAME
+
+        rv = client.post("/api/saves", headers=AUTH, json={"is_autosave": False})
+        assert rv.status_code == 201
+        assert app._test_gs.save_game.await_args.args[1] == DEFAULT_SAVE_NAME
+
     # ---- load_save ----
 
     def test_load_save_success(self, client):

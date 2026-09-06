@@ -388,7 +388,7 @@ class TestDegradedInputsDegradeInsteadOfCrashing:
         ) == 0.0  # inf * 0.0 -> nan
 
     def test_a_non_finite_heat_falls_back_to_no_scaling(self):
-        """``_resolve_heat`` degrades a NaN/inf momentum to 1.0 rather than
+        """``_resolve_heat`` degrades a NaN/inf heat to 1.0 rather than
         letting it poison the product -- so the non-finite clamp above has to
         be reached through the *power* term, which nothing sanitises."""
         assert not math.isfinite(float("inf"))

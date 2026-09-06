@@ -11,6 +11,14 @@ Provides:
   - the ``_pending_animation`` channel's attribute and key names, single-sourced
     for the engine (src/moves/_base.py) and the API (src/api/combat_adapter.py)
     that share the channel — see the comment block below.
+  - wire_handle()/find_by_handle()/index_by_handle(): the opaque per-object
+    identity the API gives the client for ANY entity it names, and the lookups
+    that resolve one back. ``wire_handle``'s docstring carries the ONE list of
+    what gets a handle — see it rather than restating the list here, and
+    ``grep -rn "wire_handle(" src/`` for the live call sites. It lives here
+    rather than in src/api/ because the combat half (issue #511) predates the
+    rest (issue #518) and the engine-side attribute it mints hangs off
+    Combatant; nothing in the engine reads it.
 
 Usage (in each subclass __init__):
     self._init_resistances()
@@ -18,6 +26,8 @@ Usage (in each subclass __init__):
 
 
 import math
+import uuid
+import weakref
 
 # Move stages, in the order Move.advance walks them. 0/1 are "not resolved
 # yet" (the move's effect is still coming); 2/3 are aftermath.
@@ -53,6 +63,226 @@ PENDING_ANIMATION_ATTR = "_pending_animation"
 OUTCOME_KEY = "outcome"
 OUTCOME_TARGET_KEY = "outcome_target"
 REPORTED_BEAT_KEY = "_reported_beat"
+
+#: ── The entity wire handle ────────────────────────────────────────
+#:
+#: Every combatant carries an opaque, stable identity token used as its wire id
+#: by ``CombatantSerializer.stream_id`` (``player`` / ``ally_<handle>`` /
+#: ``enemy_<handle>``). The scheme used to interpolate ``id(combatant)`` --
+#: CPython's heap address -- which was wrong twice over (issue #511):
+#:
+#:   1. it shipped raw process addresses to the client in every combat poll,
+#:      log line and socket emission, and
+#:   2. ``id()`` values are RECYCLED. A combatant that dies leaves
+#:      ``combat_list`` and can be freed, so a later-spawned NPC can inherit its
+#:      address -- and every client-held reference to the dead one
+#:      (``last_move_target_id``, animation ``target_id``s, death-chain
+#:      bookkeeping) then silently points at a different combatant. The same
+#:      recycling hazard had already been found and fixed *inside* the adapter
+#:      during #506, where an "already announced" set held ``id(enemy)`` and so
+#:      skipped a reinforcement that reused a dead enemy's address.
+#:
+#: ``uuid4`` rather than a per-combat counter: combatants outlive the process
+#: they were minted in (allies and the player are pickled into saves), so a
+#: counter would have to be persisted and restored globally or a loaded
+#: combatant and a freshly spawned one would collide on the same small integer
+#: -- exactly the aliasing this replaces. A uuid needs no coordination, no
+#: global mutable state, and is unique across processes and saves by
+#: construction. It also carries no ordering or population information.
+#:
+#: Issue #518 widened the scheme past combat: the room, inventory, shop and
+#: event payloads minted their wire ids the same discarded way
+#: (``str(id(entity))``), so the *same* Slime shipped as ``enemy_<handle>`` on
+#: the combat wire and as a heap address in ``get_current_room``. There is now
+#: ONE handle per object (``wire_handle``, whose docstring carries the one list
+#: of which kinds of object those are) and the attribute name is kept spelled
+#: ``_combat_handle`` so handles already persisted in saves written since #511
+#: survive the widening.
+COMBAT_HANDLE_ATTR = "_combat_handle"
+
+#: Handles for entities that cannot hold an attribute of their own (spec'd test
+#: doubles and class objects, mostly). Keyed by the object itself and weak, so
+#: an entry dies with the entity it names -- unlike an ``id()``-keyed cache,
+#: which is the very recycling hazard this module closes.
+_FALLBACK_HANDLES = weakref.WeakKeyDictionary()
+
+
+def _side_table_handle(entity, handle=None):
+    """Mint into the weak side table, for an entity that cannot hold its own.
+
+    Last resort: an object that has no usable instance dict and refuses
+    ``setattr`` (or, for a class, must not be *allowed* to hold one -- see
+    ``wire_handle``). ``setdefault`` is atomic under the GIL here too, so two
+    threads racing still agree on one handle.
+    """
+    if handle is None:
+        handle = uuid.uuid4().hex
+    try:
+        return _FALLBACK_HANDLES.setdefault(entity, handle)
+    except TypeError:
+        # Neither settable nor weak-referenceable: nothing left to hang the
+        # handle on. Unreachable for real engine entities; better an unstable
+        # id than an exception out of a serializer.
+        return handle
+
+
+def wire_handle(entity):
+    """Return ``entity``'s stable opaque handle, minting one if needed.
+
+    THE list of what gets a handle lives here and nowhere else. Every other
+    mention of it in this repo points at this docstring rather than restating
+    it, because a hand-maintained enumeration drifts silently -- CLAUDE.md
+    records exactly that failure for ``to_hit_chance``, whose docstring list
+    was wrong twice before being deleted in favour of a grep. The kinds are:
+    **combatants, room NPCs, floor items, inventory rows, container contents,
+    world objects, merchants, shop stock, buyback ledger entries and events.**
+    For the live call sites rather than this prose,
+    ``grep -rn "wire_handle(" src/``.
+
+    Events are the one kind whose handle is *not* what the API resolves a
+    client-supplied id through -- ``process_event_input`` matches
+    ``api_event_id`` instead, and the handle serves the client's event dedupe.
+    ``src/api/serializers/event_serializer.py`` documents why.
+
+    All of them share this one function and one handle
+    per object, deliberately (issue #518): a Slime standing in
+    ``tile.npcs_here`` is the *same instance* the fight puts in
+    ``combat_list``, so giving it a second, room-scoped id would mean the
+    client holds two names for one entity and every cross-reference between
+    them (attacking the NPC you are looking at) needs a translation table.
+    The combat wire id is this handle plus a side prefix
+    (``CombatantSerializer.stream_id``); nothing else decorates it.
+
+    Minting is lazy rather than done in each subclass ``__init__`` so there is
+    exactly ONE code path: a combatant restored from a save written before
+    #511 has no handle, and takes the same branch a freshly spawned one takes
+    the first time its identity is asked for. An eager mint would leave the
+    lazy path as a rarely-exercised special case for old saves.
+
+    The handle is a plain ``str`` in ``__dict__``, so it pickles with the rest
+    of the entity (``Combatant.__getstate__`` strips only the transient
+    animation channel) and survives a save/load round trip. Nothing in the
+    engine reads it -- it exists solely as the API's entity identity.
+
+    The mint goes through ``__dict__.setdefault`` rather than ``setattr``
+    because it is racy otherwise: the combat poll and the socket beat emitter
+    run on different threads, and two threads that both find no handle would
+    each mint one, the second ``setattr`` silently overwriting the id the
+    first had already shipped to the client -- leaving the client holding an
+    id that resolves to nobody. ``dict.setdefault`` is atomic under the GIL,
+    so the first writer wins and every caller sees that same handle.
+
+    The *read* goes through the instance dict for the same reason it must not
+    go through ``getattr``: attribute lookup resolves through the CLASS, so an
+    entity whose class carries ``_combat_handle`` would report the class's
+    handle as its own and every instance of that class would answer to one
+    wire id -- see the ``isinstance(entity, type)`` branch below for how a
+    class comes to carry one.
+    """
+    if isinstance(entity, dict):
+        # ``ObjectSerializer`` also accepts a plain mapping as a world object,
+        # and a buyback ledger entry is a dict too. A mapping has no instance
+        # dict and is not weak-referenceable, so the branches below would
+        # remint on every call -- an id that changes between two polls is
+        # worse than the address it replaced. Mint into the mapping itself
+        # instead; ``setdefault`` is atomic here too.
+        existing = entity.get(COMBAT_HANDLE_ATTR)
+        if isinstance(existing, str) and existing:
+            return existing
+        return entity.setdefault(COMBAT_HANDLE_ATTR, uuid.uuid4().hex)
+
+    if isinstance(entity, type):
+        # A class is not an instance, and must never be stamped: its
+        # ``__dict__`` is a read-only ``mappingproxy``, so the instance branch
+        # below cannot mint into it and would fall through to ``setattr`` --
+        # putting the handle on the CLASS. After that every instance of that
+        # class with no own handle resolves *through* the class to that one
+        # id, so a single wire id would name every Slime in the game. That is
+        # precisely the aliasing #511/#518 exist to remove, and it would be
+        # silent. Classes do reach a serializer in principle:
+        # ``Universe._deserialize_saved_instance`` returns bare class objects
+        # for ``__class_type__`` markers. Give the class its own handle in the
+        # weak side table, where nothing can inherit it.
+        return _side_table_handle(entity)
+
+    own = getattr(entity, "__dict__", None)
+    if isinstance(own, dict):
+        existing = own.get(COMBAT_HANDLE_ATTR)
+        if isinstance(existing, str) and existing:
+            return existing
+        return own.setdefault(COMBAT_HANDLE_ATTR, uuid.uuid4().hex)
+
+    # No usable instance dict (``__slots__``): read and write through the
+    # attribute protocol instead. A slot and a class attribute of the same
+    # name cannot coexist, and nothing stamps classes any more, so the
+    # class-inheritance hazard above does not apply on this path.
+    existing = getattr(entity, COMBAT_HANDLE_ATTR, None)
+    if isinstance(existing, str) and existing:
+        return existing
+    handle = uuid.uuid4().hex
+    try:
+        setattr(entity, COMBAT_HANDLE_ATTR, handle)
+        return handle
+    except (AttributeError, TypeError):
+        pass
+    return _side_table_handle(entity, handle)
+
+
+#: Combat-facing spelling of :func:`wire_handle`, kept as the name issue #511
+#: introduced and the combat serializer/adapter import. It is an alias, not a
+#: parallel scheme: one entity has exactly one handle whichever name mints it.
+combatant_handle = wire_handle
+
+
+def index_by_handle(entities, handle):
+    """Return ``(entity, index)`` for the first handle match, else ``(None, None)``.
+
+    The positional twin of :func:`find_by_handle`, for the callers that need
+    the row number as well as the object (the inventory routes address items
+    by index too). It exists so those callers do not re-inline the comparison
+    just to keep the index, and so recovering the index afterwards with
+    ``list.index()`` -- which compares by equality, not identity, and would
+    silently return the wrong row for a stacked duplicate the day an ``Item``
+    defines ``__eq__`` -- is never necessary.
+
+    Scanning mints a handle for each candidate it passes. That is deliberate
+    and harmless: the mint is idempotent, and every entity reachable from a
+    lookup is one the matching serializer would have minted for anyway.
+
+    A falsy ``handle`` matches nothing -- an absent id must not resolve to the
+    first entity in the room.
+    """
+    if not handle:
+        return None, None
+    for index, entity in enumerate(entities or ()):
+        if wire_handle(entity) == handle:
+            return entity, index
+    return None, None
+
+
+def find_by_handle(entities, handle):
+    """Return the first entity in ``entities`` whose wire handle is ``handle``.
+
+    The inverse of :func:`wire_handle`, and the way the API turns a
+    client-supplied id back into an object. It is written once here, rather
+    than re-inlined at each lookup, because the lookup is the half of the
+    scheme that silently breaks: a site left comparing ``id(entity)`` after
+    the mint moved to handles does not raise, it just answers "not found" --
+    which is how the serializer half of this change, applied on its own, broke
+    every room interaction.
+
+    Two shapes of caller legitimately do more than call this, and neither
+    re-implements the comparison: those that need the row index go through
+    :func:`index_by_handle`, and those that must exclude candidates before
+    matching (the shop's ``name != "Gold"`` filter, the combat adapter's
+    ``enemy_``/``ally_`` prefix strip) narrow their arguments and then call
+    this. If you find yourself writing ``wire_handle(x) == some_id`` anywhere
+    else, one of these two is the tool you want.
+
+    A falsy ``handle`` matches nothing -- an absent id must not resolve to the
+    first entity in the room.
+    """
+    return index_by_handle(entities, handle)[0]
 
 
 def move_in_progress(combatant):
@@ -143,6 +373,11 @@ class Combatant:
         adds further API-layer exclusions of its own on top by delegating to
         this method (see ``Player.__getstate__``), so a strip added here
         reaches every combatant structurally.
+
+        ``COMBAT_HANDLE_ATTR`` is deliberately NOT stripped: the wire handle is
+        persisted combatant identity (issue #511), and dropping it would remint
+        a fresh one on load -- breaking any id a client still holds across a
+        save/load and reintroducing, per reload, the aliasing it replaced.
         """
         state = self.__dict__.copy()
         state.pop(PENDING_ANIMATION_ATTR, None)

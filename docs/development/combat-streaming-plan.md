@@ -1,6 +1,13 @@
 # Combat Streaming over SocketIO — Implementation Plan (#436)
 
-Status: **in progress** (Phase 0). Owner: engine/frontend. Tracking issue: #436.
+Status: **in progress** (Phase 3, partial). Owner: engine/frontend. Tracking issue: #436.
+
+> **Status accuracy note.** This line read "Phase 0" until 2026-09-05, three
+> phases after the fact — it was never updated as work landed, and `f888c65`
+> edited this document while landing Phase 3b without touching it. Anyone
+> resuming this work should verify the phase checklists against the code
+> rather than trusting the header; the code is the record, this document is a
+> plan. Update this line in the same commit as the work it describes.
 
 ## Goal
 
@@ -29,6 +36,14 @@ paced locally. This tightly couples combat visuals **and** SFX to the engine.
   frontend dependency that is never imported. Config keys
   `SOCKETIO_CORS_ALLOWED_ORIGINS` / `SOCKETIO_MESSAGE_QUEUE` are defined but never
   read (app.py builds the socket from `CORS_ORIGINS`).
+
+  **No longer true as of Phase 1–3 (kept because this section describes the
+  starting point, not today).** `socket.io-client` is imported and used;
+  `SOCKETIO_*` is wired in `app.py`. What survives of this paragraph is the
+  list of *legacy* emits — `combat:log`, `combat:started` and `combat:turn`
+  still have no client listener, and `combat:update`'s only listener is
+  documented in `useCombatSocket.js` as a recovery path for when the streaming
+  flag is off. Those are the Phase 4 deletions.
 
 ## Core design decisions
 
@@ -120,6 +135,63 @@ paced locally. This tightly couples combat visuals **and** SFX to the engine.
 - `execute_move` route returns `{success, seq}` (behind flag); response treated
   as an ack.
 - Update `useCombatCoordinator`/`GamePage`/`Battlefield` tests accordingly.
+
+### Phase 3 — deviations and remaining gaps (recorded 2026-09-05)
+
+**Deviation from the plan as written.** The bullet above specifies
+`execute_move` returning `{success, seq}` treated as an ack. That was
+deliberately *not* implemented; it was superseded by the `response_streamed`
+marker (`combat_adapter.py`, consumed in `useApi.js`), which lets the client
+tell "the socket already carried this" from "this response is the only
+carrier" without inventing a second sequence authority. The marker design is
+the one in the code and the one to build on.
+
+**What is actually done:** animations and SFX are rewired onto the beat queue
+(`BattlefieldGrid.jsx` enqueues from the stream, its log-spooler animation
+path is gated off under streaming, and the 75% SFX chain replaces the
+phase-keyed cues).
+
+**What is not, and would ship as a silent degradation if the flag were flipped
+today:**
+
+1. `Battlefield.jsx`'s `displayState`/`accBeatStates` stepping and
+   `BattlefieldGrid`'s breadcrumb trails still read `combat.beat_states`, which
+   the socket path strips (`combat_beat_stream.py` pops it before emit). Under
+   streaming they degrade to samples from the 8s poll. **Decision (maintainer,
+   2026-09-05): derive both from the beat queue** — preserve the visuals, do
+   not delete the feature and do not keep `beat_states` on the move response to
+   feed it.
+2. `initialize_combat` never calls `_stream_combat_result`, so first-strike NPC
+   turns and reinforcement-wave rosters are never pushed as beats. Their
+   animations live only in `combat.log`, whose spooler path is disabled under
+   streaming — so under streaming those swings are silent and invisible. Note
+   the beat protocol has no *arrival* concept at all: `diff_combatants` skips
+   combatants absent from `prev`.
+3. `GamePage` passes no `onSuggestions`, so `combat:suggestions` is emitted to
+   nobody.
+4. `validate_beat` has no production caller — nothing validates a beat before
+   it reaches the wire.
+
+**Not a Phase 4 deletion, despite appearances:** `LeftPanel`'s log-reveal
+pacing (now `hooks/useCombatLogPlayback.js`, extracted in #490) must NOT be
+deleted with the old path. It owns `displayedLogCount`, which gates the
+victory/defeat dialog and `isMyTurn`. If the log is ever re-paced off the beat
+queue, that hook is where it happens.
+
+**Gate before flipping the default (maintainer decision, 2026-09-05):** the
+socket auth path must be hardened first. The client currently substring-matches
+`"invalid session"` against a message the server also emits when the handshake
+simply carried no cookie, and routes it to `redirectToLogin()` — a forced
+logout mid-fight on any cookie-delivery fault. It is inert only because the
+flag is off. Page-level streaming coverage is also a gate: every `GamePage`
+test currently runs with streaming off and none mocks `useCombatSocket`, so the
+wiring being made unconditional has no coverage at that level.
+
+**One correction to "Risks & mitigations" below:** removing the flag does not
+leave combat with no fallback. `GamePage` keeps an 8s `fetchCombatStatus` poll
+in both modes, and `get_combat_status` has desync recovery, so a dead socket
+self-heals within 8s. What is lost is animation, SFX and immediate feedback —
+a fight that feels frozen for up to 8s per action, not a soft-lock.
 
 ### Phase 4 — Cleanup / removal
 - Server: delete old `combat:log/started/update/turn/suggestions_ready` emits;

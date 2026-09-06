@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 from src.api.utils.log_cleanup import LogCleanupManager
 from src.api.serializers.object_serializer import ObjectSerializer
+from src.combatant import find_by_handle, wire_handle
 
 # ---------------------------------------------------------------------------
 # LogCleanupManager
@@ -318,17 +319,33 @@ class TestObjectSerializerBase:
         assert data["name"] == "Gate"
         assert data["type"] == "dict"
 
-    def test_id_defaults_to_python_id_for_objects(self):
+    def test_id_defaults_to_the_objects_wire_handle(self):
+        """Was ``test_id_defaults_to_python_id_for_objects`` until #518: the
+        default is now the object's opaque handle, not its heap address."""
         obj = _SimpleObj(name="X", description="", aliases=[], action_aliases=[])
         data = ObjectSerializer._serialize_base(obj)
-        assert str(id(obj)) == data["id"]
+        assert wire_handle(obj) == data["id"]
+        assert str(id(obj)) != data["id"]
 
-    def test_custom_id_used_when_present(self):
+    def test_an_explicit_id_attribute_does_not_override_the_handle(self):
+        """The serialized id is always the handle, and always resolvable.
+
+        An explicit ``id`` attribute used to win. Nothing in the engine sets
+        one, so its only effect was to publish, for a test double, an id that
+        ``find_by_handle`` cannot accept — the exact half-move #518 exists to
+        prevent. This test asserts the id *and* its round trip, so the mint and
+        the resolver cannot drift apart again the way they could while the
+        emitted id was pinned with no resolver counterpart.
+        """
         obj = _SimpleObj(
             id="obj-42", name="X", description="", aliases=[], action_aliases=[]
         )
+
         data = ObjectSerializer._serialize_base(obj)
-        assert data["id"] == "obj-42"
+
+        assert data["id"] == wire_handle(obj)
+        assert data["id"] != "obj-42"
+        assert find_by_handle([obj], data["id"]) is obj
 
     def test_is_passable_included_when_present(self):
         obj = _SimpleObj(

@@ -668,6 +668,28 @@ class TestFeedbackRoute:
         )
         assert rv.status_code == 400
 
+    @pytest.mark.parametrize(
+        "invisible",
+        ["\u200b", "\ufeff", "\x00", "\u2060", "\u200b \ufeff"],
+        ids=["zero-width-space", "bom", "nul", "word-joiner", "mixed"],
+    )
+    def test_a_title_that_renders_as_nothing_is_rejected(self, client, invisible):
+        """An invisible title must not become a blank GitHub issue title.
+
+        ``.strip()`` leaves every one of these codepoints standing, so a
+        truthiness check accepts them and files an issue with no visible
+        title. The route delegates to has_visible_characters instead
+        (issue #523's rule, applied project-wide).
+        """
+        c, _ = client
+        rv = c.post(
+            "/api/feedback/issue",
+            json={"type": "bug", "title": invisible},
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 400
+        assert rv.get_json()["error"] == "Title is required"
+
     def test_title_too_long(self, client):
         c, _ = client
         rv = c.post(

@@ -16,6 +16,7 @@ except ImportError:
 from src.universe import Universe
 from src.player import Player
 from src.api.services.game_service import GameService
+from src.combatant import wire_handle
 
 class TestChestRumblerBattleIntegration:
     """Integration test for the complete Chest Rumbler battle narrative sequence."""
@@ -53,15 +54,47 @@ class TestChestRumblerBattleIntegration:
         4. Submit user input to continue
         5. Verify combat starts with Rock Rumbler
         """
-        # Step 1: Find and open the Wooden Chest
+        # Step 1: Find the Wooden Chest
         chest = next((obj for obj in self.target_tile.objects_here if obj.name == 'Wooden Chest'), None)
         assert chest is not None, "Wooden Chest not found on tile (7, 1)"
+
+        # The chest is authored locked, and Container.open() no-ops on a locked
+        # container. Model the real player flow: fetch the Iron Key (hidden on
+        # tile (2, 2), lock_nickname "wooden chest"), carry it back, unlock.
+        if chest.locked:
+            key_tile = self.universe.get_tile(2, 2)
+            assert key_tile is not None, "Tile (2, 2) not found"
+            key = next((i for i in key_tile.items_here if i.name == 'Iron Key'), None)
+            assert key is not None, "Iron Key not found on tile (2, 2)"
+
+            self.player.location_x, self.player.location_y = 2, 2
+            self.player.current_room = key_tile
+            result = self.service.interact_with_target(
+                self.player,
+                wire_handle(key),
+                "take",
+                session_data=self.session_data
+            )
+            assert result["success"] is True, "Failed to take the Iron Key"
+            assert any(i.name == 'Iron Key' for i in self.player.inventory), \
+                "Iron Key should be in Jean's inventory"
+
+            self.player.location_x, self.player.location_y = 7, 1
+            self.player.current_room = self.target_tile
+            result = self.service.interact_with_target(
+                self.player,
+                wire_handle(chest),
+                "unlock",
+                session_data=self.session_data
+            )
+            assert result["success"] is True, "Failed to unlock chest"
+            assert chest.locked is False, "Iron Key should have unlocked the Wooden Chest"
 
         # Open the chest if closed
         if chest.state == "closed":
             result = self.service.interact_with_target(
                 self.player,
-                str(id(chest)),
+                wire_handle(chest),
                 "open",
                 session_data=self.session_data
             )
@@ -74,18 +107,30 @@ class TestChestRumblerBattleIntegration:
 
         # Step 2: Take all items from the chest one by one
         items_taken = []
-        while len(chest.inventory) > 0:
+        # Bounded, and asserts progress each pass. An unbounded "until empty"
+        # loop turns a take that reports success without shrinking the
+        # container -- a stack merge, a non-removable entry, or the battle
+        # event restocking it -- into a hang that burns the CI job's whole
+        # --timeout=300 budget instead of failing red on the real defect.
+        for _ in range(initial_item_count + 5):
+            if not chest.inventory:
+                break
+            remaining_before = len(chest.inventory)
             item = chest.inventory[0]
             item_name = item.name
 
             result = self.service.interact_with_target(
                 self.player,
-                str(id(item)),
+                wire_handle(item),
                 "take",
                 session_data=self.session_data
             )
 
             assert result["success"] is True, f"Failed to take {item_name}"
+            assert len(chest.inventory) < remaining_before, (
+                f"take reported success but the chest still holds "
+                f"{len(chest.inventory)} items -- '{item_name}' was not removed"
+            )
             items_taken.append(item_name)
             print(f"Took: {item_name}")
 
@@ -189,6 +234,10 @@ class TestChestRumblerBattleIntegration:
         chest = next((obj for obj in self.target_tile.objects_here if obj.name == 'Wooden Chest'), None)
         assert chest is not None
 
+        # The authored chest is locked and Container.open() no-ops while it is.
+        # This test is about event queueing, not the lock, so clear it directly
+        # rather than dragging the whole key hunt in.
+        chest.locked = False
         if chest.state == "closed":
             chest.open()
 
@@ -243,6 +292,9 @@ class TestChestRumblerBattleIntegration:
         """
         # Empty the chest and trigger the event
         chest = next((obj for obj in self.target_tile.objects_here if obj.name == 'Wooden Chest'), None)
+        # See test_event_does_not_retrigger: unlock directly, the lock is not
+        # what this test is exercising.
+        chest.locked = False
         if chest.state == "closed":
             chest.open()
         chest.inventory = []

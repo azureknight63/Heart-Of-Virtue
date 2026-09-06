@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockUseAuth = vi.fn()
@@ -107,6 +107,22 @@ describe('App', () => {
     setLocation('/games/HeartOfVirtue/menu')
     render(<App />)
     expect(screen.getByText('LandingPageStub')).toBeInTheDocument()
+  })
+
+  it('puts the combat glossary within reach on the game surface (#507)', async () => {
+    mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false })
+    setLocation('/games/HeartOfVirtue/game')
+    render(<App />)
+    fireEvent.keyDown(document.body, { key: '?' })
+    expect(await screen.findByRole('dialog', { name: 'COMBAT GLOSSARY' })).toBeInTheDocument()
+  })
+
+  it('keeps the glossary — and its "?" shortcut — off the non-game routes', () => {
+    mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false })
+    setLocation('/games/HeartOfVirtue/menu')
+    render(<App />)
+    fireEvent.keyDown(document.body, { key: '?' })
+    expect(screen.queryByRole('dialog', { name: 'COMBAT GLOSSARY' })).toBeNull()
   })
 
   it('renders GamePage when authenticated', () => {

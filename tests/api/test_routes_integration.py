@@ -1,16 +1,9 @@
 """Integration tests for API routes."""
 
-import sys
-from pathlib import Path
 import json
-
-# Ensure the project's src directory is on sys.path
-ROOT = Path(__file__).resolve().parent.parent.parent
-
+from unittest.mock import AsyncMock, patch
 
 import pytest
-
-pytestmark = pytest.mark.skip(reason="Routes not fully implemented - incomplete test infrastructure")
 
 
 @pytest.fixture
@@ -47,25 +40,36 @@ class TestAuthRoutes:
     """Test authentication endpoints."""
 
     def test_login_success(self, client):
-        """Test successful login."""
-        response = client.post(
-            "/auth/login",
-            data=json.dumps({"username": "testuser"}),
-            content_type="application/json",
-        )
+        """Test successful login.
 
-        assert response.status_code == 201
+        Login requires real credentials (there is no guest mode), so the
+        database-backed authentication is stubbed and everything downstream of
+        it -- session creation, response envelope, cookie -- runs for real.
+        """
+        mock_user = {"id": "user_001", "username": "testuser", "timezone": "UTC"}
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            response = client.post(
+                "/api/auth/login",
+                data=json.dumps({"username": "testuser", "password": "secret"}),
+                content_type="application/json",
+            )
+
+        assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is True
-        assert "session_id" in data
-        assert "player_id" in data
-        assert "expires_at" in data
+        assert "session_id" in data["data"]
+        # The session id also travels in an HttpOnly cookie (issue #493).
+        assert "hov_session" in response.headers.get("Set-Cookie", "")
 
     def test_login_missing_username(self, client):
         """Test login without username."""
         response = client.post(
-            "/auth/login",
-            data=json.dumps({}),
+            "/api/auth/login",
+            data=json.dumps({"password": "secret"}),
             content_type="application/json",
         )
 
@@ -73,22 +77,48 @@ class TestAuthRoutes:
         data = json.loads(response.data)
         assert data["success"] is False
 
-    def test_login_short_username(self, client):
-        """Test login with too-short username."""
+    def test_login_missing_password(self, client):
+        """Test login without password."""
         response = client.post(
-            "/auth/login",
-            data=json.dumps({"username": "a"}),
+            "/api/auth/login",
+            data=json.dumps({"username": "testuser"}),
             content_type="application/json",
         )
 
         assert response.status_code == 400
         data = json.loads(response.data)
         assert data["success"] is False
+
+    def test_register_short_username(self, client):
+        """Test registration with a too-short username.
+
+        Username-length validation lives in ``auth_service.create_user``, i.e.
+        on registration. Login has never validated it -- a login posting only a
+        short username 400s for the missing password, so asserting it there
+        proved nothing.
+        """
+        response = client.post(
+            "/api/auth/register",
+            data=json.dumps(
+                {
+                    "username": "a",
+                    "password": "a-sufficiently-long-password",
+                    "email": "a@example.com",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert data["error"] == "validation_error"
+        assert "at least 4 characters" in data["message"]
 
     def test_logout_success(self, client, session_id):
         """Test successful logout."""
         response = client.post(
-            "/auth/logout",
+            "/api/auth/logout",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -97,30 +127,37 @@ class TestAuthRoutes:
         assert data["success"] is True
 
     def test_logout_missing_auth(self, client):
-        """Test logout without authorization."""
-        response = client.post("/auth/logout")
+        """Logout without credentials still succeeds and clears the cookie.
 
-        assert response.status_code == 401
+        Deliberate since issue #493: logout is NOT behind @require_auth, so a
+        browser pinned to an expired/unknown session can still clear it. See
+        the comment in ``routes/auth.logout``.
+        """
+        response = client.post("/api/auth/logout")
+
+        assert response.status_code == 200
         data = json.loads(response.data)
-        assert data["success"] is False
+        assert data["success"] is True
+        assert "hov_session" in response.headers.get("Set-Cookie", "")
 
     def test_validate_session_valid(self, client, session_id):
         """Test validating a valid session."""
         response = client.get(
-            "/auth/validate",
+            "/api/auth/validate",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["valid"] is True
-        assert data["username"] == "testuser"
-        assert "player_id" in data
+        # `username` is not part of the success contract (see the route's own
+        # docstring) -- only the failure body carries a null one.
+        assert data["player_id"] is not None
 
     def test_validate_session_invalid(self, client):
         """Test validating an invalid session."""
         response = client.get(
-            "/auth/validate",
+            "/api/auth/validate",
             headers={"Authorization": "Bearer invalid_token"},
         )
 
@@ -134,14 +171,14 @@ class TestWorldRoutes:
 
     def test_get_current_room_without_auth(self, client):
         """Test getting room without authentication."""
-        response = client.get("/world/")
+        response = client.get("/api/world/")
 
         assert response.status_code == 401
 
     def test_get_current_room_with_invalid_session(self, client):
         """Test getting room with invalid session."""
         response = client.get(
-            "/world/",
+            "/api/world/",
             headers={"Authorization": "Bearer invalid_session"},
         )
 
@@ -150,7 +187,7 @@ class TestWorldRoutes:
     def test_move_player_without_auth(self, client):
         """Test moving without authentication."""
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             data=json.dumps({"direction": "north"}),
             content_type="application/json",
         )
@@ -160,7 +197,7 @@ class TestWorldRoutes:
     def test_move_player_missing_direction(self, client, session_id):
         """Test moving without direction."""
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             data=json.dumps({}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -171,18 +208,49 @@ class TestWorldRoutes:
     def test_get_tile_missing_coordinates(self, client, session_id):
         """Test getting tile without coordinates."""
         response = client.get(
-            "/world/tile",
+            "/api/world/tile",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
         assert response.status_code == 400
 
-    def test_get_current_room_success(self, client, session_id):
-        """Test getting current room successfully."""
-        response = client.get(
-            "/world/",
-            headers={"Authorization": f"Bearer {session_id}"},
+    def test_get_current_room_success(self, app, client, session_id):
+        """The room payload carries an item, an NPC and an object, fully shaped.
+
+        The starting tile ships one item (Gold) and no NPCs or objects, so the
+        per-entity loops below used to iterate empty lists -- every
+        `idle_message` assertion was unreachable. A real NPC and a real object
+        are seeded onto the tile so the loops have something to check.
+        """
+        from src.npc import NPC
+        from src.objects import Object
+
+        player = app.session_manager.get_player(session_id)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        assert tile is not None
+        npc = NPC(
+            name="Room Fixture",
+            description="An NPC seeded for this assertion.",
+            damage=1,
+            aggro=False,
+            exp_award=0,
+            maxhp=10,
+            speed=1,
         )
+        obj = Object(
+            name="Room Fixture Object",
+            description="An object seeded for this assertion.",
+        )
+        tile.npcs_here.append(npc)
+        tile.objects_here.append(obj)
+        try:
+            response = client.get(
+                "/api/world/",
+                headers={"Authorization": f"Bearer {session_id}"},
+            )
+        finally:
+            tile.npcs_here.remove(npc)
+            tile.objects_here.remove(obj)
 
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -193,33 +261,37 @@ class TestWorldRoutes:
         assert "y" in room
         assert "name" in room
         assert "description" in room
-        assert "exits" in room or isinstance(room.get("exits"), dict)
+        # `exits` is always emitted as a dict. The old
+        # `"exits" in room or isinstance(room.get("exits"), dict)` could not
+        # fail: Python only evaluates the right operand when the left is
+        # false, at which point `room.get("exits")` is None.
+        assert isinstance(room["exits"], dict)
         # Verify room contents are returned
-        assert "items" in room
-        assert "npcs" in room
-        assert "objects" in room
         assert isinstance(room["items"], list)
         assert isinstance(room["npcs"], list)
         assert isinstance(room["objects"], list)
+        assert room["items"], "the starting tile should ship at least one item"
         # Verify items have announce field
         for item in room["items"]:
             assert "name" in item
-            assert "quantity" in item
+            # ItemSerializer emits `count`, never `quantity` -- real engine
+            # items only carry `count`.
+            assert "count" in item
             assert "announce" in item
         # Verify NPCs have idle_message field
-        for npc in room["npcs"]:
-            assert "name" in npc
-            assert "level" in npc
-            assert "idle_message" in npc
+        assert [entry["name"] for entry in room["npcs"]] == [npc.name]
+        for entry in room["npcs"]:
+            assert "level" in entry
+            assert entry["idle_message"] == npc.idle_message
         # Verify objects have idle_message field
-        for obj in room["objects"]:
-            assert "name" in obj
-            assert "idle_message" in obj
+        assert [entry["name"] for entry in room["objects"]] == [obj.name]
+        for entry in room["objects"]:
+            assert entry["idle_message"] == obj.idle_message
 
     def test_move_player_north_success(self, client, session_id):
         """Test moving player east successfully (valid from (1,1))."""
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             data=json.dumps({"direction": "east"}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -235,7 +307,7 @@ class TestWorldRoutes:
     def test_move_player_invalid_direction(self, client, session_id):
         """Test moving in an invalid direction."""
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             data=json.dumps({"direction": "north"}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -249,7 +321,7 @@ class TestWorldRoutes:
     def test_move_player_case_insensitive(self, client, session_id):
         """Test that direction is case-insensitive."""
         response = client.post(
-            "/world/move",
+            "/api/world/move",
             data=json.dumps({"direction": "EAST"}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -262,7 +334,7 @@ class TestWorldRoutes:
     def test_get_tile_success(self, client, session_id):
         """Test getting tile data successfully."""
         response = client.get(
-            "/world/tile?x=1&y=1",
+            "/api/world/tile?x=1&y=1",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -283,7 +355,7 @@ class TestWorldRoutes:
     def test_get_tile_invalid_coordinates(self, client, session_id):
         """Test getting tile with non-integer coordinates."""
         response = client.get(
-            "/world/tile?x=abc&y=def",
+            "/api/world/tile?x=abc&y=def",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -294,7 +366,7 @@ class TestWorldRoutes:
     def test_get_tile_out_of_bounds(self, client, session_id):
         """Test getting tile outside map bounds."""
         response = client.get(
-            "/world/tile?x=9999&y=9999",
+            "/api/world/tile?x=9999&y=9999",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -309,13 +381,13 @@ class TestPlayerRoutes:
 
     def test_get_status_without_auth(self, client):
         """Test getting status without authentication."""
-        response = client.get("/player/status")
+        response = client.get("/api/status")
 
         assert response.status_code == 401
 
     def test_get_stats_without_auth(self, client):
         """Test getting stats without authentication."""
-        response = client.get("/player/stats")
+        response = client.get("/api/stats")
 
         assert response.status_code == 401
 
@@ -325,15 +397,20 @@ class TestInventoryRoutes:
 
     def test_get_inventory_without_auth(self, client):
         """Test getting inventory without authentication."""
-        response = client.get("/inventory/")
+        response = client.get("/api/inventory")
 
         assert response.status_code == 401
 
     def test_take_item_without_auth(self, client):
-        """Test taking item without authentication."""
+        """Test taking item without authentication.
+
+        There is no /api/inventory/take route (nor /pickup) -- item pickup goes
+        through /api/world/interact (Item.take() / interact_with_target), so
+        that is the route the auth check belongs on.
+        """
         response = client.post(
-            "/inventory/take",
-            data=json.dumps({"item_id": "item_123"}),
+            "/api/world/interact",
+            data=json.dumps({"target": "item_123", "action": "take"}),
             content_type="application/json",
         )
 
@@ -345,7 +422,7 @@ class TestEquipmentRoutes:
 
     def test_get_equipment_without_auth(self, client):
         """Test getting equipment without authentication."""
-        response = client.get("/equipment/")
+        response = client.get("/api/equipment")
 
         assert response.status_code == 401
 
@@ -356,7 +433,7 @@ class TestCombatRoutes:
     def test_start_combat_without_auth(self, client):
         """Test starting combat without authentication."""
         response = client.post(
-            "/combat/start",
+            "/api/combat/start",
             data=json.dumps({"enemy_id": "enemy_001"}),
             content_type="application/json",
         )
@@ -369,14 +446,14 @@ class TestSavesRoutes:
 
     def test_list_saves_without_auth(self, client):
         """Test listing saves without authentication."""
-        response = client.get("/saves/")
+        response = client.get("/api/saves")
 
         assert response.status_code == 401
 
     def test_create_save_without_auth(self, client):
         """Test creating save without authentication."""
         response = client.post(
-            "/saves/",
+            "/api/saves",
             data=json.dumps({"name": "My Save"}),
             content_type="application/json",
         )

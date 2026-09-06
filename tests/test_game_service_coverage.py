@@ -29,6 +29,7 @@ import pytest
 
 from src.items import Gold, Restorative, RustedDagger
 from src.npc import NPC
+from src.api.serializers.combat import CombatantSerializer
 from tests._gs_fixtures import GRID_3X3, live_world, set_player_gold
 
 
@@ -135,7 +136,7 @@ class TestGetPlayerStatus:
         party = game_service.get_player_status(player)["party_members"]
 
         assert [p["name"] for p in party] == ["Gorran"]
-        assert party[0]["id"] == f"ally_{id(gorran)}"
+        assert party[0]["id"] == CombatantSerializer.stream_id(gorran)
         assert party[0]["description"] == "A golemite."
         assert party[0]["hp"] == gorran.hp
 

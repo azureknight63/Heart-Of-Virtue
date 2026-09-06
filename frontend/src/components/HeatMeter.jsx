@@ -1,37 +1,39 @@
 import React, { useEffect, useState } from 'react'
 import { colors, fonts } from '../styles/theme'
 import {
+  HEAT_DRIFT_NOTE,
+  HEAT_GAINS,
+  HEAT_LOSSES,
   METER_MAX,
   METER_MIN,
-  MOMENTUM_DRIFT_NOTE,
-  MOMENTUM_GAINS,
-  MOMENTUM_LOSSES,
   NEUTRAL_MARK_RATIO,
-  formatMomentumDelta,
+  formatHeatDelta,
   formatMultiplier,
+  heatBand,
+  heatDelta,
+  heatFillRatio,
   isRenderableHeat,
-  momentumBand,
-  momentumDelta,
-  momentumFillRatio,
-} from '../utils/momentum'
+} from '../utils/heat'
 
-/** How long the rise/fall chip stays up after the beat that moved momentum. */
+/** How long the rise/fall chip stays up after the beat that moved heat. */
 export const DELTA_HOLD_MS = 1800
 
 const MONO = fonts.main
 
 /**
- * MomentumMeter — Jean's heat multiplier, made legible.
+ * HeatMeter — Jean's heat multiplier, made legible.
  *
- * Heat has always been a full damage multiplier (src/moves/_base.py
- * `standard_execute_attack`) and has never been shown to the player. This
+ * Heat scales the engine's canonical damage expression (`resolve_damage` in
+ * src/moves/_base.py) and has never been shown to the player. A few moves run
+ * other damage shapes that apply no heat -- Jab, Reap, Sweep, Halberd Spin --
+ * so "multiplies everything" is not quite true. This
  * renders three things the player needs to steer it:
  *
  *   1. the live multiplier and its named band,
- *   2. where that sits inside the band momentum actually occupies in play
- *      (see utils/momentum.js on why the bar is not scaled to the [0.5, 10]
+ *   2. where that sits inside the band heat actually occupies in play
+ *      (see utils/heat.js on why the bar is not scaled to the [0.5, 10]
  *      engine clamp),
- *   3. a transient ▲/▼ chip on the beat momentum moves, plus an expandable
+ *   3. a transient ▲/▼ chip on the beat heat moves, plus an expandable
  *      table of what raises and lowers it.
  *
  * The chip only reports the DIRECTION and SIZE of the change, not its cause:
@@ -39,7 +41,7 @@ const MONO = fonts.main
  * of them records a reason on the player, so no reason string exists on the
  * wire to render. The rules table below carries the "why".
  */
-function MomentumMeter({ heat, beat, combatId }) {
+function HeatMeter({ heat, beat, combatId }) {
   // Per-beat delta is derived on the client because the server sends no
   // previous-heat or delta field. Tracked with React's adjust-state-during-
   // render idiom, the same pattern LeftPanel uses for its combat_id reset —
@@ -52,7 +54,7 @@ function MomentumMeter({ heat, beat, combatId }) {
     setTracked({ combatId, beat, heat })
     setDelta(0)
   } else if (tracked.beat !== beat) {
-    setDelta(momentumDelta(heat, tracked.heat))
+    setDelta(heatDelta(heat, tracked.heat))
     setTracked({ combatId, beat, heat })
   }
 
@@ -66,9 +68,9 @@ function MomentumMeter({ heat, beat, combatId }) {
 
   if (!isRenderableHeat(heat)) return null
 
-  const band = momentumBand(heat)
-  const fill = momentumFillRatio(heat)
-  const deltaText = formatMomentumDelta(delta)
+  const band = heatBand(heat)
+  const fill = heatFillRatio(heat)
+  const deltaText = formatHeatDelta(delta)
   const rising = delta > 0
 
   return (
@@ -78,10 +80,10 @@ function MomentumMeter({ heat, beat, combatId }) {
         borderTop: `1px solid rgba(0,255,136,0.15)`,
         paddingTop: '8px',
       }}
-      data-testid="momentum-meter"
+      data-testid="heat-meter"
     >
       <style>
-        {`@keyframes momentumChip {
+        {`@keyframes heatChip {
             from { opacity: 0; transform: translateY(2px); }
             to   { opacity: 1; transform: translateY(0); }
           }`}
@@ -96,17 +98,20 @@ function MomentumMeter({ heat, beat, combatId }) {
         gap: '8px',
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
-          <span style={{
-            fontSize: '0.62rem',
-            color: colors.text.muted,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            fontFamily: MONO,
-          }}>
-            Momentum
+          <span
+            data-testid="heat-caption"
+            style={{
+              fontSize: '0.62rem',
+              color: colors.text.muted,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              fontFamily: MONO,
+            }}
+          >
+            Heat
           </span>
           <span
-            data-testid="momentum-band"
+            data-testid="heat-band"
             style={{
               fontSize: '0.62rem',
               fontWeight: 'bold',
@@ -123,20 +128,20 @@ function MomentumMeter({ heat, beat, combatId }) {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
           {deltaText && (
             <span
-              data-testid="momentum-delta"
+              data-testid="heat-delta"
               style={{
                 fontSize: '0.62rem',
                 fontWeight: 'bold',
                 fontFamily: MONO,
                 color: rising ? colors.primary : colors.danger,
-                animation: 'momentumChip 180ms ease-out',
+                animation: 'heatChip 180ms ease-out',
               }}
             >
               {rising ? '▲' : '▼'}{deltaText}
             </span>
           )}
           <span
-            data-testid="momentum-value"
+            data-testid="heat-value"
             style={{
               fontSize: '0.78rem',
               fontWeight: 'bold',
@@ -150,10 +155,10 @@ function MomentumMeter({ heat, beat, combatId }) {
         </div>
       </div>
 
-      {/* Bar. Log-scaled across the band momentum actually occupies in play. */}
+      {/* Bar. Log-scaled across the band heat actually occupies in play. */}
       <div
         role="meter"
-        aria-label="Combat momentum"
+        aria-label="Combat heat"
         // Clamped to the meter's own domain: heat runs to the engine's ceiling of
       // 10 while the bar is scaled to 3.5, and role="meter" requires valuenow
       // to sit within [valuemin, valuemax]. aria-valuetext still carries the
@@ -171,7 +176,7 @@ function MomentumMeter({ heat, beat, combatId }) {
         }}
       >
         <div
-          data-testid="momentum-fill"
+          data-testid="heat-fill"
           style={{
             width: `${fill * 100}%`,
             height: '100%',
@@ -183,7 +188,7 @@ function MomentumMeter({ heat, beat, combatId }) {
         />
         {/* Neutral reference tick: where decay is always pulling him back to. */}
         <div
-          data-testid="momentum-neutral-tick"
+          data-testid="heat-neutral-tick"
           style={{
             position: 'absolute',
             top: 0,
@@ -195,7 +200,7 @@ function MomentumMeter({ heat, beat, combatId }) {
         />
       </div>
 
-      <MomentumRules band={band} />
+      <HeatRules band={band} />
     </div>
   )
 }
@@ -205,7 +210,7 @@ function MomentumMeter({ heat, beat, combatId }) {
  * multipliers. Collapsed by default so the meter costs one line of the panel
  * during a fight; a button (not a hover) so it works on touch.
  */
-function MomentumRules({ band }) {
+function HeatRules({ band }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -233,7 +238,7 @@ function MomentumRules({ band }) {
 
       {expanded && (
         <div
-          data-testid="momentum-rules"
+          data-testid="heat-rules"
           style={{
             marginTop: '5px',
             padding: '7px 9px',
@@ -246,7 +251,7 @@ function MomentumRules({ band }) {
           }}
         >
           <div
-            data-testid="momentum-band-note"
+            data-testid="heat-band-note"
             style={{
               fontSize: '0.6rem',
               color: band.color,
@@ -256,15 +261,15 @@ function MomentumRules({ band }) {
           >
             {band.note}
           </div>
-          <RuleGroup title="Gains" color={colors.primary} rules={MOMENTUM_GAINS} />
-          <RuleGroup title="Losses" color={colors.danger} rules={MOMENTUM_LOSSES} />
+          <RuleGroup title="Gains" color={colors.primary} rules={HEAT_GAINS} />
+          <RuleGroup title="Losses" color={colors.danger} rules={HEAT_LOSSES} />
           <div style={{
             fontSize: '0.55rem',
             color: colors.text.dim,
             fontFamily: MONO,
             lineHeight: 1.4,
           }}>
-            {MOMENTUM_DRIFT_NOTE}
+            {HEAT_DRIFT_NOTE}
           </div>
         </div>
       )}
@@ -306,4 +311,4 @@ function RuleGroup({ title, color, rules }) {
   )
 }
 
-export default MomentumMeter
+export default HeatMeter

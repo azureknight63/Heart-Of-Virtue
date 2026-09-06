@@ -490,12 +490,22 @@ def test_a_non_dict_pending_animation_cannot_crash_the_move_loop():
     assert not [e for e in player.combat_log if e.get("animation")]
 
 
-#: A hand-rolled wire id is any f-string that interpolates ``id(...)`` next to
-#: an ally/enemy discriminator. Keying on ``id(`` rather than on a literal
-#: ``enemy_``/``ally_`` prefix is deliberate: the prefix can be spelled as a
-#: conditional, and the first version of this guard missed a real site that
-#: did exactly that.
-_HANDROLLED_ID = r'f"[^"]*(?:ally|enemy)[^"]*\{id\([^)]*\)\}[^"]*"'
+#: A hand-rolled wire id is any f-string that interpolates an identity call
+#: (``id(...)`` or ``combatant_handle(...)``) next to an ally/enemy
+#: discriminator. Keying on the call rather than on a literal ``enemy_``/
+#: ``ally_`` prefix is deliberate: the prefix can be spelled as a conditional,
+#: and the first version of this guard missed a real site that did exactly
+#: that.
+#:
+#: ``combatant_handle`` joined the pattern with issue #511, which moved the id
+#: scheme off ``id(combatant)`` onto a stable per-combatant handle. Rebuilding
+#: the prefix around the *new* suffix is the same mistake in new clothes — the
+#: prefix depends on live ``friend`` state, so an unconditional one still
+#: mislabels the player and any combatant on the "wrong" list. Only
+#: ``stream_id`` gets to spell this.
+_HANDROLLED_ID = (
+    r'f"[^"]*(?:ally|enemy)[^"]*\{(?:id|combatant_handle)\([^)]*\)\}[^"]*"'
+)
 
 
 def test_no_animation_payload_hardcodes_a_combatant_wire_id():
@@ -552,6 +562,9 @@ def test_the_hardcoded_id_scan_can_actually_find_something():
         '        "target_id": f"ally_{id(target)}",',
         '        "source_id": f"{\'ally\' if npc.friend else \'enemy\'}_{id(npc)}",',
         '        label = f"enemy_{id(move.target)}" if x else "player"',
+        # Post-#511 spellings: the suffix changed, the mistake did not.
+        '        "source_id": f"enemy_{combatant_handle(npc)}",',
+        '        "target_id": f"{\'ally\' if npc.friend else \'enemy\'}_{combatant_handle(npc)}",',
     ]
     for spelling in known_spellings:
         assert re.findall(_HANDROLLED_ID, spelling), (
@@ -687,7 +700,13 @@ def test_initialize_combat_flushes_animations_left_by_the_initial_turns():
     """
     from src.api.combat_adapter import ApiCombatAdapter
 
+    # ``initialize_combat`` is a thin lock wrapper over
+    # ``_initialize_combat_locked`` (see ``_beat_lock``), so scan whichever one
+    # actually holds the body — follow the delegation rather than pinning the
+    # split, which is an implementation detail this test has no stake in.
     calls = _method_calls(ApiCombatAdapter.initialize_combat)
+    if "_initialize_combat_locked" in calls:
+        calls |= _method_calls(ApiCombatAdapter._initialize_combat_locked)
     # An ast.Call, not a source-substring: a comment or docstring mentioning
     # the flush would satisfy a text search without ever running it.
     assert "_flush_pending_animations" in calls, (
@@ -930,21 +949,15 @@ def _method_calls(func):
     The positive-property complement to a negative substring check: asserting
     "the old scan's spelling is absent" passes forever once the loop is renamed,
     while asserting "the key index is consulted" keeps meaning something.
-    """
-    import ast
-    import inspect
-    import textwrap
 
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            target = node.func
-            if isinstance(target, ast.Attribute):
-                names.add(target.attr)
-            elif isinstance(target, ast.Name):
-                names.add(target.id)
-    return names
+    One shared implementation (``tests._ast_helpers``), because three files had
+    grown their own copy and the copies were not equivalent — one of them was
+    blind to ``async def``. Its positive control lives in
+    ``tests/test_ast_helpers.py``.
+    """
+    from tests._ast_helpers import called_names
+
+    return called_names(func)
 
 
 def test_the_dedup_consults_the_key_index_not_a_linear_scan():
@@ -1259,12 +1272,14 @@ def test_both_endings_route_through_the_shared_teardown():
     assert "_teardown_combat_roster" in _method_calls(
         ApiCombatAdapter._handle_victory
     )
-    inner_calls = _method_calls(ApiCombatAdapter._execute_move_inner)
-    assert "_teardown_combat_roster" in inner_calls, (
+    # The defeat tail lives in settle_defeat, reached from _execute_move_inner.
+    assert "settle_defeat" in _method_calls(ApiCombatAdapter._execute_move_inner)
+    defeat_calls = _method_calls(ApiCombatAdapter.settle_defeat)
+    assert "_teardown_combat_roster" in defeat_calls, (
         "the defeat tail no longer routes through the shared teardown"
     )
-    assert "_discard_pending_animations" not in inner_calls, (
-        "_execute_move_inner discards directly instead of via the teardown "
+    assert "_discard_pending_animations" not in defeat_calls, (
+        "settle_defeat discards directly instead of via the teardown "
         "(the defeat-path discard used to hide inside a try that swallowed it)"
     )
 
@@ -1296,20 +1311,9 @@ def test_no_combatant_retains_a_pending_animation_after_defeat():
 
 def _calls_of(func, name):
     """Every ``ast.Call`` of ``self.<name>``/bare ``<name>`` inside ``func``."""
-    import ast
-    import inspect
-    import textwrap
+    from tests._ast_helpers import calls_of
 
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-    return [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and (
-            (isinstance(node.func, ast.Attribute) and node.func.attr == name)
-            or (isinstance(node.func, ast.Name) and node.func.id == name)
-        )
-    ]
+    return calls_of(func, name)
 
 
 def test_every_mid_windup_cancellation_site_routes_through_the_detach_helper():
@@ -1317,21 +1321,28 @@ def test_every_mid_windup_cancellation_site_routes_through_the_detach_helper():
 
     The end-of-move flush's fallback emission is right for a move that ran to
     completion without resolving; for a move CANCELLED mid-wind-up it plays
-    the full animation of a swing that never happened. All three cancellation
-    sites — the event-interrupt branch and the roster-emptied precheck in
-    ``_execute_move_inner``, plus ``abort_current_move`` — must pair the
-    ``current_move`` clear with the channel discard through the ONE helper
-    that encodes the pairing (``_detach_current_move``), not through a
-    re-flush (a phantom emission) or a bare clear (a leaked channel).
+    the full animation of a swing that never happened. All four cancellation
+    sites — the event-interrupt branch, the roster-emptied precheck and the
+    instant-loop iteration bound in ``_execute_move_inner``, plus
+    ``abort_current_move`` — must pair the ``current_move`` clear with the
+    channel discard through the ONE helper that encodes the pairing
+    (``_detach_current_move``), not through a re-flush (a phantom emission) or
+    a bare clear (a leaked channel).
+
+    The iteration bound is the newest of the four: an instant move whose
+    ``advance()`` never releases ``current_move`` used to spin the request
+    thread forever, and abandoning it has to abandon its channel too — the
+    swing it was mid-way through will never resolve.
     """
     from src.api.combat_adapter import ApiCombatAdapter
 
     inner_detaches = _calls_of(
         ApiCombatAdapter._execute_move_inner, "_detach_current_move"
     )
-    assert len(inner_detaches) == 2, (
-        "expected the event-interrupt and roster-emptied sites to detach via "
-        f"_detach_current_move; found {len(inner_detaches)} call(s)"
+    assert len(inner_detaches) == 3, (
+        "expected the event-interrupt, roster-emptied and instant-loop-bound "
+        f"sites to detach via _detach_current_move; found "
+        f"{len(inner_detaches)} call(s)"
     )
     assert len(
         _calls_of(ApiCombatAdapter.abort_current_move, "_detach_current_move")
@@ -1720,11 +1731,20 @@ def test_log_trimmed_since_beat_is_reset_at_each_beats_window_open():
 
     from src.api.combat_adapter import ApiCombatAdapter
 
-    tree = ast.parse(
+    # The beat loop's body is _run_move_beat; the loop itself stays in
+    # _execute_move_inner. Both halves are checked so they cannot drift apart.
+    loop_tree = ast.parse(
         textwrap.dedent(inspect.getsource(ApiCombatAdapter._execute_move_inner))
     )
-    loops = [n for n in ast.walk(tree) if isinstance(n, ast.While)]
+    loops = [n for n in ast.walk(loop_tree) if isinstance(n, ast.While)]
     assert loops, "_execute_move_inner no longer has a beat loop"
+    assert "_run_move_beat" in _method_calls(ApiCombatAdapter._execute_move_inner), (
+        "_execute_move_inner no longer drives the per-beat unit"
+    )
+
+    tree = ast.parse(
+        textwrap.dedent(inspect.getsource(ApiCombatAdapter._run_move_beat))
+    )
 
     def _resets_counter(node):
         return (
@@ -1739,5 +1759,5 @@ def test_log_trimmed_since_beat_is_reset_at_each_beats_window_open():
         )
 
     assert any(
-        _resets_counter(node) for loop in loops for node in ast.walk(loop)
+        _resets_counter(node) for node in ast.walk(tree)
     ), "_log_trimmed_since_beat is not reset to 0 inside the beat loop"

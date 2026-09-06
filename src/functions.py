@@ -109,6 +109,46 @@ def check_for_combat(
     return enemy_combat_list
 
 
+def signal_combat_wave_pending(player):
+    """Arm the continuation signal for the fight ``player`` is currently in.
+
+    ``player.combat_wave_pending`` is the signal that tells the combat adapter
+    "this roster wipe is a gap in an ongoing fight, not the end of it" (issue
+    #514). This is the ONE arming site: every caller routes through here rather
+    than setting the attribute itself, because a second, differently-scoped
+    continuation signal is exactly how a fight gets stranded the way a
+    never-cleared ``player.combat_events`` stranded one in issue #506.
+
+    It is half of a two-flag state machine, and the halves are not
+    interchangeable:
+
+    * ``player.combat_wave_pending`` is the ARMING — "a wave is expected". It is
+      consumed by ``ApiCombatAdapter._execute_move_inner`` on the one transition
+      it covers, so one arming buys exactly one deferral.
+    * ``ApiCombatAdapter.victory_deferred`` is the CONSEQUENCE — "this fight is
+      currently holding an emptied roster open on the strength of that arming"
+      (issue #519). It lives on adapter state because only the status poll needs
+      to read it, to tell an abandoned deferral from a fight merely waiting on
+      the player.
+
+    The second flag is safe only because it never got its own clear sites:
+    ``ApiCombatAdapter._clear_wave_state`` zeroes both together, and every path
+    that ends or restarts a fight — victory/defeat teardown, a fresh
+    ``initialize_combat``, and ``GameService.flee_combat`` — goes through it.
+    Do not add a third flag, and do not clear either one by hand.
+
+    Two sites arm it:
+
+    * :func:`add_enemies_to_combat`, once a wave has actually joined the roster
+      -- that covers waves 2 and later.
+    * ``GameService.trigger_combat_events``, when a ``combat_effect`` event
+      passes ``check_combat_conditions`` and comes back asking for input -- that
+      covers the FIRST roster wipe, which no wave has preceded and which the
+      enrolment-only signal therefore could never reach.
+    """
+    player.combat_wave_pending = True
+
+
 def add_enemies_to_combat(player, new_enemies, announcement: str = None):
     """Add new enemies to an ongoing combat and reinitialize positions.
 
@@ -138,8 +178,10 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
         cprint(announcement, "red", attrs=["bold"])
 
     # Add enemies to combat list
+    enrolled_any = False
     for enemy in new_enemies:
         if enemy not in player.combat_list:
+            enrolled_any = True
             player.combat_list.append(enemy)
             enemy.in_combat = True
 
@@ -162,6 +204,22 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
             enemy.combat_list = player.combat_list_allies
             # Enemies are allied with other enemies
             enemy.combat_list_allies = player.combat_list
+
+    # Signal that this fight continues past a roster wipe (issue #514). The
+    # story chains that spawn waves announce the next one from a queued combat
+    # event and only enroll it a stage or two later, so the beat in between has
+    # an empty combat_list even though the ambush is still running. Recording
+    # the wave here — before the adapter is reinitialized, and long before that
+    # next beat — is what lets the terminal victory path recognize a wave
+    # transition ahead of time instead of ending the fight and then having it
+    # resume. The adapter consumes the signal on the transition it covers.
+    # Only a wave that actually joined the roster counts: a call that enrolls
+    # nothing must not buy a fight one free victory deferral. This covers waves
+    # 2 and later; the FIRST roster wipe of a chain has no enrolment behind it
+    # and is armed from the event side instead -- see
+    # signal_combat_wave_pending, which both sites share.
+    if enrolled_any:
+        signal_combat_wave_pending(player)
 
     # Reinitialize positions for ALL combatants to include new enemies
     try:
@@ -204,7 +262,15 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
         try:
             player._combat_adapter.initialize_combat(new_enemies, reinit=True)
         except Exception:
-            pass
+            # Recover rather than crash the combat loop (CLAUDE.md), but do not
+            # recover SILENTLY: this bare swallow is what turned the reinit
+            # recursion into a livelock instead of a RecursionError — the loop
+            # ran forever with nothing anywhere to say why. Left broad on
+            # purpose; the log line, not a narrower except, is the fix.
+            logger.exception(
+                "Combat adapter reinit failed after adding %d enemies",
+                len(new_enemies),
+            )
 
 
 def refresh_stat_bonuses(

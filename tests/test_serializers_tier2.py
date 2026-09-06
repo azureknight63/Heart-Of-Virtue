@@ -150,7 +150,7 @@ def mock_npc():
     npc.heat = 1.0
     npc.level = 2
     npc.speed = 6
-    npc.id = f"enemy_{id(npc)}"
+    npc.id = CombatantSerializer.stream_id(npc)
     npc.__class__.__name__ = "NPC"
     npc.friend = False
     npc.in_combat = True
@@ -608,13 +608,13 @@ class TestCombatStateSerializer:
 
         assert result["status"] == "active"
         assert [e["name"] for e in result["enemies"]] == ["Goblin"]
-        assert result["enemies"][0]["id"] == f"enemy_{id(goblin)}"
+        assert result["enemies"][0]["id"] == CombatantSerializer.stream_id(goblin)
         assert result["enemies"][0]["type"] == "npc"
         # Distance is measured against the player reference, not invented.
         assert result["enemies"][0]["distance"] == 3
         assert [c["id"] for c in result["combatants"]] == [
             "player",
-            f"enemy_{id(goblin)}",
+            CombatantSerializer.stream_id(goblin),
         ]
 
     def test_serialize_combat_state_with_allies(self, live_player, live_goblin):
@@ -626,12 +626,12 @@ class TestCombatStateSerializer:
         )
 
         assert [a["name"] for a in result["allies"]] == ["Goblin"]
-        assert result["allies"][0]["id"] == f"ally_{id(live_goblin)}"
+        assert result["allies"][0]["id"] == CombatantSerializer.stream_id(live_goblin)
         assert result["enemies"] == []
         # combatants = player, then allies, then enemies -- order is the contract.
         assert [c["id"] for c in result["combatants"]] == [
             "player",
-            f"ally_{id(live_goblin)}",
+            CombatantSerializer.stream_id(live_goblin),
         ]
 
     def test_serialize_battle_summary_victory(self, mock_player, mock_npc):
@@ -697,7 +697,7 @@ class TestCombatantSerializer:
 
         assert result["type"] == "npc"
         assert result["name"] == "Goblin"
-        assert result["id"] == f"enemy_{id(live_goblin)}"
+        assert result["id"] == CombatantSerializer.stream_id(live_goblin)
         assert result["health"] == {"current": 30, "max": 40}
 
     def test_serialize_ally_npc(self, live_goblin):
@@ -707,7 +707,7 @@ class TestCombatantSerializer:
 
         result = CombatantSerializer.serialize_combatant(live_goblin)
 
-        assert result["id"] == f"ally_{id(live_goblin)}"
+        assert result["id"] == CombatantSerializer.stream_id(live_goblin)
         assert result["id"] != enemy_id
         assert result["type"] == "npc", "allies are still NPCs, not players"
 

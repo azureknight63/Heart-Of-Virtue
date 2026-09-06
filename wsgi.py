@@ -1,7 +1,20 @@
 """WSGI entry point for production deployments.
 
-async_mode="threading" — WebSockets work with Werkzeug (dev) and fall back to
-long-polling behind gunicorn sync workers (acceptable for single-player).
+async_mode="threading" — engineio's threading driver *does* provide a WebSocket
+transport (via simple-websocket) and the handshake advertises it. There is no
+automatic "fall back to long-polling behind gunicorn sync workers", whatever an
+earlier version of this header said; engineio does no such thing. The client
+pins polling instead (frontend/src/api/socketClient.js), because a *completed*
+upgrade parks the WSGI request thread for the life of the connection, which a
+`-w 1` sync worker cannot survive. That file carries the full derivation and
+its caveats — including that gunicorn is in no requirements file here, so the
+process model is asserted from the Procfile rather than verified.
+
+`simple-websocket` is therefore pinned in requirements-api.txt for a narrower
+reason than "the dev WebSocket half": with the client pinning polling in dev
+and prod alike, nothing we ship ever asks for an upgrade. It matters only for a
+future or manual client that does, and for keeping a future engineio release
+from removing the transport silently.
 
 Usage (gunicorn, threading mode):
     gunicorn -w 1 --bind "0.0.0.0:${PORT:-5000}" wsgi:app

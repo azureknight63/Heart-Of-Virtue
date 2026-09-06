@@ -9,7 +9,8 @@ import { shop as shopApi } from '../api/endpoints'
  * invoke onRefetch() (from the parent) after success to sync player gold
  * and inventory in the rest of the UI.
  *
- * @param {string} npcId - str(id(npc)) of the target merchant
+ * @param {string} npcId - the merchant's opaque wire handle, as published
+ *   in `shop_state.npc_id` (never a heap address — issues #511/#518)
  */
 export function useShop(npcId) {
   const [shopState, setShopState] = useState(null)

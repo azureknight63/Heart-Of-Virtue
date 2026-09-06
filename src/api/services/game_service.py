@@ -8,8 +8,9 @@ from unittest.mock import patch
 
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
+from src.combatant import find_by_handle, wire_handle
 from src.events import purge_orphaned_combat_events
-from src.functions import check_for_combat
+from src.functions import check_for_combat, signal_combat_wave_pending
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
 from src.narration import capture_narration, narrate
@@ -63,6 +64,21 @@ _LLM_NOISE_PREFIXES = (
 #: attribute entirely — a sheet request must not 500 over a partially built
 #: player. The engine itself has no such fallback; this is an API-layer policy.
 _MISSING_ATTRIBUTE_DEFAULT = 10
+
+
+def _sellable_items(holder):
+    """``holder.inventory`` minus its Gold, for a handle lookup to scan.
+
+    A shop lookup must never resolve to the gold pile — buying or selling the
+    till is not a transaction. Narrowing the list here and handing it to the
+    shared ``find_by_handle`` keeps the handle comparison in one place
+    (``src/combatant.py``) instead of re-inlining it beside the filter.
+    """
+    return [
+        item
+        for item in getattr(holder, "inventory", [])
+        if getattr(item, "name", None) != "Gold"
+    ]
 
 
 def derive_hit_accuracy(player):
@@ -516,20 +532,146 @@ class GameService:
             return output_text, [], None
         return output_text, segments, conversation
 
-    @staticmethod
-    def _apply_staged_payload(target, clean_output, segments, conversation):
+    #: The keys :meth:`_apply_staged_payload` writes and
+    #: :meth:`_carry_staged_payload` preserves. Both READ this tuple rather
+    #: than spelling the names, so a fourth staged part means adding it here
+    #: and widening :meth:`_apply_staged_payload`'s parameter list to match --
+    #: ``test_the_two_helpers_agree_on_the_staged_keys`` guards that pair, and
+    #: ``test_no_one_spells_a_staged_key_by_hand`` guards against a third copy.
+    _STAGED_PAYLOAD_KEYS = ("output_text", "segments", "conversation")
+
+    @classmethod
+    def _apply_staged_payload(cls, target, clean_output, segments, conversation):
         """Copy a :meth:`_capture_conversation` result onto a response/event dict.
 
         Empty parts are skipped so an unstaged event's payload keeps the exact
         shape it had before staged conversations existed.
+
+        The key names are READ from :attr:`_STAGED_PAYLOAD_KEYS` rather than
+        spelled out again, so the tuple is the authority both helpers answer to
+        instead of a third copy that happens to agree with them today.
         """
-        if clean_output:
-            target["output_text"] = clean_output
-        if segments:
-            target["segments"] = segments
-        if conversation:
-            target["conversation"] = conversation
+        # strict=True: the tuple is the authority for the key names, so a
+        # fourth staged key added there without widening this parameter list
+        # must fail loudly rather than silently never being written.
+        for key, value in zip(
+            cls._STAGED_PAYLOAD_KEYS,
+            (clean_output, segments, conversation),
+            strict=True,
+        ):
+            if value:
+                target[key] = value
         return target
+
+    @classmethod
+    def _carry_staged_payload(cls, previous, event, event_data: Dict[str, Any]) -> None:
+        """Re-attach a pending event's captured prose to a freshly serialized copy.
+
+        ``EventSerializer.serialize_with_input`` carries none of the narration
+        the event emitted -- ``output_text``/``segments``/``conversation`` are
+        attached afterwards by :meth:`_apply_staged_payload`, and only on the
+        path that actually ran the event. Every later tile/combat event trigger
+        re-serializes an already-pending event from scratch and stores that
+        bare dict, which used to overwrite the stored prose. The client then
+        served the stripped copy from ``GET /world/events/pending`` on reload,
+        so a player who reconnected mid-event saw one fallback line -- or, for
+        an event that never sets ``self.description``, an empty dialog.
+
+        Only the *same event instance* under the *same* id is topped up. A
+        multi-stage event is re-keyed to a fresh UUID on every stage transition
+        (see :meth:`process_event_input`), so there is no id under which an
+        earlier stage's prose could survive onto a later one; and
+        :meth:`_store_pending_event`'s dedupe-by-name branch deliberately hands
+        a *different* instance the old id, whose prose is not this event's to
+        inherit.
+        """
+        if not previous or previous.get("event") is not event:
+            return
+        prior_data = previous.get("event_data") or {}
+        for key in cls._STAGED_PAYLOAD_KEYS:
+            if key in prior_data and key not in event_data:
+                event_data[key] = prior_data[key]
+
+    @staticmethod
+    def _pending_payload(event, event_data, tile_x=None, tile_y=None):
+        """Build a ``session_data["pending_events"]`` entry.
+
+        The one place the entry's shape is spelled. Every reader of the store
+        goes looking for ``event``, ``event_data`` and the optional
+        ``tile_x``/``tile_y`` that :meth:`process_event_input` resolves
+        ``event.tile`` from (issue #327); a writer that forgets the coordinates
+        silently falls back to ``player.current_room``, which is usually None in
+        the API, and the event loses the tile it was queued on.
+
+        The coordinates are omitted rather than stored as ``None`` when absent —
+        every reader uses ``pending.get(...)``, so the two are equivalent, and
+        omitting keeps a coordinate-less entry visibly coordinate-less.
+        """
+        payload = {"event": event, "event_data": event_data}
+        if tile_x is not None and tile_y is not None:
+            payload["tile_x"] = tile_x
+            payload["tile_y"] = tile_y
+        return payload
+
+    @staticmethod
+    def _visible_pending_events(
+        session_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """The pending-event store as a dict — empty when the caller has none.
+
+        The permissive reading: a caller with no ``session_data`` is treated
+        the same as one whose store is empty. That is right for gating work
+        that is merely *held up* by an outstanding dialog (the resume gate),
+        and wrong for concluding that a chain has *ended* — see
+        :meth:`_pending_chain_is_gone`, which is the same question asked
+        strictly.
+        """
+        return (session_data or {}).get("pending_events") or {}
+
+    @staticmethod
+    def _pending_chain_is_gone(session_data: Optional[Dict[str, Any]]) -> bool:
+        """True only when the caller CAN see the store and finds it empty.
+
+        ``session_data is None`` means the caller cannot see the store, which
+        is NOT the same as the store being empty; reading it that way would
+        conclude a fight is over when it is merely mid-ambush, which is issue
+        #514 all over again. Only a caller that HAS the store may say the chain
+        is gone. The invariant, rather than an enumeration of today's
+        store-less callers: **any** caller that reaches this without
+        ``session_data`` gets "the chain may still be alive", and that is the
+        safe answer for every one of them.
+        """
+        return session_data is not None and not session_data.get("pending_events")
+
+    @classmethod
+    def _deferral_abandoned(cls, player, adapter, session_data) -> bool:
+        """Is a deferred victory stranded with nothing left to resolve it?
+
+        The move loop declines to end a fight whose roster emptied mid-ambush
+        (issue #514) and leaves ``awaiting_input`` True — the dialog holding
+        that beat has not been dismissed — so the resume gate in
+        :meth:`get_combat_status`, which fires only when nothing is
+        outstanding, can never reach it. Normal play always resolves that
+        dialog through :meth:`process_event_input`, which settles the victory
+        itself. A session dropped mid-dialog does not: the player comes back to
+        an empty battlefield with nothing to dismiss and no way forward, which
+        is issue #519.
+
+        All four conjuncts have to hold before the status poll may end the
+        fight itself: a deferral is outstanding, the fight is waiting on the
+        player, the roster is empty, and no pending event survives in the
+        session store to enroll a wave. This is deliberately a separate
+        predicate rather than a widening of the resume gate — that gate keeps
+        its exact condition, so the interrupted ``current_move`` resume (issue
+        #344) is untouched.
+        """
+        return bool(
+            player.in_combat
+            and adapter.awaiting_input
+            and adapter.victory_deferred
+            and not getattr(player, "combat_list", None)
+            and cls._pending_chain_is_gone(session_data)
+        )
 
     def _store_pending_event(
         self,
@@ -559,14 +701,13 @@ class GameService:
 
         if session_data is not None:
             pending = session_data.setdefault("pending_events", {})
-            payload = {
-                "event": event,
-                "event_data": event_data,
-            }
-            if tile is not None and hasattr(tile, "x") and hasattr(tile, "y"):
-                payload["tile_x"] = tile.x
-                payload["tile_y"] = tile.y
-            pending[event_id] = payload
+            self._carry_staged_payload(pending.get(event_id), event, event_data)
+            pending[event_id] = self._pending_payload(
+                event,
+                event_data,
+                getattr(tile, "x", None),
+                getattr(tile, "y", None),
+            )
 
         return event_data
 
@@ -1394,14 +1535,11 @@ class GameService:
                     result["event"] = EventSerializer.serialize_with_input(event)
                     # Preserve ID
                     result["event"]["event_id"] = event_id
-                    # Update session data
-                    if (
-                        "pending_events" in session_data
-                        and event_id in session_data["pending_events"]
-                    ):
-                        session_data["pending_events"][event_id]["event_data"] = result[
-                            "event"
-                        ]
+                    # No session write here: every path out of this method
+                    # re-stores the event under a fresh UUID or drops it, so
+                    # anything written under `event_id` is discarded a few lines
+                    # below. It read as the update that keeps the store current
+                    # and never was one.
 
         except Exception as e:
             result["success"] = False
@@ -1451,12 +1589,12 @@ class GameService:
             # Move the session entry from the old id to the new id
             if "pending_events" in session_data:
                 session_data["pending_events"].pop(old_event_id, None)
-                session_data["pending_events"][new_event_id] = {
-                    "event": event,
-                    "event_data": updated_event_data,
-                    "tile_x": carry_tile_x,
-                    "tile_y": carry_tile_y,
-                }
+                # Deliberately NOT _store_pending_event: its dedupe-by-name rule
+                # would rehome this stage onto an existing id, and a fresh id is
+                # the entire reason this branch exists.
+                session_data["pending_events"][new_event_id] = self._pending_payload(
+                    event, updated_event_data, carry_tile_x, carry_tile_y
+                )
             result["event"] = updated_event_data
             result["needs_input"] = True
         else:
@@ -1493,6 +1631,18 @@ class GameService:
                 # Without this, the adapter holds stale viable_targets from before the event
                 # fired, causing 400s when the frontend auto-selects a dead enemy's ID.
                 if not result.get("needs_input", False):
+                    if not getattr(player, "combat_list", None):
+                        # The adapter deferred victory on this beat because the
+                        # fight was mid-ambush (issue #514), but the event that
+                        # held the beat resolved without enrolling a wave — the
+                        # fight really is over. Settle it here, exactly as the
+                        # status-poll path does, rather than leaving the player
+                        # awaiting a move against an empty battlefield.
+                        terminal_state = adapter.settle_victory()
+                        result["combat_state"] = (
+                            terminal_state.get("battle_state") or terminal_state
+                        )
+                        return result
                     adapter.awaiting_input = True
                     adapter.input_type = "move_selection"
                     adapter.available_options = adapter._get_available_moves()
@@ -1650,7 +1800,7 @@ class GameService:
                             {
                                 "type": "npc",
                                 "name": getattr(npc, "name", "Unknown"),
-                                "id": str(id(npc)),
+                                "id": wire_handle(npc),
                             }
                         )
 
@@ -1671,7 +1821,7 @@ class GameService:
                         found_entry = {
                             "type": "item",
                             "name": getattr(item, "name", "Unknown"),
-                            "id": str(id(item)),
+                            "id": wire_handle(item),
                         }
 
                         # Auto-take items with hide_factor == 0 (intentionally findable)
@@ -1726,7 +1876,7 @@ class GameService:
                             {
                                 "type": "object",
                                 "name": getattr(obj, "name", "Unknown"),
-                                "id": str(id(obj)),
+                                "id": wire_handle(obj),
                             }
                         )
 
@@ -1775,7 +1925,6 @@ class GameService:
         from unittest.mock import patch
         import inspect
         import re
-        import uuid
         from src.api.serializers.event_serializer import EventSerializer
 
         # Find target
@@ -1788,26 +1937,18 @@ class GameService:
         self.apply_tile_modifications(tile, session_data)
         target = None
 
-        # Check NPCs
+        # Check NPCs, then objects, then floor items. Ids are the opaque
+        # wire handles the room serializers minted (issue #518) — resolved
+        # through the one lookup helper so this side cannot drift back to
+        # comparing heap addresses while the serializers ship handles.
         if hasattr(tile, "npcs_here"):
-            for npc in tile.npcs_here:
-                if str(id(npc)) == target_id:
-                    target = npc
-                    break
+            target = find_by_handle(tile.npcs_here, target_id)
 
-        # Check Objects
         if not target and hasattr(tile, "objects_here"):
-            for obj in tile.objects_here:
-                if str(id(obj)) == target_id:
-                    target = obj
-                    break
+            target = find_by_handle(tile.objects_here, target_id)
 
-        # Check Items
         if not target and hasattr(tile, "items_here"):
-            for item in tile.items_here:
-                if str(id(item)) == target_id:
-                    target = item
-                    break
+            target = find_by_handle(tile.items_here, target_id)
 
         # Try to find target in items inside open containers
         if not target:
@@ -1819,11 +1960,9 @@ class GameService:
                     and getattr(obj, "state", "") == "opened"
                     and hasattr(obj, "inventory")
                 ):
-                    for item in obj.inventory:
-                        if str(id(item)) == target_id:
-                            target = item
-                            target._parent_container = obj
-                            break
+                    target = find_by_handle(obj.inventory, target_id)
+                    if target is not None:
+                        target._parent_container = obj
                 if target:
                     break
 
@@ -1916,17 +2055,23 @@ class GameService:
                         event_data = EventSerializer.serialize_with_input(loot_event)
 
                         if session_data is not None:
-                            event_id = str(uuid.uuid4())
-                            event_data["event_id"] = event_id
-
-                            if "pending_events" not in session_data:
-                                session_data["pending_events"] = {}
-                            session_data["pending_events"][event_id] = {
-                                "event": loot_event,
-                                "tile_x": tile.x,
-                                "tile_y": tile.y,
-                                "event_data": event_data,
-                            }
+                            # Dedupe-by-name is right here: the name is
+                            # "Looting <container>", so a collision is the same
+                            # container's dialog re-opened. Left to itself this
+                            # site minted a second UUID for it, and the first
+                            # entry stayed pending forever, blocking input.
+                            #
+                            # The key is the container's NAME, not its identity,
+                            # so two same-named containers on one tile would
+                            # share a dialog id — opening the second would hand
+                            # back the first's contents. That is a property of
+                            # the CONTENT, not of this code, so it is enforced
+                            # rather than asserted: tests/
+                            # test_map_object_names_unique.py scans every
+                            # shipped map for a tile that breaks it.
+                            event_data = self._store_pending_event(
+                                loot_event, event_data, session_data, tile=tile
+                            )
 
                         events_triggered.append(event_data)
                 elif (
@@ -1969,16 +2114,12 @@ class GameService:
                         passageway=target,
                     )
                     event_data = EventSerializer.serialize_with_input(trans_event)
-                    event_id = str(uuid.uuid4())
-                    event_data["event_id"] = event_id
-                    if "pending_events" not in session_data:
-                        session_data["pending_events"] = {}
-                    session_data["pending_events"][event_id] = {
-                        "event": trans_event,
-                        "tile_x": tile.x,
-                        "tile_y": tile.y,
-                        "event_data": event_data,
-                    }
+                    # Dedupe-by-name is right here too: the name is
+                    # "Passage_<passageway>", so a collision is the same
+                    # passageway's confirmation re-armed.
+                    event_data = self._store_pending_event(
+                        trans_event, event_data, session_data, tile=tile
+                    )
                     events_triggered.append(event_data)
                 else:
                     method = getattr(target, action)
@@ -2214,6 +2355,7 @@ class GameService:
                     event,
                     event_data,
                     session_data,
+                    tile=tile,
                 )
                 if queued_event:
                     events_triggered.append(queued_event)
@@ -2267,10 +2409,39 @@ class GameService:
                         needs_input = getattr(event, "needs_input", False)
                         completed = getattr(event, "completed", False)
                         if needs_input and not completed:
+                            # A combat_effect event that passed its gate and
+                            # came back asking for input is a chain holding this
+                            # beat: the announcement stage that enrolls its wave
+                            # one or two round-trips later. Arm the continuation
+                            # signal now so the adapter reads the empty roster
+                            # this beat as a gap in the fight rather than the
+                            # end of it (issue #514).
+                            #
+                            # This is what covers the FIRST roster wipe.
+                            # add_enemies_to_combat only arms the signal once a
+                            # wave has joined, so before this waves 2+ were
+                            # protected and wave 1 -- the one the issue was
+                            # filed about -- was not: Ch01PostRumbler fires on
+                            # `not combat_list` before anything has been
+                            # enrolled, so victory was banked, summarised and
+                            # streamed, and only then did its third stage enroll
+                            # two rumblers into the same fight.
+                            #
+                            # The needs_input conjunct is load-bearing: it is
+                            # what excludes an event like Ch01PostRumbler2,
+                            # which fires on the killing blow but repopulates
+                            # the roster inline and never asks for input -- so
+                            # it needs no deferral and must not buy one.
+                            # Over-suppression by some future event that arms
+                            # this and then resolves without enrolling is
+                            # bounded by settle_victory, which ends the fight on
+                            # the resolving request and on the status poll.
+                            signal_combat_wave_pending(player)
                             event_data = self._store_pending_event(
                                 event,
                                 event_data,
                                 session_data,
+                                tile=tile,
                             )
 
                 except Exception as e:
@@ -2280,18 +2451,14 @@ class GameService:
                 clean_output, segments, conversation = self._capture_conversation(
                     _msgs, player
                 )
-                triggered = False
-                if clean_output:
-                    event_data["output_text"] = clean_output
-                    triggered = True
-                if segments:
-                    event_data["segments"] = segments
-                if conversation:
-                    event_data["conversation"] = conversation
+                self._apply_staged_payload(
+                    event_data, clean_output, segments, conversation
+                )
 
-                # Mark as triggered if input required
-                if getattr(event, "needs_input", False):
-                    triggered = True
+                # Worth reporting if it said something or if it wants an answer.
+                triggered = bool(clean_output) or bool(
+                    getattr(event, "needs_input", False)
+                )
 
                 # Only add to results if it actually did something
                 if triggered:
@@ -2325,18 +2492,12 @@ class GameService:
         if hasattr(player, "universe") and player.universe:
             tile = player.universe.get_tile(player.location_x, player.location_y)
             if hasattr(tile, "npcs_here"):
-                for npc in tile.npcs_here:
-                    if str(id(npc)) == enemy_id:
-                        enemy = npc
-                        break
+                enemy = find_by_handle(tile.npcs_here, enemy_id)
 
         # 2. Try player.current_room (fallback for tests/specific events)
         if not enemy and hasattr(player, "current_room") and player.current_room:
             if hasattr(player.current_room, "npcs_here"):
-                for npc in player.current_room.npcs_here:
-                    if str(id(npc)) == enemy_id:
-                        enemy = npc
-                        break
+                enemy = find_by_handle(player.current_room.npcs_here, enemy_id)
 
         if not enemy:
             return {"error": "Enemy not found"}
@@ -2753,12 +2914,16 @@ class GameService:
                 }
             adapter = player._combat_adapter
 
+            # An abandoned deferral has no other rescue (issue #519) -- see
+            # _deferral_abandoned for why this is a separate branch and not a
+            # widening of the resume gate below.
+            if self._deferral_abandoned(player, adapter, session_data):
+                adapter.settle_victory()
+
             # Resume logic: If battle is active but not awaiting input, check why
             # This handles cases where combat was paused for narrative events
             if player.in_combat and not adapter.awaiting_input:
-                blocking_events = (
-                    session_data.get("pending_events", {}) if session_data else {}
-                )
+                blocking_events = self._visible_pending_events(session_data)
                 if not blocking_events:
                     # No pending events, we should be resuming or finishing
                     if len(player.combat_list) == 0:
@@ -2766,11 +2931,7 @@ class GameService:
                         # and publish the same terminal stream event as the normal
                         # move-execution path. Otherwise status polling can produce
                         # victory/log state without combat:ended.
-                        adapter._handle_victory()
-                        terminal_state = adapter.get_combat_state()
-                        adapter._stream_combat_result(
-                            terminal_state, [], ended=True
-                        )
+                        adapter.settle_victory()
                     elif hasattr(player, "current_move") and player.current_move:
                         # Resume the current move if it was interrupted
                         return adapter._execute_move(player.current_move)
@@ -3790,6 +3951,20 @@ class GameService:
             s for s in getattr(player, "states", []) if getattr(s, "persistent", True)
         ]
 
+        # Fleeing is the THIRD spelling of end-of-fight state reset (the settle
+        # pair's _teardown_combat_roster and initialize_combat's fresh-fight
+        # branch are the other two), so it owes the wave/deferral state machine
+        # the same clear they do — see ApiCombatAdapter._clear_wave_state.
+        # Latent today (the only consumer of combat_wave_pending sits inside
+        # _execute_move, which requires in_combat, and the next fresh fight
+        # clears it first), but this path survived only by accident: it happens
+        # to take victory_deferred with combat_adapter_state below.
+        adapter = getattr(player, "_combat_adapter", None)
+        if adapter is not None:
+            adapter._clear_wave_state()
+        else:
+            player.combat_wave_pending = False
+
         if hasattr(player, "_combat_adapter"):
             del player._combat_adapter
         if hasattr(player, "combat_adapter_state"):
@@ -4155,9 +4330,9 @@ class GameService:
     def _find_merchant(self, player: Any, npc_id: str):
         """Return the merchant NPC on the player's current tile, or None."""
         tile = player.universe.get_tile(player.location_x, player.location_y)
-        for npc in getattr(tile, "npcs_here", []):
-            if str(id(npc)) == npc_id and hasattr(npc, "buy_modifier"):
-                return npc
+        merchant = find_by_handle(getattr(tile, "npcs_here", []), npc_id)
+        if merchant is not None and hasattr(merchant, "buy_modifier"):
+            return merchant
         return None
 
     def _validate_shop_transaction(
@@ -4201,7 +4376,7 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the target merchant.
+            npc_id: opaque wire handle (``wire_handle``) of the target merchant.
 
         Returns:
             Dict with success, shop_state, and sell_inventory.
@@ -4277,8 +4452,8 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the merchant.
-            item_id: str(id(item)) of the item in merchant inventory.
+            npc_id: opaque wire handle of the merchant.
+            item_id: opaque wire handle of the item in merchant inventory.
             quantity: Number of units to purchase (≥ 1).
 
         Returns:
@@ -4295,12 +4470,10 @@ class GameService:
 
         buy_mod = ShopSerializer.get_effective_buy_modifier(merchant, player)
 
-        # Locate item in merchant inventory
-        target_item = None
-        for item in getattr(merchant, "inventory", []):
-            if getattr(item, "name", None) != "Gold" and str(id(item)) == item_id:
-                target_item = item
-                break
+        # Locate item in merchant inventory. The Gold filter narrows the
+        # candidates *before* the shared lookup rather than re-inlining the
+        # handle comparison next to it — the merchant's till is not stock.
+        target_item = find_by_handle(_sellable_items(merchant), item_id)
 
         if target_item is None:
             return {"success": False, "error": "Item not found in merchant inventory"}
@@ -4357,15 +4530,18 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the merchant.
-            item_id: str(id(item)) of the item in player inventory.
+            npc_id: opaque wire handle of the merchant.
+            item_id: opaque wire handle of the item in player inventory.
             quantity: Number of units to sell (≥ 1).
 
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
         from src.inventory_utils import transfer_gold, transfer_item
-        from src.api.serializers.shop_serializer import ShopSerializer
+        from src.api.serializers.shop_serializer import (
+            ShopSerializer,
+            find_stock_by_name,
+        )
 
         merchant = self._find_merchant(player, npc_id)
         # Use validation helper (FIX 6)
@@ -4375,12 +4551,8 @@ class GameService:
 
         sell_mod = ShopSerializer.get_effective_sell_modifier(merchant, player)
 
-        # Locate item in player inventory
-        target_item = None
-        for item in getattr(player, "inventory", []):
-            if getattr(item, "name", None) != "Gold" and str(id(item)) == item_id:
-                target_item = item
-                break
+        # Locate item in player inventory (see shop_buy: filter, then look up)
+        target_item = find_by_handle(_sellable_items(player), item_id)
 
         if target_item is None:
             return {"success": False, "error": "Item not found in inventory"}
@@ -4422,17 +4594,17 @@ class GameService:
         # id is unchanged and still present in merchant.inventory. For partial-stack
         # splits, a new object is created and appended, but stack_inv_items may
         # immediately merge it into an existing same-name item. In that case the
-        # original id is gone — fall back to the first name-matching merchant item.
-        if any(str(id(i)) == item_id for i in getattr(merchant, "inventory", [])):
+        # original id is gone — fall back to the shared name lookup
+        # (ShopSerializer.find_stock_by_name), which the ledger's own repoint
+        # and shop_buyback's redemption both use, so all three agree on which
+        # stock object an entry draws from.
+        merchant_inv = getattr(merchant, "inventory", [])
+        if find_by_handle(merchant_inv, item_id) is not None:
             buyback_item_id = item_id
         else:
-            buyback_item_id = next(
-                (
-                    str(id(i))
-                    for i in getattr(merchant, "inventory", [])
-                    if getattr(i, "name", None) == item_name
-                ),
-                item_id,
+            restacked = find_stock_by_name(merchant_inv, item_name, item_type)
+            buyback_item_id = (
+                wire_handle(restacked) if restacked is not None else item_id
             )
 
         if not hasattr(merchant, "_buyback_ledger"):
@@ -4478,14 +4650,17 @@ class GameService:
 
         Args:
             player: The Player instance.
-            npc_id: str(id(npc)) of the merchant.
+            npc_id: opaque wire handle of the merchant.
             item_id: The item_id from the buyback ledger entry.
 
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
         from src.inventory_utils import transfer_gold, transfer_item
-        from src.api.serializers.shop_serializer import ShopSerializer
+        from src.api.serializers.shop_serializer import (
+            ShopSerializer,
+            find_stock_by_name,
+        )
 
         merchant = self._find_merchant(player, npc_id)
         # Use validation helper (FIX 6) - quantity=1 for buyback
@@ -4497,12 +4672,12 @@ class GameService:
         current_tick = self._game_tick(player)
         ShopSerializer.flush_stale_buyback(merchant, current_tick)
 
-        # Find the ledger entry
-        entry = None
-        for e in merchant._buyback_ledger:
-            if e["item_id"] == item_id:
-                entry = e
-                break
+        # Find the ledger entry. ``item_id`` is the ENTRY's handle — the id
+        # ShopSerializer published for this buyback row — not the stock item's:
+        # two entries may draw from one merged stack, and matching on the stock
+        # id redeemed whichever of them was scanned first, charging the wrong
+        # price for the row the player actually clicked.
+        entry = find_by_handle(merchant._buyback_ledger, item_id)
 
         if entry is None:
             return {
@@ -4526,20 +4701,17 @@ class GameService:
         if player.weight_current + added_weight > player.weight_tolerance:
             return {"success": False, "error": "Exceeds carry limit"}
 
-        # Find the actual item object in merchant inventory
-        target_item = None
-        for item in getattr(merchant, "inventory", []):
-            if str(id(item)) == item_id:
-                target_item = item
-                break
+        # Find the actual item object in merchant inventory. The entry's
+        # ``item_id`` is the internal pointer at that stock object; if it has
+        # been re-stacked away, fall back through the same shared name lookup
+        # the ledger's repoint uses so both name the same object.
+        merchant_inv = getattr(merchant, "inventory", [])
+        target_item = find_by_handle(merchant_inv, entry.get("item_id"))
 
         if target_item is None:
-            # Item may have been re-stacked; search by name as fallback
-            item_name = entry["item_name"]
-            for item in getattr(merchant, "inventory", []):
-                if getattr(item, "name", None) == item_name:
-                    target_item = item
-                    break
+            target_item = find_stock_by_name(
+                merchant_inv, entry.get("item_name"), entry.get("type")
+            )
 
         if target_item is None:
             merchant._buyback_ledger.remove(entry)

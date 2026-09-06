@@ -31,6 +31,7 @@ from src.api.services.session_manager import Session, SessionManager
 from src.api.services.validators import (
     coerce_optional_index,
     ensure_dict,
+    has_visible_characters,
     validate_string_field,
 )
 
@@ -69,8 +70,57 @@ class TestValidateStringField:
         assert ok is False
         assert error == "Username is required"
 
+    @pytest.mark.parametrize(
+        "value, reason",
+        [
+            ("\x00", "NUL"),
+            ("\u200b", "ZERO WIDTH SPACE"),
+            ("\ufeff", "BYTE ORDER MARK"),
+            ("\u2060", "WORD JOINER"),
+            ("  \x00\u200b  ", "padding around invisible codepoints"),
+        ],
+    )
+    def test_invisible_but_non_whitespace_values_are_blank(self, value, reason):
+        """A value that survives ``.strip()`` but renders as nothing is blank.
+
+        ``str.strip()`` removes only whitespace, so these reached routes as
+        "non-empty" text and then displayed as nothing -- the empty save-list
+        row of issue #523. The rule is visibility-based instead.
+        """
+        ok, error = validate_string_field(value, "Username")
+        assert ok is False, reason
+        assert error == "Username is required"
+
+    @pytest.mark.parametrize(
+        "value, reason",
+        [
+            ("\u3164", "HANGUL FILLER -- category Lo, the classic blank name"),
+            ("\u115f", "HANGUL CHOSEONG FILLER -- category Lo"),
+            ("\uffa0", "HALFWIDTH HANGUL FILLER -- category Lo"),
+            ("\u2800", "BRAILLE PATTERN BLANK -- category So"),
+            ("\u0301", "COMBINING ACUTE -- category Mn, no base to attach to"),
+        ],
+    )
+    def test_blank_glyphs_outside_the_invisible_categories_are_blank(
+        self, value, reason
+    ):
+        """Rendering blank is not the same as having an invisible category.
+
+        These sit in Lo/So/Mn -- "letter", "symbol", "mark" -- so a rule that
+        only screens the C* and Z* categories waves them through, and a save
+        named with one renders as exactly the empty row issue #523 was filed
+        for. The category test is necessary but not sufficient.
+        """
+        ok, error = validate_string_field(value, "Username")
+        assert ok is False, reason
+        assert error == "Username is required"
+
     def test_blank_string_allowed_when_opted_in(self):
         assert validate_string_field("   ", "Note", allow_empty=True) == (True, None)
+
+    def test_invisible_value_allowed_when_opted_in(self):
+        """``allow_empty`` short-circuits the visibility rule as well."""
+        assert validate_string_field("\x00", "Note", allow_empty=True) == (True, None)
 
     def test_max_length_is_inclusive(self):
         assert validate_string_field("abc", "Name", max_length=3) == (True, None)
@@ -85,6 +135,44 @@ class TestValidateStringField:
 
     def test_valid_string_returns_no_error(self):
         assert validate_string_field("north", "Direction") == (True, None)
+
+
+class TestHasVisibleCharacters:
+    """``has_visible_characters`` is the project's definition of "not blank"."""
+
+    @pytest.mark.parametrize(
+        "value", ["a", " a ", "north", "Save_2026-01-01", "\x00a", "\u4e2d"]
+    )
+    def test_true_when_anything_renders(self, value):
+        assert has_visible_characters(value) is True
+
+    @pytest.mark.parametrize(
+        "value",
+        ["", " ", "\t\n\r", "\u00a0", "\x00", "\u200b", "\ufeff", "\x00\u200b "],
+    )
+    def test_false_for_values_that_render_as_nothing(self, value):
+        assert has_visible_characters(value) is False
+
+    @pytest.mark.parametrize("value", ["\u3164", "\u115f", "\uffa0", "\u2800", "\u0301"])
+    def test_false_for_blank_glyphs_with_a_visible_looking_category(self, value):
+        """Lo/So/Mn codepoints that still render as nothing."""
+        assert has_visible_characters(value) is False
+
+    @pytest.mark.parametrize(
+        "value", ["\u2801", "caf\u00e9", "cafe\u0301", "\U0001f5e1", "\u5192\u967a"]
+    )
+    def test_true_for_real_text_in_those_same_categories(self, value):
+        """The blank-glyph screen must not swallow legitimate text.
+
+        A non-blank braille pattern, an emoji, CJK, and both the precomposed
+        and decomposed spellings of an accented word all render.
+        """
+        assert has_visible_characters(value) is True
+
+    def test_it_is_stricter_than_strip(self):
+        """The whole reason it exists: ``.strip()`` alone lets NUL through."""
+        assert "\x00".strip() != ""
+        assert has_visible_characters("\x00") is False
 
 
 class TestCoerceOptionalIndex:

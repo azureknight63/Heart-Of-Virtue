@@ -31,8 +31,12 @@ What this file covers now is the thing its docstring always claimed and nothing
 else in the suite does: **multi-system interactions on real objects**. The shop
 sections in particular assert that gold is *moved, not minted* (the merchant's
 purse falls by exactly what the player gains) and that a reputation discount
-reaches the amount actually charged, not merely the price the client displays —
-CLAUDE.md names displayed-vs-charged drift as this codebase's dominant bug class.
+reaches the amount actually charged, not merely the price the client displays.
+(That is the same *shape* as the bug class CLAUDE.md actually names — wire-field
+-name drift, where the client reads a field the serializer never emits and the
+miss is swallowed by a ``??`` chain — but it is not that class itself, and this
+header used to claim CLAUDE.md named displayed-vs-charged drift as the dominant
+one. It does not.)
 
 Nothing here is mocked. A real ``Player``/``Universe``/``MapTile`` graph costs
 under a millisecond (``tests/_gs_fixtures.live_world``), and a real ``Merchant``
@@ -45,6 +49,7 @@ import pytest
 from src.items import Consumable, Gold
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
+from src.combatant import wire_handle
 
 
 # ========================= HELPERS =========================
@@ -133,11 +138,11 @@ def shop(game_service, player, merchant):
     """
 
     class _Shop:
-        npc_id = str(id(merchant))
+        npc_id = wire_handle(merchant)
 
         @staticmethod
         def id_of(item):
-            return str(id(item))
+            return wire_handle(item)
 
         def buy(self, item, quantity=1):
             return game_service.shop_buy(player, self.npc_id, self.id_of(item), quantity)
@@ -431,7 +436,7 @@ class TestBuybackLedger:
         shop.sell(item)
         assert get_player_gold(player) == before + 50
 
-        result = shop.buyback(merchant._buyback_ledger[0]["item_id"])
+        result = shop.buyback(wire_handle(merchant._buyback_ledger[0]))
 
         assert result["success"] is True
         assert get_player_gold(player) == before
@@ -443,7 +448,7 @@ class TestBuybackLedger:
         shop.sell(item)
         assert not [i for i in player.inventory if i.name == "Tonic"]
 
-        shop.buyback(merchant._buyback_ledger[0]["item_id"])
+        shop.buyback(wire_handle(merchant._buyback_ledger[0]))
 
         assert [i for i in player.inventory if i.name == "Tonic"]
 
@@ -451,7 +456,7 @@ class TestBuybackLedger:
         item = make_consumable(value=100)
         player.inventory.append(item)
         shop.sell(item)
-        item_id = merchant._buyback_ledger[0]["item_id"]
+        item_id = wire_handle(merchant._buyback_ledger[0])
 
         shop.buyback(item_id)
 
@@ -481,7 +486,7 @@ class TestBuybackLedger:
         item = make_consumable(value=100)
         player.inventory.append(item)
         shop.sell(item)
-        item_id = merchant._buyback_ledger[0]["item_id"]
+        item_id = wire_handle(merchant._buyback_ledger[0])
 
         game_service.move_player(player, "east")
         game_service.move_player(player, "west")
@@ -560,14 +565,14 @@ class TestShopTransactionValidation:
         slime = Slime()
         world[1][(0, 0)].npcs_here.append(slime)
 
-        result = game_service.shop_buy(player, str(id(slime)), "x", 1)
+        result = game_service.shop_buy(player, wire_handle(slime), "x", 1)
 
         assert result["error"] == "Merchant not found at this location"
 
     def test_an_item_the_merchant_does_not_have_is_rejected(self, game_service, player, merchant):
         elsewhere = make_consumable(value=10)
 
-        result = game_service.shop_buy(player, str(id(merchant)), str(id(elsewhere)), 1)
+        result = game_service.shop_buy(player, wire_handle(merchant), wire_handle(elsewhere), 1)
 
         assert result["error"] == "Item not found in merchant inventory"
 
@@ -659,7 +664,7 @@ class TestCombatLifecycleAcrossSystems:
         return enemy
 
     def test_start_combat_engages_both_sides(self, game_service, player, slime):
-        result = game_service.start_combat(player, str(id(slime)))
+        result = game_service.start_combat(player, wire_handle(slime))
 
         assert "error" not in result
         assert player.in_combat is True
@@ -668,7 +673,7 @@ class TestCombatLifecycleAcrossSystems:
         assert slime in player.combat_list
 
     def test_start_combat_installs_the_adapter(self, game_service, player, slime):
-        game_service.start_combat(player, str(id(slime)))
+        game_service.start_combat(player, wire_handle(slime))
 
         assert hasattr(player, "_combat_adapter")
         assert game_service.get_combat_status(player)["combat_active"] is True
@@ -684,7 +689,7 @@ class TestCombatLifecycleAcrossSystems:
     ):
         """CLAUDE.md: the client uses ``combat_id`` to tell "new fight" from
         "same fight, next beat", so repeated polls must return one value."""
-        game_service.start_combat(player, str(id(slime)))
+        game_service.start_combat(player, wire_handle(slime))
 
         first = game_service.get_combat_status(player)["battle_state"]["combat_id"]
         second = game_service.get_combat_status(player)["battle_state"]["combat_id"]
@@ -693,7 +698,7 @@ class TestCombatLifecycleAcrossSystems:
         assert first
 
     def test_the_enemy_roster_reaches_the_battle_state(self, game_service, player, slime):
-        game_service.start_combat(player, str(id(slime)))
+        game_service.start_combat(player, wire_handle(slime))
 
         enemies = game_service.get_combat_status(player)["battle_state"]["enemies"]
 
@@ -706,7 +711,7 @@ class TestCombatLifecycleAcrossSystems:
         """``flee_combat`` reads each enemy's own distance to Jean; under 20 ft
         it refuses. ``initialize_combat_positions`` randomises spawn points, so
         the distance is set explicitly rather than hoped for."""
-        game_service.start_combat(player, str(id(slime)))
+        game_service.start_combat(player, wire_handle(slime))
         slime.combat_proximity = {player: 5}
 
         result = game_service.flee_combat(player)
@@ -718,7 +723,7 @@ class TestCombatLifecycleAcrossSystems:
     def test_fleeing_from_a_distance_tears_the_fight_down(
         self, game_service, player, slime
     ):
-        game_service.start_combat(player, str(id(slime)))
+        game_service.start_combat(player, wire_handle(slime))
         slime.combat_proximity = {player: 40}
 
         result = game_service.flee_combat(player)
@@ -904,7 +909,7 @@ class TestMerchantRestock:
         assert [i.name for i in bare_merchant.inventory] == ["Gold"]
         assert gold_in(bare_merchant.inventory) == 1000
 
-        purse = game_service.get_shop_state(player, str(id(bare_merchant)))[
+        purse = game_service.get_shop_state(player, wire_handle(bare_merchant))[
             "shop_state"
         ]["merchant_gold"]
 
@@ -917,8 +922,8 @@ class TestMerchantRestock:
     ):
         """The main ``merchant`` fixture carries one non-gold item, so the
         restock branch is skipped and the purse survives two openings."""
-        first = game_service.get_shop_state(player, str(id(merchant)))["shop_state"]
-        second = game_service.get_shop_state(player, str(id(merchant)))["shop_state"]
+        first = game_service.get_shop_state(player, wire_handle(merchant))["shop_state"]
+        second = game_service.get_shop_state(player, wire_handle(merchant))["shop_state"]
 
         assert first["merchant_gold"] == second["merchant_gold"] == 1000
         assert [i.name for i in merchant.inventory] == ["Gold", "Stall Ledger"]

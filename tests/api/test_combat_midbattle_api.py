@@ -1,13 +1,12 @@
 """API-mode integration tests for mid-battle events, reinforcements, and move progression."""
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
 from src.moves import Move
-
-ROOT = Path(__file__).resolve().parent.parent.parent
+from src.narration import narrate
+from src.combatant import wire_handle
+from src.api.serializers.combat import CombatantSerializer
 
 
 def _post_json(client, url, payload, session_id):
@@ -39,7 +38,7 @@ def _start_combat(client, session_id, player, enemy):
     start_response = _post_json(
         client,
         "/api/combat/start",
-        {"enemy_id": str(id(enemy))},
+        {"enemy_id": wire_handle(enemy)},
         session_id,
     )
     assert start_response.status_code == 201
@@ -79,7 +78,7 @@ class PauseEvent:
             return
         self.needs_input = False
         self.completed = True
-        print("The battle resumes.")
+        narrate("The battle resumes.")
 
 
 class ReinforcementEvent:
@@ -114,7 +113,7 @@ class ReinforcementEvent:
         add_enemies_to_combat(self.player, new_enemies, announcement="Reinforcements arrive!")
         self.needs_input = False
         self.completed = True
-        print("Reinforcements arrive!")
+        narrate("Reinforcements arrive!")
 
 
 class CallForHelpMove(Move):
@@ -148,7 +147,7 @@ class CallForHelpMove(Move):
 
         self.executed = True
         add_enemies_to_combat(user.player_ref, [CaveBat()], announcement="Help arrives!")
-        print("Help arrives!")
+        narrate("Help arrives!")
 
 
 class StageProbeMove(Move):
@@ -178,19 +177,19 @@ class StageProbeMove(Move):
 
     def prep(self, user):
         self.prep_called = True
-        print("STAGE_PROBE_PREP")
+        narrate("STAGE_PROBE_PREP")
 
     def execute(self, user):
         self.execute_called = True
-        print("STAGE_PROBE_EXECUTE")
+        narrate("STAGE_PROBE_EXECUTE")
 
     def recoil(self):
         self.recoil_called = True
-        print("STAGE_PROBE_RECOIL")
+        narrate("STAGE_PROBE_RECOIL")
 
     def cooldown(self, user):
         self.cooldown_called = True
-        print("STAGE_PROBE_COOLDOWN")
+        narrate("STAGE_PROBE_COOLDOWN")
 
 
 @pytest.mark.integration
@@ -269,10 +268,15 @@ def test_reinforcements_do_not_reset_battle(app, client, authenticated_session):
         move_response = _post_json(
             client,
             "/api/combat/move",
-            {"move_type": "move", "move_id": "Advance", "target_id": f"enemy_{id(enemy)}"},
+            {"move_type": "move", "move_id": "Advance", "target_id": CombatantSerializer.stream_id(enemy)},
             session_id,
         )
         assert move_response.status_code == 200
+        # The combat route answers 200 with success=False for every
+        # game-logic refusal (out of range, on cooldown, unaffordable),
+        # so the status code alone cannot tell a move that ran from one
+        # that was declined.
+        assert json.loads(move_response.data)["success"] is True, move_response.data
 
         pending_response = _get_json(client, "/api/world/events/pending", session_id)
         pending_data = json.loads(pending_response.data)
@@ -328,10 +332,15 @@ def test_enemy_move_can_spawn_enemies(app, client, authenticated_session):
         move_response = _post_json(
             client,
             "/api/combat/move",
-            {"move_type": "move", "move_id": "Advance", "target_id": f"enemy_{id(enemy)}"},
+            {"move_type": "move", "move_id": "Advance", "target_id": CombatantSerializer.stream_id(enemy)},
             session_id,
         )
         assert move_response.status_code == 200
+        # The combat route answers 200 with success=False for every
+        # game-logic refusal (out of range, on cooldown, unaffordable),
+        # so the status code alone cannot tell a move that ran from one
+        # that was declined.
+        assert json.loads(move_response.data)["success"] is True, move_response.data
 
         assert enemy_move.executed is True
 

@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 from src.items import Consumable, Gold
 from src.npc._merchants import Merchant
+from src.combatant import wire_handle
 
 
 @pytest.fixture
@@ -195,18 +196,24 @@ class _ShopWorld:
 
     def __init__(self, game_service, player, merchant):
         self.gs, self.player, self.merchant = game_service, player, merchant
-        self.npc_id = str(id(merchant))
+        self.npc_id = wire_handle(merchant)
 
     def sell(self, item, quantity=1):
-        return self.gs.shop_sell(self.player, self.npc_id, str(id(item)), quantity)
+        return self.gs.shop_sell(self.player, self.npc_id, wire_handle(item), quantity)
 
     def buyback(self, item_id):
         return self.gs.shop_buyback(self.player, self.npc_id, item_id)
 
     def offer_id(self):
-        """The ledger id of the single outstanding buyback offer."""
+        """The wire id of the single outstanding buyback offer.
+
+        The ENTRY's handle, which is what ``_serialize_buyback_item``
+        publishes as the row id and therefore the only id a client can
+        send back. The entry's ``item_id`` is an internal pointer at the
+        stock the entry draws from, and two entries may share one.
+        """
         (entry,) = self.merchant._buyback_ledger
-        return entry["item_id"]
+        return wire_handle(entry)
 
 
 def _tradeable(name="Tonic", value=100, weight=0.1, count=1):
@@ -605,7 +612,7 @@ class TestFleeCombat:
         jean, game_map = make_world(grid_3x3)
         slime = Slime()
         game_map[(0, 0)].npcs_here = [slime]
-        game_service.start_combat(jean, str(id(slime)))
+        game_service.start_combat(jean, wire_handle(slime))
         return jean, slime
 
     def test_fleeing_a_distant_enemy_ends_the_fight(self, game_service, fighter):
@@ -756,7 +763,7 @@ class TestGetCombatStatus:
         jean, game_map = make_world(grid_3x3)
         slime = Slime()
         game_map[(0, 0)].npcs_here = [slime]
-        game_service.start_combat(jean, str(id(slime)))
+        game_service.start_combat(jean, wire_handle(slime))
 
         status = game_service.get_combat_status(jean)
 

@@ -2,6 +2,8 @@
 
 from typing import Dict, Any, List
 
+from src.combatant import wire_handle
+
 
 class EventSerializer:
     """Serialize game events to JSON-safe dictionaries."""
@@ -19,8 +21,32 @@ class EventSerializer:
         if not event:
             return {}
 
+        # An event payload carries TWO ids, and they are not interchangeable.
+        # This is the one entity kind where ``id`` is not what the API resolves
+        # a client-supplied id through — deliberately, so read this before
+        # "fixing" the asymmetry:
+        #
+        #   ``id``       — the entity's opaque handle, exactly like every other
+        #                  serializer's (``src.combatant.wire_handle``). The
+        #                  client uses it only as a secondary de-duplication
+        #                  key, paired with ``name``
+        #                  (``frontend/src/hooks/useEventManager.js``). It used
+        #                  to be ``str(id(event))``, which for that purpose was
+        #                  actively wrong: heap addresses are recycled, so two
+        #                  different events could dedupe as one.
+        #   ``event_id`` — ``event.api_event_id``, minted per multi-stage
+        #                  interaction by ``GameService`` and the ONLY id
+        #                  ``process_event_input`` (src/api/routes/world.py)
+        #                  resolves. It is added by ``serialize_with_input``
+        #                  below, and is ``None`` for the many events that
+        #                  never prompt.
+        #
+        # Publishing ``api_event_id`` as ``id`` would collapse the two and look
+        # tidier, but it would also make ``id`` null for every non-interactive
+        # event — and the client's dedupe pair (``id`` + ``name``) would then
+        # match unrelated events against each other.
         event_data = {
-            "id": str(id(event)),
+            "id": wire_handle(event),
             "type": type(event).__name__,
             "description": getattr(event, "description", ""),
         }

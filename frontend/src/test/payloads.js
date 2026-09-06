@@ -332,7 +332,7 @@ export function makePlayer(overrides = {}) {
 export function makeShopBuyItem(overrides = {}) {
   return merge(
     {
-      id: '1001',
+      id: 'c0ffee00112233445566778899aabbcc',
       name: 'Restorative',
       type: 'Restorative',
       subtype: 'Potion',
@@ -353,7 +353,7 @@ export function makeShopBuyItem(overrides = {}) {
 export function makeShopSellItem(overrides = {}) {
   return merge(
     {
-      id: '2001',
+      id: 'dec0de00112233445566778899aabbcc',
       name: 'Restorative',
       type: 'Restorative',
       subtype: 'Potion',
@@ -372,7 +372,7 @@ export function makeShopSellItem(overrides = {}) {
 export function makeShopState(overrides = {}) {
   return merge(
     {
-      npc_id: '3001',
+      npc_id: 'feed0000112233445566778899aabbcc',
       npc_name: 'Jambo',
       shop_name: "Jambo's Shop",
       buy_modifier: 1.0,
@@ -542,7 +542,11 @@ export function makeNpcChatRespond(overrides = {}) {
 // Inventory — InventoryItemSerializer.serialize (src/api/serializers/inventory.py)
 // ---------------------------------------------------------------------------
 // Two field names here are routinely mis-guessed:
-//   * `id` is a STRING — `str(id(item))`, the CPython object id — never an int.
+//   * `id` is a STRING — an opaque 32-hex wire handle minted by
+//     `src.combatant.wire_handle`, never an int and never the CPython heap
+//     address it used to be (issues #511/#518). It is what
+//     `get_item_and_index` resolves back, so a fixture that invents a
+//     decimal id encodes a contract the serializer no longer has.
 //   * the stack size is `quantity`; `count` is the engine-side attribute the
 //     serializer reads FROM, and no inventory payload carries it.
 // The weapon/armor blocks (`damage`/`str_mod`/`fin_mod`/`damage_type`,
@@ -553,7 +557,7 @@ export function makeNpcChatRespond(overrides = {}) {
 export function makeInventoryItem(overrides = {}) {
   return merge(
     {
-      id: '140234981726592',
+      id: '3f9c1d2a4b5e46f78a0c1d2e3f405162',
       index: 0,
       name: 'Rusty Dagger',
       type: 'Weapon',
@@ -585,7 +589,7 @@ export function makeConsumableItem(overrides = {}) {
   return merge(
     {
       ...base,
-      id: '140234981726593',
+      id: '7a1b2c3d4e5f4071829304a5b6c7d8e9',
       name: 'Restorative',
       type: 'Restorative',
       maintype: 'Consumable',

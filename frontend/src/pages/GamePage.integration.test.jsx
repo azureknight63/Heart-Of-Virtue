@@ -9,6 +9,20 @@ import * as api from '../api/endpoints';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
 
+// `useEventManager` is not stubbed here, so its mount-time
+// `/world/events/pending` fetch would go out over the real axios client and
+// settle after teardown on a loaded runner — an unhandled
+// `ReferenceError: window is not defined` that fails the run with every test
+// green. `../api/endpoints` being mocked does not cover this: the hook holds
+// the client directly.
+vi.mock('../api/client', () => ({
+    default: {
+        get: vi.fn(() => Promise.resolve({ data: { success: true, events: [] } })),
+        post: vi.fn(() => Promise.resolve({ data: { success: true } })),
+        delete: vi.fn(() => Promise.resolve({ data: { success: true } })),
+    },
+}));
+
 // Mock only the hooks we need to stub (useExploration, useExits, useAutosave)
 vi.mock('../hooks/useApi', async () => {
     const actual = await vi.importActual('../hooks/useApi');

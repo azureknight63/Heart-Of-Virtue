@@ -11,9 +11,24 @@ from src.api.config import TestingConfig
 
 
 @pytest.fixture(scope="module")
-def client():
-    app, _socketio = create_app(TestingConfig)
-    assert app.config.get("TESTING") is True
+def app():
+    built, _socketio = create_app(TestingConfig)
+    assert built.config.get("TESTING") is True
+    return built
+
+
+@pytest.fixture
+def client(app):
+    """A fresh client -- and so a fresh cookie jar -- per test.
+
+    The app is module-scoped because building it is the expensive part, but
+    the client must not be: `/api/test/session` issues the `hov_session`
+    cookie, so a shared client carries a live credential from whichever test
+    ran before. That silently authenticated `test_debug_requires_auth`'s
+    deliberately header-less request, which then got 200 instead of 401 --
+    an auth test passing because it accidentally had auth, decided by test
+    ordering.
+    """
     return app.test_client()
 
 

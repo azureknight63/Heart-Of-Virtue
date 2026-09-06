@@ -17,6 +17,7 @@ except ImportError:
 from src.universe import Universe
 from src.player import Player
 from src.api.services.game_service import GameService
+from src.combatant import wire_handle
 
 class TestDarkGrottoScenario:
     """Test suite for specifically verifying the Dark Grotto wall switch scenario."""
@@ -60,7 +61,7 @@ class TestDarkGrottoScenario:
         assert wall_switch is not None
 
         # 3. Perform interaction 'press' on 'Wall Depression'
-        target_id = str(id(wall_switch))
+        target_id = wire_handle(wall_switch)
 
         result = self.service.interact_with_target(
             self.player,
@@ -113,7 +114,7 @@ class TestDarkGrottoScenario:
         wall_switch = next((obj for obj in self.target_tile.objects_here if obj.name == 'Wall Depression'), None)
         assert wall_switch is not None
 
-        self.service.interact_with_target(self.player, str(id(wall_switch)), "press", session_data=self.session_data)
+        self.service.interact_with_target(self.player, wire_handle(wall_switch), "press", session_data=self.session_data)
 
         # Switch should be gone
         assert not any(obj.name == 'Wall Depression' for obj in self.target_tile.objects_here)

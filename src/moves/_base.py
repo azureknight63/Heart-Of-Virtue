@@ -443,10 +443,10 @@ def _resolve_heat(attacker, heat=None):
     return heat
 
 
-#: ``Move.hit``'s momentum reward for a landed hit by Jean, stated as a name
+#: ``Move.hit``'s heat reward for a landed hit by Jean, stated as a name
 #: so ``projected_hit_heat_sequence`` below can replay the same reward. The
-#: real contract with ``Move.hit``: the momentum-tooltip test
-#: (``tests/test_momentum_rules_contract.py``) AST-counts the *literal*
+#: real contract with ``Move.hit``: the heat-tooltip test
+#: (``tests/test_heat_rules_contract.py``) AST-counts the *literal*
 #: arguments of every ``change_heat()`` call in this file against the
 #: player-facing rules table, so ``Move.hit`` must keep passing its literal
 #: ``1.25`` -- swapping it for this Name would drop one 1.25 from the counted
@@ -457,7 +457,7 @@ HEAT_GAIN_ON_HIT = 1.25
 
 def projected_hit_heat_sequence(user, count):
     """Heat ``user`` would be at before each of ``count`` consecutive landed
-    hits, momentum feedback included.
+    hits, heat feedback included.
 
     A multi-strike move resolves each strike's damage *before* its ``hit()``,
     and ``Move.hit`` multiplies Jean's heat by ``HEAT_GAIN_ON_HIT`` per landed
@@ -493,7 +493,7 @@ def projected_hit_heat_sequence(user, count):
             change_heat(shim, HEAT_GAIN_ON_HIT)
     except (TypeError, ValueError, AttributeError, OverflowError):
         # A change_heat the shim cannot satisfy (a mock, an exotic override):
-        # degrade to no-momentum rather than raise out of the poll path.
+        # degrade to no-heat rather than raise out of the poll path.
         return [seed] * count
     return heats
 
@@ -577,7 +577,7 @@ def resolve_damage(
     bit-identical floats; do not regroup these terms.
 
     ``attacker`` is read for one thing only -- its ``heat`` -- via
-    ``_resolve_heat``, so pass the combatant whose momentum is being spent
+    ``_resolve_heat``, so pass the combatant whose heat is being spent
     (which is not always ``move.user``: Riposte scores with a temporarily
     boosted ``player.heat``). ``heat`` overrides that outright; leave it None
     for the live value.

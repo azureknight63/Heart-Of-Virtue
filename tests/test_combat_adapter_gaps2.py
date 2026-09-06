@@ -45,6 +45,7 @@ from src.api.combat_adapter import (
     CombatOutputCapture,
     _strip_combatant_prefix,
 )
+from src.api.serializers.combat import CombatantSerializer
 
 # ---------------------------------------------------------------------------
 # Helpers (reuse existing patterns)
@@ -529,8 +530,8 @@ class TestHandleCombinedSelection:
             ApiCombatAdapter,
             "_get_available_targets",
             return_value=[
-                {"id": f"enemy_{id(enemy1)}", "name": "E1"},
-                {"id": f"enemy_{id(enemy2)}", "name": "E2"},
+                {"id": CombatantSerializer.stream_id(enemy1), "name": "E1"},
+                {"id": CombatantSerializer.stream_id(enemy2), "name": "E2"},
             ],
         ):
             adapter = _make_adapter(player)
@@ -630,7 +631,7 @@ class TestHandleTargetSelectionDistanceInput:
         adapter.input_type = "target_selection"
         adapter.pending_move_index = 0
 
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         result = adapter._handle_target_selection(target_id)
         assert adapter.input_type == "number_input"
 

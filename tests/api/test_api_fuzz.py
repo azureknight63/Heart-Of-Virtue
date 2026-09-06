@@ -10,6 +10,11 @@ under garbage tokens. A structured 4xx (or 401/403) is the correct outcome.
 Lives under tests/api/ (excluded from the default run) because it constructs a
 real session/universe, which mutates module-level registries — see CLAUDE.md.
 The fuzzer module is loaded by file path, matching tests/test_save_fuzz.py.
+
+Every URL literal here is contract-checked by
+tests/api/test_route_prefix_contract.py -- including the ``for path, body in
+[...]`` list below, which is not a verb call and so is read by that guard's
+second, syntax-blind pass.
 """
 
 import importlib.util

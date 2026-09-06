@@ -64,24 +64,54 @@ describe('logEntryKey', () => {
   });
 });
 
-describe('no component keeps a private copy', () => {
+describe('no module keeps a private copy', () => {
   // Two byte-identical private definitions is exactly what this file replaced,
   // and nothing but a scan stops a third one appearing. If they drift, the
   // symptom is animations leading or trailing the revealed text -- which reads
   // as a timing bug and would be looked for anywhere but here.
-  const components = ['LeftPanel.jsx', 'BattlefieldGrid.jsx'];
+  //
+  // INVERTED on purpose. The previous version named the consumers it expected
+  // to be clean, which is the enumeration drift this codebase keeps paying
+  // for: it listed two of the three real importers (hooks/useCombatCoordinator
+  // imports distinctLogCount and was never listed), and a fourth consumer that
+  // rolled its own key would pass by simply not appearing in the array. This
+  // scans the whole of src/ and asserts the definition exists in exactly one
+  // file, so a new copy fails wherever it lands and no list needs maintaining.
+  const SRC = path.join(__dirname, '..');
+  const PRIVATE_DEFINITION = /const\s+logEntryKey\s*=/;
+  const OWNER = 'utils/combatLogKey.js';
 
-  it.each(components)('%s imports the shared key rather than defining one', (file) => {
-    const source = fs.readFileSync(
-      path.join(__dirname, '..', 'components', file),
-      'utf8',
-    );
-    expect(source).not.toMatch(/const\s+logEntryKey\s*=/);
-    expect(source).toMatch(/combatLogKey/);
+  // Test files are excluded because they are not consumers: this very file
+  // carries the pattern as a string literal in its own self-check below, and
+  // matching that would make the scan permanently red for no defect.
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return walk(full);
+    return /\.jsx?$/.test(e.name) && !/\.(test|spec)\.jsx?$/.test(e.name) ? [full] : [];
+  });
+
+  const sourceFiles = walk(SRC).map((f) => path.relative(SRC, f).split(path.sep).join('/'));
+
+  it('scans a src/ tree it actually found', () => {
+    // A walk that silently returned nothing -- or that lost most of the tree
+    // to a bad recursion -- would make the scan below vacuously green, which
+    // is the failure mode this describe block exists to prevent, one level up.
+    // 126 non-test .js/.jsx files under src/ at the time of writing; the floor
+    // is set well below that so ordinary deletions do not trip it, and it is a
+    // liveness check on the walk, not a census.
+    expect(sourceFiles.length).toBeGreaterThan(50);
+    expect(sourceFiles).toContain(OWNER);
+  });
+
+  it(`defines logEntryKey in ${OWNER} and nowhere else in src/`, () => {
+    const definers = sourceFiles.filter((file) => PRIVATE_DEFINITION.test(
+      fs.readFileSync(path.join(SRC, file), 'utf8'),
+    ));
+    expect(definers).toEqual([OWNER]);
   });
 
   it('the scan can actually find a private definition', () => {
-    expect('const logEntryKey = (entry) =>').toMatch(/const\s+logEntryKey\s*=/);
+    expect('const logEntryKey = (entry) =>').toMatch(PRIVATE_DEFINITION);
   });
 });
 

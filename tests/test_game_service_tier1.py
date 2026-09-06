@@ -12,6 +12,7 @@ Tests: 26 tests covering core combat and game state methods
 
 import pytest
 from unittest.mock import MagicMock, Mock, patch
+from src.combatant import wire_handle
 
 
 @pytest.fixture
@@ -265,7 +266,7 @@ class TestCombatStateManagement:
                 "battle_state": {}
             }
 
-            result = game_service.start_combat(mock_player, str(id(mock_enemy)))
+            result = game_service.start_combat(mock_player, wire_handle(mock_enemy))
 
             # Should have called initialize_combat
             assert mock_init.called
@@ -281,7 +282,7 @@ class TestCombatStateManagement:
         with patch.object(game_service, '_initialize_combat') as mock_init:
             mock_init.return_value = {"success": True}
 
-            result = game_service.start_combat(mock_player, str(id(mock_enemy)))
+            result = game_service.start_combat(mock_player, wire_handle(mock_enemy))
 
             assert isinstance(result, dict)
 
@@ -627,7 +628,7 @@ class TestComplexGameStateTransitions:
         with patch.object(game_service, '_initialize_combat') as mock_init:
             mock_init.return_value = {"success": True}
 
-            result = game_service.start_combat(mock_player, str(id(mock_enemy)))
+            result = game_service.start_combat(mock_player, wire_handle(mock_enemy))
 
             assert isinstance(result, dict)
 

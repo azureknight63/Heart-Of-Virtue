@@ -2,6 +2,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import StatsPanel from './StatsPanel';
 import { makePlayerStats } from '../test/payloads';
+import { GLOSSARY_ENTRIES } from '../data/combatGlossary';
 
 describe('StatsPanel', () => {
   // Derived from the real GameService.get_player_stats payload
@@ -196,6 +197,28 @@ describe('StatsPanel', () => {
 
     const chip = screen.getByText(/FIRE: 150%/i);
     expect(chip.style.color).toBe('rgb(255, 68, 68)'); // colors.danger (#ff4444)
+  });
+
+  it('labels flat damage reduction with the word the combat glossary quotes (#507)', () => {
+    // The glossary's "Protection & resistance" entry tells the player which row
+    // on this panel it is talking about. Renaming the row without updating the
+    // copy sends them looking for a label that is not there — the mockup
+    // already said "Defense", which this panel has never used.
+    render(<StatsPanel player={makePlayerStats()} />);
+    const protectionEntry = GLOSSARY_ENTRIES.find(e => e.id === 'protection');
+    expect(protectionEntry, 'no glossary entry with id "protection"').toBeDefined();
+
+    // Take the label out of the glossary copy and require the panel to render
+    // it, rather than spelling 'Protection' a third time here. Asserting in
+    // this direction is what makes the test drift-proof: renaming the row
+    // fails on getByText, and rewording the entry to quote a row that does not
+    // exist fails too. Two literals agreeing with each other would catch
+    // neither.
+    const quoted = protectionEntry.body.match(/"([^"]+)" row/);
+    expect(quoted, 'the entry should send the player to a named row on this panel').not.toBeNull();
+    expect(screen.getByText(quoted[1])).toBeInTheDocument();
+    // The mockup called this row "Defense", a word the panel has never used.
+    expect(quoted[1]).not.toBe('Defense');
   });
 
   describe('Accuracy and Evasion presentation', () => {

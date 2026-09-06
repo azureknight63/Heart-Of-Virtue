@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 
 import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
 import BeatTimeline from './BeatTimeline'
+import GlossaryHelpButton from './GlossaryHelpButton'
 import { colors, spacing } from '../styles/theme'
 import { isLiving } from '../utils/combatEntities'
 import { useFeatureFlag } from '../utils/featureFlags'
@@ -235,6 +236,9 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           <span style={{ color: livingEnemyCount > 0 ? colors.danger : colors.primary }}>
             {livingEnemyCount} standing
           </span>
+          {/* #507: the strip is the one place the word "Beat" already appears on
+              screen, so the answer to "what is a beat?" sits beside the question. */}
+          <GlossaryHelpButton style={{ marginLeft: 'auto' }} />
         </div>
       )}
       {selectedTab === 'overview' && beatTimelineEnabled && (
