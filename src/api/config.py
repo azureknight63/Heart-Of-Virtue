@@ -158,8 +158,33 @@ class Config:
         Returns a dict to overlay onto ``app.config``. Keys a subclass pins
         explicitly are omitted, so this fills gaps and never wins — the same
         contract as ``load_dotenv(override=False)`` in the entry points.
+
+        The production guards below fire if EITHER ``FLASK_ENV`` says
+        production or ``cls`` is the class that ``FLASK_ENV=production``
+        selects, so passing the class directly is as guarded as setting the
+        variable.
         """
-        production = normalized_env() == "production"
+        # "Is this production" has TWO independent sources -- the ambient
+        # ``FLASK_ENV`` and the config class actually in force -- and only one
+        # of them was being asked. ``runtime_config`` is a classmethod that
+        # ignored ``cls`` for the single decision that matters.
+        #
+        # Both shipped entry points reach here through :func:`config_for_env`,
+        # so for them the two agree by construction. But ``config_class`` is a
+        # documented parameter of ``create_app``, and
+        # ``create_app(ProductionConfig)`` with ``FLASK_ENV`` unset took the
+        # development path through this method: no "SECRET_KEY must be set"
+        # guard, and a fresh ``os.urandom(24)`` key minted per worker. The
+        # cookie half escaped only by accident -- ``ProductionConfig`` pins
+        # ``SESSION_COOKIE_SECURE``, so ``_pinned_by_subclass`` skips it.
+        #
+        # Derived from the env->class map rather than naming ``ProductionConfig``
+        # here, so "which class is production" stays spelled in exactly one
+        # place -- the same drift that once split the mapping between the two
+        # entry points.
+        production = normalized_env() == "production" or issubclass(
+            cls, _CONFIG_BY_ENV["production"]
+        )
         values = {}
 
         if not cls._pinned_by_subclass("SECRET_KEY"):
@@ -228,9 +253,14 @@ def config_for_env(env: Optional[str] = None) -> Type[Config]:
 
     Both process entry points (``tools/run_api.py``, ``wsgi.py``) call this so
     the mapping cannot diverge between them again, and
-    :meth:`Config.runtime_config` derives its ``production`` flag from the same
-    :func:`normalized_env`, so "which class" and "is this production" can never
-    disagree.
+    :meth:`Config.runtime_config` asks BOTH this mapping and
+    :func:`normalized_env`, so "which class" and "is this production" cannot
+    disagree however the class was chosen.
+
+    That last clause used to rest on convention rather than on code: the flag
+    came from :func:`normalized_env` alone, which made the claim true for these
+    two callers and false for ``create_app(ProductionConfig)`` -- a supported
+    call that skipped every production guard. See :meth:`Config.runtime_config`.
 
     Unset and unrecognised are *not* the same thing, exactly as they are not
     for ``LOG_LEVEL`` in ``src/api/app.py::_resolve_log_level``. Unset means

@@ -1500,3 +1500,103 @@ class TestUnrecognisedFlaskEnvIsNotSilent:
         with caplog.at_level(logging.WARNING, logger=self.LOGGER):
             config_for_env(value)
         assert caplog.records == []
+
+
+def _production_verdict(klass):
+    """What ``runtime_config`` decides for ``klass``, minus what is random.
+
+    The SECRET_KEY *value* is ``os.urandom(24).hex()`` when one is minted, so
+    only its presence is comparable.
+    """
+    try:
+        values = klass.runtime_config()
+    except RuntimeError as exc:
+        return ("raised", str(exc))
+    return (
+        "returned",
+        values.get("SESSION_COOKIE_SECURE", "<pinned by subclass>"),
+        "SECRET_KEY" in values,
+    )
+
+
+class TestTheProductionVerdictFollowsTheClassAsWellAsTheEnv:
+    """``runtime_config`` is a classmethod that ignored ``cls``.
+
+    Its ``production`` flag came from ``normalized_env()`` alone. Both shipped
+    entry points reach it through ``config_for_env()``, so for them the class
+    and the flag agreed by construction — and ``config_for_env``'s docstring
+    said flatly that the two "can never disagree". But ``config_class`` is a
+    documented parameter of ``create_app``, and ``create_app(ProductionConfig)``
+    with ``FLASK_ENV`` unset ran the *development* path through this method: no
+    "SECRET_KEY must be set in production" raise, a fresh ``os.urandom(24)``
+    key minted per worker. The cookie half escaped only because
+    ``ProductionConfig`` happens to pin ``SESSION_COOKIE_SECURE`` itself.
+
+    The claim is now enforced rather than asserted in prose, and enforced as an
+    equivalence over the whole mapping rather than over the one class that was
+    wrong — so a fourth environment added tomorrow is covered on arrival.
+    """
+
+    def test_the_class_alone_gives_the_same_verdict_as_its_env(
+        self, monkeypatch
+    ):
+        """The property, over every entry in the map: for the class that
+        ``FLASK_ENV=<name>`` selects, naming the env and passing the class must
+        reach the same decision."""
+        from src.api.config import _CONFIG_BY_ENV
+
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        disagreed = []
+        for env_name, klass in sorted(_CONFIG_BY_ENV.items()):
+            monkeypatch.setenv("FLASK_ENV", env_name)
+            with_env = _production_verdict(klass)
+            monkeypatch.delenv("FLASK_ENV", raising=False)
+            with_class = _production_verdict(klass)
+            if with_env != with_class:
+                disagreed.append(
+                    "FLASK_ENV=%s -> %r but %s alone -> %r"
+                    % (env_name, with_env, klass.__name__, with_class)
+                )
+        assert disagreed == [], (
+            "runtime_config decides differently depending on WHICH of the two "
+            "equivalent ways the environment was named, so create_app(<class>) "
+            "and FLASK_ENV=<name> configure the app differently: %s"
+            % "; ".join(disagreed)
+        )
+
+    def test_the_map_holds_both_verdicts(self, monkeypatch):
+        """Non-vacuity for the equivalence above, which every entry would
+        satisfy trivially if they all decided the same thing."""
+        from src.api.config import _CONFIG_BY_ENV
+
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        outcomes = set()
+        for env_name, klass in _CONFIG_BY_ENV.items():
+            monkeypatch.setenv("FLASK_ENV", env_name)
+            outcomes.add(_production_verdict(klass)[0])
+        assert outcomes == {"raised", "returned"}, outcomes
+
+    def test_passing_the_production_class_guards_like_the_variable(
+        self, monkeypatch
+    ):
+        """The instance, stated plainly, because the equivalence above would
+        also be satisfied by making FLASK_ENV=production stop guarding."""
+        from src.api.config import ProductionConfig
+
+        monkeypatch.delenv("FLASK_ENV", raising=False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        with pytest.raises(
+            RuntimeError, match="SECRET_KEY must be set in production"
+        ):
+            ProductionConfig.runtime_config()
+
+    def test_a_non_production_class_is_still_unguarded(self, monkeypatch):
+        """The control. A guard that fires for everything is not a guard, and
+        a dev run with no SECRET_KEY must keep working."""
+        from src.api.config import DevelopmentConfig
+
+        monkeypatch.delenv("FLASK_ENV", raising=False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        values = DevelopmentConfig.runtime_config()
+        assert values["SECRET_KEY"]
+        assert values["SESSION_COOKIE_SECURE"] is False
