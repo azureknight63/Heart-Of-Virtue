@@ -1,12 +1,5 @@
 """Tests for GameService."""
 
-import sys
-from pathlib import Path
-
-# Ensure the project's src directory is on sys.path
-ROOT = Path(__file__).resolve().parent.parent.parent
-
-
 from unittest.mock import patch
 
 import pytest
@@ -22,17 +15,26 @@ class _FakeResult:
 
 
 class _FakeDb:
-    """Records every (sql, params) pair and answers save_game's SELECTs."""
+    """Records every (sql, params) pair and answers save_game's SELECTs.
 
-    def __init__(self, manual_save_count=0):
+    ``rows`` and ``rows_affected`` are settable so a test can distinguish the
+    service's behaviour from the fake's. A fake that always answered
+    ``rows_affected=0`` made ``delete_save`` untestable: ``return False`` would
+    have satisfied the assertion just as well as the real ownership-scoped
+    DELETE.
+    """
+
+    def __init__(self, manual_save_count=0, rows=None, rows_affected=0):
         self.calls = []
         self._manual_save_count = manual_save_count
+        self._rows = rows or []
+        self._rows_affected = rows_affected
 
     async def execute(self, sql, params=None):
         self.calls.append((" ".join(sql.split()), params))
         if "COUNT(*)" in sql:
             return _FakeResult([[self._manual_save_count]])
-        return _FakeResult([])
+        return _FakeResult(self._rows, rows_affected=self._rows_affected)
 
 
 class MockTile:
@@ -43,12 +45,10 @@ class MockTile:
         self.description = f"Description of {name}"
         # The engine's MapTile exposes its coordinates as ``x``/``y``
         # (src/tiles.py); ``location_x``/``location_y`` are the *player's*
-        # attribute names. GameService reads tile.x/tile.y when recording
-        # explored tiles, so the mock has to carry them.
+        # attribute names and nothing reads them off a tile, so the mock does
+        # not carry them.
         self.x = x
         self.y = y
-        self.location_x = x
-        self.location_y = y
         self.exits = {
             "north": (x, y + 1),
             "south": (x, y - 1),
@@ -123,8 +123,12 @@ class MockPlayer:
         self.fatigue = 150
         self.maxfatigue = 150
         self.inventory_list = []
-        self.weight = 0
-        self.max_carrying_capacity = 500
+        # Engine names. ``weight``/``max_carrying_capacity`` are inventions:
+        # InventorySerializer reads ``weight_tolerance`` (falling back to 100.0)
+        # and get_player_stats reads ``weight_current``, so the old attributes
+        # were dead and every weight assertion measured the fallback.
+        self.weight_current = 0
+        self.weight_tolerance = 500
         self.strength = 10
         self.finesse = 10
         self.speed = 10
@@ -206,11 +210,14 @@ class TestGameService:
         """Test getting player inventory."""
         result = self.service.get_inventory(self.player)
 
-        assert "items" in result
-        assert "item_count" in result
-        assert "weight_percentage" in result
-        assert "total_weight" in result
+        assert result["items"] == []
         assert result["item_count"] == 0
+        assert result["total_weight"] == 0
+        # Read off the engine's `weight_tolerance`, not the serializer's 100.0
+        # fallback -- this is the assertion that fails if the mock drifts back
+        # to a name the engine has never had.
+        assert result["weight_limit"] == self.player.weight_tolerance
+        assert result["weight_percentage"] == 0.0
 
     def test_get_equipment(self):
         """Test getting player equipment."""
@@ -285,21 +292,26 @@ class TestGameService:
         """Test getting enhanced tile data with NPCs and items."""
         tile = self.universe.get_tile(2, 3)
 
-        # Add mock item
+        # Add mock item. ItemSerializer reads `count` and hardcodes 1 as its
+        # default, so a mock carrying `quantity` left `count == 1` no matter
+        # what it said -- the stack size assertion could not fail.
         class MockItem:
             def __init__(self):
                 self.name = "Test Item"
                 self.description = "A test item"
-                self.quantity = 1
+                self.count = 3
 
-        # Add mock NPC
+        # Add mock NPC. The engine has no `health`/`max_health`/`is_hostile`:
+        # NPCSerializer reads `hp`/`maxhp` and derives hostility from
+        # `aggro` and `friend` (see its own comment).
         class MockNPC:
             def __init__(self):
                 self.name = "Test NPC"
                 self.level = 5
-                self.health = 50
-                self.max_health = 100
-                self.is_hostile = False
+                self.hp = 50
+                self.maxhp = 100
+                self.aggro = True
+                self.friend = False
 
         # Add mock object
         class MockObject:
@@ -317,10 +329,14 @@ class TestGameService:
         assert result["name"] == "Test Room B"
         assert len(result["items"]) == 1
         assert result["items"][0]["name"] == "Test Item"
-        assert result["items"][0]["count"] == 1
+        assert result["items"][0]["count"] == 3
         assert len(result["npcs"]) == 1
-        assert result["npcs"][0]["name"] == "Test NPC"
-        assert result["npcs"][0]["level"] == 5
+        npc = result["npcs"][0]
+        assert npc["name"] == "Test NPC"
+        assert npc["level"] == 5
+        assert npc["health"] == 50
+        assert npc["max_health"] == 100
+        assert npc["is_hostile"] is True
         assert len(result["objects"]) == 1
         assert result["objects"][0]["name"] == "Test Object"
         assert "exits" in result
@@ -348,21 +364,80 @@ class TestGameService:
         assert isinstance(params[3], bytes)
 
     @pytest.mark.asyncio
-    async def test_list_saves(self):
-        """Test listing saves for a user."""
-        db = _FakeDb()
-        with patch("src.api.db.db", db):
-            result = await self.service.list_saves("user-1")
+    async def test_list_saves_maps_every_row_column(self):
+        """A seeded row exercises the row-mapping loop, not just the SQL.
 
-        assert isinstance(result, list)
+        With no rows the loop never runs, so nothing downstream of the query
+        was covered -- including the `timestamp_ms` epoch derivation the
+        frontend's save ordering depends on (CLAUDE.md, "Save-list ordering").
+        """
+        row = [
+            "save-1",
+            "Cellar",
+            "2026-04-23 22:15:00",  # SQLite CURRENT_TIMESTAMP, UTC
+            0,
+            7,
+            "Dark Grotto",
+            "Mineral Pools",
+            3600,
+        ]
+        db = _FakeDb(rows=[row])
+        with patch("src.api.db.db", db):
+            result = await self.service.list_saves("user-1", timezone="UTC")
+
         sql, params = db.calls[-1]
         assert "FROM saves" in sql
         assert params == ["user-1"]
 
+        assert len(result) == 1
+        save = result[0]
+        assert save["id"] == "save-1"
+        assert save["name"] == "Cellar"
+        assert save["is_autosave"] is False
+        assert save["level"] == 7
+        assert save["map_name"] == "Dark Grotto"
+        assert save["room_title"] == "Mineral Pools"
+        assert save["playtime"] == 3600
+        # Derived from the UTC instant *before* the display conversion, so it
+        # is timezone-independent; the display string is not.
+        assert save["timestamp_ms"] == 1776982500000  # 2026-04-23T22:15:00Z
+        assert save["timestamp"] == "2026-04-23 22:15:00 UTC"
+
     @pytest.mark.asyncio
-    async def test_delete_save(self):
-        """Deleting a save that does not belong to the user deletes nothing."""
-        db = _FakeDb()
+    async def test_list_saves_tolerates_an_unparseable_timestamp(self):
+        """A row whose timestamp will not parse keeps the raw string, no ms."""
+        row = ["save-2", "Odd", "not-a-timestamp", 1, None, None, None, None]
+        db = _FakeDb(rows=[row])
+        with patch("src.api.db.db", db):
+            result = await self.service.list_saves("user-1", timezone="UTC")
+
+        save = result[0]
+        assert save["timestamp"] == "not-a-timestamp"
+        assert save["timestamp_ms"] is None
+        assert save["is_autosave"] is True
+        assert save["level"] == "?"
+        assert save["map_name"] == "Unknown"
+        assert save["room_title"] == "Unknown"
+        assert save["playtime"] == 0
+
+    @pytest.mark.asyncio
+    async def test_save_game_rejects_the_twenty_first_manual_save(self):
+        """The manual-save cap is enforced before anything is written.
+
+        `_FakeDb.manual_save_count` had no caller passing a non-zero value, so
+        this guard was never reached.
+        """
+        db = _FakeDb(manual_save_count=20)
+        with patch("src.api.db.db", db):
+            with pytest.raises(ValueError, match="Maximum number of manual saves"):
+                await self.service.save_game(self.player, "One Too Many", "user-1")
+
+        assert not any(sql.startswith("INSERT INTO saves") for sql, _ in db.calls)
+
+    @pytest.mark.asyncio
+    async def test_delete_save_of_another_users_save_deletes_nothing(self):
+        """Ownership is scoped in SQL: no matching row means no deletion."""
+        db = _FakeDb(rows_affected=0)
         with patch("src.api.db.db", db):
             result = await self.service.delete_save("test_save_id", "user-1")
 
@@ -370,3 +445,17 @@ class TestGameService:
         sql, params = db.calls[-1]
         assert sql.startswith("DELETE FROM saves")
         assert params == ["test_save_id", "user-1"]
+
+    @pytest.mark.asyncio
+    async def test_delete_save_of_own_save_reports_success(self):
+        """A DELETE that matched a row reports True.
+
+        Without this case `delete_save` could be `return False` and the
+        negative test above would still pass -- it was asserting a property of
+        the fake, not of the service.
+        """
+        db = _FakeDb(rows_affected=1)
+        with patch("src.api.db.db", db):
+            result = await self.service.delete_save("test_save_id", "user-1")
+
+        assert result is True

@@ -1,13 +1,7 @@
 """Integration tests for API routes."""
 
-import sys
-from pathlib import Path
 import json
 from unittest.mock import AsyncMock, patch
-
-# Ensure the project's src directory is on sys.path
-ROOT = Path(__file__).resolve().parent.parent.parent
-
 
 import pytest
 
@@ -220,12 +214,43 @@ class TestWorldRoutes:
 
         assert response.status_code == 400
 
-    def test_get_current_room_success(self, client, session_id):
-        """Test getting current room successfully."""
-        response = client.get(
-            "/api/world/",
-            headers={"Authorization": f"Bearer {session_id}"},
+    def test_get_current_room_success(self, app, client, session_id):
+        """The room payload carries an item, an NPC and an object, fully shaped.
+
+        The starting tile ships one item (Gold) and no NPCs or objects, so the
+        per-entity loops below used to iterate empty lists -- every
+        `idle_message` assertion was unreachable. A real NPC and a real object
+        are seeded onto the tile so the loops have something to check.
+        """
+        from src.npc import NPC
+        from src.objects import Object
+
+        player = app.session_manager.get_player(session_id)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        assert tile is not None
+        npc = NPC(
+            name="Room Fixture",
+            description="An NPC seeded for this assertion.",
+            damage=1,
+            aggro=False,
+            exp_award=0,
+            maxhp=10,
+            speed=1,
         )
+        obj = Object(
+            name="Room Fixture Object",
+            description="An object seeded for this assertion.",
+        )
+        tile.npcs_here.append(npc)
+        tile.objects_here.append(obj)
+        try:
+            response = client.get(
+                "/api/world/",
+                headers={"Authorization": f"Bearer {session_id}"},
+            )
+        finally:
+            tile.npcs_here.remove(npc)
+            tile.objects_here.remove(obj)
 
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -236,14 +261,16 @@ class TestWorldRoutes:
         assert "y" in room
         assert "name" in room
         assert "description" in room
-        assert "exits" in room or isinstance(room.get("exits"), dict)
+        # `exits` is always emitted as a dict. The old
+        # `"exits" in room or isinstance(room.get("exits"), dict)` could not
+        # fail: Python only evaluates the right operand when the left is
+        # false, at which point `room.get("exits")` is None.
+        assert isinstance(room["exits"], dict)
         # Verify room contents are returned
-        assert "items" in room
-        assert "npcs" in room
-        assert "objects" in room
         assert isinstance(room["items"], list)
         assert isinstance(room["npcs"], list)
         assert isinstance(room["objects"], list)
+        assert room["items"], "the starting tile should ship at least one item"
         # Verify items have announce field
         for item in room["items"]:
             assert "name" in item
@@ -252,14 +279,14 @@ class TestWorldRoutes:
             assert "count" in item
             assert "announce" in item
         # Verify NPCs have idle_message field
-        for npc in room["npcs"]:
-            assert "name" in npc
-            assert "level" in npc
-            assert "idle_message" in npc
+        assert [entry["name"] for entry in room["npcs"]] == [npc.name]
+        for entry in room["npcs"]:
+            assert "level" in entry
+            assert entry["idle_message"] == npc.idle_message
         # Verify objects have idle_message field
-        for obj in room["objects"]:
-            assert "name" in obj
-            assert "idle_message" in obj
+        assert [entry["name"] for entry in room["objects"]] == [obj.name]
+        for entry in room["objects"]:
+            assert entry["idle_message"] == obj.idle_message
 
     def test_move_player_north_success(self, client, session_id):
         """Test moving player east successfully (valid from (1,1))."""

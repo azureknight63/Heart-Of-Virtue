@@ -1,11 +1,7 @@
 """Comprehensive tests for equipment routes."""
 
-import sys
-from pathlib import Path
 import json
 from datetime import datetime, timedelta
-
-ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class TestEquipmentGetRoute:
@@ -57,8 +53,11 @@ class TestEquipmentGetRoute:
         session_manager = app.session_manager
         session_id, _ = session_manager.create_session("testplayer")
         session = session_manager.get_session(session_id)
-        if session:
-            session.expires_at = datetime.now() - timedelta(hours=1)
+        # No `if session:` -- a None here would leave `expires_at` untouched and
+        # the test would 401 on an *unknown* session, never on the expired one
+        # it is named for.
+        assert session is not None
+        session.expires_at = datetime.now() - timedelta(hours=1)
 
         response = client.get(
             "/api/equipment",
