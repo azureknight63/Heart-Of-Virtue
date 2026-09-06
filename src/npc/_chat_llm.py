@@ -765,9 +765,18 @@ _MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
 # row of the committed corpus used U+0027 -- which is exactly what hid
 # "I\u2019ll take the shortsword." matching nothing at any counter while its
 # straight-quoted twin passed green. ``_chat_guard`` has carried its own copy of
-# this for the same reason; spelled once here so this module cannot drift into
-# a fourth variant the way the category tables one file over did.
+# this for the same reason -- though note theirs is OPTIONAL (`(?:['’])?`)
+# and this one is REQUIRED, so they are not interchangeable and unifying them
+# would silently change what `_OFFER` matches.
+#
+# `_SLANG_PATTERN` still spells the class inline: it is not part of the merchant
+# family and reads better self-contained there. Every merchant pattern uses this
+# constant.
 _APO = r"['\u2019]"
+
+#: Exchanges kept in the save. Two turns of context is what the prompt uses;
+#: the rest is history the player can read in the transcript panel.
+_MAX_PERSISTED_EXCHANGES = 20
 
 _MERCHANT_STOCK_VERB = r"have|carry|keep|stock|offer|sell|got"
 _MERCHANT_ITEM_REQUEST_PATTERN = re.compile(
@@ -881,7 +890,7 @@ _MERCHANT_IT_COST = r"\b(?:does|do|would|will|can)\s+it\s+cost\b"
 # no noun. That asymmetry is the point -- the earlier design gated BOTH on a
 # noun list and so missed every price question about a noun nobody had listed.
 _MERCHANT_NOMINAL_PRICE_PATTERN = re.compile(
-    r"\b(?:what(?:['’]s)?\s+(?:is|are|was|were|does|do)?|"
+    r"\b(?:what(?:" + _APO + r"s)?\s+(?:is|are|was|were|does|do)?|"
     r"how\s+much\s+(?:does|do|would|will|can))\b"
     r".{0,80}\b(?:price|cost|worth|value)\b",
     re.IGNORECASE,
@@ -1055,18 +1064,19 @@ _MERCHANT_TRANSACTION_PATTERN = re.compile(
 _MERCHANT_ROLE_PATTERN = re.compile(
     r"\bmerchant\b|\btrader\b|\bshopkeep\w*\b|\bstall\b", re.IGNORECASE
 )
-_MERCHANT_HOST_ATTRS = ("shop_name", "always_stock", "stock_count")
-# ORPHANED by the speech-act redesign: the classifier no longer gates on a
-# question mark or an interrogative prefix, because doing so made declarative
-# commerce ("I'll take the shortsword.") structurally unreachable. Kept only
-# because deleting a pattern is cheap to get wrong and this one costs nothing;
-# if it is still unreferenced next round, delete it.
-_MERCHANT_QUESTION_PREFIX_PATTERN = re.compile(
-    r"^\s*(?:what|how|which|who|where|when|do|does|can|could|may|would|"
-    r"is|are|any)\b",
-    re.IGNORECASE,
-)
+#: Attributes whose PRESENCE-AND-TRUTH means merchant context. An empty
+#: ``always_stock`` is a merchant who happens to stock nothing right now, so it
+#: does not count on its own.
+_MERCHANT_TRUTHY_ATTRS = ("shop_name", "always_stock")
 
+#: Attributes whose mere PRESENCE means it. ``stock_count = 0`` is still a
+#: counter -- the number is a capacity, not a stock level -- which is why this
+#: cannot share the rule above. That distinction used to be a string compare in
+#: the middle of the loop, expressed nowhere else.
+_MERCHANT_PRESENCE_ATTRS = ("stock_count",)
+
+#: Verbs that read as trade in a role description.
+_MERCHANT_ROLE_VERBS = {"buy", "sell", "trade"}
 # Fallback drain amounts keyed by conversation_quality — used only when the LLM
 # does not supply an explicit signed loquacity_delta (legacy adapter / fallback).
 _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30}
@@ -1802,15 +1812,16 @@ class ConversationalNPCMixin:
         role = config.get("role", "") if isinstance(config, dict) else ""
         if _MERCHANT_ROLE_PATTERN.search(str(role)):
             return True
-        for attr in _MERCHANT_HOST_ATTRS:
-            value = getattr(self, attr, None)
-            if attr == "stock_count" and value is not None:
-                return True
-            if value:
-                return True
+        if any(getattr(self, attr, None) for attr in _MERCHANT_TRUTHY_ATTRS):
+            return True
+        if any(
+            getattr(self, attr, None) is not None
+            for attr in _MERCHANT_PRESENCE_ATTRS
+        ):
+            return True
         keywords = getattr(self, "keywords", ()) or ()
         return any(
-            str(keyword).strip().lower() in {"buy", "sell", "trade"}
+            str(keyword).strip().lower() in _MERCHANT_ROLE_VERBS
             for keyword in keywords
         )
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
 from src.api.constants import ITEM_USE_RANGE
-from src.functions import check_for_combat
+from src.functions import check_for_combat, end_combat_cleanup
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
 from src.narration import capture_narration, narrate
@@ -3549,11 +3549,13 @@ class GameService:
                 # carry combat-only states into the world. ``persistent`` is the
                 # flag every ``State`` sets in ``src/states.py`` — True means the
                 # state is meant to outlive the fight.
-                player.states = [
-                    s
-                    for s in getattr(player, "states", [])
-                    if getattr(s, "persistent", True)
-                ]
+                #
+                # Delegated rather than rebound. Filtering the list here
+                # skipped refresh_stat_bonuses and on_removal, so a state
+                # that left still had its stat delta baked into the live
+                # value — permanently, because the refresh recomputes from
+                # the ``*_base`` fields.
+                end_combat_cleanup(player)
                 # Recharge equip-states (e.g. PhoenixRevive) consumed mid-battle —
                 # combat state is wiped above, so this load is effectively a fresh
                 # start that should restore any equipped item's granted states.
@@ -3782,10 +3784,10 @@ class GameService:
 
         player.current_move = None
 
-        # Strip non-persistent status effects (mirrors end-of-combat cleanup)
-        player.states = [
-            s for s in getattr(player, "states", []) if getattr(s, "persistent", True)
-        ]
+        # The engine owns this rule; the API only calls it. Rebinding the list
+        # here (which is what this used to do) skips refresh_stat_bonuses and
+        # on_removal, leaving a departed state's stat delta baked in for good.
+        end_combat_cleanup(player)
 
         if hasattr(player, "_combat_adapter"):
             del player._combat_adapter

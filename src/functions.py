@@ -1115,3 +1115,49 @@ def combat_status_resistance(target, status_type, default=0.0):
     if not math.isfinite(value):
         value = float(default)
     return min(1.0, max(0.0, value))
+
+
+def end_combat_cleanup(target):
+    """Drop every non-persistent state from ``target``, the engine's way.
+
+    Removing a state is THREE steps, not one: take it off the list, recompute
+    the stat bonuses, then let the state undo whatever else it did. Every
+    engine call site does all three (``src/states.py``'s expiry path, and the
+    item effects in ``src/items.py``).
+
+    The API layer did only the first — it rebound ``player.states`` to a
+    filtered list — at all three combat-exit paths, with three DIFFERENT rules:
+    flee stripped without refreshing, load stripped without refreshing, and
+    victory stripped nothing at all. Because ``refresh_stat_bonuses``
+    recomputes from the ``*_base`` values, skipping it leaves the departed
+    state's contribution baked into the live stat permanently.
+
+    Measured before this existed: a player who fled combat with ``Dodging`` up
+    kept finesse 64 against a base of 11, for the rest of the game. The
+    penalties stuck the same way.
+
+    ``persistent`` defaults to FALSE on a state that does not declare it. Every
+    real ``State`` sets the flag, so the default is only reached by a degraded,
+    legacy or mocked state — exactly the case a cleanup guard should drop
+    rather than keep.
+
+    Returns the states that were removed, so a caller can log or assert on them.
+    """
+    states = list(getattr(target, "states", None) or [])
+    keep, removed = [], []
+    for state in states:
+        (keep if getattr(state, "persistent", False) else removed).append(state)
+    if not removed:
+        return []
+    target.states = keep
+    refresh_stat_bonuses(target)
+    for state in removed:
+        on_removal = getattr(state, "on_removal", None)
+        if callable(on_removal):
+            try:
+                on_removal(target)
+            except Exception:  # pragma: no cover - a state's own teardown
+                logging.getLogger(__name__).warning(
+                    "on_removal failed for %s", type(state).__name__, exc_info=True
+                )
+    return removed

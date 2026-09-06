@@ -6,6 +6,7 @@ It captures output, manages state between API calls, and processes commands
 without blocking for user input.
 """
 
+from src import functions
 import contextlib
 import uuid
 import threading
@@ -2073,6 +2074,12 @@ class ApiCombatAdapter:
         self.player.in_combat = False
         self.awaiting_input = False
         self.player.fatigue = self.player.maxfatigue
+        # Victory used to strip NOTHING, so a combat-only state such as
+        # Dodging survived it forever: State.process decrements neither
+        # clock out of combat, and nothing else removes it. Flee and load
+        # stripped (without refreshing); victory did not strip at all —
+        # three exits, three rules. All three now call the engine.
+        functions.end_combat_cleanup(self.player)
         # Recharge single-use equip states (e.g. PhoenixRevive) consumed this battle
         self.player.recharge_equip_states()
 
