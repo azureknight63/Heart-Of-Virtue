@@ -989,6 +989,59 @@ class TestProviderPromptReinforcement:
         assert "genuine self-introduction" in user
 
 
+#: The item attributes a player can point at across a counter. ``name`` is what
+#: the shop prints; ``subtype`` is the category word ("sword", "potion") a
+#: player is at least as likely to type. Deliberately NOT the full population
+#: ``_host_merchandise_pattern`` derives from -- it also reads ``aliases`` and
+#: the ``specialties`` classes -- because an oracle assembled from exactly the
+#: implementation's own inputs agrees with it for free. A strict subset can
+#: still fail; a mirror cannot.
+PROBE_ATTRS = ("name", "subtype")
+
+
+def _stocked_items(merchant):
+    """Every item ``merchant``'s ``always_stock`` actually puts on the counter.
+
+    ``src/npc/_shop.py`` types the field as ``list[Item | type[Item]]`` and
+    ``_create_always_stock_item`` instantiates the type form, so what reaches
+    the counter is an instance whichever spelling the merchant used. That
+    contract -- not ``_host_merchandise_pattern``'s walk -- is why this
+    instantiates a class-form entry.
+
+    Four copies of this walk used to sit in the four tests below and NONE of
+    them instantiated, so every one of them ``continue``-d past a class-form
+    entry's ``None`` attributes: a merchant stocked entirely by class was
+    unprobed by the roster guards and reported green, which is the hole
+    ``TestClassFormStockContributesVocabulary`` had to be written by hand to
+    cover for one merchant at a time.
+    """
+    for entry in list(getattr(merchant, "always_stock", None) or []):
+        if isinstance(entry, type):
+            try:
+                entry = entry()
+            except Exception:  # pragma: no cover - a stock class that needs args
+                continue
+        yield entry
+
+
+def _stock_words(merchant, attrs=PROBE_ATTRS):
+    """``(attribute, word)`` for every usable string those items declare.
+
+    ``attrs`` is explicit rather than fixed because the guards below do not all
+    want the same width, and collapsing them was the other half of the drift:
+    one copy read ``name`` and ``subtype``, two read ``name`` only, and one had
+    no ``isinstance`` guard at all, so a non-string truthy ``name`` raised
+    ``AttributeError`` there and was skipped in the other three. The WALK is
+    shared; what each test chooses to probe with stays that test's decision and
+    is argued for at each call site.
+    """
+    for item in _stocked_items(merchant):
+        for attr in attrs:
+            word = getattr(item, attr, None)
+            if isinstance(word, str) and word.strip():
+                yield attr, word
+
+
 def _conversational_merchants():
     """Every merchant the game can actually hold a conversation with.
 
@@ -1048,17 +1101,14 @@ class TestEveryConversationalMerchantSellsWordsTheClassifierKnows:
         misses = []
         for cls in _conversational_merchants():
             merchant = cls()
-            for item in list(getattr(merchant, "always_stock", None) or []):
-                for attr in ("name", "subtype"):
-                    word = getattr(item, attr, None)
-                    if not isinstance(word, str) or not word.strip():
-                        continue
-                    if not merchant._names_merchandise(word):
-                        misses.append(
-                            "%s stocks %s (%s=%r) but the classifier does not "
-                            "read it as merchandise"
-                            % (cls.__name__, type(item).__name__, attr, word)
-                        )
+            # The widest probe in the file: both attributes, because either is
+            # what a player points at.
+            for attr, word in _stock_words(merchant):
+                if not merchant._names_merchandise(word):
+                    misses.append(
+                        "%s stocks an item the classifier does not read as "
+                        "merchandise (%s=%r)" % (cls.__name__, attr, word)
+                    )
         assert misses == [], "\n".join(misses)
 
     def test_the_canonical_price_question_is_commerce_at_every_counter(self):
@@ -1071,11 +1121,12 @@ class TestEveryConversationalMerchantSellsWordsTheClassifierKnows:
         misses = []
         for cls in _conversational_merchants():
             merchant = cls()
-            for item in list(getattr(merchant, "always_stock", None) or []):
-                noun = (getattr(item, "name", "") or "").lower()
-                if not noun:
-                    continue
-                question = "How much for the %s?" % noun
+            # ``name`` only, and that is deliberate rather than left over: the
+            # frame is "the X", which reads as a specific object on the counter.
+            # A subtype in that slot ("How much for the sword?") is a different
+            # question and belongs to the vocabulary test above.
+            for _attr, word in _stock_words(merchant, ("name",)):
+                question = "How much for the %s?" % word.lower()
                 if not merchant._is_merchant_commerce_question(question):
                     misses.append("%s: %r not suppressed" % (cls.__name__, question))
         assert misses == [], "\n".join(misses)
@@ -1094,10 +1145,12 @@ class TestEveryConversationalMerchantSellsWordsTheClassifierKnows:
         derived_only = []
         for cls in _conversational_merchants():
             merchant = cls()
-            for item in list(getattr(merchant, "always_stock", None) or []):
-                word = getattr(item, "name", None)
-                if not isinstance(word, str) or not word.strip():
-                    continue
+            # ``name`` only, and here the narrowness is the point: this is an
+            # existence claim, so every attribute added to the probe makes it
+            # EASIER to satisfy. A subtype ("potion") is far more likely to be
+            # in the shared floor anyway, and finding the derived half through
+            # one would say less, not more.
+            for _attr, word in _stock_words(merchant, ("name",)):
                 floor = _chat_llm._MERCHANT_ITEM_PATTERN.search(word)
                 if not floor and merchant._names_merchandise(word):
                     derived_only.append("%s: %s" % (cls.__name__, word))
@@ -1297,15 +1350,19 @@ class TestEveryMerchantContributesAssertions:
     do about it, rather than silently contributing nothing three tests over.
     """
 
-    def _probeable_words(self, merchant):
-        """Every word the coverage guards would actually test for this host."""
-        words = []
-        for item in list(getattr(merchant, "always_stock", None) or []):
-            for attr in ("name", "subtype"):
-                word = getattr(item, attr, None)
-                if isinstance(word, str) and word.strip():
-                    words.append(word)
-        return words
+    @staticmethod
+    def _probeable_words(merchant, attrs=PROBE_ATTRS):
+        """What the widest coverage guard would test for this host.
+
+        This docstring used to say "every word the coverage guards would
+        actually test", and that was false in a way that mattered: two of the
+        three guards read ``name`` alone, so a merchant declaring only
+        ``subtype``s counted as probeable here while contributing nothing to
+        them. ``attrs`` is threaded through so both widths can be asserted --
+        see ``test_every_merchant_contributes_a_name`` below, which is the half
+        the false claim was hiding.
+        """
+        return [word for _attr, word in _stock_words(merchant, attrs)]
 
     def test_every_conversational_merchant_is_probeable(self):
         silent = []
@@ -1324,6 +1381,27 @@ class TestEveryMerchantContributesAssertions:
             "leave the merchant unprobed, which is how the apothecary shipped "
             "with its entire stock invisible to the classifier."
             % ", ".join(sorted(silent))
+        )
+
+    def test_every_merchant_contributes_a_name(self):
+        """The narrower width, which two of the three guards actually use.
+
+        ``test_every_conversational_merchant_is_probeable`` above passes on a
+        ``subtype`` alone. The price-frame guard and the guard-the-guard both
+        probe with ``name``, so a merchant with no usable ``name`` on any
+        stocked item contributes zero assertions to either while looking
+        covered -- the exact silent-pass shape this class exists to close, one
+        attribute narrower than the check that was written for it.
+        """
+        nameless = [
+            cls.__name__
+            for cls in _conversational_merchants()
+            if not self._probeable_words(cls(), ("name",))
+        ]
+        assert nameless == [], (
+            "these conversational merchants declare no stocked item with a "
+            "usable `name`, so the price-frame and derived-half guards check "
+            "nothing at their counter: %s" % ", ".join(sorted(nameless))
         )
 
     def test_the_probe_words_are_not_all_the_same_merchant(self):

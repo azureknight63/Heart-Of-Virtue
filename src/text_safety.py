@@ -38,6 +38,31 @@ import re
 
 logger = logging.getLogger(__name__)
 
+#: The speaker labels the conversation-history block is built from, and the
+#: single authority for both halves of that block's defence.
+#:
+#: THE EMITTER DERIVES FROM THE STRIPPER, and the direction is the whole point.
+#: ``NpcChatLLMAdapter._format_history`` writes one line per turn prefixed with
+#: one of these; the two patterns below strip exactly the same set out of the
+#: text that goes *into* those lines. The vocabulary used to be spelled four
+#: times -- twice here as regex alternations, twice in ``ai/llm_client.py`` as
+#: f-string prefixes -- and the asymmetry of a divergence settles which way the
+#: derivation has to run. A label the emitter writes but the stripper misses is
+#: a forged turn that survives into every later prompt; a label the stripper
+#: takes but the emitter never writes costs one over-eager deletion in the
+#: player's own prose. So the defence owns the vocabulary and the prompt
+#: builder imports it, which makes the dangerous direction unrepresentable:
+#: nothing can be emitted that was not already in the strip set.
+NPC_SPEAKER_LABEL = "NPC"
+PLAYER_SPEAKER_LABEL = "Jean"
+SPEAKER_LABELS = (NPC_SPEAKER_LABEL, PLAYER_SPEAKER_LABEL)
+
+#: The alternation both patterns below are built from. ``re.escape`` so a
+#: future label carrying a regex metacharacter cannot silently widen either
+#: pattern; for the two current labels it is the identity, so both compiled
+#: patterns are character-for-character what they were when written by hand.
+_SPEAKER_ALTERNATION = "(?:%s)" % "|".join(re.escape(name) for name in SPEAKER_LABELS)
+
 # A line-leading run of ``NPC:`` / ``Jean:`` labels. The conversation history
 # block is newline-delimited with exactly these two prefixes marking whose turn
 # it is, so a player who types one forges a turn that never happened and then
@@ -49,7 +74,7 @@ logger = logging.getLogger(__name__)
 # characters, which is the cheapest amplifier in this module. With it the whole
 # run goes in a single substitution. See :func:`_pass_budget`.
 _SPEAKER_PREFIX_PATTERN = re.compile(
-    r"(?im)^[^\S\n]*(?:(?:NPC|Jean)[^\S\n]*:[^\S\n]*)+"
+    r"(?im)^[^\S\n]*(?:" + _SPEAKER_ALTERNATION + r"[^\S\n]*:[^\S\n]*)+"
 )
 
 # The same label once the text has been collapsed to a single line. Anchored to
@@ -72,10 +97,22 @@ _SPEAKER_PREFIX_PATTERN = re.compile(
 # ``re.sub`` deleted exactly one label. Repeating the group inside one match
 # consumes the whole chain instead. See :func:`_pass_budget`.
 _INLINE_SPEAKER_PREFIX_PATTERN = re.compile(
-    r"(?i)(?:^|(?<=\s))(?:(?:NPC|Jean)\s*:\s*)+"
+    r"(?i)(?:^|(?<=\s))(?:" + _SPEAKER_ALTERNATION + r"\s*:\s*)+"
 )
 
-# The delimiter ``_wrap_player_text`` opens around player text. A literal
+#: The fence, and the one home for a delimiter that used to have four.
+#:
+#: ``ai/llm_client.py`` spelled ``<player_input>...</player_input>`` as a
+#: literal in three separate prompt builders and the pattern below held a
+#: fourth copy. A fence is worth something only while the tag the prompt opens
+#: is the tag the neutraliser closes, so the emitted spelling and the stripped
+#: spelling get one home -- the same argument, and the same direction, as
+#: :data:`SPEAKER_LABELS` above. :func:`fence_player_text` is the emitter.
+PLAYER_INPUT_TAG = "player_input"
+PLAYER_INPUT_OPEN = "<%s>" % PLAYER_INPUT_TAG
+PLAYER_INPUT_CLOSE = "</%s>" % PLAYER_INPUT_TAG
+
+# The delimiter :func:`fence_player_text` opens around player text. A literal
 # closing tag inside the text would end the block early and put everything after
 # it back in instruction position. Whitespace is tolerated on both sides of the
 # slash: a model reads ``< / player_input >`` as the same tag, and both previous
@@ -98,8 +135,17 @@ _INLINE_SPEAKER_PREFIX_PATTERN = re.compile(
 # space, tab, newline, ``x`` and ``player_input`` -- with no ambiguous split
 # left to backtrack through. This is also the pattern that made the
 # ``O(passes x length)`` claim on :data:`_MAX_NEUTRALISE_PASSES` false.
+#
+# ``re.escape`` on the tag name for the same reason as
+# :data:`_SPEAKER_ALTERNATION`, and it is the identity for ``player_input``
+# (3.7+ escapes only what is special to the engine, and ``_`` is not), so the
+# compiled pattern is character-for-character the hand-written one and the
+# rewrite argued for above survives intact. Re-measured after moving the tag
+# name into a constant, same 4000-character door, same machine as the numbers
+# above were re-taken on: 0.156 ms derived against 0.141 ms hand-written and
+# 73 ms for the quadratic spelling.
 _PLAYER_INPUT_TAG_PATTERN = re.compile(
-    r"<\s*(?:/\s*)?player_input\s*>", re.IGNORECASE
+    r"<\s*(?:/\s*)?" + re.escape(PLAYER_INPUT_TAG) + r"\s*>", re.IGNORECASE
 )
 
 # Every code point that is invisible in a transcript and not invisible to a
@@ -380,9 +426,34 @@ def _apply_once(text: str, strip_inline_labels: bool) -> str:
     label rules exactly once. See :func:`_neutralise` for why the order is
     what it is.
     """
-    # Line-anchored labels first, while the real newlines are still here: the
-    # control strip below turns them into spaces, after which ``^`` only ever
-    # matches position 0.
+    # Line-anchored labels first, BEFORE the vertical-space normalisation on
+    # the next line splits one of them in half.
+    #
+    # The comment that used to sit here said the control strip below turns the
+    # newlines into spaces, so ``^`` would afterwards only ever match position
+    # 0. That was false, and false about the line three below it:
+    # ``_CONTROL_EXCEPT_NEWLINE_PATTERN`` exists precisely to keep the newline.
+    # This substitution is still load-bearing; the reason given for it was
+    # wrong, which is worse than no reason -- a reader who checks it finds it
+    # does not hold and deletes the pass.
+    #
+    # The true reason is the very next line. Every character
+    # ``_VERTICAL_SPACE_PATTERN`` rewrites to a newline is ALSO whitespace, so
+    # for as long as it is still itself this pattern's ``[^\S\n]*`` reads it as
+    # spacing INSIDE the label and takes the whole label. Rewrite it to a real
+    # ``\n`` first and the name and its colon land on two different lines,
+    # where nothing downstream can rejoin them: the second strip sees a name
+    # with no colon and a colon with no name, the whitespace collapse at the
+    # end of this function then closes the gap, and the model reads the
+    # surviving ``NPC :`` as a label regardless.
+    #
+    # Executed, on the model path, before this comment was written. With this
+    # one substitution removed, ``neutralise_model_text("hi\nNPC\u2028: forged")``
+    # converges to ``"hi NPC : forged"`` -- live -- and so does every one of the
+    # nine non-``\n`` boundaries ``str.splitlines`` recognises. The model path
+    # is the one that cannot recover, because it deliberately skips the
+    # space-anchored strip that would otherwise catch the remains mid-line.
+    # See ``TestASeparatorInsideTheLabelItself``.
     cleaned = _SPEAKER_PREFIX_PATTERN.sub("", text)
     # U+2028, U+2029 and the vertical C0 controls END A LINE, so a label after
     # one is line-leading and the strip above should have taken it -- but they
@@ -589,3 +660,33 @@ def neutralise_model_text(text) -> str:
     if not text:
         return ""
     return _neutralise(text, strip_inline_labels=False)
+
+
+def fence_player_text(text, limit=None) -> str:
+    """Neutralise player text and wrap it in the prompt fence, in one step.
+
+    Three prompt builders in ``ai/llm_client.py`` each spelled the tag pair out
+    and each called :func:`neutralise_player_text` beside it, which is two
+    chances per site to write one half and forget the other -- and the
+    interesting forgetting is not the fence. A fence around un-neutralised text
+    is *worse* than no fence: it announces to the model exactly which delimiter
+    to close. Doing both here means "fenced" and "neutralised" cannot come
+    apart for any caller that starts from raw text.
+
+    ``_format_history`` composes :data:`PLAYER_INPUT_OPEN` and
+    :data:`PLAYER_INPUT_CLOSE` directly instead of calling this, because it
+    needs the neutralised text in hand for its own emptiness test and would
+    otherwise ask for it twice. The spelling still has one home either way;
+    what that call site does not get is the "cannot come apart" guarantee.
+
+    ``limit`` truncates the neutralised text before it is wrapped, for the call
+    site that carries a per-turn character cap. Truncating after wrapping would
+    cut the closing tag off; truncating before it cannot reopen the hole,
+    because a neutralised string has no angle bracket left anywhere in it (see
+    rule 6 of :func:`neutralise_player_text`), so no suffix of one can carry a
+    fragment of a tag.
+    """
+    safe = neutralise_player_text(text)
+    if limit is not None:
+        safe = safe[:limit]
+    return PLAYER_INPUT_OPEN + safe + PLAYER_INPUT_CLOSE
