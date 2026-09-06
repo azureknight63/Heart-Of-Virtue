@@ -14,7 +14,15 @@ Tests for:
 Every request below must name a URL that exists in ``app.url_map``, and every
 assertion must name one status code. ``in [200, 404]`` against a URL with no
 route is satisfied by the 404, so it tests nothing; the whole class of that
-mistake is now caught by ``tests/api/test_route_prefix_contract.py``.
+mistake is now caught by ``tests/api/test_route_prefix_contract.py``, which
+contract-checks every URL literal in this file -- including the ones a rule
+serves under a different verb.
+
+The one-status-code rule has exactly one exception, and it is deliberate: the
+quest family asserts ``!= 404`` (paired with ``< 500``) rather than a single
+status. Those tests are strict-xfail bodies -- the feature does not exist, so
+there is no single status to name; the pair says "the route is registered and
+does not fault", which is the whole claim available until it lands.
 
 There is no ``/api/dialogue`` blueprint and no design for one: staged dialogue
 reaches the client through ``/api/npc/chat/*`` and ``/api/world/events``, which
@@ -25,19 +33,7 @@ marker on a URL that is never going to exist is a skip wearing a disguise.
 
 import pytest
 
-
-#: Applied to every test in the quest family. ``strict=True`` so the day a
-#: quest blueprint lands, the unexpected pass fails the suite and forces the
-#: marker off instead of quietly masking a working feature.
-NO_QUEST_SYSTEM = pytest.mark.xfail(
-    reason=(
-        "No quest system exists in this tree: no quest, quest-chain or "
-        "npc-quest blueprint is registered in src/api/routes/, GameService "
-        "carries no quest method, and src/ defines no Quest class -- so every "
-        "/api/quests/*, /api/quest-chains/* and /api/npc/quests/* URL 404s."
-    ),
-    strict=True,
-)
+from ._marks import NO_QUEST_SYSTEM
 
 
 class TestAuthRoutes:
@@ -103,6 +99,66 @@ class TestAuthRoutes:
         assert data['player_id']
 
 
+def _room(client, session_id):
+    """Return the current room payload, asserting the request succeeded.
+
+    Module scope, not a method on TestWorldRoutes: three tests further down
+    the file re-inlined this same fetch, two of them without the status and
+    ``success`` assertions.
+    """
+    response = client.get('/api/world',
+                        headers={'Authorization': f'Bearer {session_id}'})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    return data['room']
+
+
+def _move(client, session_id, direction):
+    """POST one movement request and return the response."""
+    return client.post('/api/world/move',
+                     json={'direction': direction},
+                     headers={'Authorization': f'Bearer {session_id}'})
+
+
+def _assert_move_succeeds(client, session_id, direction):
+    """*direction* is advertised by the room, and walking it lands where it says.
+
+    This is not a cross-check of two serializers: ``room['exits']`` and the
+    coordinates the move route reports both come out of
+    ``GameService._calculate_exits`` (game_service.py:844 and :1159), so a bug
+    inside that function is invisible to the comparison. What it does pin is
+    that the room payload and the move route agree about the same tile graph,
+    and that a route the room advertises is actually walkable.
+    """
+    exits = _room(client, session_id)['exits']
+    assert exits, 'the starting tile must advertise at least one exit'
+    assert direction in exits, (
+        f'{direction} is not advertised by this tile ({sorted(exits)}); this '
+        'test asserts a successful move, so use _assert_move_refused instead'
+    )
+
+    response = _move(client, session_id, direction)
+    assert response.status_code == 200
+    assert response.get_json()['new_position'] == exits[direction]
+
+
+def _assert_move_refused(client, session_id, direction):
+    """*direction* is not advertised by the room, and walking it is refused."""
+    exits = _room(client, session_id)['exits']
+    assert exits, 'the starting tile must advertise at least one exit'
+    assert direction not in exits, (
+        f'{direction} IS advertised by this tile ({sorted(exits)}); this test '
+        'asserts a refusal, so use _assert_move_succeeds instead'
+    )
+
+    response = _move(client, session_id, direction)
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data['success'] is False
+    assert data['error'] == f'Cannot go {direction} from here'
+
+
 class TestWorldRoutes:
     """Test world navigation and location routes.
 
@@ -111,44 +167,11 @@ class TestWorldRoutes:
     is ``GET /api/world/explored``.
     """
 
-    @staticmethod
-    def _room(client, session_id):
-        """Return the current room payload, asserting the request succeeded."""
-        response = client.get('/api/world',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code == 200
-        data = response.get_json()
-        assert data['success'] is True
-        return data['room']
-
-    def _assert_move(self, client, session_id, direction):
-        """Move one step and assert the outcome the tile's own exits imply.
-
-        This cross-checks two serializers against each other: a direction the
-        room payload advertises must move the player to exactly the
-        coordinates that payload named, and one it does not advertise must be
-        refused by name. Neither branch accepts a range of statuses.
-        """
-        exits = self._room(client, session_id)['exits']
-
-        response = client.post('/api/world/move',
-                             json={'direction': direction},
-                             headers={'Authorization': f'Bearer {session_id}'})
-        data = response.get_json()
-
-        if direction in exits:
-            assert response.status_code == 200
-            assert data['new_position'] == exits[direction]
-        else:
-            assert response.status_code == 400
-            assert data['success'] is False
-            assert data['error'] == f'Cannot go {direction} from here'
-
     def test_get_current_room_success(self, client, authenticated_session):
         """The current room carries a name, a description and its exits."""
         session_id, player, session_manager = authenticated_session
 
-        room = self._room(client, session_id)
+        room = _room(client, session_id)
         assert room['name']
         assert room['description']
         assert isinstance(room['exits'], dict)
@@ -161,25 +184,27 @@ class TestWorldRoutes:
         assert response.status_code == 401
         assert response.get_json()['success'] is False
 
-    def test_move_player_north(self, client, authenticated_session):
-        """Test moving player north."""
+    @pytest.mark.parametrize('direction', ['south', 'east'])
+    def test_move_player_walks_an_advertised_exit(
+        self, client, authenticated_session, direction
+    ):
+        """dark-grotto (1, 1) advertises south and east; both are walkable."""
         session_id, player, session_manager = authenticated_session
-        self._assert_move(client, session_id, 'north')
+        _assert_move_succeeds(client, session_id, direction)
 
-    def test_move_player_south(self, client, authenticated_session):
-        """Test moving player south."""
-        session_id, player, session_manager = authenticated_session
-        self._assert_move(client, session_id, 'south')
+    @pytest.mark.parametrize('direction', ['north', 'west'])
+    def test_move_player_refuses_an_unadvertised_exit(
+        self, client, authenticated_session, direction
+    ):
+        """dark-grotto (1, 1) has no north or west exit; both are refused.
 
-    def test_move_player_east(self, client, authenticated_session):
-        """Test moving player east."""
+        These were named ``test_move_player_north``/``_west`` and shared one
+        helper with the two above, so their names promised movement while
+        their bodies asserted a refusal -- and nothing pinned which branch
+        ran, so a map edit could have flipped them silently.
+        """
         session_id, player, session_manager = authenticated_session
-        self._assert_move(client, session_id, 'east')
-
-    def test_move_player_west(self, client, authenticated_session):
-        """Test moving player west."""
-        session_id, player, session_manager = authenticated_session
-        self._assert_move(client, session_id, 'west')
+        _assert_move_refused(client, session_id, direction)
 
     def test_move_abbreviated_direction_is_rejected(self, client, authenticated_session):
         """The route takes full direction names only -- 'n' is not 'north'.
@@ -221,8 +246,14 @@ class TestWorldRoutes:
         assert data['success'] is False
         assert data['error'] == 'Missing direction'
 
-    def test_get_surrounding_tiles(self, client, authenticated_session):
+    def test_explored_map_records_the_room_once_read(
+        self, client, authenticated_session
+    ):
         """The explored map records a tile once the client has read the room.
+
+        Named ``test_get_surrounding_tiles`` while it requested
+        ``/api/world/map``, which has no route; it now exercises
+        ``GET /api/world/explored`` and says so.
 
         A brand-new session has explored nothing: the starting tile is only
         recorded when something actually reads it, which every client does
@@ -235,7 +266,7 @@ class TestWorldRoutes:
         assert before.status_code == 200
         assert before.get_json()['explored_tiles'] == {}
 
-        self._room(client, session_id)
+        _room(client, session_id)
 
         response = client.get('/api/world/explored', headers=headers)
         assert response.status_code == 200
@@ -387,8 +418,7 @@ class TestInventoryRoutes:
         session_id, player, session_manager = authenticated_session
         headers = {'Authorization': f'Bearer {session_id}'}
 
-        room = client.get('/api/world', headers=headers).get_json()['room']
-        floor_items = room['items']
+        floor_items = _room(client, session_id)['items']
         assert floor_items, 'starting tile is expected to carry a floor item'
         target = floor_items[0]
 
@@ -400,7 +430,7 @@ class TestInventoryRoutes:
         assert data['success'] is True
         assert data['target_name'] == target['name']
 
-        remaining = client.get('/api/world', headers=headers).get_json()['room']
+        remaining = _room(client, session_id)
         assert target['id'] not in [item['id'] for item in remaining['items']]
 
     def test_pick_up_unknown_target(self, client, authenticated_session):
@@ -542,18 +572,30 @@ class TestNPCRoutes:
     ships inside the room payload, and conversation is ``/api/npc/chat/*``.
     """
 
-    def test_get_npcs_in_room(self, client, authenticated_session):
-        """The room payload carries the NPC roster for the current tile."""
-        session_id, player, session_manager = authenticated_session
+    def test_room_npc_roster_is_empty_here_and_populated_where_it_should_be(
+        self, client, authenticated_session
+    ):
+        """The roster reflects the tile: empty at the start, Ferdie at (4, 2).
 
-        response = client.get('/api/world',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code == 200
-        room = response.get_json()['room']
-        npcs = room['npcs']
+        Asserting only ``npcs == []`` on the starting tile -- which is what
+        this test did under the name ``test_get_npcs_in_room`` -- is satisfied
+        by a serializer that returns ``[]`` unconditionally, so it is paired
+        here with a tile that really is populated.
+        """
+        session_id, player, session_manager = authenticated_session
+        headers = {'Authorization': f'Bearer {session_id}'}
+
+        # dark-grotto's tile (1, 1) declares "npcs": [] in the map JSON
+        # (src/resources/maps/dark-grotto.json), and the session starts there.
+        npcs = _room(client, session_id)['npcs']
         assert isinstance(npcs, list)
-        # The default starting tile is unpopulated (see test_default_starting_map).
         assert npcs == []
+
+        # (4, 2) -- RockLedgeWest -- declares a Mynx named Ferdie.
+        response = client.get('/api/world/tile?x=4&y=2', headers=headers)
+        assert response.status_code == 200
+        roster = response.get_json()['tile']['npcs']
+        assert [npc['name'] for npc in roster] == ['Ferdie']
 
     def test_talk_to_npc(self, client, authenticated_session):
         """Opening chat with an NPC that is not here is a 400 naming the id."""
@@ -643,8 +685,11 @@ class TestErrorHandling:
     These previously requested ``/api/world/room``, which has no route: they
     got the same 404 for a missing header, an invalid session and a malformed
     header alike, and would have passed with authentication deleted entirely.
-    They now use ``/api/world/tile``, a real ``@require_auth`` route, and
-    assert the specific 401 body the middleware emits for each case.
+    They now use ``/api/world/tile``, which really is authenticated -- not by
+    a ``@require_auth`` decorator (``get_tile`` carries none; nothing in
+    ``src/api/routes/world.py`` does) but by the ``get_session_and_player()``
+    call at the top of its body, which is why the 401 bodies asserted below
+    are the middleware's own.
     """
 
     def test_missing_json_body(self, client, authenticated_session):
@@ -680,8 +725,16 @@ class TestErrorHandling:
         assert data['success'] is False
         assert data['error'] == 'Missing direction'
 
-    def test_expired_session(self, client):
-        """A well-formed Bearer naming no live session is a 401."""
+    def test_unknown_session(self, client):
+        """A well-formed Bearer naming no live session is a 401.
+
+        Named ``test_expired_session``, but ``expired_session_id`` is simply
+        not a key in the session store, so this takes
+        ``SessionManager.get_session``'s not-in-dict branch and never reaches
+        ``is_expired()``. Genuine expiry is covered in
+        ``test_routes_combat_comprehensive.py``, which pushes a real session's
+        ``expires_at`` into the past.
+        """
         response = client.get(
             '/api/world/tile',
             headers={'Authorization': 'Bearer expired_session_id'}

@@ -10,6 +10,13 @@ Tests the inventory/equipment endpoints:
 - POST /api/inventory/unequip - Unequip an item
 - GET /api/inventory/compare - Compare items
 - GET /api/inventory/stats - Get player stats
+
+Every URL literal in this file is contract-checked by
+``tests/api/test_route_prefix_contract.py``, including the ones in the
+``endpoints = [...]`` lists the two require-auth tests loop over: those are
+not verb calls, so the guard's second pass reads them as plain literals. A
+routeless URL there would 404 for every credential and the "must be 401"
+assertions would have been passing against nothing.
 - GET /api/inventory/currency - Get currency info
 """
 

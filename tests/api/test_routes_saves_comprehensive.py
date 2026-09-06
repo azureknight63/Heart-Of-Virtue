@@ -1,4 +1,12 @@
-"""Comprehensive tests for saves routes."""
+"""Comprehensive tests for saves routes.
+
+Every URL literal in this file is contract-checked by
+``tests/api/test_route_prefix_contract.py``: a URL with no rule in
+``app.url_map`` fails there, and so does a request whose verb the matching
+rule does not serve -- ``test_delete_rule_rejects_a_post_to_saves_load``
+below is the one deliberate exception, registered in that guard's
+``ALLOWED_METHOD_MISMATCH``.
+"""
 
 import asyncio
 import sys
@@ -423,12 +431,16 @@ class TestCreateSaveNameValidation:
 class TestLoadSaveRoute:
     """Test POST /saves/<id>/load endpoint."""
 
-    def test_load_save_missing_id(self, client, authenticated_session):
-        """Test load save without ID in path.
+    def test_delete_rule_rejects_a_post_to_saves_load(
+        self, client, authenticated_session
+    ):
+        """POST /api/saves/load is a 405 from the DELETE-only rule.
 
-        ``/api/saves/load`` matches the ``/api/saves/<save_id>`` rule, which
-        is DELETE-only, so a POST there is a 405 -- not the 404 the old
-        ``>= 400`` assertion left ambiguous.
+        Nothing here reaches the load endpoint: ``/api/saves/load`` matches
+        ``/api/saves/<save_id>`` with ``save_id="load"``, and that rule serves
+        DELETE only, so Werkzeug refuses the verb while routing and the view
+        never runs. Named ``test_load_save_missing_id`` while it asserted
+        ``>= 400``, which said neither what it hit nor why.
         """
         session_id, _, _ = authenticated_session
         response = client.post(

@@ -4,10 +4,15 @@ API Route Integration Tests - Tier 1
 Implements 9 core API route tests covering:
 - Test 1-3: GET /api/world/tile (query, boundary, error cases)
 - Test 4-5: POST /api/combat/move (valid move, invalid move)
-- Test 6-7: POST /api/inventory/use-item (use, error handling)
+- Test 6-7: POST /api/inventory/use (use, error handling)
 - Test 8-9: Integration tests (multi-step workflows)
 
-Expected coverage gain: +2-3% (11-23% → 25-30%)
+Every URL literal in this file is contract-checked by
+``tests/api/test_route_prefix_contract.py``: a URL with no rule in
+``app.url_map`` fails there, as does a request whose verb the matching rule
+does not serve. That guard exists because ``status_code in [200, 404]`` against
+a routeless URL is satisfied by Flask's own 404 and tests nothing -- which is
+what the three ``/api/inventory/use-item`` requests here used to do.
 """
 
 import sys
@@ -95,14 +100,13 @@ class TestWorldRoutesTier1:
             headers=headers
         )
 
-        # Should return 404 for out-of-bounds or 200 with success=false
-        assert response.status_code in [404, 200]
+        # dark-grotto has no (999, 999): GameService.get_tile reports the
+        # miss and the route turns it into a 404. Not a range -- the branch
+        # that returned 200 with success=false does not exist.
+        assert response.status_code == 404
         data = response.get_json()
-
-        if response.status_code == 404:
-            assert data["success"] is False
-        else:
-            assert data["success"] is False or "error" in data
+        assert data["success"] is False
+        assert data["error"] == "Tile not found"
 
     # ========== Test 3: GET /world/tile - Missing Parameters ==========
 
