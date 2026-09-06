@@ -3773,10 +3773,16 @@ class GameService:
         # Clear ally combat state — filter to living allies first, then clear their flags.
         # Fight-scoped allies (CombatEventConfig.ally_list, issue #427) are dropped here
         # too — fleeing ends their one-fight enrollment same as victory/defeat would.
+        # `a is not player`, not `[1:]`. The other three exits filter by
+        # identity; flee was the only one depending on "the player is always
+        # index 0", and if that ever broke it would enrol him in his own ally
+        # list twice.
         living_allies = [
             a
-            for a in getattr(player, "combat_list_allies", [])[1:]
-            if a.is_alive() and getattr(a, "event_temp_ally", False) is not True
+            for a in getattr(player, "combat_list_allies", [])
+            if a is not player
+            and a.is_alive()
+            and getattr(a, "event_temp_ally", False) is not True
         ]
         for ally in living_allies:
             ally.in_combat = False
@@ -3788,6 +3794,15 @@ class GameService:
         # here (which is what this used to do) skips refresh_stat_bonuses and
         # on_removal, leaving a departed state's stat delta baked in for good.
         end_combat_cleanup(player)
+
+        # Victory and load both did this and flee did not, so a player who
+        # burned a single-use equip state (PhoenixRevive) and then FLED lost it
+        # permanently -- until he won a fight, reloaded, or re-equipped the
+        # item. The teardown being written out once per exit is why a step
+        # could go missing from exactly one of them; `Player.recharge_equip_states`
+        # documents its callers as "victory or session load", which described
+        # the call sites rather than the rule.
+        player.recharge_equip_states()
 
         if hasattr(player, "_combat_adapter"):
             del player._combat_adapter

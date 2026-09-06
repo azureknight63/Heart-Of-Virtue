@@ -3002,3 +3002,164 @@ class TestHeadroomRendersAnAbsoluteReset:
         stats = GenericLLMClient.provider_saturation()["providers"]["groq"]
         assert isinstance(stats["reset_at"], datetime)
         assert "resets 20" in GenericLLMClient.format_headroom(stats)
+
+
+class TestPlayerTextIsNotAFormatString:
+    """`generate_npc_turn` used player text as a printf format string.
+
+    The prompt was assembled from four adjacent string literals, the last of
+    which ended ``' % _QUALITY_VALUES``. Implicit concatenation binds tighter
+    than any operator, so ``%`` applied to the WHOLE group -- including
+    ``history_block`` and ``task``, i.e. the replayed conversation and the
+    player's current line.
+
+    Measured: ``"Is it 50% more?"`` raised ``ValueError: unsupported format
+    character 'm'``; a literal ``"%s"`` raised ``TypeError: not enough
+    arguments``. ``_generate_turn`` catches both, so the turn degraded to
+    canned dialogue -- and because the line is persisted into the exchange
+    history and replayed on every later prompt, it degraded for the rest of
+    that conversation and across a save/load.
+
+    ``generate_turn`` (the production combined path) uses f-strings throughout
+    and was never affected, which is why this survived nine review rounds.
+    """
+
+    _HOSTILE = [
+        "Is it 50% more?",
+        "%s",
+        "100%",
+        "%(name)s",
+        "%d gold?",
+        "50%% off?",
+    ]
+
+    @pytest.mark.parametrize("jean_text", _HOSTILE)
+    def test_a_percent_in_player_text_still_builds_a_prompt(
+        self, monkeypatch, jean_text
+    ):
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
+        adapter = NpcChatLLMAdapter()
+        raw = json.dumps(
+            {
+                "npc_text": "Aye.",
+                "conversation_quality": "neutral",
+                "conversation_end": False,
+                "reputation_delta": 0,
+            }
+        )
+        with patch.object(adapter, "_call_llm", return_value=raw) as mock_call:
+            result = adapter.generate_npc_turn(
+                "sys", [], is_opening=False, jean_text=jean_text
+            )
+        assert result is not None, jean_text
+        # And the text really did reach the prompt -- a builder that dropped
+        # it would also "not raise".
+        assert jean_text in mock_call.call_args[0][1], jean_text
+
+    @pytest.mark.parametrize("jean_text", _HOSTILE)
+    def test_a_percent_in_replayed_history_still_builds_a_prompt(
+        self, monkeypatch, jean_text
+    ):
+        """The worse half: history is replayed on EVERY later turn, so one
+        such line poisoned the conversation rather than one exchange."""
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
+        adapter = NpcChatLLMAdapter()
+        raw = json.dumps(
+            {
+                "npc_text": "Aye.",
+                "conversation_quality": "neutral",
+                "conversation_end": False,
+                "reputation_delta": 0,
+            }
+        )
+        history = [{"npc": "The ferry runs at dawn.", "jean": jean_text}]
+        with patch.object(adapter, "_call_llm", return_value=raw):
+            result = adapter.generate_npc_turn(
+                "sys", history, is_opening=False, jean_text="And the fee?"
+            )
+        assert result is not None, jean_text
+
+
+class TestNoPromptBuilderUsesPercentFormatting:
+    """The shape, banned rather than the instance.
+
+    An f-string never needs ``%``. When one appears on the left of a ``%``
+    operator it is because implicit concatenation has swallowed the literals
+    around it -- which is exactly how player text became a format string. The
+    scan is structural and repo-wide, so the next builder written that way
+    fails here rather than in a player's conversation.
+    """
+
+    _SCANNED = ("ai", "src")
+
+    def _offenders(self):
+        import ast
+        from pathlib import Path
+
+        found = []
+        for root in self._SCANNED:
+            for path in sorted(Path(root).rglob("*.py")):
+                try:
+                    tree = ast.parse(path.read_text(encoding="utf-8"))
+                except SyntaxError:  # pragma: no cover - not our file to fix
+                    continue
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.BinOp):
+                        continue
+                    if not isinstance(node.op, ast.Mod):
+                        continue
+                    if isinstance(node.left, ast.JoinedStr):
+                        found.append("%s:%d" % (path.as_posix(), node.lineno))
+        return found
+
+    def test_the_scan_reads_a_real_corpus(self):
+        """Non-vacuity: a scan over nothing bans nothing."""
+        from pathlib import Path
+
+        files = [p for root in self._SCANNED for p in Path(root).rglob("*.py")]
+        assert len(files) > 50, len(files)
+
+    def test_no_f_string_is_the_left_operand_of_a_percent(self):
+        offenders = self._offenders()
+        assert offenders == [], (
+            "an f-string is the left operand of `%` at %s. Adjacent string "
+            "literals concatenate before `%` is applied, so the operator acts "
+            "on the whole group -- including any interpolated player or model "
+            "text, which then gets read as a printf format string. Use an "
+            "f-string for the substitution instead." % ", ".join(offenders)
+        )
+
+    def test_the_scan_recognises_the_original_shape(self):
+        """Guard-the-guard, against the code that actually shipped."""
+        import ast
+
+        source = (
+            'user = (\n'
+            '    f"{history_block}\\n"\n'
+            '    \'{"quality": "%s", \' % values\n'
+            ')\n'
+        )
+        tree = ast.parse(source)
+        hits = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.BinOp)
+            and isinstance(n.op, ast.Mod)
+            and isinstance(n.left, ast.JoinedStr)
+        ]
+        assert len(hits) == 1, ast.dump(tree)
+
+    def test_the_scan_leaves_ordinary_percent_formatting_alone(self):
+        """The control. `"%s" % x` on a plain literal is idiomatic here and
+        must not be flagged, or the ban is unusable."""
+        import ast
+
+        tree = ast.parse('msg = "%s failed" % name\nlog = "%d of %d" % (a, b)\n')
+        hits = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.BinOp)
+            and isinstance(n.op, ast.Mod)
+            and isinstance(n.left, ast.JoinedStr)
+        ]
+        assert hits == []

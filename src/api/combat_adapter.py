@@ -1439,6 +1439,20 @@ class ApiCombatAdapter:
                 ally.in_combat = False
             self.player.combat_list_allies = [self.player] + existing_allies
 
+            # THE FOURTH EXIT. Defeat is a combat exit like flee, load and
+            # victory, and it was the one nobody counted: the fix that taught
+            # the other three to call the engine was written against a list of
+            # "three exits", and the guard that was supposed to hold it grepped
+            # whole FILES for the name -- so this file satisfied it through the
+            # victory call thirty lines down while this omission sat invisible.
+            #
+            # Without it a player defeated with Dodging up keeps the state and
+            # its finesse delta on the live Player: State.process decrements
+            # neither clock outside combat and nothing else removes it.
+            functions.end_combat_cleanup(self.player)
+            self.player.recharge_equip_states()
+            self.player.current_move = None
+
             return result
 
         # Evaluate all combat events one final time when enemies are defeated
@@ -2077,8 +2091,14 @@ class ApiCombatAdapter:
         # Victory used to strip NOTHING, so a combat-only state such as
         # Dodging survived it forever: State.process decrements neither
         # clock out of combat, and nothing else removes it. Flee and load
-        # stripped (without refreshing); victory did not strip at all —
-        # three exits, three rules. All three now call the engine.
+        # stripped (without refreshing); victory did not strip at all.
+        #
+        # There are FOUR exits, not the three that comment used to claim --
+        # defeat (`_execute_move_inner`) is the fourth and was missed by the
+        # first pass. All four now call the engine, and
+        # `tests/test_end_combat_cleanup.py` locates them by AST rather than
+        # by grepping for the name, which is what let a whole file pass on
+        # the strength of one call site.
         functions.end_combat_cleanup(self.player)
         # Recharge single-use equip states (e.g. PhoenixRevive) consumed this battle
         self.player.recharge_equip_states()

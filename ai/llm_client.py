@@ -3405,8 +3405,18 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{history_block}\n\n"
             f"[TASK]\n{task}\n\n"
             "Return ONLY this JSON (no code fences, no extra keys):\n"
-            '{"npc_text": "...", "conversation_quality": "%s", ' % _QUALITY_VALUES
-            + '"conversation_end": false, "reputation_delta": 0}\n'
+            # f-string, NOT `"..." % _QUALITY_VALUES`. Implicit concatenation
+            # binds tighter than `%`, so the operator applied to the WHOLE
+            # preceding literal group -- which includes `history_block` and
+            # `task`, i.e. the replayed conversation and the player's own line.
+            # A player typing "Is it 50% more?" raised
+            # `ValueError: unsupported format character 'm'`; a literal "%s"
+            # raised TypeError. Either is swallowed by `_generate_turn`'s
+            # except, so that conversation fell back to canned dialogue for
+            # good. `generate_turn` uses f-strings throughout and was never
+            # affected, which is why this survived.
+            f'{{"npc_text": "...", "conversation_quality": "{_QUALITY_VALUES}", '
+            '"conversation_end": false, "reputation_delta": 0}\n'
             f"{_QUALITY_GLOSS}\n"
             "Set conversation_end to true ONLY if the NPC is done talking entirely (loquacity exhausted or deeply offended).\n"
             f"{_NPC_TEXT_RULE}\n"
