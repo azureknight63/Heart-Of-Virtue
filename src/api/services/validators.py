@@ -11,7 +11,23 @@ from typing import Any, Dict, List, Optional, Tuple
 # entirely from the rest survives stripping yet still displays as blank. That is
 # how a save name of "\x00" reached the load list as an empty row (issue #523),
 # and the same hole applied to every field guarded by validate_string_field.
-_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Cn", "Co", "Cs", "Zl", "Zp", "Zs"})
+# Categories whose codepoints either render as nothing (Cc/Cf and the Z*
+# separators) or have no dependable rendering at all (Cs/Co/Cn -- surrogates,
+# private use, and codepoints unassigned in THIS interpreter's Unicode table,
+# so the classification is version-dependent by design). Mn/Me are combining
+# marks: they carry no advance width of their own, so a string of nothing but
+# marks has no base character to attach to and shows nothing.
+_INVISIBLE_CATEGORIES = frozenset(
+    {"Cc", "Cf", "Cn", "Co", "Cs", "Zl", "Zp", "Zs", "Mn", "Me"}
+)
+
+# Codepoints that render blank despite a category that says otherwise, so the
+# category test alone lets them through. The Hangul fillers and the halfwidth
+# filler are Lo (a "letter"); U+2800 is So (a "symbol"); U+3164 is the classic
+# blank-username character. A name made only of these is the empty load-list
+# row issue #523 was filed for, which is why the category check is not enough
+# on its own.
+_BLANK_GLYPHS = frozenset("\u115f\u1160\u3164\uffa0\u2800\u17b4\u17b5\u180e")
 
 
 def has_visible_characters(value: str) -> bool:
@@ -29,7 +45,11 @@ def has_visible_characters(value: str) -> bool:
         True if at least one character is visible, False for an empty string or
         one made entirely of invisible codepoints.
     """
-    return any(unicodedata.category(ch) not in _INVISIBLE_CATEGORIES for ch in value)
+    return any(
+        unicodedata.category(ch) not in _INVISIBLE_CATEGORIES
+        and ch not in _BLANK_GLYPHS
+        for ch in value
+    )
 
 
 def validate_required_fields(

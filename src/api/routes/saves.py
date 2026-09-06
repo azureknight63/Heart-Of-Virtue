@@ -24,11 +24,17 @@ logger = logging.getLogger(__name__)
 # mirrored-literal drift as a recurring failure mode in this codebase).
 MAX_SAVE_NAME_LENGTH = 100
 
-# Used when the caller supplies no "name" at all (e.g. an autosave POSTed as
-# just {"is_autosave": true}). Server-generated, so it bypasses the rules by
-# construction: validate_save_name returns it before any check runs. That is
-# what keeps the validation from ever being able to reject an autosave.
+# Used when the caller supplies no "name" at all. Server-generated, so both
+# bypass the rules by construction: validate_save_name returns one before any
+# check runs, which is what keeps validation from ever rejecting an autosave.
+#
+# The two are distinct because the name is what the load list renders: an
+# autosave POSTed as just {"is_autosave": true} is stored with the flag set, so
+# labelling it "Manual Save" put a row in front of the player describing itself
+# as the opposite of what it is. useAutosave sends the "Autosave" literal
+# explicitly today, so this default is the fallback for a caller that does not.
 DEFAULT_SAVE_NAME = "Manual Save"
+DEFAULT_AUTOSAVE_NAME = "Autosave"
 
 
 def validate_save_name(data):
@@ -40,7 +46,10 @@ def validate_save_name(data):
 
     Rules (deliberately conservative -- reject rather than repair, so a mistake
     is reported instead of silently rewritten):
-      * absent            -> DEFAULT_SAVE_NAME, no validation
+      * absent            -> the server default for this save's kind
+                             (DEFAULT_AUTOSAVE_NAME when the body sets
+                             is_autosave, else DEFAULT_SAVE_NAME), no
+                             validation
       * not a string      -> error (no coercion; ``None`` must not become "None")
       * blank             -> error (no auto-naming, which would hide the mistake)
       * > MAX_SAVE_NAME_LENGTH after stripping -> error (no truncation, which
@@ -52,6 +61,8 @@ def validate_save_name(data):
     empty, which plain ``.strip()`` does not.
     """
     if "name" not in data:
+        if data.get("is_autosave"):
+            return DEFAULT_AUTOSAVE_NAME, None
         return DEFAULT_SAVE_NAME, None
 
     raw = data["name"]
