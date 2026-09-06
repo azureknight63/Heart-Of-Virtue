@@ -96,7 +96,24 @@ def buy_item():
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
-        quantity = int(data.get("quantity", 1))
+        # Converted HERE, inside its own guard, rather than inside a
+        # function-wide `except (ValueError, TypeError)`. That handler was
+        # added for this one `int()` call and then spanned the whole body
+        # including `game_service.shop_*`, so an engine TypeError came back to
+        # the player as `400 "Invalid input: <internal message>"` -- a server
+        # fault reported as a client one, with the exception text echoed.
+        try:
+            quantity = int(data.get("quantity", 1))
+        except (TypeError, ValueError):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Quantity must be a whole number",
+                    }
+                ),
+                400,
+            )
         if quantity < 1:
             return jsonify({"success": False, "error": "Quantity must be at least 1"}), 400
 
@@ -112,8 +129,6 @@ def buy_item():
             current_app.session_manager.save_session(session.session_id)
 
         return jsonify(result), 200 if result.get("success") else 400
-    except (ValueError, TypeError) as e:
-        return jsonify({"success": False, "error": f"Invalid input: {e}"}), 400
     except Exception:
         logger.exception("Unhandled error in buy_item")
         return jsonify({"success": False, "error": "An internal error occurred"}), 500
@@ -149,7 +164,24 @@ def sell_item():
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
-        quantity = int(data.get("quantity", 1))
+        # Converted HERE, inside its own guard, rather than inside a
+        # function-wide `except (ValueError, TypeError)`. That handler was
+        # added for this one `int()` call and then spanned the whole body
+        # including `game_service.shop_*`, so an engine TypeError came back to
+        # the player as `400 "Invalid input: <internal message>"` -- a server
+        # fault reported as a client one, with the exception text echoed.
+        try:
+            quantity = int(data.get("quantity", 1))
+        except (TypeError, ValueError):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Quantity must be a whole number",
+                    }
+                ),
+                400,
+            )
         if quantity < 1:
             return jsonify({"success": False, "error": "Quantity must be at least 1"}), 400
 
@@ -165,8 +197,6 @@ def sell_item():
             current_app.session_manager.save_session(session.session_id)
 
         return jsonify(result), 200 if result.get("success") else 400
-    except (ValueError, TypeError) as e:
-        return jsonify({"success": False, "error": f"Invalid input: {e}"}), 400
     except Exception:
         logger.exception("Unhandled error in sell_item")
         return jsonify({"success": False, "error": "An internal error occurred"}), 500

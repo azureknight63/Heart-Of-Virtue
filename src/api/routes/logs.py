@@ -204,7 +204,23 @@ def receive_browser_logs():
         if not isinstance(logs, list):
             return jsonify({"error": "No logs provided"}), 400
 
-        session_id = str(data.get("session_id", "unknown"))
+        # Bounded HERE, before anything else touches it, because this is the
+        # one client-supplied field that is re-emitted on EVERY written line
+        # (see the log_line below) rather than once per request.
+        #
+        # It was unbounded, and nothing downstream shortened it: `str()`,
+        # `os.path.basename` and the charset `re.sub` are all
+        # length-preserving. With MAX_LOGS_PER_REQUEST entries in one body, a
+        # ~1 MiB session_id wrote ~500 MB -- on a route with no auth, at 60
+        # requests per minute per IP, with the retention sweep floored at
+        # CLEANUP_MIN_INTERVAL_SECONDS so growth between sweeps is unbounded.
+        # `cleanup_by_size` then evicts oldest-first, destroying genuine logs.
+        #
+        # The bounds comment at the top of this module claimed to cap "what a
+        # single request can write" -- and it does, for every field of an
+        # ENTRY. session_id is a sibling of `logs`, not a member of an entry,
+        # so it fell outside an enumeration derived from the entry schema.
+        session_id = str(data.get("session_id", "unknown"))[:MAX_SHORT_FIELD_LENGTH]
 
         if not logs:
             return jsonify({"message": "No logs to write"}), 200

@@ -184,13 +184,39 @@ class TestSavesRoutes:
         rv = client.post("/api/saves", headers=AUTH, json={})
         assert rv.status_code == 400
 
-    def test_create_save_value_error_limit(self, app):
-        app._test_gs.save_game = AsyncMock(side_effect=ValueError("Too many saves"))
+    def test_create_save_limit_is_echoed_at_403(self, app):
+        """The declared type is echoed, because the player can act on it.
+
+        Raised as `SaveLimitReached` rather than a plain ValueError: the route
+        decides what is safe to show by TYPE now, not by the message surviving
+        a filter. See test_create_save_infra_value_error_is_masked.
+        """
+        from src.api.services.auth_service import SaveLimitReached
+
+        app._test_gs.save_game = AsyncMock(
+            side_effect=SaveLimitReached("Too many saves")
+        )
         with app.test_client() as c:
             rv = c.post("/api/saves", headers=AUTH, json={"name": "Extra"})
         assert rv.status_code == 403
         data = rv.get_json()
         assert "Too many saves" in data["error"]
+
+    def test_create_save_infra_value_error_is_masked(self, app):
+        """The other half of the contract, and the regression it closes.
+
+        `save_game` reaches `db.get_client()`, which raises
+        `ValueError("TURSO_DATABASE_URL is not set")`. This route used to
+        answer that verbatim in a 403 body -- the registration leak, one route
+        over, mislabelled as the save limit.
+        """
+        leak = "could not connect to postgres://svc:hunter2@db.internal:5432/hov"
+        app._test_gs.save_game = AsyncMock(side_effect=ValueError(leak))
+        with app.test_client() as c:
+            rv = c.post("/api/saves", headers=AUTH, json={"name": "Extra"})
+        assert rv.status_code == 503
+        assert leak not in rv.data.decode()
+        assert "hunter2" not in rv.data.decode()
 
     def test_create_save_no_auth(self, client):
         rv = client.post("/api/saves", headers=NO_AUTH, json={"name": "X"})

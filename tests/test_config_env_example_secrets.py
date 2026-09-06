@@ -82,9 +82,43 @@ class TestTheGuardsStillAcceptARealSecret:
     assertions above and take the deployment down."""
 
     def test_a_real_secret_key_boots(self, monkeypatch):
+        """Both production credentials are set, because production needs both.
+
+        ``runtime_config`` now refuses a missing ENCRYPTION_KEY as well --
+        ``AuthService``'s own check runs at import time and so cannot see a
+        config class, which left ``create_app(ProductionConfig)`` minting an
+        ephemeral Fernet key. Setting only SECRET_KEY here would now be a
+        production boot this method's own premise says should fail.
+        """
+        from cryptography.fernet import Fernet
+
         monkeypatch.setenv("FLASK_ENV", "production")
         monkeypatch.setenv("SECRET_KEY", "0" * 64)
+        monkeypatch.setenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
         assert Config.runtime_config()["SECRET_KEY"] == "0" * 64
+
+    def test_production_refuses_a_missing_encryption_key(self, monkeypatch):
+        """The half that was left open when the SECRET_KEY guard learned to
+        ask the config class. `create_app(ProductionConfig)` with FLASK_ENV
+        unset skipped it entirely and silently generated a key, orphaning every
+        already-encrypted email on the next restart."""
+        monkeypatch.delenv("FLASK_ENV", raising=False)
+        monkeypatch.setenv("SECRET_KEY", "0" * 64)
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+        from src.api.config import ProductionConfig
+
+        with pytest.raises(RuntimeError, match="ENCRYPTION_KEY"):
+            ProductionConfig.runtime_config()
+
+    def test_development_still_boots_without_either(self, monkeypatch):
+        """The control on the control. A dev machine must not need production
+        credentials configured, or nobody can run the game."""
+        from src.api.config import DevelopmentConfig
+
+        monkeypatch.delenv("FLASK_ENV", raising=False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+        assert DevelopmentConfig.runtime_config()["SECRET_KEY"]
 
     def test_a_real_encryption_key_boots(self, monkeypatch):
         from cryptography.fernet import Fernet

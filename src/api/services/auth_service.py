@@ -61,6 +61,29 @@ class RegistrationValidationError(ValueError):
     """
 
 
+class SaveLimitReached(ValueError):
+    """The player has as many manual saves as the game allows.
+
+    Lives beside :class:`RegistrationValidationError` and for the same reason:
+    "this message is safe to show the player" is carried by the TYPE, because
+    carrying it in the message text is what leaked a database password out of
+    the registration route.
+
+    ``routes/saves.py`` had the identical shape one route over -- ``except
+    ValueError as ve: return str(ve), 403`` around a call that reaches
+    ``db.get_client()``, which raises ``ValueError("TURSO_DATABASE_URL is not
+    set")``. An authenticated player against a misconfigured deployment got
+    the internal variable name back in a 403 body, mislabelled as the save
+    limit. The fix for the registration route was applied to the SITE and not
+    to the CLASS, and the AST guard written to hold it was scoped to
+    ``create_user`` alone, so it could not see this.
+
+    Not raised by ``AuthService``; it lives here because this module is where
+    the API's "safe to echo" vocabulary is declared, and a second home for the
+    same idea is how the two would drift.
+    """
+
+
 class AuthService:
     def __init__(self):
         self.ph = PasswordHasher()

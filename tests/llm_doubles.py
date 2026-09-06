@@ -783,6 +783,40 @@ def make_generic_client(
     return _build(GenericLLMClient, provider, model, api_key, overrides)
 
 
+def _refuse_to_dial(*args, **kwargs):
+    """Stand-in for ``requests.post``/``get`` while a unit test is running.
+
+    THE HOLE THIS CLOSES. ``tests/conftest.py`` and
+    :func:`isolate_llm_class_state` blank every credential in the
+    ENVIRONMENT. But :func:`_build` constructs its clients with ``__new__``
+    and assigns ``obj._openrouter_api_key = "or-key"`` straight onto the
+    instance, where no environment control can reach it. So a test that drives
+    ``_try_http``, ``_openrouter_attempt`` or ``_openrouter_chat_single``
+    without patching the transport makes a REAL HTTPS POST to openrouter.ai,
+    carrying the fixture's prompt text in the body.
+
+    Every test in the suite currently does patch. That is precisely the
+    problem: "the author remembered" is the only control, and
+    ``tests/conftest.py`` names that as unacceptable in its own docstring --
+    having watched it fail four times over, with 20 real GitHub issues filed,
+    real rows written to the production Turso database, real provider credit
+    spent, and an SMTP password reachable from ``tools/inquisitor.py``.
+
+    Installed with ``monkeypatch.setattr`` onto the real ``requests`` module,
+    which is deliberate and is what makes it compatible rather than
+    obstructive: a test doing ``patch("requests.post", ...)`` or
+    ``patch.object(llm.requests, "post", ...)`` replaces this for its own
+    duration, exactly as before. Only an UNPATCHED call reaches here.
+    """
+    raise AssertionError(
+        "a unit test tried to make a real HTTP request from ai.llm_client. "
+        "Patch the transport in this test (`patch(\"requests.post\", ...)` "
+        "is the idiom used elsewhere in this suite). The fixture credentials "
+        "are fake, but the URL is not: unpatched, this dials a live provider "
+        "with the prompt text in the request body."
+    )
+
+
 @pytest.fixture(autouse=True)
 def isolate_llm_class_state(monkeypatch, tmp_path):
     """Reset the process-wide LLM class state around every test in a module.
@@ -839,6 +873,14 @@ def isolate_llm_class_state(monkeypatch, tmp_path):
         "NPC_CHAT_LLM_MODEL",
     ):
         monkeypatch.setenv(key, "")
+    # The STRUCTURAL half of the same job. Blanking the environment cannot
+    # reach a credential written straight onto an instance by `_build`, so the
+    # transport refuses instead. See :func:`_refuse_to_dial` -- a test's own
+    # patch still wins, because this is set on the real module.
+    if llm.requests is not None:
+        for verb in ("post", "get", "put", "delete", "head", "request"):
+            if hasattr(llm.requests, verb):
+                monkeypatch.setattr(llm.requests, verb, _refuse_to_dial)
     yield
     GenericLLMClient.reset_class_state()
     GenericLLMClient._nightly_refresh_started = False

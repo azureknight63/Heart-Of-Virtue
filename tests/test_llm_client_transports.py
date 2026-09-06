@@ -17,6 +17,10 @@ Plus the third OpenRouter candidate loop, ``_validate_and_fallback_openrouter``,
 which the 429 work never reached.
 """
 
+from unittest.mock import patch
+
+import pytest
+
 import ai.llm_client as llm
 from ai.llm_client import GenericLLMClient
 from tests.llm_doubles import Resp, make_chat_adapter, make_generic_client
@@ -279,3 +283,65 @@ class TestValidationRespectsTheAccountQuota:
 
         assert client._available is False
         assert client.enabled is False
+
+
+class TestNoUnitTestCanReachTheNetwork:
+    """The credential blanking has a hole, and this is the structural patch.
+
+    ``tests/conftest.py`` and ``isolate_llm_class_state`` blank every provider
+    credential in the ENVIRONMENT. ``tests/llm_doubles._build`` then constructs
+    its clients with ``__new__`` and assigns ``_openrouter_api_key = "or-key"``
+    directly onto the instance, which no environment control can reach. So the
+    only thing standing between a transport test and a live HTTPS POST to
+    openrouter.ai was the author remembering to patch ``requests``.
+
+    Four incidents have already come from exactly that control: 20 real GitHub
+    issues filed, real rows in the production Turso database, real provider
+    credit spent, and an SMTP password reachable from ``tools/inquisitor.py``.
+    ``tests/conftest.py`` names "the author remembered" as unacceptable in its
+    own docstring.
+    """
+
+    def test_an_unpatched_post_raises_instead_of_dialling(self):
+        """The backstop, fired directly."""
+        with pytest.raises(AssertionError, match="real HTTP request"):
+            llm.requests.post("https://openrouter.ai/api/v1/chat/completions")
+
+    def test_an_unpatched_get_raises_too(self):
+        with pytest.raises(AssertionError, match="real HTTP request"):
+            llm.requests.get("https://openrouter.ai/api/v1/models")
+
+    def test_a_transport_on_a_credentialed_client_cannot_dial(self):
+        """The real shape: a client built the way every transport test builds
+        one, carrying a fake-but-present key, driven without a patch.
+
+        Before the backstop this made a live request. It is asserted through
+        the transport rather than through ``requests`` directly, because the
+        transport is what a forgetful test actually calls.
+        """
+        client = make_generic_client(provider="openrouter", model="x/y")
+        assert client._openrouter_api_key, "probe is vacuous without a key"
+        with pytest.raises(AssertionError, match="real HTTP request"):
+            llm.requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json={"model": client.model},
+            )
+
+    def test_a_deliberate_patch_still_wins(self):
+        """The control, and the reason the refusal is installed on the real
+        module rather than on a proxy: the suite's existing idiom must keep
+        working, or the backstop is an obstruction rather than a guard."""
+        resp = Resp(200, {"choices": [{"message": {"content": "ok"}}]})
+        with patch("requests.post", return_value=resp) as posted:
+            got = llm.requests.post("https://example.invalid/x")
+        assert got is resp
+        assert posted.called
+
+    def test_the_refusal_is_restored_after_a_patch(self):
+        """A patch is for the duration of the patch. If monkeypatch's restore
+        and mock's restore ever fought, the backstop would silently stay off
+        for the rest of the session."""
+        with patch("requests.post", return_value=None):
+            pass
+        with pytest.raises(AssertionError, match="real HTTP request"):
+            llm.requests.post("https://example.invalid/x")

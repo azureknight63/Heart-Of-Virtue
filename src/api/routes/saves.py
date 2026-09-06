@@ -3,6 +3,7 @@
 import logging
 
 from flask import Blueprint, request, jsonify
+from src.api.services.auth_service import SaveLimitReached
 from src.api.middleware.auth import get_session_and_player, require_game_service
 
 saves_bp = Blueprint("saves", __name__)
@@ -113,9 +114,32 @@ async def create_save():
             save_id = await game_service.save_game(
                 player, save_name, session.db_user_id, is_autosave=is_autosave
             )
-        except ValueError as ve:
-            # Handle the 20 manual save limit
-            return jsonify({"success": False, "error": str(ve)}), 403
+        except SaveLimitReached as limit:
+            # The ONLY exception whose text is echoed here, and it is echoed
+            # because of its type. See routes/auth.py for the same rule and
+            # the leak that produced it.
+            return jsonify({"success": False, "error": str(limit)}), 403
+        except ValueError:
+            # Everything else is infrastructure until declared otherwise.
+            # This used to be the same `except ValueError: str(ve)` that leaked
+            # `could not connect to postgres://svc:<password>@...` out of the
+            # registration route -- and `save_game` reaches `db.get_client()`,
+            # which raises `ValueError("TURSO_DATABASE_URL is not set")`.
+            # Logged for the operator, masked for the player.
+            logger.exception("Save failed with a non-limit ValueError")
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "service_unavailable",
+                        "message": (
+                            "Saving is temporarily unavailable. Please try "
+                            "again later."
+                        ),
+                    }
+                ),
+                503,
+            )
 
         # save_game returns None only for an autosave skipped because
         # GameConfig.autosave_enabled is False (issue #450) -- not an error,

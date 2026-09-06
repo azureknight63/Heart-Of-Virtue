@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
 from src.api.constants import ITEM_USE_RANGE
+from src.api.services.auth_service import SaveLimitReached
 from src.functions import check_for_combat, end_combat_cleanup
+
+#: Manual saves one player may keep. Autosaves are not counted against it.
+#: Named because the number was written twice -- once in the check and once in
+#: the message the player reads -- so they could disagree.
+MAX_MANUAL_SAVES = 20
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
 from src.narration import capture_narration, narrate
@@ -3377,9 +3383,11 @@ class GameService:
             )
             res = await db.execute(count_sql, [user_id])
             count = res.rows[0][0]
-            if count >= 20:
-                raise ValueError(
-                    "Maximum number of manual saves reached (20). Please delete an existing save to create a new one."
+            if count >= MAX_MANUAL_SAVES:
+                raise SaveLimitReached(
+                    "Maximum number of manual saves reached (%d). Please "
+                    "delete an existing save to create a new one."
+                    % MAX_MANUAL_SAVES
                 )
 
         save_id = str(uuid.uuid4())

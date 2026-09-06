@@ -346,3 +346,180 @@ class TestTheServiceReadScanSeesThroughFormatting:
         source = auth.read_text(encoding="utf-8")
         assert direct_service_reads(source), "the helper no longer reads the service"
         assert message_copies(source), "the helper no longer owns the message"
+
+
+#: Exception types whose message a route may put in a response body.
+#:
+#: The rule is that "safe to echo" rides on the TYPE, never on the wording
+#: surviving a filter. A five-substring deny-list over free-form exception
+#: text is what returned
+#: ``could not connect to postgres://svc:<password>@db.internal:5432/hov``
+#: from an anonymous ``POST /api/auth/register``; the same shape then turned
+#: up untouched one route over in ``saves.py``, because the first fix was
+#: applied to the site rather than to the class and its guard was scoped to a
+#: single function.
+_ECHOABLE_EXCEPTIONS = frozenset(
+    {
+        "RegistrationValidationError",
+        "SaveLimitReached",
+    }
+)
+
+#: Modules exempt, with the reason. ``debug.py`` is registered only under
+#: ``app.config["TESTING"]`` (``_register_test_routes`` in ``src/api/app.py``),
+#: so it is unreachable in a deployed app and its echoes are a debugging
+#: convenience rather than a disclosure.
+_ECHO_EXEMPT_MODULES = {
+    "debug.py": (
+        "registered only when TESTING is set, so it is not reachable in a "
+        "deployed app -- see _register_test_routes in src/api/app.py"
+    ),
+}
+
+
+def _caught_type_names(handler):
+    """The exception names an ``except`` clause catches."""
+    caught = handler.type
+    if caught is None:
+        return {"<bare except>"}
+    parts = caught.elts if isinstance(caught, ast.Tuple) else [caught]
+    names = set()
+    for part in parts:
+        if isinstance(part, ast.Name):
+            names.add(part.id)
+        elif isinstance(part, ast.Attribute):
+            names.add(part.attr)
+    return names
+
+
+def _puts_alias_in(node, alias):
+    """True if ``alias`` reaches ``node`` as text -- ``str(e)`` or ``f"{e}"``."""
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
+            if inner.func.id == "str" and any(
+                isinstance(a, ast.Name) and a.id == alias for a in inner.args
+            ):
+                return True
+        if isinstance(inner, ast.FormattedValue):
+            for sub in ast.walk(inner.value):
+                if isinstance(sub, ast.Name) and sub.id == alias:
+                    return True
+    return False
+
+
+def exception_text_echoes(source: str):
+    """Every ``except ... as e`` whose ``e`` reaches a ``jsonify`` body."""
+    found = []
+    for handler in ast.walk(ast.parse(source)):
+        if not isinstance(handler, ast.ExceptHandler) or not handler.name:
+            continue
+        bodies = [
+            node
+            for node in ast.walk(handler)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "jsonify"
+        ]
+        if any(_puts_alias_in(body, handler.name) for body in bodies):
+            found.append((handler.lineno, frozenset(_caught_type_names(handler))))
+    return found
+
+
+class TestNoRouteEchoesAnUndeclaredExceptionToTheClient:
+    """A route may echo an exception's text only for a type declared safe.
+
+    THE INCIDENT. ``register`` decided what to disclose by scanning the message
+    for five substrings and echoing anything that matched none of them. A
+    ``ValueError`` reading ``could not connect to
+    postgres://svc:<password>@db.internal:5432/hov`` matched none, and went
+    back verbatim to an anonymous caller.
+
+    THE REASON IT NEEDED A SECOND FIX. That was closed by allow-listing
+    ``RegistrationValidationError`` in ``routes/auth.py`` -- and the guard
+    written to hold it scanned ``AuthService.create_user`` alone. ``saves.py``
+    had the identical ``except ValueError as ve: str(ve)`` around a call that
+    reaches ``db.get_client()``'s ``ValueError("TURSO_DATABASE_URL is not
+    set")``, and no guard could see it. The message even tripped two of the
+    markers the discarded deny-list used, so the mechanism that was replaced
+    would have caught this one.
+
+    So the scan is over every route module, and the exemptions are declared
+    with reasons rather than implied by scope.
+    """
+
+    def test_the_scan_reads_every_route_module(self):
+        """Non-vacuity: a scan over no modules permits anything."""
+        modules = _route_modules()
+        assert len(modules) >= 8, [m.name for m in modules]
+
+    def test_no_route_echoes_an_undeclared_exception(self):
+        offenders = []
+        for path in _route_modules():
+            if path.name in _ECHO_EXEMPT_MODULES:
+                continue
+            source = path.read_text(encoding="utf-8")
+            for lineno, caught in exception_text_echoes(source):
+                if caught & _ECHOABLE_EXCEPTIONS:
+                    continue
+                offenders.append(
+                    "%s:%d (catches %s)"
+                    % (path.name, lineno, ", ".join(sorted(caught)))
+                )
+        assert offenders == [], (
+            "these handlers put an exception's text into a response body for a "
+            "type not declared safe to echo: %s\n\n"
+            "The exception may carry infrastructure detail -- a connection "
+            "string, an env-var name, an internal path. If the message really "
+            "is player-facing advice, give it a declared type (beside "
+            "RegistrationValidationError) and add it to _ECHOABLE_EXCEPTIONS. "
+            "Otherwise log it and answer a fixed string."
+            % ", ".join(offenders)
+        )
+
+    def test_every_declared_echoable_type_exists(self):
+        """An allow-list entry for a type nobody raises is a licence lying
+        around waiting to excuse something."""
+        import src.api.services.auth_service as auth_service
+
+        missing = sorted(
+            name
+            for name in _ECHOABLE_EXCEPTIONS
+            if not isinstance(getattr(auth_service, name, None), type)
+        )
+        assert missing == [], missing
+
+    def test_every_exemption_carries_a_reason(self):
+        thin = sorted(
+            name
+            for name, reason in _ECHO_EXEMPT_MODULES.items()
+            if len(reason.split()) < 8
+        )
+        assert thin == [], thin
+
+    def test_every_exempt_module_still_exists(self):
+        """An exemption for a deleted module is dead weight that makes the
+        next reader trust the list less."""
+        names = {p.name for p in _route_modules()}
+        stale = sorted(set(_ECHO_EXEMPT_MODULES) - names)
+        assert stale == [], stale
+
+    def test_the_scan_recognises_both_spellings(self):
+        """Guard-the-guard, in the two forms the codebase has actually used:
+        ``str(e)`` (auth, saves) and an f-string (shop)."""
+        for source in (
+            "try:\n    pass\nexcept ValueError as e:\n"
+            "    return jsonify({'error': str(e)}), 400\n",
+            "try:\n    pass\nexcept ValueError as e:\n"
+            "    return jsonify({'error': f'Invalid input: {e}'}), 400\n",
+        ):
+            assert exception_text_echoes(source), source
+
+    def test_the_scan_leaves_a_logged_exception_alone(self):
+        """The control. Logging the text is correct and must not be flagged,
+        or the rule is unusable and someone will delete it."""
+        source = (
+            "try:\n    pass\nexcept ValueError as e:\n"
+            "    logger.exception('failed: %s', e)\n"
+            "    return jsonify({'error': 'An internal error occurred'}), 500\n"
+        )
+        assert exception_text_echoes(source) == []

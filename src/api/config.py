@@ -195,6 +195,27 @@ class Config:
             # restart) and is refused above for production.
             values["SECRET_KEY"] = secret or os.urandom(24).hex()
 
+        # The OTHER production guard, checked here for the reason this
+        # method exists at all.
+        #
+        # `AuthService.__init__` also refuses a missing ENCRYPTION_KEY in
+        # production -- but it runs at IMPORT time, on the module-level
+        # `auth_service = AuthService()` singleton, long before any config
+        # class is chosen. So it can only ever ask `normalized_env()`, and
+        # `create_app(ProductionConfig)` with FLASK_ENV unset walked straight
+        # past it and minted an ephemeral Fernet key, orphaning every
+        # already-encrypted email on the next restart.
+        #
+        # Teaching runtime_config the same rule is what closes that, because
+        # this is the one place that knows the answer from BOTH sources. The
+        # import-time check stays: it is the layer that catches an entry point
+        # which never reaches create_app.
+        #
+        # Checked after SECRET_KEY so a deployment missing both is told about
+        # the one that also breaks sessions.
+        if production and not (os.environ.get("ENCRYPTION_KEY") or "").strip():
+            raise RuntimeError("ENCRYPTION_KEY must be set in production")
+
         if not cls._pinned_by_subclass("SESSION_COOKIE_SECURE"):
             values["SESSION_COOKIE_SECURE"] = production
 
@@ -260,19 +281,27 @@ def config_for_env(env: Optional[str] = None) -> Type[Config]:
     That last clause used to rest on convention rather than on code: the flag
     came from :func:`normalized_env` alone, which made the claim true for these
     two callers and false for ``create_app(ProductionConfig)`` -- a supported
-    call that skipped every production guard. See :meth:`Config.runtime_config`.
+    call that skipped the SECRET_KEY guard, and then, for one more round, the
+    ENCRYPTION_KEY guard too. Both are now checked by
+    :meth:`Config.runtime_config`, which is the only place that knows the
+    answer from both sources; ``AuthService``'s own import-time check remains
+    as the layer for an entry point that never reaches ``create_app``.
 
     Unset and unrecognised are *not* the same thing, exactly as they are not
     for ``LOG_LEVEL`` in ``src/api/app.py::_resolve_log_level``. Unset means
     the operator said nothing and development is the right silent answer.
     ``FLASK_ENV=prod`` means the operator said "production" and got
     ``DEBUG=True``, ``SESSION_COOKIE_SECURE=False``, a fresh ``os.urandom(24)``
-    SECRET_KEY per worker, and localhost CORS origins — because *both*
-    production guards (``runtime_config``'s SECRET_KEY check and
-    ``AuthService``'s ENCRYPTION_KEY check) test ``normalized_env() ==
-    "production"``, so a near-miss skips them all with nothing said. Warning
-    rather than raising keeps a typo from taking a running deployment down,
-    but it does not let it pass in silence.
+    SECRET_KEY per worker, and localhost CORS origins — because a near-miss
+    selects ``DevelopmentConfig``, and every production guard keys off either
+    this mapping or :func:`normalized_env`, so it skips them all with nothing
+    said. Warning rather than raising keeps a typo from taking a running
+    deployment down, but it does not let it pass in silence.
+
+    (That paragraph used to say both guards test ``normalized_env() ==
+    "production"``. Since :meth:`Config.runtime_config` began asking the class
+    as well, that was false of the half it describes — and the sentence sat
+    fifteen lines under the corrected version of the same fact.)
     """
     name = normalized_env(env)
     config = _CONFIG_BY_ENV.get(name)

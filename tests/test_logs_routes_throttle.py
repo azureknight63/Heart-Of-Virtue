@@ -16,6 +16,7 @@ satisfy the negative assertions and break the endpoint.
 """
 
 import ast
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -289,3 +290,111 @@ class TestAHandledFailureCannotBecomeAnUnhandledOne:
         module that reports nothing at all."""
         _, warns_in_handlers = _print_and_warn_sites()
         assert len(warns_in_handlers) >= 6, warns_in_handlers
+
+
+class TestOneRequestCannotWriteMuchMoreThanItSent:
+    """The unauthenticated route had a ~500x write amplification.
+
+    ``session_id`` was the one client-supplied field re-emitted on EVERY
+    written line rather than once per request, and it was unbounded: ``str()``,
+    ``os.path.basename`` and the charset ``re.sub`` are all length-preserving.
+    A ~1 MiB session_id with ``MAX_LOGS_PER_REQUEST`` entries wrote ~500 MB,
+    with no auth, at the route's own 60/min/IP ceiling, and with the retention
+    sweep floored at ``CLEANUP_MIN_INTERVAL_SECONDS`` so growth between sweeps
+    was unbounded. ``cleanup_by_size`` then evicts oldest-first, so the flood
+    destroys genuine logs on its way through.
+
+    The module's bounds comment claimed to cap "what a single request can
+    write". The enumeration behind it was derived from the ENTRY schema, and
+    ``session_id`` is a sibling of ``logs``, not a member of an entry -- so it
+    was outside the population that comment described. And nothing in
+    ``tests/`` referenced any of the four bound constants, so the block was
+    coverage theatre in both directions.
+
+    The property asserted here is the one that matters and is not a restatement
+    of any constant: **the bytes written must not be a large multiple of the
+    bytes sent.** A future field that is emitted per line rather than per
+    request fails this without anyone adding it to a list.
+    """
+
+    def _written_bytes(self, tmp_path):
+        return sum(p.stat().st_size for p in tmp_path.rglob("*") if p.is_file())
+
+    def test_a_huge_repeated_field_does_not_multiply_on_disk(
+        self, client, tmp_path
+    ):
+        big = "s" * 100_000
+        body = {
+            "session_id": big,
+            "logs": [
+                {"timestamp": "T", "level": "LOG", "message": "m", "url": "u"}
+                for _ in range(logs_module.MAX_LOGS_PER_REQUEST)
+            ],
+        }
+        sent = len(json.dumps(body).encode("utf-8"))
+        response = client.post(_PATH, json=body)
+        assert response.status_code == 200, response.data
+
+        written = self._written_bytes(tmp_path)
+        assert written <= sent * 2, (
+            "the request sent %d bytes and the route wrote %d (%.1fx). A "
+            "client-supplied field is being emitted once per LINE rather than "
+            "once per request." % (sent, written, written / max(sent, 1))
+        )
+
+    def test_the_probe_would_have_caught_the_original(self, client, tmp_path):
+        """Non-vacuity, stated as arithmetic rather than trusted.
+
+        The old behaviour wrote roughly `len(session_id) * entries` bytes. With
+        the numbers this test uses that is far above the bound asserted above,
+        so the assertion is one the bug would genuinely have failed.
+        """
+        would_have_written = 100_000 * logs_module.MAX_LOGS_PER_REQUEST
+        body_bytes = 100_000 + 60 * logs_module.MAX_LOGS_PER_REQUEST
+        assert would_have_written > body_bytes * 2
+
+    def test_an_ordinary_request_still_writes_its_line(self, client, tmp_path):
+        """The control: bounding the field must not stop the route logging.
+
+        A guard that made the endpoint write nothing would satisfy every
+        assertion above.
+        """
+        response = client.post(
+            _PATH,
+            json={
+                "session_id": "session_12345_abc",
+                "logs": [
+                    {
+                        "timestamp": "T",
+                        "level": "ERROR",
+                        "message": "a real message",
+                        "url": "u",
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 200
+        written = [p for p in tmp_path.rglob("*") if p.is_file()]
+        assert written, "nothing was logged at all"
+        text = written[0].read_text(encoding="utf-8")
+        assert "a real message" in text
+        assert "session_12345_abc" in text
+
+    def test_a_long_session_id_is_truncated_not_rejected(self, client, tmp_path):
+        """It is a correlation id, not a credential -- an over-long one is a
+        buggy client, not an attack, and the route should keep working."""
+        response = client.post(
+            _PATH,
+            json={
+                "session_id": "x" * 5000,
+                "logs": [
+                    {"timestamp": "T", "level": "LOG", "message": "kept", "url": "u"}
+                ],
+            },
+        )
+        assert response.status_code == 200
+        written = [p for p in tmp_path.rglob("*") if p.is_file()]
+        assert written
+        text = written[0].read_text(encoding="utf-8")
+        assert "kept" in text
+        assert "x" * (logs_module.MAX_SHORT_FIELD_LENGTH + 1) not in text
