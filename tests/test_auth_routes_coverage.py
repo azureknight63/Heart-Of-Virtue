@@ -141,10 +141,16 @@ class TestRegister:
         assert data["error"] == "conflict_error"
 
     def test_register_validation_error_from_service(self, app):
+        """``RegistrationValidationError``, because the route echoes a message
+        on the strength of its TYPE now, not on its wording surviving a
+        five-substring deny-list. A plain ValueError is infrastructure until
+        declared otherwise -- see test_register_infra_value_error_is_masked."""
+        from src.api.services.auth_service import RegistrationValidationError
+
         with patch(
             "src.api.routes.auth.auth_service.create_user",
             new_callable=AsyncMock,
-            side_effect=ValueError("Username too short"),
+            side_effect=RegistrationValidationError("Username too short"),
         ):
             with app.test_client() as c:
                 rv = c.post(
@@ -154,6 +160,27 @@ class TestRegister:
         assert rv.status_code == 400
         data = rv.get_json()
         assert data["error"] == "validation_error"
+
+    def test_register_infra_value_error_is_masked(self, app):
+        """The other half of the same contract, in the suite that covers this
+        route generally: an undeclared ValueError is never echoed."""
+        leak = "could not connect to postgres://svc:hunter2@db.internal:5432/hov"
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            side_effect=ValueError(leak),
+        ):
+            with app.test_client() as c:
+                rv = c.post(
+                    "/auth/register",
+                    json={
+                        "username": "abcd",
+                        "password": "pw",
+                        "email": "x@test.com",
+                    },
+                )
+        assert rv.status_code == 503
+        assert leak not in rv.data.decode()
 
     def test_register_service_unavailable_env_error(self, app):
         with patch(

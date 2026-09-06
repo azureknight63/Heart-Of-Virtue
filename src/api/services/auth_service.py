@@ -39,6 +39,28 @@ MAX_PASSWORD_LENGTH = 128
 MAX_EMAIL_LENGTH = 254
 
 
+class RegistrationValidationError(ValueError):
+    """A registration input the caller supplied and can fix.
+
+    The point of the type is that its *message is safe to echo* to an
+    unauthenticated caller. ``routes/auth.py`` used to decide that by scanning
+    the message for five substrings -- ``_URL``, ``_KEY``, ``_TOKEN``, "not
+    set", "os.environ" -- and echoing anything that matched none of them. A
+    deny-list over free-form exception text cannot be complete, and this one
+    was not: a ``ValueError`` reading ``could not connect to
+    postgres://svc:<password>@db.internal:5432/hov`` contains none of the five
+    markers, so it was returned verbatim, credential included, in a 400 body
+    to an anonymous POST /api/auth/register.
+
+    Subclasses ``ValueError`` so existing callers and their
+    ``pytest.raises(ValueError)`` assertions are unaffected; the route is what
+    changed, and it now allow-lists this type instead of deny-listing text.
+    Anything else out of :meth:`AuthService.create_user` is treated as
+    infrastructure and masked, which is the safe default a deny-list can never
+    give.
+    """
+
+
 class AuthService:
     def __init__(self):
         self.ph = PasswordHasher()
@@ -85,19 +107,19 @@ class AuthService:
         # before the insert — see the MAX_* constants for why the maximums are
         # not optional.
         if len(username) < 4:
-            raise ValueError("Username must be at least 4 characters")
+            raise RegistrationValidationError("Username must be at least 4 characters")
         if len(username) > MAX_USERNAME_LENGTH:
-            raise ValueError(
+            raise RegistrationValidationError(
                 "Username must be at most %d characters" % MAX_USERNAME_LENGTH
             )
         if len(password) < 16:
-            raise ValueError("Password must be at least 16 characters")
+            raise RegistrationValidationError("Password must be at least 16 characters")
         if len(password) > MAX_PASSWORD_LENGTH:
-            raise ValueError(
+            raise RegistrationValidationError(
                 "Password must be at most %d characters" % MAX_PASSWORD_LENGTH
             )
         if len(email) > MAX_EMAIL_LENGTH:
-            raise ValueError(
+            raise RegistrationValidationError(
                 "Email must be at most %d characters" % MAX_EMAIL_LENGTH
             )
 

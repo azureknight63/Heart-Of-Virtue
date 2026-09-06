@@ -10,7 +10,10 @@ from src.api.rate_limiter import (
     limiter_from_env,
     rate_limited_response,
 )
-from src.api.services.auth_service import auth_service
+from src.api.services.auth_service import (
+    RegistrationValidationError,
+    auth_service,
+)
 from functools import wraps
 import asyncio
 
@@ -120,13 +123,32 @@ def _clear_login_attempts(key: str) -> None:
     _login_limiter.clear(key)
 
 
-# Substrings that mark an internal config/infrastructure error whose text must
-# never reach the client (avoids leaking env-var names, connection URLs, etc).
+# Substrings that suggest an internal config/infrastructure fault. This is a
+# HEURISTIC, and it is no longer what stands between an exception message and
+# the client.
+#
+# It used to be: `register` echoed any ValueError whose text matched none of
+# these five markers, so `could not connect to
+# postgres://svc:<password>@db.internal:5432/hov` -- which matches none of them
+# -- went back to an anonymous caller verbatim. A deny-list over free-form
+# exception text cannot be complete, and a test built from the same five
+# markers cannot notice that it is not. `register` now allow-lists
+# `RegistrationValidationError` instead, and every other failure is masked.
+#
+# What remains is a status-code hint on the login path, where BOTH branches
+# return a generic message and the only thing this chooses is 503 ("infra
+# trouble, retry") versus 500 ("we broke"). A false negative there costs a
+# status code, not a disclosure.
 _CONFIG_LEAK_MARKERS = ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
 
 
 def _is_config_leak(msg: str) -> bool:
-    """True if an error message would expose internal config/infra details."""
+    """True if ``msg`` contains one of :data:`_CONFIG_LEAK_MARKERS`.
+
+    Named for the question it is asked, not for a property it can decide: a
+    message with no marker in it may still be pure infrastructure. Only ever
+    used to pick between two responses that are both generic.
+    """
     return any(marker in msg for marker in _CONFIG_LEAK_MARKERS)
 
 
@@ -252,29 +274,42 @@ async def register():
         # Registration logic using auth_service
         try:
             user = await auth_service.create_user(username, password, email)
-        except ValueError as ve:
-            msg = str(ve)
-            # Don't expose internal config/infrastructure details to users
-            if _is_config_leak(msg):
-                return (
-                    jsonify(
-                        {
-                            "success": False,
-                            "error": "service_unavailable",
-                            "message": "Registration is temporarily unavailable. Please try again later.",
-                        }
-                    ),
-                    503,
-                )
+        except RegistrationValidationError as ve:
+            # The ONLY exception whose text is echoed, and it is echoed because
+            # of its type rather than because its wording passed a filter.
+            # `AuthService` raises it for the five input bounds a caller can
+            # act on; nothing else in the stack raises it.
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": "validation_error",
-                        "message": msg,
+                        "message": str(ve),
                     }
                 ),
                 400,
+            )
+        except ValueError:
+            # Everything else is infrastructure until proven otherwise. This
+            # used to be the other way round -- echo unless the message
+            # contained one of five markers -- and a ValueError reading
+            # `could not connect to postgres://svc:<password>@db.internal:5432`
+            # matched none of them and went back to an anonymous caller with
+            # the credential in it. Logged, not returned: the operator needs
+            # the text and the client does not.
+            logger.exception("Registration failed with a non-validation error")
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "service_unavailable",
+                        "message": (
+                            "Registration is temporarily unavailable. "
+                            "Please try again later."
+                        ),
+                    }
+                ),
+                503,
             )
         except Exception as e:
             if "UNIQUE constraint failed" in str(e):
