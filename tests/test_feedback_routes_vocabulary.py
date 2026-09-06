@@ -23,7 +23,9 @@ newline in a title survived into the tracker; and the username got both scrubs
 but no length bound at all.
 """
 
+import ast
 import re
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,6 +34,9 @@ from src.api.routes import feedback as feedback_module
 from src.api.routes.feedback import (
     FEEDBACK_TYPES,
     MAX_USERNAME_LABEL_LENGTH,
+    _BODY_BUILDERS,
+    _MAPPING_FIELD_KEYS_BY_TYPE,
+    _STRING_FIELD_KEYS_BY_TYPE,
     _validate_fields_for_type,
 )
 
@@ -212,3 +217,144 @@ class TestTheUsernameLabelIsBounded:
             client(username="  "), {"type": "bug", "title": "T"}
         )
         assert _attribution_label(payload["body"]) == "Unknown Player"
+
+
+def _keys_each_builder_reads():
+    """The field keys the body builders actually read, taken from their source.
+
+    Derived from the BUILDERS, not from ``_STRING_FIELD_KEYS_BY_TYPE``, and the
+    difference is the whole point. Those tables are what the *validator*
+    consults, so a guard built on them could only confirm that the validator
+    agrees with itself. The builders are the independent authority here: they
+    are the code that dereferences the value, so they are the code that decides
+    which keys can crash.
+
+    It also gives the floor a direction the tables cannot. Add a
+    ``fields.get("foo", "")`` to a builder and forget its table row, and
+    ``test_every_key_a_builder_reads_is_declared`` fails. The reverse -- a
+    table row with no builder -- is what ``assert_closed_over`` covers above.
+    """
+    source = Path(feedback_module.__file__).read_text(encoding="utf-8")
+    by_function = {}
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        keys = []
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            target = call.func
+            if not isinstance(target, ast.Attribute) or target.attr != "get":
+                continue
+            # ``fields.get(...)`` only. ``_build_general_body`` also does
+            # ``ratings.get(key)``, but that reads an already-extracted
+            # sub-mapping rather than the request payload.
+            if not isinstance(target.value, ast.Name):
+                continue
+            if target.value.id != "fields":
+                continue
+            if call.args and isinstance(call.args[0], ast.Constant):
+                if isinstance(call.args[0].value, str):
+                    keys.append(call.args[0].value)
+        if keys:
+            by_function[node.name] = keys
+    return {
+        feedback_type: tuple(by_function.get(builder.__name__, ()))
+        for feedback_type, builder in _BODY_BUILDERS.items()
+    }
+
+
+_BUILDER_READS = _keys_each_builder_reads()
+
+#: Every (type, key) pair a builder dereferences -- the population an explicit
+#: ``null`` can be sent for.
+_NULLABLE = [
+    (feedback_type, key)
+    for feedback_type, keys in sorted(_BUILDER_READS.items())
+    for key in keys
+]
+
+
+class TestAnExplicitNullIsNotAServerError:
+    """A field sent as JSON ``null`` answered 500.
+
+    ``_validate_fields_for_type`` tests ``value is not None and not
+    isinstance(value, str)``, exempting ``None`` because an omitted field is
+    fine. The builders then reach for their defaults with
+    ``fields.get(key, default)``, which supplies the default only when the key
+    is ABSENT -- so a key present with a null value passed validation and hit
+    ``None.strip()`` one frame later. The ``except Exception`` wrapped around
+    the handler turned that AttributeError into "An internal error occurred".
+
+    The review that found it named ``steps``. It was all eight declared fields
+    across all three types, which is why the fix is one normalisation at the
+    boundary rather than eight defensive ``or ""`` edits -- and why this guard
+    derives its population instead of listing what was reported.
+    """
+
+    def test_the_scan_found_the_builders(self):
+        """Non-vacuity. An AST scan that matches nothing parametrises nothing,
+        and the two parametrised tests below would pass with no cases."""
+        assert set(_BUILDER_READS) == set(FEEDBACK_TYPES)
+        empty = sorted(t for t, keys in _BUILDER_READS.items() if not keys)
+        assert empty == [], (
+            "no fields.get(...) reads found in the builders for %s -- the scan "
+            "has stopped matching the source it derives from"
+            % ", ".join(empty)
+        )
+
+    @pytest.mark.parametrize("feedback_type, key", _NULLABLE)
+    def test_a_null_field_renders_exactly_as_an_omitted_one(
+        self, client, feedback_type, key
+    ):
+        """The chosen semantic, asserted as an equivalence rather than against
+        a hand-copied ``_Not provided_`` literal: whatever a builder renders
+        for a missing field, a null one must render identically."""
+        with_null, null_payload = _post(
+            client(),
+            {"type": feedback_type, "title": "T", "fields": {key: None}},
+        )
+        without, omitted_payload = _post(
+            client(), {"type": feedback_type, "title": "T", "fields": {}}
+        )
+        assert without.status_code == 201, without.get_json()
+        assert with_null.status_code == 201, with_null.get_json()
+        assert null_payload["body"] == omitted_payload["body"]
+
+    @pytest.mark.parametrize("feedback_type, key", _NULLABLE)
+    def test_the_builders_are_still_strict_about_none(self, feedback_type, key):
+        """What makes the test above non-vacuous.
+
+        It would pass just as happily if the builders had been made tolerant,
+        and then it would be pinning nothing about the route. The fix is
+        deliberately at the boundary -- one place, ahead of both the validator
+        and every builder -- so the builders stay strict, and this records
+        that they do.
+        """
+        with pytest.raises(AttributeError):
+            _BODY_BUILDERS[feedback_type]({key: None}, "attribution")
+
+    def test_every_key_a_builder_reads_is_declared(self):
+        """Floor on the increment.
+
+        A builder that reads a key no table declares is a field the validator
+        never type-checks -- the fail-open hole ``assert_closed_over`` closes
+        for TYPES, closed here for KEYS.
+        """
+        undeclared = []
+        for feedback_type, keys in sorted(_BUILDER_READS.items()):
+            declared = set(_STRING_FIELD_KEYS_BY_TYPE[feedback_type]) | set(
+                _MAPPING_FIELD_KEYS_BY_TYPE[feedback_type]
+            )
+            undeclared += [
+                "%s.%s" % (feedback_type, key)
+                for key in keys
+                if key not in declared
+            ]
+        assert undeclared == [], (
+            "these keys are read by a body builder but declared in neither "
+            "_STRING_FIELD_KEYS_BY_TYPE nor _MAPPING_FIELD_KEYS_BY_TYPE, so "
+            "_validate_fields_for_type never type-checks them and a "
+            "wrong-typed value reaches the builder as a 500: %s"
+            % ", ".join(undeclared)
+        )

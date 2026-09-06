@@ -517,6 +517,22 @@ def submit_feedback():
                 else v
             )
             for k, v in fields.items()
+            # A JSON ``null`` is DROPPED here, not carried through.
+            # `_validate_fields_for_type` exempts ``None`` from its type check
+            # -- deliberately, because an omitted field is fine -- but the
+            # builders reach for their defaults with
+            # ``fields.get(key, default)``, which supplies the default only
+            # when the key is ABSENT. The two ends therefore disagreed about
+            # what "absent" means, and ``{"steps": null}`` passed validation
+            # and then hit ``None.strip()`` inside the builder: an
+            # AttributeError, swallowed by this function's ``except
+            # Exception``, answered to the player as a 500. All eight declared
+            # fields across the three types did it, not just that one.
+            #
+            # Normalising once here makes the validator's exemption true,
+            # rather than making eight builder lines individually defensive
+            # and leaving the ninth to be written without the guard.
+            if v is not None
         }
 
         field_type_error = _validate_fields_for_type(feedback_type, fields)
