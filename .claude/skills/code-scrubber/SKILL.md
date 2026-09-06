@@ -58,6 +58,7 @@ Announce the plan and progress as you go; this is a long-running workflow and th
 - Cap fix iterations at **`MAX_ITERATIONS_PER_CHUNK`** (3) per chunk. If a chunk is still not A-grade after 3 iterations, stop iterating and list its remaining findings under `Escalations`.
 - Dispatch dimension/adversary subagents by `subagent_type` only (see the table in Step 3) - do not pass a `model` override; each subagent's own `.claude/agents/*.md` definition already pins the correct model where one is required.
 - NEVER fabricate test results, grades, or finding counts. If you didn't run it, say so.
+- A fix whose guard has not been proven non-vacuous (Step 4.25) is not closed. Report it as applied-but-unproven rather than counting it toward an A.
 - **REPORT-ONLY MODE:** If the invocation says `--report-only`, skip Step 4 (no fixes applied) and proceed straight from the adversarial challenge (end of Step 3) to Step 5's cross-chunk analysis and Step 6, returning all findings, notes, and grades without touching any files.
 
 ## Reference Data
@@ -225,9 +226,66 @@ For each file touched by the wave's findings, in severity order:
 1. `Read` the file fresh.
 2. **Confidence check first.** Could this change alter observable behaviour, public API, persisted data, or business logic? Are you below ~80% confident? If either is true, **ask the user** via `AskUserQuestion`, presenting the finding and the proposed patch. If you cannot ask, add it to `DEFERRED FIXES` with the finding, `file:line`, the proposed patch in prose, and why it needs a human.
 3. Otherwise apply the smallest change that resolves the finding.
-4. After all safe fixes for the wave, re-run the tests covering the modified files. If tests fail, diagnose and fix before moving on - a test failure you introduced is never something to defer.
+4. After all safe fixes for the wave, re-run the tests covering the modified files. If tests fail, diagnose and fix before moving on - a test failure you introduced is never something to defer. **If a fix ships with a new or changed guard, put it through Step 4.25 before you count the finding closed.**
 5. **Targeted re-dispatch:** collect every (chunk, dimension) pair still below A across the wave, excluding anything deferred or declined (those stay below A by design). Re-extract the chunk diffs (the files changed - regenerate them per Step 2.5) and dispatch all pairs simultaneously in one parallel block.
 6. Repeat until every non-deferred dimension in the wave is A - **maximum 3 iterations per chunk**. After a chunk's 3rd iteration, list its remaining findings under `Escalations`.
+
+### Step 4.25 - Prove the Guard
+
+A green suite is not evidence a fix is held. Most of the guards this project has
+had to repair were green the whole time — they were green because they had
+stopped checking anything. Before a finding counts as closed:
+
+**Revert the fix and watch the guard fail.** Not "reason that it would" — do it,
+run it, read the failure message, put the fix back. A guard that still passes
+with the fix reverted is testing something else. This costs a minute and is the
+only thing that distinguishes a real guard from a decorative one.
+
+**Read the failure message you get.** It should name the site. "Expected [] to
+equal [...]" that does not say *which* file, symbol or line is at fault sends the
+next reader hunting; a guard is also a message to somebody at 2am.
+
+**Derive the expectation from an independent authority.** This is the central
+rule and the one most often broken. A test that hand-lists what the code
+hand-lists is one opinion written twice, and it agrees with itself forever. Read
+the expectation from the thing that owns it: the engine constant, the registry,
+the shared JSON, the module's own key set, an AST walk of the tree. If you find
+yourself typing a list that already exists somewhere, stop and import it.
+
+**Prove the derivation is not empty.** A scan that matches nothing approves of
+everything. Every derived population needs a companion assertion that it is
+non-empty, and — where the set is meant to be a strict subset — that it has not
+silently become the whole. This is what catches the failure below.
+
+#### The shapes a guard fails in
+
+Watch for these by name; each has cost this project a real defect.
+
+- **Fail-open scope.** The guard greps a whole FILE, or scopes itself to one
+  function, so a second call site in the same file satisfies it while the site
+  that matters goes uncovered. Ask: *what is the population, and does the guard
+  enumerate it or assume it?*
+- **Goes quiet on refactor.** The guard scans for literals, an exact signature,
+  a file extension, a line number. The code is refactored — the literals become
+  named constants, the signature gains an optional argument, `.log` becomes
+  `.jsonl` — and the guard now matches zero things and passes. **A guard that
+  stops matching reads exactly like a guard that passes.** Only a non-vacuity
+  assertion tells them apart.
+- **Coverage theatre.** The test executes the line without observing what it
+  did. It moves the coverage number and catches nothing.
+- **Permissive dedup / fail-open table.** A lookup or comparison that answers
+  "no match" by falling through to a permissive default, so a rename or a typo
+  degrades silently instead of raising.
+- **Floor on the base but not the increment.** A bound applied where a value is
+  first set and not where it is later added to, so the invariant holds on the
+  first pass and not on the second.
+- **Restating the thing it checks.** The guard's expectation is a copy of the
+  implementation. It cannot fail for the reason it was written.
+
+When a guard has gone quiet, **fix the guard, do not narrow the assertion to
+match the new reality.** Narrowing is how a guard retires without anyone
+deciding to retire it. If the guard was genuinely asking the wrong question,
+say so explicitly in the report — that is a finding, not a chore.
 
 ### Step 5 - Inspect the Full Run
 
@@ -254,7 +312,8 @@ Per-chunk grades (final):
   <chunk-id>  DRY=A  CleanCode=A  Optimization=A  Maintainability=A  Security=A  AIFriendliness=A  Alignment=A  Correctness=A
   ...
 
-Fixes applied:     <count>
+Fixes applied:     <count>  (<count> with a guard proven non-vacuous per Step 4.25)
+Guards repaired:   <count>  (guards that were passing while checking nothing)
 Escalations (not A-grade after 3 iterations): <count>
 
 DEFERRED FIXES (need your review - not auto-applied):
