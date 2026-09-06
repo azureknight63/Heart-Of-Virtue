@@ -3,6 +3,7 @@ import ItemDetailDialog from './ItemDetailDialog'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
+import { lookupOr } from '../utils/lookup'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -55,8 +56,13 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
       // localeCompare would order it artifact, common, epic, legendary, rare,
       // uncommon, which tells the player nothing.
       if (activeSortKey === 'rarity') {
-        const aRank = RARITY_RANK[a.rarity?.toLowerCase()] ?? -1
-        const bRank = RARITY_RANK[b.rarity?.toLowerCase()] ?? -1
+        // `lookupOr`, not `?? -1`: `rarity` comes off the wire, and a value of
+        // `constructor` or `toString` finds an inherited function on
+        // RARITY_RANK, which `??` happily keeps. The comparator then subtracts
+        // two functions and returns NaN for every pair, and the sort order
+        // becomes whatever the engine feels like. See utils/lookup.js.
+        const aRank = lookupOr(RARITY_RANK, a.rarity?.toLowerCase(), -1)
+        const bRank = lookupOr(RARITY_RANK, b.rarity?.toLowerCase(), -1)
         return isDesc ? bRank - aRank : aRank - bRank
       }
 

@@ -17,17 +17,37 @@
  *                        message: "Slow down — too many messages."}` — a
  *                      MACHINE token in `error`, the human half in `message`.
  *                      Emitted by `rate_limited_response()`
- *                      (src/api/rate_limiter.py) and by auth.py's login and
- *                      register handlers. NOT by every auth.py failure —
- *                      several put prose straight in `error` with no
- *                      `message` at all, which is the first shape above.
+ *                      (src/api/rate_limiter.py) and by
+ *                      src/api/routes/auth.py's login and register handlers.
+ *                      NOT by every auth failure — several put prose straight
+ *                      in `error` with no `message` at all, which is the first
+ *                      shape above.
  *
  * A site that reads `error` first is correct for the first shape and shows the
  * player the literal string `rate_limited` for the second — which is what
  * happens to any route the day it adopts `rate_limited_response()`. Reading
- * `message` first is correct for BOTH shapes, because no response in this API
- * carries a `message` that is worse copy than its `error` — verified across
- * src/api/routes/*.py.
+ * `message` first is correct for BOTH shapes, because no response carrying
+ * both fields has a `message` that is worse copy than its `error`.
+ *
+ * WHAT "VERIFIED" MEANS HERE, AND WHAT IT USED TO MEAN
+ * ---------------------------------------------------
+ * That sentence used to read "no response in THIS API", cited to
+ * `src/api/routes/*.py` — a claim about every response the client can receive,
+ * resting on a reading of one directory. Routes are not the only thing that
+ * mints a body with these two fields. The check now covers every site under
+ * `src/api` where an `error` key and a `message` key are emitted together, and
+ * four of them are outside the routes package:
+ *
+ *   src/api/handlers/error_handler.py   404, 405, 500 and the catch-all
+ *                                       `Exception` handler — the bodies a
+ *                                       client gets when no route ran at all.
+ *   src/api/app.py                      the payload-too-large guard.
+ *   src/api/rate_limiter.py             `rate_limited_response()` itself.
+ *   src/api/services/game_service.py    the "resolve the current event first"
+ *                                       refusal, returned through a route.
+ *
+ * All four put the machine token in `error` and the prose in `message`, so the
+ * precedence holds — but it held by luck for as long as nobody had looked.
  *
  * So the precedence is `message` -> `error` -> caller's copy, and it lives
  * here once instead of being hand-rolled per site.
@@ -101,20 +121,86 @@ export function apiErrorMessage(errOrBody, fallback) {
 }
 
 /**
+ * `String(value)` by a path that cannot itself throw.
+ *
+ * `String` is not total. `String(Object.create(null))` raises
+ * `TypeError: Cannot convert object to primitive value`, and so does any
+ * object whose `toString` is not callable — an object shaped by hand in a
+ * test, or a `Proxy` whose trap throws. `Object.prototype.toString.call` has
+ * no such failure mode, so it is the floor under the floor.
+ */
+function safeString(value) {
+    try {
+        return String(value)
+    } catch {
+        return Object.prototype.toString.call(value)
+    }
+}
+
+/**
+ * A non-string `message`/`error` from a response body, rendered readably.
+ *
+ * `String({code: 'insufficient_gold'})` is `'[object Object]'`, which is the
+ * empty log line this module exists to avoid; the JSON form keeps the detail.
+ * `JSON.stringify` is not total either (a cycle, a `BigInt`), so `safeString`
+ * is still underneath.
+ *
+ * Called ONLY on a field of the response body, never on `err` itself — see
+ * {@link apiErrorDetail} on what `AxiosError.toJSON()` drags along.
+ */
+function describeBodyField(value) {
+    try {
+        const json = JSON.stringify(value)
+        if (typeof json === 'string') return json
+    } catch {
+        /* a cycle or a BigInt — fall through to the total path */
+    }
+    return safeString(value)
+}
+
+/**
+ * The thrown value's own description, guaranteed to say something.
+ *
+ * `safeString` is total but not non-empty: `String([])` and `String('')` are
+ * both `''`, and an empty log line is the one outcome a reader cannot act on
+ * at all. The type tag is a poor description and still a better one than
+ * nothing.
+ */
+function describeThrown(err) {
+    return safeString(err) || Object.prototype.toString.call(err)
+}
+
+/**
  * The most specific detail available for a failed request, for a log sink.
  *
- * The last resort is `String(err)`, never `err` itself: utils/logger mirrors
- * console arguments to /api/logs/browser and JSON-stringifies any object it is
- * given, and `AxiosError.toJSON()` carries `config.headers.Authorization` —
- * the Bearer session id — with it. utils/logger now redacts those keys at its
- * own choke point, because no call site can be relied on to remember;
- * this function is the second layer, and the one that also keeps a request
- * config out of a log line that has no use for it.
+ * The last resort is `describeThrown(err)`, never `err` itself: utils/logger
+ * mirrors console arguments to /api/logs/browser and JSON-stringifies any
+ * object it is given, and `AxiosError.toJSON()` carries
+ * `config.headers.Authorization` — the Bearer session id — with it.
+ * utils/logger now redacts those keys at its own choke point, because no call
+ * site can be relied on to remember; this function is the second layer, and
+ * the one that also keeps a request config out of a log line that has no use
+ * for it. That is why `describeBodyField` is reached only from a BODY field:
+ * JSON-stringifying `err` here would undo the whole point.
  *
  * @param {*} err - A rejected request, or anything else that was thrown.
- * @returns {string} Something, always — an empty log line describes nothing.
+ * @returns {string} A string, always, and never an empty one.
+ *
+ *   Both halves of that used to be false, and the doc said them anyway. The
+ *   server is free to answer `{"error": {"field": "password"}}` — nothing in
+ *   the API forbids it — and the object was returned as-is, so a caller
+ *   passing the result to `console.error` logged `[object Object]`. And
+ *   `String(err)` throws on a null-prototype object, so the function written
+ *   to describe a failure could fail instead. Callers are all
+ *   `console.error('...:', apiErrorDetail(err))` (hooks/useNpcChat.js), which
+ *   is the shape that makes both defects quiet rather than loud.
  */
 export function apiErrorDetail(err) {
     const body = errorBody(err)
-    return body?.message || body?.error || err?.message || String(err)
+    const detail = body?.message || body?.error || err?.message
+    // Every falsy case, `''` included, falls through: an empty `message` is
+    // not a description, and returning it would keep the promise's letter
+    // while breaking the thing the promise is for.
+    if (!detail) return describeThrown(err)
+    return typeof detail === 'string' ? detail : describeBodyField(detail)
 }

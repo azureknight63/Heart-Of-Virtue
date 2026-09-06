@@ -5,6 +5,7 @@ import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
 import { apiErrorMessage } from '../utils/apiError'
+import { lookupOr } from '../utils/lookup'
 
 /**
  * The commands this panel knows about — one entry per command, carrying both
@@ -273,7 +274,7 @@ export default function ActionsPanel({ location, onClose }) {
                         boxShadow: `0 0 15px ${colors.primary}66`,
                         pointerEvents: 'none'
                       }}>
-                        {COMMAND_TOOLTIPS[command.name] || 'General interaction command.'}
+                        {lookupOr(COMMAND_TOOLTIPS, command.name, 'General interaction command.')}
                         {/* Arrow */}
                         <div style={{
                           position: 'absolute',

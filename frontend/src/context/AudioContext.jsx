@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import { DEFAULT_COMBAT_SPEED, normalizeSpeed } from '../utils/combatTiming';
+import { lookupOr } from '../utils/lookup';
 
 const AudioContext = createContext({
     playBGM: () => {},
@@ -146,11 +147,15 @@ export const AudioProvider = ({ children }) => {
                 trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
             }
 
-            const path = BGM_MAP[trackName] || getAssetPath(`/assets/sounds/bgm_${trackName}.wav`);
+            const path = lookupOr(BGM_MAP, trackName, getAssetPath(`/assets/sounds/bgm_${trackName}.wav`));
             bgmRef.current.src = path;
 
             // Restore progress
-            const savedTime = trackProgress.current[trackName] || 0;
+            // `lookupOr` rather than `|| 0`: this ref holds a plain object, so a
+            // track named `constructor` would resolve to a FUNCTION, and assigning
+            // that to `currentTime` throws on a non-finite double. Same shape as
+            // the BGM_MAP lookup above; see utils/lookup.js.
+            const savedTime = lookupOr(trackProgress.current, trackName, 0);
             bgmRef.current.currentTime = savedTime;
 
             bgmRef.current.play().catch(e => console.warn("Audio play failed (user interaction needed):", e));
@@ -220,7 +225,7 @@ export const AudioProvider = ({ children }) => {
 
     const playSting = useCallback((trackName) => {
         const previousBGM = currentBGMRef.current;
-        const path = BGM_MAP[trackName] || getAssetPath(`/assets/sounds/bgm_${trackName}.wav`);
+        const path = lookupOr(BGM_MAP, trackName, getAssetPath(`/assets/sounds/bgm_${trackName}.wav`));
 
         // Save progress of current track before switching
         if (currentBGMRef.current) {

@@ -1,4 +1,5 @@
 import { colors, fonts } from '../styles/theme'
+import { lookupOr } from '../utils/lookup'
 
 /**
  * GameText - A standardized text component with variants.
@@ -38,8 +39,8 @@ export default function GameText({
     }
 
     const textStyle = {
-        color: colorMap[variant] || colors.text.main,
-        fontSize: sizeMap[size] || sizeMap.md,
+        color: lookupOr(colorMap, variant, colors.text.main),
+        fontSize: lookupOr(sizeMap, size, sizeMap.md),
         fontWeight: weight,
         textAlign: align,
         fontFamily: variant === 'accent' || variant === 'primary' ? fonts.main : '"Courier New", monospace',

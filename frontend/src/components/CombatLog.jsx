@@ -4,6 +4,7 @@ import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameText from './GameText'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
+import { lookupOr } from '../utils/lookup'
 
 const LOG_ENTRY_COLORS = {
   damage: colors.danger,
@@ -135,7 +136,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
                 </GameText>
               )}
               {visibleEntries.map((entry, idx) => {
-                const textColor = LOG_ENTRY_COLORS[entry.type] || colors.text.main
+                const textColor = lookupOr(LOG_ENTRY_COLORS, entry.type, colors.text.main)
 
                 return (
                   <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>

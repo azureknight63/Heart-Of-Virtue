@@ -5,6 +5,7 @@ import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 import { ItemStatGrid, ItemSection } from './ItemStatGrid'
 import { formatWeight } from '../utils/itemUtils'
 import { apiErrorMessage } from '../utils/apiError'
+import { lookupOr } from '../utils/lookup'
 
 // Display labels for the scalar stat-bonus keys the backend emits (see
 // inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
@@ -368,7 +369,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         {item.comparison && (
           <div style={{
             backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            border: `1px solid ${REC_COLORS[item.comparison.recommendation] || '#664400'}`,
+            border: `1px solid ${lookupOr(REC_COLORS, item.comparison.recommendation, '#664400')}`,
             borderRadius: '4px',
             padding: '8px 10px',
           }}>
@@ -376,8 +377,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase' }}>
                 vs. Equipped{item.comparison.current ? `: ${item.comparison.current.name}` : ''}
               </span>
-              <span style={{ color: REC_COLORS[item.comparison.recommendation] || '#ffee99', fontWeight: 'bold', fontSize: '12px' }}>
-                {REC_LABELS[item.comparison.recommendation] || item.comparison.recommendation}
+              <span style={{ color: lookupOr(REC_COLORS, item.comparison.recommendation, '#ffee99'), fontWeight: 'bold', fontSize: '12px' }}>
+                {lookupOr(REC_LABELS, item.comparison.recommendation, item.comparison.recommendation)}
               </span>
             </div>
             {item.comparison.reason && (
@@ -392,7 +393,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                 <DiffChip label="WT" value={item.comparison.differences.weight_diff} invert />
                 <DiffChip label="VAL" value={item.comparison.differences.value_diff} suffix="g" />
                 {Object.entries(item.comparison.differences.bonus_diffs || {}).map(([stat, diff]) => (
-                  <DiffChip key={`bonus-${stat}`} label={BONUS_STAT_LABELS[stat] || capitalize(stat)} value={diff} />
+                  <DiffChip key={`bonus-${stat}`} label={lookupOr(BONUS_STAT_LABELS, stat, capitalize(stat))} value={diff} />
                 ))}
                 {Object.entries(item.comparison.differences.resistance_diffs || {}).map(([type, diff]) => (
                   <DiffChip key={`res-${type}`} label={`${capitalize(type)} Res`} value={diff} percent />
@@ -426,7 +427,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           <ItemSection title="Bonuses">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {Object.entries(item.bonuses).map(([stat, value]) => (
-                <DiffChip key={stat} label={BONUS_STAT_LABELS[stat] || capitalize(stat)} value={value} />
+                <DiffChip key={stat} label={lookupOr(BONUS_STAT_LABELS, stat, capitalize(stat))} value={value} />
               ))}
             </div>
           </ItemSection>

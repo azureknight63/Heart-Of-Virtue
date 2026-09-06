@@ -109,6 +109,118 @@ const CITATIONS = [
         claim: 'the stylesheet owns the name a component used to redeclare',
     }),
     cite({
+        where: 'hooks/useNpcChat.js',
+        about: 'test/sourceAudit.js',
+        anchor: 'mapEmotion(table, key)',
+        claim: 'that audit names this call as one it structurally cannot see',
+    }),
+
+    // utils/apiError.js, registered because its central claim IS a claim about
+    // other files: "no response carries a `message` that is worse copy than
+    // its `error`". That sentence used to cite one directory while asserting
+    // something about the whole API. Every minter it now names is anchored to
+    // the literal that puts it in the population.
+    cite({
+        where: 'utils/apiError.js',
+        about: 'src/api/rate_limiter.py',
+        anchor: 'def rate_limited_response',
+        claim: 'the token-in-`error` shape is emitted by this helper',
+    }),
+    cite({
+        where: 'utils/apiError.js',
+        about: 'src/api/routes/auth.py',
+        anchor: '"error": "validation_error"',
+        claim: 'auth pairs a machine token in `error` with prose in `message`',
+    }),
+    cite({
+        where: 'utils/apiError.js',
+        about: 'src/api/handlers/error_handler.py',
+        anchor: '"message": "An unexpected error occurred"',
+        claim: 'the global handlers mint both fields, outside any route',
+    }),
+    cite({
+        where: 'utils/apiError.js',
+        about: 'src/api/app.py',
+        anchor: '"error": "payload_too_large"',
+        claim: 'the payload guard mints both fields, outside any route',
+    }),
+    cite({
+        where: 'utils/apiError.js',
+        about: 'src/api/services/game_service.py',
+        anchor: '"message": "Please resolve the current event before taking combat actions."',
+        claim: 'the service layer mints both fields, returned through a route',
+    }),
+    cite({
+        where: 'utils/apiError.js',
+        about: 'hooks/useNpcChat.js',
+        anchor: 'apiErrorDetail(err)',
+        claim: 'every caller passes the result straight to console.error',
+    }),
+    cite({
+        where: 'utils/apiError.js',
+        about: 'utils/logger.js',
+        anchor: '/api/logs/browser',
+        claim: 'console output is mirrored to the browser-log endpoint',
+    }),
+
+    cite({
+        where: 'utils/logger.js',
+        about: 'main.jsx',
+        anchor: 'if (import.meta.env.DEV) {',
+        claim: 'the transport is gated to development, so the leak was never in production',
+    }),
+    cite({
+        where: 'utils/logger.js',
+        about: 'api/client.js',
+        anchor: 'config.headers.Authorization = ',
+        claim: 'the interceptor is what attaches the Bearer header that leaked',
+    }),
+    cite({
+        where: 'utils/logger.js',
+        about: 'utils/logger.test.js',
+        anchor: 'scrubSecrets',
+        claim: 'the suite drives the scrubber directly, not only through the transport',
+    }),
+
+    cite({
+        where: 'utils/lookup.js',
+        about: 'utils/animationConfigs.js',
+        anchor: 'Object.hasOwn',
+        claim: 'that module reached the same rule first and wrote it inline',
+    }),
+    cite({
+        where: 'utils/lookup.js',
+        about: 'test/sourceAudit.js',
+        anchor: 'findUnguardedTableLookups',
+        claim: 'that audit is what holds a table added tomorrow to this rule',
+    }),
+
+    cite({
+        where: 'pages/LoginPage.jsx',
+        about: 'App.jsx',
+        anchor: 'path="/login"',
+        claim: '/login is a client-side route, not a server endpoint',
+    }),
+    cite({
+        where: 'pages/LoginPage.jsx',
+        about: 'api/client.js',
+        anchor: 'apiClient.interceptors.request.use',
+        claim: 'submission goes through the shared client, not a native form post',
+    }),
+    cite({
+        where: 'pages/LoginPage.jsx',
+        about: 'utils/apiError.js',
+        anchor: 'apiErrorMessage',
+        claim: 'this page deliberately does NOT use that precedence',
+    }),
+    cite({
+        where: 'pages/LoginPage.jsx',
+        about: 'src/api/routes/auth.py',
+        anchor: '"error": "conflict_error"',
+        claim: 'auth failures put a machine token in `error`, never player copy',
+    }),
+
+    cite({
         where: 'utils/eventIds.js',
         about: 'src/events.py',
         anchor: 'class PassagewayTransitionEvent',

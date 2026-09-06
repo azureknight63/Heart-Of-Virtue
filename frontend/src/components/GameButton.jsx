@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { colors, spacing, accessibility } from '../styles/theme'
+import { lookupOr } from '../utils/lookup'
 
 /**
  * GameButton - A standardized button component for the Heart of Virtue UI.
@@ -59,8 +60,8 @@ export default function GameButton({
         large: { padding: '12px 24px', fontSize: '15px' },
     }
 
-    const currentVariant = variants[variant] || variants.secondary
-    const currentSize = sizes[size] || sizes.medium
+    const currentVariant = lookupOr(variants, variant, variants.secondary)
+    const currentSize = lookupOr(sizes, size, sizes.medium)
 
     const baseStyle = {
         borderRadius: '6px',

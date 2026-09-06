@@ -1,4 +1,5 @@
 import { colors, shadows, spacing } from '../styles/theme'
+import { lookupOr } from '../utils/lookup'
 
 /**
  * The ✕ affordance, shared by the titled and title-less branches below.
@@ -53,9 +54,9 @@ export default function GamePanel({
         // still override it.
         position: 'relative',
         backgroundColor: colors.bg.panel,
-        border: `2px solid ${colors.border[borderVariant] || colors.border.main}`,
+        border: `2px solid ${lookupOr(colors.border, borderVariant, colors.border.main)}`,
         borderRadius: '8px',
-        padding: paddingValues[padding] || paddingValues.large,
+        padding: lookupOr(paddingValues, padding, paddingValues.large),
         boxShadow: glow ? shadows.glow : shadows.main,
         fontFamily: '"Courier New", monospace',
         ...style

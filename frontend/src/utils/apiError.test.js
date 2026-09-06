@@ -111,4 +111,80 @@ describe('apiErrorDetail', () => {
     expect(detail).toBe('AxiosError: Network Error');
     expect(JSON.stringify(detail)).not.toContain(authorization);
   });
+
+  describe('the `@returns {string}` promise, which used to be false', () => {
+    // Callers all do `console.error('…:', apiErrorDetail(err))`
+    // (hooks/useNpcChat.js), so a non-string return logged `[object Object]`
+    // and a throwing one replaced the failure being reported with a different
+    // failure. Neither was loud.
+
+    it('renders a non-string `message` readably instead of returning the object', () => {
+      const detail = apiErrorDetail(rejection({ message: { field: 'password' } }));
+
+      expect(typeof detail).toBe('string');
+      // `String({…})` would be '[object Object]', which is the empty log line
+      // this function exists to avoid.
+      expect(detail).toContain('password');
+    });
+
+    it('renders a non-string `error` readably', () => {
+      const detail = apiErrorDetail(rejection({ error: ['too short', 'no digit'] }));
+
+      expect(typeof detail).toBe('string');
+      expect(detail).toContain('too short');
+    });
+
+    it('does not throw on a value `String()` cannot convert', () => {
+      // `String(Object.create(null))` raises TypeError: Cannot convert object
+      // to primitive value. The old last resort was exactly that call.
+      const bare = Object.create(null);
+
+      expect(() => apiErrorDetail(bare)).not.toThrow();
+      expect(typeof apiErrorDetail(bare)).toBe('string');
+    });
+
+    it('never returns an empty string', () => {
+      // An empty `message` is not a description. Returning it would keep the
+      // promise's letter and lose the thing the promise is for.
+      const err = Object.assign(new Error(''), {
+        response: { data: { message: '', error: '' } },
+      });
+
+      expect(apiErrorDetail(err)).not.toBe('');
+    });
+
+    it('returns a string for anything at all', () => {
+      const circular = {};
+      circular.self = circular;
+      const odd = [
+        undefined, null, '', 0, false, NaN, Symbol('sym'), 10n,
+        () => {}, [], circular, new Error('boom'),
+        Object.create(null), { message: 0 }, { error: false },
+      ];
+
+      for (const value of odd) {
+        const detail = apiErrorDetail(value);
+        expect(typeof detail, String(detail)).toBe('string');
+        expect(detail.length, String(detail)).toBeGreaterThan(0);
+      }
+    });
+
+    it('still never JSON-stringifies the thrown value itself', () => {
+      // The body-field renderer must not be reachable from `err`: doing that
+      // would walk an AxiosError through toJSON() and put the Bearer header
+      // back in the log line, which is the whole reason the last resort is a
+      // string form.
+      const authorization = 'Bearer session-abc123';
+      const rejected = {
+        response: { data: 'a proxy error page, not a body' },
+        config: { headers: { Authorization: authorization } },
+        toString: () => 'AxiosError: Request failed with status code 502',
+      };
+
+      const detail = apiErrorDetail(rejected);
+
+      expect(detail).not.toContain(authorization);
+      expect(detail).toBe('AxiosError: Request failed with status code 502');
+    });
+  });
 });

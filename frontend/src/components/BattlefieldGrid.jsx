@@ -8,6 +8,7 @@ import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils
 import { beatSfxFor } from '../utils/combatSfx';
 import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
+import { lookupOr } from '../utils/lookup';
 import useDoubleRaf from '../hooks/useDoubleRaf';
 import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
@@ -170,7 +171,7 @@ const CombatantMarker = React.memo(({
     if (typeof entity.position.facing === 'number') {
       facing = entity.position.facing;
     } else {
-      facing = FACING_MAP[entity.position.facing] || 0;
+      facing = lookupOr(FACING_MAP, entity.position.facing, 0);
     }
   }
 
@@ -1896,7 +1897,7 @@ function BattlefieldGrid({
     if (animData.beat) {
       const schedule = scheduleSfxChain(
         beatSfxFor(animData.beat),
-        (cue) => SFX_DURATIONS[cue] || 0,
+        (cue) => lookupOr(SFX_DURATIONS, cue, 0),
         combatSpeed
       );
       for (const { cue, startMs } of schedule) {

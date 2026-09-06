@@ -8,6 +8,7 @@ import {
   JEAN_ID,
 } from '../utils/conversationSegment'
 import { apiErrorDetail } from '../utils/apiError'
+import { lookupOr } from '../utils/lookup'
 
 // Re-exported so the panel and its suites keep one import for the whole live
 // chat vocabulary; both are DECLARED in utils/conversationSegment, beside the
@@ -69,9 +70,17 @@ export const CHAT_PHASES = {
  * Both tables are looked up the same way — case-folded, with an unmapped or
  * missing value reading as neutral — so the rule lives here once instead of
  * being written out per table.
+ *
+ * `lookupOr`, not `table[key] || DEFAULT_EMOTION`. `tone` and
+ * `conversation_quality` are strings the server chose; a value of
+ * `constructor` or `toString` found an inherited function on the table, which
+ * is truthy, so the default never ran and a FUNCTION went on to be used as a
+ * portrait emotion. `table` arrives as a parameter here, so the static audit
+ * in test/sourceAudit.js cannot see this call — it is fixed by hand and stays
+ * fixed by reading.
  */
 function mapEmotion(table, key) {
-  return table[String(key || '').toLowerCase()] || DEFAULT_EMOTION
+  return lookupOr(table, String(key || '').toLowerCase(), DEFAULT_EMOTION)
 }
 
 export function toneEmotion(tone) {
