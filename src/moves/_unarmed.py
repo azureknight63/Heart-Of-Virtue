@@ -219,7 +219,7 @@ class PowerStrike(Move):
         # has always computed the real line) overstated the move by the whole
         # heat multiplier -- 128-192 advertised against 64-96 dealt at heat 2.0
         # -- and the heavy bludgeon finisher, the move whose entire role is to
-        # cash in accumulated momentum, was the one attack momentum could not
+        # cash in accumulated heat, was the one attack heat could not
         # move. A copy that has drifted looks exactly like one that has not,
         # which is why there is no copy here any more.
         #
@@ -438,7 +438,7 @@ class Jab(Move):
         #   exist to stack heat; the heavy moves exist to spend it.
         #
         # Jab has the shortest cycle in the game -- one beat, no prep, no
-        # recoil, no cooldown -- and ``Move.hit`` grants a flat 1.25x momentum
+        # recoil, no cooldown -- and ``Move.hit`` grants a flat 1.25x heat
         # per landed hit regardless of how much damage it dealt, so Jab is
         # already the fastest heat generator by an order of magnitude: it is the
         # only move that holds the 10.0 clamp, where Attack-on-fists plateaus

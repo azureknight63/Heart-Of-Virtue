@@ -493,7 +493,7 @@ class LightningAssault(Move):
 
     def _flurry_heats(self):
         """The heat each of the three strikes is actually scored with — see
-        ``_base.projected_hit_heat_sequence`` for why the momentum feedback
+        ``_base.projected_hit_heat_sequence`` for why the heat feedback
         between strikes belongs in the preview.
         """
         return projected_hit_heat_sequence(self.user, self.STRIKES)
