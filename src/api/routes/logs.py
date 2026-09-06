@@ -215,9 +215,18 @@ _browser_log_limiter = limiter_from_env(
 CLEANUP_MIN_INTERVAL_SECONDS = 300
 
 _cleanup_lock = threading.Lock()
-# monotonic() so a clock adjustment cannot push the next sweep hours away; the
-# 0.0 start means the first post after boot sweeps, as before.
-_last_cleanup_at = 0.0
+# monotonic() so a clock adjustment cannot push the next sweep hours away.
+#
+# None, not 0.0, and the difference is not cosmetic. `monotonic()`'s epoch is
+# unspecified: on Windows it counts from system boot and is always far larger
+# than the interval, but on Linux a container starts near zero, so `now - 0.0`
+# is SMALLER than the floor for the first five minutes of the process's life
+# and the first sweep is skipped — the opposite of what the sentinel was
+# written to mean. Comparing against a sentinel that only reads as "long ago"
+# on some platforms is how a value with no epoch gets treated as if it had one.
+# An explicit "never swept" says it on all of them, and is what the tests set
+# themselves back to.
+_last_cleanup_at = None
 
 
 def _warn(message):
@@ -264,7 +273,10 @@ def _maybe_cleanup():
     global _last_cleanup_at
     now = time.monotonic()
     with _cleanup_lock:
-        if now - _last_cleanup_at < CLEANUP_MIN_INTERVAL_SECONDS:
+        if (
+            _last_cleanup_at is not None
+            and now - _last_cleanup_at < CLEANUP_MIN_INTERVAL_SECONDS
+        ):
             return False
         _last_cleanup_at = now
     try:

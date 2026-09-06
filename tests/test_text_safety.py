@@ -406,12 +406,29 @@ class TestTheClassMatchesItsAuthority:
         )
         vendored = re.search(r"Unicode (\d+\.\d+\.\d+)", self._authority_text())
         assert vendored, "the file header no longer records its Unicode version"
-        assert vendored.group(1) == unicodedata.unidata_version, (
+
+        def _release(text):
+            return tuple(int(part) for part in text.split("."))
+
+        # One-sided, and the docstring says which side: a NEWER interpreter is
+        # the hazard, because the Default_Ignorable half of the authority has
+        # no stdlib check and a release that added to it would slip past
+        # unnoticed. An OLDER interpreter cannot: it names a subset, and the
+        # subset check above already sweeps its whole Cc/Cf/Zl/Zp half live.
+        #
+        # This was an equality pin, which could not be green in both places at
+        # once. `.python-version` is 3.11 and every CI workflow matches it
+        # (Unicode 14.0.0), while a developer box on 3.13 ships 15.1.0 — so the
+        # pin passed locally and failed in CI from the moment it was written.
+        # An assertion that cannot hold on the interpreter CI actually uses is
+        # not a stricter guard, it is a broken one.
+        assert _release(vendored.group(1)) >= _release(unicodedata.unidata_version), (
             "the authority was vendored at Unicode %s and this interpreter "
-            "ships %s. The subset check above only covers Cc/Cf/Zl/Zp; the "
-            "Default_Ignorable half has no stdlib check, so a release bump has "
-            "to be re-derived by hand rather than assumed harmless."
-            % (vendored.group(1), unicodedata.unidata_version)
+            "ships the NEWER %s. The subset check above only covers "
+            "Cc/Cf/Zl/Zp; the Default_Ignorable half has no stdlib check, so a "
+            "release bump has to be re-derived by hand rather than assumed "
+            "harmless — regenerate tests/data/invisible_code_points.txt on this "
+            "interpreter." % (vendored.group(1), unicodedata.unidata_version)
         )
 
     def test_every_code_point_the_authority_names_is_stripped(self):

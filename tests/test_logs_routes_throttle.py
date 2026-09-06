@@ -56,7 +56,17 @@ def client(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _reset_cleanup_clock(monkeypatch):
-    monkeypatch.setattr(logs_module, "_last_cleanup_at", 0.0)
+    """Put the sweep clock back to "never swept" around every test.
+
+    ``None``, not ``0.0``. The timestamp is module-level and process-wide, so
+    without this the first test to POST sweeps and every later one in the same
+    worker sees an unlapsed floor — and which test that is depends on
+    pytest-randomly's ordering. Resetting to ``0.0`` looked like it fixed that
+    and only did so on Windows, where ``monotonic()`` counts from system boot
+    and is always far past the 300s floor; on a freshly booted Linux CI
+    container ``monotonic()`` is still under 300, so ``now - 0.0`` did not
+    clear the floor and these three tests failed there and only there."""
+    monkeypatch.setattr(logs_module, "_last_cleanup_at", None)
 
 
 class TestTheTierExists:
