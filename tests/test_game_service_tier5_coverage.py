@@ -1510,7 +1510,11 @@ class TestShopSuccessPaths:
             "src.api.serializers.shop_serializer.ShopSerializer.serialize_player_sellable",
             return_value=[],
         ):
-            result = game_service.shop_buyback(mock_player, "merchant_id", wire_handle(item))
+            # The client posts back the id the shop payload published: the
+            # LEDGER ENTRY's handle, not the stock item's.
+            result = game_service.shop_buyback(
+                mock_player, "merchant_id", wire_handle(entry)
+            )
 
         assert result["success"] is True
         assert merchant._buyback_ledger == []
@@ -1544,7 +1548,7 @@ class TestShopSuccessPaths:
             return_value=[],
         ):
             result = game_service.shop_buyback(
-                mock_player, "merchant_id", "stale-id-not-matching"
+                mock_player, "merchant_id", wire_handle(entry)
             )
 
         assert result["success"] is True
@@ -1567,7 +1571,9 @@ class TestShopSuccessPaths:
         ), patch(
             "src.api.serializers.shop_serializer.ShopSerializer.flush_stale_buyback"
         ):
-            result = game_service.shop_buyback(mock_player, "merchant_id", "gone")
+            result = game_service.shop_buyback(
+                mock_player, "merchant_id", wire_handle(entry)
+            )
 
         assert result["success"] is False
         assert "no longer in merchant stock" in result["error"]

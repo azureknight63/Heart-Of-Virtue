@@ -27,17 +27,20 @@ class ObjectSerializer:
                 return attr_name in obj
             return hasattr(obj, attr_name)
 
-        # Default object id: an opaque, stable handle rather than the heap
-        # address this used to interpolate (issue #518). An explicit `id` on
-        # the object still wins -- map data and test doubles set one -- but
-        # engine objects have none, so they get the handle every other entity
-        # (NPC, item, merchant) is identified by.
-        obj_id = get_attr("id", None)
-        if obj_id is None:
-            obj_id = wire_handle(obj)
-
+        # The object's id is its opaque handle, unconditionally — the same rule
+        # the other six entity serializers follow, and the id
+        # ``interact_with_target`` resolves through ``find_by_handle``.
+        #
+        # An explicit ``id`` attribute used to win over the handle. Nothing in
+        # the engine sets one (no class in src/objects.py has an ``id``, and no
+        # object entry in any map JSON carries the key — both checked), so the
+        # branch's only effect was on test doubles, where it published an id
+        # that ``find_by_handle`` cannot accept: the client would get "Target
+        # not found." for that object and nothing would log a reason. That is
+        # exactly the half-move #518 exists to make impossible, so the branch
+        # is gone rather than being taught to the resolver.
         obj_data = {
-            "id": str(obj_id),
+            "id": wire_handle(obj),
             "name": get_attr("name", "Unknown"),
             "type": get_attr("type", "dict" if is_dict else type(obj).__name__),
             "description": get_attr("description", ""),

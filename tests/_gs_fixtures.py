@@ -22,6 +22,7 @@ test needs to force a state a real object cannot reach (e.g. a universe method t
 raises), and even then prefer patching a single method on the real object.
 """
 
+import re
 from unittest.mock import MagicMock
 
 from src.items import Gold
@@ -31,6 +32,8 @@ from src.universe import Universe
 
 __all__ = [
     "live_world",
+    "live_shop",
+    "assert_opaque_wire_id",
     "make_tile",
     "set_player_gold",
     "get_player_gold",
@@ -84,6 +87,59 @@ def live_world(coords=((0, 0),), start=(0, 0), map_name="gs-test-map"):
     player.location_x, player.location_y = start
     player.current_room = game_map[start]
     return player, game_map
+
+
+def live_shop(coords=((0, 0),), start=(0, 0), stock=None, player_gold=None):
+    """A live world with a merchant standing on the starting tile.
+
+    The shop half of :func:`live_world`, so the six-kwarg ``Merchant(...)``
+    construction and its tile placement are written once rather than copied
+    into every shop test (the room half already had ``_room()`` helpers; this
+    is its counterpart).
+
+    Args:
+        coords/start: as :func:`live_world`.
+        stock: items to place in ``merchant.inventory``. Defaults to empty —
+            pass ``merchandise=True`` items to have them appear in the BUY tab.
+        player_gold: if given, the player's purse is set to exactly this.
+
+    Returns:
+        ``(player, game_map, merchant)``.
+    """
+    from src.npc._merchants import Merchant
+
+    player, game_map = live_world(coords=coords, start=start)
+    if player_gold is not None:
+        set_player_gold(player, player_gold)
+    merchant = Merchant(
+        name="Tester", description="desc", damage=1, aggro=False,
+        exp_award=0, stock_count=0,
+    )
+    merchant.inventory = list(stock) if stock else []
+    game_map[start].npcs_here = [merchant]
+    return player, game_map, merchant
+
+
+#: A wire handle is 32 lowercase hex characters — ``uuid4().hex``.
+_HANDLE_SHAPE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def assert_opaque_wire_id(wire_id, label):
+    """Assert ``wire_id`` is an opaque handle, not a heap address.
+
+    The one spelling of "an id must be opaque", shared by the wire-id tests
+    (previously asserted two different ways in two files, with neither making
+    both checks). It asserts the ``uuid4().hex`` SHAPE rather than
+    ``not wire_id.isdigit()``: an all-decimal uuid4 hex is possible (~1.5e-7
+    per assertion), so the digit check is a false-failure waiting to happen,
+    and it would also pass a non-address id of any other shape.
+    """
+    assert wire_id, f"{label} emitted an empty id"
+    assert _HANDLE_SHAPE.match(str(wire_id)), (
+        f"{label} emitted {wire_id!r}, which is not a 32-hex wire handle. "
+        "Wire ids are opaque handles (src.combatant.wire_handle); a decimal "
+        "string is the CPython heap address the scheme removed — see #518."
+    )
 
 
 def set_player_gold(player, amount):

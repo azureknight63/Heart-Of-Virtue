@@ -66,6 +66,21 @@ _LLM_NOISE_PREFIXES = (
 _MISSING_ATTRIBUTE_DEFAULT = 10
 
 
+def _sellable_items(holder):
+    """``holder.inventory`` minus its Gold, for a handle lookup to scan.
+
+    A shop lookup must never resolve to the gold pile — buying or selling the
+    till is not a transaction. Narrowing the list here and handing it to the
+    shared ``find_by_handle`` keeps the handle comparison in one place
+    (``src/combatant.py``) instead of re-inlining it beside the filter.
+    """
+    return [
+        item
+        for item in getattr(holder, "inventory", [])
+        if getattr(item, "name", None) != "Gold"
+    ]
+
+
 def derive_hit_accuracy(player):
     """Return the attacker-side half of the engine's to-hit roll.
 
@@ -4400,12 +4415,10 @@ class GameService:
 
         buy_mod = ShopSerializer.get_effective_buy_modifier(merchant, player)
 
-        # Locate item in merchant inventory
-        target_item = None
-        for item in getattr(merchant, "inventory", []):
-            if getattr(item, "name", None) != "Gold" and wire_handle(item) == item_id:
-                target_item = item
-                break
+        # Locate item in merchant inventory. The Gold filter narrows the
+        # candidates *before* the shared lookup rather than re-inlining the
+        # handle comparison next to it — the merchant's till is not stock.
+        target_item = find_by_handle(_sellable_items(merchant), item_id)
 
         if target_item is None:
             return {"success": False, "error": "Item not found in merchant inventory"}
@@ -4470,7 +4483,10 @@ class GameService:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
         from src.inventory_utils import transfer_gold, transfer_item
-        from src.api.serializers.shop_serializer import ShopSerializer
+        from src.api.serializers.shop_serializer import (
+            ShopSerializer,
+            find_stock_by_name,
+        )
 
         merchant = self._find_merchant(player, npc_id)
         # Use validation helper (FIX 6)
@@ -4480,12 +4496,8 @@ class GameService:
 
         sell_mod = ShopSerializer.get_effective_sell_modifier(merchant, player)
 
-        # Locate item in player inventory
-        target_item = None
-        for item in getattr(player, "inventory", []):
-            if getattr(item, "name", None) != "Gold" and wire_handle(item) == item_id:
-                target_item = item
-                break
+        # Locate item in player inventory (see shop_buy: filter, then look up)
+        target_item = find_by_handle(_sellable_items(player), item_id)
 
         if target_item is None:
             return {"success": False, "error": "Item not found in inventory"}
@@ -4527,17 +4539,17 @@ class GameService:
         # id is unchanged and still present in merchant.inventory. For partial-stack
         # splits, a new object is created and appended, but stack_inv_items may
         # immediately merge it into an existing same-name item. In that case the
-        # original id is gone — fall back to the first name-matching merchant item.
-        if find_by_handle(getattr(merchant, "inventory", []), item_id) is not None:
+        # original id is gone — fall back to the shared name lookup
+        # (ShopSerializer.find_stock_by_name), which the ledger's own repoint
+        # and shop_buyback's redemption both use, so all three agree on which
+        # stock object an entry draws from.
+        merchant_inv = getattr(merchant, "inventory", [])
+        if find_by_handle(merchant_inv, item_id) is not None:
             buyback_item_id = item_id
         else:
-            buyback_item_id = next(
-                (
-                    wire_handle(i)
-                    for i in getattr(merchant, "inventory", [])
-                    if getattr(i, "name", None) == item_name
-                ),
-                item_id,
+            restacked = find_stock_by_name(merchant_inv, item_name, item_type)
+            buyback_item_id = (
+                wire_handle(restacked) if restacked is not None else item_id
             )
 
         if not hasattr(merchant, "_buyback_ledger"):
@@ -4590,7 +4602,10 @@ class GameService:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
         from src.inventory_utils import transfer_gold, transfer_item
-        from src.api.serializers.shop_serializer import ShopSerializer
+        from src.api.serializers.shop_serializer import (
+            ShopSerializer,
+            find_stock_by_name,
+        )
 
         merchant = self._find_merchant(player, npc_id)
         # Use validation helper (FIX 6) - quantity=1 for buyback
@@ -4602,12 +4617,12 @@ class GameService:
         current_tick = self._game_tick(player)
         ShopSerializer.flush_stale_buyback(merchant, current_tick)
 
-        # Find the ledger entry
-        entry = None
-        for e in merchant._buyback_ledger:
-            if e["item_id"] == item_id:
-                entry = e
-                break
+        # Find the ledger entry. ``item_id`` is the ENTRY's handle — the id
+        # ShopSerializer published for this buyback row — not the stock item's:
+        # two entries may draw from one merged stack, and matching on the stock
+        # id redeemed whichever of them was scanned first, charging the wrong
+        # price for the row the player actually clicked.
+        entry = find_by_handle(merchant._buyback_ledger, item_id)
 
         if entry is None:
             return {
@@ -4631,16 +4646,17 @@ class GameService:
         if player.weight_current + added_weight > player.weight_tolerance:
             return {"success": False, "error": "Exceeds carry limit"}
 
-        # Find the actual item object in merchant inventory
-        target_item = find_by_handle(getattr(merchant, "inventory", []), item_id)
+        # Find the actual item object in merchant inventory. The entry's
+        # ``item_id`` is the internal pointer at that stock object; if it has
+        # been re-stacked away, fall back through the same shared name lookup
+        # the ledger's repoint uses so both name the same object.
+        merchant_inv = getattr(merchant, "inventory", [])
+        target_item = find_by_handle(merchant_inv, entry.get("item_id"))
 
         if target_item is None:
-            # Item may have been re-stacked; search by name as fallback
-            item_name = entry["item_name"]
-            for item in getattr(merchant, "inventory", []):
-                if getattr(item, "name", None) == item_name:
-                    target_item = item
-                    break
+            target_item = find_stock_by_name(
+                merchant_inv, entry.get("item_name"), entry.get("type")
+            )
 
         if target_item is None:
             merchant._buyback_ledger.remove(entry)

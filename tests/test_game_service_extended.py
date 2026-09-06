@@ -205,9 +205,15 @@ class _ShopWorld:
         return self.gs.shop_buyback(self.player, self.npc_id, item_id)
 
     def offer_id(self):
-        """The ledger id of the single outstanding buyback offer."""
+        """The wire id of the single outstanding buyback offer.
+
+        The ENTRY's handle, which is what ``_serialize_buyback_item``
+        publishes as the row id and therefore the only id a client can
+        send back. The entry's ``item_id`` is an internal pointer at the
+        stock the entry draws from, and two entries may share one.
+        """
         (entry,) = self.merchant._buyback_ledger
-        return entry["item_id"]
+        return wire_handle(entry)
 
 
 def _tradeable(name="Tonic", value=100, weight=0.1, count=1):

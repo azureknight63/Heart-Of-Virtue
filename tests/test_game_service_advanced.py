@@ -432,7 +432,7 @@ class TestBuybackLedger:
         shop.sell(item)
         assert get_player_gold(player) == before + 50
 
-        result = shop.buyback(merchant._buyback_ledger[0]["item_id"])
+        result = shop.buyback(wire_handle(merchant._buyback_ledger[0]))
 
         assert result["success"] is True
         assert get_player_gold(player) == before
@@ -444,7 +444,7 @@ class TestBuybackLedger:
         shop.sell(item)
         assert not [i for i in player.inventory if i.name == "Tonic"]
 
-        shop.buyback(merchant._buyback_ledger[0]["item_id"])
+        shop.buyback(wire_handle(merchant._buyback_ledger[0]))
 
         assert [i for i in player.inventory if i.name == "Tonic"]
 
@@ -452,7 +452,7 @@ class TestBuybackLedger:
         item = make_consumable(value=100)
         player.inventory.append(item)
         shop.sell(item)
-        item_id = merchant._buyback_ledger[0]["item_id"]
+        item_id = wire_handle(merchant._buyback_ledger[0])
 
         shop.buyback(item_id)
 
@@ -482,7 +482,7 @@ class TestBuybackLedger:
         item = make_consumable(value=100)
         player.inventory.append(item)
         shop.sell(item)
-        item_id = merchant._buyback_ledger[0]["item_id"]
+        item_id = wire_handle(merchant._buyback_ledger[0])
 
         game_service.move_player(player, "east")
         game_service.move_player(player, "west")

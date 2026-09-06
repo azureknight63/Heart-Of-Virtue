@@ -142,9 +142,13 @@ class TestCombatStateSerializer:
     """Tests for CombatStateSerializer covering uncovered branches."""
 
     def setup_method(self):
-        from src.api.serializers.combat import CombatStateSerializer
+        from src.api.serializers.combat import (
+            CombatStateSerializer,
+            CombatantSerializer,
+        )
 
         self.CombatStateSerializer = CombatStateSerializer
+        self.CombatantSerializer = CombatantSerializer
 
     def test_serialize_combat_state_basic(self):
         player = _combatant()
@@ -205,11 +209,22 @@ class TestCombatStateSerializer:
         assert result["items_dropped"] == []
 
     def test_get_turn_order(self):
+        """Entries are canonical combat wire ids, not list indices.
+
+        ``enemy_<i>`` was a fourth spelling no resolver accepted, and it
+        renamed every enemy whenever one left the list.
+        """
         player = _combatant()
         enemy = _combatant(name="Goblin", is_player=False)
+
         order = self.CombatStateSerializer._get_turn_order(player, [enemy])
+
+        assert order == [
+            self.CombatantSerializer.stream_id(player),
+            self.CombatantSerializer.stream_id(enemy),
+        ]
         assert order[0] == "player"
-        assert "enemy_0" in order
+        assert order[1] != "enemy_0"
 
     def test_get_available_actions_with_inventory(self):
         combatant = _combatant()
@@ -2226,7 +2241,16 @@ class TestObjectSerializer:
         assert "opened" not in result
 
     def test_serialize_dict_shaped_object(self):
-        """Map JSON hands the serializer plain dicts for some objects."""
+        """Map JSON hands the serializer plain dicts for some objects.
+
+        A mapping gets a handle like any other entity — minted into the
+        mapping itself so it is stable across polls. The ``id`` key below is
+        deliberately kept in the fixture to pin that it is NOT preferred over
+        the handle: no map JSON object entry actually carries one, and
+        publishing it would ship an id ``find_by_handle`` cannot resolve.
+        """
+        from src.combatant import find_by_handle, wire_handle
+
         obj = {
             "id": "door_1",
             "name": "Iron Door",
@@ -2239,7 +2263,12 @@ class TestObjectSerializer:
         }
         result = self.ObjectSerializer._serialize_base(obj)
 
-        assert result["id"] == "door_1"
+        assert result["id"] == wire_handle(obj)
+        assert result["id"] != "door_1"
+        assert find_by_handle([obj], result["id"]) is obj
+        assert self.ObjectSerializer._serialize_base(obj)["id"] == result["id"], (
+            "a mapping's id must be stable between polls"
+        )
         assert result["name"] == "Iron Door"
         assert result["type"] == "Door"
         assert result["aliases"] == ["door"]

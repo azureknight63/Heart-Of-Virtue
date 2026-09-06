@@ -21,6 +21,7 @@ import src.moves as moves  # type: ignore
 from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
+    strip_combatant_prefix,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
 from src.api.schemas.combat_beat import (
@@ -40,6 +41,7 @@ from src.combatant import (
     PENDING_ANIMATION_ATTR,
     REPORTED_BEAT_KEY,
     combatant_handle,
+    find_by_handle,
 )
 from src.moves._base import select_weighted_target, display_name_of
 from src.events import purge_orphaned_combat_events
@@ -68,16 +70,13 @@ ABORTABLE_MIN_PREP_BEATS = 8
 logger = logging.getLogger(__name__)
 
 
-def _strip_combatant_prefix(target_id: str) -> str:
-    """Strip the 'enemy_'/'ally_' prefix, leaving the bare combatant handle.
-
-    The suffix is the combatant's stable handle (``combatant_handle``), not a
-    Python ``id()`` -- see ``CombatantSerializer.stream_id`` and issue #511.
-    """
-    for prefix in ("enemy_", "ally_"):
-        if target_id.startswith(prefix):
-            return target_id[len(prefix):]
-    return target_id
+#: Strip the ``enemy_``/``ally_`` prefix, leaving the bare combatant handle.
+#: Re-exported from the serializer that mints those prefixes rather than
+#: re-spelled here: this module used to carry its own literal tuple of them,
+#: which meant a renamed or added side stopped resolving on this side only,
+#: silently. The suffix is the combatant's stable handle (``combatant_handle``),
+#: not a Python ``id()`` -- see ``CombatantSerializer.stream_id`` and #511.
+_strip_combatant_prefix = strip_combatant_prefix
 
 
 #: ── The ``_pending_animation`` lifecycle, in one place ──────────────────────
@@ -1438,11 +1437,10 @@ class ApiCombatAdapter:
         The prefix (``enemy_``/``ally_``) is stripped before comparison so
         either form resolves against the bare handle.
         """
-        target_handle = _strip_combatant_prefix(target_id)
-        for combatant in self.player.combat_list + self.player.combat_list_allies:
-            if combatant_handle(combatant) == target_handle:
-                return combatant
-        return None
+        return find_by_handle(
+            self.player.combat_list + self.player.combat_list_allies,
+            _strip_combatant_prefix(target_id),
+        )
 
     def _resolve_target_from_options(
         self, move, target_id: str, options: Optional[List[Dict[str, Any]]] = None

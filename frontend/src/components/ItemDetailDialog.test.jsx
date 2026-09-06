@@ -14,7 +14,8 @@ vi.mock('../api/client', () => ({
 
 describe('ItemDetailDialog', () => {
   // From src/test/payloads.js: InventoryItemSerializer emits `id` as a STRING
-  // (str(id(item))) and the stack size as `quantity`. The previous inline
+  // (an opaque 32-hex wire handle, not a heap address — issues #511/#518)
+  // and the stack size as `quantity`. The previous inline
   // fixture used `id: 1`, so every `item_id` assertion here was checking a
   // value no serializer can produce.
   const mockItem = makeInventoryItem({

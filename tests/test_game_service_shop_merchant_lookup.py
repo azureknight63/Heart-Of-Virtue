@@ -170,7 +170,7 @@ class TestShopRoutesReachRealMerchant:
         assert ledger[0]["item_name"] == "Restorative"
 
         buyback_result = game_service.shop_buyback(
-            player, wire_handle(merchant), ledger[0]["item_id"]
+            player, wire_handle(merchant), wire_handle(ledger[0])
         )
 
         assert buyback_result["success"] is True, buyback_result.get("error")

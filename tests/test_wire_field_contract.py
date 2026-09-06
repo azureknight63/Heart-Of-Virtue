@@ -1603,12 +1603,10 @@ class TestAbortableMoveWireContract:
 
 #: An id must be opaque. A decimal string is a CPython heap address — the
 #: scheme #511/#518 removed — so its reappearance anywhere is a regression.
-def _assert_opaque(wire_id, label):
-    assert wire_id, f"{label} emitted an empty id"
-    assert not str(wire_id).isdigit(), (
-        f"{label} emitted {wire_id!r} — a decimal heap address. Wire ids are "
-        "opaque handles (src.combatant.wire_handle); see issue #518."
-    )
+#: The check itself lives in ``tests/_gs_fixtures`` so this file and
+#: ``test_entity_wire_handles`` make the SAME check rather than two different
+#: partial ones.
+from tests._gs_fixtures import assert_opaque_wire_id as _assert_opaque  # noqa: E402
 
 
 class TestWireIdRoundTrip:
@@ -1629,17 +1627,27 @@ class TestWireIdRoundTrip:
         tile.objects_here = [chest]
         return player, tile
 
-    def test_a_room_npc_id_resolves_back_through_interact_with_target(self):
+    @pytest.mark.parametrize("payload_key", ["npcs", "items", "objects"])
+    def test_a_room_entity_id_resolves_back_through_interact_with_target(
+        self, payload_key
+    ):
+        """Every room list: the id ``get_current_room`` published resolves.
+
+        One parametrised body rather than three copies differing only in the
+        dict key — the container-contents case below stays separate because it
+        reads a *nested* id (``objects[0].contents[0]``) and a different branch
+        of ``interact_with_target`` resolves it.
+        """
         player, _ = self._room()
         gs = GameService()
 
-        npc_id = gs.get_current_room(player)["npcs"][0]["id"]
-        _assert_opaque(npc_id, "room npcs[0].id")
+        entity_id = gs.get_current_room(player)[payload_key][0]["id"]
+        _assert_opaque(entity_id, f"room {payload_key}[0].id")
 
-        result = gs.interact_with_target(player, npc_id, "look")
+        result = gs.interact_with_target(player, entity_id, "look")
 
         assert result["message"] != "Target not found.", (
-            "the id get_current_room published did not resolve"
+            f"the id get_current_room published for {payload_key} did not resolve"
         )
 
     def test_a_room_npc_id_is_what_start_combat_matches_on(self):
@@ -1652,28 +1660,6 @@ class TestWireIdRoundTrip:
             result = gs.start_combat(player, npc_id)
 
         assert "error" not in result, result
-
-    def test_a_room_object_id_resolves_back_through_interact_with_target(self):
-        player, _ = self._room()
-        gs = GameService()
-
-        obj_id = gs.get_current_room(player)["objects"][0]["id"]
-        _assert_opaque(obj_id, "room objects[0].id")
-
-        result = gs.interact_with_target(player, obj_id, "look")
-
-        assert result["message"] != "Target not found."
-
-    def test_a_floor_item_id_resolves_back_through_interact_with_target(self):
-        player, _ = self._room()
-        gs = GameService()
-
-        item_id = gs.get_current_room(player)["items"][0]["id"]
-        _assert_opaque(item_id, "room items[0].id")
-
-        result = gs.interact_with_target(player, item_id, "look")
-
-        assert result["message"] != "Target not found."
 
     def test_a_container_content_id_resolves_back_through_interact_with_target(self):
         """Chest contents are serialized by ItemSerializer inside the object
@@ -1748,15 +1734,11 @@ class TestWireIdRoundTrip:
         assert get_item_and_index(player, item_id="no-such-handle") == (None, None)
 
     def test_the_shop_npc_id_resolves_back_through_find_merchant(self):
-        from tests._gs_fixtures import live_world
+        from tests._gs_fixtures import live_shop
 
-        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
-        merchant = Merchant(
-            name="Tester", description="desc", damage=1, aggro=False,
-            exp_award=0, stock_count=0,
+        player, _, merchant = live_shop(
+            coords=GRID_3X3, stock=[Restorative(count=2, merchandise=True)]
         )
-        merchant.inventory = [Restorative(count=2, merchandise=True)]
-        game_map[(0, 0)].npcs_here = [merchant]
         gs = GameService()
 
         npc_id = ShopSerializer.serialize_state(merchant, player, 0)["npc_id"]
@@ -1765,17 +1747,12 @@ class TestWireIdRoundTrip:
         assert gs._find_merchant(player, npc_id) is merchant
 
     def test_a_stock_item_id_is_what_shop_buy_matches_on(self):
-        from tests._gs_fixtures import live_world, set_player_gold
+        from tests._gs_fixtures import live_shop
 
-        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
-        set_player_gold(player, 500)
-        merchant = Merchant(
-            name="Tester", description="desc", damage=1, aggro=False,
-            exp_award=0, stock_count=0,
-        )
         stock = Restorative(count=2, merchandise=True)
-        merchant.inventory = [stock]
-        game_map[(0, 0)].npcs_here = [merchant]
+        player, _, merchant = live_shop(
+            coords=GRID_3X3, stock=[stock], player_gold=500
+        )
         gs = GameService()
 
         state = ShopSerializer.serialize_state(merchant, player, 0)
@@ -1787,18 +1764,13 @@ class TestWireIdRoundTrip:
         assert result["success"], result.get("error")
 
     def test_a_sell_row_id_is_what_shop_sell_matches_on(self):
-        from tests._gs_fixtures import live_world
+        from tests._gs_fixtures import live_shop
 
-        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        player, _, merchant = live_shop(coords=GRID_3X3)
         goods = Restorative()
         goods.value = 10
         player.inventory = [goods]
-        merchant = Merchant(
-            name="Tester", description="desc", damage=1, aggro=False,
-            exp_award=0, stock_count=0,
-        )
         merchant.update_goods()
-        game_map[(0, 0)].npcs_here = [merchant]
         gs = GameService()
 
         state = ShopSerializer.serialize_state(merchant, player, 0)
@@ -1816,19 +1788,13 @@ class TestWireIdRoundTrip:
         """The buyback id is the one wire id that is *persisted* (on the
         merchant, into saves), so its round trip spans a sell and a repurchase
         rather than a single request."""
-        from tests._gs_fixtures import live_world, set_player_gold
+        from tests._gs_fixtures import live_shop
 
-        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
-        set_player_gold(player, 500)
+        player, _, merchant = live_shop(coords=GRID_3X3, player_gold=500)
         goods = Restorative()
         goods.value = 10
         player.inventory.append(goods)
-        merchant = Merchant(
-            name="Tester", description="desc", damage=1, aggro=False,
-            exp_award=0, stock_count=0,
-        )
         merchant.update_goods()
-        game_map[(0, 0)].npcs_here = [merchant]
         gs = GameService()
 
         npc_id = ShopSerializer.serialize_state(merchant, player, 0)["npc_id"]

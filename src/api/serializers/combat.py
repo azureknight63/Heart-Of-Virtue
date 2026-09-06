@@ -214,11 +214,23 @@ class CombatStateSerializer:
 
     @staticmethod
     def _get_turn_order(player: "Player", enemies: List["NPC"]) -> List[str]:
-        """Get turn order based on initiative/speed."""
-        combatants = [("player", getattr(player, "speed", 10))] + [
-            (f"enemy_{i}", getattr(e, "speed", 5)) for i, e in enumerate(enemies)
+        """The ``battle_state.turn_order`` list: the player, then the enemies.
+
+        Named "turn order" historically, but it does not sort by anything --
+        it reports the combat list in its existing order, which is the order
+        the engine resolves beats in. Nothing on the client reads the field
+        today; it is still emitted on every poll, so its entries must be real
+        wire ids.
+
+        They are minted through :meth:`CombatantSerializer.stream_id` for that
+        reason. This used to interpolate the enemy's *list index*
+        (``f"enemy_{i}"``) -- a fourth spelling of a combat id that no
+        resolver accepts, and one that renames every enemy whenever a
+        combatant leaves the list.
+        """
+        return [CombatantSerializer.stream_id(player)] + [
+            CombatantSerializer.stream_id(enemy) for enemy in enemies
         ]
-        return [c[0] for c in combatants]
 
     @staticmethod
     def _get_available_actions(combatant: Any) -> List[str]:
@@ -263,6 +275,37 @@ class CombatStateSerializer:
         return drops
 
 
+#: ── The combat wire-id prefix vocabulary, single-sourced ────────────────────
+#:
+#: A combat wire id is a side prefix plus the combatant's opaque handle. The
+#: prefixes are minted in :meth:`CombatantSerializer.stream_id` below and
+#: parsed back apart in two other files (``src/api/combat_adapter.py``'s
+#: ``_strip_combatant_prefix`` and ``src/api/routes/inventory.py``'s
+#: ``_resolve_ally_target``). Both parsers pass an unrecognised prefix through
+#: unchanged -- so spelled as literals on three sides, adding or renaming a
+#: side makes every id of that side resolve to nobody, with no error anywhere.
+#: Naming them once here and deriving both parsers from them removes that.
+PLAYER_ID = "player"
+ALLY_ID_PREFIX = "ally_"
+ENEMY_ID_PREFIX = "enemy_"
+
+#: Every side prefix, for parsers that strip whichever one is present.
+COMBATANT_ID_PREFIXES = (ENEMY_ID_PREFIX, ALLY_ID_PREFIX)
+
+
+def strip_combatant_prefix(target_id: str) -> str:
+    """Strip whichever side prefix ``target_id`` carries, leaving the handle.
+
+    Derived from :data:`COMBATANT_ID_PREFIXES` rather than a literal list, so a
+    new side is understood by every parser the moment it is minted. An id with
+    no known prefix is returned unchanged -- a bare handle is a legal input.
+    """
+    for prefix in COMBATANT_ID_PREFIXES:
+        if target_id.startswith(prefix):
+            return target_id[len(prefix):]
+    return target_id
+
+
 class CombatantSerializer:
     """Serialize individual combatant state (player or NPC in combat)."""
 
@@ -288,10 +331,10 @@ class CombatantSerializer:
         from src.player import Player
 
         if isinstance(combatant, Player):
-            return "player"
+            return PLAYER_ID
         if getattr(combatant, "friend", False):
-            return f"ally_{combatant_handle(combatant)}"
-        return f"enemy_{combatant_handle(combatant)}"
+            return f"{ALLY_ID_PREFIX}{combatant_handle(combatant)}"
+        return f"{ENEMY_ID_PREFIX}{combatant_handle(combatant)}"
 
     @staticmethod
     def serialize_combatant(combatant: Any, reference: Any = None) -> Dict[str, Any]:
