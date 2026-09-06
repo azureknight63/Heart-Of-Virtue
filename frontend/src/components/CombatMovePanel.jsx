@@ -198,14 +198,37 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                         // or keyboard events to anything nested inside it — so a
                         // term rendered in there would be inert exactly when it is
                         // needed, besides being a nested interactive control.
+                        //
+                        // Two seams that restructure opened, both fixed here: the
+                        // wrapper carries no padding (the button pads itself, so the
+                        // whole card face casts the move and shows the right cursor
+                        // instead of a 12px dead ring), and the hover handlers sit on
+                        // the wrapper — the element the hover chrome is drawn on — so
+                        // crossing from the button onto the ring or the reason line
+                        // cannot blink the card highlight and the battlefield's enemy
+                        // highlight off under a pointer that never left the card.
                         return (
                           <div
                             key={moveKey}
+                            onMouseEnter={() => {
+                                if (isAvailable) {
+                                    setHoveredMoveName(moveKey);
+                                    if (singleTargetId && onTargetHover) {
+                                        onTargetHover(singleTargetId);
+                                    }
+                                }
+                            }}
+                            onMouseLeave={() => {
+                                setHoveredMoveName(null);
+                                if (onTargetHover) {
+                                    onTargetHover(null);
+                                }
+                            }}
                             style={{
                                 backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
                                 border: `1px solid ${isHovered ? colors.secondary : colors.border.light}`,
                                 borderRadius: '4px',
-                                padding: spacing.md,
+                                padding: 0,
                                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -223,26 +246,12 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                         onMoveClick(move);
                                     }
                                 }}
-                                onMouseEnter={() => {
-                                    if (isAvailable) {
-                                        setHoveredMoveName(moveKey);
-                                        if (singleTargetId && onTargetHover) {
-                                            onTargetHover(singleTargetId);
-                                        }
-                                    }
-                                }}
-                                onMouseLeave={() => {
-                                    setHoveredMoveName(null);
-                                    if (onTargetHover) {
-                                        onTargetHover(null);
-                                    }
-                                }}
                                 disabled={!isAvailable || isProcessing}
                                 title={!isAvailable ? reason : ''}
                                 style={{
                                     background: 'none',
                                     border: 'none',
-                                    padding: 0,
+                                    padding: spacing.md,
                                     color: 'inherit',
                                     textAlign: 'left',
                                     cursor: isProcessing ? 'wait' : (isAvailable ? 'pointer' : 'not-allowed'),
@@ -278,7 +287,9 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                         fontSize: '0.75rem',
                                         fontStyle: 'italic',
                                         fontFamily: '"Courier New", monospace',
-                                        marginTop: spacing.xs,
+                                        // The wrapper pads nothing now, so the
+                                        // reason line pays for its own inset.
+                                        padding: `0 ${spacing.md} ${spacing.md}`,
                                     }}
                                 />
                             )}
