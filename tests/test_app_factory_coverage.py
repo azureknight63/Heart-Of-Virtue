@@ -1600,3 +1600,95 @@ class TestTheProductionVerdictFollowsTheClassAsWellAsTheEnv:
         values = DevelopmentConfig.runtime_config()
         assert values["SECRET_KEY"]
         assert values["SESSION_COOKIE_SECURE"] is False
+
+
+class TestTheSessionGaugeIsNotPublishedInProduction:
+    """``GET /health`` publishes a live session count, and must not always.
+
+    The route has no auth at all, so on a public deployment the gauge is an
+    occupancy oracle for a single-player game: anyone can poll "is the
+    developer online?" and watch the number move. The route already dropped it
+    outside dev/test — but only the PRESENT direction was ever asserted
+    (``test_health_returns_sessions_count``, under a TESTING app), so the half
+    that carries the security decision had no guard whatsoever.
+
+    The other consequence of leaving the predicate inline was in the harness:
+    ``tools/harness/scenarios/health.py`` required ``sessions`` in every
+    response, which is right only for the config ``bug_hunt.py`` happens to
+    build. Both now ask ``session_gauge_visible``.
+    """
+
+    def setup_method(self):
+        # Imported here rather than at module scope, like _make_app does: other
+        # test files replace sys.modules["flask"] with a MagicMock during
+        # collection, and src.api.app imports flask at module level.
+        from src.api.app import session_gauge_visible
+
+        self.gauge_visible = session_gauge_visible
+        self.app, _ = _make_app(_FastTestConfig)
+        self.client = self.app.test_client()
+
+    @pytest.mark.parametrize(
+        "testing, debug",
+        [(True, True), (True, False), (False, True), (False, False)],
+    )
+    def test_the_payload_follows_the_predicate(self, testing, debug):
+        """The wiring: the route publishes the gauge exactly when the shared
+        predicate says to, in all four config states."""
+        self.app.config["TESTING"] = testing
+        self.app.config["DEBUG"] = debug
+        data = json.loads(self.client.get("/health").data)
+        assert ("sessions" in data) is self.gauge_visible(self.app.config)
+
+    def test_both_answers_actually_occur(self):
+        """Non-vacuity for the parametrisation above, which a route that always
+        published — or never did — would satisfy in one of its two halves
+        without anyone noticing the other was untested."""
+        seen = set()
+        for testing, debug in [(True, False), (False, False)]:
+            self.app.config["TESTING"] = testing
+            self.app.config["DEBUG"] = debug
+            seen.add("sessions" in json.loads(self.client.get("/health").data))
+        assert seen == {True, False}, seen
+
+    def test_the_production_config_lands_in_the_silent_state(self):
+        """The anchor.
+
+        Everything above is stated in terms of the predicate, so it would hold
+        just as well if the predicate itself were wrong. This ties it to the
+        actual shipped production class instead: whatever ``ProductionConfig``
+        sets, the gauge must not be published under it.
+        """
+        from src.api.config import ProductionConfig
+
+        production_state = {
+            "TESTING": getattr(ProductionConfig, "TESTING", False),
+            "DEBUG": ProductionConfig.DEBUG,
+        }
+        assert self.gauge_visible(production_state) is False, production_state
+
+    def test_the_status_field_is_never_conditional(self):
+        """The control: only the gauge is config-dependent. A health endpoint
+        that answered nothing in production would be a worse bug than the one
+        this class closes."""
+        for testing, debug in [(True, True), (False, False)]:
+            self.app.config["TESTING"] = testing
+            self.app.config["DEBUG"] = debug
+            response = self.client.get("/health")
+            assert response.status_code == 200
+            assert json.loads(response.data)["status"] == "healthy"
+
+    def test_the_harness_scenario_asks_the_same_predicate(self):
+        """The second caller, which is why the predicate has a name.
+
+        ``tools/harness/scenarios/health.py`` hard-required ``sessions``; run
+        against anything but a dev/test app it reported a field the server was
+        deliberately withholding as a missing-field bug.
+        """
+        from pathlib import Path
+
+        source = Path("tools/harness/scenarios/health.py").read_text(
+            encoding="utf-8"
+        )
+        assert "session_gauge_visible" in source
+        assert '["status", "sessions"]' not in source

@@ -898,21 +898,33 @@ def _register_request_limits(app):
         return None
 
 
+def session_gauge_visible(config) -> bool:
+    """Whether ``GET /health`` publishes the live session count.
+
+    The gauge is operational telemetry on a route with no auth at all: on a
+    public deployment it is an occupancy oracle for a single-player game —
+    anyone can poll "is the developer online?" and watch the count move. It is
+    genuinely useful locally, so it is kept for the non-production configs and
+    dropped for production. A monitor that needs the number in production
+    should read it from an authenticated route rather than reopening this one.
+
+    Named and exported rather than left inline because it has a SECOND caller
+    with no business guessing: ``tools/harness/scenarios/health.py`` asserts
+    the shape of this payload, and used to require ``sessions``
+    unconditionally. That is only right for the config the harness happens to
+    build; pointed at a production app it reported a phantom missing field.
+    Now both the route and the harness ask the same function.
+    """
+    return bool(config.get("TESTING") or config.get("DEBUG"))
+
+
 def _register_meta_routes(app):
     """Health and API info — the two unauthenticated public endpoints."""
 
     @app.route("/health", methods=["GET"])
     def health():
         payload = {"status": "healthy"}
-        # The live session gauge is operational telemetry, and this route has
-        # no auth at all: on a public deployment it is an occupancy oracle for
-        # a single-player game — anyone can poll "is the developer online?" and
-        # watch the count move. It is genuinely useful locally, so it is kept
-        # for the non-production configs (which is every config the tests and
-        # the bug-hunt harness build) and dropped for production. A monitor
-        # that needs the number in production should read it from an
-        # authenticated route rather than reopening this one.
-        if app.config.get("TESTING") or app.config.get("DEBUG"):
+        if session_gauge_visible(app.config):
             payload["sessions"] = app.session_manager.get_active_session_count()
         return jsonify(payload)
 
