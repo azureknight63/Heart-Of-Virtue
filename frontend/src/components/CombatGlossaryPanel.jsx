@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  ALL_CATEGORIES,
   GLOSSARY_CATEGORIES,
   filterGlossaryEntries,
   glossaryCategory,
@@ -8,8 +9,6 @@ import {
 import useHorizontalScrollEnd from '../hooks/useHorizontalScrollEnd'
 import { useMobile } from '../hooks/useMobile'
 import { colors, fonts, shadows, spacing } from '../styles/theme'
-
-const ALL = 'all'
 
 /**
  * One glossary entry: name → what it is → how you see it happening.
@@ -95,7 +94,7 @@ function GlossaryEntryRow({ entry, highlighted, rowRef }) {
 export default function CombatGlossaryPanel({ onClose, focusEntryId = null }) {
   const isMobile = useMobile()
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState(ALL)
+  const [category, setCategory] = useState(ALL_CATEGORIES)
   const searchRef = useRef(null)
   const focusedRowRef = useRef(null)
   const { hasMore, ref: filtersRef } = useHorizontalScrollEnd()
@@ -124,7 +123,7 @@ export default function CombatGlossaryPanel({ onClose, focusEntryId = null }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
-  const chips = [{ id: ALL, label: 'All', color: colors.secondary }, ...GLOSSARY_CATEGORIES]
+  const chips = [{ id: ALL_CATEGORIES, label: 'All', color: colors.secondary }, ...GLOSSARY_CATEGORIES]
 
   const shellStyle = isMobile
     ? {
