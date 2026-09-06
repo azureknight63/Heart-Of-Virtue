@@ -221,6 +221,15 @@ _SDK_DETERMINISTIC_REFUSALS = _PERMANENT_MODEL_FAILURES | {403}
 # Completion budgets for one attempt. Structured replies carry a JSON envelope
 # and (on a reasoning model) a chain of thought billed as completion tokens, so
 # they need several times the room a one-paragraph plain reply does.
+#: How many past exchanges each prompt actually reads. They differ on
+#: purpose: the full history block carries the conversation, while the
+#: jean-options builder only needs enough to avoid suggesting what Jean just
+#: said. Named because ``ConversationalNPCMixin`` caps what it PERSISTS, and a
+#: cap below either of these silently starves the prompt -- see
+#: ``_MAX_PERSISTED_EXCHANGES`` and the guard that ties them together.
+_PROMPT_HISTORY_TURNS = 8
+_JEAN_OPTIONS_HISTORY_TURNS = 4
+
 _STRUCTURED_MAX_TOKENS = 1024
 _PLAIN_MAX_TOKENS = 256
 
@@ -3625,7 +3634,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # an attacker probes.
         recent_jean_lines = [
             fence_player_text(ex.get("jean", ""))
-            for ex in history[-4:]
+            for ex in history[-_JEAN_OPTIONS_HISTORY_TURNS:]
             if ex.get("jean")
         ]
         history_hint = " | ".join(recent_jean_lines) if recent_jean_lines else "none yet"
@@ -4306,7 +4315,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if not history:
             return "[CONVERSATION HISTORY]\nNone yet."
         lines = ["[CONVERSATION HISTORY]"]
-        for ex in history[-8:]:
+        for ex in history[-_PROMPT_HISTORY_TURNS:]:
             npc_line = neutralise_model_text(ex.get("npc", ""))
             jean_line = neutralise_player_text(ex.get("jean", ""))
             if npc_line:

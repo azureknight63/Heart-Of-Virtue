@@ -328,8 +328,11 @@ class TestRetractionUsesWhatLandedNotWhatWasAsked:
         return npc
 
     def _round_trip(self, npc, delta):
-        applied, _ended = npc._apply_loquacity_delta(delta, "positive")
-        npc._retract_guarded_loquacity_gain(applied)
+        # Named `outcome`, not `applied`: this variable used to be called
+        # `applied` and held the REQUESTED delta, which is the same confusion
+        # the production signatures had.
+        outcome = npc._apply_loquacity_delta(delta, "positive")
+        npc._retract_guarded_loquacity_gain(outcome)
         return npc.loquacity_current
 
     @pytest.mark.parametrize("delta", [3, 8, 15])
@@ -353,9 +356,9 @@ class TestRetractionUsesWhatLandedNotWhatWasAsked:
         """Retraction is for gains only -- cancelling drains would let a
         conversation that trips every turn run forever."""
         npc = self._npc(current=10)
-        applied, _ = npc._apply_loquacity_delta(-4, "negative")
+        outcome = npc._apply_loquacity_delta(-4, "negative")
         assert npc.loquacity_current == 6
-        npc._retract_guarded_loquacity_gain(applied)
+        npc._retract_guarded_loquacity_gain(outcome)
         assert npc.loquacity_current == 6
 
     def test_the_ceiling_is_what_a_real_merchant_actually_opens_at(self):

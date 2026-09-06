@@ -522,6 +522,32 @@ class GuardedTurn(NamedTuple):
     tripped: bool = False
 
 
+class LoquacityOutcome(NamedTuple):
+    """What one round's loquacity change asked for, and what it actually did.
+
+    ``requested`` is the bounded delta the model asked for -- the number that
+    gets logged and persisted. ``applied`` is what the clamp against
+    ``loquacity_max`` really moved. They differ exactly when the NPC was
+    already at its ceiling, which is the state every shipped merchant OPENS
+    in: ``scale_loquacity(80)`` is 12, so ``current == max`` on turn one.
+
+    Both are carried because the retraction on a tripped turn must undo
+    ``applied``, while the log and the save want ``requested``. That
+    distinction used to live in an undeclared instance attribute written by
+    one method and read by another through ``getattr(..., default)``, with the
+    reader's parameter named ``loquacity_delta`` -- the same name the applier
+    uses for a DIFFERENT number. The test that covered the pair had already
+    absorbed the confusion and called the requested value ``applied``.
+
+    Passing the record instead of an int is what makes the wrong number
+    unwritable rather than merely documented.
+    """
+
+    requested: int
+    applied: int
+    ended: bool
+
+
 class TurnOutcome(NamedTuple):
     """One raw turn as it came back from the adapter, coerced and clamped.
 
@@ -774,8 +800,16 @@ _MERCHANT_STOCK_REQUEST_PATTERN = re.compile(
 # constant.
 _APO = r"['\u2019]"
 
-#: Exchanges kept in the save. Two turns of context is what the prompt uses;
-#: the rest is history the player can read in the transcript panel.
+#: Exchanges kept in the save.
+#:
+#: The prompts read at most the last 8 (``_format_history``) and the last 4
+#: (the jean-options builder), so this is the larger of those plus room --
+#: NOT, as this said when the constant was introduced, "two turns of context
+#: is what the prompt uses". Nobody checked that number and it was wrong by
+#: four times; ``tests/test_npc_chat_merchant_and_loquacity.py`` now derives
+#: the floor from ``ai/llm_client.py`` so the next person cannot be wrong
+#: about it quietly. The margin above the floor is transcript history, which
+#: the player can read back even though no prompt sees it.
 _MAX_PERSISTED_EXCHANGES = 20
 
 _MERCHANT_STOCK_VERB = r"have|carry|keep|stock|offer|sell|got"
@@ -1105,6 +1139,22 @@ _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30
 # sentinel (see :meth:`ConversationalNPCMixin.loquacity_tick`), and the floor of
 # 1 exists so a small pool can never scale away to nothing — a recovery of 0
 # would leave an exhausted NPC permanently mute.
+# WHERE THE REST OF LOQUACITY LIVES. Seven places, and nothing pointed
+# from any one of them to the others, in a 4,400-line module. By name
+# rather than by line, because a symbol survives a move and a number
+# does not:
+#
+#   scale_loquacity                   the 15% rule, applied to every
+#                                     quantity below except the drains
+#   _compute_loquacity                the pool, once per conversation:
+#                                     base + modifiers, then scaled
+#   _rescale_persisted_loquacity      a save written at the old scale
+#   _apply_loquacity_delta            the per-turn change, and the
+#                                     `ended` verdict that follows it
+#   _retract_guarded_loquacity_gain   undoing a gain the guard rejected
+#   loquacity_tick                    recovery while Jean is elsewhere
+#   LOQUACITY_DELTA_BOUNDS            what the model is allowed to ask
+#   (on the mixin)                    for in one turn
 LOQUACITY_SCALE_PERCENT = 15
 
 
@@ -1137,6 +1187,61 @@ _DEFAULT_LOQUACITY_RECOVERY = scale_loquacity(2)
 #: made the Gorran loquacity bonus below permanently zero in the game and
 #: reachable only from a test double that invented the attribute.
 _PARTY_ATTR = "combat_list_allies"
+
+# What moves an NPC's willingness to talk, in the SAME unscaled units as
+# ``loquacity_base``. Every one of these was a bare number inside
+# ``_compute_loquacity``, which made the design unreadable in the one place it
+# most needed to be: the whole point of scaling the SUM rather than the base
+# (see the block above) is that these modifiers are commensurate with the base,
+# and you cannot see that when the base is a name and the modifiers are digits.
+#
+# A stat contributes nothing at :data:`_LOQUACITY_STAT_BASELINE`; the weights
+# are per point above or below it. Reputation is a step, not a slope -- it
+# applies in full once |reputation| reaches 1 -- which is why it has no weight.
+
+#: Authored default when neither the character config nor the personality
+#: declares a ``loquacity_base``.
+_LOQUACITY_BASE_DEFAULT = 60
+
+#: The stat value that neither helps nor hurts. Both charisma modifiers and the
+#: wisdom-driven recovery measure from here.
+_LOQUACITY_STAT_BASELINE = 10
+
+#: Per point of the NPC's own charisma. Weighted above Jean's because it is the
+#: NPC's patience being modelled.
+_LOQUACITY_NPC_CHARISMA_WEIGHT = 3
+
+#: Per point of Jean's charisma.
+_LOQUACITY_JEAN_CHARISMA_WEIGHT = 2
+
+#: Applied in full once reputation reaches +/-1, in the matching direction.
+_LOQUACITY_REPUTATION_MOD = 20
+
+#: For visibly religious or road-worn gear -- see
+#: :data:`_LOQUACITY_FAVOURABLE_EQUIPMENT`.
+_LOQUACITY_EQUIPMENT_MOD = 10
+
+#: For travelling with Gorran.
+_LOQUACITY_PARTY_MOD = 10
+
+#: Equipment names that read as trustworthy to an NPC. Substring-matched
+#: against the lowercased name of every item Jean has equipped.
+#:
+#: NOTHING IN THE GAME CURRENTLY MATCHES. "crucifix" exists only in narration
+#: (the chapter 3 beat where Jean notices his own, and Maribel's in
+#: `src/npc/_friends.py`); there is no crucifix, religious token or nomad gear
+#: item in `src/items.py`. So the modifier is reachable now -- the read below
+#: was broken and is fixed -- but it will not fire until such an item is
+#: authored. Left as written rather than repointed at items that do exist,
+#: because which items should read as devout is a content decision, not a
+#: refactor. `test_the_favourable_equipment_vocabulary_is_honest` pins this
+#: state so it is a known gap rather than a silent one.
+_LOQUACITY_FAVOURABLE_EQUIPMENT = ("crucifix", "religious token", "nomad gear")
+
+#: Recovery per beat is wisdom-driven, with a floor so an unwise NPC still
+#: recovers at all.
+_LOQUACITY_RECOVERY_FLOOR = 2
+_LOQUACITY_RECOVERY_WISDOM_DIVISOR = 8
 
 #: Pre-scale floors, kept as the numbers the design was written in so the scaling
 #: rule is visible at the one place it is applied.
@@ -1497,10 +1602,18 @@ class ConversationalNPCMixin:
     def _memoised(self, attr: str, key: Any, build) -> Any:
         """Return ``build()``'s result, cached on ``self.<attr>`` under ``key``.
 
-        Two accessors (:meth:`_allowed_noun_tokens`, :meth:`_guard_allowed_topics`)
-        each rebuild a set from static authored config on every turn, and each
-        had its own hand-rolled "unpack the tuple, compare the parts, maybe
-        rebuild" block. One shape, written twice.
+        Three accessors (:meth:`_allowed_noun_tokens`,
+        :meth:`_guard_allowed_topics`, :meth:`_host_merchandise_pattern`) each
+        rebuild a value from static authored config on every turn, and each had
+        its own hand-rolled "unpack the tuple, compare the parts, maybe
+        rebuild" block. One shape, written three times -- and the third was
+        still written out by hand for a while AFTER this helper existed to
+        replace it, which is why the count is spelled here rather than left as
+        "several".
+
+        A ``None`` result caches correctly: the guard tests the stored TUPLE,
+        not the value, so a merchant with no declared stock is not rebuilt on
+        every turn. ``_host_merchandise_pattern`` depends on that.
 
         The key is compared with ``==``, which is what the callers want even
         where they mean identity: tuple comparison goes through
@@ -1554,34 +1667,56 @@ class ConversationalNPCMixin:
         base = (
             (self._chat_char_config or {}).get("loquacity_base")
             or (self._chat_personality or {}).get("loquacity_base")
-            or 60
+            or _LOQUACITY_BASE_DEFAULT
         )
 
         # NPC charisma bonus
-        npc_charisma_bonus = (getattr(self, "charisma", 10) - 10) * 3
+        npc_charisma_bonus = (
+            getattr(self, "charisma", _LOQUACITY_STAT_BASELINE)
+            - _LOQUACITY_STAT_BASELINE
+        ) * _LOQUACITY_NPC_CHARISMA_WEIGHT
 
         # Reputation modifier
         rep = getattr(player, "reputation", {}).get(self.name, 0)
-        story_mod = 20 if rep >= 1 else (-20 if rep <= -1 else 0)
+        story_mod = (
+            _LOQUACITY_REPUTATION_MOD
+            if rep >= 1
+            else (-_LOQUACITY_REPUTATION_MOD if rep <= -1 else 0)
+        )
 
         # Jean's charisma modifier
-        jean_stat_mod = (getattr(player, "charisma", 10) - 10) * 2
+        jean_stat_mod = (
+            getattr(player, "charisma", _LOQUACITY_STAT_BASELINE)
+            - _LOQUACITY_STAT_BASELINE
+        ) * _LOQUACITY_JEAN_CHARISMA_WEIGHT
 
-        # Equipment check
-        equipped = getattr(player, "equipped", {})
-        equip_names = []
-        if isinstance(equipped, dict):
-            for v in equipped.values():
-                if isinstance(v, dict):
-                    equip_names.append(str(v.get("name", "")).lower())
-                else:
-                    equip_names.append(str(v).lower())
-        equip_text = " ".join(equip_names)
+        # Equipment check.
+        #
+        # THIS READ WAS DEAD. It was `getattr(player, "equipped", {})`, and
+        # there is no `player.equipped` -- not on a fresh Player, not as a
+        # class attribute, not set anywhere in src/. The engine models
+        # equipment as `isequipped` on the items in `player.inventory`
+        # (`src/player/_combat.py` recomputes protection that way, and
+        # `src/api/serializers/combat.py` says so outright, citing issue #430:
+        # "there is no `combatant.equipped` dict"). The only assignments to it
+        # anywhere are five test fixtures that invented the attribute, one of
+        # which says as much in its own docstring -- so the modifier looked
+        # covered while never once firing in the game.
+        #
+        # This is the SAME BUG as `player.allies` fifteen lines below, whose
+        # comment describes it at length. Fixing that one did not prompt
+        # anybody to check its neighbour, which is why the contract guard in
+        # `tests/test_npc_chat_merchant_and_loquacity.py` now derives every
+        # attribute this mixin reads off `player` and checks each against a
+        # real Player rather than trusting the next reader to notice.
+        equip_text = " ".join(
+            str(getattr(item, "name", "") or "").lower()
+            for item in getattr(player, "inventory", None) or []
+            if getattr(item, "isequipped", False)
+        )
         equip_mod = (
-            10
-            if any(
-                x in equip_text for x in ("crucifix", "religious token", "nomad gear")
-            )
+            _LOQUACITY_EQUIPMENT_MOD
+            if any(x in equip_text for x in _LOQUACITY_FAVOURABLE_EQUIPMENT)
             else 0
         )
 
@@ -1596,7 +1731,11 @@ class ConversationalNPCMixin:
         # double an attribute the real Player does not have. The list's first
         # entry is the player himself; the name check skips him harmlessly.
         allies = getattr(player, _PARTY_ATTR, None) or []
-        party_mod = 10 if any(getattr(a, "name", "") == "Gorran" for a in allies) else 0
+        party_mod = (
+            _LOQUACITY_PARTY_MOD
+            if any(getattr(a, "name", "") == "Gorran" for a in allies)
+            else 0
+        )
 
         unscaled_max = max(
             _LOQUACITY_MAX_FLOOR,
@@ -1618,7 +1757,11 @@ class ConversationalNPCMixin:
             loquacity_max // _LOQUACITY_THRESHOLD_DIVISOR,
         )
         self.loquacity_recovery = scale_loquacity(
-            max(2, getattr(self, "wisdom", 10) // 8)
+            max(
+                _LOQUACITY_RECOVERY_FLOOR,
+                getattr(self, "wisdom", _LOQUACITY_STAT_BASELINE)
+                // _LOQUACITY_RECOVERY_WISDOM_DIVISOR,
+            )
         )
 
         if self.loquacity_current == 0:
@@ -1764,9 +1907,8 @@ class ConversationalNPCMixin:
             }
         )
 
-        # Keep only last 20 exchanges
-        if len(entry["exchanges"]) > 20:
-            entry["exchanges"] = entry["exchanges"][-20:]
+        if len(entry["exchanges"]) > _MAX_PERSISTED_EXCHANGES:
+            entry["exchanges"] = entry["exchanges"][-_MAX_PERSISTED_EXCHANGES:]
 
         entry["loquacity_current"] = self.loquacity_current
         entry["loquacity_max"] = self.loquacity_max
@@ -2512,10 +2654,14 @@ class ConversationalNPCMixin:
             tuple(type(item).__name__ for item in stock),
             tuple(getattr(cls, "__name__", str(cls)) for cls in specialties),
         )
-        cached = self._host_merchandise_cache
-        if cached is not None and cached[0] == cache_key:
-            return cached[1]
+        return self._memoised(
+            "_host_merchandise_cache",
+            cache_key,
+            lambda: self._build_merchandise_pattern(stock, specialties),
+        )
 
+    def _build_merchandise_pattern(self, stock, specialties):
+        """The uncached half of :meth:`_host_merchandise_pattern`."""
         words = set()
         for item in stock:
             # `_shop.py` documents `always_stock` as `list[Item | type[Item]]`
@@ -2553,14 +2699,12 @@ class ConversationalNPCMixin:
             key=len,
             reverse=True,
         )
-        pattern = None
-        if alternatives:
-            pattern = re.compile(
-                r"\b(?:" + "|".join(alternatives) + r")s?\b",
-                re.IGNORECASE,
-            )
-        self._host_merchandise_cache = (cache_key, pattern)
-        return pattern
+        if not alternatives:
+            return None
+        return re.compile(
+            r"\b(?:" + "|".join(alternatives) + r")s?\b",
+            re.IGNORECASE,
+        )
 
     def _names_merchandise(self, text: str) -> bool:
         """Does ``text`` name a thing this merchant trades in?
@@ -3645,7 +3789,7 @@ class ConversationalNPCMixin:
 
     def _apply_loquacity_delta(
         self, loquacity_delta: Optional[int], conversation_quality: str
-    ) -> Tuple[int, bool]:
+    ) -> LoquacityOutcome:
         """Apply the round's loquacity change; report whether the talk is over.
 
         The LLM may signal a signed delta (usually a drain, occasionally a GAIN
@@ -3668,13 +3812,17 @@ class ConversationalNPCMixin:
         self.loquacity_current = max(
             0, min(self.loquacity_max, self.loquacity_current + loquacity_delta)
         )
-        # What the clamp ACTUALLY moved, which is not what was asked for
-        # whenever the NPC was already at the ceiling. Recorded here because
-        # the retraction on a tripped turn has to undo the change that
-        # happened, and undoing the requested one charged the NPC for a gain
-        # it never received. See _retract_guarded_loquacity_gain.
-        self._last_applied_loquacity = self.loquacity_current - before
-        return loquacity_delta, self.loquacity_current < self.loquacity_threshold
+        # `applied` is what the clamp actually moved, which is not what was
+        # asked for whenever the NPC was already at the ceiling. It is RETURNED
+        # rather than stashed on self: the retraction needs it, and an
+        # attribute written by this method and read by that one through a
+        # `getattr` default is a data dependency the signatures do not admit
+        # to. See LoquacityOutcome.
+        return LoquacityOutcome(
+            requested=loquacity_delta,
+            applied=self.loquacity_current - before,
+            ended=self.loquacity_current < self.loquacity_threshold,
+        )
 
     def _resolve_fallback_response(
         self, player, conversation_ended: bool
@@ -3723,10 +3871,12 @@ class ConversationalNPCMixin:
             )
         return response, conversation_ended
 
-    def _retract_guarded_loquacity_gain(self, loquacity_delta: int) -> None:
+    def _retract_guarded_loquacity_gain(
+        self, outcome: "LoquacityOutcome"
+    ) -> None:
         """Take back a loquacity *gain* granted by a turn the guard had to fix.
 
-        ``loquacity_delta`` is the second structured field of a chat response
+        ``outcome.requested`` is the second structured field of a chat response
         that reaches the engine (see ``_chat_guard``'s module docstring): it
         persists in the save file, and a positive value RESTORES the NPC's
         willingness to talk. A turn the model had to be talked out of therefore
@@ -3741,8 +3891,11 @@ class ConversationalNPCMixin:
         that the conversation ends one turn later than the strict number says —
         the same slack any drain landing on the threshold has.
 
-        THE AMOUNT RETRACTED IS THE ONE THAT LANDED, not the one the model
+        THE AMOUNT RETRACTED IS ``outcome.applied``, not the one the model
         asked for, and the difference is the whole correctness of this method.
+        Taking the whole :class:`LoquacityOutcome` rather than an int is what
+        stops the two being confused again: there is no longer a number to
+        pass wrongly.
         ``_apply_loquacity_delta`` clamps the addition to ``loquacity_max``, and
         a real merchant opens a conversation at the ceiling —
         ``scale_loquacity(80)`` is 12, so ``current == max == 12`` on turn one.
@@ -3756,15 +3909,14 @@ class ConversationalNPCMixin:
         max=100, twenty points of headroom, so the saturating case the shipped
         NPCs are always in was structurally unreachable.
         """
-        applied = getattr(self, "_last_applied_loquacity", loquacity_delta)
-        if applied <= 0:
+        if outcome.applied <= 0:
             return
-        self.loquacity_current = max(0, self.loquacity_current - applied)
+        self.loquacity_current = max(0, self.loquacity_current - outcome.applied)
         logger.info(
             "chat_respond retracting loquacity applied=+%s (model asked +%s): "
             "the state guard tripped on this turn. npc=%s current=%s",
-            applied,
-            loquacity_delta,
+            outcome.applied,
+            outcome.requested,
             self.name,
             self.loquacity_current,
         )
@@ -4126,9 +4278,11 @@ class ConversationalNPCMixin:
                     self.name,
                 )
 
-            loquacity_delta, conversation_ended = self._apply_loquacity_delta(
+            loquacity = self._apply_loquacity_delta(
                 loquacity_delta, conversation_quality
             )
+            loquacity_delta = loquacity.requested
+            conversation_ended = loquacity.ended
             logger.info(
                 "chat_respond loquacity resolved. npc=%s delta=%s current=%s threshold=%s ended=%s",
                 self.name,
@@ -4164,7 +4318,7 @@ class ConversationalNPCMixin:
                 guardable=model_turn is not None,
                 deadline=deadline,
                 on_tripped=lambda: self._retract_guarded_loquacity_gain(
-                    loquacity_delta
+                    loquacity
                 ),
             )
             self._bump_conversation_count(player)

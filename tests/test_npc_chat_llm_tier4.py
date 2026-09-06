@@ -26,6 +26,7 @@ Tests cover:
 - All edge cases and error paths
 """
 
+from types import SimpleNamespace
 import pytest
 import json
 from pathlib import Path
@@ -45,6 +46,7 @@ from tests._npc_fixtures import (
     qc_npc,
     ready_npc,
     wired_chat_npc,
+    equipped_item,
 )
 
 
@@ -309,7 +311,7 @@ class TestComputeLoquacity:
     def test_compute_loquacity_basic(self):
         """Test basic loquacity computation with default base."""
         npc = chat_npc()
-        player = chat_player(charisma=10, equipped={}, combat_list_allies=[])
+        player = chat_player(charisma=10, combat_list_allies=[])
 
         npc._compute_loquacity(player)
         assert npc.loquacity_max == scale_loquacity(60)
@@ -323,7 +325,7 @@ class TestComputeLoquacity:
             loquacity_current=50,
             loquacity_threshold=10,
         )
-        player = chat_player(charisma=10, equipped={}, combat_list_allies=[])
+        player = chat_player(charisma=10, combat_list_allies=[])
 
         original_max = npc.loquacity_max
         npc._compute_loquacity(player)
@@ -332,7 +334,7 @@ class TestComputeLoquacity:
     def test_compute_loquacity_npc_charisma_bonus(self):
         """Test NPC charisma bonus to loquacity."""
         npc = chat_npc(charisma=15)
-        player = chat_player(charisma=10, equipped={}, combat_list_allies=[])
+        player = chat_player(charisma=10, combat_list_allies=[])
 
         npc._compute_loquacity(player)
         # Charisma 15 gives +5*3=+15 bonus before the 15% scale.
@@ -342,7 +344,7 @@ class TestComputeLoquacity:
         """Test positive reputation bonus."""
         npc = chat_npc()
         player = chat_player(
-            charisma=10, reputation={"TestNPC": 1}, equipped={}, combat_list_allies=[]
+            charisma=10, reputation={"TestNPC": 1}, combat_list_allies=[]
         )
 
         npc._compute_loquacity(player)
@@ -353,7 +355,7 @@ class TestComputeLoquacity:
         """Test negative reputation penalty."""
         npc = chat_npc()
         player = chat_player(
-            charisma=10, reputation={"TestNPC": -1}, equipped={}, combat_list_allies=[]
+            charisma=10, reputation={"TestNPC": -1}, combat_list_allies=[]
         )
 
         npc._compute_loquacity(player)
@@ -363,7 +365,7 @@ class TestComputeLoquacity:
     def test_compute_loquacity_jean_charisma_bonus(self):
         """Test Jean's charisma modifier."""
         npc = chat_npc()
-        player = chat_player(charisma=15, equipped={}, combat_list_allies=[])
+        player = chat_player(charisma=15, combat_list_allies=[])
 
         npc._compute_loquacity(player)
         # Jean charisma 15 gives +5*2=+10 bonus before the 15% scale.
@@ -373,7 +375,9 @@ class TestComputeLoquacity:
         """Test equipment modifiers."""
         npc = chat_npc()
         player = chat_player(
-            charisma=10, equipped={"head": {"name": "Crucifix"}}, combat_list_allies=[]
+            charisma=10,
+            inventory=[equipped_item("Crucifix")],
+            combat_list_allies=[],
         )
 
         npc._compute_loquacity(player)
@@ -385,7 +389,7 @@ class TestComputeLoquacity:
         gorran = MagicMock()
         gorran.name = "Gorran"
         npc = chat_npc()
-        player = chat_player(charisma=10, equipped={}, combat_list_allies=[gorran])
+        player = chat_player(charisma=10, combat_list_allies=[gorran])
 
         npc._compute_loquacity(player)
         # Gorran gives +10 before the 15% scale.
@@ -410,7 +414,7 @@ class TestComputeLoquacity:
         gorran = MagicMock()
         gorran.name = "Gorran"
         npc = chat_npc()
-        player = chat_player(charisma=10, equipped={}, allies=[gorran])
+        player = chat_player(charisma=10, allies=[gorran])
 
         npc._compute_loquacity(player)
         assert npc.loquacity_max == scale_loquacity(60)
@@ -418,7 +422,7 @@ class TestComputeLoquacity:
     def test_compute_loquacity_recovery_from_wisdom(self):
         """Test recovery rate derived from wisdom."""
         npc = chat_npc(wisdom=16)
-        player = chat_player(charisma=10, equipped={}, combat_list_allies=[])
+        player = chat_player(charisma=10, combat_list_allies=[])
 
         npc._compute_loquacity(player)
         # Wisdom 16 gives recovery = 16 // 8 = 2 before the 15% scale.
@@ -428,7 +432,7 @@ class TestComputeLoquacity:
         """Test loquacity threshold has minimum."""
         npc = chat_npc(charisma=1)
         player = chat_player(
-            charisma=1, reputation={"TestNPC": -1}, equipped={}, combat_list_allies=[]
+            charisma=1, reputation={"TestNPC": -1}, combat_list_allies=[]
         )
 
         npc._compute_loquacity(player)
@@ -2075,7 +2079,6 @@ class TestIntegrationChatFlow:
             persist=True,
             universe=MagicMock(story={}, game_tick=10),
             charisma=10,
-            equipped={},
             combat_list_allies=[],
         )
 
@@ -2202,17 +2205,25 @@ class TestProhibitedPatternsSetup:
 class TestEquipmentHandling:
     """Test equipment dict handling in loquacity computation."""
 
-    def test_compute_loquacity_equipment_non_dict(self):
-        """Test equipment handling when value is not dict."""
+    def test_compute_loquacity_tolerates_a_nameless_item(self):
+        """A degenerate inventory entry must not take the turn down.
+
+        This used to pass ``equipped={"hand": "Sword"}`` to probe "value is not
+        a dict" -- a branch of a read that no Player could reach. The real
+        degenerate case is an item whose ``name`` is missing or None, which
+        `Gold` and `Relic` in Jean's starting inventory demonstrate for
+        ``isequipped``.
+        """
         npc = chat_npc()
+        nameless = equipped_item("Sword")
+        nameless.name = None
         player = chat_player(
             charisma=10,
-            equipped={"hand": "Sword"},  # String, not dict
+            inventory=[nameless, SimpleNamespace(isequipped=False)],
             combat_list_allies=[],
         )
 
         npc._compute_loquacity(player)
-        # Should handle gracefully
         assert npc.loquacity_max == scale_loquacity(60)
 
     def test_compute_loquacity_religious_token(self):
@@ -2220,7 +2231,7 @@ class TestEquipmentHandling:
         npc = chat_npc()
         player = chat_player(
             charisma=10,
-            equipped={"neck": {"name": "Religious Token"}},
+            inventory=[equipped_item("Religious Token")],
             combat_list_allies=[],
         )
 
@@ -2233,7 +2244,7 @@ class TestEquipmentHandling:
         npc = chat_npc()
         player = chat_player(
             charisma=10,
-            equipped={"back": {"name": "Nomad Gear Pack"}},
+            inventory=[equipped_item("Nomad Gear Pack")],
             combat_list_allies=[],
         )
 
@@ -2265,7 +2276,6 @@ class TestChatOpenWithLLM:
             persist=True,
             universe=MagicMock(story={}, game_tick=10),
             charisma=10,
-            equipped={},
             combat_list_allies=[],
         )
 
@@ -2472,7 +2482,6 @@ class TestALLMRetryLogic:
             persist=True,
             universe=MagicMock(story={}, game_tick=10),
             charisma=10,
-            equipped={},
             combat_list_allies=[],
         )
 
@@ -2648,7 +2657,6 @@ class TestRetryOnQCFailure:
             persist=True,
             universe=MagicMock(story={}, game_tick=10),
             charisma=10,
-            equipped={},
             combat_list_allies=[],
         )
 
@@ -2678,7 +2686,6 @@ class TestJeanOptionsQCRetry:
             persist=True,
             universe=MagicMock(story={}, game_tick=10),
             charisma=10,
-            equipped={},
             combat_list_allies=[],
         )
 
@@ -2753,7 +2760,6 @@ class TestChatRespondHistoryIntegrity:
         player = chat_player(
             universe=MagicMock(story={}, game_tick=0),
             charisma=10,
-            equipped={},
             combat_list_allies=[],
         )
         # Deliberately no npc_chat_histories attribute — matches a real

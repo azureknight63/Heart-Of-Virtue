@@ -71,6 +71,7 @@ from. If they ever do warrant fixture form, the right home is a
 """
 
 import re
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Optional, Pattern, Sequence
 
 from src.npc._chat_llm import ConversationalNPCMixin
@@ -91,11 +92,24 @@ __all__ = [
 
 
 class ChatPlayer:
-    """The player side of the mixin's contract: ``universe`` and ``reputation``.
+    """The player side of the mixin's contract.
 
-    Those two, plus the optional ``npc_chat_histories``, are the *only* things
-    ``src/npc/_chat_llm.py`` ever reads off a player. See :func:`chat_player`
-    for why this is a double rather than a real ``Player``.
+    ``universe`` and ``reputation`` are constructor-routed; the rest are set by
+    :func:`chat_player`'s keyword overrides.
+
+    This docstring used to claim those two "plus the optional
+    ``npc_chat_histories``" were the ONLY things ``src/npc/_chat_llm.py`` ever
+    reads off a player. That was false -- it also reads ``charisma``,
+    ``inventory`` and ``combat_list_allies`` -- and the falsehood mattered,
+    because a double that will setattr anything plus a contract nobody
+    maintained is how two dead modifiers stayed "covered" for months. The live
+    list is derived from the source in
+    ``tests/test_npc_chat_merchant_and_loquacity.py``
+    (``_player_attributes_read_by_the_mixin``) rather than restated here, and
+    checked against a real ``Player``.
+
+    See :func:`chat_player` for why this is a double rather than a real
+    ``Player``.
     """
 
     def __init__(
@@ -103,6 +117,22 @@ class ChatPlayer:
     ) -> None:
         self.universe = universe
         self.reputation: Dict[str, Any] = {} if reputation is None else reputation
+
+
+def equipped_item(name: str, isequipped: bool = True) -> SimpleNamespace:
+    """One inventory item, shaped the way the ENGINE models equipment.
+
+    There is no ``player.equipped`` dict. ``src/api/serializers/combat.py``
+    says so outright, citing issue #430, and ``src/player/_combat.py``
+    recomputes protection by walking ``inventory`` and testing ``isequipped``.
+
+    This helper exists because the tests here previously built
+    ``equipped={"neck": {"name": "Crucifix"}}`` -- a shape no Player has ever
+    had -- and ``_compute_loquacity`` read it back, so a modifier that could
+    never fire in the game had three green tests over it. Building the double
+    the way the engine builds the real thing is what stops that.
+    """
+    return SimpleNamespace(name=name, isequipped=isequipped)
 
 
 def chat_player(persist: bool = False, **overrides: Any) -> ChatPlayer:

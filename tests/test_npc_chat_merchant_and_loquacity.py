@@ -28,7 +28,7 @@ from src.npc._chat_llm import (
     _JEAN_FALLBACK_POOL,
     scale_loquacity,
 )
-from tests._npc_fixtures import chat_npc, chat_player, qc_npc
+from tests._npc_fixtures import chat_npc, chat_player, equipped_item, qc_npc
 from tests.llm_doubles import make_chat_adapter
 
 # A character config whose role puts the NPC in merchant context, the way
@@ -847,7 +847,7 @@ class TestComputeLoquacityScaled:
             self._player(
                 charisma=15,  # +10 Jean charisma
                 reputation={"TestNPC": 1},  # +20
-                equipped={"neck": {"name": "Crucifix"}},  # +10
+                inventory=[equipped_item("Crucifix")],  # +10
             )
         )
         assert npc.loquacity_max == scale_loquacity(60 + 15 + 20 + 10 + 10)
@@ -939,7 +939,7 @@ class TestPersistedLoquacityRescaled:
     def test_saved_entry_carries_new_scale_values(self):
         npc = _merchant()
         player = chat_player(npc_chat_histories={})
-        npc._compute_loquacity(chat_player(charisma=10, equipped={}, allies=[]))
+        npc._compute_loquacity(chat_player(charisma=10, allies=[]))
         npc._chat_npc_key = "Vespera"
         npc._save_exchange_to_persistence(player, "Line.", "", 1, "1")
         entry = player.npc_chat_histories["Vespera"]
@@ -1474,3 +1474,344 @@ class TestClassFormStockContributesVocabulary:
         assert merchant._is_merchant_commerce_question(
             "What is the price of the shortsword?"
         ) is True
+
+
+def _prompt_history_windows():
+    """Every ``history[-N:]`` window the prompt builders actually read.
+
+    Scanned out of ``ai/llm_client.py`` rather than read from the two named
+    constants, because the failure this guards against is somebody adding a
+    THIRD consumer -- and the natural way to add one is the way both of these
+    were originally written, with the number inline. A guard that imported the
+    two constants would agree with itself while a literal ``history[-24:]``
+    sailed past it.
+
+    Returns ``{description: window}``. A window spelled as a name is resolved
+    against the module's own constants; one spelled as a literal is taken as
+    it stands.
+    """
+    import ast
+    from pathlib import Path
+
+    source = Path("ai/llm_client.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    constants = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            if isinstance(node.value.value, int):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        constants[target.id] = node.value.value
+
+    windows = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Subscript):
+            continue
+        if not (isinstance(node.value, ast.Name) and node.value.id == "history"):
+            continue
+        if not isinstance(node.slice, ast.Slice) or node.slice.lower is None:
+            continue
+        lower = node.slice.lower
+        # `history[-N:]` parses as a unary minus over N.
+        if not (
+            isinstance(lower, ast.UnaryOp) and isinstance(lower.op, ast.USub)
+        ):
+            continue
+        operand = lower.operand
+        if isinstance(operand, ast.Constant) and isinstance(operand.value, int):
+            windows["line %d (literal)" % node.lineno] = operand.value
+        elif isinstance(operand, ast.Name) and operand.id in constants:
+            windows["line %d (%s)" % (node.lineno, operand.id)] = constants[
+                operand.id
+            ]
+    return windows
+
+
+class TestThePersistedHistoryOutlastsWhatThePromptReads:
+    """``_MAX_PERSISTED_EXCHANGES`` must not be smaller than any prompt window.
+
+    The save keeps the last N exchanges; the prompt builders then ask for the
+    last 8 and the last 4 of them. If the cap ever drops below a window the
+    prompt silently gets less history than it asked for -- no error, just a
+    duller NPC that has forgotten the middle of the conversation.
+
+    The constant carried a comment claiming "two turns of context is what the
+    prompt uses". Nobody had checked it and it was wrong by a factor of four.
+    Numbers in prose is how that happens, so the relationship is asserted here
+    instead of described there.
+    """
+
+    def test_the_scan_finds_the_prompt_windows(self):
+        """Non-vacuity. An empty scan makes the bound below hold trivially."""
+        windows = _prompt_history_windows()
+        assert len(windows) >= 2, windows
+
+    def test_the_cap_is_at_least_every_window(self):
+        from src.npc._chat_llm import _MAX_PERSISTED_EXCHANGES
+
+        windows = _prompt_history_windows()
+        starved = {
+            where: size
+            for where, size in windows.items()
+            if size > _MAX_PERSISTED_EXCHANGES
+        }
+        assert starved == {}, (
+            "these prompt builders read further back than the save keeps "
+            "(_MAX_PERSISTED_EXCHANGES = %d), so they silently get less "
+            "history than they ask for: %s"
+            % (_MAX_PERSISTED_EXCHANGES, starved)
+        )
+
+    def test_the_cap_is_actually_a_cap(self):
+        """The control: a bound satisfied by keeping everything is not one.
+        The margin above the largest window is deliberate -- transcript history
+        the player can read back -- but it is still finite."""
+        from src.npc._chat_llm import _MAX_PERSISTED_EXCHANGES
+
+        assert max(_prompt_history_windows().values()) < _MAX_PERSISTED_EXCHANGES
+        assert _MAX_PERSISTED_EXCHANGES < 1000
+
+    def test_the_cap_is_the_only_number_at_the_trim_site(self):
+        """The constant existed, unused, while the trim site kept its own 20 --
+        a dead constant introduced in the same edit that deleted another one
+        for being dead."""
+        from pathlib import Path
+
+        source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+        assert 'entry["exchanges"][-_MAX_PERSISTED_EXCHANGES:]' in source
+        assert 'entry["exchanges"][-20:]' not in source
+
+
+def _player_attributes_read_by_the_mixin():
+    """Every attribute ``_chat_llm.py`` reads off a ``player``.
+
+    Derived from the source, not declared in a tuple beside it. A hand-kept
+    list is exactly what this mixin has failed at twice: the list would have
+    been written by the same person who wrote the read, and would have carried
+    the same wrong name.
+
+    Resolves ``getattr(player, _SOME_CONST, ...)`` through the module's own
+    string constants, because the party attribute is spelled that way.
+    """
+    import ast
+    from pathlib import Path
+
+    source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    constants = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            if isinstance(node.value.value, str):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        constants[target.id] = node.value.value
+
+    found = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if node.value.id == "player":
+                found.setdefault(node.attr, node.lineno)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id != "getattr" or len(node.args) < 2:
+                continue
+            target, key = node.args[0], node.args[1]
+            if not (isinstance(target, ast.Name) and target.id == "player"):
+                continue
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                found.setdefault(key.value, node.lineno)
+            elif isinstance(key, ast.Name) and key.id in constants:
+                found.setdefault(constants[key.id], node.lineno)
+    return found
+
+
+#: Attributes a real ``Player`` does not have until something creates them.
+#: Each needs a REASON, because "it is created later" is precisely what a
+#: misspelled attribute looks like from here.
+_LAZILY_CREATED = {
+    "reputation": (
+        "created on first write; every read in src/ goes through "
+        "getattr(player, 'reputation', {}) for exactly this reason."
+    ),
+    "npc_chat_histories": (
+        "created by the chat mixin itself on the first conversation, so a "
+        "player who has never spoken to anybody does not carry the dict."
+    ),
+}
+
+
+class TestTheMixinOnlyReadsAttributesAPlayerHas:
+    """Two modifiers in ``_compute_loquacity`` were reading attributes that do
+    not exist, and both looked covered.
+
+    ``player.allies`` -- nothing in ``src/`` has ever set it; the real name is
+    ``combat_list_allies``. Found, fixed, and documented at length in a comment
+    inside this very method.
+
+    ``player.equipped`` -- there is no such dict. ``src/api/serializers/
+    combat.py`` says so outright, citing issue #430: equipment is
+    ``isequipped`` on the items in ``player.inventory``. The only assignments
+    to ``.equipped`` anywhere are five test fixtures that invented it, one of
+    which admits as much in its own docstring. So the crucifix modifier had
+    never fired in the game, and it sat FIFTEEN LINES BELOW the comment
+    explaining the identical bug.
+
+    That is the argument for deriving this population instead of listing it.
+    The second bug survived the first bug's fix, its post-mortem, and every
+    review round since, because nothing checked the reads against a real
+    Player.
+    """
+
+    def test_the_scan_finds_the_reads(self):
+        """Non-vacuity: an empty scan approves of every attribute name."""
+        found = _player_attributes_read_by_the_mixin()
+        assert len(found) >= 4, found
+
+    def test_every_attribute_read_exists_or_is_declared_lazy(self):
+        from src.player import Player
+
+        player = Player()
+        missing = {
+            name: line
+            for name, line in sorted(_player_attributes_read_by_the_mixin().items())
+            if not hasattr(player, name) and name not in _LAZILY_CREATED
+        }
+        assert missing == {}, (
+            "src/npc/_chat_llm.py reads these off `player`, and a real Player "
+            "does not have them: %s\n\n"
+            "This is how `player.allies` and `player.equipped` both became "
+            "modifiers that could never fire. If the attribute is created "
+            "lazily, add it to _LAZILY_CREATED with the reason. If it is a "
+            "wrong name, the engine is the source of truth -- find the real "
+            "one." % missing
+        )
+
+    def test_every_lazy_exemption_is_actually_read(self):
+        """The other direction. An exemption for an attribute nobody reads any
+        more is a licence sitting around waiting to excuse a typo."""
+        found = _player_attributes_read_by_the_mixin()
+        stale = sorted(set(_LAZILY_CREATED) - set(found))
+        assert stale == [], stale
+
+    def test_every_lazy_exemption_carries_a_reason(self):
+        thin = sorted(
+            name
+            for name, reason in _LAZILY_CREATED.items()
+            if len(reason.split()) < 8
+        )
+        assert thin == [], thin
+
+    def test_the_known_bad_names_would_be_caught(self):
+        """The control, against the two real bugs. If a Player ever grows an
+        `allies` or `equipped` attribute this test fails and the guard above
+        quietly stops being able to catch its own motivating defects."""
+        from src.player import Player
+
+        player = Player()
+        for name in ("allies", "equipped"):
+            assert not hasattr(player, name), name
+            assert name not in _LAZILY_CREATED, name
+
+    def test_the_equipment_modifier_reads_real_equipment(self):
+        """The fix, driven rather than read: the modifier must see an equipped
+        item's name. Uses whatever Jean actually starts with, so it cannot pass
+        against a fixture that invents the shape."""
+        from src.player import Player
+
+        player = Player()
+        equipped = [
+            getattr(item, "name", "")
+            for item in getattr(player, "inventory", None) or []
+            if getattr(item, "isequipped", False)
+        ]
+        assert equipped, "Jean starts with nothing equipped; probe is vacuous"
+
+        npc = chat_npc()
+        npc.loquacity_max = 0
+        npc._compute_loquacity(player)
+        baseline = npc.loquacity_max
+
+        # Rename one equipped item to something the vocabulary matches. If the
+        # read is wired to the engine's model this moves the pool; against the
+        # old `player.equipped` read it could not.
+        from src.npc._chat_llm import _LOQUACITY_FAVOURABLE_EQUIPMENT
+
+        for item in player.inventory:
+            if getattr(item, "isequipped", False):
+                item.name = _LOQUACITY_FAVOURABLE_EQUIPMENT[0].title()
+                break
+        other = chat_npc()
+        other.loquacity_max = 0
+        other._compute_loquacity(player)
+        assert other.loquacity_max > baseline, (other.loquacity_max, baseline)
+
+    def test_the_favourable_equipment_vocabulary_is_honest(self):
+        """The modifier is reachable now, but still cannot fire: no crucifix,
+        religious token or nomad gear item exists. Pinned so the gap is known
+        rather than silent -- and so that authoring one turns this red and
+        somebody deletes the note that says it is missing.
+        """
+        from pathlib import Path
+
+        from src.npc._chat_llm import _LOQUACITY_FAVOURABLE_EQUIPMENT
+
+        items = Path("src/items.py").read_text(encoding="utf-8").lower()
+        present = [
+            word for word in _LOQUACITY_FAVOURABLE_EQUIPMENT if word in items
+        ]
+        assert present == [], (
+            "src/items.py now mentions %s. If an item that reads as devout "
+            "has been authored, this modifier can finally fire -- update the "
+            "_LOQUACITY_FAVOURABLE_EQUIPMENT note, which currently says "
+            "nothing in the game matches." % present
+        )
+
+
+class TestTheLoquacityIndexPointsAtRealThings:
+    """The index is a comment, and comments in this module have a record.
+
+    Loquacity is spread over seven places in a 4,400-line file with nothing
+    pointing from any one of them to the others, so an index earns its keep --
+    but an index that names a method somebody has since renamed is worse than
+    none, because a reader trusts it and then concludes the code is missing.
+
+    Names, not line numbers, for the reason stated in the comment itself: a
+    symbol survives a move. This test is what makes that true rather than
+    merely intended.
+    """
+
+    def _index_names(self):
+        import re
+        from pathlib import Path
+
+        source = Path("src/npc/_chat_llm.py").read_text(encoding="utf-8")
+        block = re.search(
+            r"# WHERE THE REST OF LOQUACITY LIVES.*?(?=^LOQUACITY_SCALE_PERCENT)",
+            source,
+            re.DOTALL | re.MULTILINE,
+        )
+        assert block, "the loquacity index is gone; delete this test or restore it"
+        return re.findall(r"^#   ([A-Za-z_][A-Za-z_0-9]*)\s{2,}", block.group(0), re.M)
+
+    def test_the_index_lists_what_it_claims(self):
+        """Non-vacuity: a block the regex cannot read names nothing, and every
+        assertion below would hold over an empty list."""
+        names = self._index_names()
+        assert len(names) == 7, names
+
+    def test_every_name_in_the_index_exists(self):
+        from src.npc import _chat_llm
+        from src.npc._chat_llm import ConversationalNPCMixin
+
+        missing = [
+            name
+            for name in self._index_names()
+            if not hasattr(_chat_llm, name)
+            and not hasattr(ConversationalNPCMixin, name)
+        ]
+        assert missing == [], (
+            "the loquacity index names things that no longer exist: %s. "
+            "Rename them there or delete the entries -- an index a reader "
+            "trusts and cannot follow is worse than no index." % missing
+        )
