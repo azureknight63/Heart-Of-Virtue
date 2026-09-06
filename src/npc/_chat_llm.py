@@ -1227,15 +1227,32 @@ _LOQUACITY_PARTY_MOD = 10
 #: Equipment names that read as trustworthy to an NPC. Substring-matched
 #: against the lowercased name of every item Jean has equipped.
 #:
-#: NOTHING IN THE GAME CURRENTLY MATCHES. "crucifix" exists only in narration
-#: (the chapter 3 beat where Jean notices his own, and Maribel's in
-#: `src/npc/_friends.py`); there is no crucifix, religious token or nomad gear
-#: item in `src/items.py`. So the modifier is reachable now -- the read below
-#: was broken and is fixed -- but it will not fire until such an item is
-#: authored. Left as written rather than repointed at items that do exist,
-#: because which items should read as devout is a content decision, not a
-#: refactor. `test_the_favourable_equipment_vocabulary_is_honest` pins this
-#: state so it is a known gap rather than a silent one.
+#: NOTHING IN THE GAME MATCHES, AND THE FIRST ENTRY CONTRADICTS THE STORY.
+#:
+#: The read below was broken and is fixed, so the modifier is reachable for the
+#: first time -- but there is no crucifix, religious token or nomad gear ITEM in
+#: `src/items.py`, and this is not simply content nobody has written yet:
+#:
+#: * The one crucifix in the game is MARA's, worn at her throat
+#:   (`src/npc/_friends.py`). Chapter 3's third beat is Jean noticing HERS and
+#:   looking away -- "a wrongness he couldn't place". Jean never gets one.
+#:   Granting him an NPC-trust bonus for wearing one would contradict the
+#:   character the story is drawing.
+#: * Jean's actual devotional object is `Relic` -- a fragment of stone from the
+#:   Via Dolorosa, carried from Jerusalem. It is a `Consumable`, so it is not
+#:   equippable, so it cannot reach an `isequipped` scan at all no matter what
+#:   this tuple says.
+#: * His equippable accessories are `JeanWeddingBand`, `DullMedallion` and
+#:   `GronditeMarkToken` -- sentimental and factional, not devotional.
+#:
+#: So this vocabulary is left in place ONLY because deleting a modifier and
+#: repointing one are both design decisions, and neither belongs in a scrub.
+#: `test_the_favourable_equipment_vocabulary_is_honest` pins the state so it
+#: stays a known question rather than a silent dead branch.
+#:
+#: An earlier version of this note said the chapter 3 beat was Jean noticing
+#: "his own" crucifix, and attributed Mara's to "Maribel". Both were wrong, and
+#: the second is why the note names the file now.
 _LOQUACITY_FAVOURABLE_EQUIPMENT = ("crucifix", "religious token", "nomad gear")
 
 #: Recovery per beat is wisdom-driven, with a floor so an unwise NPC still

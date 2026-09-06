@@ -1747,10 +1747,17 @@ class TestTheMixinOnlyReadsAttributesAPlayerHas:
         assert other.loquacity_max > baseline, (other.loquacity_max, baseline)
 
     def test_the_favourable_equipment_vocabulary_is_honest(self):
-        """The modifier is reachable now, but still cannot fire: no crucifix,
-        religious token or nomad gear item exists. Pinned so the gap is known
-        rather than silent -- and so that authoring one turns this red and
-        somebody deletes the note that says it is missing.
+        """The modifier is reachable now, but still cannot fire.
+
+        No crucifix, religious token or nomad gear item exists -- and the first
+        of those is not a gap waiting to be filled: the game's one crucifix is
+        Mara's, and chapter 3's third beat is Jean noticing HERS and looking
+        away. He never gets one. His own devotional object, `Relic`, is a
+        `Consumable` and therefore cannot be equipped at all.
+
+        Pinned so this stays a known design question rather than a silent dead
+        branch, and so that authoring a matching item turns this red and makes
+        somebody revisit the note beside the constant.
         """
         from pathlib import Path
 
