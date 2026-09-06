@@ -17,6 +17,7 @@ from src.api.rate_limiter import (
     limiter_from_env,
     rate_limited_response,
 )
+from src.api.services.validators import has_visible_characters
 
 
 logger = logging.getLogger(__name__)
@@ -564,7 +565,12 @@ def submit_feedback():
         if feedback_type not in FEEDBACK_TYPES:
             return jsonify({"success": False, "error": "Invalid feedback type"}), 400
 
-        if not title:
+        # Blank means "renders as nothing", not merely "whitespace-only".
+        # `.strip()` leaves a zero-width space, a BOM, a NUL or a word joiner
+        # standing, and this title becomes a GitHub issue title -- so the
+        # truthiness check that used to sit here filed blank-titled issues.
+        # has_visible_characters is the project-wide rule (issue #523).
+        if not has_visible_characters(title):
             return jsonify({"success": False, "error": "Title is required"}), 400
 
         if len(title) > MAX_TITLE_LENGTH:

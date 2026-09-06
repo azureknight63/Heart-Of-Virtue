@@ -17,10 +17,11 @@ import sys
 from pathlib import Path
 
 # Minimal path bootstrap so src.env_bootstrap itself is importable; it owns
-# the rationale and the .env load for both entry points.
-_ROOT = str(Path(__file__).resolve().parent.parent)
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+# the rationale and the .env load for both entry points. Kept as a Path (not
+# the str this branch had) because LOG_JSONL_DIR below joins onto it.
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from src.env_bootstrap import load_project_env  # noqa: E402
 
@@ -32,6 +33,15 @@ from src.env_bootstrap import load_project_env  # noqa: E402
 # CONFIG_FILE argument still wins — load_project_env defaults to
 # override=False, and argparse runs before create_app.)
 load_project_env()
+
+# Dev server default: capture the structured JSONL debug stream for
+# tools/logcat.py. Opt out with LOG_JSONL_DIR="" (empty disables). Guarded
+# to non-production FLASK_ENV so a shared/copied .env can't silently turn on
+# per-request synchronous file writes and DEBUG-level capture in prod — the
+# same failure shape as the GITHUB_TOKEN-via-.env leak this project already
+# hit once (see tools/bug_hunt.py's explicit-clear fix for that incident).
+if os.environ.get("FLASK_ENV", "development").lower() != "production":
+    os.environ.setdefault("LOG_JSONL_DIR", str(ROOT / "logs" / "backend"))
 
 from src.api.app import create_app  # noqa: E402
 

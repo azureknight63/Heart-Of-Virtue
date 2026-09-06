@@ -51,6 +51,7 @@ export default function AbortMoveControl({ abortable, onAbort, disabled = false 
     const { name, beats_left: beatsLeft, beats_invested: invested, cooldown_beats: cooldown } = abortable;
 
     const tick = () => {
+        // eslint-disable-next-line react-hooks/purity -- tick() only ever runs from requestAnimationFrame, never during render; wall-clock elapsed time is the hold gauge's timebase and no render-stable clock can drive it.
         const elapsed = Date.now() - startedRef.current;
         const pct = Math.min(1, elapsed / HOLD_MS);
         setProgress(pct);

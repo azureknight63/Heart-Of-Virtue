@@ -8,6 +8,7 @@ import {
   OUTCOMES,
   SFX_KINDS,
   DEPARTURE_REASONS,
+  MAX_BEAT_RESOLUTIONS,
 } from './combatBeatSchema';
 
 // This mirror is kept in parity with src/api/schemas/combat_beat.py by the
@@ -49,11 +50,19 @@ describe('combatBeatSchema', () => {
       'block',
       'deflect',
       'crit',
+      'glance',
       'absorb',
     ]);
   });
 
   it('declares the SFX kinds', () => {
     expect(SFX_KINDS).toEqual(['swing', 'impact', 'status', 'heal', 'death']);
+  });
+
+  it('caps the per-beat resolution fan-out at the same number as the server', () => {
+    // The Python side (src/api/schemas/combat_beat.py) truncates a beat's
+    // resolutions at the same constant; tests/test_combat_outcome_channel.py
+    // pins the Python value to 16 too, so the two sides cannot drift.
+    expect(MAX_BEAT_RESOLUTIONS).toBe(16);
   });
 });

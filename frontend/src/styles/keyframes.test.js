@@ -29,6 +29,7 @@ import {
  */
 const LOCAL_KEYFRAME_INJECTORS = [
     'components/GameOverScreen.jsx',
+    'components/HeatMeter.jsx', // @keyframes heatChip
     'components/HeroPanel.jsx',
     'components/InteractPanel.jsx',
     'context/ToastContext.jsx',

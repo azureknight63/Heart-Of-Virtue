@@ -17,7 +17,8 @@ from src.api.rate_limiter import (
     limiter_from_env,
     rate_limited_response,
 )
-from src.api.utils.log_cleanup import LogCleanupManager
+from src.api.structured_log import BROWSER_LEVEL_MAP, to_compact_json, utc_iso_z
+from src.api.utils.log_cleanup import LOG_FILE_PATTERNS, LogCleanupManager
 
 logs_bp = Blueprint("logs", __name__)
 
@@ -25,11 +26,17 @@ logs_bp = Blueprint("logs", __name__)
 # The frontend logger posts here without auth (incl. via sendBeacon), so the
 # route cannot be gated — instead we bound what a single request can write and
 # how many distinct files a hostile client can create (issue #429).
-MAX_LOGS_PER_REQUEST = 500       # max log entries accepted per request
-MAX_MESSAGE_LENGTH = 4000        # per-message truncation (matches npc_chat)
-MAX_FIELD_LENGTH = 2048          # cap on url and other free-text fields
-MAX_SHORT_FIELD_LENGTH = 64      # cap on timestamp/level
-SESSION_ID_BUCKETS = 64          # bound distinct session log files per day
+MAX_LOGS_PER_REQUEST = 500  # max log entries accepted per request
+MAX_MESSAGE_LENGTH = 4000  # per-message truncation (matches npc_chat)
+MAX_FIELD_LENGTH = 2048  # cap on url and other free-text fields
+MAX_SHORT_FIELD_LENGTH = 64  # cap on timestamp and data keys
+MAX_EVENT_LENGTH = 64  # cap on structured event names
+MAX_REPEAT_COUNT = 100000  # clamp on the client-side collapse counter
+SESSION_ID_BUCKETS = 64  # bound distinct session log files per day
+
+# Structured event names are dot-separated lowercase slugs; anything else
+# collapses to underscores so a hostile name can't smuggle odd characters.
+_EVENT_CHARS = re.compile(r"[^a-z0-9._-]")
 
 # Control chars (incl. CR/LF) are stripped from every client-supplied field
 # before it is written into a log line, so a hostile payload can't inject a
@@ -40,6 +47,114 @@ _LOG_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 def _sanitize_log_field(value):
     """Collapse control characters in a log field to single spaces."""
     return _LOG_CONTROL_CHARS.sub(" ", value)
+
+
+# Bound recursion on adversarially nested (_MAX_DATA_DEPTH) or wide
+# (_MAX_DATA_NODES) data payloads. The serialized-size check in
+# _entry_to_envelope runs AFTER sanitization and only bounds the stored
+# output — it does nothing to cap the walk's own cost, so a single dict
+# with one key holding thousands of short strings previously did unbounded
+# work (up to 500x per request, once per MAX_LOGS_PER_REQUEST entry) before
+# that check ever ran. The node budget bounds total work regardless of
+# whether the adversarial shape is deep or wide.
+_MAX_DATA_DEPTH = 8
+_MAX_DATA_NODES = 500
+
+
+def _sanitize_data(value, depth=0, budget=None):
+    """Strip control characters from every string inside a data payload.
+
+    The JSON file encoding escapes control bytes, but consumers that parse
+    and re-render the payload (tools/logcat.py's terminal view) would
+    otherwise receive live ESC sequences from an unauthenticated client —
+    sanitize keys and values at the source too, not just at the sink.
+    """
+    if budget is None:
+        budget = [_MAX_DATA_NODES]
+    if depth >= _MAX_DATA_DEPTH or budget[0] <= 0:
+        return "..."
+    budget[0] -= 1
+    if isinstance(value, dict):
+        result = {}
+        for k, v in value.items():
+            if budget[0] <= 0:
+                result["..."] = "(truncated)"
+                break
+            result[_sanitize_log_field(str(k))[:MAX_SHORT_FIELD_LENGTH]] = (
+                _sanitize_data(v, depth + 1, budget)
+            )
+        return result
+    if isinstance(value, list):
+        result = []
+        for v in value:
+            if budget[0] <= 0:
+                result.append("...(truncated)")
+                break
+            result.append(_sanitize_data(v, depth + 1, budget))
+        return result
+    if isinstance(value, str):
+        return _sanitize_log_field(value)
+    return value
+
+
+def _entry_to_envelope(log_entry, session_id):
+    """Convert one client log entry into the shared JSONL envelope.
+
+    Every field is client-supplied and hostile until proven otherwise:
+    strings are control-stripped and capped, the event name is slugged, the
+    data payload is size-bounded, and the repeat counter is clamped. The
+    envelope is serialized with json.dumps, so a payload can never forge
+    additional log lines (CWE-117) — newlines are escaped by encoding.
+    """
+    # Fallback matches the client's toISOString() (UTC, Z suffix) so logcat's
+    # chronological merge never mixes naive local time into the feed. Built
+    # only when the client omitted the timestamp — the closed BROWSER_LEVEL_MAP
+    # likewise makes any sanitize/cap ceremony on the level a no-op: hostile
+    # input simply isn't a key and collapses to "info".
+    raw_ts = log_entry.get("timestamp")
+    envelope = {
+        "ts": (
+            _sanitize_log_field(str(raw_ts)[:MAX_SHORT_FIELD_LENGTH])
+            if raw_ts is not None
+            else utc_iso_z()
+        ),
+        "src": "fe",
+        "lvl": BROWSER_LEVEL_MAP.get(
+            str(log_entry.get("level", "LOG")).strip().lower(), "info"
+        ),
+        "event": _EVENT_CHARS.sub("_", str(log_entry.get("event", "console")).lower())[
+            :MAX_EVENT_LENGTH
+        ]
+        or "console",
+        "session": session_id,
+    }
+
+    url = _sanitize_log_field(str(log_entry.get("url", ""))[:MAX_FIELD_LENGTH])
+    if url:
+        envelope["url"] = url
+
+    message = _sanitize_log_field(
+        str(log_entry.get("message", ""))[:MAX_MESSAGE_LENGTH]
+    )
+    if message:
+        envelope["msg"] = message
+
+    data = log_entry.get("data")
+    if isinstance(data, dict) and data:
+        data = _sanitize_data(data)
+        serialized = to_compact_json(data)
+        if len(serialized) > MAX_MESSAGE_LENGTH:
+            data = {"_truncated": True, "size": len(serialized)}
+        envelope["data"] = data
+
+    try:
+        repeat = int(log_entry.get("n", 1))
+    except (TypeError, ValueError):
+        repeat = 1
+    if repeat > 1:
+        envelope["n"] = min(repeat, MAX_REPEAT_COUNT)
+
+    return envelope
 
 
 def _require_testing():
@@ -162,10 +277,56 @@ def _maybe_cleanup():
     return True
 
 
+def _write_log_entries(entries, session_id):
+    """Append client log entries to today's bucketed JSONL file.
+
+    Shared by the console-log and CSP-violation sinks: both are unauthenticated
+    POST routes writing attacker-influenced content into the same stream, so the
+    path sanitization, bucketing and per-line encoding must be identical for
+    both rather than reimplemented per route.
+
+    Returns ``(filename, written)`` -- the file appended to, and how many
+    entries actually reached it. The count is not ``len(entries)``: hostile
+    payloads may include non-dict entries and those are skipped, so a caller
+    that reports a number has to be told the real one rather than assume.
+    """
+    # Sanitize the client-supplied session id before it becomes part of a
+    # filesystem path — strip directory components and restrict to a safe
+    # charset so it cannot be used to escape LOGS_DIR (matches the basename()
+    # guard used by the read/delete routes below).
+    session_id = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.basename(str(session_id)))
+    if not session_id:
+        session_id = "unknown"
+
+    # Bound the number of distinct log files a hostile client can create by
+    # mapping the client-controlled session id into a fixed bucket set. Without
+    # this, varying session_id yields unbounded per-day files that size-based
+    # cleanup cannot reclaim until they age out. The full session id is
+    # preserved on each log line so traceability is retained.
+    bucket = zlib.crc32(session_id.encode("utf-8")) % SESSION_ID_BUCKETS
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_filename = f"{today}_bucket{bucket:02d}.jsonl"
+
+    # Append one envelope per line, bounding every field so no single oversized
+    # entry can blow up disk usage.
+    written = 0
+    with open(LOGS_DIR / log_filename, "a", encoding="utf-8") as handle:
+        for entry in entries:
+            # Hostile payloads may include non-dict entries (e.g. bare
+            # strings); skip them instead of raising.
+            if not isinstance(entry, dict):
+                continue
+            handle.write(to_compact_json(_entry_to_envelope(entry, session_id)) + "\n")
+            written += 1
+
+    return log_filename, written
+
+
 @logs_bp.route("/browser", methods=["POST"])
 def receive_browser_logs():
     """
-    Receive browser logs from the frontend and write them to a file
+    Receive browser logs from the frontend and write them as JSONL
 
     Expected payload:
     {
@@ -175,11 +336,16 @@ def receive_browser_logs():
                 "level": "LOG|ERROR|WARN|INFO|DEBUG",
                 "message": "log message",
                 "url": "http://localhost:3000/",
-                "userAgent": "Mozilla/5.0..."
+                "event": "event.enqueue",       // optional structured name
+                "data": {"name": "..."},        // optional structured payload
+                "n": 2                           // optional repeat count
             }
         ],
         "session_id": "session_1234567890_abc123"
     }
+
+    Each entry becomes one line of the shared JSONL envelope schema (see
+    src/api/structured_log.py) in logs/browser/<date>_bucket<NN>.jsonl.
     """
     # Spent before the body is parsed and before anything is written: this is
     # the only route in the API with neither authentication nor a session, so
@@ -229,58 +395,7 @@ def receive_browser_logs():
         # unauthenticated POST cannot write an unbounded amount to disk.
         logs = logs[:MAX_LOGS_PER_REQUEST]
 
-        # Sanitize the client-supplied session id before it becomes part of a
-        # filesystem path — strip directory components and restrict to a safe
-        # charset so it cannot be used to escape LOGS_DIR (matches the
-        # basename() guard used by the read/delete routes below).
-        session_id = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.basename(session_id))
-        if not session_id:
-            session_id = "unknown"
-
-        # Bound the number of distinct log files a hostile client can create by
-        # mapping the client-controlled session id into a fixed bucket set.
-        # Without this, varying session_id yields unbounded per-day files that
-        # size-based cleanup cannot reclaim until they age out. The full session
-        # id is preserved on each log line below so traceability is retained.
-        bucket = zlib.crc32(session_id.encode("utf-8")) % SESSION_ID_BUCKETS
-
-        # Create a bucketed log file for today.
-        today = datetime.now().strftime("%Y-%m-%d")
-        log_filename = f"{today}_bucket{bucket:02d}.log"
-        log_filepath = LOGS_DIR / log_filename
-
-        # Append logs to the file, bounding every free-text field so no single
-        # oversized entry can blow up disk usage.
-        # Counts lines actually written, not entries submitted: malformed entries
-        # are skipped below, so len(logs) would over-report on a mixed batch.
-        written = 0
-        with open(log_filepath, "a", encoding="utf-8") as f:
-            for log_entry in logs:
-                # Hostile payloads may include non-dict entries (e.g. bare
-                # strings); skip them instead of raising.
-                if not isinstance(log_entry, dict):
-                    continue
-                timestamp = _sanitize_log_field(
-                    str(log_entry.get("timestamp", datetime.now().isoformat()))[
-                        :MAX_SHORT_FIELD_LENGTH
-                    ]
-                )
-                level = _sanitize_log_field(
-                    str(log_entry.get("level", "LOG"))[:MAX_SHORT_FIELD_LENGTH]
-                )
-                message = _sanitize_log_field(
-                    str(log_entry.get("message", ""))[:MAX_MESSAGE_LENGTH]
-                )
-                url = _sanitize_log_field(
-                    str(log_entry.get("url", ""))[:MAX_FIELD_LENGTH]
-                )
-
-                # Format: [TIMESTAMP] [LEVEL] [SESSION] [URL] MESSAGE
-                log_line = (
-                    f"[{timestamp}] [{level}] [{session_id}] [{url}] {message}\n"
-                )
-                f.write(log_line)
-                written += 1
+        log_filename, written = _write_log_entries(logs, session_id)
 
         # Automatic retention sweep, rate-floored rather than per-request —
         # see CLEANUP_MIN_INTERVAL_SECONDS.
@@ -302,6 +417,113 @@ def receive_browser_logs():
         return jsonify({"error": "Failed to write logs"}), 500
 
 
+# Violation sink for the Content-Security-Policy rollout (issue #492). Both
+# report transports are accepted: the legacy `report-uri` directive POSTs a
+# single {"csp-report": {...}} object as application/csp-report, while the
+# Reporting API's `report-to` POSTs a list of {"type", "body"} entries as
+# application/reports+json. The policy currently advertises `report-uri` only
+# (pairing the two delivers nothing in Chromium — see the module docstring in
+# src/api/security_headers.py), so the reports+json shape is unreachable today;
+# accepting it anyway means the follow-up that re-adds `report-to` over HTTPS
+# needs no server-side change.
+MAX_CSP_REPORTS_PER_REQUEST = 20
+
+# The bucket these violations land in. A CSP report carries no session id (it is
+# sent by the browser, not the app), so they share one predictable file rather
+# than diluting the per-session buckets.
+CSP_LOG_SESSION = "csp"
+
+# Fields worth keeping off a violation report. The rest of the payload is
+# browser-version-specific noise, and an allowlist keeps a hostile POST from
+# using this route as arbitrary log storage.
+_CSP_REPORT_FIELDS = (
+    "document-uri",
+    "referrer",
+    "violated-directive",
+    "effective-directive",
+    "original-policy",
+    "disposition",
+    "blocked-uri",
+    "line-number",
+    "column-number",
+    "source-file",
+    "status-code",
+    "script-sample",
+)
+
+
+def _csp_reports_from_body(body):
+    """Normalize either CSP report transport into a list of report dicts."""
+    if isinstance(body, dict):
+        report = body.get("csp-report")
+        if isinstance(report, dict):
+            return [report]
+        # A Reporting-API body can also arrive as a single object.
+        if isinstance(body.get("body"), dict):
+            return [body["body"]]
+        return []
+    if isinstance(body, list):
+        return [
+            item["body"]
+            for item in body
+            if isinstance(item, dict) and isinstance(item.get("body"), dict)
+        ]
+    return []
+
+
+@logs_bp.route("/csp-report", methods=["POST"])
+def receive_csp_report():
+    """Record a Content-Security-Policy violation report.
+
+    Unauthenticated by necessity — the browser, not the app, sends these, and it
+    attaches no credentials. Reports are written into the same bounded JSONL
+    stream as browser console logs (``event: csp.violation``), so logcat shows a
+    violation alongside the console output from the same page load.
+
+    Always answers 204: a report endpoint that argues with the browser only
+    produces console noise, and there is no client left to act on an error.
+    """
+    try:
+        # Reports arrive as application/csp-report or application/reports+json,
+        # neither of which Flask treats as JSON — force the parse.
+        body = request.get_json(silent=True, force=True)
+        reports = _csp_reports_from_body(body)[:MAX_CSP_REPORTS_PER_REQUEST]
+        if not reports:
+            return "", 204
+
+        entries = []
+        for report in reports:
+            data = {key: report[key] for key in _CSP_REPORT_FIELDS if key in report}
+            entries.append(
+                {
+                    "level": "WARN",
+                    "event": "csp.violation",
+                    "url": report.get("document-uri", ""),
+                    "data": data or {"_empty": True},
+                }
+            )
+
+        # The count is unused here: a CSP POST carries exactly one report.
+        _write_log_entries(entries, CSP_LOG_SESSION)
+
+        # The sibling /browser route does this too. CSP reports arrive in every
+        # environment while the browser logger is DEV-gated, so this route can
+        # be a deployment's only writer — without it nothing ever reclaims the
+        # bounded logs/browser budget.
+        try:
+            cleanup_manager.cleanup()
+        except Exception:
+            pass
+
+        return "", 204
+
+    except Exception as e:
+        # Through _warn, never print: this is inside an except block, and print
+        # raises on a cp1252 console or a closed stdout -- see _warn.
+        _warn(f"Error writing CSP report: {str(e)}")
+        return "", 204
+
+
 @logs_bp.route("/browser/files", methods=["GET"])
 def list_browser_log_files():
     """
@@ -312,7 +534,9 @@ def list_browser_log_files():
         log_files = []
 
         if LOGS_DIR.exists():
-            for log_file in sorted(LOGS_DIR.glob("*.log"), reverse=True):
+            # Both current .jsonl files and pre-migration .log files
+            found = [p for pattern in LOG_FILE_PATTERNS for p in LOGS_DIR.glob(pattern)]
+            for log_file in sorted(found, key=lambda p: p.name, reverse=True):
                 stat = log_file.stat()
                 log_files.append(
                     {
@@ -398,9 +622,7 @@ def cleanup_logs():
             retention_days = cleanup_manager.retention_days
         try:
             max_size_mb = float(
-                data.get(
-                    "max_size_mb", cleanup_manager.max_size_bytes / (1024 * 1024)
-                )
+                data.get("max_size_mb", cleanup_manager.max_size_bytes / (1024 * 1024))
             )
         except (TypeError, ValueError):
             max_size_mb = cleanup_manager.max_size_bytes / (1024 * 1024)

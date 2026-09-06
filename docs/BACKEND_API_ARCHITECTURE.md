@@ -353,10 +353,15 @@ class SerializedItem:
     type: str  # "weapon", "armor", "consumable", etc.
     properties: Dict[str, Any]
 
+# Wire ids are opaque handles minted by `src.combatant.wire_handle`, NEVER
+# `str(id(x))`: a CPython heap address leaks process layout and is RECYCLED,
+# so a client-held id for a freed entity resolves to whatever was allocated
+# at that address. Ids are resolved back with `src.combatant.find_by_handle`
+# (see issues #511/#518 and CLAUDE.md, "Every wire id is an opaque handle").
 def serialize_item(item) -> SerializedItem:
     """Convert Item to JSON-safe dict."""
     return {
-        "id": str(id(item)),
+        "id": wire_handle(item),
         "name": item.name,
         "description": str(item),
         "weight": getattr(item, "weight", 0),
@@ -373,7 +378,7 @@ def serialize_item(item) -> SerializedItem:
 def serialize_npc(npc) -> dict:
     """Convert NPC to JSON."""
     return {
-        "id": str(id(npc)),
+        "id": wire_handle(npc),
         "name": npc.name,
         "hp": npc.hp,
         "maxhp": npc.maxhp,
@@ -388,7 +393,7 @@ def serialize_npc(npc) -> dict:
 def serialize_player(player) -> dict:
     """Full player serialization."""
     return {
-        "id": str(id(player)),
+        "id": wire_handle(player),
         "name": player.name,
         "level": player.level,
         "exp": player.skill_exp.get("Basic", 0),
@@ -432,7 +437,7 @@ def serialize_battlefield(player) -> dict:
         "allies": [serialize_npc(a) for a in player.combat_list_allies],
         "available_moves": [
             {
-                "id": str(id(m)),
+                "id": wire_handle(m),
                 "name": m.name,
                 "viable": m.viable(),
                 "fatigue_cost": getattr(m, "fatigue_cost", 0),

@@ -9,13 +9,50 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
+    weapon_scaled_power,
     Move,
+    STANDARD_FATIGUE_BASE,
     PassiveMove,
     _ensure_weapon_exp,
-    _apply_carry_fatigue,
     _apply_to_hit_modifiers,
+    apply_facing_damage,
+    facing_damage_multiplier,
     to_hit_chance,
+    resolve_damage,
 )  # noqa: F401
+
+
+#: How much steeper Backstab's positional damage curve is than the baseline
+#: every attack now gets from ``apply_facing_damage``.
+#:
+#: ``facing_damage_multiplier`` scales the *deviation* from 1.0, so 2.0 doubles
+#: both the bonus and the penalty of the shared table: 0.70x head-on (vs 0.85),
+#: 1.30x flank (vs 1.15), 1.50x deep flank (vs 1.25), 1.80x from the rear (vs
+#: 1.40). Backstab is the engine's signature positional move, and once *every*
+#: attack responds to facing it needs its own curve or it is simply a dagger
+#: attack with a worse cooldown. Doubling — rather than a flat bonus on top —
+#: keeps it anchored to the same shape and keeps it a genuine gamble: a
+#: Backstab thrown head-on is materially worse than an ordinary strike, which
+#: is the trade that makes the payoff worth positioning for.
+BACKSTAB_POSITIONAL_STEEPNESS = 2.0
+
+
+#: Slash's power as a multiple of a full-swing baseline
+#: (``damage + strength*str_mod + finesse*fin_mod``), and the beats it adds to
+#: the basic Attack's cycle.
+#:
+#: Slash used to be the basic Attack plus five power and fifteen fatigue — one
+#: extra beat for a 10% damage bump, i.e. the dead centre of the roster and
+#: very nearly dominated by the move it was supposed to improve on. It is now
+#: the *committed swing*: power scales faster than the cycle does (1.45x
+#: damage for ~1.27x beats), so it buys real damage-per-beat, while the
+#: fatigue base below scales faster still — it is decisively the more tiring of
+#: the two. Better damage-per-beat, worse damage-per-fatigue: that is the whole
+#: trade, and it is the same one every "commit harder" move in the roster makes.
+SLASH_POWER_MULTIPLIER = 1.45
+SLASH_FATIGUE_BASE = 112
 
 
 class Slash(
@@ -25,7 +62,11 @@ class Slash(
     web_animation = "attack"
 
     def __init__(self, player):
-        description = "Slash at your enemy with your equipped weapon. Slightly stronger than a standard attack."
+        description = (
+            "Commit to a full swing with your equipped weapon. Considerably "
+            "more damaging than a standard attack, and considerably more "
+            "tiring — with a longer wind-up and recovery to match."
+        )
         prep = 1
         execute = 1
         recoil = 1  # modified later, based on player weapon
@@ -81,58 +122,36 @@ class Slash(
             viability = True
         return viability
 
-    def evaluate(
-        self,
-    ):  # adjusts the move's attributes to match the current game state
-        # Guard against no weapon equipped
+    def evaluate(self):
+        """Delegate to the shared attack-evaluation helper.
+
+        This was a line-for-line reimplementation of
+        ``standard_evaluate_attack`` -- same prep/recoil/cooldown/fatigue
+        formulas, same announcement string -- and it had already silently
+        diverged: the local copy never called
+        ``_apply_blade_mastery_discount``, so the Blade Mastery passive was
+        inert on Slash for anyone wielding a sword. The retune made the two
+        copies MORE identical (the three "+1"s are exactly mod_prep/mod_recoil/
+        mod_cd, and 1.45x is exactly mod_power="145%"), which is the moment to
+        collapse it rather than edit both.
+        """
         if not self.user.eq_weapon:
             self.power = 0
             self.stage_beat = [1, 1, 1, 0]
             self.fatigue_cost = 10
             return
 
-        power = (
-            (self.user.eq_weapon.damage + 5)
-            + (self.user.strength * self.user.eq_weapon.str_mod)
-            + (self.user.finesse * self.user.eq_weapon.fin_mod)
+        self.power, self.base_damage_type = self.standard_evaluate_attack(
+            base_power=0,
+            base_damage_type="slashing",
+            mod_power=f"{int(SLASH_POWER_MULTIPLIER * 100)}%",
+            mod_prep=1,
+            mod_recoil=1,
+            mod_cd=1,
+            mod_fatigue=SLASH_FATIGUE_BASE - STANDARD_FATIGUE_BASE,
         )
-
-        prep = int(
-            (40 + (self.user.eq_weapon.weight * 3)) / self.user.speed
-        )  # starting prep of 5
-        if prep < 1:
-            prep = 1
-
-        execute = 1
-
-        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.endurance / 10)
-        if cooldown < 0:
-            cooldown = 0
-
-        recoil = int(1 + (self.user.eq_weapon.weight / 2))
-
-        wt_mult = max(4, 10 - 0.2 * self.user.strength)
-        fatigue_cost = int(
-            math.ceil(
-                85 + (self.user.eq_weapon.weight * wt_mult) - (2 * self.user.endurance)
-            )
-        )
-        fatigue_cost = max(10, fatigue_cost)
-        fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
-
-        mvrange = self.user.eq_weapon.wpnrange
-
-        weapon_name = self.user.eq_weapon.name
-        self.stage_announce[1] = colored(
-            f"{self.user.name} strikes with his " + weapon_name + "!", "green"
-        )
-        self.power = power
-        self.stage_beat = [prep, execute, recoil, cooldown]
-        self.fatigue_cost = fatigue_cost
-        self.mvrange = mvrange
 
     def execute(self, player):
-        glance = False  # switch for determining a glancing blow
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -156,30 +175,24 @@ class Slash(
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        if damage <= 0:
-            damage = 0
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (issue #394) — same shared curve as
+        # standard_execute_attack; Slash hand-rolls its damage line and so
+        # would otherwise be one of the paths the fix silently skips.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 10
-        if hit_chance >= roll:  # a hit!
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
         self.user.fatigue -= self.fatigue_cost
+        # Every sibling attack clamps here. The adapter checks affordability at
+        # CAST time, but the deduction happens several beats later at execute,
+        # and evaluate() re-runs _apply_carry_fatigue on every intervening beat
+        # -- so picking up loot mid-move can raise the cost after the check
+        # passed and drive fatigue negative.
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class FeintAndPivot(Move):
@@ -199,11 +212,17 @@ class FeintAndPivot(Move):
 
     def __init__(self, user):
         description = "Attack then reposition strategically."
+        # Utility-first setup move. The strike is deliberately under half a
+        # full swing; what you are paying for is the pivot, which walks you
+        # front -> flank -> rear and hands Backstab (and every other attack,
+        # via the shared facing curve) a much better angle on the next beat.
         prep = 1
-        execute = 4
+        execute = 3
         recoil = 1
-        cooldown = 4
-        fatigue_cost = 70
+        cooldown = 3
+        # Deliberately the cheapest attack-plus-effect in the roster: the strike
+        # is a feint, and the fatigue reflects that rather than a real swing.
+        fatigue_cost = 38
         target = user  # Will be set when move is selected
         super().__init__(
             name="Feint & Pivot",
@@ -243,21 +262,16 @@ class FeintAndPivot(Move):
 
         return False
 
+    #: Fraction of a full weapon swing the feint itself deals. The lowest
+    #: single-target factor in the roster — the repositioning is the payload.
+    POWER_FACTOR = 0.45
+
     def evaluate(self):
         """Adjusts move power based on weapon and stats."""
-        try:
-            if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
-                wpn = self.user.eq_weapon
-                if hasattr(wpn, "base_damage_type"):
-                    self.base_damage_type = wpn.base_damage_type
-                if hasattr(wpn, "damage"):
-                    self.power = (int(wpn.damage) * 0.8) + (self.user.strength * 0.2)
-                else:
-                    self.power = self.user.strength * 0.4
-            else:
-                self.power = self.user.strength * 0.4
-        except (TypeError, AttributeError):
-            self.power = self.user.strength * 0.4
+        wpn = getattr(self.user, "eq_weapon", None)
+        if wpn is not None and hasattr(wpn, "base_damage_type"):
+            self.base_damage_type = wpn.base_damage_type
+        self.power = weapon_scaled_power(self.user, self.POWER_FACTOR)
 
     def prep(self, user):
         """Prep stage - announce the maneuver."""
@@ -284,16 +298,12 @@ class FeintAndPivot(Move):
 
         Returns: "front" (±45° from facing), "flank" (±90°), or "behind" (±45° opposite)
         """
-        # Calculate angle from target to user
-        angle = positions.angle_to_target(target_pos, user_pos)
-
-        # Target's facing angle
-        target_angle = target_facing.value
-
-        # Calculate angular difference
-        diff = abs(angle - target_angle)
-        if diff > 180:
-            diff = 360 - diff
+        # Shared helper so this can't drift out of step with the argument
+        # order the accuracy and damage curves use. ``target_facing`` is
+        # accepted for signature compatibility with _calculate_new_position's
+        # caller; the authoritative facing is ``target_pos.facing``, which is
+        # the same object in every live call.
+        diff = positions.attack_angle_diff(user_pos, target_pos)
 
         # Classify position based on angle difference
         if diff <= 45:
@@ -313,7 +323,6 @@ class FeintAndPivot(Move):
         - Flank: move to behind (180° from facing)
         - Behind: maintain/perfect behind positioning
         """
-        import math
 
         # Ensure facing is a Direction enum value
         user_facing = user_pos.facing
@@ -391,36 +400,24 @@ class FeintAndPivot(Move):
         # heat scaling, and self.hit()/miss()/parry() bookkeeping (which also
         # awards combat exp for the wielder).
         base_damage_type = getattr(self, "base_damage_type", "slashing")
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, base_damage_type))
-                - self.target.protection
-            )
-            * self.user.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        # Facing/angle damage (issue #394). The strike is resolved from where
+        # the user stands *now*, before the pivot below moves them — a feint
+        # launched from the blind side should be rewarded for the blind side it
+        # was launched from, not the one it ends up on.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(self.user, self.target, power, base_damage_type)
 
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
-        glance = False
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
             _ensure_weapon_exp(self.user)
             self.user.combat_exp[self.user.eq_weapon.subtype] += 5
         self.user.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         # Reposition strategically based on current relative position
         try:
@@ -488,9 +485,15 @@ class ShadowStep(PassiveMove):
 class Backstab(Move):
     """Strike from flank or behind for bonus damage.
 
-    Uses the positions angle system (angle_to_target / attack_angle_difference /
-    get_damage_modifier) to scale power based on attack angle. Frontal attacks
-    get a slight penalty; flanking and rear attacks deal up to +40% more.
+    Scales power by the shared facing/angle curve at double steepness (see
+    ``BACKSTAB_POSITIONAL_STEEPNESS``): a head-on Backstab is worse than an
+    ordinary strike at 0.70x, while a true rear strike deals 1.80x.
+
+    The roster's positional gamble. Base power is only 70% of a full swing on
+    a short six-beat cycle, so thrown head-on it is *worse* than the basic
+    Attack on every axis — and from the rear it is roughly twice as good.
+    That is the entire point: it is the one attack whose value the player sets
+    with their feet rather than with the button.
     """
     display_name = 'Backstab'
 
@@ -538,38 +541,63 @@ class Backstab(Move):
             self.stage_beat = [1, 1, 2, 3]
             self.fatigue_cost = 10
             return
+        # Short, cheap, and under-powered on purpose: the positional
+        # multiplier below (0.70x head-on to 1.80x from the rear) is where the
+        # damage comes from, so the flat number has to stay low or the gamble
+        # stops being a gamble.
         evaluation = self.standard_evaluate_attack(
-            base_power=5,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="70%",
+            mod_prep=-2,
+            mod_recoil=-1,
+            mod_cd=-1,
+            mod_fatigue=-25,
+            floor_fatigue=12,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
 
     def _positional_modifier(self):
-        """Return damage multiplier based on attack angle vs target's facing."""
-        try:
-            if (
-                hasattr(self.user, "combat_position")
-                and self.user.combat_position is not None
-                and hasattr(self.target, "combat_position")
-                and self.target.combat_position is not None
-            ):
-                attack_angle = positions.angle_to_target(
-                    self.user.combat_position, self.target.combat_position
-                )
-                angle_diff = positions.attack_angle_difference(
-                    attack_angle, self.target.combat_position.facing
-                )
-                return positions.get_damage_modifier(angle_diff)
-        except Exception:
-            pass
-        return 1.0
+        """Return Backstab's damage multiplier for the current attack angle.
+
+        The shared curve at ``BACKSTAB_POSITIONAL_STEEPNESS``: 0.70x head-on,
+        1.30x flank, 1.50x deep flank, 1.80x from the rear.
+
+        This used to compute the angle inline as
+        ``angle_to_target(user_pos, target_pos)`` — the bearing from the
+        *attacker*, i.e. exactly 180° wrong — so Backstab paid its rear bonus
+        for frontal attacks and penalised real backstabs. It now shares one
+        argument-order-safe helper with the accuracy side. Note Backstab
+        hand-rolls its own ``execute()`` and never calls
+        ``standard_execute_attack``, so this is applied once, not stacked on
+        top of the baseline curve.
+        """
+        return facing_damage_multiplier(
+            self.user, self.target, BACKSTAB_POSITIONAL_STEEPNESS
+        )
+
+    def preview_damage(self, target=None):
+        """Backstab's damage line is the canonical expression scored at its own
+        steeper facing curve — see ``_positional_modifier`` for the curve and
+        ``execute`` for the ``apply_facing_damage`` call this mirrors. Nothing
+        else about the line diverges, so the steepness is the only argument
+        that changes.
+        """
+        return self._standard_preview_damage(
+            target, steepness=BACKSTAB_POSITIONAL_STEEPNESS
+        )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
+        # Facing/angle damage (#394) at Backstab's own steeper curve. Routed
+        # through the shared helper rather than multiplying here: the local
+        # `max(1, int(...))` dropped apply_facing_damage's `power <= 0`
+        # short-circuit, so a fully-nullified stab was floored back up to 1.
         mod = self._positional_modifier()
-        power = max(1, int(self.power * mod))
+        power = apply_facing_damage(
+            self.user, self.target, self.power, BACKSTAB_POSITIONAL_STEEPNESS
+        )
 
         if mod > 1.0:
             cprint(
@@ -601,31 +629,15 @@ class Backstab(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:

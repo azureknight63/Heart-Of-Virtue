@@ -20,10 +20,14 @@ export const FEATURE_FLAGS = {
   beatTimeline: {
     label: 'Beat timeline',
     description:
-      'Replace the "Beat N / X standing" counter with a schedule of who '
-      + 'resolves next and when, so timing is read off the strip instead of '
-      + 'derived in your head.',
-    default: false,
+      'Show a schedule of who resolves next and when, above the battlefield, '
+      + 'so timing is read off the strip instead of derived in your head. '
+      + 'The "Beat N / X standing" counter stays either way.',
+    // On by default: in a beat-based ATB, the turn-order schedule is the
+    // primary legibility affordance — without it the player reconstructs the
+    // order from countdown badges scattered across the grid. Kept as a flag
+    // so it remains switchable from the settings dialog.
+    default: true,
   },
 };
 

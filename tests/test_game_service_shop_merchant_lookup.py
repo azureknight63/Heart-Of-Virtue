@@ -27,6 +27,7 @@ from src.items import Gold, Restorative, RustedDagger
 from src.npc import NPC
 from src.npc._merchants import JamboHealsU, Merchant, MiloCurioDealer
 from tests._gs_fixtures import get_player_gold, live_world, set_player_gold
+from src.combatant import wire_handle
 
 MERCHANT_STOCK_GOLD = 2000
 PLAYER_PURSE_GOLD = 1000
@@ -92,7 +93,7 @@ class TestRealMerchantLookup:
         merchant = factory()
         player, _tile = _live_world(merchant)
 
-        assert game_service._find_merchant(player, str(id(merchant))) is merchant
+        assert game_service._find_merchant(player, wire_handle(merchant)) is merchant
 
     def test_find_merchant_ignores_non_merchant_npc(self, game_service):
         merchant = _plain_merchant()
@@ -106,7 +107,7 @@ class TestRealMerchantLookup:
         )
         tile.npcs_here.append(bystander)
 
-        assert game_service._find_merchant(player, str(id(bystander))) is None
+        assert game_service._find_merchant(player, wire_handle(bystander)) is None
 
     def test_find_merchant_returns_none_for_unknown_id(self, game_service):
         merchant = _plain_merchant()
@@ -123,7 +124,7 @@ class TestShopRoutesReachRealMerchant:
         merchant = factory()
         player, _tile = _live_world(merchant)
 
-        result = game_service.get_shop_state(player, str(id(merchant)))
+        result = game_service.get_shop_state(player, wire_handle(merchant))
 
         assert result["success"] is True, result.get("error")
         shop_state = result["shop_state"]
@@ -136,12 +137,12 @@ class TestShopRoutesReachRealMerchant:
         player, _tile = _live_world(merchant)
         _fund_player(player, PLAYER_PURSE_GOLD)
 
-        state = game_service.get_shop_state(player, str(id(merchant)))
+        state = game_service.get_shop_state(player, wire_handle(merchant))
         stock_entry = state["shop_state"]["stock"][0]
         gold_before = state["shop_state"]["player_gold"]
 
         result = game_service.shop_buy(
-            player, str(id(merchant)), stock_entry["id"], 1
+            player, wire_handle(merchant), stock_entry["id"], 1
         )
 
         assert result["success"] is True, result.get("error")
@@ -159,7 +160,7 @@ class TestShopRoutesReachRealMerchant:
         player.inventory.append(sellable)
 
         sell_result = game_service.shop_sell(
-            player, str(id(merchant)), str(id(sellable)), 1
+            player, wire_handle(merchant), wire_handle(sellable), 1
         )
 
         assert sell_result["success"] is True, sell_result.get("error")
@@ -169,7 +170,7 @@ class TestShopRoutesReachRealMerchant:
         assert ledger[0]["item_name"] == "Restorative"
 
         buyback_result = game_service.shop_buyback(
-            player, str(id(merchant)), ledger[0]["item_id"]
+            player, wire_handle(merchant), wire_handle(ledger[0])
         )
 
         assert buyback_result["success"] is True, buyback_result.get("error")
@@ -183,7 +184,7 @@ class TestShopRoutesReachRealMerchant:
         player, tile = _live_world(merchant)
         tile.npcs_here.remove(merchant)
 
-        result = game_service.get_shop_state(player, str(id(merchant)))
+        result = game_service.get_shop_state(player, wire_handle(merchant))
 
         assert result["success"] is False
         assert "Merchant not found" in result["error"]

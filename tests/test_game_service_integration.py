@@ -27,10 +27,13 @@ the event-patch construction. These are cheap to test directly and nothing else
 covers them.
 """
 
+import inspect
+
 import pytest
 
 from src.api.services.game_service import GameService
 from src.events import Event
+from src.narration import cprint
 from tests._gs_fixtures import GRID_3X3, live_world
 
 
@@ -431,6 +434,145 @@ class TestStaticUniverseHelpers:
         """They are called as ``self._story(player)`` but hold no instance state."""
         assert GameService._story(None) == {}
         assert GameService._game_tick(None) == 0
+
+
+class _NarratingInteractiveEvent:
+    """Mirrors ``Ch01ChestRumblerBattle``'s first stage.
+
+    It narrates, then blocks on a choice — the shape that made the
+    ``_store_pending_event`` prose loss player-visible.
+    """
+
+    def __init__(self, name="RumblingNoise"):
+        self.name = name
+        self.needs_input = False
+        self.completed = False
+        self.player = None
+        self.tile = None
+        self.checks = 0
+
+    def check_conditions(self):
+        self.checks += 1
+        cprint("Jean hears a loud rumbling noise and the sound of scraping rocks.")
+        self.needs_input = True
+        self.input_type = "choice"
+        self.input_prompt = "What's that noise!?"
+        self.input_options = [{"value": "continue", "label": "Continue"}]
+
+
+def _stored_event_data(session_data, name):
+    for payload in session_data.get("pending_events", {}).values():
+        if payload.get("event_data", {}).get("name") == name:
+            return payload["event_data"]
+    return None
+
+
+class TestPendingEventProseSurvivesRePolling:
+    """Regression: a pending event's captured narration must survive a re-poll.
+
+    ``trigger_tile_events`` re-serializes an already-pending event on every
+    call and hands the bare dict to ``_store_pending_event``. That dict has no
+    ``output_text``/``segments``/``conversation`` — those are attached
+    afterwards by ``_apply_staged_payload``, and only on the pass that actually
+    ran the event. Storing it unguarded wiped the prose the client re-reads
+    from ``GET /world/events/pending`` after a reload, leaving the player with
+    ``EventDialog``'s one-line ``description`` fallback (or a blank dialog for
+    an event that never sets ``description`` at all).
+    """
+
+    def test_first_trigger_stores_the_narration(self, game_service, player, tile):
+        session_data = {}
+        tile.events_here = [_NarratingInteractiveEvent()]
+
+        game_service.trigger_tile_events(player, tile, session_data)
+
+        stored = _stored_event_data(session_data, "RumblingNoise")
+        assert stored is not None
+        assert "rumbling noise" in stored["output_text"].lower()
+
+    def test_a_second_trigger_does_not_strip_it(self, game_service, player, tile):
+        session_data = {}
+        event = _NarratingInteractiveEvent()
+        tile.events_here = [event]
+
+        game_service.trigger_tile_events(player, tile, session_data)
+        game_service.trigger_tile_events(player, tile, session_data)
+
+        # The pending event is short-circuited, not re-run, on the second pass.
+        assert event.checks == 1
+        stored = _stored_event_data(session_data, "RumblingNoise")
+        assert stored is not None
+        assert "rumbling noise" in stored.get("output_text", "").lower(), (
+            "the re-poll overwrote the pending event's captured narration — a "
+            "player reloading mid-event gets the stripped copy"
+        )
+
+    def test_a_fresh_payload_wins_over_the_stored_one(self, game_service):
+        """Carrying forward must never mask prose the new pass actually captured."""
+        event = Event(name="E")
+        session_data = {"pending_events": {}}
+
+        game_service._store_pending_event(
+            event, {"name": "E", "output_text": "stage one"}, session_data
+        )
+        result = game_service._store_pending_event(
+            event, {"name": "E", "output_text": "stage two"}, session_data
+        )
+
+        assert result["output_text"] == "stage two"
+
+    def test_the_two_helpers_agree_on_the_staged_keys(self, game_service):
+        """Contract: what ``_apply_staged_payload`` writes is what gets carried.
+
+        A fourth staged part added to one helper and not the other would go
+        missing on re-poll exactly as ``output_text`` used to.
+
+        Driven from ``_STAGED_PAYLOAD_KEYS`` and the helper's SIGNATURE, not
+        from a hand-written call. The previous version passed the three parts
+        positionally, so a fourth part added as a defaulted parameter simply
+        went unpassed, wrote nothing, and the assertion still held — the test
+        could not catch the one drift its docstring names.
+        """
+        parts = [
+            p
+            for p in inspect.signature(
+                GameService._apply_staged_payload
+            ).parameters.values()
+            if p.name != "target"
+        ]
+        assert len(parts) == len(GameService._STAGED_PAYLOAD_KEYS), (
+            "_apply_staged_payload takes "
+            f"{[p.name for p in parts]} but _STAGED_PAYLOAD_KEYS declares "
+            f"{list(GameService._STAGED_PAYLOAD_KEYS)} — update the tuple and "
+            "_carry_staged_payload together, or the new part goes missing on "
+            "re-poll"
+        )
+
+        # Every part truthy, so each `if <part>:` branch writes.
+        target = {}
+        game_service._apply_staged_payload(
+            target, *[f"<{p.name}>" for p in parts]
+        )
+        assert set(target) == set(GameService._STAGED_PAYLOAD_KEYS)
+
+    def test_a_different_instance_does_not_inherit_the_prose(self, game_service):
+        """The dedupe-by-name branch rehomes a *new* event onto an existing id.
+
+        That event did not emit the stored narration, so it must not adopt it —
+        otherwise a re-armed repeatable event would replay the last run's text.
+        """
+        session_data = {"pending_events": {}}
+        first = Event(name="ItemFound")
+        game_service._store_pending_event(
+            first, {"name": "ItemFound", "output_text": "the first run's prose"}, session_data
+        )
+
+        second = Event(name="ItemFound")
+        result = game_service._store_pending_event(
+            second, {"name": "ItemFound"}, session_data
+        )
+
+        assert "output_text" not in result
 
 
 if __name__ == "__main__":

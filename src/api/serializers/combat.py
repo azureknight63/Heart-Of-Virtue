@@ -8,11 +8,12 @@ This module provides serialization for:
 """
 
 import logging
+import math
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
 from src.api.constants import ITEM_USE_RANGE
 from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
-from src.combatant import move_in_progress
+from src.combatant import combatant_handle, move_in_progress
 from src.moves import attacker_accuracy
 from src.moves._base import display_name_of
 
@@ -25,14 +26,25 @@ logger = logging.getLogger(__name__)
 
 
 def _num(obj, attr, default=0.0) -> float:
-    """Read a numeric attribute defensively, coercing None/garbage to `default`."""
+    """Read a numeric attribute defensively, coercing None/garbage to `default`.
+
+    Non-finite values are coerced too, and that part is load-bearing rather
+    than tidiness: ``float('nan')`` raises neither TypeError nor ValueError, so
+    it used to pass straight through. Flask's JSON provider serialises it as a
+    bare ``NaN`` token, which is not valid JSON -- so `JSON.parse` rejects the
+    response and the ENTIRE combat poll fails, not just the field. A single
+    poisoned stat would take the fight down rather than degrade one number.
+    """
     try:
         value = getattr(obj, attr, default)
         if value is None:
             return float(default)
-        return float(value)
+        value = float(value)
     except (TypeError, ValueError):
         return float(default)
+    if not math.isfinite(value):
+        return float(default)
+    return value
 
 
 def _as_dict(value) -> Dict:
@@ -307,24 +319,66 @@ class CombatStateSerializer:
         return drops
 
 
+#: ── The combat wire-id prefix vocabulary, single-sourced ────────────────────
+#:
+#: A combat wire id is a side prefix plus the combatant's opaque handle. The
+#: prefixes are minted in :meth:`CombatantSerializer.stream_id` below and
+#: parsed back apart in two other files (``src/api/combat_adapter.py``'s
+#: ``_strip_combatant_prefix`` and ``src/api/routes/inventory.py``'s
+#: ``_resolve_ally_target``). Both parsers pass an unrecognised prefix through
+#: unchanged -- so spelled as literals on three sides, adding or renaming a
+#: side makes every id of that side resolve to nobody, with no error anywhere.
+#: Naming them once here and deriving both parsers from them removes that.
+PLAYER_ID = "player"
+ALLY_ID_PREFIX = "ally_"
+ENEMY_ID_PREFIX = "enemy_"
+
+#: Every side prefix, for parsers that strip whichever one is present.
+COMBATANT_ID_PREFIXES = (ENEMY_ID_PREFIX, ALLY_ID_PREFIX)
+
+
+def strip_combatant_prefix(target_id: str) -> str:
+    """Strip whichever side prefix ``target_id`` carries, leaving the handle.
+
+    Derived from :data:`COMBATANT_ID_PREFIXES` rather than a literal list, so a
+    new side is understood by every parser the moment it is minted. An id with
+    no known prefix is returned unchanged -- a bare handle is a legal input.
+    """
+    for prefix in COMBATANT_ID_PREFIXES:
+        if target_id.startswith(prefix):
+            return target_id[len(prefix):]
+    return target_id
+
+
 class CombatantSerializer:
     """Serialize individual combatant state (player or NPC in combat)."""
 
     @staticmethod
     def stream_id(combatant: Any) -> str:
-        """Canonical wire id for a combatant: ``player`` / ``ally_<id>`` /
-        ``enemy_<id>``.
+        """Canonical wire id for a combatant: ``player`` / ``ally_<handle>`` /
+        ``enemy_<handle>``.
 
         Single source of truth for the combatant-id scheme so the serialized
         combat state and the beat streamer (issue #436) can never diverge.
+
+        The suffix is the combatant's stable opaque handle
+        (``src.combatant.combatant_handle``), NOT ``id(combatant)``: heap
+        addresses both leaked process layout to the client and were recycled
+        onto later-spawned NPCs, silently aliasing stale client-held ids onto a
+        different combatant. See the handle's comment block in
+        ``src/combatant.py`` for the full rationale (issue #511).
+
+        The prefix still depends on live state (``friend``), so a combatant
+        that changes sides changes wire id -- that is deliberate and unchanged:
+        the client keys allies and enemies apart by prefix.
         """
         from src.player import Player
 
         if isinstance(combatant, Player):
-            return "player"
+            return PLAYER_ID
         if getattr(combatant, "friend", False):
-            return f"ally_{id(combatant)}"
-        return f"enemy_{id(combatant)}"
+            return f"{ALLY_ID_PREFIX}{combatant_handle(combatant)}"
+        return f"{ENEMY_ID_PREFIX}{combatant_handle(combatant)}"
 
     @staticmethod
     def serialize_combatant(combatant: Any, reference: Any = None) -> Dict[str, Any]:
@@ -371,7 +425,19 @@ class CombatantSerializer:
             "fatigue": getattr(combatant, "fatigue", 0),
             "max_fatigue": getattr(combatant, "maxfatigue", 100),
             "maxfatigue": getattr(combatant, "maxfatigue", 100),
-            "heat": getattr(combatant, "heat", 1.0) if is_player else 1.0,
+            # Heat multiplier. Only the player has one — `standard_execute_attack`
+            # (src/moves/_base.py) multiplies Jean's damage by it and nothing scales
+            # NPC damage, so enemies report the neutral 1.0.
+            #
+            # Rounded to 2dp because the per-beat decay (ApiCombatAdapter._update_heat)
+            # does NOT round the way Player.change_heat does — heat drifts to values
+            # like 1.6234567891 — and this is the number the client renders directly
+            # (HeatMeter, via frontend/src/utils/heat.js). Rounding on the wire
+            # keeps the displayed multiplier and its client-derived per-beat delta
+            # stable instead of jittering in the eighth decimal. `_num` (rather than a
+            # bare getattr) matches every other numeric field here and stops a None or
+            # non-numeric heat reaching the client as a NaN multiplier.
+            "heat": round(_num(combatant, "heat", 1.0), 2) if is_player else 1.0,
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
             "attributes": CombatantSerializer._serialize_base_attributes(combatant),
             "status_effects": CombatantSerializer._serialize_status_effects(combatant),
@@ -407,7 +473,12 @@ class CombatantSerializer:
                 # smaller number — the battlefield countdown badge renders
                 # this one instead. Computed by the engine (Move.
                 # beats_until_resolve) so the stage machine has one owner.
-                "beats_until_resolve": move.beats_until_resolve(),
+                #
+                # Reached through _call_move_method: an absent countdown must
+                # not blank a whole fighter. See _move_method's docstring.
+                "beats_until_resolve": CombatantSerializer._call_move_method(
+                    move, "beats_until_resolve"
+                ),
                 "target_id": CombatantSerializer._serialize_move_target_id(move),
                 "mvrange": CombatantSerializer._serialize_move_range(move),
                 "falloff": CombatantSerializer._serialize_move_falloff(move),
@@ -416,6 +487,39 @@ class CombatantSerializer:
                 ),
             }
         return None
+
+    @staticmethod
+    def _move_method(move: Any, name: str):
+        """Return ``move``'s bound engine method ``name``, or None if absent.
+
+        Every real Move (src/moves/_base.py) defines these, so this is not a
+        guard against engine bugs — a method that *raises* still propagates,
+        exactly as :meth:`_serialize_move_range` documents. It guards the one
+        case where ``current_move`` is not a Move at all: a save written while
+        a move was in flight, whose move class has since been renamed or
+        removed, restores as a synthesized legacy placeholder (see
+        ``src/secure_pickle.py``) carrying none of Move's API. That
+        AttributeError escaped :meth:`_serialize_active_move` and the _safe
+        boundary then replaced the WHOLE combatant with ``{}`` — no name, no
+        hp, no position on the wire — so the battlefield rendered empty for
+        every fighter, Jean included, with only a log warning to show for it.
+        """
+        method = getattr(move, name, None)
+        return method if callable(method) else None
+
+    @staticmethod
+    def _call_move_method(move: Any, name: str, *args):
+        """Call ``move``'s engine method ``name``, or return None if absent.
+
+        The conditional-call idiom that goes with :meth:`_move_method`, in one
+        place instead of copy-pasted at each call site. Deliberately NOT
+        wrapped in try/except: absence resolves to None here, and a method that
+        *raises* still propagates — see :meth:`_move_method` and
+        :meth:`_serialize_move_range` for why swallowing it would ship a
+        silently wrong payload instead of a loud bug.
+        """
+        method = CombatantSerializer._move_method(move, name)
+        return method(*args) if method is not None else None
 
     @staticmethod
     def _serialize_damage_multiplier(move: Any) -> float:
@@ -514,13 +618,16 @@ class CombatantSerializer:
         range_min, range_max = mvrange
 
         # Every Move has get_effective_range_max (the base returns None — see
-        # src/moves/_base.py), so this is a plain call, matching how
-        # combat_adapter._get_available_targets already invokes it. It is
-        # deliberately not wrapped in try/except: an override that raises is a
-        # real engine bug, and swallowing it here would ship a silently wrong
-        # threat radius instead — the exact silent-failure mode this payload's
-        # contract test exists to prevent.
-        effective_max = move.get_effective_range_max(getattr(move, "user", None))
+        # src/moves/_base.py), matching how combat_adapter.
+        # _get_available_targets already invokes it. Reached via
+        # _call_move_method, which resolves *absence* only — there is still no
+        # try/except here: an override that raises is a real engine bug, and
+        # swallowing it would ship a silently wrong threat radius instead, the
+        # exact silent-failure mode this payload's contract test exists to
+        # prevent.
+        effective_max = CombatantSerializer._call_move_method(
+            move, "get_effective_range_max", getattr(move, "user", None)
+        )
         if effective_max is not None:
             range_max = effective_max
 
@@ -543,7 +650,9 @@ class CombatantSerializer:
         The client draws the difference — a dissolving gradient for a decaying
         move, a hard ring for a bounded one.
         """
-        falloff = move.get_accuracy_falloff(getattr(move, "user", None))
+        falloff = CombatantSerializer._call_move_method(
+            move, "get_accuracy_falloff", getattr(move, "user", None)
+        )
         if not falloff:
             return None
         start, per_ft = falloff

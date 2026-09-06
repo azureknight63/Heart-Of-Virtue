@@ -13,6 +13,7 @@ Targets:
 import pytest
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
+from src.combatant import wire_handle
 
 # ---------------------------------------------------------------------------
 # Helpers — real engine objects wherever affordable
@@ -228,10 +229,16 @@ class TestCombatStateSerializer:
         assert state["turn_order"] == [
             self.CombatantSerializer.stream_id(c) for c in (player, ally, enemy)
         ]
-        # Not vacuous: the ids are the stream-id scheme, not positional labels.
+        # Not vacuous: the ids carry the side prefix and the combatant's own
+        # stable handle, not a positional label. Compared against
+        # `wire_handle`, never `id()` — heap addresses stopped being wire ids
+        # in #511/#518, and a test that still spelled `f"ally_{id(ally)}"`
+        # would fail here for a reason that has nothing to do with turn order.
+        from src.combatant import wire_handle
+
         assert state["turn_order"][0] == "player"
-        assert state["turn_order"][1] == f"ally_{id(ally)}"
-        assert state["turn_order"][2] == f"enemy_{id(enemy)}"
+        assert state["turn_order"][1] == f"ally_{wire_handle(ally)}"
+        assert state["turn_order"][2] == f"enemy_{wire_handle(enemy)}"
 
     def test_turn_order_survives_a_combatant_that_fails_to_serialize(self):
         """A degraded combatant costs its own slot, not the whole payload.
@@ -512,7 +519,9 @@ class TestCombatantSerializer:
 
         combatant = _combatant()
         move = moves.PowerStrike(combatant)
-        assert move.stage_beat == [5, 4, 8, 9]
+        # [5, 4, 6, 6] since Power Strike's cycle was re-cut from 26 beats to
+        # 21; the recoil and cooldown +3 bases were trimmed.
+        assert move.stage_beat == [5, 4, 6, 6]
         move.current_stage = 1
         move.beats_left = 2
         combatant.current_move = move
@@ -764,8 +773,8 @@ class TestCombatantSerializer:
         stats = self.CombatantSerializer._serialize_combat_stats(combatant)
         assert stats["defense"] == 7  # protection, the real mitigation stat
         assert stats["evasion"] == 20  # finesse, subtracted from attacker accuracy
-        # 98 + finesse*0.7 + intelligence*0.3
-        assert stats["accuracy"] == 115
+        # HIT_CHANCE_BASE (85) + finesse*0.7 + intelligence*0.3
+        assert stats["accuracy"] == 102
         assert stats["damage"] == 20  # weapon base damage
         # weapon damage + strength*str_mod + finesse*fin_mod
         assert stats["attack_power"] == 31
@@ -783,7 +792,7 @@ class TestCombatantSerializer:
         stats = self.CombatantSerializer._serialize_combat_stats(combatant)
         assert stats["defense"] == 3
         assert stats["evasion"] == 12
-        assert stats["accuracy"] == 108
+        assert stats["accuracy"] == 95
         assert stats["attack_power"] != 99
         assert "armor" not in stats
 
@@ -910,7 +919,7 @@ class TestNPCSerializer:
         slime = self._slime()
         result = self.NPCSerializer.serialize(slime)
 
-        assert result["id"] == str(id(slime))
+        assert result["id"] == wire_handle(slime)
         assert result["name"] == slime.name
         assert result["type"] == "Slime"
         assert result["description"] == slime.description
@@ -1245,8 +1254,8 @@ class TestItemSerializer:
         result = self.ItemSerializer.serialize_list([sword, armor])
 
         assert [r["name"] for r in result] == ["Longsword", "Iron Cuirass"]
-        assert result[0]["id"] == str(id(sword))
-        assert result[1]["id"] == str(id(armor))
+        assert result[0]["id"] == wire_handle(sword)
+        assert result[1]["id"] == wire_handle(armor)
 
 
 # ===========================================================================
@@ -1947,7 +1956,7 @@ class TestEventSerializer:
         event = self._event()
         result = self.EventSerializer.serialize(event)
 
-        assert result["id"] == str(id(event))
+        assert result["id"] == wire_handle(event)
         assert result["type"] == "Event"
         assert result["name"] == "TestEvent"
         assert result["repeat"] is False
@@ -2247,7 +2256,7 @@ class TestObjectSerializer:
         passage = Passageway(player=None, tile=None)
         result = self.ObjectSerializer.serialize(passage)
 
-        assert result["id"] == str(id(passage))
+        assert result["id"] == wire_handle(passage)
         assert result["name"] == "Passageway"
         assert result["type"] == "Passageway"
         assert result["description"] == passage.description
@@ -2262,7 +2271,16 @@ class TestObjectSerializer:
         assert "opened" not in result
 
     def test_serialize_dict_shaped_object(self):
-        """Map JSON hands the serializer plain dicts for some objects."""
+        """Map JSON hands the serializer plain dicts for some objects.
+
+        A mapping gets a handle like any other entity — minted into the
+        mapping itself so it is stable across polls. The ``id`` key below is
+        deliberately kept in the fixture to pin that it is NOT preferred over
+        the handle: no map JSON object entry actually carries one, and
+        publishing it would ship an id ``find_by_handle`` cannot resolve.
+        """
+        from src.combatant import find_by_handle, wire_handle
+
         obj = {
             "id": "door_1",
             "name": "Iron Door",
@@ -2275,7 +2293,12 @@ class TestObjectSerializer:
         }
         result = self.ObjectSerializer._serialize_base(obj)
 
-        assert result["id"] == "door_1"
+        assert result["id"] == wire_handle(obj)
+        assert result["id"] != "door_1"
+        assert find_by_handle([obj], result["id"]) is obj
+        assert self.ObjectSerializer._serialize_base(obj)["id"] == result["id"], (
+            "a mapping's id must be stable between polls"
+        )
         assert result["name"] == "Iron Door"
         assert result["type"] == "Door"
         assert result["aliases"] == ["door"]

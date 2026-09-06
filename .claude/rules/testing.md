@@ -15,14 +15,34 @@ paths:
 # Testing rules
 
 ## Running
-- `python -m pytest -q` — never bare `pytest`. All of `pytest.ini` is three settings: `norecursedirs` (`tests/broken`, `tests/uat`, `tests/integration`, `.claude` — `tests/api` used to be listed here and is not any more; it runs in the gate), `testpaths = tests`, and `addopts = -n auto --dist loadfile`. There are no `--ignore-glob` entries; the seven that used to sit there named `debug_*`/`check_*`/`find_*`/`reproduce_*`/`verify_*`/`uat_*`/`manual_*`, none of which pytest's default `python_files` (`test_*.py`, `*_test.py`) ever matched, so they guarded nothing and were deleted. CI (`ci.yml`) runs `python -m pytest -q -n auto` and `flake8 --extend-ignore=E501 src/`; `test-coverage.yml` enforces backend ≥85% / frontend ≥95%.
+- `python -m pytest -q` — never bare `pytest`. All of `pytest.ini` is three settings: `norecursedirs` (`tests/api`, `tests/broken`, `tests/uat`, `tests/integration`, `.claude` — `tests/api` is excluded on purpose and has its own per-file CI job; see "Where tests go"), `testpaths = tests`, and `addopts = -n auto --dist loadfile`. There are no `--ignore-glob` entries; the seven that used to sit there named `debug_*`/`check_*`/`find_*`/`reproduce_*`/`verify_*`/`uat_*`/`manual_*`, none of which pytest's default `python_files` (`test_*.py`, `*_test.py`) ever matched, so they guarded nothing and were deleted. CI (`ci.yml`) runs `python -m pytest -q -n auto` and `flake8 --extend-ignore=E501 src/`; `test-coverage.yml` enforces backend ≥85% / frontend ≥95%.
 - Review-rule unit tests run separately: `python -m pytest .claude/skills/_shared/review_rules/test_code_review_rules.py -v` (and `test_code_scrubber_rules.py`).
 - Live-provider tests: `HOV_LIVE_LLM=1 python -m pytest tests/integration/ -q` (excluded from the default run). **Do not gate them on `MYNX_LLM_ENABLED`/`MYNX_LLM_PROVIDER`** — `tests/conftest.py` pins those to `0`/`none` suite-wide, so such a module skips itself unconditionally (which is how `test_tactical_advisor_live.py` stayed inert for its whole existence). `tests/integration/conftest.py`'s `live_env` restores the real `.env` provider for one module and puts the pins back, including clearing `NpcChatLLMAdapter._instances` (which `reset_class_state()` does not touch and production populates via `get_instance`/`prewarm`). See `.claude/rules/llm-prompts.md` before editing a prompt.
 - No pre-commit hook is installed (worktrees share `../.git/hooks`, which holds only samples). Optional local hook: a `pre-commit` script that runs `python -m pytest -q --tb=line || exit 1`.
 
 ## Where tests go
-- **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) go in `tests/api/`, which is **not** excluded from the default run. Creating a real session mutates module-level item/merchant registries, so such a module depends on its own internal ordering; `--dist loadfile` schedules a whole file onto one worker, which is what keeps that ordering intact. Other route tests use a *mocked* `session_manager`. Pure in-memory engine fuzz (serializer, save) lives under `tests/`.
+- **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) go in `tests/api/`, which **is** excluded from the default run (`pytest.ini`'s `norecursedirs`) and runs one-process-per-file in `.github/workflows/api-tests.yml`. Creating a real session mutates module-level item and merchant registries, so these tests pollute downstream shop and spawn tests; the per-file job is what buys order-independence, which passing once in a single process does not. Other route tests use a *mocked* `session_manager`. Pure in-memory engine fuzz (serializer, save) lives under `tests/`.
+- **`tests/api/conftest.py` disables `time.sleep` and `pbkdf2_hmac` for the whole process.** Both are `patch(...).start()`ed at module import and never stopped, so for every test in that directory `time.sleep` is a no-op `MagicMock` and password hashing returns a constant. Two consequences before writing a test there: a wait budget spelled `for _ in range(N): time.sleep(x)` is **fictitious** — it costs microseconds, not `N*x` seconds — and a `MagicMock` call does not release the GIL the way a real `time.sleep` does, so the whole spin can finish inside one interpreter switch interval without a background thread ever being scheduled. Any test waiting on a worker thread is a latent flake. Wait on `threading.Event().wait(x)`, which the patch does not touch and which genuinely yields.
+- **`tests/api/test_cloud_integration.py` writes REAL rows** if it ever reaches a database: `auth_service.create_user` has no TESTING guard and `src/api/db.py` reads `TURSO_DATABASE_URL` straight from the environment. Two things stop it, and only together — `tests/conftest.py` blanks the Turso credentials unconditionally, and the file's `xfail(strict=True)` turns that into a LOUD failure the day the blanking stops working. Don't convert it to a skip: a skip reports the same "nothing ran" whether the guard is holding or has quietly come off.
 - `tests/acceptance/<slug>/` — generated by `python tools/acceptance_test_generator.py --feature "…" --output tests/acceptance/<slug>` (config.ini, run.sh, test_plan.json, a 2-tile map, a harness scenario, README). Register the scenario in `tools/harness/scenarios/__init__.py` to make it part of `bug_hunt.py`.
+
+## Randomness
+
+**Every unseeded RNG-dependent assertion is a latent flake.** `pytest-randomly` is
+installed and active, and it reseeds the stdlib `random` module before *every* test
+from `run_seed + crc32(nodeid)`, with a fresh run seed per invocation. A test that
+draws from `random` without seeding gets a different stream on every run, and its
+failure rate is set purely by how much margin its assertion has — which is why such
+a test "fails once, then passes twenty times in isolation", and why re-running it is
+not evidence of anything. Reproduce with `--randomly-seed=N` (the seed is printed in
+the run header) and sweep seeds to measure a rate: one such assertion failed 1 run in
+960 before being seeded. **Seed the fixture rather than loosening the bound.** Where a
+single seeded draw would pin an assertion to an arbitrary point in a wide
+distribution, average over N seeded renders instead, so the assertion measures the
+thing under test rather than one lucky sample. `tests/_combat_fixtures.py`'s
+`seeded(seed=...)` is the established helper — but it imports `src.items`/`src.npc`/
+`src.player`, whose instantiation mutates module-level registries, so a test needing
+no engine objects should seed locally instead.
 
 ## Pollution and isolation gotchas
 - A stray root-level script that does `sys.modules['flask'] = MagicMock()` at import would poison every Flask test in a full run. `testpaths = tests` closes this structurally — pytest no longer walks the repo root at all, so a rootdir `test_*_fix.py` is simply never collected, and nothing needs adding to `pytest.ini` per script. (It is also why collection is ~3.3s instead of ~6.2s, paid per xdist worker.) A script under `tests/` is still collected: to find a collection-time culprit there, hook `pytest_collection_finish` and check `type(sys.modules['flask'])`.

@@ -25,6 +25,19 @@ import pytest
 from src.player import Player
 
 
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` — the
+# last point every NPC attack passes through before rolling — instead of
+# hand-computing a to-hit value and pinning ``random.randint`` next to it.
+# The old style ("hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48")
+# encoded a balance number in the test: when the hostile base moved 95 -> 76,
+# every one of these silently became a miss-path test asserting the wrong
+# branch. Pinning here is immune to retuning the base, the bestiary's finesse
+# spread, and the facing/HauntingPresence modifiers alike.
+PINNED_HIT_CHANCE = 50
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+GLANCING_ROLL = PINNED_HIT_CHANCE - 5
+
+
 def _player():
     p = Player()
     p.combat_list = []
@@ -1219,8 +1232,14 @@ class TestKeeningToll:
             kt = moves.KeeningToll(npc)
         kt.target = p
         fatigue_before = p.fatigue
-        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
-        with patch("builtins.print"), patch("random.randint", return_value=48):
+        with (
+            patch("builtins.print"),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
+        ):
             kt.execute(npc)
         # power fixed at 20; base drain = max(1, int(20*0.5)) = 10, halved -> 5
         assert p.fatigue == fatigue_before - 5
@@ -1422,7 +1441,10 @@ class TestNpcAttackEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         attack = moves.NpcAttack(npc)
         assert attack.stage_beat[0] == 1
@@ -1461,8 +1483,14 @@ class TestNpcAttackEdgeCases:
             attack = moves.NpcAttack(npc)
         attack.target = p
         hp_before = p.hp
-        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
-        with patch("builtins.print"), patch("random.randint", return_value=48):
+        with (
+            patch("builtins.print"),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
+        ):
             attack.execute(npc)
         # power fixed at 20 (uniform patched); damage = 20 - protection(2) = 18, halved -> 9
         assert p.hp == hp_before - 9
@@ -1566,7 +1594,10 @@ class TestGorranClubEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         gc = moves.GorranClub(npc)
         assert gc.stage_beat[0] == 1
@@ -1624,8 +1655,14 @@ class TestGorranClubEdgeCases:
             gc = moves.GorranClub(npc)
         gc.target = p
         hp_before = p.hp
-        # hit_chance = int(105 - 50 + 10*0.7 + 5*0.3) = 63; roll=58 -> diff=5 < 10 (glancing)
-        with patch("builtins.print"), patch("random.randint", return_value=58):
+        with (
+            patch("builtins.print"),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
+        ):
             gc.execute(npc)
         # power fixed at 20 (uniform patched); damage = 20 - protection(2) = 18, halved -> 9
         assert p.hp == hp_before - 9
@@ -1662,7 +1699,10 @@ class TestVenomClawEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         vc = moves.VenomClaw(npc)
         assert vc.stage_beat[0] == 1
@@ -1738,10 +1778,13 @@ class TestVenomClawEdgeCases:
             vc = moves.VenomClaw(npc)
         vc.target = p
         hp_before = p.hp
-        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
         with (
             patch("builtins.print"),
-            patch("random.randint", return_value=48),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
             patch("random.random", return_value=0.99),
         ):
             vc.execute(npc)
@@ -1814,7 +1857,10 @@ class TestSpiderBiteEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         sb = moves.SpiderBite(npc)
         assert sb.stage_beat[0] == 1
@@ -1873,10 +1919,13 @@ class TestSpiderBiteEdgeCases:
             sb = moves.SpiderBite(npc)
         sb.target = p
         hp_before = p.hp
-        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
         with (
             patch("builtins.print"),
-            patch("random.randint", return_value=48),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
             patch("random.random", return_value=0.99),
         ):
             sb.execute(npc)
@@ -1918,7 +1967,10 @@ class TestBatBiteEdgeCases:
         import src.moves as moves
 
         p = _player()
-        npc = _make_npc(speed=-10, endurance=100)
+        # speed=100 (not a negative speed): the divisor is now floored at 1
+        # (_npc_speed_divisor), so a very HIGH speed is what reaches the
+        # prep/recoil result floors; a negative speed reads as speed 1.
+        npc = _make_npc(speed=100, endurance=100)
         npc.target = p
         bb = moves.BatBite(npc)
         assert bb.stage_beat[0] == 1
@@ -2090,8 +2142,14 @@ class TestMineralSpitEdgeCases:
             ms = moves.MineralSpit(npc)
         ms.target = p
         hp_before = p.hp
-        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
-        with patch("builtins.print"), patch("random.randint", return_value=48):
+        with (
+            patch("builtins.print"),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
+        ):
             ms.execute(npc)
         # power fixed at 20; base damage = max(0, int(20*0.4) - protection(2)) = 6, halved -> 3
         assert p.hp == hp_before - 3
@@ -2206,10 +2264,13 @@ class TestSoulDrainEdgeCases:
             sd = moves.SoulDrain(npc)
         sd.target = p
         hp_before = p.hp
-        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
         with (
             patch("builtins.print"),
-            patch("random.randint", return_value=48),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
             patch("random.random", return_value=0.99),
         ):
             sd.execute(npc)
@@ -2325,8 +2386,14 @@ class TestWailStrikeEdgeCases:
             ws = moves.WailStrike(npc)
         ws.target = p
         hp_before = p.hp
-        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
-        with patch("builtins.print"), patch("random.randint", return_value=48):
+        with (
+            patch("builtins.print"),
+            patch(
+                "src.moves._npc._apply_to_hit_modifiers",
+                return_value=PINNED_HIT_CHANCE,
+            ),
+            patch("random.randint", return_value=GLANCING_ROLL),
+        ):
             ws.execute(npc)
         # power fixed at 20*1.8=36; base damage = int(36*0.7) = 25, halved -> 12
         assert p.hp == hp_before - 12

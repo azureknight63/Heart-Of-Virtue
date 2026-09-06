@@ -143,6 +143,9 @@ request and response.
 development, so exceptions print full tracebacks and code reloads on save. Structured
 JSONL logs land under `logs/`.
 
+Or `python tools/logcat.py --tail` in a third terminal for a merged, colorized
+backend+browser JSONL stream (see `logs/README.md`).
+
 **Werkzeug's reloader can drop environment variables** — if a feature flag
 (`COMBAT_SOCKET_STREAMING`, say) appears not to take effect, re-run with the reloader off
 before believing it.

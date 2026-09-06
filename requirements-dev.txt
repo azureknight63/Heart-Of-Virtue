@@ -17,6 +17,12 @@ pytest-xdist==3.6.1
 # perform real DNS. Keep it installed.
 pytest-randomly==4.1.0
 
+# pytest-timeout is what makes the tests/api CI job (.github/workflows/api-tests.yml)
+# fail on a hang instead of hanging until the runner's own limit. That directory
+# has produced a hang before (test_combat_midbattle_api.py); nothing structural
+# stops the next one, and a job that never returns reports nothing.
+pytest-timeout==2.4.0
+
 # Code quality
 flake8==7.3.0
 # black is a documented step in CLAUDE.md's test block (`python -m black --check src/`)

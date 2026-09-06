@@ -1,63 +1,111 @@
-"""Security response headers: the CSPs, the static header set, and the hook.
+"""Security response headers for the Flask app: the CSPs, the static set, HSTS.
 
-This module owns every security response header this app sets -- the two
-content security policies, the three static headers, HSTS and its production
-gate -- and the ``after_request`` hook that installs them. It has exactly one
-edge into the app factory: ``create_app`` calls
-:func:`_register_security_headers`. Nothing here imports from
-``src.api.app``, so ``tests/test_security_headers.py`` reaches these constants
-without building a universe.
+This module owns every security response header this app sets, and has exactly
+one edge into the app factory: ``create_app`` calls
+:func:`register_security_headers`. Nothing here imports from ``src.api.app``,
+so ``tests/test_security_headers.py`` reaches these constants without building
+a universe.
 
-The header *values* are judgement calls about this app's shape rather than a
-hardening checklist, so the reasoning travels with them; it starts below.
+Two policies, because there are two kinds of response
+-----------------------------------------------------
+The CSP rollout below (issue #492) is a policy for a *document*: it governs
+what the SPA may load, it is shared with the Vite dev server and the
+production static host, and it starts report-only so nothing breaks while we
+learn what it needs.
+
+This Flask app serves no documents. There is no ``templates/``, no ``static/``,
+no ``render_template`` / ``send_file`` / ``send_from_directory`` call anywhere
+under ``src/``, and no catch-all SPA route; every registered endpoint returns
+``jsonify()``. The only HTML it can emit is Werkzeug's -- routing redirects and
+HTTPException bodies. So a JSON response gets :data:`_API_CSP` instead: the
+strictest policy the grammar allows, enforcing rather than report-only,
+because with nothing to render there is none of the blank-page risk that gets a
+CSP deleted. ``default-src 'none'`` only ever binds the case it is meant to
+stop -- a browser induced to *navigate* at an API URL and render the body --
+and fetch/XHR/EventSource/WebSocket responses are not documents and ignore the
+header entirely, so the SPA is unaffected.
+
+A response opts into the document policy by name, through
+:func:`serves_html_document`, rather than by being sniffed for
+``mimetype == "text/html"``. Sniffing reads the wrong way round here: since
+this app authors no HTML, every ``text/html`` response it emits today is
+Werkzeug's, so branching on content type handed the permissive policy to
+exactly the responses nobody designed -- the error paths an attacker reaches
+without credentials -- while the strict one covered the routes we control.
+``_register_preflight``'s bare ``make_response()`` was a third such case:
+Flask's default content type is ``text/html``, so an empty preflight body
+looked like a document too. Inverted, forgetting to declare a real document
+yields a visibly blank page in development; the sniffing version's failure was
+a policy that silently stopped applying.
+
+Nothing below touches the ``Access-Control-*`` headers that flask_cors and
+``src.api.app._register_preflight`` negotiate, and nothing below contradicts
+that allow-list: CSP constrains what a *document* may load, CORS constrains who
+may read a *response*, and the two never describe the same thing.
+
+Why a response header and not a ``<meta>`` tag
+----------------------------------------------
+A ``<meta http-equiv="Content-Security-Policy-Report-Only">`` element is
+**ignored by browsers** — the CSP spec allows only the enforcing header name in
+markup, and Chrome/Firefox additionally log a console error when a report-only
+policy arrives that way. Since the rollout starts in report-only mode (no
+player-visible breakage while we learn what the real policy needs), a meta tag
+is not an option today; the policy has to be a response header.
+
+Where the header actually lands
+-------------------------------
+Three surfaces serve bytes to a browser, and each needs the header from its own
+server:
+
+* **The Flask API** — this module. Covers every ``/api/*`` response and any HTML
+  Werkzeug renders (error pages), and is the home the policy moves to wholesale
+  if Flask ever serves the SPA itself.
+* **The Vite dev server** — ``frontend/vite.config.js`` (``server.headers`` /
+  ``preview.headers``). This is what carries the policy on the *document* during
+  development and QA runs, which is where violations are actually observed.
+* **Production static hosting** — the built SPA is untarred into the web
+  server's document root by ``deploy.ps1``; that server is not configured from
+  this repo. ``docs/development/csp-rollout.md`` carries the snippet to add
+  there.
+
+All three read the same directive data from ``src/resources/csp-policy.json`` so
+the dev and production policies cannot silently diverge.
+
+Why only ``report-uri``, and not the newer ``report-to``
+-------------------------------------------------------
+The obvious move is to advertise both transports, since ``report-uri`` is
+deprecated and browser support is split. Measured in headless Chromium against
+this app, that combination delivers **nothing**: ``report-to`` takes precedence
+over ``report-uri`` whenever both are present, and Chromium's Reporting API then
+queues the report rather than POSTing it (delivery is batched, and a plain-HTTP
+origin is not an eligible endpoint at all). A three-way A/B over one forced
+violation — ``report-uri`` alone, ``report-to`` alone, both — produced 1, 0 and 0
+report POSTs respectively.
+
+A report-only rollout whose reports never arrive is worse than no rollout: it
+reads as "zero violations" and nothing is learned. So the policy ships
+``report-uri`` alone, which is also the only transport Firefox and Safari
+implement. Re-adding ``report-to`` is a follow-up in
+docs/development/csp-rollout.md, gated on re-running that A/B over HTTPS.
 """
 
-# --------------------------------------------------------------------------
-# Security response headers
-# --------------------------------------------------------------------------
-#
-# The reasoning is written out here rather than filed in a doc, because every
-# value below is a judgement about *this* app's shape, and the shape is unusual
-# enough that the obvious policy is the wrong one.
-#
-# This Flask app serves no HTML. There is no ``templates/`` directory, no
-# ``static/`` directory, no ``render_template`` / ``send_file`` /
-# ``send_from_directory`` call anywhere under ``src/``, and no catch-all SPA
-# route; every registered endpoint returns ``jsonify()``. The React frontend is
-# a separate artefact on a separate origin -- Vite serves it from :3000 in
-# development (proxying ``/api`` here, which is why ``CORS_ORIGINS`` exists at
-# all), and ``deploy.ps1`` unpacks ``frontend/dist`` into a *different*
-# container's document root in production while this app runs as its own
-# systemd service. Two consequences follow, and they pull in opposite
-# directions:
-#
-#   * These headers can never reach the SPA document, so the CSP that backstops
-#     React's escaping of model-authored NPC dialogue is not something this file
-#     can ship. It has to be issued by whatever serves ``index.html``.
-#     :data:`_HTML_CSP` records the policy that document actually needs, so the
-#     requirement is written down in the repo and is applied automatically the
-#     day anything here does serve HTML.
-#   * Because nothing here renders, the API's own CSP can be the strictest one
-#     the grammar allows, with none of the blank-page risk that gets a CSP
-#     deleted. :data:`_API_CSP` takes that option.
-#
-# Nothing below touches the ``Access-Control-*`` headers that flask_cors and
-# ``src.api.app._register_preflight`` negotiate, and nothing below contradicts
-# that allow-list: CSP constrains what a *document* may load, CORS constrains
-# who may read a *response*, and the two never describe the same thing. In
-# particular ``default-src 'none'`` does not affect the SPA's cross-origin
-# ``fetch``, because a CSP binds the document it was served with and a fetched
-# JSON body never becomes a document.
+import json
+import os
+from pathlib import Path
 
-# The policy for every response this app actually produces today.
-#
-# ``default-src 'none'`` is safe precisely because it only ever binds the case
-# it is meant to stop: a browser induced to *navigate* to an API URL and render
-# the body (the classic route from a reflected value in an error payload to
-# script execution). XHR / fetch / EventSource / WebSocket responses are not
-# documents and ignore this header entirely, so the SPA is unaffected.
-# ``sandbox`` with no tokens drops such a document into an opaque origin with no
-# scripts, no forms and no top-level navigation -- belt to the braces.
+# Directive data shared with frontend/vite.config.js. Loaded once at import.
+POLICY_PATH = (
+    Path(__file__).resolve().parent.parent / "resources" / "csp-policy.json"
+)
+
+ENFORCING_HEADER = "Content-Security-Policy"
+REPORT_ONLY_HEADER = "Content-Security-Policy-Report-Only"
+
+# The policy for every response this app actually produces today. Enforced, not
+# report-only: see the module docstring for why a non-document can carry the
+# strictest policy in the grammar at no risk. ``sandbox`` with no tokens drops
+# such a response, if a browser is ever induced to render one, into an opaque
+# origin with no scripts, no forms and no top-level navigation.
 _API_CSP = (
     "default-src 'none'; "
     "frame-ancestors 'none'; "
@@ -66,80 +114,11 @@ _API_CSP = (
     "sandbox"
 )
 
-# The policy for HTML -- unreachable from this app today (nothing calls
-# :func:`serves_html_document`), and deliberately kept anyway: it is the
-# specification the SPA's host must mirror, and it is what a future
-# ``send_from_directory`` of ``frontend/dist`` would need on day one. Derived
-# from what the frontend measurably does, not from a hardening checklist:
-#
-#   script-src 'self'  No inline <script>, no eval, no ``new Function``, no
-#       Worker and no blob: URL exists in ``frontend/src`` or ``index.html``
-#       (grepped: zero hits) -- index.html loads one module by src. So the
-#       directive that actually stops XSS stays strict, with no escape hatch.
-#
-#   style-src 'unsafe-inline'  A measured cost, not a necessity. Three
-#       components render a literal <style> element (GameOverScreen:61,
-#       HeroPanel:241, ToastContext:172) plus
-#       InteractPanel.jsx, which builds one via
-#       ``document.createElement('style')`` -- all of them for ``@keyframes``.
-#       Those four are the whole of what forces the concession today, and the
-#       count is falling: TypewriterOutput's ``blink``, NpcChatPanel's
-#       spinner keyframes and ItemDetailDialog's ``fadeIn`` have already been
-#       lifted into
-#       ``frontend/src/styles/index.css``, because keyframe names are
-#       document-global and a component-local block silently competes with
-#       every other definition of the same name. The same move would work for
-#       the remaining four, and if it is made this token should go with them.
-#       There is no nonce to offer them meanwhile: a statically hosted, cached
-#       index.html has no per-response value to mint. The ~1000 ``style={{}}``
-#       props are the weaker argument (React applies those through the CSSOM,
-#       which CSP does not police) but they are why a strict style policy would
-#       be one refactor away from a blank screen anyway. The concession is
-#       bounded: inline *style* cannot execute script, and the one place
-#       untrusted model text reaches the DOM as markup (CombatLog's
-#       ``dangerouslySetInnerHTML``) is already sanitised by DOMPurify -- CSP is
-#       the second line there, not the first. It is still an escape hatch
-#       written into a policy this file bills as the spec the SPA's host must
-#       mirror, so it is worth removing rather than inheriting.
-#
-#   fonts.googleapis.com / fonts.gstatic.com  index.html links a Google Fonts
-#       stylesheet, which in turn pulls its faces from the gstatic host. Both
-#       are needed or the game loses its typography.
-#
-#   img-src / media-src data:  Vite inlines assets under its 4 KB threshold as
-#       data: URIs at build time.
-#
-#   connect-src 'self'  Correct for the case this constant governs: HTML served
-#       *from here* is same-origin with this API, and CSP3's 'self' already
-#       covers the ws:/wss: upgrade Socket.IO performs against the same host. A
-#       host serving the SPA on a *different* origin from the API (today's
-#       production split, and any build setting VITE_API_URL) must append that
-#       API origin here.
-_HTML_CSP = (
-    "default-src 'self'; "
-    "base-uri 'self'; "
-    "frame-ancestors 'none'; "
-    "form-action 'self'; "
-    "object-src 'none'; "
-    "script-src 'self'; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com; "
-    "img-src 'self' data:; "
-    "media-src 'self' data:; "
-    "connect-src 'self'"
-)
-
 # Headers with no policy trade-off to weigh, and so no knob to offer.
 #
 #   X-Content-Type-Options  The precondition for most "navigate straight at an
 #       API endpoint" attacks is a browser deciding a JSON body is really HTML.
 #       nosniff removes it, and this app has no legitimate sniffing to lose.
-#
-#   X-Frame-Options  Nothing here is meant to be framed. This duplicates the
-#       CSPs' ``frame-ancestors 'none'`` on purpose: frame-ancestors supersedes
-#       it in modern browsers, and X-Frame-Options is what the ones that ignore
-#       CSP still honour. DENY rather than SAMEORIGIN because the SPA is a
-#       different origin and frames nothing.
 #
 #   Referrer-Policy  A deliberate pick, not a default. ``no-referrer`` was the
 #       alternative and would also have been defensible -- the API never
@@ -149,29 +128,37 @@ _HTML_CSP = (
 #       policy rather than two, and it keeps the full URL on same-origin
 #       requests, which is what any debugging or log correlation on the API host
 #       wants. The residual cross-origin leak is the bare origin, and this API
-#       keeps no credential in a URL -- the session id travels in the
-#       Authorization header, by the convention in ``src/api/middleware/auth.py``.
+#       keeps no credential in a URL.
+#
+# Both enforce immediately, unlike the report-only document CSP, so for the
+# whole rollout window they are the only active protection on a document.
 _STATIC_SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
 }
 
+# X-Frame-Options travels with :data:`_API_CSP` and only with it, so the two
+# cannot disagree. It duplicates that policy's ``frame-ancestors 'none'`` on
+# purpose: frame-ancestors supersedes it in modern browsers, and this is what
+# the ones that ignore CSP still honour. DENY rather than SAMEORIGIN because the
+# SPA is a different origin and frames nothing.
+#
+# Deliberately NOT set on a declared document. The shared policy in
+# ``csp-policy.json`` says ``frame-ancestors 'self'``; pairing that with a blunt
+# DENY would ship a header pair that contradicts itself, with which one wins
+# depending on the browser. If the document policy ever tightens to 'none', move
+# this into the static set above.
+_FRAME_OPTIONS_HEADER = "X-Frame-Options"
+_FRAME_OPTIONS_VALUE = "DENY"
+
 # Strict-Transport-Security, production only.
 #
-# It is not in the set above because it is the one header here with a
+# It is not in the static set because it is the one header here with a
 # precondition: a browser ignores HSTS over plaintext, but a host that is *not*
 # reachable over TLS and sends it anyway has locked its own clients out of it
 # for a year. So it is gated on ``SESSION_COOKIE_SECURE``, which is the flag by
 # which this app already says "I believe I am behind TLS" -- pinned True by
 # ProductionConfig and by ``runtime_config()`` for a production ``FLASK_ENV``.
-#
-# It matters more here than the cookie flag it rides on. The session id does
-# not travel in a cookie at all: ``src/api/middleware/auth.py`` reads it from
-# ``Authorization: Bearer``, which ``SESSION_COOKIE_SECURE`` does nothing to
-# protect. One ``http://`` request -- a typed URL, an old bookmark, a redirect
-# -- hands that credential to the network in clear text. HSTS is what stops the
-# request being made at all.
 #
 # One year, no ``includeSubDomains``, no ``preload``: the API is one host among
 # whatever else the operator runs under the same parent domain, and asserting
@@ -179,29 +166,13 @@ _STATIC_SECURITY_HEADERS = {
 _HSTS_HEADER = "Strict-Transport-Security"
 _HSTS_VALUE = "max-age=31536000"
 
-
-# Marks a response as a real SPA document. Opt-in, and deliberately so.
-#
-# Sniffing ``mimetype == "text/html"`` reads the wrong way round. This app
-# authors no HTML, so every ``text/html`` response it emits today is written by
-# *Werkzeug*, not by us: routing redirects, and HTTPExceptions that reach the
-# WSGI layer with their default HTML bodies. Branching on the content type
-# therefore handed the permissive policy to exactly the responses nobody
-# designed -- the error paths an attacker reaches without credentials -- while
-# the strict one covered the routes we control. ``_register_preflight``'s bare
-# ``make_response()`` is a third case: Flask's default content type is
-# ``text/html``, so an empty preflight body looked like a document too.
-#
-# Inverted, the default is :data:`_API_CSP` and a view that genuinely serves
-# ``index.html`` asks for :data:`_HTML_CSP` by name. Forgetting to ask yields a
-# visibly blank page in development, which is the file's stated safe direction
-# to be wrong in; the sniffing version's failure was a policy that silently
-# stopped applying.
+# Marks a response as a real SPA document, so it gets the shared document policy
+# instead of :data:`_API_CSP`. Opt-in -- see the module docstring.
 _HTML_DOCUMENT_FLAG = "_hov_html_document"
 
 
 def serves_html_document(response):
-    """Mark ``response`` as an HTML document, so it gets :data:`_HTML_CSP`.
+    """Mark ``response`` as an HTML document, so it gets the document policy.
 
     For whatever eventually serves ``frontend/dist`` from this app -- a
     ``send_from_directory`` catch-all, or an SPA fallback route. Returns the
@@ -216,8 +187,69 @@ def _renders_as_html(response):
     return bool(getattr(response, _HTML_DOCUMENT_FLAG, False))
 
 
-def _register_security_headers(app):
+def load_policy(path=None):
+    """Read the shared directive data.
+
+    Returns a ``{"base": {...}, "dev_additions": {...}}`` mapping. Keys starting
+    with an underscore (the in-file rationale comment) are dropped.
+    """
+    with open(path or POLICY_PATH, "r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+    return {k: v for k, v in raw.items() if not k.startswith("_")}
+
+
+def build_csp(dev=False, report_uri=None, policy=None):
+    """Compose the policy string.
+
+    Args:
+        dev: Apply the development relaxations (the Vite dev server injects an
+            inline React-Refresh preamble that no build step can hash). Never
+            true for the production policy.
+        report_uri: Where violations are POSTed, as a ``report-uri`` directive.
+            Deliberately not paired with ``report-to`` — see the module
+            docstring for the measurement that ruled that out.
+        policy: Pre-loaded directive data, for tests. Defaults to the shared
+            JSON file.
+
+    Returns:
+        The policy as a single ``;``-joined header value.
+    """
+    data = policy if policy is not None else load_policy()
+    directives = {name: list(values) for name, values in data["base"].items()}
+
+    if dev:
+        for name, extra in data.get("dev_additions", {}).items():
+            merged = directives.setdefault(name, [])
+            # Preserve source order and skip anything the base already allows;
+            # a duplicated source is legal CSP but noise in a header humans read.
+            merged.extend(value for value in extra if value not in merged)
+
+    parts = [f"{name} {' '.join(values)}" for name, values in directives.items()]
+
+    if report_uri:
+        parts.append(f"report-uri {report_uri}")
+
+    return "; ".join(parts)
+
+
+def _flag(app, key, default):
+    """Read a boolean switch from Flask config, then environment, then default."""
+    value = app.config.get(key, os.environ.get(key))
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in ("0", "false", "no", "")
+
+
+def register_security_headers(app):
     """Install the single ``after_request`` hook that sets security headers.
+
+    The document CSP is report-only by default: ``CSP_REPORT_ONLY=false``
+    (config or environment) flips it to enforcing. See
+    docs/development/csp-rollout.md for the checklist that gates that flip.
+    :data:`_API_CSP` is not part of that rollout and is always enforced -- it
+    governs responses that are not documents, where there is nothing to break.
 
     Every header is written with ``setdefault``, so a reverse proxy or a route
     that has already made a deliberate choice keeps it, and repeated
@@ -226,10 +258,23 @@ def _register_security_headers(app):
     Covers Flask responses only. flask_socketio wraps ``app.wsgi_app``, so the
     ``/socket.io/*`` handshake and polling responses are served beneath this
     hook and carry none of these headers. Harmless -- they are not documents
-    and nothing frames them -- but the coverage is not total, and anything
-    that needs to be true of *every* response on the port has to be set at the
+    and nothing frames them -- but the coverage is not total, and anything that
+    needs to be true of *every* response on the port has to be set at the
     reverse proxy instead.
+
+    Returns True when the hook was installed, False when ``CSP_ENABLED`` is off.
     """
+    if not _flag(app, "CSP_ENABLED", True):
+        return False
+
+    report_only = _flag(app, "CSP_REPORT_ONLY", True)
+    dev = _flag(app, "CSP_DEV_RELAXATIONS", bool(app.config.get("TESTING")))
+    report_uri = app.config.get(
+        "CSP_REPORT_URI", os.environ.get("CSP_REPORT_URI", "/api/logs/csp-report")
+    )
+    # Composed once at registration, not per request: load_policy() opens a file.
+    document_header = REPORT_ONLY_HEADER if report_only else ENFORCING_HEADER
+    document_policy = build_csp(dev=dev, report_uri=report_uri)
 
     @app.after_request
     def set_security_headers(response):
@@ -237,8 +282,22 @@ def _register_security_headers(app):
             response.headers.setdefault(header, value)
         if app.config.get("SESSION_COOKIE_SECURE"):
             response.headers.setdefault(_HSTS_HEADER, _HSTS_VALUE)
-        response.headers.setdefault(
-            "Content-Security-Policy",
-            _HTML_CSP if _renders_as_html(response) else _API_CSP,
+
+        # Don't clobber a policy a nearer layer already chose (e.g. a route that
+        # deliberately relaxes it) — set only when absent. Checked against BOTH
+        # header names: a route that set the enforcing one must not then also
+        # receive the report-only one, and vice versa.
+        already_set = (
+            ENFORCING_HEADER in response.headers
+            or REPORT_ONLY_HEADER in response.headers
         )
+        if _renders_as_html(response):
+            if not already_set:
+                response.headers[document_header] = document_policy
+        else:
+            response.headers.setdefault(_FRAME_OPTIONS_HEADER, _FRAME_OPTIONS_VALUE)
+            if not already_set:
+                response.headers[ENFORCING_HEADER] = _API_CSP
         return response
+
+    return True

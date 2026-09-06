@@ -9,12 +9,16 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
     _apply_carry_fatigue,
     _apply_to_hit_modifiers,
+    apply_facing_damage,
     to_hit_chance,
+    resolve_damage,
 )  # noqa: F401
 
 
@@ -345,8 +349,26 @@ class ShootBow(
         if hasattr(self, "arrow") and self.arrow:
             self.base_damage_type = items.get_base_damage_type(self.arrow)
 
+    def preview_damage(self, target=None):
+        """Shoot Bow scores the canonical damage expression, but not on
+        ``self.power``: ``execute`` adds ``finesse * weapon.fin_mod`` to it
+        immediately before the damage line, while ``evaluate`` — which runs
+        every beat — resets it to the arrow's contribution alone. The value
+        sitting on the move between beats therefore understates the shot by
+        exactly that term, and a preview that read it would underprice every
+        shot the player is about to take.
+        """
+        weapon = getattr(self.user, "eq_weapon", None)
+        power = getattr(self, "power", 0) or 0
+        try:
+            power += float(getattr(self.user, "finesse", 0)) * float(
+                getattr(weapon, "fin_mod", 0)
+            )
+        except (TypeError, ValueError):
+            pass
+        return self._standard_preview_damage(target, power=power)
+
     def execute(self, player):
-        glance = False  # switch for determining a glancing blow
         self.prep_colors()
 
         # Face the target when attacking
@@ -385,20 +407,17 @@ class ShootBow(
         roll = random.randint(0, 100)
         arrow_recovery = self.arrow.sturdiness
         self.power += self.user.finesse * self.user.eq_weapon.fin_mod
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        if damage <= 0:
-            damage = 0
-        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-            damage /= 2
-            glance = True
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
+        if glance:
+            # A glancing arrow is more likely to survive intact.
             arrow_recovery *= 1.1
-        damage = int(damage)
         player.combat_exp["Bow"] += 10
         arrow_location = "tile"
         if hit_chance >= roll:  # a hit!
@@ -616,7 +635,6 @@ class ShootCrossbow(Move):
         return _apply_to_hit_modifiers(self.user, t, hit_chance)
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -634,31 +652,21 @@ class ShootCrossbow(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -765,7 +773,6 @@ class BroadheadBolt(Move):
         return _apply_to_hit_modifiers(self.user, t, hit_chance)
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -783,31 +790,21 @@ class BroadheadBolt(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 10
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -916,7 +913,6 @@ class AimedShot(Move):
         return _apply_to_hit_modifiers(self.user, t, hit_chance)
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -934,31 +930,21 @@ class AimedShot(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 10
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -1063,7 +1049,6 @@ class PinningBolt(Move):
         return _apply_to_hit_modifiers(self.user, t, hit_chance)
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -1081,18 +1066,14 @@ class PinningBolt(Move):
         hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (issue #394). Applied to ranged shots on the
+        # same curve as melee: the bands are a property of how well the
+        # *defender* covers that angle (see positions.get_damage_modifier),
+        # not of the attacker's leverage, and the accuracy half of the pair
+        # already applies here through _apply_to_hit_modifiers.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)

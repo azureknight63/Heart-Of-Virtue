@@ -24,6 +24,8 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from flask import Flask
 
+from src.combatant import wire_handle, combatant_handle
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -276,7 +278,7 @@ class TestDropItem:
     def test_drop_by_item_id(self, make_inventory_app):
         item = _make_item(isequipped=False)
         player = _make_player(items=[item])
-        item_id = str(id(item))
+        item_id = wire_handle(item)
         app, _, _, _ = make_inventory_app(player=player)
         app.game_service.drop_item.return_value = {
             "success": True,
@@ -516,7 +518,7 @@ class TestUseItem:
         item = _make_item()
         player = _make_player(items=[item])
         player.in_combat = False
-        item_id = str(id(item))
+        item_id = wire_handle(item)
         app, _, _, _ = make_inventory_app(player=player)
         app.game_service.use_item.return_value = {
             "success": True,
@@ -541,7 +543,7 @@ class TestUseItem:
         item = _make_item()
         ally = MagicMock()
         ally.name = "Gorran"
-        ally_id = id(ally)
+        ally_id = combatant_handle(ally)
         player = _make_player(items=[item])
         player.in_combat = True
         player.combat_list_allies = [player, ally]
@@ -848,7 +850,7 @@ class TestGetItemAndIndex:
         player = _make_player()
         item = _make_item()
         player.inventory_list = [item]
-        item_id = str(id(item))
+        item_id = wire_handle(item)
         found, idx = get_item_and_index(player, item_id=item_id)
         assert found is item
         assert idx == 0
@@ -893,7 +895,7 @@ class TestGetItemAndIndex:
         assert not hasattr(player, "inventory_list")
         target = player.inventory[2]
 
-        found, idx = get_item_and_index(player, item_id=str(id(target)))
+        found, idx = get_item_and_index(player, item_id=wire_handle(target))
         assert found is target
         assert idx == 2
         assert get_item_and_index(player, item_index=2) == (target, 2)
@@ -947,7 +949,7 @@ class TestResolveAllyTarget:
         player = _make_player()
         ally = MagicMock()
         player.combat_list_allies = [player, ally]
-        target_id = f"ally_{id(ally)}"
+        target_id = f"ally_{combatant_handle(ally)}"
         result = _resolve_ally_target(player, target_id)
         assert result is ally
 
@@ -970,8 +972,8 @@ class TestResolveAllyTarget:
         player = _make_player()
         ally = MagicMock()
         player.combat_list_allies = [player, ally]
-        assert _resolve_ally_target(player, f"ally_{id(player)}") is None
-        assert _resolve_ally_target(player, f"ally_{id(ally)}") is ally
+        assert _resolve_ally_target(player, f"ally_{combatant_handle(player)}") is None
+        assert _resolve_ally_target(player, f"ally_{combatant_handle(ally)}") is ally
 
     def test_strips_ally_prefix(self):
         from src.api.routes.inventory import _resolve_ally_target
@@ -979,7 +981,7 @@ class TestResolveAllyTarget:
         player = _make_player()
         ally = MagicMock()
         player.combat_list_allies = [player, ally]
-        raw_id = str(id(ally))
+        raw_id = combatant_handle(ally)
         result = _resolve_ally_target(player, f"ally_{raw_id}")
         assert result is ally
 

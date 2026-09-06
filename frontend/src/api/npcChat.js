@@ -2,7 +2,7 @@ import apiClient from './client'
 
 /**
  * npcChat - Axios endpoint wrappers for NPC chat API routes
- * Uses apiClient which automatically handles auth tokens via localStorage.authToken
+ * Uses apiClient, which sends the HttpOnly session cookie with every request
  */
 
 // apiClient already prefixes baseURL ('/api'), so paths here must be relative to it.

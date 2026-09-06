@@ -1,72 +1,72 @@
-# Heart of Virtue - Documentation
+# Heart of Virtue — Documentation
 
-This directory contains technical documentation for the Heart of Virtue project.
+Technical documentation for the Heart of Virtue project. The game is played
+entirely through the web app (Flask REST API + React SPA); the terminal/CLI play
+mode has been removed.
 
-## 📖 Documentation Structure
+Start with the root [README.md](../README.md) for setup and a project overview.
 
-### Core Documentation
+## Core Documentation
 
-- **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)** - Complete API reference with all endpoints
-- **[ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md)** - System architecture and component relationships
-- **[BACKEND_API_ARCHITECTURE.md](BACKEND_API_ARCHITECTURE.md)** - Backend API architecture details
-- **[BACKEND_API_INTEGRATION.md](BACKEND_API_INTEGRATION.md)** - API integration guide and testing
-- **[DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)** - Development roadmap and feature planning
-- **[FRONTEND_DOCUMENTATION.md](FRONTEND_DOCUMENTATION.md)** - Frontend architecture and component guide
+| Document | Contents |
+|---|---|
+| [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md) | System architecture and component relationships |
+| [API_DOCUMENTATION.md](API_DOCUMENTATION.md) | Complete REST API reference with all endpoints |
+| [BACKEND_API_ARCHITECTURE.md](BACKEND_API_ARCHITECTURE.md) | Backend API internals |
+| [BACKEND_API_INTEGRATION.md](BACKEND_API_INTEGRATION.md) | API integration guide and testing |
+| [FRONTEND_DOCUMENTATION.md](FRONTEND_DOCUMENTATION.md) | Frontend architecture and component guide |
+| [LOCAL_DEV_SETUP.md](LOCAL_DEV_SETUP.md) | Step-by-step local setup for backend and frontend |
 
-### Deployment & Testing
+## Deployment & Testing
 
-- **[DEPLOYMENT_ROADMAP.md](DEPLOYMENT_ROADMAP.md)** - Deployment planning and procedures
-- **[FINAL_TEST_RESULTS.md](FINAL_TEST_RESULTS.md)** - Test results and coverage reports
+| Document | Contents |
+|---|---|
+| [DEPLOYMENT_ROADMAP.md](DEPLOYMENT_ROADMAP.md) | Deployment planning and procedures |
+| [coverage/coverage-dashboard.md](coverage/coverage-dashboard.md) | Live coverage figures, per-module breakdown, CI enforcement |
 
-### Feature Documentation
+## Feature Documentation
 
-- **[QUEST_CHAINS_INTEGRATION_EXAMPLES.md](QUEST_CHAINS_INTEGRATION_EXAMPLES.md)** - Quest system integration examples
-- **[STAGE-5-DIALOGUE-PLAN.md](STAGE-5-DIALOGUE-PLAN.md)** - Dialogue system planning
-- **[TILE_CACHING.md](TILE_CACHING.md)** - Tile caching implementation
-- **[IMPLEMENTATION_TILE_CACHING.md](IMPLEMENTATION_TILE_CACHING.md)** - Tile caching technical details
-- **[book_pagination.md](book_pagination.md)** - Book pagination feature
+| Document | Contents |
+|---|---|
+| [QUEST_CHAINS_INTEGRATION_EXAMPLES.md](QUEST_CHAINS_INTEGRATION_EXAMPLES.md) | Quest system integration examples |
+| [TILE_CACHING.md](TILE_CACHING.md) | Tile caching implementation |
+| [combat-map-animation.md](combat-map-animation.md) | Combat and map animation system |
+| [book_pagination.md](book_pagination.md) | Book pagination feature |
 
-### Milestone Documentation
+## Subdirectories
 
-- **[HV-38_PLAN.md](HV-38_PLAN.md)** - HV-38 milestone plan
-- **[HV-38_PHASE1_COMPLETE.md](HV-38_PHASE1_COMPLETE.md)** - HV-38 Phase 1 completion
-- **[HV-38_UAT_GUIDE.md](HV-38_UAT_GUIDE.md)** - HV-38 UAT testing guide
-- **[HV-39_STAGE3_COMPLETE.md](HV-39_STAGE3_COMPLETE.md)** - HV-39 Stage 3 completion
-- **[MILESTONE1_COMPLETE.md](MILESTONE1_COMPLETE.md)** - Milestone 1 completion report
-- **[MILESTONE1_COVERAGE_IMPROVEMENT.md](MILESTONE1_COVERAGE_IMPROVEMENT.md)** - Test coverage improvements
-- **[MILESTONE1_PROGRESS.md](MILESTONE1_PROGRESS.md)** - Milestone 1 progress tracking
-- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - General implementation planning
+| Directory | Contents |
+|---|---|
+| [coverage/](coverage/) | Test coverage dashboard (the single live coverage document) |
+| [development/](development/) | Design plans, acceptance-test plans, UI mockups, open decisions |
+| [lore/](lore/) | World-building: character profiles, creatures, enemies, environments, story |
+| [concept-art/](concept-art/) | Character and location concept art (PNG) |
+| [qa/](qa/) and [qa-reports/](qa-reports/) | QA session reports |
+| [ui-mockups/](ui-mockups/) | Standalone HTML UI mockups |
+| [archive/](archive/) | Historical documentation: completed milestones, superseded plans, point-in-time reports. Kept for reference, no longer maintained — treat any figures there as stale. |
 
-## 📂 Subdirectories
+### Lore at a glance
 
-### [archive/](archive/)
-Historical documentation, completed milestones, and deprecated guides. These documents are kept for reference but are no longer actively maintained.
+`lore/` holds 55 documents across `character-profiles/` (16), `environments/` (18,
+including map design documents and audit reports), `enemies/` (12), `story/` (3),
+and `creatures/` (2), plus standalone documents on Jean Claire's backstory.
 
-### [development/](development/)
-Development-specific guides and workflows.
+Story, lore, and creative assets are licensed CC BY-NC-ND 4.0 — see
+[LICENSE-ASSETS](../LICENSE-ASSETS).
 
-### [lore/](lore/)
-Game lore, story documents, and world-building materials.
+## Finding Documentation
 
-## 🚀 Quick Start
+| I want to… | Read |
+|---|---|
+| Get the app running locally | [LOCAL_DEV_SETUP.md](LOCAL_DEV_SETUP.md), then the root [README.md](../README.md) |
+| Understand the system end to end | [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md) |
+| Call or extend the API | [API_DOCUMENTATION.md](API_DOCUMENTATION.md), [BACKEND_API_ARCHITECTURE.md](BACKEND_API_ARCHITECTURE.md) |
+| Work on the React client | [FRONTEND_DOCUMENTATION.md](FRONTEND_DOCUMENTATION.md), [frontend/README.md](../frontend/README.md) |
+| Check test coverage or CI rules | [coverage/coverage-dashboard.md](coverage/coverage-dashboard.md) |
+| Deploy | [DEPLOYMENT_ROADMAP.md](DEPLOYMENT_ROADMAP.md) |
+| Understand save-file security | [SECURITY.md](../SECURITY.md) |
+| Look up world or character canon | [lore/](lore/) |
+| Find historical context | [archive/](archive/) |
 
-New to the project? Start here:
-
-1. Read the main [README.md](../README.md) in the project root
-2. Review [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md) for system overview
-3. Check [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for API details
-4. See [FRONTEND_DOCUMENTATION.md](FRONTEND_DOCUMENTATION.md) for frontend development
-
-## 🔍 Finding Documentation
-
-- **API Development**: See API_DOCUMENTATION.md and BACKEND_API_INTEGRATION.md
-- **Frontend Development**: See FRONTEND_DOCUMENTATION.md and frontend/README.md
-- **Architecture**: See ARCHITECTURE_DIAGRAM.md and BACKEND_API_ARCHITECTURE.md
-- **Deployment**: See DEPLOYMENT_ROADMAP.md
-- **Testing**: See FINAL_TEST_RESULTS.md
-- **Historical Info**: Check the archive/ subdirectory
-
----
-
-**Last Updated**: December 2025
-
+Project-wide conventions, architectural rules, and known gotchas live in
+[CLAUDE.md](../CLAUDE.md) at the repo root.

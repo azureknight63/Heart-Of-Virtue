@@ -31,7 +31,6 @@ describe('apiClient', () => {
   // interceptor is a hard failure instead of the previous `if (responseError)`
   // guard — which made the whole 401 test a silent no-op if client.js ever
   // stopped registering a response handler.
-  const requestInterceptor = mockRequestUse.mock.calls[0][0];
   const [responseSuccess, responseError] = mockResponseUse.mock.calls[0];
 
   beforeEach(() => {
@@ -49,37 +48,24 @@ describe('apiClient', () => {
     expect(axios.create).toHaveBeenCalledWith({
       baseURL: import.meta.env.VITE_API_URL || '/api',
       headers: { 'Content-Type': 'application/json' },
+      withCredentials: true,
     });
   });
 
-  it('registers exactly one request and one response interceptor', () => {
-    expect(mockRequestUse).toHaveBeenCalledTimes(1);
+  it('sends cookies with every request (issue #493)', () => {
+    // The session credential is an HttpOnly cookie. Without withCredentials a
+    // cross-origin dev setup drops it and every request is unauthenticated —
+    // a failure that looks like "the API forgot who I am", not like a config
+    // typo, so it is pinned here.
+    expect(axios.create.mock.calls[0][0].withCredentials).toBe(true);
+  });
+
+  it('registers a response interceptor and no request interceptor', () => {
+    // No request interceptor at all any more: nothing client-side attaches a
+    // credential. A reinstated one would mean the Bearer token came back.
+    expect(mockRequestUse).not.toHaveBeenCalled();
     expect(mockResponseUse).toHaveBeenCalledTimes(1);
-    expect(typeof requestInterceptor).toBe('function');
     expect(typeof responseError).toBe('function');
-  });
-
-  describe('request interceptor', () => {
-    it('adds the stored auth token as a Bearer header', () => {
-      localStorage.setItem(AUTH_TOKEN_KEY, 'test-token');
-      const config = { headers: {} };
-      const result = requestInterceptor(config);
-
-      expect(result.headers.Authorization).toBe('Bearer test-token');
-      // The config object is mutated and returned, not replaced.
-      expect(result).toBe(config);
-    });
-
-    it('sends no Authorization header when there is no token', () => {
-      const result = requestInterceptor({ headers: {} });
-      expect(result.headers).not.toHaveProperty('Authorization');
-    });
-
-    it('leaves other headers untouched', () => {
-      localStorage.setItem(AUTH_TOKEN_KEY, 'tok');
-      const result = requestInterceptor({ headers: { 'X-Trace': 'abc' } });
-      expect(result.headers).toEqual({ 'X-Trace': 'abc', Authorization: 'Bearer tok' });
-    });
   });
 
   describe('response interceptor', () => {
@@ -100,7 +86,10 @@ describe('apiClient', () => {
     });
 
     it('clears the whole session and redirects to login on a 401', async () => {
-      localStorage.setItem(AUTH_TOKEN_KEY, 'test-token');
+      // AUTH_TOKEN_KEY is legacy since #493 — nothing writes it — but a browser
+      // upgrading from a pre-#493 visit still carries one, and a 401 must clear
+      // that stale credential too, not just the username.
+      localStorage.setItem(AUTH_TOKEN_KEY, 'legacy-token');
       localStorage.setItem(USERNAME_KEY, 'jean');
       const error = { response: { status: 401 } };
 

@@ -79,12 +79,21 @@ vi.mock('./CombatMovePanel', () => ({
 }));
 vi.mock('./FeedbackDialog', () => ({ default: ({ onClose }) => <div data-testid="feedback-dialog"><button onClick={onClose}>Close Feedback</button></div> }));
 vi.mock('./CooldownTray', () => ({ default: ({ moves }) => <div data-testid="cooldown-tray">{moves.length} on cooldown</div> }));
+// The meter's own behaviour is covered in HeatMeter.test.jsx; here we only
+// prove LeftPanel hands it the three battle_state fields it needs, since a
+// silently-undefined prop is this repo's dominant bug class.
+vi.mock('./HeatMeter', () => ({
+    default: ({ heat, beat, combatId }) => (
+        <div data-testid="heat-meter">{`${heat}|${beat}|${combatId}`}</div>
+    )
+}));
 vi.mock('./FleeButton', () => ({ default: ({ onFlee }) => <button data-testid="flee-button" onClick={onFlee}>Flee</button> }));
 vi.mock('./SuggestedMovesPanel', () => ({
-    default: ({ onSuggestClick }) => (
+    default: ({ onSuggestClick, blockedReasonFor }) => (
         <div data-testid="suggested-moves-panel">
             <button onClick={() => onSuggestClick({ move_name: 'repeat_last' })}>Repeat Last</button>
             <button onClick={() => onSuggestClick({ move_name: 'Slash', target_id: 'enemy_1' })}>Suggest Slash</button>
+            <span data-testid="slash-blocked-reason">{blockedReasonFor?.('Slash') || ''}</span>
         </div>
     )
 }));
@@ -350,6 +359,26 @@ describe('LeftPanel', () => {
         };
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
         expect(screen.getByTestId('cooldown-tray')).toHaveTextContent('1 on cooldown');
+    });
+
+    it('feeds the heat meter the player heat, beat and fight id from battle_state', () => {
+        // These are the exact keys the serializer emits: `player.heat` is the
+        // raw float multiplier (CombatantSerializer), NOT battle_state's own
+        // `heat` (which is round(heat*100) and absent from beat states).
+        const combat = {
+            log: [],
+            beat: 7,
+            combat_id: 'fight-0001',
+            player: { hp: 100, heat: 1.62 },
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        expect(screen.getByTestId('heat-meter')).toHaveTextContent('1.62|7|fight-0001');
+    });
+
+    it('hides the heat meter outside combat', () => {
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" combat={{ log: [], beat_states: [{ enemies: [] }] }} />);
+        expect(screen.queryByTestId('heat-meter')).toBeNull();
     });
 
     it('shows the flee button once enemies are all 20ft or further away', () => {
@@ -1002,6 +1031,68 @@ describe('LeftPanel', () => {
         const combat = { log: [], awaiting_input: true, beat_states: [{ enemies: [] }] };
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Suggest Slash'));
+        expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
+            move_name: 'Slash', target_id: 'enemy_1',
+        });
+    });
+
+    it('refuses to dispatch a suggested move the server has marked unavailable', () => {
+        // Issue #505. The advisor suggested `Attack` with fatigue drained while
+        // `available_options` reported it `available:false`; the click POSTed a
+        // move the server answered 200 `success:false` — no state change, no
+        // error, which reads as a dead button. The availability was already on
+        // the wire; the panel just never looked at it.
+        const onCombatAction = vi.fn();
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            available_options: [
+                { name: 'Slash', available: false, reason: 'Not enough fatigue' },
+                { name: 'Guard', available: true, reason: null },
+            ],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+
+        expect(screen.getByTestId('slash-blocked-reason')).toHaveTextContent('Not enough fatigue');
+        fireEvent.click(screen.getByText('Suggest Slash'));
+        expect(onCombatAction).not.toHaveBeenCalled();
+    });
+
+    it('dispatches a suggested move the server reports as available', () => {
+        const onCombatAction = vi.fn();
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            available_options: [{ name: 'Slash', available: true, reason: null }],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+
+        expect(screen.getByTestId('slash-blocked-reason')).toHaveTextContent('');
+        fireEvent.click(screen.getByText('Suggest Slash'));
+        expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
+            move_name: 'Slash', target_id: 'enemy_1',
+        });
+    });
+
+    it('skips an unavailable first suggestion when repeating with no last move on record', () => {
+        const onCombatAction = vi.fn();
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            suggested_moves: [
+                { move_name: 'Guard', target_id: 'enemy_2' },
+                { move_name: 'Slash', target_id: 'enemy_1' },
+            ],
+            available_options: [
+                { name: 'Guard', available: false, reason: 'Move not ready yet' },
+                { name: 'Slash', available: true, reason: null },
+            ],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        fireEvent.click(screen.getByText('Repeat Last'));
         expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
             move_name: 'Slash', target_id: 'enemy_1',
         });

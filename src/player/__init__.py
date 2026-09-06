@@ -178,6 +178,12 @@ class Player(
             []
         )  # list of pending events in combat. If non-empty, combat will be paused
         # while an event happens
+        self.combat_wave_pending = False  # armed via
+        # functions.signal_combat_wave_pending — either once a wave has been enrolled
+        # into this fight, or as soon as a combat_effect event passes
+        # check_combat_conditions asking for input (the first wipe of a chain has no
+        # enrolment before it). A beat that empties the roster while a queued combat
+        # event holds it is then a wave transition, not the end of the fight (#514)
         self.combat_log = []  # List of combat messages
         self.combat_list = (
             []
@@ -363,7 +369,9 @@ maintenant et à l'heure de notre mort. Amen.""",
     def __getstate__(self):
         """Return picklable state, stripping API-layer attributes that are not serializable.
 
-        Known non-picklable attributes attached by the web layer:
+        Delegates to ``Combatant.__getstate__`` for the shared strips (the
+        adapter's ``_pending_animation`` channel — see that docstring), then
+        removes the Player-only exclusions:
           _combat_adapter — holds a threading.Lock and a closure; removed before
                             pickle.dumps in game_service.save_game as a belt-and-suspenders
                             measure, but also excluded here so the Player class is
@@ -372,7 +380,7 @@ maintenant et à l'heure de notre mort. Amen.""",
         If you attach a new non-picklable attribute to Player from the API layer,
         add it to the exclusion list below rather than only patching the save path.
         """
-        state = self.__dict__.copy()
+        state = super().__getstate__()
         state.pop("_combat_adapter", None)
         # Transient API-layer suggestion state — regenerated each session, not part of the save
         state.pop("suggestions_paused", None)

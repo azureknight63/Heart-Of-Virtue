@@ -32,6 +32,110 @@ The engine is the source of truth; this layer adapts. Root CLAUDE.md carries the
 ## Serializers — the contract
 A serializer **never raises on a degraded object** (missing/None/wrong-typed attributes, `_legacy_placeholder` shapes) and its output is always JSON-serializable. `tools/serializer_fuzzer.py` + `tests/test_serializer_fuzz.py` enforce it — add new serializer entry points there. The frontend reads wire field *names*: any field the client will read also goes into `tests/test_wire_field_contract.py`.
 
+## Wire ids — one opaque handle per object
+
+- **Every wire id is an opaque handle, and there is exactly ONE per object.**
+  `src/combatant.py::wire_handle(entity)` lazily mints a `uuid4().hex` into
+  `entity.__dict__` via `setdefault` (atomic under the GIL, so two threads cannot ship
+  two ids for one object), persists it through pickling, and falls back to a
+  `WeakKeyDictionary` for objects that cannot hold an attribute. `combatant_handle` is
+  an **alias**, not a parallel scheme (#511 minted combatants; #518 widened it to room
+  NPCs, world objects, floor and inventory items, container contents, merchants, shop
+  stock and events). The `Slime` in `tile.npcs_here` is the same instance as the one in
+  `combat_list`, so the room id and the combat id name it identically — the combat
+  payload just prefixes the same handle (`enemy_<handle>` via
+  `CombatantSerializer.stream_id`).
+- **Never mint a wire id from `str(id(x))`.** Heap addresses leak process layout and,
+  worse, CPython **recycles** them, so a client-held id for a freed entity resolves to
+  whatever was allocated at that address (`tests/test_entity_wire_handles.py` forces
+  exactly that reuse). Resolve client ids through `src.combatant.find_by_handle`, never
+  by comparing `id()`.
+- **The trap when changing this**: the mint and the lookup live in *different files*,
+  and moving only one half does not raise — `interact_with_target` simply answers
+  "Target not found." for everything in the room.
+  `tests/test_wire_field_contract.py::TestWireIdRoundTrip` feeds each real serializer's
+  id back to its real resolver so that half-move fails loudly.
+- **The buyback ledger is the only PERSISTED wire id.**
+  `merchant._buyback_ledger[*]["item_id"]` lives on the merchant and pickles into
+  saves; every other id is minted fresh per response, so a stale one at worst costs one
+  failed lookup the client re-fetches past. `ShopSerializer.flush_stale_buyback` is the
+  chokepoint every ledger read passes through, and it calls `repoint_stale_buyback_ids`
+  to re-point an entry whose `item_id` no longer names a stocked item at the same-named
+  stock item. That migrates pre-#518 saves and covers the identical live case of
+  `stack_inv_items` merging the item away between the sale and the next request.
+  Unmigrated, the symptom is not a crash but a **double listing**: the stock
+  subtraction in `serialize_state` misses and the just-sold item is offered twice in
+  the BUY tab, once at full price and once at the buyback price.
+
+## Auth — the session cookie
+
+- **The session credential is an `HttpOnly` cookie (`hov_session`), not
+  `localStorage.authToken`** (#493). `session_token()` in `src/api/middleware/auth.py`
+  is the single place that decides which credential a request carries — cookie first,
+  `Authorization: Bearer <session_id>` second. The Bearer path is deliberate, not
+  leftover: the bug-hunt harness, API-only Inquisitor mode and several hundred route
+  tests hold a session id from `/api/test/session` and have no cookie jar. The cookie
+  wins when both are present, so a stale header from a previous sign-in can never
+  override the cookie the browser was just issued. Don't reintroduce a client-side
+  token store — `AUTH_TOKEN_KEY` survives in `frontend/src/utils/session.js` only so a
+  browser carrying a pre-#493 value gets it cleared on the next logout or 401.
+- **`src/api/sockets.py` gates its payload fallback on `TESTING`**, unlike the HTTP
+  Bearer path. Nothing outside the test suite needs it: the browser has sent `{}` since
+  #493 and nothing in `tools/` speaks Socket.IO. Ungated it was an unauthenticated
+  join — a caller with no cookie could name any session and receive that whole battle
+  stream.
+- **`Path=/` is load-bearing.** The Socket.IO handshake is served from the app root
+  (`/socket.io/...`), outside the SPA's base path, and authenticates by reading this
+  cookie. Scope the cookie to the base path and the browser simply does not send it on
+  the handshake: the socket still connects, `join_combat` is refused, and nothing on
+  the client listens for that `error` event — so the combat beat stream goes to nobody
+  with no visible failure anywhere.
+- **A route that issues the cookie needs `make_response(...)` + `set_session_cookie`**
+  (`src/api/session_cookie.py`), and any clear must repeat the same
+  path/secure/samesite: a browser matches a deletion against an existing cookie by name
+  *and* attributes, so a bare `delete_cookie(name)` leaves it in place and logout
+  returns 200 while the player stays signed in. Use `clear_session_cookie`.
+- **Cookie-config traps.** Flask predefines `SESSION_COOKIE_SAMESITE` as `None` in
+  *every* app config, so `config.get("SESSION_COOKIE_SAMESITE", "Lax")` returns `None`
+  and the default is never reached — write `config.get(...) or "Lax"`. And
+  `PERMANENT_SESSION_LIFETIME` may be an `int` of seconds or a `timedelta` depending on
+  who wrote it; assuming the `timedelta` raises `AttributeError` on *every* response, a
+  total outage caused by a config style choice.
+- **`logout` is deliberately not `@require_auth`.** That decorator 401s before the body
+  runs whenever the cookie names an expired or unknown session — so the cookie was
+  never cleared, and since #493 the page cannot clear an `HttpOnly` cookie itself,
+  leaving the browser pinned to a dead credential with no way out. Logout always clears
+  and returns 200; only a genuine server fault returns an error. The knowing trade-off
+  is that an unauthenticated cross-site POST can force a logout — a nuisance, not a
+  disclosure, and `SameSite=Lax` withholds the cookie on cross-site POST anyway.
+
+## Content-Security-Policy
+
+- **New external origins go in `src/resources/csp-policy.json`, never into one
+  emitter.** Both `src/api/security_headers.py` (`build_csp`) and
+  `frontend/vite.config.js` (`cspHeaders`) read that file, and
+  `tests/test_security_headers.py` fails if the Vite config ever inlines a directive
+  copy. Dev-server-only relaxations belong in `dev_additions`, which the production
+  policy never merges.
+- **Two policies, because there are two kinds of response.** The shared JSON is the
+  *document* policy and ships report-only during the rollout. A response that does not
+  declare itself a document via `serves_html_document` gets `_API_CSP`
+  (`default-src 'none'; … sandbox`), **enforced** — a JSON body has nothing to break,
+  and report-only on `/api/*` would be a header that blocks nothing.
+  `X-Frame-Options: DENY` travels with that policy and only with it, so it cannot
+  contradict the document policy's `frame-ancestors 'self'`.
+- **The production SPA *document* receives no CSP from this repo.** Vite's
+  `server`/`preview` headers cover the document in development and QA; production
+  static hosting is not configured from here — the document's policy is a
+  hand-maintained nginx snippet in `docs/development/csp-rollout.md`. Editing the JSON
+  does not update production: the snippet has to be regenerated and redeployed, and
+  nothing enforces this today.
+- **`CSP_REPORT_ONLY` as an environment variable is inert.** `_flag` reads
+  `app.config.get(key, os.environ.get(key))`, and the base `Config` defines
+  `CSP_ENABLED`/`CSP_REPORT_ONLY`/`CSP_REPORT_URI`/`CSP_DEV_RELAXATIONS`, so every
+  subclass carries the key and config always wins. Flipping report-only to enforcing is
+  an edit in `src/api/config.py`, not a deploy-time env var.
+
 ## Routes
 - `/api/debug/*` (`routes/debug.py`, `debug_bp`) registers only when `app.config["TESTING"]`. It exposes the Adjutant's parametrized ops (`set_hp`, `set_level`, `set_attributes`, `set_heat`, `restore`, `learn_all_skills`, `list_skills`, `player_state`, `arena_rosters`, `add_combatant`, `remove_combatant`, `clear_room`, `set_combatant_stats`). Never register a debug/test route outside that gate.
 - `/api/test/session` (TESTING only) creates a session with no `db_user_id`. There is **no guest mode** in production — every real session has a `db_user_id`; the "no db_user_id" 403 branch in the saves routes is only reachable through this bypass.

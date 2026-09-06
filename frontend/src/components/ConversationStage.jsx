@@ -407,6 +407,7 @@ function ConversationStage({
     // event are often the same length, and a length-keyed reset leaves the stage
     // parked on the previous stage's last beat with onComplete already spent.
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset above is the whole point: EventDialog reuses one mounted ConversationStage across stages, so a new `segments` array must rewind beatIndex/completedRef or onComplete never fires again (soft-lock). In live mode the newest segment is the one to show, so it rewinds to the end rather than the start.
         setBeatIndex(isLive ? Math.max(0, segments.length - 1) : 0)
         completedRef.current = false
     }, [segments, isLive])

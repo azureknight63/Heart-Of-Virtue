@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useCombatSocket } from './useCombatSocket';
+import { useCombatSocket, REHANDSHAKE_DELAYS_MS } from './useCombatSocket';
+import {
+  ERROR_SESSION_MISSING,
+  ERROR_SESSION_INVALID,
+} from '../utils/combatBeatSchema';
+import logger from '../utils/logger';
 
 // Fake socket: records handlers and lets tests fire server events. Mirrors
 // socket.io-client v4's split between Socket-level events (.on) and
@@ -11,6 +16,10 @@ function makeFakeSocket() {
   return {
     emit: vi.fn(),
     disconnect: vi.fn(),
+    // A re-handshake, not a re-emit: the server reads the session cookie off
+    // the connect environ, so only a new connection can pick up a cookie the
+    // previous handshake missed.
+    connect: vi.fn(),
     on(ev, fn) {
       (handlers[ev] ||= []).push(fn);
     },
@@ -43,7 +52,6 @@ function setup(overrides = {}) {
   };
   const hook = renderHook(() =>
     useCombatSocket({
-      sessionId: 'sess-1',
       enabled: true,
       createSocket: () => socket,
       ...calls,
@@ -59,18 +67,161 @@ describe('useCombatSocket', () => {
   it('joins the combat room on connect', () => {
     const { socket } = setup();
     act(() => socket.fire('connect'));
-    expect(socket.emit).toHaveBeenCalledWith('join_combat', {
-      session_id: 'sess-1',
-    });
+    // No session id in the payload: since #493 the page holds no readable
+    // session, and the server resolves the room from the handshake's HttpOnly
+    // cookie instead of trusting whatever the client claims to be.
+    expect(socket.emit).toHaveBeenCalledWith('join_combat', {});
   });
 
   it('stops reconnect churn when the server rejects a stale session', () => {
     const { socket, calls } = setup();
-    act(() => socket.fire('error', { message: 'Invalid session' }));
+    const payload = { code: ERROR_SESSION_INVALID, message: 'Invalid session' };
+    act(() => socket.fire('error', payload));
     expect(socket.disconnect).toHaveBeenCalledTimes(1);
-    expect(calls.onSessionInvalid).toHaveBeenCalledWith({ message: 'Invalid session' });
+    expect(calls.onSessionInvalid).toHaveBeenCalledWith(payload);
     // No rejoin attempt: the whole point is to stop the churn.
     expect(socket.emit).not.toHaveBeenCalled();
+  });
+
+  describe('a handshake that carried no credential', () => {
+    // This is NOT a sign-out. The cookie is Path=/ purely so it reaches the
+    // /socket.io/ handshake, which sits outside the SPA's base path; a
+    // path-scoping regression, a proxy that drops it, or a cross-origin dev
+    // setup all withhold it from the socket while every HTTP request keeps
+    // working. Logging the player out over that throws them to the login page
+    // out of a live fight.
+    afterEach(() => vi.useRealTimers());
+
+    // The message is deliberately the exact prose the server used to send for
+    // this condition. The old handler substring-matched it, found "invalid
+    // session" inside "Missing or invalid session credentials", and logged the
+    // player out; pairing that prose with the code proves the code is what
+    // settles it now. (The server no longer sends this wording — see
+    // test_error_payloads_keep_a_human_readable_message — but a client that
+    // still reads prose must fail these tests.)
+    const missingPayload = {
+      code: ERROR_SESSION_MISSING,
+      message: 'Missing or invalid session credentials',
+    };
+    const fireMissing = (socket) => act(() => socket.fire('error', missingPayload));
+
+    it('does not log the player out', () => {
+      vi.useFakeTimers();
+      const { socket, calls } = setup();
+      fireMissing(socket);
+      expect(calls.onSessionInvalid).not.toHaveBeenCalled();
+    });
+
+    it('re-handshakes on a backoff instead of re-emitting the join', () => {
+      vi.useFakeTimers();
+      const { socket } = setup();
+      fireMissing(socket);
+      // The dead connection is dropped first: it can never see the cookie.
+      expect(socket.disconnect).toHaveBeenCalledTimes(1);
+      expect(socket.connect).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(REHANDSHAKE_DELAYS_MS[0]));
+      expect(socket.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('degrades to the HTTP polling path once the retries run out', () => {
+      vi.useFakeTimers();
+      const { socket, calls } = setup();
+      for (const delay of REHANDSHAKE_DELAYS_MS) {
+        fireMissing(socket);
+        act(() => vi.advanceTimersByTime(delay));
+      }
+      expect(socket.connect).toHaveBeenCalledTimes(REHANDSHAKE_DELAYS_MS.length);
+      calls.fetchStatus.mockClear();
+
+      // One rejection past the budget: no further handshake, and still no
+      // logout — the fight carries on over HTTP.
+      fireMissing(socket);
+      act(() => vi.advanceTimersByTime(60000));
+      expect(socket.connect).toHaveBeenCalledTimes(REHANDSHAKE_DELAYS_MS.length);
+      expect(calls.onSessionInvalid).not.toHaveBeenCalled();
+      // A final resync so the board is current the moment streaming stops.
+      expect(calls.fetchStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives a fresh retry budget after a successful join', () => {
+      vi.useFakeTimers();
+      const { socket } = setup();
+      for (const delay of REHANDSHAKE_DELAYS_MS) {
+        fireMissing(socket);
+        act(() => vi.advanceTimersByTime(delay));
+      }
+      act(() => socket.fire('joined_combat', { joined: true }));
+      socket.connect.mockClear();
+
+      fireMissing(socket);
+      act(() => vi.advanceTimersByTime(REHANDSHAKE_DELAYS_MS[0]));
+      expect(socket.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('never leaves a second rejection\'s timer un-cancellable', () => {
+      // Two rejections before the first retry fires. Each schedules a timer,
+      // and only one handle is kept — so without cancelling the first, unmount
+      // can only clear the newest and the orphan still fires a handshake at a
+      // socket the hook has already torn down.
+      vi.useFakeTimers();
+      const { socket, hook } = setup();
+      fireMissing(socket);
+      fireMissing(socket);
+      hook.unmount();
+      act(() => vi.advanceTimersByTime(60000));
+      expect(socket.connect).not.toHaveBeenCalled();
+    });
+
+    it('drops a pending re-handshake when the hook unmounts', () => {
+      vi.useFakeTimers();
+      const { socket, hook } = setup();
+      fireMissing(socket);
+      hook.unmount();
+      act(() => vi.advanceTimersByTime(60000));
+      expect(socket.connect).not.toHaveBeenCalled();
+    });
+  });
+
+  it('ignores an error it cannot classify', () => {
+    // Codes are the contract. The hook used to substring-match `message`, and
+    // "Missing or invalid session credentials" contains "invalid session" —
+    // which is precisely how a missing cookie became a logout. An error with
+    // no code is not an authentication verdict; a genuinely dead session is
+    // still caught by the axios 401 interceptor on the next HTTP call.
+    const { socket, calls } = setup();
+    act(() => socket.fire('error', { message: 'Missing or invalid session credentials' }));
+    act(() => socket.fire('error', { message: 'something else went wrong' }));
+    expect(calls.onSessionInvalid).not.toHaveBeenCalled();
+    expect(socket.disconnect).not.toHaveBeenCalled();
+    expect(socket.connect).not.toHaveBeenCalled();
+  });
+
+  it('reports an error it cannot classify instead of dropping it silently', () => {
+    // Ignoring the error is the correct behaviour and stays. Ignoring it with
+    // NO trace is what made the class undiagnosable: a server emitting an
+    // unrecognised code every beat looked exactly like a server emitting
+    // nothing. The event carries the code and whether a message was present,
+    // never the message itself -- that text is server-authored, carries
+    // session wording, and this feed ships to logs/browser/*.jsonl.
+    const spy = vi.spyOn(logger, 'event').mockImplementation(() => {});
+    try {
+      const { socket, calls } = setup();
+      act(() => socket.fire('error', { code: 'SOMETHING_NEW', message: 'nope' }));
+      act(() => socket.fire('error', {}));
+
+      expect(spy.mock.calls.filter((c) => c[0] === 'combat.socket.uncoded_error'))
+        .toEqual([
+          ['combat.socket.uncoded_error', { code: 'SOMETHING_NEW', hasMessage: true }],
+          ['combat.socket.uncoded_error', { code: null, hasMessage: false }],
+        ]);
+      // Control flow is deliberately unchanged: no retry, no resync, no logout.
+      expect(calls.onSessionInvalid).not.toHaveBeenCalled();
+      expect(calls.fetchStatus).not.toHaveBeenCalled();
+      expect(socket.disconnect).not.toHaveBeenCalled();
+      expect(socket.connect).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('forwards beats in order', () => {
@@ -141,9 +292,10 @@ describe('useCombatSocket', () => {
       socket.io.fire('reconnect');
       await Promise.resolve();
     });
-    expect(socket.emit).toHaveBeenCalledWith('join_combat', {
-      session_id: 'sess-1',
-    });
+    // No session id in the payload: since #493 the page holds no readable
+    // session, and the server resolves the room from the handshake's HttpOnly
+    // cookie instead of trusting whatever the client claims to be.
+    expect(socket.emit).toHaveBeenCalledWith('join_combat', {});
     // Rejoining alone is not enough — beats missed while disconnected mean the
     // client must also re-seed from the authoritative snapshot.
     expect(calls.fetchStatus).toHaveBeenCalledTimes(2);
@@ -234,24 +386,27 @@ describe('useCombatSocket', () => {
     const onBeat = vi.fn();
     const sockets = [socketA, socketB];
 
+    // Driven by `enabled` rather than a session id: since #493 the hook takes
+    // no sessionId, so combat ending and starting again is what tears the
+    // socket down and builds a new one.
     const hook = renderHook(
-      ({ sessionId }) =>
+      ({ enabled }) =>
         useCombatSocket({
-          sessionId,
-          enabled: true,
+          enabled,
           createSocket: () => sockets.shift(),
           onBeat,
           fetchStatus,
         }),
-      { initialProps: { sessionId: 'sess-1' } }
+      { initialProps: { enabled: true } }
     );
 
     act(() => socketA.fire('combat:beat', beat(7)));
     expect(onBeat).toHaveBeenCalledTimes(1);
     expect(fetchStatus).not.toHaveBeenCalled();
 
-    hook.rerender({ sessionId: 'sess-2' });
+    hook.rerender({ enabled: false });
     expect(socketA.disconnect).toHaveBeenCalledTimes(1);
+    hook.rerender({ enabled: true });
 
     // seq 9 against a surviving high-water mark of 7 classifies as a GAP
     // (9 > 7 + 1) and would fire a resync instead of delivering the beat. With
@@ -267,7 +422,6 @@ describe('useCombatSocket', () => {
     const socket = makeFakeSocket();
     renderHook(() =>
       useCombatSocket({
-        sessionId: 'sess-1',
         enabled: false,
         createSocket: () => socket,
       })

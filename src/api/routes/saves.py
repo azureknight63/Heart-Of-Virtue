@@ -5,23 +5,84 @@ import logging
 from flask import Blueprint, request, jsonify
 from src.api.services.auth_service import SaveLimitReached
 from src.api.middleware.auth import get_session_and_player, require_game_service
+from src.api.services.validators import validate_string_field
 
 saves_bp = Blueprint("saves", __name__)
 
 logger = logging.getLogger(__name__)
 
-#: Longest save name accepted. The name is client-supplied, persisted to Turso,
-#: echoed back in the 201 body, and listed in the save picker, so it is bounded
-#: here rather than wherever it is next rendered. 96 is set against what a
-#: person types ("Before the Grotto, 3rd try") with room to spare, and far
-#: below MAX_CONTENT_LENGTH -- which was previously the *only* thing standing
-#: between this field and a megabyte of attacker text in a durable row. Feedback
-#: bounds its title the same way (MAX_TITLE_LENGTH, routes/feedback.py).
-MAX_SAVE_NAME_LENGTH = 96
+# Issue #523: POST /saves used to gate on `"name" in data` alone, so "", None
+# and a 1000-character name were all stored verbatim -- the load list then
+# rendered a blank row, a row literally labelled "None", or one that blew out
+# the layout. Not a security issue (the SQL is parameterised); a data-quality
+# and UI one.
+#
+# The frontend never asks the player to type a save name -- ActionsPanel
+# generates `Save_<iso-timestamp>` (24 chars) and useAutosave sends the literal
+# "Autosave" (8 chars) -- so there is no input field to mirror this cap into.
+# Should a naming dialog ever be added, mirror MAX_SAVE_NAME_LENGTH there as a
+# `maxLength` and reference this constant by name in a comment (CLAUDE.md flags
+# mirrored-literal drift as a recurring failure mode in this codebase).
+MAX_SAVE_NAME_LENGTH = 100
 
-#: Used when a client sends no name at all, which is a documented shape: the
-#: route accepts a body carrying only ``is_autosave``.
+# Used when the caller supplies no "name" at all. Server-generated, so both
+# bypass the rules by construction: validate_save_name returns one before any
+# check runs, which is what keeps validation from ever rejecting an autosave.
+#
+# The two are distinct because the name is what the load list renders: an
+# autosave POSTed as just {"is_autosave": true} is stored with the flag set, so
+# labelling it "Manual Save" put a row in front of the player describing itself
+# as the opposite of what it is. useAutosave sends the "Autosave" literal
+# explicitly today, so this default is the fallback for a caller that does not.
 DEFAULT_SAVE_NAME = "Manual Save"
+DEFAULT_AUTOSAVE_NAME = "Autosave"
+
+
+def validate_save_name(data):
+    """Resolve and validate the save name from a POST /saves body.
+
+    Returns ``(name, error)``. Exactly one is non-None: on success ``name`` is
+    the stripped, validated save name; on failure ``error`` is a player-facing
+    message explaining what is wrong.
+
+    Rules (deliberately conservative -- reject rather than repair, so a mistake
+    is reported instead of silently rewritten):
+      * absent            -> the server default for this save's kind
+                             (DEFAULT_AUTOSAVE_NAME when the body sets
+                             is_autosave, else DEFAULT_SAVE_NAME), no
+                             validation
+      * not a string      -> error (no coercion; ``None`` must not become "None")
+      * blank             -> error (no auto-naming, which would hide the mistake)
+      * > MAX_SAVE_NAME_LENGTH after stripping -> error (no truncation, which
+        would silently discard the player's intent)
+
+    The type and blank rules are delegated to the shared route validator so that
+    every endpoint agrees on what a usable string field is -- in particular its
+    blank rule counts a value made only of invisible codepoints (NUL, U+200B) as
+    empty, which plain ``.strip()`` does not.
+    """
+    if "name" not in data:
+        if data.get("is_autosave"):
+            return DEFAULT_AUTOSAVE_NAME, None
+        return DEFAULT_SAVE_NAME, None
+
+    raw = data["name"]
+    is_valid, error = validate_string_field(raw, "Save name")
+    if not is_valid:
+        return None, error
+
+    # Measured after stripping, so padding alone cannot push a legitimate name
+    # over the cap. validate_string_field's own max_length deliberately measures
+    # the raw value instead, so the check stays here rather than being delegated.
+    name = raw.strip()
+    if len(name) > MAX_SAVE_NAME_LENGTH:
+        return (
+            None,
+            f"Save name cannot exceed {MAX_SAVE_NAME_LENGTH} characters "
+            f"(got {len(name)}).",
+        )
+
+    return name, None
 
 
 @saves_bp.route("/saves", methods=["GET"])
@@ -85,24 +146,9 @@ async def create_save():
                 400,
             )
 
-        # Rejected rather than coerced. ``str(data["name"])`` would happily
-        # persist "{'$ne': None}" or "[1, 2, 3]" as somebody's save title,
-        # which is a client bug worth reporting back rather than storing; this
-        # matches how auth.py answers a non-string username. Over-length IS
-        # truncated rather than refused, because a name is presentation and
-        # losing the tail of one should not lose the save.
-        save_name = data.get("name", DEFAULT_SAVE_NAME)
-        if not isinstance(save_name, str):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Save name must be a string",
-                    }
-                ),
-                400,
-            )
-        save_name = save_name.strip()[:MAX_SAVE_NAME_LENGTH] or DEFAULT_SAVE_NAME
+        save_name, name_error = validate_save_name(data)
+        if name_error:
+            return jsonify({"success": False, "error": name_error}), 400
 
         is_autosave = data.get("is_autosave", False)
 

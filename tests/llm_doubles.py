@@ -630,6 +630,27 @@ _NON_SECRET_GROUPS = (
         ("INQUISITOR_SMTP_PORT", "INQUISITOR_SMTP_TLS"),
     ),
     (
+        "How the Content-Security-Policy is DELIVERED, not what is in it -- "
+        "the directive data lives in src/resources/csp-policy.json. None of "
+        "these can reach anything: they select a header name, toggle the dev "
+        "relaxations, and name a same-origin report path. They are also inert "
+        "as environment variables, since src/api/config.py defines all four on "
+        "the base Config and security_headers._flag reads config first.",
+        (
+            "CSP_DEV_RELAXATIONS",
+            "CSP_ENABLED",
+            "CSP_REPORT_ONLY",
+            "CSP_REPORT_URI",
+        ),
+    ),
+    (
+        "Where the backend writes its JSONL debug stream. A local path, no "
+        "credential -- and tools/run_api.py already refuses to default it on "
+        "for a production FLASK_ENV, so a shared .env cannot turn on "
+        "per-request synchronous file writes in production.",
+        ("LOG_JSONL_DIR",),
+    ),
+    (
         "Sampling temperatures. Deliberately NOT blanked -- read as a bare "
         "float(os.getenv(...)) with no except, so a blank value raises rather "
         "than neutralising. See the note at the foot of LLM_SETTING_ENVS.",

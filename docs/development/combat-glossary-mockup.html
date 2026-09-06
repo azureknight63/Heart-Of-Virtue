@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Combat Glossary + Beat Tooltip — Mockup (#507)</title>
+<style>
+:root{
+  /* Tokens copied verbatim from frontend/src/styles/theme.js */
+  --primary:#00ff88; --primary-dark:#00cc66; --primary-hover:#00ffaa;
+  --secondary:#ffaa00; --secondary-hover:#ffbb00;
+  --accent:#00ccff; --gold:#ffcc00; --danger:#ff4444; --special:#9944ff;
+  --text-main:#e0e0e0; --text-muted:#888888; --text-bright:#ffffff;
+  --text-dim:#666666; --text-highlight:#ffeeaa; --text-inverse:#000000;
+  --bg-main:#0a0a0a; --bg-panel:rgba(0,0,0,.3); --bg-panel-deep:rgba(0,0,0,.9);
+  --bg-panel-heavy:rgba(0,0,0,.7); --bg-overlay:rgba(0,0,0,.75);
+  --border-main:rgba(255,170,0,.3); --border-light:rgba(255,170,0,.1);
+  --border-bright:#ffaa00; --border-dark:#664400;
+  --shadow-glow:0 0 15px rgba(255,170,0,.2);
+  --shadow-main:0 4px 12px rgba(0,0,0,.5);
+  --shadow-inset:inset 0 2px 10px rgba(0,0,0,.5);
+  --mono:'Courier New', monospace;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:32px 20px 80px; background:var(--bg-main);
+  color:var(--text-main); font-family:var(--mono); font-size:14px; line-height:1.55;
+}
+.wrap{max-width:1040px;margin:0 auto}
+
+/* ---------- document chrome ---------- */
+h1{font-size:1.35rem;color:var(--primary);margin:0 0 6px;letter-spacing:.06em}
+.sub{color:var(--text-muted);font-size:.75rem;margin:0 0 4px}
+.mockup-banner{
+  border:1px dashed var(--secondary); border-radius:6px; padding:10px 14px;
+  color:var(--secondary); font-size:.72rem; letter-spacing:.05em; margin:18px 0 34px;
+  background:rgba(255,170,0,.05);
+}
+section{margin:0 0 54px}
+h2{
+  font-size:1rem;color:var(--secondary);margin:0 0 4px;letter-spacing:.08em;
+  text-transform:uppercase;border-bottom:1px solid var(--border-main);padding-bottom:6px;
+}
+h3{font-size:.8rem;color:var(--primary);margin:26px 0 10px;letter-spacing:.1em;text-transform:uppercase}
+.note{color:var(--secondary);font-size:.72rem;line-height:1.6;margin:10px 0 0;
+  border-left:2px solid rgba(255,170,0,.35);padding-left:10px}
+.note b{color:var(--secondary-hover)}
+.note code, code{background:rgba(255,255,255,.06);padding:1px 4px;border-radius:3px;color:var(--text-highlight);font-size:.95em}
+.caption{font-size:.65rem;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;margin:0 0 8px}
+.row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+.col{flex:1 1 300px;min-width:280px}
+
+/* ---------- shared game-shell pieces (mirrors GamePanel.jsx) ---------- */
+.game-frame{
+  border:2px solid var(--primary); border-radius:8px; overflow:hidden;
+  box-shadow:0 0 25px -5px rgba(0,255,136,.3); background:#050505;
+}
+.frame-body{display:flex;gap:0;min-height:430px}
+.panel{
+  background:var(--bg-panel); border:2px solid var(--border-main); border-radius:8px;
+  padding:16px; box-shadow:var(--shadow-glow); font-family:var(--mono);
+}
+.left-panel{
+  flex:0 0 330px; border-right:1px solid rgba(0,255,136,.18);
+  display:flex; flex-direction:column; background:rgba(0,0,0,.35);
+}
+.lp-head{
+  background:var(--primary); color:var(--text-inverse); padding:9px 12px;
+  font-weight:bold; font-size:12px; display:flex; justify-content:space-between;
+  align-items:center; box-shadow:0 0 10px rgba(0,255,136,.5);
+}
+.lp-head .btns{display:flex;gap:6px}
+.lp-head .btns span{
+  background:var(--primary-dark); border:1px solid #000; border-radius:4px;
+  padding:2px 7px; font-size:10px;
+}
+.lp-body{padding:14px;display:flex;flex-direction:column;gap:14px;flex:1}
+
+/* hero stand-in */
+.hero-stub{
+  flex:1;display:flex;align-items:center;justify-content:center;position:relative;
+  min-height:150px;
+}
+.heart{
+  width:96px;height:96px;border:2px solid rgba(0,255,136,.45);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;color:var(--primary);
+  font-size:11px;letter-spacing:.1em;box-shadow:0 0 18px rgba(0,255,136,.25);
+  text-align:center;
+}
+.vital{position:absolute;top:50%;transform:translateY(-50%);width:13px;height:120px;
+  border:2px solid;display:flex;flex-direction:column-reverse;overflow:hidden}
+.vital.hp{left:38px;border-color:var(--danger);border-radius:13px 0 0 13px;
+  background:rgba(255,68,68,.05);box-shadow:0 0 10px rgba(255,68,68,.5)}
+.vital.hp i{display:block;width:100%;height:62%;background:var(--danger);border-radius:11px 0 0 11px}
+.vital.fp{right:38px;border-color:var(--secondary);border-radius:0 13px 13px 0;
+  background:rgba(255,170,0,.05);box-shadow:var(--shadow-glow)}
+.vital.fp i{display:block;width:100%;height:44%;background:var(--secondary);border-radius:0 11px 11px 0}
+
+/* heat + cooldown tray stand-ins */
+.tray{border-top:1px solid rgba(0,255,136,.15);padding-top:8px}
+.tray-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.tray-head .lbl{font-size:.62rem;color:var(--text-muted);letter-spacing:.12em;text-transform:uppercase}
+.tray-head .cnt{font-size:.62rem;color:rgba(0,255,136,.6)}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{
+  width:44px;height:42px;border-radius:5px;background:rgba(0,0,0,.6);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+}
+.chip .ic{font-size:.95rem;line-height:1}
+.chip .n{font-size:.72rem;font-weight:bold;line-height:1}
+.chip.off{border:1px solid rgba(255,68,68,.6);box-shadow:0 0 6px rgba(255,68,68,.27)}
+.chip.off .ic,.chip.off .n{color:var(--danger)}
+.chip.man{border:1px solid rgba(0,255,136,.6);box-shadow:0 0 6px rgba(0,255,136,.27)}
+.chip.man .ic,.chip.man .n{color:var(--primary)}
+.chip.mst{border:1px solid rgba(153,68,255,.6);box-shadow:0 0 6px rgba(153,68,255,.27)}
+.chip.mst .ic,.chip.mst .n{color:var(--special)}
+.mom-bar{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;margin-top:5px}
+.mom-bar i{display:block;height:100%;width:58%;background:var(--secondary);opacity:.8}
+
+/* battlefield side */
+.right-panel{flex:1;display:flex;flex-direction:column;padding:12px;gap:8px;min-width:0}
+.bf-head{display:flex;justify-content:space-between;align-items:center}
+.bf-title{color:var(--secondary);font-size:.75rem;font-weight:bold;letter-spacing:.06em}
+.zoom{display:flex;border:1px solid var(--secondary);border-radius:4px;overflow:hidden}
+.zoom span{padding:3px 8px;font-size:10px;font-weight:bold;color:var(--secondary);background:rgba(0,0,0,.5)}
+.zoom span.on{background:var(--secondary);color:#fff}
+.status-strip{
+  display:flex;gap:12px;align-items:center;font-size:10px;color:var(--text-muted);
+  letter-spacing:.05em;text-transform:uppercase;
+}
+.status-strip .alive{color:var(--danger)}
+.timeline{display:flex;gap:8px;align-items:flex-end;padding:2px 2px 4px}
+.tl-col{display:flex;flex-direction:column;align-items:center;gap:3px}
+.tl-mark{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;
+  justify-content:center;font-size:11px;background:rgba(0,0,0,.6)}
+.tl-mark.me{border:1px solid var(--primary);color:var(--primary)}
+.tl-mark.foe{border:1px solid var(--danger);color:var(--danger)}
+.tl-col .b{font-size:9px;color:var(--text-dim)}
+.grid-stub{
+  flex:1;border:1px solid var(--border-main);border-radius:4px;background:rgba(0,0,0,.3);
+  position:relative;min-height:190px;overflow:hidden;
+  background-image:linear-gradient(rgba(255,170,0,.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,170,0,.05) 1px,transparent 1px);
+  background-size:26px 26px;
+}
+.token{position:absolute;width:40px;text-align:center}
+.token .disc{
+  width:36px;height:36px;border-radius:50%;margin:0 auto;display:flex;align-items:center;
+  justify-content:center;font-size:14px;background:rgba(0,0,0,.7);
+}
+.token.me .disc{border:2px solid var(--primary);color:var(--primary);box-shadow:0 0 12px rgba(0,255,136,.45)}
+.token.foe .disc{border:2px solid var(--danger);color:var(--danger);box-shadow:0 0 12px rgba(255,68,68,.4)}
+.token .nm{font-size:9px;color:var(--text-muted);margin-top:2px;white-space:nowrap}
+.token .dist{font-size:9px;color:var(--text-dim)}
+.badge{
+  position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:9px;
+  background:#000;border:1px solid var(--danger);color:var(--danger);border-radius:3px;
+  padding:0 3px;white-space:nowrap;
+}
+
+/* ---------- the ? affordance ---------- */
+.qmark{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;
+  border:1px solid rgba(0,204,255,.55); background:rgba(0,204,255,.08);
+  color:var(--accent); font-family:var(--mono); font-size:11px; font-weight:bold;
+  line-height:1; cursor:help; vertical-align:middle; flex:0 0 auto;
+}
+.qmark.hov{border-color:var(--accent);background:rgba(0,204,255,.22);
+  box-shadow:0 0 8px rgba(0,204,255,.5);color:#bff2ff}
+.qmark.tap{width:44px;height:44px;border-radius:6px;font-size:16px}
+.qmark.big{width:26px;height:26px;font-size:14px}
+
+/* ---------- the tooltip ---------- */
+.term{
+  color:var(--accent); border-bottom:1px dotted rgba(0,204,255,.7); cursor:help;
+}
+.tip{
+  position:absolute; z-index:40; width:266px;
+  background:var(--bg-main); border:1.5px solid var(--accent); border-radius:5px;
+  box-shadow:0 0 12px rgba(0,204,255,.3), var(--shadow-main);
+  padding:9px 11px; text-align:left;
+}
+.tip .t{font-size:.65rem;color:var(--accent);letter-spacing:.14em;text-transform:uppercase;
+  font-weight:bold;margin-bottom:5px}
+.tip .d{font-size:.72rem;color:var(--text-main);line-height:1.5}
+.tip .tell{font-size:.68rem;color:var(--text-highlight);margin-top:7px;line-height:1.5;
+  border-top:1px solid rgba(255,255,255,.09);padding-top:6px}
+.tip .more{font-size:.65rem;color:var(--primary);margin-top:7px;letter-spacing:.05em}
+.tip .arrow{position:absolute;left:26px;bottom:-7px;width:0;height:0;
+  border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid var(--accent)}
+
+/* ---------- move card (mirrors CombatMovePanel.jsx) ---------- */
+.move-panel{
+  width:390px;background:var(--bg-panel-deep);border:2px solid var(--border-bright);
+  border-radius:8px;padding:16px;box-shadow:var(--shadow-glow);
+}
+.mp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;
+  border-bottom:1px solid var(--border-light);padding-bottom:8px}
+.mp-head .ttl{color:var(--secondary);font-weight:bold;text-transform:uppercase;font-size:.875rem}
+.mp-head .rt{display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:16px}
+.move-card{
+  background:rgba(255,255,255,.03);border:1px solid var(--border-light);border-radius:4px;
+  padding:12px;display:flex;flex-direction:column;gap:4px;margin-bottom:8px;position:relative;
+}
+.move-card.dim{opacity:.6}
+.move-card .r1{display:flex;justify-content:space-between;align-items:center}
+.move-card .nm{font-weight:bold;font-size:.875rem;color:var(--text-bright)}
+.move-card.dim .nm{color:var(--text-dim)}
+.move-card .fp{font-size:.65rem;color:var(--text-muted)}
+.move-card .desc{font-size:.75rem;color:var(--text-muted)}
+.move-card.dim .desc{color:var(--text-dim)}
+.reason{font-size:.65rem;color:var(--danger);font-style:italic;margin-top:4px}
+.cbar{display:flex;align-items:center;gap:4px}
+.cbar .track{width:120px;height:6px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.cbar .track i{display:flex;height:100%}
+.cbar .track b{display:block;height:100%}
+.seg-prep{background:var(--accent)} .seg-exec{background:var(--primary)}
+.seg-rec{background:var(--danger)} .seg-cd{background:var(--text-muted)}
+.cbar .tot{font-size:.65rem;color:var(--text-muted);white-space:nowrap}
+
+/* ---------- glossary panel ---------- */
+.overlay{
+  background:var(--bg-overlay);border-radius:8px;padding:26px;display:flex;
+  align-items:flex-start;justify-content:center;
+}
+.glossary{
+  width:520px;max-width:100%;background:var(--bg-panel-deep);
+  border:2px solid var(--border-bright);border-radius:8px;box-shadow:var(--shadow-glow);
+  display:flex;flex-direction:column;max-height:560px;overflow:hidden;
+}
+.gl-head{
+  display:flex;justify-content:space-between;align-items:center;padding:14px 16px 10px;
+  border-bottom:1px solid var(--border-main);
+}
+.gl-head h4{margin:0;font-size:.95rem;color:var(--primary);letter-spacing:.1em;font-weight:bold}
+.gl-head .x{color:var(--primary);font-size:16px}
+.gl-search{margin:12px 16px 0;display:flex;align-items:center;gap:8px;
+  border:1px solid var(--border-main);border-radius:4px;background:#1a1a2e;padding:7px 10px}
+.gl-search span{color:var(--text-dim);font-size:12px}
+.gl-search input{
+  flex:1;background:none;border:none;outline:none;color:var(--text-main);
+  font-family:var(--mono);font-size:.8rem;
+}
+.gl-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 2px}
+/* Horizontally scrolling filter row (mobile): the tabs overflow, so the edge has
+   to say so. A fade plus a chevron on the right, both hidden once the row is
+   scrolled to its end -- a static fade reads as a visual bug at the end of travel. */
+.tabs-scroll{position:relative}
+.tabs-scroll .gl-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.tabs-scroll .gl-tabs::-webkit-scrollbar{display:none}
+.tabs-scroll::after{
+  content:'';position:absolute;top:0;right:0;bottom:0;width:34px;pointer-events:none;
+  background:linear-gradient(to right,rgba(10,10,10,0),rgba(10,10,10,.92));
+}
+.tabs-scroll .cue{
+  position:absolute;right:5px;top:50%;transform:translateY(-50%);pointer-events:none;
+  color:var(--secondary);font-size:.75rem;line-height:1;text-shadow:0 0 4px rgba(0,0,0,.9);
+}
+.gl-tabs .tab{
+  font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;
+  border-radius:3px;border:1px solid;background:rgba(0,0,0,.4);cursor:pointer;
+}
+.tab.all{border-color:var(--secondary);color:var(--text-inverse);background:var(--secondary)}
+.tab.time{border-color:rgba(0,204,255,.5);color:var(--accent)}
+.tab.moves{border-color:rgba(0,255,136,.5);color:var(--primary)}
+.tab.res{border-color:rgba(255,170,0,.5);color:var(--secondary)}
+.tab.pos{border-color:rgba(255,204,0,.5);color:var(--gold)}
+.tab.dmg{border-color:rgba(255,68,68,.5);color:var(--danger)}
+.tab.eff{border-color:rgba(153,68,255,.5);color:var(--special)}
+.gl-list{overflow-y:auto;padding:12px 16px 16px;display:flex;flex-direction:column;gap:2px}
+.entry{padding:10px 0;border-bottom:1px solid rgba(255,170,0,.09)}
+.entry:last-child{border-bottom:none}
+.entry .hd{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.entry .term-name{font-size:.85rem;font-weight:bold;letter-spacing:.05em}
+.entry .cat{font-size:.55rem;letter-spacing:.12em;text-transform:uppercase;
+  border:1px solid;border-radius:2px;padding:0 5px;line-height:1.6}
+.entry .body{font-size:.75rem;color:var(--text-main);margin-top:5px;line-height:1.55}
+.entry .tell{font-size:.7rem;color:var(--text-highlight);margin-top:5px;line-height:1.5}
+.entry .tell::before{content:'▸ ';color:var(--secondary)}
+.c-time{color:var(--accent);border-color:rgba(0,204,255,.5)}
+.c-moves{color:var(--primary);border-color:rgba(0,255,136,.5)}
+.c-res{color:var(--secondary);border-color:rgba(255,170,0,.5)}
+.c-pos{color:var(--gold);border-color:rgba(255,204,0,.5)}
+.c-dmg{color:var(--danger);border-color:rgba(255,68,68,.5)}
+.c-eff{color:var(--special);border-color:rgba(153,68,255,.5)}
+.gl-foot{padding:9px 16px;border-top:1px solid var(--border-main);
+  font-size:.62rem;color:var(--text-dim);letter-spacing:.06em}
+
+/* ---------- mobile ---------- */
+.phone{
+  width:300px;border:2px solid var(--border-dark);border-radius:8px;overflow:hidden;
+  background:#050505;display:flex;flex-direction:column;height:540px;position:relative;
+}
+.phone .ph-head{background:var(--primary);color:#000;font-size:10px;font-weight:bold;
+  padding:7px 10px;display:flex;justify-content:space-between;align-items:center}
+.phone .ph-body{flex:1;padding:10px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.tabbar{
+  height:56px;display:flex;background:var(--bg-panel-deep);border-top:2px solid var(--border-main);
+}
+.tabbar button{
+  flex:1;background:none;border:none;border-top:3px solid transparent;font-family:var(--mono);
+  font-size:11px;font-weight:bold;color:var(--text-muted);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;
+}
+.tabbar button.on{border-top-color:var(--primary);color:var(--primary)}
+.tabbar button.on.amber{border-top-color:var(--secondary);color:var(--secondary)}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;top:52px;background:var(--bg-panel-deep);
+  border-top:2px solid var(--border-bright);border-radius:8px 8px 0 0;display:flex;
+  flex-direction:column;overflow:hidden;box-shadow:0 -6px 24px rgba(0,0,0,.8);
+}
+.grabber{width:44px;height:4px;border-radius:2px;background:var(--border-dark);margin:8px auto 4px}
+
+/* ---------- source table ---------- */
+table{width:100%;border-collapse:collapse;font-size:.7rem}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid rgba(255,170,0,.12);vertical-align:top}
+th{color:var(--secondary);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase}
+td.tm{color:var(--primary);font-weight:bold;white-space:nowrap}
+td.src{color:var(--text-dim);font-size:.65rem;white-space:nowrap}
+.flag{color:var(--gold)}
+.scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>COMBAT GLOSSARY + BEAT TOOLTIP</h1>
+<p class="sub">Design mockup for issue #507 — "What the Heck are Beats?" (player report, Combat &amp; Gameplay 2/5)</p>
+<p class="sub">Two halves, as chosen by the maintainer: <b style="color:var(--accent)">(1)</b> an inline hover/tap tooltip on the cooldown text, and <b style="color:var(--accent)">(2)</b> a clickable <b style="color:var(--accent)">?</b> that opens a glossary of combat terms.</p>
+
+<div class="mockup-banner">
+  MOCKUP ONLY — no React written. Every definition below was derived from the engine, not invented;
+  the source for each term is listed in section 6. Tokens are read from
+  <code>frontend/src/styles/theme.js</code>; panel/tooltip/card geometry copied from
+  <code>GamePanel.jsx</code>, <code>CombatMovePanel.jsx</code>, <code>HeroPanel.jsx</code> (VitalBar tooltip)
+  and <code>CooldownTray.jsx</code>.
+</div>
+
+<!-- ============================================================ 1 -->
+<section>
+<h2>1 · In context — where the ? sits</h2>
+<p class="caption">Desktop combat screen · LeftPanel (330px) + Battlefield</p>
+
+<div class="game-frame">
+  <div class="lp-head" style="border-bottom:2px solid var(--primary)">
+    <span>Heart of Virtue - Combat</span>
+    <div class="btns"><span>⚙</span><span>Feedback</span><span>Account</span></div>
+  </div>
+  <div class="frame-body">
+
+    <!-- LEFT PANEL -->
+    <div class="left-panel">
+      <div class="lp-body">
+        <div class="hero-stub">
+          <div class="vital hp"><i></i></div>
+          <div class="heart">JEAN<br>CLAIRE</div>
+          <div class="vital fp"><i></i></div>
+        </div>
+
+        <div class="tray">
+          <div class="tray-head">
+            <span class="lbl">Heat</span>
+            <span style="font-size:.72rem;color:var(--secondary);font-weight:bold">1.62×</span>
+          </div>
+          <div style="font-size:.6rem;color:var(--secondary);letter-spacing:.1em">FERVENT</div>
+          <div class="mom-bar"><i></i></div>
+        </div>
+
+        <div class="tray">
+          <div class="tray-head"><span class="lbl">Cooldown</span><span class="cnt">3</span></div>
+          <div class="chips">
+            <div class="chip off"><span class="ic">⚔</span><span class="n">5</span></div>
+            <div class="chip man"><span class="ic">↯</span><span class="n">2</span></div>
+            <div class="chip mst"><span class="ic">✦</span><span class="n">9</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+      <div class="bf-head">
+        <span class="bf-title">BATTLEFIELD</span>
+        <div class="zoom"><span class="on">FIT FIGHT</span><span>CLOSE</span></div>
+      </div>
+
+      <!-- THE ? LIVES HERE -->
+      <div class="status-strip">
+        <span>Beat 14</span>
+        <span class="alive">2 standing</span>
+        <span class="qmark" title="Combat glossary">?</span>
+      </div>
+
+      <div class="timeline">
+        <div class="tl-col"><div class="tl-mark foe">⚔</div><div class="b">next</div></div>
+        <div class="tl-col"><div class="tl-mark me">↯</div><div class="b">+2</div></div>
+        <div class="tl-col"><div class="tl-mark foe">◈</div><div class="b">+4</div></div>
+        <div class="tl-col"><div class="tl-mark me">⚔</div><div class="b">+7</div></div>
+      </div>
+
+      <div class="grid-stub">
+        <div class="token me" style="left:34px;top:104px">
+          <div class="disc">🧝</div><div class="nm">Jean</div>
+        </div>
+        <div class="token foe" style="left:210px;top:52px">
+          <div style="position:relative"><div class="badge">in 3 beats</div><div class="disc">🦇</div></div>
+          <div class="nm">Cave Bat</div><div class="dist">18 ft</div>
+        </div>
+        <div class="token foe" style="left:290px;top:124px">
+          <div class="disc">🟢</div><div class="nm">Slime</div><div class="dist">27 ft</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="note">
+  <b>Placement rationale.</b> The <b>?</b> goes at the right end of the fight-status strip
+  (<code>Battlefield.jsx</code>, the <code>Beat N / N standing</code> row) — the one place the word
+  "Beat" already appears on screen, so the answer sits beside the question. It is an 18px circle to
+  match the 10px uppercase strip it lives in; it does not displace the zoom control or the timeline.
+  <b>Secondary entry points</b> (same panel, same content): the <b>?</b> in the move-panel header
+  (section 2), and every dotted term in a tooltip footer.
+</p>
+</section>
+
+<!-- ============================================================ 2 -->
+<section>
+<h2>2 · Inline tooltip on the cooldown text</h2>
+<p class="caption">The exact string the player quoted is <code>"Available in 5 beats"</code> — emitted by <code>combat_adapter.py:3061</code> and rendered as the ⚠ line on a greyed move card.</p>
+
+<div class="row">
+  <div class="col">
+    <h3>State A — tooltip hidden (today + the new underline)</h3>
+    <div class="move-panel">
+      <div class="mp-head">
+        <span class="ttl">OFFENSIVE MOVES</span>
+        <span class="rt"><span class="qmark">?</span> ✕</span>
+      </div>
+
+      <div class="move-card">
+        <div class="r1"><span class="nm">Thrust</span><span class="fp">Fatigue: 22</span></div>
+        <div class="cbar">
+          <div class="track"><i style="width:74px">
+            <b class="seg-prep" style="width:26px"></b><b class="seg-exec" style="width:8px"></b>
+            <b class="seg-rec" style="width:14px"></b><b class="seg-cd" style="width:26px"></b>
+          </i></div>
+          <span class="tot">9 beats</span>
+        </div>
+        <div class="desc">A committed forward stab that trades guard for reach.</div>
+      </div>
+
+      <div class="move-card dim">
+        <div class="r1"><span class="nm">Power Strike</span><span class="fp">Fatigue: 35</span></div>
+        <div class="cbar">
+          <div class="track"><i style="width:120px">
+            <b class="seg-prep" style="width:52px"></b><b class="seg-exec" style="width:10px"></b>
+            <b class="seg-rec" style="width:22px"></b><b class="seg-cd" style="width:36px"></b>
+          </i></div>
+          <span class="tot">15 beats</span>
+        </div>
+        <div class="desc">Wind up and put your whole weight behind the blow.</div>
+        <div class="reason">⚠ Available in 5 <span class="term">beats</span></div>
+      </div>
+    </div>
+    <p class="note">Only the noun is made interactive — a dotted cyan underline on <code>beats</code>,
+    leaving the ⚠ line's danger red intact. Cyan (<code>colors.info</code>) is the "here is information"
+    colour throughout; red stays "you cannot do this."</p>
+  </div>
+
+  <div class="col">
+    <h3>State B — tooltip shown (hover / focus)</h3>
+    <div class="move-panel" style="position:relative;padding-top:330px">
+      <div class="tip" style="left:16px;top:24px">
+        <div class="t">Beat</div>
+        <div class="d">The unit of combat time. Fights are measured in beats, not turns.
+          On every beat, each move in play advances one step, the enemies act,
+          status effects tick down, and heat drifts back toward neutral.</div>
+        <div class="tell">You'll know a beat has passed when the <b>BEAT 14</b> counter above the
+          battlefield ticks up and the timeline strip slides one column left.</div>
+        <div class="more">? Open glossary for the rest →</div>
+        <div class="arrow"></div>
+      </div>
+
+      <div class="move-card dim" style="margin-top:6px">
+        <div class="r1"><span class="nm">Power Strike</span><span class="fp">Fatigue: 35</span></div>
+        <div class="cbar">
+          <div class="track"><i style="width:120px">
+            <b class="seg-prep" style="width:52px"></b><b class="seg-exec" style="width:10px"></b>
+            <b class="seg-rec" style="width:22px"></b><b class="seg-cd" style="width:36px"></b>
+          </i></div>
+          <span class="tot">15 beats</span>
+        </div>
+        <div class="desc">Wind up and put your whole weight behind the blow.</div>
+        <div class="reason">⚠ Available in 5
+          <span class="term" style="color:#bff2ff;border-bottom-color:var(--accent)">beats</span></div>
+      </div>
+    </div>
+    <p class="note"><b>Trigger:</b> hover, keyboard focus, or tap (mobile — see section 5).
+      <b>Anchoring:</b> above the term, arrow at <code>left:26px</code>; flips below when there is no room.
+      <b>Geometry:</b> 266px wide, <code>1.5px solid var(--accent)</code>, radius 5px, padding 9/11 —
+      the <code>HeroPanel.jsx</code> VitalBar tooltip's own recipe, scaled up from an 8px numeric readout to a sentence.
+      <b>Dismiss:</b> mouse-out, blur, <code>Esc</code>, or tapping elsewhere.</p>
+  </div>
+</div>
+
+<h3>Other terms that get the same treatment</h3>
+<div class="row">
+  <div class="col" style="min-width:220px;flex:1 1 220px">
+    <div style="position:relative;padding-bottom:225px">
+      <div style="font-size:.65rem;color:var(--text-muted)">On the cooldown tray header</div>
+      <div class="tray" style="max-width:200px">
+        <div class="tray-head">
+          <span class="lbl"><span class="term">Cooldown</span></span><span class="cnt">3</span>
+        </div>
+        <div class="chips"><div class="chip off"><span class="ic">⚔</span><span class="n">5</span></div></div>
+      </div>
+      <div class="tip" style="left:0;top:106px;width:250px">
+        <div class="t">Cooldown</div>
+        <div class="d">The last of a move's four stages. Only <i>that</i> move is locked out —
+          everything else stays usable. Heavier weapons cool slower; endurance shortens every cooldown.</div>
+        <div class="more">? Open glossary →</div>
+      </div>
+    </div>
+  </div>
+  <div class="col" style="min-width:220px;flex:1 1 220px">
+    <div style="position:relative;padding-bottom:225px">
+      <div style="font-size:.65rem;color:var(--text-muted)">On the Fatigue vital bar</div>
+      <div style="max-width:200px;padding:8px 0"><span style="color:var(--secondary);font-size:.75rem">
+        <span class="term" style="color:var(--secondary);border-bottom-color:rgba(255,170,0,.7)">Fatigue</span> 66/150</span></div>
+      <div class="tip" style="left:0;top:66px;width:250px">
+        <div class="t">Fatigue (FP)</div>
+        <div class="d">What moves are paid for with. It does <b>not</b> come back on its own during a
+          fight — Rest recovers roughly 40% of your maximum, some items restore it, and winning
+          refills it completely.</div>
+        <div class="more">? Open glossary →</div>
+      </div>
+    </div>
+  </div>
+  <div class="col" style="min-width:220px;flex:1 1 220px">
+    <div style="position:relative;padding-bottom:225px">
+      <div style="font-size:.65rem;color:var(--text-muted)">On an enemy's countdown badge</div>
+      <div style="max-width:200px;padding:14px 0 0 24px">
+        <div class="token foe" style="position:relative;left:0;top:0">
+          <div style="position:relative"><div class="badge">in 3 <span class="term" style="color:var(--danger);border-bottom-color:rgba(255,68,68,.7)">beats</span></div><div class="disc">🦇</div></div>
+        </div>
+      </div>
+      <div class="tip" style="left:0;top:100px;width:250px">
+        <div class="t">Resolves in N beats</div>
+        <div class="d">How long until that enemy's move actually lands — counted through <i>all</i>
+          its remaining stages, not just the one it is in. Time to block, close, or get clear.</div>
+        <div class="more">? Open glossary →</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="note">Every underlined term resolves to the same glossary entry; the tooltip is the
+  one-sentence version and the panel is the full one. One content source, two densities —
+  no second copy of the wording to drift.</p>
+</section>
+
+<!-- ============================================================ 3 -->
+<section>
+<h2>3 · The ? affordance — closed states</h2>
+<div class="row" style="align-items:center">
+  <div class="col" style="flex:0 0 auto;min-width:0">
+    <div style="display:flex;gap:26px;align-items:center;padding:14px 18px;border:1px solid var(--border-light);border-radius:6px">
+      <div style="text-align:center"><span class="qmark">?</span>
+        <div style="font-size:.6rem;color:var(--text-dim);margin-top:6px">rest</div></div>
+      <div style="text-align:center"><span class="qmark hov">?</span>
+        <div style="font-size:.6rem;color:var(--text-dim);margin-top:6px">hover</div></div>
+      <div style="text-align:center"><span class="qmark hov" style="outline:2px solid var(--secondary);outline-offset:2px">?</span>
+        <div style="font-size:.6rem;color:var(--text-dim);margin-top:6px">focus</div></div>
+      <div style="text-align:center"><span class="qmark tap">?</span>
+        <div style="font-size:.6rem;color:var(--text-dim);margin-top:6px">mobile 44px</div></div>
+    </div>
+  </div>
+  <div class="col">
+    <p class="note" style="margin-top:0">
+      18px circle on desktop; on mobile it becomes a 44px target
+      (<code>accessibility.touchTarget</code> from theme.js). Colours are
+      <code>colors.info</code> at 55% / 100% border alpha, background 8% / 22%, glow
+      <code>0 0 8px rgba(0,204,255,.5)</code> on hover — the same border/glow ratio the category
+      chips use. Focus ring is amber so it reads against the cyan. <code>aria-label="Combat glossary"</code>,
+      opens on click/Enter/Space, and <code>?</code> anywhere in combat is the keyboard shortcut.
+    </p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ 4 -->
+<section>
+<h2>4 · Glossary panel — open</h2>
+<p class="caption">Centred overlay, same shell as CombatMovePanel (2px bright border, radius 8px, <code>bg.panelDeep</code>)</p>
+
+<div class="overlay">
+  <div class="glossary">
+    <div class="gl-head">
+      <h4>COMBAT GLOSSARY</h4>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="gl-search">
+      <span>⌕</span>
+      <input value="" placeholder="Filter terms…" readonly>
+    </div>
+
+    <div class="gl-tabs">
+      <span class="tab all">All</span>
+      <span class="tab time">Time</span>
+      <span class="tab moves">Moves</span>
+      <span class="tab res">Resources</span>
+      <span class="tab pos">Position</span>
+      <span class="tab dmg">Damage</span>
+      <span class="tab eff">Effects</span>
+    </div>
+
+    <div class="gl-list">
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--accent)">Beat</span>
+          <span class="cat c-time">Time</span></div>
+        <div class="body">The unit of combat time. Fights are measured in beats, not turns. On every
+          beat, each move in play advances one step, the enemies act, status effects tick down, and
+          heat drifts back toward neutral.</div>
+        <div class="tell">You'll know a beat has passed when the <b>BEAT</b> counter above the
+          battlefield ticks up. Outside combat, effects count down in <i>steps</i> — one per room you
+          walk into — instead.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--primary)">The four stages</span>
+          <span class="cat c-moves">Moves</span></div>
+        <div class="body">Every move runs through four stages, each lasting a set number of beats.<br>
+          <b style="color:var(--accent)">Prep</b> — winding up; nothing has happened yet and you can still break off.<br>
+          <b style="color:var(--primary)">Execute</b> — the move lands.<br>
+          <b style="color:var(--danger)">Recoil</b> — the backswing: the hit has landed, but you are still
+          committed and cannot act until it finishes.<br>
+          <b style="color:var(--text-muted)">Cooldown</b> — you are free to act again, but <i>this</i> move is locked out.</div>
+        <div class="tell">The four-segment bar on a move card is those stages, in that order. Its
+          length compares that move's total commitment against the heaviest move in the list.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--primary)">Cooldown</span>
+          <span class="cat c-moves">Moves</span></div>
+        <div class="body">The last of a move's four stages. Only that move is unavailable — everything
+          else stays usable, which is why the card says "Available in 5 beats" rather than stopping you
+          from acting. For a standard weapon attack the length is roughly
+          <code>3 + weapon weight − (endurance ÷ 10)</code> beats: heavier weapons cool slower, and
+          endurance shortens every cooldown you have.</div>
+        <div class="tell">Moves cooling down are stacked in the <b>COOLDOWN</b> tray on the left panel,
+          each showing the beats it still needs. Hover the tray to expand it.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--secondary)">Fatigue (FP)</span>
+          <span class="cat c-res">Resources</span></div>
+        <div class="body">The orange bar — that which pays for moves. It does <b>not</b>
+          regenerate on its own during a fight.</div>
+        <div class="tell">Endurance raises your maximum fatigue; carrying too much weight lowers it.
+          "Jean recovered 60 FP!" in the log is fatigue points.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--secondary)">Heat</span>
+          <span class="cat c-res">Resources</span></div>
+        <div class="body">A multiplier on every point of damage Jean deals — shown as
+          <code>1.62×</code>. Landing hits, parrying, and making enemies miss push it up; missing,
+          being parried, and taking hits pull it down. It drifts 5% back toward 1.00× every beat, so
+          it is a lease, not a bank. It never leaves the range 0.50×–10.00×, and only Jean has one.</div>
+        <div class="tell">The <b>HEAT</b> meter on the left panel names the band you are in and
+          lists exactly what raises and lowers it.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--gold)">Distance &amp; reach</span>
+          <span class="cat c-pos">Position</span></div>
+        <div class="body">The battlefield is a grid where one square is about one foot, and the
+          "18 ft" under an enemy is the straight-line distance to them. Every move has a minimum and a
+          maximum reach in feet; when nothing is inside that band &mdash; too far off, or drawn in too
+          close for a long weapon &mdash; the move greys out with a range reason such as "Enemy out of
+          range (too far)". Advancing covers roughly one to three feet per beat and withdrawing one to
+          two, depending on how much faster you are than what you are chasing.</div>
+        <div class="tell">Moves that reach further than a sword draw their range as a ring around Jean.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--danger)">Protection &amp; resistance</span>
+          <span class="cat c-dmg">Damage</span></div>
+        <div class="body">A blow's power is first scaled by the target's <b>resistance</b> to that kind
+          of damage (1.0 is neutral; lower resists more), then their <b>protection</b> is subtracted as
+          a flat amount, and heat is applied to what is left. Protection appears as "Defense" on the
+          stat panel.</div>
+        <div class="tell">A blow that never gets past protection reads as "struck … but did no damage".</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--danger)">Hit chance</span>
+          <span class="cat c-dmg">Damage</span></div>
+        <div class="body">A percentage — your accuracy (a base value plus your finesse and
+          intelligence) minus the target's finesse, adjusted for the situation. If the roll comes in
+          just under your hit chance the blow only grazes and deals half damage; the log calls that
+          "just barely hit".</div>
+        <div class="tell">Target cards preview the hit chance before you commit the beats.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--special)">Status effect vs. passive</span>
+          <span class="cat c-eff">Effects</span></div>
+        <div class="body">A <b>status effect</b> is temporary and carries a duration in beats; it ticks
+          down one per beat while you fight (one per step while you explore) and then falls off. A
+          <b>passive</b> is a permanent trait from a skill you have learned — always on, never expires.</div>
+        <div class="tell">Status effects sit in the <b>STATUS</b> column beside the hero; passives in
+          the <b>PASSIVES</b> column.</div>
+      </div>
+
+      <div class="entry">
+        <div class="hd"><span class="term-name" style="color:var(--primary)">Breaking off (abort)</span>
+          <span class="cat c-moves">Moves</span></div>
+        <div class="body">While a move is still winding up you can hold the amber control to abandon
+          it. This is not an undo: the beats already spent are gone, and you still pay the move's full
+          cooldown before you can use it again.</div>
+        <div class="tell">The control only exists while a move is in prep — that is the only window
+          in which the move has not yet happened.</div>
+      </div>
+
+    </div>
+    <div class="gl-foot">? Also opens from any underlined term · Esc to close</div>
+  </div>
+</div>
+
+<p class="note">
+  <b>Structure.</b> Each entry is <i>name → what it is → how you see it</i>. The second line
+  (amber ▸) is the part that answers the player's actual question — "how do I know a beat has passed"
+  — and it is what tooltips reuse. Terms are grouped, not alphabetised: a player who does not know
+  what a beat is cannot look it up under B.
+  <b>Filter chips</b> narrow the list; the search box filters on term name and body.
+  <b>Scroll</b> lives inside <code>.gl-list</code> only, so the header, search and chips stay pinned.
+  <b>Not modal-blocking:</b> combat is paused for input while the panel is open, so it can safely
+  cover the battlefield.
+</p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section>
+<h2>5 · Mobile</h2>
+<div class="row">
+
+  <div class="col" style="flex:0 0 300px">
+    <div class="caption">Combat tab — ? in the status strip</div>
+    <div class="phone">
+      <div class="ph-head"><span>HoV - Combat</span><span>⚙ &nbsp; Account</span></div>
+      <div class="ph-body">
+        <div class="status-strip" style="justify-content:space-between">
+          <div style="display:flex;gap:10px"><span>Beat 14</span><span class="alive">2 standing</span></div>
+          <span class="qmark tap" style="width:34px;height:34px;font-size:14px">?</span>
+        </div>
+        <div class="grid-stub" style="min-height:120px">
+          <div class="token me" style="left:16px;top:44px"><div class="disc">🧝</div></div>
+          <div class="token foe" style="left:170px;top:24px"><div class="disc">🦇</div><div class="dist">18 ft</div></div>
+        </div>
+        <div class="move-card dim" style="margin:0">
+          <div class="r1"><span class="nm" style="font-size:.75rem">Power Strike</span><span class="fp">FP 35</span></div>
+          <div class="reason">⚠ Available in 5 <span class="term">beats</span></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <button class="on"><span style="font-size:18px">🧝</span><span>COMBAT</span></button>
+        <button class="amber"><span style="font-size:18px">🗺️</span><span>BATTLEFIELD</span></button>
+      </div>
+    </div>
+    <p class="note">The <b>?</b> grows to a 34–44px target and moves to the far right of the strip.
+      The tab bar is untouched — the glossary is not a third tab.</p>
+  </div>
+
+  <div class="col" style="flex:0 0 300px">
+    <div class="caption">Tap a term → tooltip as a pinned card</div>
+    <div class="phone">
+      <div class="ph-head"><span>HoV - Combat</span><span>⚙ &nbsp; Account</span></div>
+      <div class="ph-body">
+        <div class="status-strip" style="justify-content:space-between">
+          <div style="display:flex;gap:10px"><span>Beat 14</span><span class="alive">2 standing</span></div>
+          <span class="qmark tap" style="width:34px;height:34px;font-size:14px">?</span>
+        </div>
+        <div class="grid-stub" style="min-height:120px;opacity:.35">
+          <div class="token me" style="left:16px;top:44px"><div class="disc">🧝</div></div>
+        </div>
+        <div class="tip" style="position:relative;left:0;top:0;width:100%">
+          <div class="t">Beat</div>
+          <div class="d">The unit of combat time. On every beat, each move in play advances one step,
+            the enemies act, effects tick down, and heat drifts.</div>
+          <div class="tell">You'll know one passed when the <b>BEAT</b> counter at the top ticks up.</div>
+          <div class="more">? Open glossary →</div>
+        </div>
+        <div class="move-card dim" style="margin:0">
+          <div class="reason">⚠ Available in 5
+            <span class="term" style="color:#bff2ff">beats</span></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <button class="on"><span style="font-size:18px">🧝</span><span>COMBAT</span></button>
+        <button class="amber"><span style="font-size:18px">🗺️</span><span>BATTLEFIELD</span></button>
+      </div>
+    </div>
+    <p class="note">On touch the popover does not float — it docks in flow directly under the strip so
+      a thumb cannot cover it. Tapping anywhere else, or the term again, dismisses it.</p>
+  </div>
+
+  <div class="col" style="flex:0 0 300px">
+    <div class="caption">Glossary as a full-height sheet</div>
+    <div class="phone">
+      <div class="ph-head"><span>HoV - Combat</span><span>⚙ &nbsp; Account</span></div>
+      <div class="ph-body" style="opacity:.3">
+        <div class="status-strip"><span>Beat 14</span></div>
+        <div class="grid-stub" style="min-height:120px"></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="gl-head" style="padding:6px 14px 8px">
+          <h4 style="font-size:.8rem">COMBAT GLOSSARY</h4><span class="x">✕</span>
+        </div>
+        <div class="gl-search" style="margin:8px 12px 0;padding:9px 10px">
+          <span>⌕</span><input placeholder="Filter terms…" readonly>
+        </div>
+        <div class="tabs-scroll">
+          <div class="gl-tabs" style="padding:8px 12px 2px">
+            <span class="tab all">All</span><span class="tab time">Time</span>
+            <span class="tab moves">Moves</span><span class="tab res">Resources</span>
+            <span class="tab pos">Position</span><span class="tab dmg">Damage</span>
+            <span class="tab eff">Effects</span>
+          </div>
+          <span class="cue">›</span>
+        </div>
+        <div class="gl-list" style="padding:8px 12px 10px">
+          <div class="entry">
+            <div class="hd"><span class="term-name" style="color:var(--accent);font-size:.78rem">Beat</span>
+              <span class="cat c-time">Time</span></div>
+            <div class="body" style="font-size:.7rem">The unit of combat time. On every beat, each move
+              in play advances one step, enemies act, effects tick down, and heat drifts.</div>
+            <div class="tell" style="font-size:.66rem">The <b>BEAT</b> counter above the battlefield ticks up.</div>
+          </div>
+          <div class="entry">
+            <div class="hd"><span class="term-name" style="color:var(--primary);font-size:.78rem">The four stages</span>
+              <span class="cat c-moves">Moves</span></div>
+            <div class="body" style="font-size:.7rem">Prep · Execute · Recoil · Cooldown — each lasting
+              a set number of beats.</div>
+          </div>
+          <div class="entry">
+            <div class="hd"><span class="term-name" style="color:var(--primary);font-size:.78rem">Cooldown</span>
+              <span class="cat c-moves">Moves</span></div>
+            <div class="body" style="font-size:.7rem">Only that move is locked out; everything else
+              stays usable.</div>
+          </div>
+        </div>
+        <div class="gl-foot" style="padding:8px 12px">Swipe down or ✕ to close</div>
+      </div>
+      <div class="tabbar" style="opacity:.35">
+        <button class="on"><span style="font-size:18px">🧝</span><span>COMBAT</span></button>
+        <button class="amber"><span style="font-size:18px">🗺️</span><span>BATTLEFIELD</span></button>
+      </div>
+    </div>
+    <p class="note">Sheet, not centred modal: it starts below the header, keeps the tab bar visible
+      but inert, and closes on ✕, swipe-down, or Esc/back.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ 6 -->
+<section>
+<h2>6 · Term sources — every definition is derived, not invented</h2>
+<div class="scroll">
+<table>
+<tr><th>Term</th><th>Short definition used above</th><th>Engine source</th></tr>
+
+<tr><td class="tm">Beat</td>
+<td>One tick of combat. Every move advances a step, NPCs act, states cycle, heat drifts, then the beat counter increments.</td>
+<td class="src">src/api/combat_adapter.py:1918–1959</td></tr>
+
+<tr><td class="tm">…how you see it</td>
+<td>The <code>Beat N</code> / <code>N standing</code> strip above the grid, plus the beat timeline.</td>
+<td class="src">frontend/src/components/Battlefield.jsx:230–235<br>frontend/src/components/BeatTimeline.jsx</td></tr>
+
+<tr><td class="tm">Steps</td>
+<td>The out-of-combat counterpart: world-tagged states drain one <code>steps_left</code> per move instead of per beat.</td>
+<td class="src">src/states.py:75–90</td></tr>
+
+<tr><td class="tm">Prep / Execute /<br>Recoil / Cooldown</td>
+<td>The four stages a move passes through; <code>advance()</code> drains one beat per beat and rolls the stage over at zero.</td>
+<td class="src">src/moves/_base.py:1648–1657 (process_stage), 1710–1760 (advance)<br>frontend/src/components/CombatMovePanel.jsx:27–31</td></tr>
+
+<tr><td class="tm">"Available in N beats"</td>
+<td>Move is at stage 3; N is <code>beats_left + 1</code>. Only that move is blocked.</td>
+<td class="src">src/api/combat_adapter.py:3052–3063<br>src/moves/_base.py:1744–1748 (current_move cleared at stage 3)</td></tr>
+
+<tr><td class="tm">Cooldown length</td>
+<td><code>int(3 + weapon weight) − int(endurance ÷ 10)</code>, plus the move's own modifier, floored at 0.</td>
+<td class="src">src/moves/_base.py:2063–2065</td></tr>
+
+<tr><td class="tm">Total commitment</td>
+<td>prep + execute + recoil + cooldown — the whole beat cost of choosing a move; drawn as the 4-segment bar.</td>
+<td class="src">frontend/src/components/CombatMovePanel.jsx:44–102<br>frontend/src/utils/moveCommitment.js</td></tr>
+
+<tr><td class="tm">Fatigue / FP</td>
+<td>Starts 150/150; each move's <code>fatigue_cost</code> is subtracted on execute; too little → "Not enough fatigue".</td>
+<td class="src">src/player/__init__.py:95–97<br>src/moves/_base.py:2157–2160<br>src/api/combat_adapter.py:3065–3067</td></tr>
+
+<tr><td class="tm">…no passive regen</td>
+<td>Rest restores ceil(max × 0.4 × 0.8–1.2); victory refills to max; nothing else refunds it per beat.</td>
+<td class="src">src/moves/_utility.py:878–886 (Rest)<br>src/api/combat_adapter.py:2668 (_handle_victory)</td></tr>
+
+<tr><td class="tm">…max fatigue</td>
+<td>Endurance adds +2 per point above 10; carry weight raises it 25% under half capacity, penalises overweight.</td>
+<td class="src">src/functions.py:339–343, 369–385</td></tr>
+
+<tr><td class="tm">Heat</td>
+<td>Full damage multiplier on Jean's blows; clamped 0.50×–10.00×; drifts 5% toward 1.00× each beat; Jean only.</td>
+<td class="src">src/moves/_base.py:525–600 (resolve_damage)<br>src/player/_combat.py:24–39 (change_heat)<br>src/api/combat_adapter.py:2470–2481 (_update_heat)<br>src/api/serializers/combat.py:342</td></tr>
+
+<tr><td class="tm">Distance (ft)</td>
+<td>50×50 grid, one square ≈ one foot; distance is the rounded Euclidean between two positions.</td>
+<td class="src">src/positions.py:10–22, 294–311</td></tr>
+
+<tr><td class="tm">Reach / out of range</td>
+<td>Each move carries <code>mvrange</code> (min, max) in feet. Nothing inside that band — whether every enemy is beyond <code>range_max</code> or inside <code>range_min</code> — greys the move out, with <b>one of two</b> strings: "Enemy out of range (too far)" only when <code>range_max &lt;= 5</code>, otherwise "No valid target in range".</td>
+<td class="src">src/api/combat_adapter.py:3415–3424<br>src/api/combat_adapter.py:55 (MELEE_REACH_FT = 6, ring threshold)</td></tr>
+
+<tr><td class="tm">Advance / Withdraw</td>
+<td>The two moves have <b>different</b> caps. Advance: <code>max(1, (rand(0,30) + speed − target.speed) // 10)</code>, capped at 3 ft. Withdraw: <code>max(1, (rand(0,35) + speed − threat.speed) // 20)</code>, capped at <b>2</b> ft. (BullCharge, TacticalRetreat and FlankingManeuver roll their own ranges again — there is no shared movement cap.)</td>
+<td class="src">src/moves/_movement.py:263–264 (Advance)<br>src/moves/_movement.py:428–429 (Withdraw)</td></tr>
+
+<tr><td class="tm">Protection ("Defense")</td>
+<td>Flat subtraction, applied after resistance and before heat: <code>((power × resistance) − protection) × heat × variance</code>.</td>
+<td class="src">src/moves/_base.py:525–600<br>src/api/serializers/combat.py:555–577</td></tr>
+
+<tr><td class="tm">Resistance</td>
+<td>Per-damage-type multiplier on power; 1.0 neutral.</td>
+<td class="src">src/moves/_base.py:resolve_damage → functions.combat_resistance</td></tr>
+
+<tr><td class="tm">Hit chance /<br>accuracy / evasion</td>
+<td>Integer percent. Accuracy = base + weighted finesse/intelligence; evasion = defender's finesse.</td>
+<td class="src">src/moves/_base.py (to_hit_chance / attacker_accuracy)<br>src/api/serializers/combat.py:555–573</td></tr>
+
+<tr><td class="tm">"Just barely hit"</td>
+<td>A glancing blow: the roll came within 10 points of the hit chance, so damage is halved.</td>
+<td class="src">src/moves/_base.py:378–380 (GLANCE_MARGIN), 1856–1864 (narration)</td></tr>
+
+<tr><td class="tm">Status effect</td>
+<td>Temporary; <code>beats_left</code> drains one per beat in combat (one per step in the world), then it is removed.</td>
+<td class="src">src/states.py:36–37, 75–90<br>src/api/serializers/combat.py:741–747</td></tr>
+
+<tr><td class="tm">Passive</td>
+<td>A known move flagged <code>passive</code> — permanent, never castable, no duration.</td>
+<td class="src">src/api/serializers/combat.py:599–616<br>src/moves/_base.py (PassiveMove)</td></tr>
+
+<tr><td class="tm">Resolves in N beats</td>
+<td>Beats until an in-flight move's effect lands, walked through all remaining stages — not beats left in the current stage.</td>
+<td class="src">src/moves/_base.py:1260–1290<br>frontend/src/utils/combatMoveStatus.js:33–56</td></tr>
+
+<tr><td class="tm">Break off (abort)</td>
+<td>Interrupt jumps the move straight to cooldown; the beats invested are forfeit and the full cooldown is still paid.</td>
+<td class="src">src/moves/_base.py:1710–1725<br>frontend/src/components/AbortMoveControl.jsx:130–140</td></tr>
+</table>
+</div>
+
+<h3 class="flag" style="color:var(--primary)">Confirmed by the maintainer (2026-09-05)</h3>
+<p class="note" style="border-left-color:rgba(0,255,136,.5)">
+  <b>The displayed cooldown number being one larger than the engine's stage length is intended.</b>
+  <code>cooldown_remaining = beats_left + 1</code> and <code>cooldown_max = stage_beat[3] + 1</code>
+  (<code>combat_adapter.py:3053–3058</code>), because draining to zero does not itself advance the
+  stage — the next beat does. The glossary states the player-facing number, which is the right one to
+  state; it simply is not the move's declared cooldown stage.<br><br>
+  <b>Recoil is a real, intended stage.</b> It represents the time between a hit landing and cooldown
+  starting — the weapon's backswing. The four-stages entry now says so in those terms. Worth noting
+  the UI still never names recoil outside the commitment-bar hover title, so the glossary is currently
+  the only place a player can learn the word.<br><br>
+  <b>Fatigue does not regenerate during a fight.</b> The engine never states this — an exhaustive
+  grep finds only Rest, items, a mastery skill and <code>_handle_victory</code> ever adding fatigue,
+  so it was an inferred negative rather than a written rule. Confirmed as intended, and the Fatigue
+  entry now says so outright.<br><br>
+  <b>Heat is the name, in the UI and on the wire.</b> The earlier draft called it Momentum in
+  player-facing text while the engine called it <code>heat</code>; that split is gone — everything
+  reads Heat now, so no alias entry is needed.
+</p>
+
+<h3 class="flag" style="color:var(--gold)">Still flagged — engine meaning genuinely unclear</h3>
+<p class="note" style="border-left-color:rgba(255,204,0,.5)">
+  <b>1. A beat has no in-fiction duration.</b> Nothing in the engine maps a beat to seconds or to any
+  narrative unit. Every definition above is deliberately mechanical ("the unit of combat time"); if the
+  maintainer wants a fictional gloss ("about one heartbeat"), that is a <i>writing</i> decision, not a
+  fact to be read out of the code.<br><br>
+  <b>2. Advance/Withdraw distance is a roll, not a constant.</b> "One to three feet per beat" describes
+  the clamped range of <code>max(1, (rand(0,30) + speed − target.speed) // 10)</code>; the typical value
+  depends on the speed gap. Stated as a range on purpose.
+</p>
+</section>
+
+<p style="color:var(--text-dim);font-size:.65rem;letter-spacing:.06em;border-top:1px solid var(--border-light);padding-top:14px">
+  Mockup for issue #507 · design only, no implementation · Heart of Virtue
+</p>
+
+</div>
+</body>
+</html>

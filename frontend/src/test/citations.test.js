@@ -180,8 +180,12 @@ const CITATIONS = [
     cite({
         where: 'utils/logger.js',
         about: 'api/client.js',
-        anchor: 'config.headers.Authorization = ',
-        claim: 'the interceptor is what attaches the Bearer header that leaked',
+        // Repointed when #493 deleted the request interceptor this used to
+        // anchor on. The claim survived the deletion — the leak is history,
+        // the scrubbing is not — so what it needs is the line that now carries
+        // the credential decision, not a retirement.
+        anchor: 'withCredentials: true',
+        claim: 'the credential is a cookie the browser attaches, not a header this code sets',
     }),
     cite({
         where: 'utils/logger.js',
@@ -212,7 +216,7 @@ const CITATIONS = [
     cite({
         where: 'pages/LoginPage.jsx',
         about: 'api/client.js',
-        anchor: 'apiClient.interceptors.request.use',
+        anchor: 'withCredentials: true',
         claim: 'submission goes through the shared client, not a native form post',
     }),
     cite({
@@ -237,6 +241,32 @@ const CITATIONS = [
     }),
 ]
 
+/**
+ * Citations of files this repository does not contain, and cannot.
+ *
+ * The EXISTENCE check resolves every filename-shaped token in every comment
+ * against the tree, which is exactly right for a claim about our own code and
+ * exactly wrong for a claim about a dependency's. `socketClient.js` explains
+ * why the WebSocket transport is pinned off by walking engineio's own source —
+ * the threading driver that advertises the upgrade, the WSGI shim that raises
+ * StopIteration under gunicorn, and the handler that parks the request thread.
+ * Those three files are the whole argument, and the alternative to naming them
+ * is prose that asserts the conclusion with nothing to check it against.
+ *
+ * Listed exactly, not matched by a `.py`-outside-src pattern: an exemption
+ * broad enough to cover a category would also cover the next Python citation
+ * somebody fat-fingers, and this repo's dominant defect class is precisely a
+ * reference that looks plausible and names nothing. Each entry earns its place
+ * by being an installed dependency's internals — unverifiable HERE, in the
+ * same sense `tests/_cite.py`'s `unverifiable()` means it, and countable for
+ * the same reason.
+ */
+const OUTSIDE_THE_TREE = new Set([
+    'api/socketClient.js -> engineio/async_drivers/threading.py',
+    'api/socketClient.js -> _websocket_wsgi.py',
+    'api/socketClient.js -> engineio/socket.py',
+])
+
 const SCAN = scanCitations(readCommentedFiles())
 
 describe('cross-file comment claims', () => {
@@ -250,8 +280,22 @@ describe('cross-file comment claims', () => {
     it('names no file that does not exist', () => {
         // EXISTENCE. Global, and it needs no registration, so it can never
         // fall behind the codebase the way a hand-kept list does.
-        const broken = SCAN.dangling.map((d) => `${d.where} -> ${d.spelling}`)
+        const broken = SCAN.dangling
+            .map((d) => `${d.where} -> ${d.spelling}`)
+            .filter((claim) => !OUTSIDE_THE_TREE.has(claim))
         expect(broken, broken.join('\n')).toEqual([])
+    })
+
+    it('every citation excused as external is still being made', () => {
+        // The other direction, and the reason the exemption above is a Set of
+        // exact `where -> spelling` pairs rather than a pattern: an excused
+        // citation that has since been deleted or reworded leaves a standing
+        // permission for a claim nobody makes, and the next dangling reference
+        // that happens to match it passes silently. `tests/_cite.py` keeps its
+        // `unverifiable()` set countable for the same reason.
+        const seen = new Set(SCAN.dangling.map((d) => `${d.where} -> ${d.spelling}`))
+        const stale = [...OUTSIDE_THE_TREE].filter((claim) => !seen.has(claim))
+        expect(stale, stale.join('\n')).toEqual([])
     })
 
     it('finds every registered anchor still in the file it names', () => {

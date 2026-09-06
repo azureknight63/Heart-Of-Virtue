@@ -831,6 +831,166 @@ class TestCombatAdapterContext:
 
         assert "defensive_cooldowns" in captured_ctx
 
+    def test_context_includes_fatigue_locked_moves_key(self):
+        p = self._make_player()
+        adapter = self._make_adapter(p)
+        with patch('threading.Thread') as mock_thread:
+            captured_ctx = {}
+
+            def run_sync(target, **kwargs):
+                m = MagicMock()
+                m.start = lambda: target()
+                return m
+
+            mock_thread.side_effect = run_sync
+            with patch.object(adapter.strategist, 'get_suggestions', side_effect=lambda ctx, **kw: captured_ctx.update(ctx) or []):
+                adapter.refresh_suggestions()
+
+        assert "fatigue_locked_moves" in captured_ctx
+
+
+# ---------------------------------------------------------------------------
+# Issue #504 — offense priced out by fatigue must surface Rest
+# ---------------------------------------------------------------------------
+
+class _UnavailableLLMClient:
+    """Forces CombatStrategist down its heuristic fallback path."""
+
+    def available(self):
+        return False
+
+    def generate_structured(self, system_prompt, user_prompt):  # pragma: no cover
+        raise AssertionError("LLM must not be consulted when unavailable")
+
+
+class TestOffensePricedOutEndToEnd:
+    """Real Player + real ApiCombatAdapter + real fallback strategist.
+
+    The reported bug: with a heavy weapon, fatigue can sit above the 25%-of-max
+    "fatigue critical" line while every attack still costs more than Jean has
+    left. Only Rest and zero-cost maneuvers remain castable, nothing restores
+    fatigue passively, and the advisor kept recommending Advance (80) over Rest
+    (72) forever. Only the single top-scored move is ever shown to the player,
+    so Rest was invisible and the advice looped.
+
+    ``Attack.fatigue_cost`` is recomputed from the equipped weapon on every
+    ``viable()`` call, so these tests read the engine's own number rather than
+    pinning one, and positions are placed explicitly (spawn points are
+    randomised) so move availability is deterministic.
+    """
+
+    def _capture_ctx(self, adapter):
+        """The context dict the adapter hands the strategist, built for real."""
+        captured = {}
+        with patch('threading.Thread') as mock_thread:
+            def run_sync(target, **kwargs):
+                m = MagicMock()
+                m.start = lambda: target()
+                return m
+
+            mock_thread.side_effect = run_sync
+            with patch.object(adapter.strategist, 'get_suggestions',
+                              side_effect=lambda ctx, **kw: captured.update(ctx) or []):
+                adapter.refresh_suggestions()
+        return captured
+
+    def _run(self, adapter):
+        with patch('threading.Thread') as mock_thread:
+            def run_sync(target, **kwargs):
+                m = MagicMock()
+                m.start = lambda: target()
+                return m
+
+            mock_thread.side_effect = run_sync
+            adapter.refresh_suggestions()
+        return adapter.player.suggested_moves
+
+    def _setup(self, fixtures, distance):
+        """Engage Jean (heavy weapon) and a Slime ``distance`` feet apart."""
+        from src.npc import Slime
+
+        make_player, make_npc, make_adapter, place, repair_proximity = fixtures
+        player = make_player(weapon="Bludgeon")
+        player.combat_log = []
+        player.last_move_summary = ""
+        slime = make_npc(Slime)
+        adapter = make_adapter(player, enemies=[slime])
+        place(player, 0, 0)
+        place(slime, distance, 0)
+        repair_proximity([player, slime])
+        adapter.strategist = CombatStrategist(client=_UnavailableLLMClient())
+        attack = next(m for m in player.known_moves if m.name == "Attack")
+        attack.viable()  # forces evaluate(); fatigue_cost follows the weapon
+        return adapter, attack.fatigue_cost
+
+    def test_priced_out_offense_recommends_rest(self, make_player, make_npc, make_adapter,
+                                                place, repair_proximity):
+        fixtures = (make_player, make_npc, make_adapter, place, repair_proximity)
+        adapter, attack_cost = self._setup(fixtures, distance=10)
+        player = adapter.player
+        player.fatigue = attack_cost - 1
+        # Premise of the regression: inside the dead band, i.e. NOT the
+        # "fatigue critical" case the old heuristic already handled.
+        assert player.fatigue / player.maxfatigue >= 0.25
+
+        suggestions = self._run(adapter)
+        assert suggestions, "advisor returned no suggestion"
+        assert suggestions[0]["move_name"] == "Rest"
+        assert "No attack is affordable" in suggestions[0]["reasoning"]
+
+    def test_affordable_offense_is_not_diverted_to_rest(self, make_player, make_npc, make_adapter,
+                                                        place, repair_proximity):
+        # In reach and able to pay: offense wins, Rest does not hijack it.
+        fixtures = (make_player, make_npc, make_adapter, place, repair_proximity)
+        adapter, _ = self._setup(fixtures, distance=1)
+        adapter.player.fatigue = adapter.player.maxfatigue
+
+        suggestions = self._run(adapter)
+        assert suggestions
+        assert suggestions[0]["move_name"] == "Attack"
+
+    def test_out_of_range_offense_still_recommends_advance(self, make_player, make_npc, make_adapter,
+                                                           place, repair_proximity):
+        # Offense is missing because the Slime is too far, not because Jean
+        # cannot pay for it. Advance fixes that; Rest does not.
+        fixtures = (make_player, make_npc, make_adapter, place, repair_proximity)
+        adapter, attack_cost = self._setup(fixtures, distance=10)
+        player = adapter.player
+        player.fatigue = player.maxfatigue - 40  # affordable, and Rest is viable
+        assert player.fatigue > attack_cost
+
+        suggestions = self._run(adapter)
+        assert suggestions
+        assert suggestions[0]["move_name"] == "Advance"
+
+    def test_context_reports_the_attack_jean_cannot_pay_for(self, make_player, make_npc,
+                                                            make_adapter, place, repair_proximity):
+        # The adapter side of the contract: `available_moves` is stripped of
+        # everything unavailable, so the fatigue-locked attack has to arrive on
+        # its own key or the strategist cannot tell "priced out" from "absent".
+        fixtures = (make_player, make_npc, make_adapter, place, repair_proximity)
+        adapter, attack_cost = self._setup(fixtures, distance=1)
+        adapter.player.fatigue = attack_cost - 1
+
+        ctx = self._capture_ctx(adapter)
+
+        assert not any(m.get("category") == "Offensive" for m in ctx["available_moves"])
+        locked = {m["name"]: m["fatigue_cost"] for m in ctx["fatigue_locked_moves"]}
+        assert locked.get("Attack") == attack_cost
+
+    def test_affordable_moves_are_never_reported_as_fatigue_locked(self, make_player, make_npc,
+                                                                   make_adapter, place, repair_proximity):
+        # Availability alone must not put a move on the locked list — a move
+        # blocked by cooldown or range while Jean can still pay for it would
+        # otherwise be read as evidence that offense is priced out.
+        fixtures = (make_player, make_npc, make_adapter, place, repair_proximity)
+        adapter, _ = self._setup(fixtures, distance=10)
+        player = adapter.player
+        player.fatigue = player.maxfatigue
+
+        ctx = self._capture_ctx(adapter)
+
+        assert ctx["fatigue_locked_moves"] == []
 
 # ---------------------------------------------------------------------------
 # CombatLLMAdapter — configuration must precede discovery

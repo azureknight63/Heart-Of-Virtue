@@ -316,6 +316,10 @@ class TacticalState(TypedDict):
     hp_critical: bool
     fatigue_critical: bool
     fatigue_low: bool
+    # Not derivable from the two above. Fatigue as a FRACTION of max is not the
+    # signal that matters -- whether Jean can still pay for an attack is. The
+    # two diverge for a wide band on a heavy weapon; see `_offense_priced_out`.
+    offense_priced_out: bool
     defensively_vulnerable: bool
     dot_active: bool
     dodge_impaired: bool
@@ -690,6 +694,12 @@ _SYSTEM_PROMPT = (
     "below actually applies.\n\n"
     "PRIORITIES, in order:\n"
     f"1. Fatigue < {_pct(_FATIGUE_CRITICAL_PCT)}: prefer Rest; avoid high-cost offense.\n"
+    "1b. Offense priced out: when the alerts say no attack is affordable, "
+    "'Available Moves' is showing only what Jean can still pay for — every attack "
+    "he knows costs more than he has. Rest is the only move that restores fatigue; "
+    "zero-cost maneuvers (Advance, Withdraw, Turn, Check) do not, so recommending "
+    "one leaves Jean exactly where he is next beat. Prefer Rest unless an incoming "
+    "hit must be answered this beat.\n"
     f"2. Telegraphed attack: Dodge/Parry land {_DEFENSIVE_WINDOW_BEATS} beats after "
     f"casting and then hold for {_DEFENSIVE_STANCE_BEATS} beats, counting the beat "
     "it goes up on. "
@@ -883,6 +893,12 @@ class CombatStrategist:
             # "CRITICAL" is inside "LOW": the scorer's low-fatigue branch is
             # only reached after the critical one has already returned.
             "fatigue_low": fatigue_band in ("CRITICAL", "LOW"),
+            # Read off the context rather than the vitals: this is an
+            # affordability question, and the answer lives in
+            # `fatigue_locked_moves`, which the adapter supplies alongside
+            # `available_moves` precisely because the latter has already had
+            # everything unaffordable stripped out of it.
+            "offense_priced_out": self._offense_priced_out(ctx),
             "defensively_vulnerable": _is_defensively_vulnerable(*defenses),
             # Active DoT on player accelerates urgency to end combat
             "dot_active": bool(player_status_names & _DOT_STATUSES),
@@ -976,6 +992,23 @@ class CombatStrategist:
         if state["fatigue_critical"] and name == "Rest":
             return 90, (
                 "Fatigue critically low; Rest is essential to maintain move availability."
+            )
+
+        # Issue #504: Rest was never missing from the candidate set -- it lost a
+        # scoring contest inside a dead band. Measuring fatigue pressure as a
+        # fraction of max disconnects it from what moves actually COST: with a
+        # heavy weapon (Rusted Iron Mace, maxfatigue 190, Attack 90) the two
+        # diverge across the whole 25%-47.4% band, where Attack is already
+        # unaffordable but Rest scored 72 and lost to Advance (80), Maneuver
+        # (75) and Dodge. Every move that wins there costs 0 fatigue, and
+        # nothing restores fatigue passively -- Rest and SecondWind are its only
+        # writers -- so fatigue never moved, the 25% line was never crossed, and
+        # the advice repeated forever. Only the top-scored move is shown, so an
+        # 8-point loss made Rest invisible.
+        if state["offense_priced_out"] and name == "Rest":
+            return 90, (
+                "No attack is affordable at this fatigue; Rest is the only move "
+                "that restores it -- a zero-cost maneuver leaves Jean here next beat."
             )
 
         if state["hp_critical"] and name == "UseItem":
@@ -1100,7 +1133,7 @@ class CombatStrategist:
             f"{self._ally_block(ctx.get('allies', []))}"
             f"{self._cooldown_block(ctx.get('defensive_cooldowns', {}))}"
             f"{priority_block}"
-            f"{self._alert_block(imminent_alerts, vitals)}\n"
+            f"{self._alert_block(imminent_alerts, vitals, ctx)}\n"
             f"Recent History:\n{history_str}\n"
             f"Previous Move: {ctx.get('last_move', 'None')}\n\n"
             f"Available Moves:\n{self._moves_block(ctx.get('available_moves', []))}"
@@ -1351,7 +1384,9 @@ class CombatStrategist:
         return "Defensive moves on cooldown: " + ", ".join(cd_parts) + "\n"
 
     @staticmethod
-    def _alert_block(imminent_alerts: List[str], vitals: PlayerVitals) -> str:
+    def _alert_block(
+        imminent_alerts: List[str], vitals: PlayerVitals, ctx: Dict[str, Any]
+    ) -> str:
         """Situational alerts, most immediately fatal first.
 
         A telegraphed hit leads because it is the only entry with a clock on
@@ -1371,6 +1406,25 @@ class CombatStrategist:
             == "CRITICAL"
         ):
             alerts.append("⚠ FATIGUE CRITICAL: Prefer Rest or zero-cost moves.")
+        if CombatStrategist._offense_priced_out(ctx):
+            # Separate from FATIGUE CRITICAL above, and reached at fatigue
+            # levels that clear it: unavailable moves are stripped from the
+            # prompt, so without this the model is told offense is ABSENT
+            # rather than priced out, and reaches for a zero-cost maneuver that
+            # leaves Jean exactly where he is (issue #504).
+            #
+            # A locked attack is guaranteed here, but its cost is only quoted
+            # when the context actually carried one -- a hand-built context
+            # without fatigue_cost would otherwise read "costs 0 fatigue".
+            cheapest = CombatStrategist._cheapest_locked_offense(ctx)
+            cost_note = (
+                f" (cheapest attack costs {cheapest} fatigue)" if cheapest else ""
+            )
+            alerts.append(
+                f"⚠ OFFENSE PRICED OUT: no attack is affordable at "
+                f"{vitals.fatigue} fatigue{cost_note}. Rest is the only move "
+                "that restores fatigue — zero-cost maneuvers will not."
+            )
         heat_alert = _HEAT_ALERTS.get(_heat_band(vitals.heat))
         if heat_alert:
             alerts.append(heat_alert.format(heat=vitals.heat))
@@ -1406,6 +1460,52 @@ class CombatStrategist:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _offense_priced_out(ctx: Dict[str, Any]) -> bool:
+        """True when Jean can afford no attack but fatigue is the only thing stopping him.
+
+        Nothing restores fatigue passively — Rest and Second Wind are the only
+        writers that add it — so in this state every zero-cost move on offer
+        (Advance, Withdraw, Turn, Check) leaves the situation exactly as it was
+        and the same advice repeats forever. Rest is the only move that ends
+        the loop.
+
+        The condition deliberately is *not* "no Offensive move available":
+        offense also disappears when the enemy is out of range or the move is
+        on cooldown, and there Advance (or waiting out the cooldown) is the
+        right call rather than Rest. ``fatigue_locked_moves`` — supplied by
+        ApiCombatAdapter alongside ``available_moves`` — carries the moves
+        priced out by fatigue specifically, which keeps the pure range/cooldown
+        case out of this branch entirely. Absent that key (older or hand-built
+        contexts) this is False and scoring behaves as it did before.
+
+        The mixed case — one attack out of reach but affordable, another
+        affordable only after resting — resolves to Rest by design. Advising
+        Rest there is at worst a beat spent early rather than late, and it
+        cannot loop: the moment fatigue clears the cheapest attack this returns
+        False again. Under-firing would leave the reported soft-lock in place,
+        so the tie breaks toward the move that always makes progress.
+        """
+        usable = [
+            m for m in ctx.get("available_moves", []) if m.get("available", True)
+        ]
+        if any(m.get("category") == "Offensive" for m in usable):
+            return False
+        return any(
+            m.get("category") == "Offensive"
+            for m in ctx.get("fatigue_locked_moves", [])
+        )
+
+    @staticmethod
+    def _cheapest_locked_offense(ctx: Dict[str, Any]) -> Optional[int]:
+        """Fatigue cost of the cheapest attack Jean currently cannot pay for."""
+        costs = [
+            m.get("fatigue_cost") or 0
+            for m in ctx.get("fatigue_locked_moves", [])
+            if m.get("category") == "Offensive"
+        ]
+        return min(costs) if costs else None
 
     @staticmethod
     def _format_status_effects(

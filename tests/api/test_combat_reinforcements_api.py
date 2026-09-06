@@ -7,6 +7,14 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
+
+# Wire ids are opaque handles, never id()-derived: combat target_ids since
+# #511, and the room-interaction enemy_id passed to /api/combat/start since
+# #518. Both are now the SAME handle per object (combatant_handle is an alias
+# of wire_handle), so the NPC on the tile and the enemy it becomes share one
+# identity -- only the combat payload's ally_/enemy_ prefix separates them.
+from src.combatant import wire_handle, combatant_handle  # noqa: E402
 
 
 def _post_json(client, url, payload, session_id):
@@ -84,7 +92,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
         start_response = _post_json(
             client,
             "/api/combat/start",
-            {"enemy_id": str(id(enemy))},
+            {"enemy_id": wire_handle(enemy)},
             session_id,
         )
 
@@ -110,7 +118,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
             {
                 "move_type": "move",
                 "move_id": "Advance",
-                "target_id": f"enemy_{id(enemy)}",
+                "target_id": f"enemy_{combatant_handle(enemy)}",
             },
             session_id,
         )
@@ -183,7 +191,7 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
         start_response = _post_json(
             client,
             "/api/combat/start",
-            {"enemy_id": str(id(enemy))},
+            {"enemy_id": wire_handle(enemy)},
             session_id,
         )
 
@@ -208,7 +216,7 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
         move_response = _post_json(
             client,
             "/api/combat/move",
-            {"move_type": "move", "move_id": "Attack", "target_id": f"enemy_{id(enemy)}"},
+            {"move_type": "move", "move_id": "Attack", "target_id": f"enemy_{combatant_handle(enemy)}"},
             session_id,
         )
 

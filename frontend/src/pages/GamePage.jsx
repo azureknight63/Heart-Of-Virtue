@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { AUTH_TOKEN_KEY, clearLocalSession } from '../utils/session'
 import { useEventManager } from '../hooks/useEventManager'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
@@ -24,6 +23,7 @@ import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 import { TAB_KEYS } from '../utils/mobileTabs'
+import { redirectToLogin } from '../utils/session'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -33,9 +33,26 @@ export default function GamePage() {
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combatSocketStreaming } = useCapabilities()
-  const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat(combatSocketStreaming)
   const { playBGM, playSFX, playSting, combatSpeed } = useAudio()
   const { error: showError } = useToast()
+
+  // The server answers an in-game refusal (not enough fatigue, move on
+  // cooldown, an event still open) with HTTP 200 + `success:false` and no
+  // state payload — see src/api/routes/combat.py. Nothing used to read that:
+  // the click played its pre-flight sound, no state changed, and no message
+  // appeared, so every button looked dead and the player had no way out but a
+  // refresh (issue #505). Surface it, and remember an "Event pending" refusal
+  // so the recovery poll below can go re-fetch the event the client lost.
+  const pendingEventRefusalRef = useRef(false)
+  const handleCombatActionRefused = useCallback((refusal) => {
+    if (refusal?.error === 'Event pending') pendingEventRefusalRef.current = true
+    showError(refusal?.message || refusal?.error || 'That action is not available right now.')
+  }, [showError])
+
+  const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat(
+    combatSocketStreaming,
+    { onActionRefused: handleCombatActionRefused }
+  )
   const { triggerTick } = useAutosave({
     onSaveError: () => showError('Failed to save your progress. Check your connection.')
   })
@@ -48,7 +65,6 @@ export default function GamePage() {
   combatRef.current = combat
 
   useCombatSocket({
-    sessionId: localStorage.getItem(AUTH_TOKEN_KEY),
     enabled: combatSocketStreaming && inCombat,
     // Accumulate cumulatively via a functional updater: BattlefieldGrid consumes
     // this buffer through an absolute-index cursor, and appending to `prev`
@@ -64,16 +80,16 @@ export default function GamePage() {
     onEnded: applyCombatState,
     onUpdate: applyCombatState,
     onSessionInvalid: () => {
-      // The THIRD teardown path. `utils/session.js` says its invariant is
-      // shared by "AuthContext.logout() and the axios 401 interceptor" -- and
-      // there were three, this one carrying its own hand-written key list.
-      // The lists happened to agree, so nothing leaked; the failure mode the
-      // module was written to prevent is a fourth session-scoped key updating
-      // two paths out of three, and the one it misses stranding a credential
-      // or handing the prior account's identifier to the next user.
-      clearLocalSession()
-      const baseUrl = import.meta.env.BASE_URL || '/'
-      window.location.href = `${baseUrl}login`
+      // The THIRD teardown path -- `utils/session.js` names only two, its
+      // own words being "AuthContext.logout() and the axios 401 interceptor",
+      // and this one carried a hand-written key list besides. The lists
+      // happened to agree, so nothing leaked; the failure the module exists to
+      // prevent is a fourth session-scoped key updating two paths out of
+      // three, and the one it misses stranding a credential or handing the
+      // prior account's identifier to the next user. Master added
+      // `redirectToLogin` -- clearLocalSession plus the BASE_URL redirect, in
+      // one place -- which is exactly the helper this comment was asking for.
+      redirectToLogin()
     },
     fetchStatus: fetchCombatStatus,
   })
@@ -210,6 +226,31 @@ export default function GamePage() {
   }, [location, setExploredTiles])
 
   /**
+   * Did this page load land in the middle of a fight?
+   *
+   * Combat progress lives on the server; the client's view of what it has
+   * already shown the player does not survive a refresh. LeftPanel has always
+   * detected this for itself and replayed the log text instantly and silently
+   * (isPageReloadRecovery), but the battlefield had no equivalent: a fresh mount
+   * looked like a brand-new fight, so it re-animated and re-sounded every blow of
+   * the fight so far as the log caught up (issue #508). Decided once per page
+   * load, from the first combat payload we see: any non-`system` log entry means
+   * blows have already been traded. Cleared when the fight ends so the next
+   * fight in the same session mounts the battlefield with a clean slate.
+   */
+  const [isCombatReloadRecovery, setIsCombatReloadRecovery] = useState(false)
+  const reloadRecoveryDecidedRef = useRef(false)
+  useEffect(() => {
+    if (!inCombat) {
+      setIsCombatReloadRecovery(false)
+      return
+    }
+    if (reloadRecoveryDecidedRef.current || !combat) return
+    reloadRecoveryDecidedRef.current = true
+    setIsCombatReloadRecovery((combat.log || []).some(entry => entry.type !== 'system'))
+  }, [inCombat, combat])
+
+  /**
    * Synchronize mode with combat state
    */
   useEffect(() => {
@@ -236,20 +277,42 @@ export default function GamePage() {
   }, [isMobile, combat?.awaiting_input, combat?.log?.length, combat?.end_state, isEventDialogActive])
 
   /**
-   * Poll for combat status when suggestions are loading (fallback for missing socket events)
+   * Re-sync combat status while a fight is live.
+   *
+   * Combat state used to be push-only: it changed when the player acted or a
+   * socket beat arrived, and nothing ever asked the server "what do you think
+   * the state is?". Any desync was therefore permanent, and the only escape a
+   * page refresh (issues #505/#508). GameService.get_combat_status already
+   * carries a self-heal for exactly this class of desync — in_combat with no
+   * awaiting_input and no blocking event resets the adapter to move_selection
+   * — but with the poll gated on `suggestions_loading` it was unreachable in
+   * ordinary play. Polling whenever we are in combat makes it reachable.
+   *
+   * Two cadences, deliberately: suggestions are a short-lived async fetch the
+   * player is actively waiting on, so that keeps the 3s tick; the rest of the
+   * fight only needs a slow safety net, and putting a whole fight on a 3s poll
+   * would multiply request volume for no gain.
    */
   useEffect(() => {
-    let pollInterval
-    if (inCombat && combat?.suggestions_loading) {
-      const pollIntervalMs = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 50 : 3000
-      pollInterval = setInterval(() => {
-        fetchCombatStatus()
-      }, pollIntervalMs) // Poll every 3 seconds (50ms in tests)
-    }
-    return () => {
-      if (pollInterval) clearInterval(pollInterval)
-    }
-  }, [inCombat, combat?.suggestions_loading, fetchCombatStatus])
+    if (!inCombat) return undefined
+    const isTestEnv = typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)
+    const awaitingSuggestions = !!combat?.suggestions_loading
+    const pollIntervalMs = isTestEnv
+      ? (awaitingSuggestions ? 50 : 100)
+      : (awaitingSuggestions ? 3000 : 8000)
+    const pollInterval = setInterval(() => {
+      fetchCombatStatus()
+      // A move refused with "Event pending" means the server is still holding
+      // an event the client no longer has (useEventManager's processedEventIds
+      // dedup can drop it, and the server keeps it forever). Re-fetch it so the
+      // dialog can be answered instead of blocking combat for good.
+      if (pendingEventRefusalRef.current) {
+        pendingEventRefusalRef.current = false
+        checkPendingEvents()
+      }
+    }, pollIntervalMs)
+    return () => clearInterval(pollInterval)
+  }, [inCombat, combat?.suggestions_loading, fetchCombatStatus, checkPendingEvents])
 
   /**
    * Handle events triggered from combat
@@ -347,10 +410,23 @@ export default function GamePage() {
    */
   useEffect(() => {
     if (inCombat) {
-      // Only show the "Enemy Encounter" dialog if we aren't currently showing a story event
-      if (!combatDialogShown && eventQueue.length === 0 && !currentEvent && !showVictoryDialog && !showDefeatDialog) {
-        const logEntries = combat?.log || []
+      // A fight already in progress must never be re-introduced. `combatDialogShown`
+      // is client-only state, so a page refresh mid-combat lost it and this effect
+      // re-synthesized the opening dialog out of EVERY `system` log line of the whole
+      // fight — per-enemy "glares sharply" alerts, "Victory! Gained exp", ally
+      // level-ups, "breaks off" — announcing enemies that had been dead for ten
+      // rounds and are (correctly) absent from `battle_state.enemies` and the
+      // battlefield (issue #508). Any non-`system` entry means blows have already
+      // been traded, so the encounter is old news: treat the introduction as done
+      // and drop straight into combat mode.
+      const logEntries = combat?.log || []
+      const fightAlreadyUnderway = logEntries.some(entry => entry.type !== 'system')
 
+      // Only show the "Enemy Encounter" dialog if we aren't currently showing a story event
+      if (!combatDialogShown && fightAlreadyUnderway) {
+        setCombatDialogShown(true)
+        setMode('combat')
+      } else if (!combatDialogShown && eventQueue.length === 0 && !currentEvent && !showVictoryDialog && !showDefeatDialog) {
         const alertMessages = logEntries
           .filter(entry => entry.type === 'system')
           .map(e => e.message)
@@ -380,8 +456,10 @@ export default function GamePage() {
       setCombatDialogShown(false)
       // Handle combat end state
       const maybeEnd = combat?.end_state
-      const combatLogLength = combat?.log?.length || 0
-      const hasPendingLogs = combatLogLength > displayedLogCount
+      // The end-of-combat gate lives in useCombatCoordinator, which compares
+      // the DEDUPED log count (utils/combatLogKey) against LeftPanel's reveal
+      // count. This effect used to carry its own copy of that comparison;
+      // nothing here ever read it, so it was deleted rather than kept in sync.
 
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
@@ -655,6 +733,7 @@ export default function GamePage() {
           showDescription={isMobile}
           onDescriptionInteract={isMobile ? () => setActiveMobileTab(TAB_KEYS.left) : undefined}
           onAnimatingChange={setIsBattlefieldAnimating}
+          isReloadRecovery={isCombatReloadRecovery}
           streaming={combatSocketStreaming}
           streamedAnimations={streamedAnimations}
           combatSpeed={combatSpeed}

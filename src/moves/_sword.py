@@ -9,11 +9,17 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
+    weapon_scaled_power,
+    apply_facing_damage,
+    hostiles_in_arc,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
     to_hit_chance,
+    resolve_damage,
 )  # noqa: F401
 
 
@@ -76,12 +82,18 @@ class PommelStrike(Move):
             self.power = 0
             self.fatigue_cost = 10
             return
+        # base_power MUST be a literal, never ``self.power``.  ``advance()``
+        # calls ``evaluate()`` on every beat for every known move, and
+        # ``standard_evaluate_attack`` computes
+        # ``weapon.damage + base_power + str*str_mod + fin*fin_mod``.  Feeding
+        # the previous result back in as ``base_power`` made the move's power
+        # compound without bound (51 -> 102 -> 153 -> ... on a Longsword).
         evaluation = self.standard_evaluate_attack(
-            self.power,
-            self.base_damage_type,
+            base_power=-10,
+            base_damage_type=self.base_damage_type,
             mod_prep=(-1 * (self.user.eq_weapon.weight * 3)),
-            mod_fatigue=-5,
-            floor_fatigue=12,
+            mod_fatigue=-35,
+            floor_fatigue=10,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -103,11 +115,14 @@ class WhirlAttack(Move):
 
     def __init__(self, user):
         description = "Spin to attack all nearby enemies."
+        # Area chip: a short 7-beat cycle with a 2-beat spin, deliberately the
+        # cheapest sustained option in the roster. Single-target throughput is
+        # poor by design (~0.40x a full swing); it only pays against 2+ enemies.
         prep = 1
-        execute = 3
+        execute = 2
         recoil = 1
         cooldown = 3
-        fatigue_cost = 60
+        fatigue_cost = 45
         target = user  # Self-targeted, affects multiple enemies
         super().__init__(
             name="Whirl Attack",
@@ -149,24 +164,35 @@ class WhirlAttack(Move):
                         return True
         return False
 
+    #: Fraction of a full weapon swing each enemy in the spin takes. The
+    #: lowest area factor in the roster — Whirl Attack hits a full 360 degrees
+    #: with no arc restriction, so it trades per-target damage for coverage.
+    AREA_POWER_FACTOR = 0.40
+
     def evaluate(self):
         """Adjusts move power based on weapon and stats."""
-        try:
-            if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
-                wpn = self.user.eq_weapon
-                if hasattr(wpn, "base_damage_type"):
-                    self.base_damage_type = wpn.base_damage_type
-                if hasattr(wpn, "damage"):
-                    # Whirl Attack does reduced damage compared to single-target attacks
-                    self.power = max(
-                        1, (int(wpn.damage) * 0.6) + (self.user.strength * 0.3)
-                    )
-                else:
-                    self.power = self.user.strength * 0.5
-            else:
-                self.power = self.user.strength * 0.5
-        except (TypeError, AttributeError):
-            self.power = self.user.strength * 0.5
+        wpn = getattr(self.user, "eq_weapon", None)
+        if wpn is not None and hasattr(wpn, "base_damage_type"):
+            self.base_damage_type = wpn.base_damage_type
+        self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)
+
+    def preview_affected(self):
+        """Everything ``execute``'s loop below would swing at: a full circle
+        (no arc gate) out to ``mvrange[1]``, and — unlike the cone swings — it
+        skips any enemy without ``combat_position`` outright rather than
+        falling back to ``combat_proximity`` distance.
+        """
+        return hostiles_in_arc(self, self.preview_reach(), require_position=True)
+
+    def preview_damage(self, target=None, affected=None):
+        """Each enemy in the spin takes the canonical damage expression on
+        ``self.power`` — ``execute`` scores the same line the standard pipeline
+        does, per enemy. Only *who* it lands on differs, and that is
+        ``preview_affected`` above. ``affected`` is a server-computed
+        ``preview_affected()`` result the adapter passes back in — see
+        ``Move._area_preview_damage``.
+        """
+        return self._area_preview_damage(target, affected=affected)
 
     def prep(self, user):
         """Prep stage - announce the spin."""
@@ -189,44 +215,41 @@ class WhirlAttack(Move):
 
         # Find all enemies in range
         try:
-            for enemy in list(self.user.combat_proximity.keys()):
-                if not enemy.is_alive():
-                    continue
+            # Exactly the set the preview prices: preview_affected() states
+            # the spin's gate once (require_position and all -- see
+            # hostiles_in_arc's docstring, which also carries the
+            # friendly-fire rationale: the gate is where "hostiles only"
+            # lives), so the spin and its preview cannot disagree.
+            for enemy in self.preview_affected():
+                # Route damage through the shared pipeline (issue #402):
+                # resistances, heat scaling, and self.hit()/parry() bookkeeping.
+                self.target = enemy
+                self.prep_colors()
+                # Facing/angle damage (#394) - see apply_facing_damage.
+                # Scored per enemy: a spin hits each one from a different
+                # angle, so a single hoisted multiplier would be wrong for
+                # every target but one.
+                power = apply_facing_damage(self.user, enemy, self.power)
+                damage = resolve_damage(self.user, enemy, power, base_damage_type)
 
-                if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
-                    dist = positions.distance_from_coords(
-                        self.user.combat_position, enemy.combat_position
-                    )
-                    if dist <= self.mvrange[1]:
-                        # Route damage through the shared pipeline (issue #402):
-                        # resistances, heat scaling, and self.hit()/parry() bookkeeping.
-                        self.target = enemy
-                        self.prep_colors()
-                        damage = (
-                            (
-                                (self.power * functions.combat_resistance(enemy, base_damage_type))
-                                - enemy.protection
-                            )
-                            * self.user.heat
-                        ) * random.uniform(0.8, 1.2)
-                        damage = max(0, damage)
+                hit_chance = to_hit_chance(self.user, enemy, base=85)
+                # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+                hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
+                roll = random.randint(0, 100)
+                damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
-                        hit_chance = to_hit_chance(self.user, enemy, base=85)
-                        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-                        hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
-                        roll = random.randint(0, 100)
-                        glance = False
-                        if hit_chance >= roll and hit_chance - roll < 10:
-                            damage /= 2
-                            glance = True
-                        damage = int(damage)
-
-                        if hit_chance >= roll:
-                            if functions.check_parry(enemy):
-                                self.parry()
-                            else:
-                                self.hit(damage, glance)
-                                self.affected_enemies.append(enemy)
+                if hit_chance >= roll:
+                    if functions.check_parry(enemy):
+                        self.parry()
+                    else:
+                        self.hit(damage, glance)
+                        self.affected_enemies.append(enemy)
+                else:
+                    # Every enemy the spin reaches gets an outcome, the whiffed
+                    # ones included. Without this the swing passed through an
+                    # enemy in silence and the client could not tell a miss
+                    # from a target out of range.
+                    self.miss()
         finally:
             # Restore the original target even if a hit() raises mid-loop, so the
             # facing/fatigue stages below don't act on a stale loop enemy.
@@ -255,11 +278,17 @@ class VertigoSpin(Move):
 
     def __init__(self, user):
         description = "Spin attack that disorients the target."
+        # Utility-first. The damage is deliberately about half a full swing:
+        # the reason to press this is Disoriented plus the random re-facing it
+        # forces on the target, which hands every subsequent attack in the
+        # fight a flank or rear angle on the shared facing curve.
         prep = 1
-        execute = 3
-        recoil = 1
-        cooldown = 4
-        fatigue_cost = 80
+        execute = 2
+        recoil = 2
+        cooldown = 3
+        # Cheaper than every same-length attack it competes with, so the low
+        # damage buys something concrete rather than just being a worse strike.
+        fatigue_cost = 42
         target = user  # Will be set when move is selected
         super().__init__(
             name="Vertigo Spin",
@@ -300,21 +329,17 @@ class VertigoSpin(Move):
 
         return False
 
+    #: Fraction of a full weapon swing this deals. Above the pure area moves
+    #: (it is single-target) but well below a real attack — the status is the
+    #: payload, not the damage.
+    POWER_FACTOR = 0.55
+
     def evaluate(self):
         """Adjusts move power based on weapon and stats."""
-        try:
-            if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
-                wpn = self.user.eq_weapon
-                if hasattr(wpn, "base_damage_type"):
-                    self.base_damage_type = wpn.base_damage_type
-                if hasattr(wpn, "damage"):
-                    self.power = (int(wpn.damage) * 0.9) + (self.user.strength * 0.25)
-                else:
-                    self.power = self.user.strength * 0.6
-            else:
-                self.power = self.user.strength * 0.6
-        except (TypeError, AttributeError):
-            self.power = self.user.strength * 0.6
+        wpn = getattr(self.user, "eq_weapon", None)
+        if wpn is not None and hasattr(wpn, "base_damage_type"):
+            self.base_damage_type = wpn.base_damage_type
+        self.power = weapon_scaled_power(self.user, self.POWER_FACTOR)
 
     def prep(self, user):
         """Prep stage - announce the spin."""
@@ -348,23 +373,14 @@ class VertigoSpin(Move):
         # heat scaling, and self.hit()/miss()/parry() bookkeeping (which also
         # awards combat exp for the wielder).
         base_damage_type = getattr(self, "base_damage_type", "slashing")
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, base_damage_type))
-                - self.target.protection
-            )
-            * self.user.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(self.user, self.target, power, base_damage_type)
 
         preview = self.preview_hit_chance(self.target)
         hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
-        glance = False
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
             _ensure_weapon_exp(self.user)
@@ -405,7 +421,14 @@ class VertigoSpin(Move):
 
 
 class Thrust(Move):
-    """Fast piercing attack. Slightly lower power than Slash but quicker.
+    """The roster's chip attack: ~40% of a full swing on a five-beat cycle.
+
+    Deliberately the *worst* damage-per-beat of any sword or spear strike and
+    by far the best damage-per-fatigue. It exists to fill a gap the basic
+    Attack cannot: a complete attack cycle short enough to land inside a
+    narrow opening, at a quarter of the fatigue, so an exhausted fighter still
+    has an offensive option. Pressing it repeatedly is slower than pressing
+    Attack — that is the trade, and it is what keeps Attack relevant.
 
     Viable for Sword and Spear. Each weapon's natural stats (weight, damage,
     range) differentiate their feel: a lighter sword thrusts quicker; a spear
@@ -418,7 +441,8 @@ class Thrust(Move):
     def __init__(self, user):
         description = (
             "Drive the point of your weapon forward in a fast, direct thrust. "
-            "Less power than a full slash but quicker to execute."
+            "A fraction of a full swing's power, but it costs almost nothing "
+            "and is over in a heartbeat."
         )
         prep = 1
         execute = 1
@@ -457,12 +481,19 @@ class Thrust(Move):
             self.stage_beat = [1, 1, 1, 0]
             self.fatigue_cost = 10
             return
+        # Chip archetype. Power is a *percentage* of the full swing so the
+        # 40% ratio holds on every weapon rather than only on flat-damage
+        # ones; the timing mods drive prep/recoil/cooldown to their floors so
+        # the whole cycle is ~5 beats regardless of weapon weight.
         evaluation = self.standard_evaluate_attack(
-            base_power=-5,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="40%",
             mod_prep=-10,
-            mod_fatigue=-30,
-            floor_fatigue=8,
+            mod_recoil=-1,
+            mod_cd=-3,
+            mod_fatigue=-70,
+            floor_fatigue=12,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -483,8 +514,10 @@ class Thrust(Move):
 class DisarmingSlash(Move):
     """Calculated slash that rattles the target, applying Disoriented on hit.
 
-    Trades raw damage for a persistent status debuff that reduces the
-    target's defensive bonuses.
+    Utility-first: 60% of a full swing on a compressed eight-beat cycle. Its
+    damage-per-beat is deliberately well under the basic Attack's — the
+    Disoriented state is what you are buying, and the short cycle is what lets
+    you buy it early in an exchange instead of committing to a full swing.
     """
     display_name = 'Disarming Slash'
 
@@ -498,7 +531,7 @@ class DisarmingSlash(Move):
         prep = 1
         execute = 1
         recoil = 2
-        cooldown = 4
+        cooldown = 3
         super().__init__(
             name="Disarming Slash",
             description=description,
@@ -529,13 +562,18 @@ class DisarmingSlash(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 1, 2, 4]
+            self.stage_beat = [1, 1, 2, 3]
             self.fatigue_cost = 10
             return
+        # Debuff opener: short prep and cooldown so it can be thrown early,
+        # paid for with 60% power — the Disoriented state is the payload.
         evaluation = self.standard_evaluate_attack(
-            base_power=-8,
+            base_power=0,
             base_damage_type="slashing",
-            mod_fatigue=5,
+            mod_power="60%",
+            mod_prep=-2,
+            mod_cd=-2,
+            mod_fatigue=-45,
             floor_fatigue=15,
         )
         self.power = evaluation[0]
@@ -547,7 +585,6 @@ class DisarmingSlash(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -569,18 +606,10 @@ class DisarmingSlash(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
@@ -616,8 +645,19 @@ class DisarmingSlash(Move):
 class Riposte(Move):
     """Counterattack delivered while still in guard — usable only while Parrying.
 
-    The heat boost from still being in guard amplifies the strike's damage.
-    Near-instant prep (guard is already up); short recoil.
+    The roster's high-risk, high-tempo option. Prep is genuinely **zero** —
+    the guard is already up — which makes it the only attack in the game that
+    resolves without a telegraph, and gives it by far the best
+    damage-per-beat. The risk is entirely up front: reaching it costs a beat
+    spent on Parry that does no damage at all, and it evaporates the moment
+    the Parrying state does, so it only pays on a correct read of the
+    opponent's timing.
+
+    ``__init__`` has always declared ``prep = 0``, but ``evaluate()`` used to
+    overwrite the whole ``stage_beat`` from ``standard_evaluate_attack`` —
+    whose prep is weapon-weight derived — so the documented near-instant
+    counter actually wound up on a 4-beat wind-up, slower than a Thrust. The
+    prep is now re-forced to 0 after the standard evaluation.
     """
     display_name = 'Riposte'
 
@@ -679,11 +719,18 @@ class Riposte(Move):
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=10,
+            base_power=0,
             base_damage_type="slashing",
-            mod_fatigue=-10,
+            mod_power="85%",
+            mod_cd=-2,
+            mod_fatigue=-25,
             floor_fatigue=12,
         )
+        # Zero prep is the whole identity of the move (see the class
+        # docstring). ``standard_evaluate_attack`` cannot express it — its prep
+        # is floored at 1 — so re-force it here. Assigning a literal, never a
+        # value derived from the move's own state, keeps evaluate() idempotent.
+        self.stage_beat[0] = 0
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name
@@ -692,7 +739,6 @@ class Riposte(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -719,34 +765,20 @@ class Riposte(Move):
         old_heat = player.heat
         player.heat = min(10.0, player.heat * 1.3)
         try:
-            damage = (
-                (
-                    (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                    - self.target.protection
-                )
-                * player.heat
-            ) * random.uniform(0.8, 1.2)
+            # Facing/angle damage (#394) - see apply_facing_damage.
+            power = apply_facing_damage(self.user, self.target, self.power)
+            damage = resolve_damage(player, self.target, power, self.base_damage_type)
         finally:
             player.heat = old_heat
 
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 8
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:

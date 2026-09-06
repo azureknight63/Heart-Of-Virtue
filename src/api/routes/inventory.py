@@ -24,6 +24,8 @@ from src.api.serializers.inventory import (
 )
 from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.utils.inventory import get_inventory_list
+from src.api.serializers.combat import ALLY_ID_PREFIX
+from src.combatant import find_by_handle, index_by_handle
 
 # Create blueprint
 inventory_bp = Blueprint("inventory", __name__)
@@ -37,7 +39,9 @@ def get_item_and_index(player, item_id=None, item_index=None):
 
     Args:
         player: Player object
-        item_id: String ID of the item (Python id())
+        item_id: The item's opaque wire handle — the ``id`` the inventory and
+            room serializers emit (``src.combatant.wire_handle``), not a Python
+            ``id()`` (issue #518)
         item_index: Numeric index in inventory
 
     Returns:
@@ -45,12 +49,13 @@ def get_item_and_index(player, item_id=None, item_index=None):
     """
     inventory_list = get_inventory_list(player)
 
-    # Try finding by ID first
+    # Try finding by ID first. index_by_handle rather than find_by_handle
+    # because this caller needs the row number too — recovering it afterwards
+    # with list.index() would compare by equality rather than identity, fine
+    # today (no Item defines __eq__) but a silent way to return the wrong row
+    # for a stacked duplicate the day one does.
     if item_id:
-        for idx, item in enumerate(inventory_list):
-            if str(id(item)) == item_id:
-                return item, idx
-        return None, None
+        return index_by_handle(inventory_list, item_id)
 
     # Fall back to index
     if item_index is not None:
@@ -64,17 +69,25 @@ def get_item_and_index(player, item_id=None, item_index=None):
 def _resolve_ally_target(player, target_id: str):
     """Resolve a target_id string to an NPC ally object.
 
-    Accepts IDs in the form "ally_<python-id>" as produced by the party_members
-    serializer and the combat serializer.  Returns None if not found.
+    Accepts IDs in the form "ally_<handle>" as produced by the party_members
+    serializer and the combat serializer — i.e. by
+    ``CombatantSerializer.stream_id``, whose suffix is the combatant's stable
+    handle rather than a Python ``id()`` (issue #511).  Returns None if not
+    found.
+
+    The prefix comes from ``ALLY_ID_PREFIX`` beside the minter rather than a
+    literal spelled here, so this parser cannot drift from it (issue #518
+    scrub). Only the ALLY prefix is stripped — deliberately, not for want of a
+    general ``strip_combatant_prefix``: an ``enemy_``-prefixed id must fall
+    through unstripped and resolve to nobody, or an enemy's wire id would name
+    an ally (the M2 fix, pinned by
+    ``tests/combat/test_ally_healing.py::test_resolve_ally_target_enemy_prefix_not_stripped``).
     """
-    if target_id.startswith("ally_"):
-        target_id = target_id[len("ally_"):]
-    raw_id = target_id
+    if target_id.startswith(ALLY_ID_PREFIX):
+        target_id = target_id[len(ALLY_ID_PREFIX):]
     # Skip index 0 (the player) — allies start at index 1
-    for ally in getattr(player, "combat_list_allies", [])[1:]:
-        if str(id(ally)) == raw_id:
-            return ally
-    return None
+    allies = list(getattr(player, "combat_list_allies", []))[1:]
+    return find_by_handle(allies, target_id)
 
 
 @inventory_bp.route("/inventory", methods=["GET"])
@@ -308,7 +321,7 @@ def use_item():
     JSON body:
         item_id: Unique ID of the item (preferred)
         item_index: Item index in inventory (fallback)
-        target_id: Optional ally ID (e.g. "ally_<python-id>"). When provided
+        target_id: Optional ally ID (e.g. "ally_<handle>"). When provided
                    the item's effect is applied to that ally instead of self.
                    In combat the target must be within 5 ft.
 

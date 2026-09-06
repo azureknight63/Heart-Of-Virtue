@@ -3,12 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import FeedbackDialog from './FeedbackDialog';
 import { feedback as feedbackApi } from '../api/endpoints';
 import { colors } from '../styles/theme';
-
-/** jsdom serialises inline style colours as rgb(), so compare in that space. */
-const hexToRgb = (hex) => {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
-};
+import { hexToRgb } from '../test/hexToRgb';
 
 // FeedbackDialog uses useToast internally
 const mockToastSuccess = vi.fn();

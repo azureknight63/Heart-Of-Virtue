@@ -1,18 +1,23 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
-import { colors, spacing, shadows, fonts } from '../styles/theme';
+import { colors, spacing } from '../styles/theme';
 import GameText from './GameText';
-import { useAudio } from '../context/AudioContext';
-import { getAnimationConfig, impactSfxFor } from '../utils/animationConfigs';
+import { strikeFlashFor } from '../utils/animationConfigs';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
-import { beatSfxFor } from '../utils/combatSfx';
-import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
-import { SFX_DURATIONS } from '../utils/sfxDurations';
 import { lookupOr } from '../utils/lookup';
 import useDoubleRaf from '../hooks/useDoubleRaf';
+import useBattlefieldAnimations, {
+  // Re-exported below so existing import sites (and their tests) keep resolving
+  // these pure helpers through BattlefieldGrid, where they used to live.
+  revealedLogEntries,
+  takeAnimationBatch,
+  removeBatchByIdentity,
+} from '../hooks/useBattlefieldAnimations';
 import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
 import { isLiving } from '../utils/combatEntities';
+
+export { revealedLogEntries, takeAnimationBatch, removeBatchByIdentity };
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -61,10 +66,6 @@ const FIT_PADDING = 2;
 // current frame stops working (see fitBox below), so the map does not visibly
 // rescale every single beat as combatants shuffle a cell.
 const FIT_STEP = 4;
-// Ceiling on queued animations. Draining is ~1-2/sec (phase totals are
-// 500-1050ms), so a faster beat stream accumulates without this.
-const MAX_ANIMATION_QUEUE = 200;
-
 /**
  * Normalize the `zoom` prop onto a named view mode. The legacy encoding
  * (`1` = follow, `'full'` = fit) is still accepted so callers and existing
@@ -99,6 +100,133 @@ const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 /** Phase duration lookup on a config; falls back when the phase is unknown. */
 const phaseDurationOf = (config, phaseName, fallback = 200) =>
   config?.phases?.find((p) => p.name === phaseName)?.duration ?? fallback;
+
+/** Stable empty default for `animationStates`: a token that is in no animation
+ *  would otherwise hand React.memo a fresh array identity on every render and
+ *  re-render the whole roster — and each layer ticks its own phase, so that
+ *  churn is multiplied by layers x phases per swing. */
+const NO_ANIMATION_STATES = Object.freeze([]);
+
+/**
+ * Every animation state one entity is involved in on this frame, as
+ * `{ anim, isSource, isTarget }` — all animation fields are read through
+ * `anim` (one access path; the record used to also mirror phase/outcome/config
+ * at the top level and consumers mixed the two).
+ *
+ * Animations play CONCURRENTLY (one move resolves once per target and each
+ * resolution animates in full — see playAnimations), so an entity can be the
+ * source of one layer while being the target of another, or the target of
+ * several landings at once. This used to pick a single match with an if/else
+ * chain over one active animation; with N in flight, picking one silently drops
+ * the rest and a target hit twice in one swing flashes once.
+ *
+ * A layer that has not started its own phase clock yet (`phase == null` — it is
+ * in the active set but still inside its stagger) contributes nothing, so
+ * queued layers render as if absent. Source still wins over target *within one
+ * animation*: a self-targeted move must not fight its own strike flash.
+ */
+export const collectAnimationStates = (activeAnimations, entityId) => {
+  const states = [];
+  if (entityId == null) return NO_ANIMATION_STATES;
+  for (const anim of activeAnimations || []) {
+    if (!anim?.phase) continue;
+    if (anim.source_id === entityId) {
+      states.push({ anim, isSource: true, isTarget: false });
+    } else if (anim.target_id === entityId) {
+      states.push({ anim, isSource: false, isTarget: true });
+    }
+  }
+  return states.length ? states : NO_ANIMATION_STATES;
+};
+
+/**
+ * Fold the styles of an entity's concurrent animation states into one.
+ *
+ * Later states win on conflicting properties, EXCEPT `transform`, which is
+ * composed: a token scaling as a source while skidding as a glance target needs
+ * both, and a plain spread would silently drop the earlier one — the same
+ * quiet-failure shape as this file's documented drift bugs. `undefined` values
+ * are skipped so an absent property in a later state can't blank an earlier
+ * one (strikeFlashFor and the source-phase styles both emit `undefined` keys).
+ *
+ * Byte-identical transform strings are applied ONCE: transforms multiply, so
+ * two overlapping landings on one token would otherwise square the glance
+ * skid (`translate(8%,-8%) scale(0.94)`, twice) — the same compounding bug the
+ * lead gate in animationStyleFor closes on the source side.
+ */
+export const mergeAnimationStyles = (styles) => {
+  const merged = {};
+  const transforms = [];
+  for (const style of styles || []) {
+    for (const key of Object.keys(style || {})) {
+      const value = style[key];
+      if (value === undefined) continue;
+      if (key === 'transform') {
+        if (!transforms.includes(value)) transforms.push(value);
+        continue;
+      }
+      merged[key] = value;
+    }
+  }
+  if (transforms.length) merged.transform = transforms.join(' ');
+  return merged;
+};
+
+/**
+ * Marker styling for ONE animation state: source phases read scale/glow from
+ * the animation config; the target gets an outcome flash (or a fixed glow for
+ * buff/debuff-style effects) during the config's impact phase.
+ *
+ * Source styling belongs to the LEAD layer alone, like the token's motion and
+ * the swing's non-impact cues: one swing is one movement of the caster, and
+ * every follower emitting the config's `scale()` too compounded them in the
+ * merge — a 4-layer heavy_attack rendered the caster at 1.28^4 ≈ 2.7x.
+ */
+const animationStyleFor = (state) => {
+  const { anim } = state;
+  const cfg = anim.config;
+
+  if (state.isTarget) {
+    if (anim.phase !== 'impact') return {};
+    const treatment = cfg?.target;
+    if (treatment && treatment !== 'strike') {
+      // Fixed treatment (debuff hex, drain wither, ...)
+      return {
+        transform: treatment.scale ? `scale(${treatment.scale})` : undefined,
+        boxShadow: treatment.glow ? `0 0 18px 6px ${treatment.glow}` : undefined,
+        transition: 'all 0.2s ease-out',
+        zIndex: 60,
+      };
+    }
+    // Outcome-dependent strike flash. Resolved in animationConfigs so the
+    // visual treatment and the impact SFX cue for an outcome are declared
+    // together and stay in step with the engine's OUTCOMES vocabulary.
+    return strikeFlashFor(anim.outcome);
+  }
+
+  if (state.isSource && anim.isLead) {
+    const phaseStyle = cfg?.source?.[anim.phase];
+    if (phaseStyle) {
+      return {
+        transform: phaseStyle.scale ? `scale(${phaseStyle.scale})` : undefined,
+        boxShadow: phaseStyle.glow ? `0 0 22px 8px ${phaseStyle.glow}` : undefined,
+        transition: 'transform 0.18s ease-out, box-shadow 0.18s ease-out',
+        zIndex: 100,
+      };
+    }
+    if (anim.phase === 'return' || anim.phase === 'contract')
+      return { transform: 'scale(1)', transition: 'all 0.2s ease-in' };
+  }
+  return {};
+};
+
+/** Heavy hits and shockwaves rattle the target cell — but never on a miss. */
+const isShakingTarget = (state) => Boolean(
+  state.isTarget
+  && state.anim.config?.shake
+  && state.anim.phase === 'impact'
+  && state.anim.outcome !== 'miss'
+);
 
 /** Finite number or the supplied default. A non-numeric field must not reach
  *  the percentages: `Math.min(1, Math.max(0, NaN))` is `NaN`, which CSS and SVG
@@ -148,7 +276,7 @@ const CombatantMarker = React.memo(({
   isCompact = false,
   isHovered = false,
   isSelected = false,
-  animationState = null,
+  animationStates = NO_ANIMATION_STATES,
   displaySymbol = null,
 }) => {
   const move = entity.current_move;
@@ -184,60 +312,17 @@ const CombatantMarker = React.memo(({
     ? 'absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent filter drop-shadow-sm opacity-90'
     : 'absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent filter drop-shadow opacity-90';
 
-  // Config-driven marker styling: source phases read scale/glow from the
-  // animation config; the target gets an outcome flash (or a fixed glow for
-  // buff/debuff-style effects) during the config's impact phase.
-  const animationStyle = useMemo(() => {
-    if (!animationState) return {};
-    const cfg = animationState.config;
-
-    if (animationState.isTarget) {
-      if (animationState.phase !== 'impact') return {};
-      const treatment = cfg?.target;
-      if (treatment && treatment !== 'strike') {
-        // Fixed treatment (debuff hex, drain wither, ...)
-        return {
-          transform: treatment.scale ? `scale(${treatment.scale})` : undefined,
-          boxShadow: treatment.glow ? `0 0 18px 6px ${treatment.glow}` : undefined,
-          transition: 'all 0.2s ease-out',
-          zIndex: 60,
-        };
-      }
-      // Outcome-dependent strike flash
-      switch (animationState.outcome) {
-        case 'hit': return { backgroundColor: 'rgba(255, 0, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
-        case 'miss': return { opacity: 0.3, transition: 'opacity 0.2s', filter: 'blur(2px)' };
-        case 'parry':
-        case 'block':
-        case 'deflect':
-          return { backgroundColor: 'rgba(255, 200, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
-        default: return {};
-      }
-    }
-
-    if (animationState.isSource) {
-      const phaseStyle = cfg?.source?.[animationState.phase];
-      if (phaseStyle) {
-        return {
-          transform: phaseStyle.scale ? `scale(${phaseStyle.scale})` : undefined,
-          boxShadow: phaseStyle.glow ? `0 0 22px 8px ${phaseStyle.glow}` : undefined,
-          transition: 'transform 0.18s ease-out, box-shadow 0.18s ease-out',
-          zIndex: 100,
-        };
-      }
-      if (animationState.phase === 'return' || animationState.phase === 'contract')
-        return { transform: 'scale(1)', transition: 'all 0.2s ease-in' };
-    }
-    return {};
-  }, [animationState]);
-
-  // Target shake — heavy hits and shockwaves rattle the target cell.
-  const targetShake = Boolean(
-    animationState?.isTarget
-    && animationState.config?.shake
-    && animationState.phase === 'impact'
-    && animationState.outcome !== 'miss'
+  // Config-driven marker styling, folded across every animation this token is
+  // currently part of (it can be the source of the swing and the target of a
+  // concurrent landing at the same time).
+  const animationStyle = useMemo(
+    () => mergeAnimationStyles(animationStates.map(animationStyleFor)),
+    [animationStates]
   );
+
+  // Target shake — heavy hits and shockwaves rattle the target cell. Any one
+  // qualifying landing is enough; the CSS class is not additive.
+  const targetShake = animationStates.some(isShakingTarget);
 
   return (
     <div
@@ -552,8 +637,7 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
 // ---------------------------------------------------------------------------
 const EntityLayer = React.memo(({
   entitiesToRender,
-  activeAnimation,
-  animationPhase,
+  activeAnimations,
   hoveredEntity,
   selectedEntity,
   hoveredTargetId,
@@ -569,26 +653,30 @@ const EntityLayer = React.memo(({
         entityId != null ? hoveredEntity.id === entityId : hoveredEntity === item.entity
       );
 
-      // Derive per-entity animation state
-      let animState = null;
-      if (activeAnimation && animationPhase) {
-        if (activeAnimation.source_id === entityId) {
-          animState = { isSource: true, isTarget: false, phase: animationPhase, outcome: activeAnimation.outcome, config: activeAnimation.config };
-        } else if (activeAnimation.target_id === entityId) {
-          animState = { isSource: false, isTarget: true, phase: animationPhase, outcome: activeAnimation.outcome, config: activeAnimation.config };
-        }
-      }
+      // Derive per-entity animation state — ALL of them, see collectAnimationStates
+      const animStates = collectAnimationStates(activeAnimations, entityId);
 
       // Config-driven source motion: recoil away from the target on windup,
       // travel toward it on the strike/rush phase, hold there through impact
       // so the hit connects visually, then ease back on return. Spin motions
       // rotate in place instead of travelling.
+      //
+      // A token has ONE position, so only one layer may drive it: the lead of
+      // the swing, tagged in playAnimations. Selecting "the first source layer
+      // still in flight" instead looks equivalent and is not -- the lead is
+      // removed from activeAnimations the moment its phases end, after which a
+      // follower aimed at a different cell inherits the token and the marker
+      // snaps toward the new target mid-arc.
       let transformStyle = {};
-      const motion = activeAnimation?.config?.motion;
-      if (animState?.isSource && motion) {
-        const cfg = activeAnimation.config;
-        const targetItem = activeAnimation.target_id
-          ? entitiesToRender.find((e) => e.entity.id === activeAnimation.target_id)
+      const motionState = animStates.find(
+        (s) => s.isSource && s.anim.config?.motion && s.anim.isLead
+      );
+      if (motionState) {
+        const { config: cfg, phase } = motionState.anim;
+        const motion = cfg.motion;
+        const targetId = motionState.anim.target_id;
+        const targetItem = targetId
+          ? entitiesToRender.find((e) => e.entity.id === targetId)
           : null;
         const sPos = getPos(item.entity);
         const tPos = targetItem ? getPos(targetItem.entity) : null;
@@ -598,29 +686,29 @@ const EntityLayer = React.memo(({
         const travel = motion.travel || 0;
         const rotate = motion.spinDegrees ? ` rotate(${motion.spinDegrees}deg)` : '';
 
-        if (animState.phase === motion.windupPhase && motion.recoil) {
+        if (phase === motion.windupPhase && motion.recoil) {
           // Recoil directly away from the target; small upward coil when untargeted
           const len = Math.hypot(dx, dy) || 1;
           transformStyle = {
             transform: tPos
               ? `translate(${(-dx / len) * motion.recoil * 100}%, ${(-dy / len) * motion.recoil * 100}%)`
               : `translate(0, -${motion.recoil * 60}%)`,
-            transition: `transform ${phaseDurationOf(cfg, animState.phase)}ms ease-out`,
+            transition: `transform ${phaseDurationOf(cfg, phase)}ms ease-out`,
             zIndex: 100,
           };
-        } else if (animState.phase === motion.travelPhase) {
+        } else if (phase === motion.travelPhase) {
           transformStyle = {
             transform: `translate(${dx * travel * 100}%, ${dy * travel * 100}%)${rotate}`,
-            transition: `transform ${phaseDurationOf(cfg, animState.phase)}ms ${motion.easing || 'ease-in'}`,
+            transition: `transform ${phaseDurationOf(cfg, phase)}ms ${motion.easing || 'ease-in'}`,
             zIndex: 100,
           };
-        } else if (animState.phase === 'impact' && travel && tPos) {
+        } else if (phase === 'impact' && travel && tPos) {
           // Hold at the target through impact — no snap-back mid-hit
           transformStyle = {
             transform: `translate(${dx * travel * 100}%, ${dy * travel * 100}%)${rotate}`,
             zIndex: 100,
           };
-        } else if (animState.phase === 'return') {
+        } else if (phase === 'return') {
           transformStyle = {
             transform: 'translate(0, 0) rotate(0deg)',
             transition: `transform ${phaseDurationOf(cfg, 'return')}ms ease-in-out`,
@@ -653,7 +741,7 @@ const EntityLayer = React.memo(({
             // This has to live on the wrapper: it is absolutely positioned
             // with a numeric z-index, so it forms a stacking context and any
             // z-index set on the inner motion div is scoped inside it.
-            zIndex: animState ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
+            zIndex: animStates.length ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
           }}
         >
           <div style={{
@@ -672,7 +760,7 @@ const EntityLayer = React.memo(({
               isCompact={isCompact}
               isHovered={(entityId != null && hoveredTargetId === entityId) || isEntityHovered}
               isSelected={entityId != null && selectedEntity?.id === entityId}
-              animationState={animState}
+              animationStates={animStates}
               displaySymbol={item.displaySymbol}
             />
           </div>
@@ -819,137 +907,156 @@ const TravelDot = ({ fromStyle, toStyle, color, duration, delay = 0, size = 1 })
 // config.effect: projectile streaks, expanding shockwave rings, rising buff
 // particles, and drain streams. Rendered only during the effect's phase.
 // ---------------------------------------------------------------------------
-const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntityStyle, combat }) => {
-  const cfg = activeAnimation?.config;
-  const effect = cfg?.effect;
-
+const EffectsLayer = React.memo(({ activeAnimations, getEntityStyle, combat }) => {
   // Deliberately not the parent's `allCombatants` memo. Two reasons, both
   // load-bearing: EffectsLayer is a separate React.memo component and cannot
   // see that memo without prop-drilling it, and this lookup accepts the
   // literal sentinel 'player' as an id — animation payloads use it for the
-  // source/target of player-originated effects — which a plain id match over
-  // the flat list would not resolve.
+  // source/target of player-originated effects — which a plain id lookup
+  // would not resolve. The id→entity map turns the per-overlay pool scans
+  // into O(1) lookups (a 12-layer batch does 24 of them per render).
+  const entityById = useMemo(() => {
+    const map = new Map();
+    for (const pool of [[combat?.player], combat?.allies, combat?.enemies]) {
+      for (const entity of pool || []) {
+        if (entity?.id != null) map.set(entity.id, entity);
+      }
+    }
+    return map;
+  }, [combat?.player, combat?.allies, combat?.enemies]);
+
   const findEntity = (id) => {
     if (!id || !combat) return null;
-    if (id === 'player' || combat.player?.id === id) return combat.player;
-    return combat.enemies?.find((e) => e.id === id)
-      || combat.allies?.find((e) => e.id === id)
-      || null;
+    if (id === 'player') return combat.player || null;
+    return entityById.get(id) || null;
   };
 
-  if (!effect || animationPhase !== effect.phase) return null;
+  // One overlay per animation currently inside its effect phase. This rendered
+  // exactly one effect for one active animation; a four-target arc now has four
+  // landings in flight, each entitled to its own ring/streak on its own cell.
+  const renderEffect = (anim) => {
+    const cfg = anim?.config;
+    const effect = cfg?.effect;
+    if (!effect || anim?.phase !== effect.phase) return null;
 
-  const duration = phaseDurationOf(cfg, effect.phase, 300);
-  const source = findEntity(activeAnimation.source_id);
-  const target = findEntity(activeAnimation.target_id);
-  const sourceStyle = source ? getEntityStyle(getPos(source), 140) : null;
-  const targetStyle = target ? getEntityStyle(getPos(target), 140) : null;
+    const duration = phaseDurationOf(cfg, effect.phase, 300);
+    const source = findEntity(anim.source_id);
+    const target = findEntity(anim.target_id);
+    const sourceStyle = source ? getEntityStyle(getPos(source), 140) : null;
+    const targetStyle = target ? getEntityStyle(getPos(target), 140) : null;
 
-  let content = null;
-  switch (effect.kind) {
-    case 'projectile': {
-      if (!sourceStyle || !targetStyle) break;
-      content = (
-        <TravelDot
-          fromStyle={sourceStyle}
-          toStyle={targetStyle}
-          color={effect.color}
-          duration={duration}
-        />
-      );
-      break;
-    }
-    case 'drain': {
-      if (!sourceStyle || !targetStyle) break;
-      // Three staggered motes flowing target → source
-      content = [0, 1, 2].map((i) => (
-        <TravelDot
-          key={i}
-          fromStyle={targetStyle}
-          toStyle={sourceStyle}
-          color={effect.color}
-          duration={Math.max(120, duration - i * 120)}
-          delay={i * 120}
-          size={0.7}
-        />
-      ));
-      break;
-    }
-    case 'ring': {
-      // The effect config declares which cell the ring sits on: 'target' for
-      // impact rings, caster (default) for sweep arcs / defensive shells /
-      // shockwaves radiating outward.
-      const anchor = (effect.anchor === 'target' && targetStyle) ? targetStyle : sourceStyle;
-      if (!anchor) break;
-      content = (
-        <div
-          style={{
-            position: 'absolute',
-            ...anchor,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-          }}
-        >
-          <div
-            className="battlefield-effect-ring"
-            style={{
-              width: '90%',
-              height: '90%',
-              border: `3px solid ${effect.color}`,
-              boxShadow: `0 0 12px 2px ${effect.color}`,
-              ['--bf-ring-scale']: (effect.size || 1) * 2.6,
-              animationDuration: `${duration}ms`,
-            }}
+    let content = null;
+    switch (effect.kind) {
+      case 'projectile': {
+        if (!sourceStyle || !targetStyle) break;
+        content = (
+          <TravelDot
+            fromStyle={sourceStyle}
+            toStyle={targetStyle}
+            color={effect.color}
+            duration={duration}
           />
-        </div>
-      );
-      break;
-    }
-    case 'rise': {
-      if (!sourceStyle) break;
-      // Sparks climbing off the caster — offsets in % of the cell
-      content = (
-        <div
-          style={{
-            position: 'absolute',
-            ...sourceStyle,
-            pointerEvents: 'none',
-          }}
-        >
-          {[{ left: '25%', d: 0 }, { left: '50%', d: 120 }, { left: '70%', d: 60 }].map((p, i) => (
+        );
+        break;
+      }
+      case 'drain': {
+        if (!sourceStyle || !targetStyle) break;
+        // Three staggered motes flowing target → source
+        content = [0, 1, 2].map((i) => (
+          <TravelDot
+            key={i}
+            fromStyle={targetStyle}
+            toStyle={sourceStyle}
+            color={effect.color}
+            duration={Math.max(120, duration - i * 120)}
+            delay={i * 120}
+            size={0.7}
+          />
+        ));
+        break;
+      }
+      case 'ring': {
+        // The effect config declares which cell the ring sits on: 'target' for
+        // impact rings, caster (default) for sweep arcs / defensive shells /
+        // shockwaves radiating outward.
+        const anchor = (effect.anchor === 'target' && targetStyle) ? targetStyle : sourceStyle;
+        if (!anchor) break;
+        content = (
+          <div
+            style={{
+              position: 'absolute',
+              ...anchor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
             <div
-              key={i}
-              className="battlefield-effect-rise"
+              className="battlefield-effect-ring"
               style={{
-                position: 'absolute',
-                left: p.left,
-                bottom: '20%',
-                width: '12%',
-                height: '12%',
-                borderRadius: '50%',
-                backgroundColor: effect.color,
-                boxShadow: `0 0 6px 2px ${effect.color}`,
-                animationDuration: `${Math.max(200, duration - p.d)}ms`,
-                animationDelay: `${p.d}ms`,
+                width: '90%',
+                height: '90%',
+                border: `3px solid ${effect.color}`,
+                boxShadow: `0 0 12px 2px ${effect.color}`,
+                ['--bf-ring-scale']: (effect.size || 1) * 2.6,
+                animationDuration: `${duration}ms`,
               }}
             />
-          ))}
-        </div>
-      );
-      break;
+          </div>
+        );
+        break;
+      }
+      case 'rise': {
+        if (!sourceStyle) break;
+        // Sparks climbing off the caster — offsets in % of the cell
+        content = (
+          <div
+            style={{
+              position: 'absolute',
+              ...sourceStyle,
+              pointerEvents: 'none',
+            }}
+          >
+            {[{ left: '25%', d: 0 }, { left: '50%', d: 120 }, { left: '70%', d: 60 }].map((p, i) => (
+              <div
+                key={i}
+                className="battlefield-effect-rise"
+                style={{
+                  position: 'absolute',
+                  left: p.left,
+                  bottom: '20%',
+                  width: '12%',
+                  height: '12%',
+                  borderRadius: '50%',
+                  backgroundColor: effect.color,
+                  boxShadow: `0 0 6px 2px ${effect.color}`,
+                  animationDuration: `${Math.max(200, duration - p.d)}ms`,
+                  animationDelay: `${p.d}ms`,
+                }}
+              />
+            ))}
+          </div>
+        );
+        break;
+      }
+      default:
+        break;
     }
-    default:
-      break;
-  }
 
-  if (!content) return null;
-  return (
-    <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 140 }}>
-      {content}
-    </div>
-  );
+    if (!content) return null;
+    return (
+      <div
+        key={anim.animId}
+        style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 140 }}
+      >
+        {content}
+      </div>
+    );
+  };
+
+  const overlays = (activeAnimations || []).map(renderEffect).filter(Boolean);
+  return overlays.length ? overlays : null;
 });
 
 // ---------------------------------------------------------------------------
@@ -1519,6 +1626,10 @@ function BattlefieldGrid({
   displayedLogCount = 0,
   hoveredTargetId = null,
   mapSize = null,
+  // True when this grid mounted into a fight that was already under way — a page
+  // refresh mid-combat. Supplied by GamePage; see replayedLogIdsRef in
+  // useBattlefieldAnimations, which this is forwarded to.
+  isReloadRecovery = false,
   onAnimatingChange = null,
   // Engine-driven combat streaming (issue #436). When `streaming` is true the
   // log-spooler animation path is bypassed: pre-built animations arrive via
@@ -1529,14 +1640,21 @@ function BattlefieldGrid({
   streamedAnimations = [],
   combatSpeed = 1,
 }) {
-  const [activeAnimation, setActiveAnimation] = useState(null);
-  const [animationPhase, setAnimationPhase] = useState(null);
-  const [lastProcessedLogIndex, setLastProcessedLogIndex] = useState(0);
-  const [animationQueue, setAnimationQueue] = useState([]);
-  const [dyingEntities, setDyingEntities] = useState([]);
-  // Guard ref: set to true on unmount to prevent stale setTimeout callbacks
-  const animationCancelRef = useRef(false);
-  const animationTimeoutsRef = useRef([]);
+  // The whole animation pipeline - queue, batching, concurrency, per-fight
+  // reset, SFX chains and death bursts - lives in its own hook. This file keeps
+  // rendering, camera and pan.
+  const { activeAnimations, queueLength, dyingEntities } = useBattlefieldAnimations({
+    streaming,
+    streamedAnimations,
+    combatLog,
+    fallbackLog: combat?.log,
+    displayedLogCount,
+    allBeatStates,
+    combatId,
+    combatActive,
+    combatSpeed,
+    isReloadRecovery,
+  });
 
   const [hoveredEntity, setHoveredEntity] = useState(null);
   // Store the id, not the entity object. Every beat replaces `combat` with freshly
@@ -1567,13 +1685,11 @@ function BattlefieldGrid({
     []
   );
 
-  const { playSFX } = useAudio();
-
   // Notify parent when animation busy-state changes so end-of-combat timing
   // can wait for the death animation to finish before starting the grace timer.
   // prevAnimatingRef skips the callback when the boolean hasn't changed (e.g.
-  // phase transitions within a single animation — all fire activeAnimation!=null
-  // so the value stays true throughout). This avoids unnecessary GamePage
+  // phase transitions within a single animation — the in-flight set stays
+  // non-empty throughout). This avoids unnecessary GamePage
   // re-renders on every phase. Cleanup resets to false on unmount so GamePage
   // never gets stuck with isBattlefieldAnimating=true.
   const prevAnimatingRef = useRef(false);
@@ -1587,12 +1703,14 @@ function BattlefieldGrid({
   // prevAnimatingRef still reads `true`, so the guard below would suppress the
   // corrective `true` and leave the parent believing animation had finished.
   useEffect(() => {
-    const isAnimating = activeAnimation !== null || animationQueue.length > 0;
+    // The LAST layer, not the first: a four-target arc is still animating long
+    // after its lead resolution has finished its return phase.
+    const isAnimating = activeAnimations.length > 0 || queueLength > 0;
     if (onAnimatingChange && isAnimating !== prevAnimatingRef.current) {
       prevAnimatingRef.current = isAnimating;
       onAnimatingChange(isAnimating)
     }
-  }, [activeAnimation, animationQueue, onAnimatingChange]);
+  }, [activeAnimations, queueLength, onAnimatingChange]);
 
   // Unmount-only reset, so the parent never gets stuck with isBattlefieldAnimating=true.
   useEffect(() => () => {
@@ -1786,19 +1904,23 @@ function BattlefieldGrid({
     // node and panning is silently dead for the rest of the session.
   }, [applyPanTransform, tab]);
 
-  // Reset pan when a new combat begins. Keyed on the props Battlefield passes
-  // from the top-level combat object, NOT on `combat` — that prop is a beat
-  // state here, and serialize_combat_state emits neither field, so reading them
-  // off it made this dep flip uuid <-> undefined every time displayState
-  // alternated shape, resetting the camera mid-fight.
+  // Reset the touch-pan offset when the fight identity changes, so a new fight
+  // does not open with the camera parked where the last one left it.
+  //
+  // Runs unconditionally: it does NOT branch on "is this a new fight", so it
+  // needs no prev-refs and cannot compete with useBattlefieldAnimations'
+  // private fight-boundary detection (see the note on that effect - two
+  // recorders of the same transition would make the second one miss it).
+  //
+  // Keyed on the props Battlefield passes from the top-level combat object,
+  // NOT on `combat` - that prop is a beat state here, and
+  // serialize_combat_state emits neither field, so reading them off it made
+  // this dep flip uuid <-> undefined every time displayState alternated shape,
+  // resetting the camera mid-fight.
   useEffect(() => {
     if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
     touchPanRef.current = { x: 0, y: 0 };
     applyPanTransform();
-    // The queue is per-fight. Without this it lives for the whole session,
-    // replaying a finished fight's animations into the next one.
-    setAnimationQueue([]);
-    setLastProcessedStreamIndex(0);
   }, [combatId, combatActive, applyPanTransform]);
 
   // Clicking the map background clears the selection — as the panel's own
@@ -1822,198 +1944,6 @@ function BattlefieldGrid({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [setSelectedEntity]);
-
-  // Set/clear the unmount guard
-  useEffect(() => {
-    animationCancelRef.current = false;
-    return () => {
-      animationCancelRef.current = true;
-      animationTimeoutsRef.current.forEach(clearTimeout);
-      animationTimeoutsRef.current = [];
-    };
-  }, []);
-
-  // Schedule a timeout tracked for unmount cleanup, self-pruning its id once it
-  // fires. Without the self-prune the tracking array grows unbounded across a
-  // whole play session (BattlefieldGrid never unmounts between fights), holding
-  // dead ids forever; only unmount cleared it.
-  const trackTimeout = useCallback((fn, delay) => {
-    const id = setTimeout(() => {
-      animationTimeoutsRef.current = animationTimeoutsRef.current.filter(
-        (t) => t !== id
-      );
-      fn();
-    }, delay);
-    animationTimeoutsRef.current.push(id);
-    return id;
-  }, []);
-
-  // Streaming (issue #436): enqueue pre-built animations as the engine's beats
-  // arrive. Replaces the log-spooler path below; deaths/departures are built by
-  // the parent from the engine's authoritative killed/departed, not diffed here.
-  const [lastProcessedStreamIndex, setLastProcessedStreamIndex] = useState(0);
-  useEffect(() => {
-    if (!streaming) return;
-    // The parent resets streamedAnimations to [] between fights. Without
-    // re-syncing the cursor, a shorter (or empty) buffer would sit below the
-    // stale index and the next combat's beats would never enqueue.
-    if (streamedAnimations.length < lastProcessedStreamIndex) {
-      setLastProcessedStreamIndex(streamedAnimations.length);
-      return;
-    }
-    if (streamedAnimations.length > lastProcessedStreamIndex) {
-      const next = streamedAnimations.slice(lastProcessedStreamIndex);
-      setAnimationQueue((prev) => [...prev, ...next].slice(-MAX_ANIMATION_QUEUE));
-      setLastProcessedStreamIndex(streamedAnimations.length);
-    }
-  }, [streaming, streamedAnimations, lastProcessedStreamIndex]);
-
-  // Enqueue new animations from the combat log as entries are revealed
-  useEffect(() => {
-    if (streaming) return; // beats drive animation instead (see effect above)
-    const log = combatLog || combat?.log;
-    if (!log) return;
-    // Mirror of the streaming guard above. LeftPanel empties its revealed set
-    // when a new fight starts, so displayedLogCount drops back to 0; without
-    // re-syncing, the stale cursor sits above it and the new fight's entries
-    // never enqueue.
-    if (displayedLogCount < lastProcessedLogIndex) {
-      setLastProcessedLogIndex(displayedLogCount);
-      return;
-    }
-    if (displayedLogCount > lastProcessedLogIndex) {
-      const newEntries = log.slice(lastProcessedLogIndex, displayedLogCount);
-      const animations = [];
-      const killedIds = new Set(); // guard against duplicate death animations in one batch
-
-      newEntries.forEach((entry) => {
-        if (!entry.animation) return;
-        const anim = entry.animation;
-        animations.push(anim);
-
-        // Detect a killing blow — chain a death animation immediately after the attack
-        if (anim.target_id && allBeatStates && !killedIds.has(anim.target_id)) {
-          const beatIdx = entry.beat_index ?? 0;
-          const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
-          const stateAt = allBeatStates[beatIdx];
-          // Both liveness checks must read a missing hp field identically.
-          // Divergent defaults across these two lines make an enemy count as
-          // alive before the blow and dead after it, firing a death burst on a
-          // combatant that is still fighting.
-          const wasAlive = stateBefore?.enemies?.some(
-            (en) => en.id === anim.target_id && isLiving(en)
-          );
-          const isNowDead = !stateAt?.enemies?.some(
-            (en) => en.id === anim.target_id && isLiving(en)
-          );
-          if (wasAlive && isNowDead) {
-            const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
-            if (lastKnown?.position) {
-              // friendly: false is sound here — this branch only inspects
-              // `stateBefore.enemies`, so it can only ever synthesize an
-              // enemy death. Streamed deaths (which can be an ally or Jean)
-              // carry their own alignment from `beatToAnimations`.
-              animations.push({
-                type: 'death',
-                target_id: anim.target_id,
-                position: lastKnown.position,
-                entity: lastKnown,
-                friendly: false,
-              });
-              killedIds.add(anim.target_id);
-            }
-          }
-        }
-      });
-
-      if (animations.length > 0) {
-        setAnimationQueue((prev) => [...prev, ...animations].slice(-MAX_ANIMATION_QUEUE));
-      }
-      setLastProcessedLogIndex(displayedLogCount);
-    }
-  }, [streaming, combatLog, combat?.log, lastProcessedLogIndex, displayedLogCount, allBeatStates]);
-
-  // Run one animation at a time from the queue
-  const playAnimation = useCallback((animData) => {
-    const config = getAnimationConfig(animData.type);
-    setActiveAnimation({ ...animData, config });
-
-    // Streaming (issue #436): fire this beat's ordered SFX as a 75% partial
-    // stack at animation start (the engine authored the emissions); this
-    // replaces the phase-keyed cues below. `suppressSfx` entries stay silent
-    // (e.g. a streamed death whose sound already played in the attack's chain).
-    if (animData.beat) {
-      const schedule = scheduleSfxChain(
-        beatSfxFor(animData.beat),
-        (cue) => lookupOr(SFX_DURATIONS, cue, 0),
-        combatSpeed
-      );
-      for (const { cue, startMs } of schedule) {
-        // scheduleSfxChain already divides startMs by combatSpeed internally.
-        trackTimeout(() => playSFX(cue, combatSpeed), startMs);
-      }
-    }
-
-    // Register the entity as dying so DeathAnimationLayer can render the burst
-    // and EntityLayer can fade out the marker
-    if (animData.type === 'death' && animData.position) {
-      setDyingEntities((prev) => [...prev, {
-        id: animData.target_id,
-        position: animData.position,
-        entity: animData.entity,
-        friendly: animData.friendly === true,
-      }]);
-      // Enemy death SFX — play once per kill (streamed deaths are sounded by the
-      // attack beat's SFX chain instead, so they carry suppressSfx).
-      if (!animData.suppressSfx) playSFX('enemy_death', combatSpeed);
-    }
-
-    let currentPhaseIndex = 0;
-
-    const advancePhase = () => {
-      if (animationCancelRef.current) return; // component unmounted — bail out
-      if (currentPhaseIndex >= config.phases.length) {
-        setActiveAnimation(null);
-        setAnimationPhase(null);
-        if (animData.type === 'death') {
-          setDyingEntities((prev) => prev.filter((d) => d.id !== animData.target_id));
-        }
-        return;
-      }
-      const phase = config.phases[currentPhaseIndex];
-      setAnimationPhase(phase.name);
-
-      // Phase-aligned SFX cues, declared on the animation config. The special
-      // cue 'outcome' resolves through the animation's outcome
-      // ('hit' | 'miss' | 'parry' | ...) to the matching pre-baked WAV.
-      // Skipped for streaming beats: their SFX is the 75% chain fired at start
-      // (animData.beat), or intentionally silent (suppressSfx).
-      const usesChain = animData.beat || animData.suppressSfx;
-      const cue = usesChain ? null : config.sfx?.[phase.name];
-      if (cue) {
-        playSFX(cue === 'outcome' ? impactSfxFor(animData.outcome) : cue, combatSpeed);
-      }
-
-      trackTimeout(() => {
-        currentPhaseIndex++;
-        advancePhase();
-      }, effectiveDuration(phase.duration, combatSpeed));
-    };
-
-    advancePhase();
-    // Omitted deps are stable by construction: state setters, animationCancelRef
-    // (a ref), and trackTimeout (empty-dep useCallback). Only playSFX and
-    // combatSpeed change this callback's behaviour.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playSFX, combatSpeed]);
-
-  useEffect(() => {
-    if (!activeAnimation && animationQueue.length > 0) {
-      const nextAnim = animationQueue[0];
-      setAnimationQueue((prev) => prev.slice(1));
-      playAnimation(nextAnim);
-    }
-  }, [activeAnimation, animationQueue, playAnimation]);
 
   // Compute player position before camera effect (needed for camera target calculation)
   const playerPos = getPos(combat?.player);
@@ -2470,8 +2400,7 @@ function BattlefieldGrid({
 
         <EntityLayer
           entitiesToRender={entitiesToRender}
-          activeAnimation={activeAnimation}
-          animationPhase={animationPhase}
+          activeAnimations={activeAnimations}
           hoveredEntity={hoveredEntity}
           selectedEntity={selectedEntity}
           hoveredTargetId={hoveredTargetId}
@@ -2482,8 +2411,7 @@ function BattlefieldGrid({
         />
 
         <EffectsLayer
-          activeAnimation={activeAnimation}
-          animationPhase={animationPhase}
+          activeAnimations={activeAnimations}
           getEntityStyle={getEntityStyle}
           combat={combat}
         />
@@ -2525,9 +2453,10 @@ function BattlefieldGrid({
           className="absolute top-1 left-1 z-[200] pointer-events-none text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/80 text-lime-400 select-none"
           aria-hidden="true"
         >
-          anim: {activeAnimation?.type || 'idle'}
-          {animationPhase ? ` / ${animationPhase}` : ''}
-          {` · q${animationQueue.length}`}
+          anim: {activeAnimations.length
+            ? activeAnimations.map((a) => `${a.type}${a.phase ? `/${a.phase}` : ''}`).join(' + ')
+            : 'idle'}
+          {` · q${queueLength}`}
         </div>
       )}
 

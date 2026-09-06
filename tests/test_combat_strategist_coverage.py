@@ -199,6 +199,85 @@ class TestFallbackSuggestions:
         assert result[0]["move_name"] == "Rest"
         assert "Fatigue critically low" in result[0]["reasoning"]
 
+    # --- offense priced out (issue #504) ---------------------------------
+    # Fatigue at 32% of max is above the "fatigue critical" line but below the
+    # 90-fatigue cost of the equipped weapon's Attack. Every move Jean can
+    # still afford costs 0 fatigue and nothing restores it passively, so
+    # anything but Rest repeats the same advice forever.
+
+    def _priced_out_ctx(self, **overrides):
+        ctx = _base_ctx(available_moves=[
+            {"name": "Rest", "category": "Miscellaneous", "available": True},
+            {"name": "Advance", "category": "Maneuver", "available": True},
+            {"name": "Dodge", "category": "Maneuver", "available": True},
+        ])
+        ctx["player"]["fatigue"] = 60
+        ctx["player"]["max_fatigue"] = 190
+        ctx["fatigue_locked_moves"] = [
+            {"name": "Attack", "category": "Offensive", "fatigue_cost": 90},
+        ]
+        ctx.update(overrides)
+        return ctx
+
+    def test_offense_priced_out_prefers_rest(self, strategist):
+        ctx = self._priced_out_ctx()
+        result = strategist._get_fallback_suggestions(ctx, 3)
+        assert result[0]["move_name"] == "Rest"
+        assert result[0]["score"] == 90
+        assert "No attack is affordable" in result[0]["reasoning"]
+
+    def test_offense_priced_out_still_yields_to_lethal_dodge(self, strategist):
+        enemy = {
+            "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
+            "stats": {"damage": 200}, "fatigue": 50, "max_fatigue": 50,
+            # `beats_until_resolve`, not the `beats_left`/`current_stage` pair
+            # this was first written with: the advisor stopped walking the
+            # stage machine itself (its copy had drifted from the engine in all
+            # three branches) and now reads the engine's own field. Set to the
+            # beat the defensive window OPENS on, so the scenario is "lethal,
+            # and a Dodge cast now still lands" by construction rather than by
+            # a number that happens to work.
+            "move_in_process": {
+                "name": "BatBite",
+                "beats_until_resolve": _DEFENSIVE_WINDOW_BEATS,
+            },
+            "status_effects": [],
+        }
+        ctx = self._priced_out_ctx(enemies=[enemy])
+        result = strategist._get_fallback_suggestions(ctx, 3)
+        assert result[0]["move_name"] == "Dodge"
+        assert result[0]["score"] == 97
+        rest = next(r for r in result if r["move_name"] == "Rest")
+        assert rest["score"] == 90
+
+    def test_offense_out_of_range_still_prefers_advance(self, strategist):
+        # No offensive move is available, but none is priced out either (the
+        # enemy is simply too far). Advance, not Rest, is the fix for that.
+        ctx = self._priced_out_ctx(fatigue_locked_moves=[])
+        ctx["player"]["fatigue"] = 150
+        result = strategist._get_fallback_suggestions(ctx, 3)
+        assert result[0]["move_name"] == "Advance"
+
+    def test_non_offensive_fatigue_lock_does_not_trigger_rest(self, strategist):
+        # Only a Miscellaneous move is unaffordable; offense is missing for
+        # some other reason, so the Rest override must not fire.
+        ctx = self._priced_out_ctx(fatigue_locked_moves=[
+            {"name": "Shoot Bow", "category": "Miscellaneous", "fatigue_cost": 80},
+        ])
+        ctx["player"]["fatigue"] = 150
+        result = strategist._get_fallback_suggestions(ctx, 3)
+        assert result[0]["move_name"] == "Advance"
+
+    def test_affordable_offense_suppresses_priced_out_override(self, strategist):
+        # A stale/over-broad fatigue_locked_moves entry must not override
+        # scoring while Jean can still pay for an attack.
+        ctx = self._priced_out_ctx()
+        ctx["available_moves"].append(
+            {"name": "Jab", "category": "Offensive", "available": True}
+        )
+        result = strategist._get_fallback_suggestions(ctx, 3)
+        assert result[0]["move_name"] == "Jab"
+
     def test_hp_critical_prefers_use_item(self, strategist):
         ctx = _base_ctx(available_moves=[
             {"name": "UseItem", "category": "Miscellaneous", "available": True},
@@ -593,6 +672,45 @@ class TestBuildUserPromptComprehensive:
         prompt = strategist._build_user_prompt(ctx)
         assert "Dodge in 2 beats" in prompt
         assert "Parry in 1 beat" in prompt
+
+    def _priced_out_prompt_ctx(self, **overrides):
+        ctx = {
+            "player": {
+                "name": "Jean", "hp": 100, "max_hp": 100, "fatigue": 60, "max_fatigue": 190, "heat": 1.0,
+                "position": {}, "attributes": {}, "passives": [], "stats": {}, "equipment": {},
+                "consumables": [], "status_effects": [],
+            },
+            "enemies": [], "history": [],
+            "available_moves": [
+                {"name": "Rest", "category": "Miscellaneous", "available": True, "fatigue_cost": 0},
+                {"name": "Advance", "category": "Maneuver", "available": True, "fatigue_cost": 0},
+            ],
+            "fatigue_locked_moves": [
+                {"name": "Attack", "category": "Offensive", "fatigue_cost": 90},
+                {"name": "Shoot Crossbow", "category": "Offensive", "fatigue_cost": 80},
+            ],
+        }
+        ctx.update(overrides)
+        return ctx
+
+    def test_offense_priced_out_alert_rendered(self, strategist):
+        # Unavailable moves are stripped from the prompt, so without this alert
+        # the model is never told that offense is priced out rather than absent.
+        prompt = strategist._build_user_prompt(self._priced_out_prompt_ctx())
+        assert "OFFENSE PRICED OUT" in prompt
+        assert "cheapest attack costs 80 fatigue" in prompt
+        assert "Rest is the only move that restores fatigue" in prompt
+
+    def test_offense_priced_out_alert_absent_when_offense_affordable(self, strategist):
+        ctx = self._priced_out_prompt_ctx()
+        ctx["available_moves"].append(
+            {"name": "Jab", "category": "Offensive", "available": True, "fatigue_cost": 10}
+        )
+        assert "OFFENSE PRICED OUT" not in strategist._build_user_prompt(ctx)
+
+    def test_offense_priced_out_alert_absent_when_nothing_fatigue_locked(self, strategist):
+        ctx = self._priced_out_prompt_ctx(fatigue_locked_moves=[])
+        assert "OFFENSE PRICED OUT" not in strategist._build_user_prompt(ctx)
 
     def test_target_priority_block_for_multiple_enemies(self, strategist):
         ctx = {

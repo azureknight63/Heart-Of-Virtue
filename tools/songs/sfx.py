@@ -153,6 +153,51 @@ class AttackParrySFX(Song):
         return mix_layers([ring, clang])
 
 
+class AttackGlanceSFX(Song):
+    """Metallic skid — a blow that connects but is deflected for half damage.
+
+    Sits deliberately between :class:`AttackHitSFX` (low 90 Hz sawtooth thud,
+    150 ms) and :class:`AttackParrySFX` (steady 1200 Hz square ring, 200 ms):
+    higher and thinner than the thud, shorter and duller than the ring.
+
+    Three layers, all struck at t=0 so the cue reads as *contact then escape*:
+
+    * ``scrape`` — six 10 ms noise grains at falling volume. The granular
+      chatter is what separates a glance from a hit: the hit is one solid
+      120 ms noise body, this is a skid across a surface.
+    * ``skid`` — a sawtooth sweep gliding 880 → 300 Hz. The downward glide is
+      the energy bleeding off rather than being stopped dead; it lands well
+      above the thud's 90 Hz so it never reads as a quiet hit.
+    * ``glint`` — a quiet triangle sweep 1560 → 720 Hz, an inharmonic ~1.8x
+      above the skid, giving the metallic edge. Triangle (not the parry's
+      square), a third of the parry's level and 60 ms rather than 200 ms, so
+      it glances off instead of ringing out.
+    """
+    # Falling grain volumes: the skid loses bite as the blade slides away.
+    _SCRAPE_GRAINS = [0.60, 0.50, 0.42, 0.32, 0.22, 0.13]
+
+    def __init__(self):
+        super().__init__("SFX: Attack Glance", "sfx/attack_glance.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+        # Granular contact: short noise grains chattering across the surface
+        scrape = b''
+        for vol in self._SCRAPE_GRAINS:
+            scrape += generate_tone(0, d(0.010), volume=vol, wave_type='noise',
+                                    attack_time=0.0008, release_time=d(0.006))
+        # The strike skidding off — pitch bleeds downward as it escapes
+        skid = generate_tone_sweep(fr(880), fr(300), d(0.12), volume=0.50,
+                                   wave_type='sawtooth',
+                                   attack_time=0.002, release_time=d(0.08))
+        # Thin metallic glint over the top; far shorter/quieter than a parry ring
+        glint = generate_tone_sweep(fr(1560), fr(720), d(0.06), volume=0.26,
+                                    wave_type='triangle',
+                                    attack_time=0.001, release_time=d(0.05))
+        return mix_layers([skid, scrape, glint])
+
+
 class EnemyDeathSFX(Song):
     """Descending sawtooth steps into a fading noise tail."""
     def __init__(self):

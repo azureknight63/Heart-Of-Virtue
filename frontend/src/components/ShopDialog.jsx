@@ -260,7 +260,8 @@ function QtyPicker({ value, max, onChange, isMobile }) {
  * ShopDialog — full shop modal overlay.
  *
  * Props:
- *   npcId      {string}   str(id(npc)) of the merchant
+ *   npcId      {string}   the merchant's opaque wire handle, as published
+ *                         in `shop_state.npc_id` (not a heap address)
  *   npcName    {string}   Display name of the merchant
  *   initialTab {string}   'buy' | 'sell'
  *   player     {object}   Current player state (gold, weight)

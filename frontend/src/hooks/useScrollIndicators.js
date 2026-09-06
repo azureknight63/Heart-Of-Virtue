@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useState } from 'react'
+import useScrollGeometry, { SCROLL_EDGE_EPSILON_PX } from './useScrollGeometry'
 
 /**
  * Tracks whether a scrollable element has content above or below the visible window.
@@ -13,29 +14,15 @@ import { useState, useEffect, useCallback } from 'react'
  *   check — call imperatively after programmatic scrollTop resets
  */
 export default function useScrollIndicators() {
-  const [el, setEl] = useState(null)
   const [showTop, setShowTop] = useState(false)
   const [showBottom, setShowBottom] = useState(false)
 
-  const ref = useCallback(node => setEl(node), [])
+  const measure = useCallback(el => {
+    setShowTop(el.scrollTop > SCROLL_EDGE_EPSILON_PX)
+    setShowBottom(el.scrollTop + el.clientHeight < el.scrollHeight - SCROLL_EDGE_EPSILON_PX)
+  }, [])
 
-  const check = useCallback(() => {
-    if (!el) return
-    setShowTop(el.scrollTop > 4)
-    setShowBottom(el.scrollTop + el.clientHeight < el.scrollHeight - 4)
-  }, [el])
-
-  useEffect(() => {
-    if (!el) return
-    check()
-    el.addEventListener('scroll', check, { passive: true })
-    const ro = new ResizeObserver(check)
-    ro.observe(el)
-    return () => {
-      el.removeEventListener('scroll', check)
-      ro.disconnect()
-    }
-  }, [el, check])
+  const { ref, check } = useScrollGeometry(measure)
 
   return { showTop, showBottom, check, ref }
 }

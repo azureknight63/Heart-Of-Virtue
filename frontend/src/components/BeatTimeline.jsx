@@ -5,14 +5,16 @@ import { categoryIcon } from '../utils/categories';
 import { buildBeatTimelineColumns, DEFAULT_MAX_COLUMNS } from '../utils/beatTimeline';
 
 /**
- * Horizontal beat-timeline strip — a schedule of what resolves when, in place
- * of the old "Beat N / X standing" counter. Modelled on FFX's CTB timeline and
+ * Horizontal beat-timeline strip — a schedule of what resolves when, shown
+ * alongside the "Beat N / X standing" counter. Modelled on FFX's CTB timeline and
  * The Banner Saga's turn-order strip (see CLAUDE.md): the player reads who
  * acts next and how their own choice shifts the order, instead of deriving it
  * from the countdown badges scattered across the map.
  *
- * Behind the `beatTimeline` feature flag (default off) — `Battlefield.jsx`
- * renders this OR the old strip, never both, so the two can be compared.
+ * On by default, behind the `beatTimeline` flag so it stays switchable from
+ * the settings dialog. The two strips are complementary, not alternatives:
+ * this one carries ordering, the counter carries the beat number and how many
+ * enemies are left. Turning the flag off drops only the schedule.
  */
 export default function BeatTimeline({ combat }) {
   const columns = useMemo(() => buildBeatTimelineColumns(combat, DEFAULT_MAX_COLUMNS), [combat]);

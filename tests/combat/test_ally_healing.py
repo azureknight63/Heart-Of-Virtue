@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 
 from src.api.routes.inventory import _resolve_ally_target
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
+from src.api.serializers.combat import CombatantSerializer
+from src.combatant import combatant_handle
 
 # ---------------------------------------------------------------------------
 # _resolve_ally_target
@@ -27,14 +29,16 @@ def _make_player_with_allies(*allies):
 def test_resolve_ally_target_valid():
     ally = MagicMock()
     player = _make_player_with_allies(ally)
-    assert _resolve_ally_target(player, f"ally_{id(ally)}") is ally
+    assert _resolve_ally_target(player, CombatantSerializer.stream_id(ally)) is ally
 
 
 def test_resolve_ally_target_enemy_prefix_not_stripped():
     """enemy_ prefix must NOT be resolved as an ally — that was a bug (M2 fix)."""
     ally = MagicMock()
     player = _make_player_with_allies(ally)
-    assert _resolve_ally_target(player, f"enemy_{id(ally)}") is None
+    assert _resolve_ally_target(
+        player, CombatantSerializer.stream_id(ally).replace("ally_", "enemy_")
+    ) is None
 
 
 def test_resolve_ally_target_unknown_id_returns_none():
@@ -53,7 +57,7 @@ def test_resolve_ally_target_skips_player_at_index_zero():
     """The player at index 0 must never be returned."""
     player = MagicMock()
     player.combat_list_allies = [player]
-    assert _resolve_ally_target(player, f"ally_{id(player)}") is None
+    assert _resolve_ally_target(player, f"ally_{combatant_handle(player)}") is None
 
 
 # ---------------------------------------------------------------------------

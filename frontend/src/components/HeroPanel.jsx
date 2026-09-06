@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { colors, spacing, fonts, shadows, accessibility } from '../styles/theme'
+import { colors, spacing, fonts, accessibility } from '../styles/theme'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
 import GameText from './GameText'
 
@@ -13,18 +13,16 @@ import GameText from './GameText'
  * in lockstep.
  *
  * `side` drives every left/right mirror (position, both border radii, and the
- * tooltip's anchor). `tooltipShadow` is a prop rather than derived from `color`
- * only because the two bars genuinely render different glows today — HP uses a
- * colour-matched shadow, Fatigue uses the orange `shadows.glow` token, which
- * looks like an oversight but is preserved here so this extraction stays purely
- * structural. Unify them in a deliberate visual change, not silently.
+ * tooltip's anchor). The tooltip glow is derived from `color`, as the bar's own
+ * border and fill already are, so both bars glow in their own colour. Fatigue
+ * previously used the orange `shadows.glow` token against its cyan border; that
+ * mismatch was an oversight and was unified deliberately (issue #494).
  */
 function VitalBar({
   side,
   label,
   color,
   trackColor,
-  tooltipShadow,
   fillRatio,
   current,
   max,
@@ -85,7 +83,7 @@ function VitalBar({
           fontWeight: 'bold',
           fontFamily: fonts.main,
           whiteSpace: 'nowrap',
-          boxShadow: tooltipShadow,
+          boxShadow: `0 0 8px ${color}99`,
           zIndex: 20,
         }}>
           {label}<br />{current.toFixed(0)}/{max}
@@ -267,7 +265,6 @@ function HeroPanel({
           label="HP"
           color={colors.danger}
           trackColor={colors.bg.negativeLight}
-          tooltipShadow={`0 0 8px ${colors.danger}99`}
           fillRatio={hpPercent}
           current={hp.current}
           max={hp.max}
@@ -282,7 +279,6 @@ function HeroPanel({
           label="Fatigue"
           color={colors.secondary}
           trackColor={colors.bg.highlightLight}
-          tooltipShadow={shadows.glow}
           fillRatio={fatiguePercent}
           current={fatigue.current}
           max={fatigue.max}

@@ -4,6 +4,7 @@ import {
   getAnimationConfig,
   getAnimationDuration,
   impactSfxFor,
+  strikeFlashFor,
 } from './animationConfigs';
 import { OUTCOMES } from './combatBeatSchema';
 
@@ -35,6 +36,23 @@ describe('ANIMATION_CONFIGS', () => {
 
   it('keeps combat pacing tight — no animation runs longer than 1.1s', () => {
     entries.forEach(([, cfg]) => expect(cfg.duration).toBeLessThanOrEqual(1100));
+  });
+});
+
+describe('the retired `impact` follow-up type', () => {
+  // An area move resolves once per target, and every resolution now plays the
+  // move's OWN animation, concurrently — see BattlefieldGrid.concurrent.test.
+  // `impact` existed only to serve the adapter's downgrade of every resolution
+  // after the first to a 200ms outcome flash, which is exactly the behaviour
+  // the owner asked to replace. Nothing emits it any more, so it is gone
+  // rather than left here as a config no code path can reach.
+  it('is not part of the taxonomy', () => {
+    expect(ANIMATION_CONFIGS.impact).toBeUndefined();
+  });
+
+  it('degrades to pulse rather than throwing if a stale server still sends it', () => {
+    expect(getAnimationConfig('impact')).toBe(ANIMATION_CONFIGS.pulse);
+    expect(getAnimationDuration('impact')).toBe(ANIMATION_CONFIGS.pulse.duration);
   });
 });
 
@@ -86,10 +104,64 @@ describe('impactSfxFor', () => {
     expect(impactSfxFor('absorb')).toBe('attack_parry');
   });
 
+  it('plays a distinct deflection cue for a glancing blow', () => {
+    // A glance lands but skids off for half damage. It used to reach the client
+    // with no outcome at all (the adapter inferred outcomes from narration prose
+    // and "just barely hit" matched nothing), so ~10% of landed hits were silent.
+    expect(impactSfxFor('glance')).toBe('attack_glance');
+  });
+
+  it('gives glance its own cue, not the hit / miss / parry ones', () => {
+    const glance = impactSfxFor('glance');
+    expect(glance).not.toBe(impactSfxFor('hit'));
+    expect(glance).not.toBe(impactSfxFor('miss'));
+    expect(glance).not.toBe(impactSfxFor('parry'));
+  });
+
   it('covers every outcome the beat schema declares', () => {
     // Guards against the switch drifting from the engine's outcome vocabulary.
     for (const outcome of OUTCOMES) {
       expect(typeof impactSfxFor(outcome)).toBe('string');
     }
+  });
+});
+
+describe('strikeFlashFor', () => {
+  it('returns a style object for every outcome the beat schema declares', () => {
+    for (const outcome of OUTCOMES) {
+      expect(typeof strikeFlashFor(outcome), `${outcome} has no flash`).toBe('object');
+    }
+  });
+
+  it('keeps the established hit / miss / parry treatments', () => {
+    expect(strikeFlashFor('hit').backgroundColor).toBe('rgba(255, 0, 0, 0.7)');
+    expect(strikeFlashFor('miss').opacity).toBe(0.3);
+    expect(strikeFlashFor('parry').backgroundColor).toBe('rgba(255, 200, 0, 0.7)');
+    expect(strikeFlashFor('block')).toEqual(strikeFlashFor('parry'));
+    expect(strikeFlashFor('deflect')).toEqual(strikeFlashFor('parry'));
+  });
+
+  it('gives a glance its own flash, distinct from hit, miss and parry', () => {
+    const glance = strikeFlashFor('glance');
+    expect(glance).not.toEqual(strikeFlashFor('hit'));
+    expect(glance).not.toEqual(strikeFlashFor('miss'));
+    expect(glance).not.toEqual(strikeFlashFor('parry'));
+  });
+
+  it('reads as a deflection: the strike skids off at an angle', () => {
+    // The agreed feel — the blow does not land square, it glances away.
+    const glance = strikeFlashFor('glance');
+    expect(glance.transform).toMatch(/translate/);
+  });
+
+  it('flashes lighter and thinner than a solid hit', () => {
+    const alphaOf = (color) => Number(color.match(/[\d.]+\)$/)[0].slice(0, -1));
+    expect(alphaOf(strikeFlashFor('glance').backgroundColor))
+      .toBeLessThan(alphaOf(strikeFlashFor('hit').backgroundColor));
+  });
+
+  it('returns an empty style for an unknown outcome rather than throwing', () => {
+    expect(strikeFlashFor(undefined)).toEqual({});
+    expect(strikeFlashFor('nonsense')).toEqual({});
   });
 });

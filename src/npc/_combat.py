@@ -19,6 +19,28 @@ Attributes expected on the host class (provided by NPC.__init__):
 import random
 
 import src.moves as moves  # type: ignore
+from src.combatant import (
+    MOVE_STAGE_COOLDOWN,
+    MOVE_STAGE_PREP,
+    MOVE_STAGE_RECOIL,
+)
+
+#: Stages a move occupies *after* its effect has already resolved.  A move
+#: sitting in one of these is still paying its recoil/cooldown and must not be
+#: handed back to move selection — ``Move.cast()`` unconditionally resets
+#: ``current_stage`` to 0, so re-selecting a cooling move erases the debt
+#: entirely.
+_AFTERMATH_STAGES = (MOVE_STAGE_RECOIL, MOVE_STAGE_COOLDOWN)
+
+
+def move_is_cooling(move):
+    """True when `move` is in recoil/cooldown and therefore not re-castable.
+
+    Defaults to the prep stage for objects that never went through
+    ``Move.__init__`` (test doubles, moves built via ``__new__``) so a missing
+    attribute reads as "ready" rather than silently removing the move.
+    """
+    return getattr(move, "current_stage", MOVE_STAGE_PREP) in _AFTERMATH_STAGES
 
 
 class NPCCombatMixin:
@@ -38,13 +60,30 @@ class NPCCombatMixin:
         _process_npc).  A future friendly-target move (heal/buff with
         targeted=True) must pick its own target in cast()/beat_update()
         rather than trust move.target, or be excluded here.
+
+        Also drops any move still sitting in recoil or cooldown.  This is the
+        single choke point every NPC move-selection path funnels through
+        (NPCCombatMixin.select_move plus the per-NPC overrides that rebuild
+        the weighted bag themselves — TalusHound, Mara), so the filter cannot
+        be bypassed by adding another override.  It has to live here rather
+        than in the bag: ``Move.cast()`` unconditionally resets
+        ``current_stage`` to 0 and ``beats_left`` to the prep count, so a
+        cooling move that gets re-selected simply never pays its cooldown.
+        That applies to a move dropped into cooldown by ``Move.advance``'s
+        interrupt branch (War Cry, Disrupt) exactly as it does to one that
+        cooled down the ordinary way — NPC cooldowns were previously
+        unenforced in both cases.
+
+        Note the rest/idle fallbacks in the selectors build a *fresh*
+        ``NpcRest`` rather than pulling one from known_moves, so an NPC whose
+        every move is cooling can always still act.
         """
         target = getattr(self, "target", None)
         if target is not None and target is not self:
             for move in self.known_moves:
                 if getattr(move, "targeted", False):
                     move.target = target
-        return super().refresh_moves()
+        return [move for move in super().refresh_moves() if not move_is_cooling(move)]
 
     def select_move(self):
         available_moves = self.refresh_moves()
@@ -77,14 +116,24 @@ class NPCCombatMixin:
                 weighted_moves.append(move)
 
         if not weighted_moves:
-            # Fallback if no moves generated
+            # Fallback if no moves generated.  Resting is only right when the
+            # bag is empty *because* every move is mid-cooldown — the NPC has
+            # something to wait out, and recovering fatigue meanwhile beats
+            # standing still.  An NPC with no moves at all, or none in range,
+            # keeps the original no-op: there is nothing to wait for.
+            if any(move_is_cooling(m) for m in self.known_moves):
+                self.current_move = moves.NpcRest(self)
             return
 
         # If no offensive move is both affordable and viable, rest to recover fatigue.
         # This prevents the NPC from idling forever when the preferred attack costs more
         # fatigue than is currently available (e.g. after 2+ attacks drain the pool).
         # Use available_moves (deduplicated) rather than weighted_moves to avoid calling
-        # viable() multiple times on the same object due to weight expansion.
+        # viable() multiple times on the same object due to weight expansion.  An
+        # offensive move that is merely cooling down has been filtered out of
+        # available_moves, so an NPC waiting on its only attack rests through the
+        # cooldown — which is the right call, since there is nothing else to spend
+        # the beats on.
         # Use getattr in case a move was created via __new__ without calling Move.__init__.
         can_attack = any(
             getattr(m, "category", "") == "Offensive"

@@ -30,11 +30,15 @@ Targets the large uncovered sections by exercising:
 import uuid
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.api.combat_adapter import (
+    REPORTED_BEAT_KEY,
     ApiCombatAdapter,
     CombatOutputCapture,
     _strip_combatant_prefix,
 )
+from src.api.serializers.combat import CombatantSerializer
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures
@@ -74,6 +78,13 @@ def _make_move(
     m.stage_beat = stage_beat or [1, 1, 1, 3]
     m.target = None
     m.user = None
+    # Target selection validates the client-supplied id against
+    # _get_available_targets(move), which reads mvrange and calls
+    # get_effective_range_max(); a bare MagicMock returns another MagicMock for
+    # the latter and the range comparison then raises. Model the real default
+    # (no dynamic override, melee band) so these doubles behave like a move.
+    m.mvrange = (0, 5)
+    m.get_effective_range_max.return_value = None
     m.cast.return_value = None
     m.advance.side_effect = lambda user: setattr(user, "current_move", None)
     return m
@@ -181,6 +192,18 @@ class TestStripCombatantPrefix:
 # ---------------------------------------------------------------------------
 
 
+class _PendingAnim:
+    """Entity stand-in carrying a real ``_pending_animation`` dict.
+
+    ``write()`` both reads and ``delattr``s that attribute; a bare ``MagicMock``
+    answers ``hasattr`` for attributes never set and swallows the delete, so it
+    cannot honestly model either half.
+    """
+
+    def __init__(self, animation):
+        self._pending_animation = animation
+
+
 class TestCombatOutputCapture:
     def test_write_captures_message(self):
         cap = CombatOutputCapture()
@@ -236,44 +259,55 @@ class TestCombatOutputCapture:
         cap.clear()
         assert cap.get_log() == []
 
-    def test_write_hit_outcome(self):
-        """Impact text resolves pending animation with 'hit' outcome; stores in log entry."""
-        player = MagicMock()
-        player._pending_animation = {"type": "attack", "outcome": None}
+    @pytest.mark.parametrize(
+        "outcome", ["hit", "glance", "miss", "parry", "absorb"]
+    )
+    def test_write_emits_the_outcome_the_engine_published(self, outcome):
+        """The engine stamps the outcome; write() forwards it untouched.
+
+        These cases previously drove the outcome from the prose ("struck" +
+        "damage" -> hit, and so on), which silently dropped every glancing blow
+        and mislabelled absorbs as hits. The text below is deliberately generic
+        so only the published fact can produce the assertion.
+        """
+        player = _PendingAnim({"type": "attack", "outcome": outcome})
+        cap = CombatOutputCapture(player=player)
+        cap.write("Something resolves on the battlefield.")
+        entry = cap.log_entries[0]
+        assert entry.get("trigger_animation") is True
+        assert entry["animation_data"]["outcome"] == outcome
+        # The pending animation is retained but disarmed: an area move publishes
+        # one outcome per enemy in its arc, so the animation has to survive to
+        # carry the next resolution. What must not survive is the resolution
+        # just reported — a further line cannot re-fire it, and the end-of-move
+        # fallback sees it as already reported. "Reported" is recorded as the
+        # BEAT it happened in, not as a lifetime boolean, so a move that swings
+        # again in a later beat is a first-class swing rather than a follow-up.
+        cap.write("Another line entirely.")
+        assert len([e for e in cap.log_entries if e.get("trigger_animation")]) == 1
+        assert player._pending_animation["outcome"] is None
+        assert REPORTED_BEAT_KEY in player._pending_animation
+
+    def test_write_ignores_impact_prose_with_no_published_outcome(self):
+        """Prose alone must never fire an animation (regression guard)."""
+        player = _PendingAnim({"type": "attack", "outcome": None})
         cap = CombatOutputCapture(player=player)
         cap.write("Jean struck Goblin for 12 damage")
-        # After impact the animation is removed from the entity and stored in the log entry
-        entry = cap.log_entries[0]
-        assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "hit"
-
-    def test_write_parry_outcome(self):
-        player = MagicMock()
-        player._pending_animation = {"type": "attack"}
-        cap = CombatOutputCapture(player=player)
         cap.write("Goblin parried the blow")
-        entry = cap.log_entries[0]
-        assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "parry"
-
-    def test_write_miss_outcome(self):
-        player = MagicMock()
-        player._pending_animation = {"type": "attack"}
-        cap = CombatOutputCapture(player=player)
         cap.write("Jean just missed Goblin")
-        entry = cap.log_entries[0]
-        assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "miss"
+        assert all("trigger_animation" not in e for e in cap.log_entries)
+        assert player._pending_animation["outcome"] is None
 
     def test_write_impact_triggers_animation_entry(self):
-        """When impact resolves a pending animation, entry gets trigger_animation=True."""
-        player = MagicMock()
-        player._pending_animation = {"type": "attack", "move_name": "Slash"}
+        """When an outcome resolves, entry gets trigger_animation=True."""
+        player = _PendingAnim(
+            {"type": "attack", "move_name": "Slash", "outcome": "hit"}
+        )
         cap = CombatOutputCapture(player=player)
-        cap.write("Jean struck Goblin for 5 damage")
+        cap.write("Jean strikes with his sword!")
         entry = cap.log_entries[0]
         assert entry.get("trigger_animation") is True
-        assert "animation_data" in entry
+        assert entry["animation_data"]["move_name"] == "Slash"
 
     def test_write_uses_active_entity_over_player(self):
         """active_entity takes precedence over player for animation matching."""
@@ -281,15 +315,14 @@ class TestCombatOutputCapture:
         # Player has no _pending_animation attribute
         if hasattr(player, "_pending_animation"):
             del player._pending_animation
-        entity = MagicMock()
-        entity._pending_animation = {"type": "attack"}
+        entity = _PendingAnim({"type": "attack", "outcome": "glance"})
         cap = CombatOutputCapture(player=player)
         cap.active_entity = entity
-        cap.write("Jean struck Goblin for 5 damage")
+        cap.write("The blow skids off.")
         # Animation resolved on entity and stored in log entry
         entry = cap.log_entries[0]
         assert entry.get("trigger_animation") is True
-        assert entry["animation_data"]["outcome"] == "hit"
+        assert entry["animation_data"]["outcome"] == "glance"
 
     def test_round_number_in_entry(self):
         cap = CombatOutputCapture()
@@ -956,7 +989,7 @@ class TestHandleMoveSelection:
         player.known_moves = [move]
         player.combat_list = [enemy]
         player.combat_list_allies = [player]
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         with (
             patch.object(
                 adapter := _make_adapter(player),
@@ -1059,6 +1092,8 @@ class TestHandleTargetSelection:
                 "advance",
                 "target",
                 "user",
+                "mvrange",
+                "get_effective_range_max",
             ]
         )
         move.name = "Slash"
@@ -1070,6 +1105,10 @@ class TestHandleTargetSelection:
         move.viable.return_value = True
         move.target = None
         move.user = None
+        # See _make_move: the target must be inside the move's published option
+        # set, so the double has to answer the range questions a move answers.
+        move.mvrange = (0, 5)
+        move.get_effective_range_max.return_value = None
         enemy = _make_enemy()
         player.known_moves = [move]
         player.combat_list = [enemy]
@@ -1077,7 +1116,7 @@ class TestHandleTargetSelection:
         adapter = _make_adapter(player)
         adapter.input_type = "target_selection"
         adapter.pending_move_index = 0
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         with patch.object(adapter, "_execute_move", return_value={"ok": True}) as exe:
             result = adapter._handle_target_selection(target_id)
         exe.assert_called_once()
@@ -1102,7 +1141,7 @@ class TestHandleTargetSelection:
         adapter = _make_adapter(player)
         adapter.input_type = "target_selection"
         adapter.pending_move_index = 0
-        target_id = f"enemy_{id(enemy)}"
+        target_id = CombatantSerializer.stream_id(enemy)
         with patch.object(adapter, "get_combat_state", return_value={"ok": True}):
             adapter._handle_target_selection(target_id)
         assert adapter.input_type == "number_input"
@@ -1536,6 +1575,11 @@ class TestGetAvailableTargets:
         player = _make_player()
         ally = _make_enemy(name="Ally")
         ally.is_alive.return_value = True
+        # Real allies (Gorran, Mara, The Adjutant) all set friend=True, and
+        # CombatantSerializer.stream_id -- the single source of truth for wire
+        # ids -- reads that attribute. _make_enemy hardcodes friend=False, so
+        # without this the fixture is an "ally" the engine would call an enemy.
+        ally.friend = True
         player.combat_list = []
         player.combat_list_allies = [player, ally]
         player.combat_proximity = {ally: 3}
@@ -1975,3 +2019,70 @@ class TestNpcTryHealAlly:
         adapter = _make_adapter(player)
         result = adapter._npc_try_heal_ally(npc)
         assert result is False
+
+
+class TestAffectedPreviewsReuseTheArcScan:
+    """The adapter already computed the affected set; nothing may recompute it.
+
+    ``_get_affected_previews`` calls ``move.preview_affected()`` once to decide
+    which cards to build, then builds one card per combatant -- and each card's
+    ``preview_damage`` used to re-run the same ``hostiles_in_arc`` scan through
+    ``_area_preview_damage``'s membership gate. That is 1+N arc scans (proximity
+    walk, per-enemy distance, frontal-cone trig) per area move per poll, for a
+    set the caller was already holding. The engine grew an ``affected=``
+    passthrough for exactly this; the adapter must use it.
+    """
+
+    def test_the_arc_is_scanned_once_not_once_per_target(self):
+        import src.items as items
+        import src.moves as moves
+        import src.npc as npc
+        import src.positions as positions
+        from src.player import Player
+
+        player = Player()
+        weapon = items.Pole()
+        player.inventory.append(weapon)
+        weapon.isequipped = True
+        player.eq_weapon = weapon
+        player.combat_exp.setdefault(weapon.subtype, 0)
+        player.combat_position = positions.CombatPosition(
+            10, 10, positions.Direction.N
+        )
+        enemies = []
+        for i in range(3):
+            enemy = npc.Slime()
+            enemy.name = f"Slime{i + 1}"
+            enemy.maxhp = enemy.hp = 500
+            enemy.combat_position = positions.CombatPosition(
+                10, 11 + i, positions.Direction.S
+            )
+            enemies.append(enemy)
+        player.combat_list = list(enemies)
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 2 for enemy in enemies}
+        player.in_combat = True
+        player.fatigue = player.maxfatigue
+
+        move = moves.Sweep(player)
+        move.evaluate()
+
+        adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
+        adapter.player = player
+
+        calls = {"n": 0}
+        real = move.preview_affected
+
+        def counting():
+            calls["n"] += 1
+            return real()
+
+        move.preview_affected = counting
+        cards = adapter._get_affected_previews(move)
+
+        assert len(cards) == 3, "fixture must actually reach three enemies"
+        assert calls["n"] == 1, (
+            f"preview_affected ran {calls['n']} times for one affected-preview "
+            "build -- each target card re-scanned the arc the adapter had "
+            "already computed"
+        )

@@ -861,6 +861,28 @@ class TestFeedbackRoute:
         )
         assert rv.status_code == 400
 
+    @pytest.mark.parametrize(
+        "invisible",
+        ["\u200b", "\ufeff", "\x00", "\u2060", "\u200b \ufeff"],
+        ids=["zero-width-space", "bom", "nul", "word-joiner", "mixed"],
+    )
+    def test_a_title_that_renders_as_nothing_is_rejected(self, client, invisible):
+        """An invisible title must not become a blank GitHub issue title.
+
+        ``.strip()`` leaves every one of these codepoints standing, so a
+        truthiness check accepts them and files an issue with no visible
+        title. The route delegates to has_visible_characters instead
+        (issue #523's rule, applied project-wide).
+        """
+        c, _ = client
+        rv = c.post(
+            "/api/feedback/issue",
+            json={"type": "bug", "title": invisible},
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 400
+        assert rv.get_json()["error"] == "Title is required"
+
     def test_title_too_long(self, client):
         c, _ = client
         rv = c.post(
@@ -1935,11 +1957,19 @@ class TestSavesRoutesAuthGuards:
         app._test_gs.save_game = AsyncMock(return_value=save_id)
         return app._test_gs.save_game
 
-    def test_an_over_long_save_name_is_truncated_not_refused(self, client):
+    def test_an_over_long_save_name_is_refused_and_nothing_is_written(self, client):
         """The name was bounded only by MAX_CONTENT_LENGTH, so a megabyte of
-        attacker text could be persisted and echoed. Truncated rather than
-        refused: a name is presentation, and losing its tail should not lose
-        the save."""
+        attacker text could be persisted and echoed.
+
+        These two used to assert the opposite -- truncate, and auto-name a
+        blank -- on the reasoning that a name is presentation and losing its
+        tail should not lose the save. Issue #523 settled it the other way and
+        the argument is better: silently rewriting what the player typed hides
+        the mistake instead of reporting it, and a blank name auto-named to
+        "Manual Save" is indistinguishable from a deliberate one. Asserting
+        ``save_game`` was never awaited is what proves no truncated row reached
+        the database, which the old shape could not check at all.
+        """
         from src.api.routes.saves import MAX_SAVE_NAME_LENGTH
 
         c, app = client
@@ -1949,19 +1979,17 @@ class TestSavesRoutesAuthGuards:
             json={"name": "x" * (MAX_SAVE_NAME_LENGTH + 5000)},
             headers=AUTH_HEADER,
         )
-        assert rv.status_code == 201, rv.get_json()
-        stored = saver.call_args[0][1]
-        assert stored == "x" * MAX_SAVE_NAME_LENGTH
-        assert stored in rv.get_json()["message"]
+        assert rv.status_code == 400, rv.get_json()
+        assert rv.get_json()["success"] is False
+        saver.assert_not_awaited()
 
-    def test_a_blank_save_name_falls_back_to_the_default(self, client):
-        from src.api.routes.saves import DEFAULT_SAVE_NAME
-
+    def test_a_blank_save_name_is_refused(self, client):
         c, app = client
         saver = self._saving(app)
         rv = c.post("/api/saves", json={"name": "   "}, headers=AUTH_HEADER)
-        assert rv.status_code == 201, rv.get_json()
-        assert saver.call_args[0][1] == DEFAULT_SAVE_NAME
+        assert rv.status_code == 400, rv.get_json()
+        assert rv.get_json()["error"] == "Save name is required"
+        saver.assert_not_awaited()
 
     def test_an_ordinary_save_name_is_stored_verbatim(self, client):
         """The control. Every assertion above holds for a route that stores a

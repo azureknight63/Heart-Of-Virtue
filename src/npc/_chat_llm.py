@@ -2486,7 +2486,7 @@ class ConversationalNPCMixin:
 
         def _classify(match: "re.Match") -> str:
             before = source[: match.start()].rstrip()
-            after = source[match.end() :].lstrip()
+            after = source[match.end():].lstrip()
             if not before or before[-1] == "*" or not after:
                 # Start of text, straight after another aside (so consecutive
                 # asides are both extracted), or end of text.
@@ -2526,7 +2526,7 @@ class ConversationalNPCMixin:
         start = text.find("*")
         if start < 0:
             return text
-        body = text[start + 1 :]
+        body = text[start + 1:]
         cut = len(body)
         for index, char in enumerate(body):
             if char in _TERMINATORS:

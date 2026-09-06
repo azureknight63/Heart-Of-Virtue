@@ -1,38 +1,72 @@
 """Registration, login and cloud-save persistence against a REAL database.
 
-OPT-IN. These tests write real rows -- ``auth_service.create_user`` has no
-TESTING guard, and ``src/api/db.py`` reads ``TURSO_DATABASE_URL`` straight from
-the environment rather than from Flask config, so with a configured ``.env``
-this file INSERTs into whatever database that URL names. Run it deliberately:
+This file writes real rows. ``auth_service.create_user`` has no TESTING
+guard, and ``src/api/db.py`` reads ``TURSO_DATABASE_URL`` straight from the
+environment rather than from Flask config, so a process with a configured
+``.env`` INSERTs into whatever database that URL names.
 
-    HOV_LIVE_DB=1 python -m pytest tests/api/test_cloud_integration.py -v
+Two things stop that, and only together:
 
-Without the opt-in every test here skips, and ``tests/conftest.py`` separately
-blanks ``TURSO_DATABASE_URL``/``TURSO_AUTH_TOKEN`` so an un-gated DB write in
-any other test fails loudly instead of succeeding against production.
+* ``tests/conftest.py`` blanks ``TURSO_DATABASE_URL``/``TURSO_AUTH_TOKEN``
+  unconditionally, so under pytest there is no database to reach.
+* the ``xfail(strict=True)`` below turns that into an EXPECTED failure --
+  and, crucially, into a loud one the day the blanking stops working. An
+  XPASS here means a test just talked to a real database.
 
-The gate is a separate variable from ``HOV_LIVE_LLM`` for the same reason that
-one is separate from the provider pins: opting into spending free-tier quota
-and opting into writing user rows are different decisions.
+That second half is why this is an xfail and not the opt-in skip it was
+briefly rewritten as. A skip reports the same "nothing ran" whether the
+guard is holding or has quietly come off; only the strict xfail can tell
+those apart. An opt-in variable would not have helped either: the blanking
+in ``tests/conftest.py`` is unconditional, so ``HOV_LIVE_DB=1`` alone would
+not have made this run. Running it for real means restoring the credentials
+the way ``tests/integration/conftest.py`` does for the live LLM suite.
 
-This file spent months inside ``pytest.ini``'s ``norecursedirs``, which is what
-hid the exposure. Un-excluding the directory put it in the default gate; the
-coverage measurement that justified the rescue did not ask whether a rescued
-module had external side effects. It does now.
+The exposure was hidden for months by ``pytest.ini``'s ``norecursedirs``,
+and surfaced when the directory was briefly un-excluded: the coverage
+measurement that justified that rescue never asked whether a rescued module
+had external side effects.
 """
 
+import logging
 import os
 
 import pytest
 import uuid
-import json
 import asyncio
-from src.api.services.auth_service import auth_service
 from src.api.db import db
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("HOV_LIVE_DB", "0") not in ("1", "true", "True"),
-    reason="writes real rows to the configured Turso database; set HOV_LIVE_DB=1",
+_log = logging.getLogger(__name__)
+
+# Both credentials are required. Keying only on the URL made the marker
+# deactivate the moment a developer exported it, at which point the test
+# hard-failed on the first request instead of being skipped -- which is the
+# opposite of what the reason text told them to expect.
+TURSO_CONFIGURED = bool(
+    os.getenv("TURSO_DATABASE_URL") and os.getenv("TURSO_AUTH_TOKEN")
+)
+
+# Kept as an `xfail`, not converted to a `skipif`. Without a database this
+# test really does fail (503 from the register route), so "expected to fail"
+# is the accurate report, it still exercises the config-leak guard on the way
+# through, and it keeps this directory's zero-skip property (CLAUDE.md is
+# explicit that skips in this suite have a long history of hiding defects).
+#
+# `strict=True` is the house setting and matters here: an XPASS with no Turso
+# configured would mean the test is no longer verifying cloud persistence at
+# all -- exactly the silent hollowing-out that should fail loudly.
+requires_turso = pytest.mark.xfail(
+    condition=not TURSO_CONFIGURED,
+    strict=True,
+    reason=(
+        "Needs a reachable Turso database. src/api/db.py raises "
+        "'TURSO_DATABASE_URL is not set' on first execute(), and the register "
+        "route's config-leak guard turns that into HTTP 503, so the very first "
+        "assertion (201 from /api/auth/register) fails. This test verifies real "
+        "cloud persistence — registration, the manual-save row, the single-row "
+        "autosave UPSERT, and load-after-relogin — so a fake db would verify "
+        "nothing it exists to verify. Set both TURSO_DATABASE_URL and "
+        "TURSO_AUTH_TOKEN and it runs for real."
+    ),
 )
 
 
@@ -45,6 +79,7 @@ class TestCloudIntegration:
         self.test_username = f"{self.test_user_prefix}{uuid.uuid4().hex[:8]}"
         self.test_password = "SecurePassword123!@#" # > 16 chars
         self.test_email = "test@example.com"
+        self.created_user = False
 
     async def _do_cleanup(self):
         """Actual cleanup logic."""
@@ -55,13 +90,25 @@ class TestCloudIntegration:
                 user_id = res.rows[0][0]
                 await db.execute("DELETE FROM saves WHERE user_id = ?", [user_id])
                 await db.execute("DELETE FROM users WHERE id = ?", [user_id])
-        except Exception as e:
-            print(f"Teardown error: {e}")
+        except Exception:
+            # Through `logging`, never `print`: tests/api/conftest.py replaces
+            # builtins.print with a no-op for every test in this directory, so
+            # a printed teardown failure is invisible.
+            _log.exception("Cloud teardown failed for %s", self.test_username)
 
     def teardown_method(self, method):
-        """Clean up test data."""
+        """Delete the row this test created, if it created one.
+
+        Gated twice: without Turso configured there is no database to talk to,
+        and the validation test never registers anybody. Running the cleanup
+        unconditionally meant every test in the class opened an event loop and
+        issued a doomed query.
+        """
+        if not (TURSO_CONFIGURED and self.created_user):
+            return
         asyncio.run(self._do_cleanup())
 
+    @requires_turso
     def test_user_lifecycle_and_saves(self, client, app):
         """Test registration, login, and cloud save persistence."""
 
@@ -74,6 +121,7 @@ class TestCloudIntegration:
         # Correct URL with /api prefix
         response = client.post("/api/auth/register", json=reg_payload)
         assert response.status_code == 201
+        self.created_user = True
         data = response.get_json()
         assert data["success"] is True
         session_id = data["data"]["session_id"]
@@ -83,7 +131,10 @@ class TestCloudIntegration:
         session = app.session_manager.get_session(session_id)
         assert session is not None
         assert hasattr(session, "db_user_id")
-        user_id = session.db_user_id
+        # Asserted, not merely bound: a registered player always carries a
+        # db_user_id, and the saves routes 403 every cloud operation without
+        # one (CLAUDE.md, "There is no guest mode").
+        assert session.db_user_id
 
         # 3. Test Manual Save
         save_name = "Cloud Test Save"
@@ -137,19 +188,14 @@ class TestCloudIntegration:
         assert load_resp.status_code == 200
         assert load_resp.get_json()["success"] is True
 
-    def test_auth_validations(self, client):
-        """Test username/password security constraints."""
+    def test_register_rejects_a_short_password(self, client):
+        """Registration enforces the 16-character password floor.
 
-        # Short Username
-        short_user = {
-            "username": "abc", # < 4
-            "password": "Password123!@#456",
-            "email": "test@test.com"
-        }
-        resp1 = client.post("/api/auth/register", json=short_user)
-        assert resp1.status_code == 400
-        assert "at least 4 characters" in resp1.get_json()["message"]
-
+        The username floor is covered once, by
+        `test_routes_integration.py::test_register_short_username`, which
+        asserts the status, the `success` flag, the `validation_error` code and
+        the message. This test used to repeat that case verbatim.
+        """
         # Short Password
         short_pass = {
             "username": f"valid_{uuid.uuid4().hex[:4]}",

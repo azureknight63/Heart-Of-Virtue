@@ -1,9 +1,9 @@
 """Browser layer: Playwright driving the real React + Flask stack.
 
 Auto-starts both servers, runs the full login flow via the browser, then
-executes game tool calls through the real API (using the session token
-extracted from localStorage) while using Playwright for UI-specific probes
-(screenshots, page errors, element clicks, visible text).
+executes game tool calls through the real API (replaying the session id the
+login handed out) while using Playwright for UI-specific probes (screenshots,
+page errors, element clicks, visible text).
 
 Required: pip install playwright && playwright install chromium
 """
@@ -20,6 +20,10 @@ from typing import Any, Dict, Optional
 
 import requests as http_requests
 
+# Imported rather than restated so the harness cannot drift from the server's
+# actual cookie name — the exact class of two-sided drift this project keeps
+# hitting.
+from src.api.session_cookie import DEFAULT_COOKIE_NAME as SESSION_COOKIE_NAME
 from tools.inquisitor.game_tools import ToolResult
 
 # ---------------------------------------------------------------------------
@@ -43,6 +47,7 @@ class BrowserLayer:
         self._vite_process: Optional[subprocess.Popen] = None
         self._pw = None          # playwright instance
         self._browser = None
+        self._context = None
         self._page = None
         self._token: Optional[str] = None
         self._console_errors: list = []
@@ -243,8 +248,8 @@ class BrowserLayer:
             launch_kwargs["executable_path"] = candidates[0]
             self._browser = self._pw.chromium.launch(**launch_kwargs)
 
-        context = self._browser.new_context()
-        self._page = context.new_page()
+        self._context = self._browser.new_context()
+        self._page = self._context.new_page()
 
         # Collect JS errors and HTTP 4xx/5xx responses
         self._page.on("console", self._on_console)
@@ -252,8 +257,21 @@ class BrowserLayer:
         self._page.on("requestfailed", self._on_request_failed)
         self._page.on("response", self._on_response)
 
+    def _session_cookie_value(self) -> Optional[str]:
+        """The session id the API put in the browser's cookie jar.
+
+        Since issue #493 the credential is an ``HttpOnly`` cookie, so it cannot
+        be read from page JavaScript — but Playwright can read the context's
+        cookie jar directly, which is how the harness still gets a session id to
+        replay on its own out-of-band HTTP calls.
+        """
+        for cookie in self._context.cookies():
+            if cookie.get("name") == SESSION_COOKIE_NAME:
+                return cookie.get("value")
+        return None
+
     def _login(self):
-        """Register a fresh test account and extract the auth token."""
+        """Register a fresh test account and pick up the session it issues."""
         username = f"inquisitor_{uuid.uuid4().hex[:6]}"
         password = "Inquisitor1234!X"  # 16 chars — meets minimum length requirement
 
@@ -297,9 +315,24 @@ class BrowserLayer:
             if resp.status_code in (200, 201):
                 token = resp.json().get("session_id", "")
                 self._token = token
+                # Authenticate the browser the way the app does: install the
+                # same HttpOnly cookie the endpoint just issued (issue #493).
+                # Writing localStorage no longer authenticates anything — the
+                # SPA holds no credential there.
+                self._context.add_cookies([{
+                    "name": SESSION_COOKIE_NAME,
+                    "value": token,
+                    "domain": "localhost",
+                    "path": "/",
+                    "httpOnly": True,
+                    "sameSite": "Lax",
+                }])
                 self._page.goto(FRONTEND_URL, wait_until="domcontentloaded", timeout=60000)
+                # The SPA decides whether to render as signed in from this
+                # marker (see checkAuth in AuthContext.jsx); the cookie above is
+                # what actually authorises the requests it then makes.
                 self._page.evaluate(
-                    f'localStorage.setItem("authToken", {json.dumps(token)})'
+                    f'localStorage.setItem("username", {json.dumps(username)})'
                 )
                 return
             raise RuntimeError(
@@ -307,10 +340,16 @@ class BrowserLayer:
                 f"HTTP {resp.status_code} {resp.text[:200]})"
             ) from exc
 
-        # Extract token from localStorage
-        self._token = self._page.evaluate('localStorage.getItem("authToken")')
+        # Pick the session id out of the cookie jar. It is no longer in
+        # localStorage: the browser's copy is an HttpOnly cookie the page cannot
+        # read, which is the point of issue #493. The harness needs the value
+        # only for its own `requests`-based calls below, which send it as a
+        # Bearer header (the non-browser fallback the API still accepts).
+        self._token = self._session_cookie_value()
         if not self._token:
-            raise RuntimeError("Auth token not found in localStorage after login")
+            raise RuntimeError(
+                f"No {SESSION_COOKIE_NAME} cookie in the browser after login"
+            )
 
     # ------------------------------------------------------------------
     # Event handlers

@@ -30,7 +30,8 @@ def get_shop_state():
     """Fetch merchant stock, buyback items, and player's sellable inventory.
 
     Query params:
-        npc_id (str): str(id(npc)) of the merchant on the current tile.
+        npc_id (str): opaque wire handle (``src.combatant.wire_handle``) of
+            the merchant on the current tile.
 
     Returns:
         {

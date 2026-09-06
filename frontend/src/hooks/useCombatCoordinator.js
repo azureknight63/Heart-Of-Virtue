@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { distinctLogCount } from '../utils/combatLogKey'
 
 /**
  * Custom hook for managing combat coordination state and handlers.
@@ -77,10 +78,16 @@ export function useCombatCoordinator({
      */
     useEffect(() => {
         const maybeEnd = combat?.end_state
-        const combatLogLength = combat?.log?.length || 0
-        const hasPendingLogs = combatLogLength > displayedLogCount
 
         if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
+            // Distinct entries, not raw length: the per-target carriers of one
+            // swing are byte-identical, so the raw log permanently exceeds
+            // LeftPanel's deduped count after any multi-target resolution and
+            // this gate would never close -- holding the end-of-combat dialog
+            // shut. Computed only on this end-of-combat path: it walks the
+            // whole log, and this effect otherwise runs on every poll.
+            const hasPendingLogs = distinctLogCount(combat?.log) > displayedLogCount
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the engine's end_state (a poll response, not React-derived data) into hook state so the victory/defeat gate below can be evaluated against it.
             setEndState(maybeEnd)
             // Lock mode='combat' only while this end state hasn't been dispatched
             // to the countdown timer yet. Once lastEndStateId records the ID the
@@ -133,6 +140,7 @@ export function useCombatCoordinator({
      */
     useEffect(() => {
         if (!inCombat) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- arms the next fight's dialog exactly once, on the combat->exploration edge; deriving it from inCombat during render would re-show the dialog for an end state already dismissed.
             setCombatDialogShown(false)
         }
     }, [inCombat])

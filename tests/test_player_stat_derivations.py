@@ -6,9 +6,15 @@ explicitly. It therefore has to be computed the way combat computes it.
 
 It previously was not. ``get_player_stats`` used ``98 + finesse`` — full weight
 on finesse, intelligence ignored — while ``Move.calculate_hit_chance`` uses
-``98 - enemy.finesse + finesse * 0.7 + intelligence * 0.3``. The two agreed only
-when a character happened to have equal finesse and intelligence, and nothing
-tested it.
+``HIT_CHANCE_BASE - enemy.finesse + finesse * 0.7 + intelligence * 0.3``. The
+two agreed only when a character happened to have equal finesse and
+intelligence, and nothing tested it.
+
+The base term was retuned from 98 to 85 when the to-hit roll was made
+non-vestigial (at 98 a base-stat attack landed ~93% of the time and a rear
+attack was an outright certainty). The expected values below moved with it;
+the *property* under test -- sheet accuracy minus enemy finesse equals the
+engine's roll -- did not, and is what these assertions are for.
 """
 
 import pytest
@@ -27,10 +33,12 @@ class _StubPlayer:
 def engine_hit_chance(user_finesse, user_intelligence, enemy_finesse):
     """The unclamped to-hit expression from Move.calculate_hit_chance.
 
-    Duplicated deliberately: if the engine's formula changes, this test should
-    fail loudly rather than silently following it.
+    Duplicated deliberately -- including the 85 base term: if the engine's
+    formula or its base changes, this test should fail loudly rather than
+    silently following it. Importing ``HIT_CHANCE_BASE`` here would make the
+    test agree with the engine by construction and prove nothing.
     """
-    return int(98 - enemy_finesse + (user_finesse * 0.7) + (user_intelligence * 0.3))
+    return int(85 - enemy_finesse + (user_finesse * 0.7) + (user_intelligence * 0.3))
 
 
 @pytest.mark.parametrize(
@@ -57,7 +65,7 @@ def test_finesse_outweighs_intelligence():
 def test_diverges_from_the_old_naive_formula():
     """`98 + finesse` and the real weighting part company once the stats differ."""
     player = _StubPlayer(finesse=20, intelligence=10)
-    assert derive_hit_accuracy(player) == 115
+    assert derive_hit_accuracy(player) == 102
     assert derive_hit_accuracy(player) != 98 + player.finesse
 
 
@@ -67,7 +75,7 @@ def test_defaults_to_the_baseline_attributes_for_a_bare_player():
     class _Bare:
         pass
 
-    assert derive_hit_accuracy(_Bare()) == 108
+    assert derive_hit_accuracy(_Bare()) == 95
 
 
 def test_get_player_stats_publishes_the_derived_value():
@@ -87,7 +95,7 @@ def test_get_player_stats_publishes_the_derived_value():
 
     stats = GameService().get_player_stats(player)
 
-    assert stats["hit_accuracy"] == 115
+    assert stats["hit_accuracy"] == 102
     assert stats["hit_accuracy"] == derive_hit_accuracy(player)
     # The old naive formula would have published 118 here.
     assert stats["hit_accuracy"] != 98 + player.finesse
@@ -108,7 +116,7 @@ def test_get_player_stats_tracks_a_changed_intelligence():
     after = service.get_player_stats(player)["hit_accuracy"]
 
     # +20 intelligence at weight 0.3 == +6 accuracy.
-    assert (before, after) == (115, 121)
+    assert (before, after) == (102, 108)
 
 
 @pytest.mark.parametrize(
@@ -154,7 +162,7 @@ def test_accuracy_agrees_between_the_sheet_and_the_combat_card():
     sheet = GameService().get_player_stats(player)["hit_accuracy"]
     card = CombatantSerializer._serialize_combat_stats(player)["accuracy"]
 
-    assert sheet == card == int(98 + 30 * 0.7 + 5 * 0.3)
+    assert sheet == card == int(85 + 30 * 0.7 + 5 * 0.3)
 
 
 def test_evasion_chance_survives_a_none_finesse():
@@ -167,4 +175,4 @@ def test_evasion_chance_survives_a_none_finesse():
 
     stats = GameService().get_player_stats(_Partial())
     assert stats["evasion_chance"] == 10
-    assert stats["hit_accuracy"] == 108
+    assert stats["hit_accuracy"] == 95

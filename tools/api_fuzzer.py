@@ -187,11 +187,21 @@ def _collect_routes(app):
     return routes
 
 
+from src.api.session_cookie import DEFAULT_COOKIE_NAME  # noqa: E402
+
+
 def _create_session(client):
     resp = client.post("/api/test/session", json={"username": "fuzz_user"})
     if resp.status_code != 201:
         return None
-    return (resp.get_json() or {}).get("session_id")
+    session_id = (resp.get_json() or {}).get("session_id")
+    # Since #493 that endpoint also sets the auth cookie, and the Werkzeug test
+    # client keeps one jar for the whole run. Left in place it authenticates
+    # every later request, so the forged-token and no-header fuzz modes would
+    # silently pass while testing nothing. The fuzzer replays the id in a
+    # header by design, so the jar must be empty.
+    client.delete_cookie(DEFAULT_COOKIE_NAME)
+    return session_id
 
 
 def _looks_like_traceback(text):

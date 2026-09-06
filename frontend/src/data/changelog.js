@@ -3,6 +3,13 @@
 // alongside CHANGELOG.md when cutting a new version; newest entry first.
 export const CHANGELOG = [
   {
+    version: '0.2.0.0',
+    date: '2026-08-25',
+    highlights: [
+      'Behind the scenes: improved developer tooling for finding and fixing bugs faster',
+    ],
+  },
+  {
     version: '0.1.0.0',
     date: '2026-04-30',
     highlights: [

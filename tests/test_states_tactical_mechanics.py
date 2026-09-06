@@ -154,16 +154,29 @@ class _Target:
 
 
 def _state_classes():
-    """Every ``State`` subclass whose ``__init__`` takes only a target."""
+    """Every ``State`` subclass constructible from a target alone.
+
+    "Constructible from a target alone", not "whose signature is exactly
+    ``(self, target)``". The stricter test read the same for a long time and
+    then quietly stopped: ``Staggered`` gained an optional ``beats_max`` (so
+    Disrupt can hold a target past a committed wind-up) and dropped out of
+    every check in this module at once -- including the one that would have
+    reported its missing summary. A default argument does not make a state
+    less checkable, and a filter that treats it that way fails open on exactly
+    the states somebody has just been editing.
+    """
     found = []
     for name, obj in vars(states).items():
         if not (isinstance(obj, type) and issubclass(obj, states.State)):
             continue
         if obj is states.State:
             continue
-        params = list(inspect.signature(obj.__init__).parameters)
-        if params == ["self", "target"]:
-            found.append((name, obj))
+        params = list(inspect.signature(obj.__init__).parameters.values())
+        if [p.name for p in params[:2]] != ["self", "target"]:
+            continue
+        if any(p.default is inspect.Parameter.empty for p in params[2:]):
+            continue
+        found.append((name, obj))
     return sorted(found)
 
 
@@ -510,12 +523,11 @@ def test_the_strategist_table_holds_only_perspective_notes():
 
 
 def _states_that_render_live():
-    """States that build their summary from the modifiers on the books.
+    """States whose summary is built at read time rather than at construction.
 
     Derived from the override itself, not named: these are exactly the states
-    whose text goes through ``State._applied_pct`` rather than repeating the
-    static string their constructor was handed. Everything below applies only
-    to them, because only they have an applied delta to get wrong.
+    that compute their text instead of repeating the static string their
+    constructor was handed.
     """
     return [
         (name, cls)
@@ -525,13 +537,53 @@ def _states_that_render_live():
     ]
 
 
+def _states_that_report_percentages():
+    """The subset whose live text is a FRACTION of a captured base stat.
+
+    Not every live renderer is one. ``Dodging``'s grant is an absolute number
+    of finesse points computed from a decay curve, so it has no base to divide
+    by and captures none -- and the two checks below, which are about what
+    ``_applied_pct`` answers when the base is 0 or missing, have nothing to
+    say about it. Parametrizing them over every live renderer made them fail
+    on Dodging for the right reason (their premise genuinely does not hold)
+    and the wrong subject.
+
+    Derived by asking whether the override reaches for ``_applied_pct``, which
+    is the thing under test, rather than by listing the states that do. A
+    state that starts reporting percentages joins this set the moment it calls
+    the helper -- which is the direction that matters, since the risk is a
+    percentage nobody checks, not a flat number checked twice.
+    """
+    return [
+        (name, cls)
+        for name, cls in _states_that_render_live()
+        if "_applied_pct" in cls._render_tactical_mechanics.__code__.co_names
+    ]
+
+
 _LIVE = _states_that_render_live()
 _LIVE_IDS = [name for name, _ in _LIVE]
+_PCT_LIVE = _states_that_report_percentages()
+_PCT_LIVE_IDS = [name for name, _ in _PCT_LIVE]
 
 
 def test_the_live_rendering_set_is_not_empty():
     """The two checks below are parametrized over it; an empty set passes both."""
     assert len(_LIVE) >= 3
+
+
+def test_the_percentage_reporting_subset_is_not_empty():
+    """Same non-vacuity guard, for the narrower set.
+
+    And a check that the two really are different sets: if ``_PCT_LIVE`` ever
+    equals ``_LIVE`` again the split has stopped doing anything, and if it
+    empties out the two checks it feeds collect nothing and pass.
+    """
+    assert len(_PCT_LIVE) >= 3
+    assert len(_PCT_LIVE) < len(_LIVE), (
+        "every live renderer now reports percentages, so the _PCT_LIVE split "
+        "is dead weight -- fold it back into _LIVE"
+    )
 
 
 def _zero_stat_target():
@@ -549,7 +601,7 @@ def _zero_stat_target():
     return target
 
 
-@pytest.mark.parametrize("name,cls", _LIVE, ids=_LIVE_IDS)
+@pytest.mark.parametrize("name,cls", _PCT_LIVE, ids=_PCT_LIVE_IDS)
 def test_a_modifier_taken_from_a_zero_stat_is_reported_as_zero(name, cls):
     """``int(0 * fraction)`` is 0, and the summary has to say so.
 
@@ -589,7 +641,7 @@ def test_a_modifier_taken_from_a_zero_stat_is_reported_as_zero(name, cls):
         )
 
 
-@pytest.mark.parametrize("name,cls", _LIVE, ids=_LIVE_IDS)
+@pytest.mark.parametrize("name,cls", _PCT_LIVE, ids=_PCT_LIVE_IDS)
 def test_a_state_missing_its_captured_bases_still_reports_the_nominal(name, cls):
     """The other half of the split, and the reason it needs a sentinel.
 

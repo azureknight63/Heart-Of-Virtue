@@ -1199,6 +1199,45 @@ def _imported_error_tokens(tree: ast.AST):
     return {}
 
 
+def _response_dicts(tree):
+    """Every dict literal in ``tree`` that leaves the process as a response.
+
+    A dict is a *body* only if it is on its way out: inside a ``return``, or an
+    argument to ``jsonify``/``make_response``. Scanning every ``ast.Dict``
+    instead matched any mapping that happens to have an ``error`` key, and
+    ``src/api/structured_log.py``'s ``BROWSER_LEVEL_MAP`` is one -- it maps the
+    browser console's level names onto the envelope vocabulary, so it contains
+    the pair ``"error": "error"`` and always will. Reporting a level table as
+    an illegible error body is the shape of false positive that gets a scan
+    silenced with a ``# noqa``, which is the same failure this guard's own
+    docstring warns about one paragraph up.
+    """
+    out = []
+    for node in ast.walk(tree):
+        emitting = isinstance(node, ast.Return) or (
+            isinstance(node, ast.Call)
+            and (
+                (isinstance(node.func, ast.Name) and node.func.id in _RESPONSE_CALLS)
+                or (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr in _RESPONSE_CALLS
+                )
+            )
+        )
+        if not emitting:
+            continue
+        for child in ast.walk(node):
+            if isinstance(child, ast.Dict):
+                out.append(child)
+    return out
+
+
+#: Calls whose argument becomes the response body. ``return`` covers the rest,
+#: including a helper that builds a body and hands it back for a caller to
+#: jsonify.
+_RESPONSE_CALLS = {"jsonify", "make_response"}
+
+
 def token_error_bodies(source: str):
     """Every failure body in ``source`` whose ``error`` is a machine token.
 
@@ -1213,9 +1252,11 @@ def token_error_bodies(source: str):
     names.update(_imported_error_tokens(tree))
 
     found = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Dict):
+    seen = set()
+    for node in _response_dicts(tree):
+        if id(node) in seen:
             continue
+        seen.add(id(node))
         keys = {}
         for key, value in zip(node.keys, node.values):
             if isinstance(key, ast.Constant) and isinstance(key.value, str):
@@ -1329,15 +1370,21 @@ class TestATokenInErrorAlwaysCarriesAMessage:
             # not already this guard
             'return jsonify({"success": False, "error": "quota_exceeded"}), 403',
             # a bare dict, no jsonify: combat_adapter returns these
-            'x = {"error": "not_ready"}',
+            'def f():\n    return {"error": "not_ready"}',
             # via a module constant -- the spelling the canonical body uses
-            '_TOKEN = "rate_limited"\nx = {"success": False, "error": _TOKEN}',
+            '_TOKEN = "rate_limited"\n'
+            'def f():\n    return {"success": False, "error": _TOKEN}',
             # via the constant imported from the module that owns it
             "from src.api.rate_limiter import RATE_LIMITED_ERROR\n"
-            'x = {"error": RATE_LIMITED_ERROR}',
+            'def f():\n    return {"error": RATE_LIMITED_ERROR}',
             # one lowercase word: ambiguous between token and prose, and
             # ambiguous is not good enough to put in front of a player
-            'x = {"error": "unauthorized"}',
+            'def f():\n    return {"error": "unauthorized"}',
+            # built by a helper and handed back for a caller to jsonify --
+            # still a body, and the reason `return` is scanned as well as the
+            # two response calls
+            'def body():\n    return {"error": "not_ready"}\n'
+            "def route():\n    return jsonify(body()), 503",
         ],
     )
     def test_it_fires_on_a_token_with_no_message(self, snippet):

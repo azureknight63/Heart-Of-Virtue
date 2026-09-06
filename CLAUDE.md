@@ -19,7 +19,7 @@ Derived from `docs/lore/`, `src/resources/outline.md`, and the map-design princi
 
 ## Stack
 
-Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwind (+ react-three-fiber battlefield) · LibSQL/Turso · pytest / Vitest · black (88) + flake8 (`--extend-ignore=E501`) · OpenRouter/Groq/Cerebras/Ollama for NPC chat and Mynx ambient behaviour (`MYNX_LLM_ENABLED`; see `.env.example`).
+Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwind (+ react-three-fiber battlefield) · LibSQL/Turso · pytest / Vitest · flake8 (`--extend-ignore=E501`) — no autoformatter, see Coding conventions · OpenRouter/Groq/Cerebras/Ollama for NPC chat and Mynx ambient behaviour (`MYNX_LLM_ENABLED`; see `.env.example`).
 
 ## Layout — only the non-obvious parts
 
@@ -37,19 +37,28 @@ cd frontend && npm install && npm run dev     # SPA on :3000
 .\tools\start_servers.ps1 [CONFIG_FILE]       # both, PowerShell
 ```
 
+Debug logging uses one JSONL envelope (schema authority: `src/api/structured_log.py`).
+`configure_logging()` also reads `LOG_LEVEL` (console/plain-file level, default WARNING)
+and `LOG_FILE` (optional plain-text log path) — see the module docstring for the full
+env var contract. `run_api.py` writes `logs/backend/<utc-date>.jsonl` (via `LOG_JSONL_DIR`); the browser
+console ships to `logs/browser/*.jsonl`. New frontend debug output goes through
+`logger.event(name, data)` / `logger.eventOnChange` (`utils/logger.js`), not bare
+`console.log` — structured events ship `{event, data}` with no message string.
+
 ## Running Tests
 
 ```bash
-python -m pytest -q                                   # backend default suite (excludes tests/broken, tests/uat, tests/integration)
+python -m pytest -q                                   # backend default suite (excludes tests/api, tests/broken, tests/uat, tests/integration)
 python -m pytest --cov=src --cov=ai --cov-report=term-missing --cov-fail-under=85 -q   # what CI enforces
 cd frontend && npm test -- --run                      # frontend; add --coverage for the 95% thresholds in vite.config.js
-flake8 --extend-ignore=E501 src/ && python -m black --check src/
+python -m flake8 --extend-ignore=E501 src/          # the whole Python style gate; no autoformatter
 python tools/bug_hunt.py [--scenario NAME] [--headless --output bugs.json]   # in-process API harness, 22 scenarios
 python tools/inquisitor.py --headless --output tools/browser_findings.json   # real-browser QA; setup in docs/qa/inquisitor.md
+python tools/logcat.py --tail                         # merged backend+browser JSONL feed; --json (agents), --errors, --grep, --since, --session, --src be|fe
 ```
 
 - Always `python -m pytest`, never bare `pytest` — the venv may not expose the binary and bare runs fail silently on imports.
-- **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/`, which **runs in the default suite** — `pytest.ini`'s `norecursedirs` is `tests/broken tests/uat tests/integration .claude` and nothing else. Building a real session mutates module-level item/merchant registries, so such a module depends on its own internal ordering; `--dist loadfile` schedules every test in a file onto one worker, which is what keeps that ordering intact. Other route tests use a *mocked* `session_manager`.
+- **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/`, which is **excluded from the default suite** and runs one-process-per-file in its own CI job (`.github/workflows/api-tests.yml`). The exclusion is not neglect: building a real session mutates module-level item and merchant registries, so these tests pollute downstream shop and spawn tests. Passing today in one process is not the same as being order-independent, which is what the per-file job actually buys. Other route tests use a *mocked* `session_manager` and stay in `tests/` proper.
 - Coverage gates: backend ≥85% (CI, `--cov-fail-under=85`), frontend ≥95% (`vite.config.js` thresholds). The measured numbers live in `docs/coverage/coverage-dashboard.md` and nowhere else — a second copy here goes stale within the week. Re-measure before quoting either.
 - Tests touching randomness must seed or patch `random` — the engine makes ~220 unseeded `random.*` calls (only `positions.py` seeds). Never assert on an unseeded roll.
 - Mocks that stub an engine module imported as `import src.x as m` must patch both `sys.modules["src.x"]` *and* the `src` package attribute (see `_fake_engine_modules` in `tests/test_session_manager_coverage.py`); to pass an engine `isinstance`, set `mock.__class__` to the real class or build with `RealClass.__new__(RealClass)`.
@@ -92,8 +101,9 @@ unrestored class attribute, and one infinite loop.
 
 ## Coding conventions
 
-**Python** — snake_case/PascalCase; keep docstrings on public methods; don't add type annotations to files that don't already use them heavily; black 88; no `###DEBUG###` left behind; try/except with logging — prefer silent recovery over crashing the game loop. Conventional Commits (`feat(frontend):`, `fix(states):`, `refactor(backend):`).
+**Python** — snake_case/PascalCase; keep docstrings on public methods; don't add type annotations to files that don't already use them heavily; no `###DEBUG###` left behind; try/except with logging — prefer silent recovery over crashing the game loop. Conventional Commits (`feat(frontend):`, `fix(states):`, `refactor(backend):`).
 - **All local imports use the canonical `src.` path** — `from src.items import Item`, `importlib.import_module("src.tiles")`, `patch("src.x.y")`. Bare names create a duplicate module object once `src/` is on `sys.path`, silently breaking `isinstance` and registries across the API/engine boundary. Enforced by `tests/test_no_bare_local_imports.py` and `tests/test_import_sync_production.py`. Persisted data (map JSON `__module__`, legacy pickles) stores bare names by contract — resolve via `functions.canonical_module_name()`.
+- **No autoformatter.** flake8 is the only Python style gate; match the surrounding file's formatting by hand. black was configured in `pyproject.toml` but never installed and never enforced, and 69 of 119 files in `src/` did not conform — issue #501 dropped it rather than reformat the tree. Don't reintroduce it, or run any formatter over `src/` or `tests/` as a side effect of another change.
 - **Any new top-level `src/` module must be added to `LEGACY_BARE_MODULES` in `src/secure_pickle.py`** (also enforced by `test_no_bare_local_imports.py`).
 - `narrate(*parts, color=None)` joins like `print`; color is keyword-only. `cprint(text, color)` keeps the positional signature.
 
@@ -139,13 +149,24 @@ unrestored class attribute, and one infinite loop.
 | Diff size | Skill | How it runs |
 |---|---|---|
 | ≤ 1000 changed lines | `code-review` | Inline, single pass, current conversation |
-| > 1000 changed lines | `code-scrubber` | Chunked, 5 dimension subagents per chunk, dispatched as a background Agent |
+| > 1000 changed lines | `code-scrubber` | Chunked, 5 dimension subagents per chunk in parallel — **must be orchestrated from the main session** (see below) |
 
 Both grade the six generic dimensions — DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness — but **their seventh dimension is not the same one**. `code-review` adds the Heart of Virtue-specific **Architecture** (the rules above — gating) and **Correctness** (graded, reported). `code-scrubber` adds **Alignment** instead: `GRADING_DIMENSIONS` in `.claude/skills/_shared/review_rules/code_scrubber_rules.py` is the six core keys plus `"Alignment"`, and none of its dimension subagents reviews Architecture. **A diff over 1000 lines therefore never gets an architecture pass from the skill that reviews it.** Run `/code-review` over the architecture-touching subset of a scrubbed diff before calling the gate closed — this is not bookkeeping: the `player.attack` error survived three correction rounds because the review surface itself carried it. Dimension tables, the ≥80 confidence filter, and grading rules live in the two `SKILL.md` files — don't duplicate them here. Non-trivial changes iterate until every gating dimension is A; don't suggest `/commit` before that. If a dimension can't reach A without a user decision, stop and ask. Trivial changes (config, comments): confirm N/A or A and move on.
 
+**Run `code-scrubber` from the main session, not as a dispatched agent.** A dispatched
+agent cannot spawn its own subagents in this environment, so backgrounding the scrubber
+silently degrades it into a single generalist that reviews everything itself and reports
+five dimension grades as if a fanout had happened — the grades look identical, the
+adversarial coverage is not. It has cost real defects twice: the frontend code scrub, and
+the #492/#493 auth/CSP work (a credential leak, a lockout and a disarmed auth fuzzer all
+passed a self-review). If the diff needs the scrubber, dispatch the dimension specialists
+as top-level agents from the main session and accept that it blocks.
+
 ## Session workflow
 
-Worktrees can host concurrent sessions: run `git status` before committing, stage only files that are cleanly yours, and never `git stash`.
+Worktrees can host concurrent sessions: run `git status` before committing, stage only files that are cleanly yours, and never `git stash` (the stack is shared across worktrees).
+
+Git gotchas: the repo root is a **bare checkout** — run git and `/commit` from inside a worktree (Alpha/Bravo/Charlie/Delta), never the root. `logs/` is gitignored as a directory, so the *tracked* `logs/README.md` and `logs/IMPLEMENTATION_SUMMARY.md` need `git add -f`.
 
 The goal is to ship and maintain a complete game — housekeeping is part of the work. At the end of a meaningful task, suggest what applies: the review gate; `/commit` for changes worth preserving; `/revise-claude-md` when the session revealed something not yet in CLAUDE.md or `.claude/rules/`; confirm the suite is green (the tests already exist from the red-green cycle); flag newly relevant items from `~/.claude/projects/.../pending-improvements.md`. Use judgment — a two-line fix doesn't need a debrief.
 

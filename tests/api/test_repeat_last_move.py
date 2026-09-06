@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 import pytest
+from src.api.serializers.combat import CombatantSerializer
 
 
 class TestRepeatLastMove:
@@ -35,7 +36,7 @@ class TestRepeatLastMove:
         game_service._initialize_combat(player, [enemy], session_id=session_id)
 
         # Get the enemy ID for targeting
-        enemy_id = f"enemy_{id(enemy)}"
+        enemy_id = CombatantSerializer.stream_id(enemy)
 
         # Simulate that a previous Attack move was executed and recorded
         player.last_move_name = "Attack"
@@ -102,7 +103,7 @@ class TestRepeatLastMove:
         enemy = NPC("Test Enemy", "A test minion", 10, True, 50)
         game_service._initialize_combat(player, [enemy], session_id=session_id)
 
-        enemy_id = f"enemy_{id(enemy)}"
+        enemy_id = CombatantSerializer.stream_id(enemy)
 
         # Manually set last_move tracking (simulating that a previous move was executed)
         player.last_move_name = "Attack"

@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 import pytest
+from src.combatant import wire_handle
 
 
 class TestCombatRoutes:
@@ -225,7 +226,7 @@ class TestGameServiceCombatMethods:
         tile = player.universe.get_tile(player.location_x, player.location_y)
         player.current_room = tile
         tile.npcs_here = [enemy]
-        start = game_service.start_combat(player, str(id(enemy)), session_id=session_id)
+        start = game_service.start_combat(player, wire_handle(enemy), session_id=session_id)
         assert "error" not in start
         assert player.in_combat is True
 

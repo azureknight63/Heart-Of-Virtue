@@ -407,7 +407,7 @@ class TestTestingEndpoints:
         assert resp.status_code == 401
         data = json.loads(resp.data)
         assert data["success"] is False
-        assert data["error"] == "Missing or invalid Authorization header"
+        assert data["error"] == "Missing or invalid session credentials"
         # The auth gate must run before the player is touched.
         self.app.session_manager.get_player.assert_not_called()
 

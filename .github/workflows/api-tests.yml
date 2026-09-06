@@ -1,0 +1,135 @@
+# tests/api — full-app integration tests, one pytest process per file (#522)
+#
+# `tests/api` is excluded from the default suite by pytest.ini's `norecursedirs`,
+# and that exclusion is deliberate: these tests build a REAL session and universe
+# (`create_app(TestingConfig)` + `/api/test/session`), which mutates module-level
+# item and merchant registries and pollutes downstream shop/spawn tests. Nothing
+# else in CI runs them, so they were only ever exercised by hand.
+#
+# What that cost: #511's combatant-handle change passed the whole default suite
+# while leaving tests/api/test_combat_reinforcements_api.py building
+# `enemy_{id(enemy)}` target ids that the API answered with "Invalid target".
+# It was caught by a manual run, not by CI. This job is what prevents the next one.
+#
+# Why the shell loop instead of a plugin:
+#   * ONE PROCESS PER FILE. The registry mutation is cross-file within a process,
+#     so per-file processes are what make each file's result independent of which
+#     siblings ran before it. (A single `pytest tests/api` process happens to pass
+#     today, but it gives no such guarantee -- it can be green *because* of an
+#     ordering, which is exactly the failure mode this directory is prone to.)
+#   * NOT `--forked`: that isolates per *test*, which breaks the intra-file
+#     ordering these files depend on -- the same reason pytest.ini uses
+#     `--dist loadfile` rather than `--dist load`.
+#   * NOT `-n auto --dist loadfile`: a worker process still runs many files.
+#   * `-n0` because pytest.ini's addopts default to `-n auto`; spinning up xdist
+#     workers for a single file is pure overhead here.
+#   * `-p no:randomly`: pytest-randomly is installed deliberately, and these files
+#     have never been exercised for order independence. They are not order-safe
+#     yet -- with shuffling on, test_debug_endpoint.py fails. Making them order-safe
+#     is worth doing; until then this job pins the order rather than flaking.
+#   * `--timeout=300` so a future hang FAILS the job instead of hanging it until
+#     the runner's own limit. (test_combat_midbattle_api.py used to hang; it now
+#     runs in ~1s, but nothing structurally stops the next one.) 300s is per
+#     TEST, not per file, and is deliberately far above any real runtime here --
+#     the whole directory finishes in seconds. It is a hang detector, not a
+#     performance budget, so it must not be tightened to "something that should
+#     be enough": that converts a slow CI runner into a red build. The job's own
+#     `timeout-minutes: 20` is the outer bound.
+#   * `|| status=1` rather than `set -e`, so every file reports its own result and
+#     one red file does not hide the ones behind it.
+#
+# Deliberately NOT folded into test-coverage.yml: running tests/api under the same
+# invocation as `--cov-fail-under=85` would put this directory's registry pollution
+# back inside the number the default suite reports.
+
+name: API Integration Tests
+
+# Trigger set kept identical to test-coverage.yml's. A narrower PR filter here
+# meant a PR onto web-api -- the branch CLAUDE.md names as active -- ran the
+# coverage gate but not this job, so the one directory nothing else in CI
+# covers was unguarded on exactly the branch most work lands on.
+on:
+  push:
+    branches: [master, web-api, develop, main]
+  pull_request:
+    branches: [master, web-api, develop, main]
+
+jobs:
+  api-tests:
+    name: tests/api (one process per file)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # pytest.ini's norecursedirs keeps tests/api out of the default walk, but
+      # an explicit path argument still collects it -- that exclusion is not a
+      # hard block, so no pytest.ini change is needed (or wanted) here.
+      - name: Run tests/api, one pytest process per file
+        run: |
+          # Both of pytest's default python_files patterns, not just test_*.py:
+          # a future *_test.py in here would otherwise be skipped in silence,
+          # which is the same class of miss this whole job exists to close.
+          #
+          # NUL-delimited end to end. `for f in $files` word-splits the list on
+          # IFS, so a path containing a space would be handed to pytest as two
+          # nonexistent paths -- exit 4, a usage error, rather than a real
+          # result for the file. Nothing under tests/api has such a name today;
+          # the loop should not be what stops one being added.
+          #
+          # Via a file rather than `files=$(find ... -print0)`: command
+          # substitution STRIPS NUL bytes, so capturing -print0 output into a
+          # variable silently undoes the whole point and re-creates the
+          # word-splitting bug one layer down.
+          files_list="$(mktemp)"
+          trap 'rm -f "$files_list"' EXIT
+          find tests/api \
+            \( -name 'test_*.py' -o -name '*_test.py' \) -type f -print0 \
+            | sort -z > "$files_list"
+          if [ ! -s "$files_list" ]; then
+            echo "::error::no test files found under tests/api"
+            exit 1
+          fi
+          status=0
+          failed=""
+          count=0
+          # The list is read on fd 3, NOT on stdin. A `while read` loop that
+          # owns stdin hands it to every command inside the body, so anything
+          # pytest (or a test) read from stdin would consume the rest of the
+          # file list and the remaining files would be skipped in silence --
+          # the exact class of miss this job exists to close, reintroduced by
+          # the loop that fixed the word-splitting one. `for f in $files` did
+          # not have this hazard; fd 3 keeps pytest's stdin as it was.
+          while IFS= read -r -d '' f <&3; do
+            count=$((count + 1))
+            echo "::group::$f"
+            python -m pytest "$f" -q -p no:randomly -n0 --timeout=300 \
+              || { status=1; failed="$failed $f"; }
+            echo "::endgroup::"
+          done 3< "$files_list"
+          echo "ran $count file(s)"
+          if [ "$status" -ne 0 ]; then
+            echo "::error::tests/api failures in:$failed"
+          fi
+          exit "$status"
+        # Both halves of the pair, deliberately: they keep the Mynx ambient-LLM
+        # path off so this job makes no outbound network calls. Without that a
+        # CI run would depend on a third-party endpoint and an API key the
+        # workflow does not have -- a hang or a hard failure in a job whose
+        # subject is the game engine, not the LLM integration.
+        env:
+          MYNX_LLM_ENABLED: "0"
+          MYNX_LLM_PROVIDER: "none"

@@ -107,6 +107,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     useEffect(() => {
         // Death scenes show all text at once — mark complete immediately so the
         // Close button appears without waiting for a (non-existent) typewriter.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- resets the input form when the engine hands over a new event; deriving it during render would discard a half-typed answer on any unrelated re-render, and leaving isSubmitting set soft-locks the dialog.
         setIsComplete(isDeathScene)
         setShowInput(false)
         setTextInput('')
@@ -122,40 +123,6 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             inputRef.current?.focus()
         }
     }, [showInput, inputType])
-
-    // Keyboard shortcuts for choices (1-9) and Enter to submit
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (!showInput) return
-            if (isSubmitting) return
-
-            // Handle number keys for choices
-            if (inputType === 'choice' && inputOptions.length > 0) {
-                const keyNum = parseInt(e.key)
-                if (keyNum >= 1 && keyNum <= Math.min(9, inputOptions.length)) {
-                    e.preventDefault()
-                    const choice = inputOptions[keyNum - 1]
-                    handleChoiceSelect(choice.value)
-                }
-            }
-
-            // Handle Enter key
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSubmit()
-            }
-        }
-
-        if (dialogRef.current) {
-            dialogRef.current.addEventListener('keydown', handleKeyDown)
-        }
-
-        return () => {
-            if (dialogRef.current) {
-                dialogRef.current.removeEventListener('keydown', handleKeyDown)
-            }
-        }
-    }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice, isSubmitting])
 
     /**
      * Submit the player's input and, if the submission fails, re-enable the
@@ -281,6 +248,45 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
 
         submitInput(userInput)
     }
+
+    // Keyboard shortcuts for choices (1-9) and Enter to submit.
+    //
+    // Declared *after* handleChoiceSelect/handleSubmit on purpose: this effect
+    // calls both, and react-hooks/immutability rejects reading a `const` binding
+    // declared further down the component body. It is the last effect in the
+    // component either way, so effect ordering is unchanged by the move.
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!showInput) return
+            if (isSubmitting) return
+
+            // Handle number keys for choices
+            if (inputType === 'choice' && inputOptions.length > 0) {
+                const keyNum = parseInt(e.key)
+                if (keyNum >= 1 && keyNum <= Math.min(9, inputOptions.length)) {
+                    e.preventDefault()
+                    const choice = inputOptions[keyNum - 1]
+                    handleChoiceSelect(choice.value)
+                }
+            }
+
+            // Handle Enter key
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSubmit()
+            }
+        }
+
+        if (dialogRef.current) {
+            dialogRef.current.addEventListener('keydown', handleKeyDown)
+        }
+
+        return () => {
+            if (dialogRef.current) {
+                dialogRef.current.removeEventListener('keydown', handleKeyDown)
+            }
+        }
+    }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice, isSubmitting])
 
     // Character counter for text input
     const charCount = textInput.length

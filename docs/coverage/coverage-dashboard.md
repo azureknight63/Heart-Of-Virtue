@@ -3,9 +3,10 @@
 **This is the only place coverage numbers live.** Root `CLAUDE.md` carries the gates and
 links here; it deliberately keeps no second copy, because the copy it used to keep went
 45 points stale in three months. Same reason the three files that used to sit beside this
-one in `docs/coverage/` are now stubs — they were a second, third and fourth account of
+one in `docs/coverage/` are gone — they were a second, third and fourth account of
 the same measurement, and readers reaching for the one named "at a glance" got the worst
-of them.
+of them. (Master archived that trio under `docs/archive/` in the same window; the merge
+kept them deleted rather than archived, so any link to `docs/archive/COVERAGE_*` is dead.)
 
 ## Gates (these are stable; the numbers below are not)
 
@@ -32,9 +33,12 @@ does not walk, and the remaining three guard branches that do not trigger here
 `tests/test_error_handler_logging.py` only when Flask is not installed). A number materially above 3 means someone added a blanket skip
 — see root `CLAUDE.md` for why that has always turned out to be masking a real failure.
 
-The default backend suite excludes `tests/broken`, `tests/uat` and `tests/integration`
-(`pytest.ini`'s `norecursedirs`). `tests/api` is **not** excluded — it was, for long
-enough that its contents rotted, and it now runs in the gate.
+The default backend suite excludes `tests/api`, `tests/broken`, `tests/uat` and
+`tests/integration` (`pytest.ini`'s `norecursedirs`). The `tests/api` exclusion is not
+neglect: those tests build a real universe and mutate module-level item and merchant
+registries, so they run one-process-per-file in their own CI job
+(`.github/workflows/api-tests.yml`) rather than polluting the default suite. Passing in
+one process is not the same as order-independent, which is what that job buys.
 
 ## Coverage percentages — NOT measured in this pass
 
@@ -129,9 +133,10 @@ Add `--cov-report=html` (backend, → `htmlcov/index.html`) or open
 `frontend/coverage/index.html` for a browsable per-line report. Neither is checked in:
 a generated HTML report in `docs/` goes stale silently and cannot be diffed.
 
-**Backend exclusions** (`pytest.ini`'s `norecursedirs`): `tests/broken/`, `tests/uat/`,
-`tests/integration/`, `.claude/`. **Frontend**: all of `src/**/*.{js,jsx}` except
-`src/main.jsx` and `src/test/**`.
+**Backend exclusions** (`pytest.ini`'s `norecursedirs`): `tests/api/`, `tests/broken/`,
+`tests/uat/`, `tests/integration/`, `.claude/`. `tests/api/` is the one that still runs —
+one process per file, in `.github/workflows/api-tests.yml`. **Frontend**: all of
+`src/**/*.{js,jsx}` except `src/main.jsx` and `src/test/**`.
 
 ## FAQ
 

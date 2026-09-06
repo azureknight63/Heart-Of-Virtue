@@ -102,6 +102,7 @@ import src.states as states
 from tests._cite import Read, unverifiable, verify
 from tests._gs_fixtures import GRID_3X3
 from src.narration import capture_narration
+from src.combatant import wire_handle
 
 
 def _describe(why):
@@ -243,11 +244,53 @@ class TestCombatWireContract:
         real_combat_player.combat_proximity = {enemy: 10}
         real_adapter.awaiting_input = True
         real_adapter.input_type = "target_selection"
-        real_adapter.available_options = [{"id": f"enemy_{id(enemy)}"}]
+        real_adapter.available_options = [
+            {"id": CombatantSerializer.stream_id(enemy)}
+        ]
 
         result = real_adapter.get_combat_state()
 
         _assert_contract(result["battle_state"], BATTLE_STATE_CONTRACT, "battle_state")
+
+    def test_no_combatant_id_in_a_real_payload_carries_a_heap_address(
+        self, real_adapter, real_combat_player
+    ):
+        """Issue #511 moved the wire-id scheme off ``id(combatant)``: heap
+        addresses both leaked process layout to the client and were recycled
+        onto later-spawned NPCs, silently retargeting stale client-held ids.
+
+        Checked here on a payload built by the whole chain (adapter →
+        serializer → handle), which is the only place all three run together;
+        the handle's format, stability and the recycling regression are pinned
+        once in tests/test_combatant_wire_handles.py rather than restated here.
+        """
+        enemy = Slime()
+        ally = Slime()
+        ally.friend = True
+        real_combat_player.combat_list = [enemy]
+        real_combat_player.combat_list_allies = [real_combat_player, ally]
+        real_combat_player.combat_proximity = {enemy: 10, ally: 5}
+        real_adapter.awaiting_input = True
+        real_adapter.input_type = "move_selection"
+        real_adapter.available_options = []
+
+        battle_state = real_adapter.get_combat_state()["battle_state"]
+
+        # `allies` excludes Jean (he ships separately under `player`), so the
+        # roster is paired up by name rather than by position — a zip would
+        # silently drop whichever side ran short and pass on two thirds of the
+        # payload.
+        assert len(battle_state["enemies"]) == 1
+        assert len(battle_state["allies"]) == 1
+        roster = [
+            (battle_state["enemies"][0], enemy),
+            (battle_state["allies"][0], ally),
+            (battle_state["player"], real_combat_player),
+        ]
+        for entity, combatant in roster:
+            assert str(id(combatant)) not in entity["id"], (
+                f"{entity['id']!r} leaks {type(combatant).__name__}'s heap address"
+            )
 
     def test_combat_id_is_stable_across_polls_but_changes_between_fights(
         self, real_adapter, real_combat_player
@@ -338,6 +381,12 @@ MOVE_CONTRACT = {
     "display_name": Read("CombatMovePanel.jsx", "displayNameOf(move)"),
     "description": Read("CombatMovePanel.jsx", "move.description"),
     "available": Read("CombatMovePanel.jsx", "move.available"),
+    # Its *wording* is load-bearing too, not just its presence: the reason line
+    # renders through GlossaryText, which only attaches the "what is a beat?"
+    # explainer (#507) to words combatGlossary.js recognises. Rewording
+    # "Available in 5 beats" would leave this contract green while silently
+    # removing the explainer -- tests/test_combat_glossary_contract.py runs the
+    # real reason strings against the glossary's own patterns to catch that.
     "reason": Read("CombatMovePanel.jsx", "move.reason"),
     "fatigue_cost": Read("CombatMovePanel.jsx", "move.fatigue_cost"),
     "targeted": Read("CombatMovePanel.jsx", "move.targeted"),
@@ -521,6 +570,19 @@ COMBATANT_CONTRACT = {
     "position": Read("BattlefieldGrid.jsx", "entity?.position"),
     # CombatantMarker telegraph + EntityTooltip.
     "current_move": Read("BattlefieldGrid.jsx", "entity.current_move"),
+    # Heat meter. This is the RAW FLOAT multiplier applied to Jean's damage
+    # by src/moves/_base.py standard_execute_attack.
+    #
+    # battle_state carries a SECOND, different representation of the same
+    # quantity under its own top-level `heat` key -- round(player.heat * 100),
+    # set by ApiCombatAdapter.get_combat_state and absent from the per-beat
+    # states the adapter snapshots via
+    # CombatStateSerializer.serialize_combat_state. Reading that one as a
+    # multiplier renders "162.00x"; reading this one is correct. The client has
+    # exactly one reader and no `??` chain across the two (see the header
+    # comment in frontend/src/utils/heat.js), which is the only reason the
+    # duplication is survivable.
+    "heat": Read("LeftPanel.jsx", "combat?.player?.heat"),
 }
 
 # The in-progress move hanging off a combatant (CombatantSerializer.
@@ -608,6 +670,72 @@ class TestCombatantWireContract:
         enemy = Slime()
         payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
         _assert_contract(payload, COMBATANT_CONTRACT, "serialize_combatant(enemy)")
+
+    def test_player_heat_is_a_float_multiplier_at_wire_precision(self):
+        """HeatMeter renders this number directly, so its scaling is load-bearing.
+
+        `hit_chance` (bug #4) was this exact failure: two plausible scalings for
+        one quantity, and a client that picked the wrong one showed a silently,
+        wildly wrong number. Heat has the same hazard — battle_state's own
+        `heat` key is round(heat * 100) — so pin the multiplier form here.
+
+        The 2dp rounding matters too: ApiCombatAdapter._update_heat's per-beat
+        decay does NOT round the way Player.change_heat does, and the client
+        derives its rise/fall indicator from the difference between consecutive
+        values of this field.
+        """
+        player = Player()
+        player.change_heat(mult=1.25)
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["heat"] == pytest.approx(1.25)
+
+        player.heat = 1.6234567891  # a value _update_heat's decay really produces
+        assert CombatantSerializer.serialize_combatant(player)["heat"] == 1.62
+
+    def test_enemy_heat_is_neutral_because_nothing_scales_npc_damage(self):
+        """Enemies must not render as if they had heat of their own."""
+        payload = CombatantSerializer.serialize_combatant(Slime(), reference=Player())
+        assert payload["heat"] == 1.0
+
+    @pytest.mark.parametrize(
+        "heat", [0.57, 0.58, 1.13, 1.14, 1.15, 1.16, 2.01, 2.26, 1.62, 0.83]
+    )
+    def test_the_int_percentage_twin_rounds_rather_than_truncates(self, heat):
+        """battle_state's int-percentage heat must be exactly 100x the float.
+
+        Binary floats put 68 of the 951 two-decimal heats in [0.50, 10.00]
+        just below their exact product, so the adapter's original
+        ``int(heat * 100)`` disagreed with the float the client reads for
+        roughly 7% of values -- ``int(1.15 * 100)`` is 114, not 115. A single
+        hand-picked heat cannot see that; most of the values here are drawn
+        from the mismatching set, with a couple of controls.
+
+        Pins the RULE (round) rather than re-deriving the arithmetic: the
+        serialized float is the authority, and the percentage must be its
+        exact hundredfold.
+        """
+        player = Player()
+        player.heat = heat
+        serialized = CombatantSerializer.serialize_combatant(player)["heat"]
+        assert round(player.heat * 100) == round(serialized * 100), (
+            f"heat {heat}: the percentage twin and the float multiplier "
+            "disagree; truncation is how they drift apart"
+        )
+
+    def test_battle_state_heat_percentage_agrees_with_the_player_multiplier(
+        self, real_adapter, real_combat_player
+    ):
+        """The two representations must stay 100x apart, or one of them is a lie.
+
+        Nothing forces them to agree — they are set in different files
+        (serializers/combat.py vs combat_adapter.py get_combat_state) — so if
+        either is ever rescaled independently, the client reading one of them
+        starts rendering nonsense with no other test noticing.
+        """
+        real_combat_player.heat = 1.62
+        battle_state = real_adapter.get_combat_state()["battle_state"]
+        assert battle_state["player"]["heat"] == pytest.approx(1.62)
+        assert battle_state["heat"] == 162
 
     def test_active_move_fields_on_a_real_move_in_progress(self):
         """A real move mid-cast, through the real serializer, so the fields the
@@ -1219,7 +1347,7 @@ class TestShopWireContract:
         gs = GameService()
         gs._find_merchant = lambda p, nid: merchant
 
-        result = gs.shop_sell(player, "npc1", str(id(item)), 1)
+        result = gs.shop_sell(player, "npc1", wire_handle(item), 1)
 
         assert result["success"], result.get("error")
         buyback_items = result["shop_state"]["buyback_items"]
@@ -1694,6 +1822,238 @@ class TestAbortableMoveWireContract:
 
 
 # ============================================================================
+# Wire id round-trip
+# ============================================================================
+# Every `id` above is only useful if the endpoint that *consumes* it accepts
+# the same string back. That pairing is a wire contract exactly like a field
+# name, and it broke the same silent way: issue #518 moved the serializers to
+# opaque handles (src.combatant.wire_handle) while the lookups still compared
+# str(id(...)), so `interact_with_target` answered "Target not found." for
+# every object in the room — no error, no exception, just a dead UI.
+#
+# These tests deliberately never construct an id. They take the one the real
+# serializer emitted for a real engine object and feed it to the real resolver,
+# so a future change that moves one side has nowhere to hide: a mock id fed to
+# a mock lookup would agree with itself forever (CLAUDE.md, wire-field drift).
+
+#: An id must be opaque. A decimal string is a CPython heap address — the
+#: scheme #511/#518 removed — so its reappearance anywhere is a regression.
+#: The check itself lives in ``tests/_gs_fixtures`` so this file and
+#: ``test_entity_wire_handles`` make the SAME check rather than two different
+#: partial ones.
+from tests._gs_fixtures import assert_opaque_wire_id as _assert_opaque  # noqa: E402
+
+
+class TestWireIdRoundTrip:
+    """The id a serializer emits is the id its resolver accepts."""
+
+    @staticmethod
+    def _room():
+        from src.items import Longsword
+        from src.objects import Container
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        tile = game_map[(0, 0)]
+        tile.items_here = [Longsword()]
+        tile.npcs_here = [Slime()]
+        chest = Container(name="Chest", inventory=[Longsword()])
+        chest.state = "opened"
+        tile.objects_here = [chest]
+        return player, tile
+
+    @pytest.mark.parametrize("payload_key", ["npcs", "items", "objects"])
+    def test_a_room_entity_id_resolves_back_through_interact_with_target(
+        self, payload_key
+    ):
+        """Every room list: the id ``get_current_room`` published resolves.
+
+        One parametrised body rather than three copies differing only in the
+        dict key — the container-contents case below stays separate because it
+        reads a *nested* id (``objects[0].contents[0]``) and a different branch
+        of ``interact_with_target`` resolves it.
+        """
+        player, _ = self._room()
+        gs = GameService()
+
+        entity_id = gs.get_current_room(player)[payload_key][0]["id"]
+        _assert_opaque(entity_id, f"room {payload_key}[0].id")
+
+        result = gs.interact_with_target(player, entity_id, "look")
+
+        assert result["message"] != "Target not found.", (
+            f"the id get_current_room published for {payload_key} did not resolve"
+        )
+
+    def test_a_room_npc_id_is_what_start_combat_matches_on(self):
+        """InteractPanel's Attack button posts the room id to /combat/start."""
+        player, tile = self._room()
+        gs = GameService()
+
+        npc_id = gs.get_current_room(player)["npcs"][0]["id"]
+        with capture_narration():
+            result = gs.start_combat(player, npc_id)
+
+        assert "error" not in result, result
+
+    def test_a_container_content_id_resolves_back_through_interact_with_target(self):
+        """Chest contents are serialized by ItemSerializer inside the object
+        payload and resolved by a *separate* branch of interact_with_target."""
+        player, tile = self._room()
+        gs = GameService()
+
+        room_chest = gs.get_current_room(player)["objects"][0]
+        content_id = room_chest["contents"][0]["id"]
+        _assert_opaque(content_id, "room objects[0].contents[0].id")
+
+        result = gs.interact_with_target(player, content_id, "look")
+
+        assert result["message"] != "Target not found."
+
+    def test_a_search_result_id_resolves_back_through_interact_with_target(self):
+        """`search` mints its own found-entry ids, a fourth site that has to
+        agree with the room scheme — the client's very next click after a
+        successful search posts one of these back to /interact.
+
+        A hidden *NPC* rather than a hidden item: an item with hide_factor 0 is
+        auto-taken into the pack by `search`, so it is no longer on the tile for
+        interact_with_target to resolve.
+        """
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        tile = game_map[(0, 0)]
+        lurker = Slime()
+        lurker.hidden = True
+        lurker.hide_factor = 0
+        tile.npcs_here = [lurker]
+        gs = GameService()
+
+        found = gs.search(player)["found"]
+
+        assert found, "fixture: expected the hidden Slime to be uncovered"
+        _assert_opaque(found[0]["id"], "search()['found'][0].id")
+
+        result = gs.interact_with_target(player, found[0]["id"], "look")
+
+        assert result["message"] != "Target not found.", (
+            "the id search() published did not resolve"
+        )
+
+    def test_an_inventory_row_id_resolves_back_through_get_item_and_index(self):
+        from src.api.routes.inventory import get_item_and_index
+        from src.api.serializers.inventory import InventorySerializer
+        from src.items import Longsword
+
+        player = Player()
+        sword = Longsword()
+        player.inventory = [Restorative(), sword]
+
+        rows = InventorySerializer.serialize(player)["items"]
+        row = next(r for r in rows if r["name"] == "Longsword")
+        _assert_opaque(row["id"], "inventory.items[].id")
+
+        item, index = get_item_and_index(player, item_id=row["id"])
+
+        assert item is sword
+        assert index == row["index"]
+
+    def test_an_unknown_inventory_id_resolves_to_nothing(self):
+        """Negative control — the lookup must not fall through to item 0."""
+        from src.api.routes.inventory import get_item_and_index
+        from src.items import Longsword
+
+        player = Player()
+        player.inventory = [Longsword()]
+
+        assert get_item_and_index(player, item_id="no-such-handle") == (None, None)
+
+    def test_the_shop_npc_id_resolves_back_through_find_merchant(self):
+        from tests._gs_fixtures import live_shop
+
+        player, _, merchant = live_shop(
+            coords=GRID_3X3, stock=[Restorative(count=2, merchandise=True)]
+        )
+        gs = GameService()
+
+        npc_id = ShopSerializer.serialize_state(merchant, player, 0)["npc_id"]
+        _assert_opaque(npc_id, "shop_state.npc_id")
+
+        assert gs._find_merchant(player, npc_id) is merchant
+
+    def test_a_stock_item_id_is_what_shop_buy_matches_on(self):
+        from tests._gs_fixtures import live_shop
+
+        stock = Restorative(count=2, merchandise=True)
+        player, _, merchant = live_shop(
+            coords=GRID_3X3, stock=[stock], player_gold=500
+        )
+        gs = GameService()
+
+        state = ShopSerializer.serialize_state(merchant, player, 0)
+        item_id = state["stock"][0]["id"]
+        _assert_opaque(item_id, "shop_state.stock[0].id")
+
+        result = gs.shop_buy(player, state["npc_id"], item_id, 1)
+
+        assert result["success"], result.get("error")
+
+    def test_a_sell_row_id_is_what_shop_sell_matches_on(self):
+        from tests._gs_fixtures import live_shop
+
+        player, _, merchant = live_shop(coords=GRID_3X3)
+        goods = Restorative()
+        goods.value = 10
+        player.inventory = [goods]
+        merchant.update_goods()
+        gs = GameService()
+
+        state = ShopSerializer.serialize_state(merchant, player, 0)
+        sellable = ShopSerializer.serialize_player_sellable(
+            player, state["sell_modifier"]
+        )
+        row = next(r for r in sellable if r["name"] == "Restorative")
+        _assert_opaque(row["id"], "sell_inventory[].id")
+
+        result = gs.shop_sell(player, state["npc_id"], row["id"], 1)
+
+        assert result["success"], result.get("error")
+
+    def test_a_buyback_entry_id_is_what_shop_buyback_matches_on(self):
+        """The buyback id is the one wire id that is *persisted* (on the
+        merchant, into saves), so its round trip spans a sell and a repurchase
+        rather than a single request."""
+        from tests._gs_fixtures import live_shop
+
+        player, _, merchant = live_shop(coords=GRID_3X3, player_gold=500)
+        goods = Restorative()
+        goods.value = 10
+        player.inventory.append(goods)
+        merchant.update_goods()
+        gs = GameService()
+
+        npc_id = ShopSerializer.serialize_state(merchant, player, 0)["npc_id"]
+        sold = gs.shop_sell(player, npc_id, wire_handle(goods), 1)
+        assert sold["success"], sold.get("error")
+
+        buyback = sold["shop_state"]["buyback_items"]
+        assert buyback, "fixture: expected the sale to land in the ledger"
+        _assert_opaque(buyback[0]["id"], "shop_state.buyback_items[0].id")
+
+        result = gs.shop_buyback(player, npc_id, buyback[0]["id"])
+
+        assert result["success"], result.get("error")
+
+    def test_no_room_payload_id_is_a_heap_address(self):
+        player, _ = self._room()
+
+        room = GameService().get_current_room(player)
+
+        for key in ("npcs", "items", "objects"):
+            for entry in room[key]:
+                _assert_opaque(entry["id"], f"room {key}[].id")
+
+
 # The citations themselves
 # ============================================================================
 # Everything above asserts that the SERIALIZER still emits what the client

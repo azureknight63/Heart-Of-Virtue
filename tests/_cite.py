@@ -38,7 +38,16 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #: Directories a citation may name a file in. Kept narrow on purpose: a
 #: citation that resolves into ``node_modules`` is a citation of somebody
 #: else's code, which this repo has no business pinning.
-_SEARCH_ROOTS = ("frontend/src", "src", "ai", "tools", "tests")
+#:
+#: ``docs`` is in the set for the same reason the code roots are. A design
+#: rationale that has moved out of a comment and into a document has not
+#: stopped being a thing a test cites, or a thing that rots -- if anything it
+#: rots faster, because nothing compiles it. The CSP rollout moved exactly that
+#: way: docs/development/csp-rollout.md now carries the style-src argument that
+#: used to sit beside the directive, and without this the citation would have
+#: had to be downgraded to unchecked prose at the moment it became most worth
+#: checking.
+_SEARCH_ROOTS = ("frontend/src", "src", "ai", "tools", "tests", "docs")
 
 _SKIP_DIRS = {"node_modules", "__pycache__", ".git", "dist", "build", "coverage"}
 

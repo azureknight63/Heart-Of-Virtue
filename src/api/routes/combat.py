@@ -146,6 +146,12 @@ def execute_move():
             # string-matching the prose.
             if result.get("requires_abort"):
                 payload["requires_abort"] = True
+            # `error` is a short machine-readable code for some refusals ("Event
+            # pending"); the prose the player should actually read lives in
+            # `message`. Dropping it left the client with nothing but the code to
+            # show, so forward it when the service supplies one.
+            if result.get("message"):
+                payload["message"] = result["message"]
             return jsonify(payload), 200
 
         session_manager.save_session(session.session_id)

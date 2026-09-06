@@ -1,61 +1,437 @@
-"""Security response headers set by ``create_app()``'s ``after_request`` hook.
+"""Security response headers: policy composition, delivery, and the header set.
 
-Three things are pinned here, in rising order of how easy they are to break by
-accident:
+Two suites in one file, because both halves of the merge wrote one and they
+cover disjoint ground.
 
-1. The headers are actually on real responses. Before this suite the app set
-   none at all -- no CSP, no ``X-Frame-Options``, no ``nosniff``, no
-   ``Referrer-Policy`` -- and nothing would have noticed.
-2. The strict :data:`~src.api.security_headers._API_CSP` reaches exactly the
-   responses it is safe on (everything that does not render) and the permissive
-   :data:`~src.api.security_headers._HTML_CSP` reaches exactly the ones that do.
-   Getting that
-   branch backwards is silent in both directions: a strict policy on HTML is a
-   blank page, a permissive policy on the API is the hole the strict one exists
-   to close.
-3. The hook does not fight the CORS layer. ``handle_preflight`` and flask_cors
-   negotiate ``Access-Control-*`` on the same responses, and an ``after_request``
-   that reassigned rather than defaulted would have been an intermittent
-   cross-origin failure rather than an obvious one.
+MASTER'S HALF (issue #492) pins the *policy*: that it is composed from the one
+shared JSON file rather than a hand-copied list, that production never carries
+``'unsafe-inline'`` in ``script-src``, that ``report-to`` is never advertised
+alongside ``report-uri`` (measured: the pair delivers nothing), and that the
+Flask hook and ``frontend/vite.config.js`` agree because they read the same
+data.
 
-READ THIS BEFORE TRUSTING ``_HTML_CSP`` TO PROTECT ANYTHING
------------------------------------------------------------
-``_HTML_CSP`` **does not ship**. It is never sent by this app, and the tests
-below do not make it so. ``serves_html_document`` -- the only way a response
-can be given that policy -- has no production caller: the sole references in
-the repository are its own definition, the comment beside it in
-``src/api/security_headers.py``, and this file, whose ``/__html_probe`` route
-calls it to exercise the branch. Nothing under ``src/`` calls ``render_template``,
-``send_file``, ``send_from_directory`` or registers a static folder; the React
-document is unpacked into a different container's document root by
-``deploy.ps1`` and served by a webserver this app never sees.
+THIS BRANCH'S HALF pins the *delivery*: that the headers are on real responses
+including the error paths an attacker reaches without credentials, that HSTS
+appears only where TLS is believed in, that the strict
+:data:`~src.api.security_headers._API_CSP` reaches exactly the responses it is
+safe on and the document policy reaches exactly the ones that render, that the
+hook does not fight the CORS layer, and that the document policy still matches
+what ``frontend/index.html`` and the components actually do.
 
-So ``_HTML_CSP`` is a *specification for the SPA's host to mirror*, written
-down in the repo so the requirement is not folklore, and wired up so it applies
-automatically the day something here does serve HTML. The tests that check it
-against ``frontend/index.html`` and against the components that inject inline
-style are checking that the specification stays true to the frontend -- not
-that any header protects a user today. A finding of "the HTML CSP is too
-permissive" is a finding about a document written for someone else's config
-file. Do not delete these tests on that basis, and do not report the policy as
-an enforced control.
+The regression the second half exists for: before it, the app set no security
+headers at all -- no CSP, no ``X-Frame-Options``, no ``nosniff``, no
+``Referrer-Policy`` -- and nothing would have noticed.
+
+Getting the API/document branch backwards is silent in both directions: a
+strict policy on a document is a blank page, a permissive one on the API is the
+hole the strict one exists to close. Hence ``/__html_probe`` below, which
+exercises the branch rather than asserting about it.
 """
+
+import json
+import types
+
+import pytest
+from flask import Flask
+
+from src.api import security_headers
+from src.api.config import DevelopmentConfig, ProductionConfig, TestingConfig
+from src.api.security_headers import (
+    ENFORCING_HEADER,
+    REPORT_ONLY_HEADER,
+    build_csp,
+    load_policy,
+    register_security_headers,
+    serves_html_document,
+)
+
+
+def _directives(policy_string):
+    """Parse a policy string back into {directive: [sources]}."""
+    parsed = {}
+    for part in policy_string.split(";"):
+        tokens = part.split()
+        if tokens:
+            parsed[tokens[0]] = tokens[1:]
+    return parsed
+
+
+def _app(config_class, **overrides):
+    """A bare Flask app with the CSP hook installed and one DOCUMENT route.
+
+    ``/ping`` declares itself a document, because these tests are about the
+    document policy -- the one composed from the shared JSON and shared with
+    the Vite dev server. A response that does not declare itself gets
+    ``_API_CSP`` instead, enforced rather than report-only; that branch has its
+    own tests further down. Before the two policies existed this distinction
+    did not, and ``/ping`` was a bare string.
+    """
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+    app.config.update(overrides)
+    register_security_headers(app)
+
+    @app.route("/ping")
+    def ping():
+        from flask import make_response
+
+        return serves_html_document(make_response("pong"))
+
+    @app.route("/ping.json")
+    def ping_json():
+        return {"pong": True}
+
+    return app
+
+
+# --------------------------------------------------------------------------
+# Policy composition
+# --------------------------------------------------------------------------
+
+
+def test_shared_policy_file_is_readable_and_has_both_sections():
+    policy = load_policy()
+    assert set(policy) == {"base", "dev_additions"}
+    assert policy["base"]["default-src"] == ["'self'"]
+
+
+def test_load_policy_drops_the_in_file_rationale_comment():
+    """The JSON carries a `_comment` array for humans; consumers must not see it."""
+    raw = json.loads(security_headers.POLICY_PATH.read_text(encoding="utf-8"))
+    assert "_comment" in raw, "the rationale comment is part of the file's contract"
+    assert "_comment" not in load_policy()
+
+
+def test_production_policy_locks_down_script_src():
+    directives = _directives(build_csp(dev=False))
+    assert directives["script-src"] == ["'self'"]
+    assert "'unsafe-eval'" not in directives["script-src"]
+
+
+def test_production_policy_never_relaxes_scripts_even_via_dev_additions():
+    """The whole point of the dev flag: prod must not inherit its relaxations."""
+    prod = build_csp(dev=False)
+    assert "'unsafe-inline'" not in _directives(prod)["script-src"]
+    assert "ws:" not in prod
+
+
+def test_dev_policy_allows_the_vite_react_refresh_preamble():
+    directives = _directives(build_csp(dev=True))
+    assert "'unsafe-inline'" in directives["script-src"]
+    assert "ws:" in directives["connect-src"]
+    # Base sources survive the merge rather than being replaced by it.
+    assert "'self'" in directives["connect-src"]
+
+
+def test_dev_additions_do_not_duplicate_a_source_the_base_already_allows():
+    policy = {
+        "base": {"connect-src": ["'self'"]},
+        "dev_additions": {"connect-src": ["'self'", "ws:"]},
+    }
+    assert _directives(build_csp(dev=True, policy=policy))["connect-src"] == [
+        "'self'",
+        "ws:",
+    ]
+
+
+def test_style_src_keeps_unsafe_inline_for_react_inline_style_props():
+    """Documented, accepted exception — see docs/development/csp-rollout.md."""
+    assert "'unsafe-inline'" in _directives(build_csp())["style-src"]
+
+
+def test_report_directives_are_emitted_only_when_a_uri_is_configured():
+    with_uri = build_csp(report_uri="/api/logs/csp-report")
+    assert "report-uri /api/logs/csp-report" in with_uri
+
+    without = build_csp(report_uri=None)
+    assert "report-uri" not in without
+
+
+def test_report_to_is_never_advertised_alongside_report_uri():
+    """Advertising both transports delivers nothing in Chromium.
+
+    ``report-to`` takes precedence over ``report-uri`` whenever both are
+    present, and Chromium then queues the report through the Reporting API
+    instead of POSTing it — a plain-HTTP origin is not even an eligible
+    endpoint. Measured over one forced violation: ``report-uri`` alone → 1 POST,
+    ``report-to`` alone → 0, both → 0. A report-only rollout that silently
+    reports nothing reads as "clean", which is the worst possible outcome, so
+    this is pinned rather than left to a future tidy-up. See the module
+    docstring in src/api/security_headers.py.
+    """
+    assert "report-to" not in build_csp(report_uri="/api/logs/csp-report")
+
+
+def test_a_directive_only_present_in_dev_additions_is_still_emitted():
+    policy = {"base": {"default-src": ["'self'"]}, "dev_additions": {"worker-src": ["blob:"]}}
+    assert "worker-src blob:" in build_csp(dev=True, policy=policy)
+
+
+# --------------------------------------------------------------------------
+# Delivery
+# --------------------------------------------------------------------------
+
+
+def test_report_only_header_is_set_on_responses():
+    app = _app(TestingConfig)
+    response = app.test_client().get("/ping")
+    assert REPORT_ONLY_HEADER in response.headers
+    assert ENFORCING_HEADER not in response.headers
+
+
+def test_a_non_document_response_gets_the_strict_policy_enforced():
+    """Not report-only, and not the document policy.
+
+    The rollout is report-only so a real document cannot break while we learn
+    what it needs. A JSON response has nothing to break -- CSP binds documents,
+    and a fetched body never becomes one -- so it takes the strictest policy in
+    the grammar, enforced. Report-only on ``/api/*`` would have been a header
+    that blocks nothing.
+    """
+    response = _app(TestingConfig).test_client().get("/ping.json")
+    assert response.headers[ENFORCING_HEADER] == _API_CSP
+    assert REPORT_ONLY_HEADER not in response.headers
+
+
+def test_no_reporting_endpoints_header_is_sent():
+    """The companion of ``report-to``; both are omitted for the same reason."""
+    headers = _app(TestingConfig).test_client().get("/ping").headers
+    assert "Reporting-Endpoints" not in headers
+
+
+def test_report_only_false_switches_to_the_enforcing_header():
+    app = _app(TestingConfig, CSP_REPORT_ONLY=False)
+    response = app.test_client().get("/ping")
+    assert ENFORCING_HEADER in response.headers
+    assert REPORT_ONLY_HEADER not in response.headers
+
+
+def test_csp_can_be_disabled_entirely():
+    app = _app(TestingConfig, CSP_ENABLED=False)
+    response = app.test_client().get("/ping")
+    assert REPORT_ONLY_HEADER not in response.headers
+    assert ENFORCING_HEADER not in response.headers
+
+
+def test_register_reports_whether_it_installed_the_hook():
+    assert register_security_headers(_app(TestingConfig)) is True
+    disabled = Flask(__name__)
+    disabled.config["CSP_ENABLED"] = False
+    assert register_security_headers(disabled) is False
+
+
+def test_a_policy_already_set_by_a_nearer_layer_is_not_clobbered():
+    app = _app(TestingConfig)
+
+    @app.route("/own-policy")
+    def own_policy():
+        from flask import make_response
+
+        response = make_response("ok")
+        response.headers[ENFORCING_HEADER] = "default-src 'none'"
+        return response
+
+    response = app.test_client().get("/own-policy")
+    assert response.headers[ENFORCING_HEADER] == "default-src 'none'"
+    assert REPORT_ONLY_HEADER not in response.headers
+
+
+def test_development_config_serves_the_dev_relaxations():
+    header = _app(DevelopmentConfig).test_client().get("/ping").headers[
+        REPORT_ONLY_HEADER
+    ]
+    assert "'unsafe-inline'" in _directives(header)["script-src"]
+
+
+def test_production_config_serves_the_locked_down_policy():
+    header = _app(ProductionConfig).test_client().get("/ping").headers[
+        REPORT_ONLY_HEADER
+    ]
+    assert _directives(header)["script-src"] == ["'self'"]
+
+
+@pytest.mark.parametrize(
+    "raw,expected_relaxed",
+    [("0", False), ("false", False), ("no", False), ("", False), ("1", True), ("true", True)],
+)
+def test_string_flags_from_the_environment_are_coerced(raw, expected_relaxed):
+    app = _app(TestingConfig, CSP_DEV_RELAXATIONS=raw)
+    header = app.test_client().get("/ping").headers[REPORT_ONLY_HEADER]
+    assert ("'unsafe-inline'" in _directives(header)["script-src"]) is expected_relaxed
+
+
+def test_missing_config_key_falls_back_to_the_environment(monkeypatch):
+    monkeypatch.setenv("CSP_REPORT_ONLY", "false")
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    register_security_headers(app)
+
+    @app.route("/ping")
+    def ping():
+        from flask import make_response
+
+        return serves_html_document(make_response("pong"))
+
+    assert ENFORCING_HEADER in app.test_client().get("/ping").headers
+
+
+def test_flask_config_wins_over_a_conflicting_environment_variable(monkeypatch):
+    monkeypatch.setenv("CSP_REPORT_ONLY", "false")
+    app = _app(TestingConfig, CSP_REPORT_ONLY=True)
+    assert REPORT_ONLY_HEADER in app.test_client().get("/ping").headers
+
+
+def test_report_uri_omitted_leaves_the_report_directive_off():
+    app = _app(TestingConfig, CSP_REPORT_URI="")
+    headers = app.test_client().get("/ping").headers
+    assert "report-uri" not in headers[REPORT_ONLY_HEADER]
+
+
+def test_policy_is_read_once_at_registration_not_per_request(monkeypatch):
+    """A per-response file read would put disk I/O on every API call."""
+    calls = []
+    real = security_headers.load_policy
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(security_headers, "load_policy", counting)
+    app = _app(TestingConfig)
+    before = len(calls)
+    client = app.test_client()
+    client.get("/ping")
+    client.get("/ping")
+    assert len(calls) == before
+
+
+def test_load_policy_accepts_an_explicit_path(tmp_path):
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps({"base": {"default-src": ["'none'"]}}), encoding="utf-8")
+    assert load_policy(path) == {"base": {"default-src": ["'none'"]}}
+
+
+def test_bool_config_values_pass_through_unchanged():
+    """`_flag` must not stringify a real bool into an always-true value."""
+    app = types.SimpleNamespace(config={"CSP_ENABLED": False})
+    assert security_headers._flag(app, "CSP_ENABLED", True) is False
+
+
+# --------------------------------------------------------------------------
+# Cross-server drift
+#
+# The Vite dev/preview server composes the same policy in JavaScript. Nothing
+# at runtime can catch the two implementations disagreeing — a dev server whose
+# policy has quietly diverged from the API's simply reports the wrong
+# violations, which is worse than reporting none. These pin the properties that
+# keep them in step by construction.
+# --------------------------------------------------------------------------
+
+VITE_CONFIG = (
+    security_headers.POLICY_PATH.parent.parent.parent
+    / "frontend"
+    / "vite.config.js"
+)
+
+
+def _vite_config_source(strip_comments=False):
+    source = VITE_CONFIG.read_text(encoding="utf-8")
+    if strip_comments:
+        # Directive names are discussed in the file's comments; only *code*
+        # that names one would be an inlined copy.
+        source = "\n".join(
+            line for line in source.splitlines() if not line.lstrip().startswith(("//", "*", "/*"))
+        )
+    return source
+
+
+def test_vite_config_reads_the_shared_policy_file():
+    assert "csp-policy.json" in _vite_config_source()
+
+
+@pytest.mark.parametrize("directive", sorted(load_policy()["base"]))
+def test_vite_config_does_not_inline_a_copy_of_any_directive(directive):
+    """A hand-copied directive list is exactly how the two policies drift."""
+    assert directive not in _vite_config_source(strip_comments=True)
+
+
+def test_vite_config_does_not_advertise_report_to_either():
+    """Same measured reason as the Flask side — the two must not diverge."""
+    source = _vite_config_source(strip_comments=True)
+    assert "report-to" not in source
+    assert "Reporting-Endpoints" not in source
+
+
+def test_vite_preview_serves_the_production_policy():
+    """`vite preview` serves the built bundle, so it must not relax script-src.
+
+    Step 3 of docs/development/csp-rollout.md leans on this: preview is the only
+    local surface that exercises the production ``script-src``.
+    """
+    source = _vite_config_source()
+    assert "cspHeaders({ dev: true })" in source, "dev server keeps its relaxations"
+    assert "cspHeaders({ dev: false })" in source, "preview must not"
+
+
+def test_the_vite_report_uri_matches_the_production_report_uri():
+    """Both resolve to the deployed subpath; a mismatch loses reports silently."""
+    assert ProductionConfig.CSP_REPORT_URI in _vite_config_source().replace(
+        "${BASE}api", "/games/HeartOfVirtue/api"
+    )
+
+
+def test_the_real_app_factory_serves_the_policy(make_api_app):
+    """Every other delivery test builds a bare Flask app and registers the hook
+    by hand, so deleting ``register_security_headers(app)`` from the factory
+    left this whole file green. This is the only test that would catch that.
+
+    ``/health`` is deliberate: it needs no session, so this cannot drag a real
+    Universe into the default suite. Being JSON, it takes the enforced
+    ``_API_CSP`` rather than the report-only document policy -- either would
+    prove the hook is wired, which is the only thing at stake here.
+    """
+    response = make_api_app().test_client().get("/health")
+    assert response.headers[ENFORCING_HEADER] == _API_CSP
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_the_report_uri_resolves_to_a_real_route(make_api_app):
+    """A re-prefixed blueprint would send every violation into a 404."""
+    app = make_api_app()
+    report_path = app.config["CSP_REPORT_URI"]
+    assert any(str(rule) == report_path for rule in app.url_map.iter_rules())
+
+
+# --------------------------------------------------------------------------
+# Header delivery: the set, HSTS, the API/document branch, CORS coexistence
+# --------------------------------------------------------------------------
 
 import pathlib
 import re
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from src.api.security_headers import (
     _API_CSP,
+    _FRAME_OPTIONS_HEADER,
+    _FRAME_OPTIONS_VALUE,
     _HSTS_HEADER,
     _HSTS_VALUE,
-    _HTML_CSP,
     _STATIC_SECURITY_HEADERS,
-    serves_html_document,
 )
 from tests._cite import Read, verify
+
+# The document policy as this app actually composes and ships it, not a
+# transcription of it. `_DOCUMENT_CSP` -- a second, hand-written copy of the same
+# directives -- used to sit in security_headers.py and be the target of every
+# assertion below; master replaced it with `src/resources/csp-policy.json`,
+# read by BOTH the Flask hook and frontend/vite.config.js, which is the whole
+# point (a policy that drifts between the dev server and the API is a policy
+# nobody trusts). Reading it back through `build_csp` means the checks below
+# are made against what the browser gets.
+#
+# `dev=False`: the production policy is the one whose promises matter. The dev
+# relaxations get their own tests in master's half of this file.
+_DOCUMENT_CSP = build_csp(dev=False)
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _FRONTEND = _REPO_ROOT / "frontend"
@@ -68,8 +444,8 @@ _FRONTEND = _REPO_ROOT / "frontend"
 #: .test_the_rationale_this_suite_cites_is_still_there` fails if the anchor
 #: moves out from under it.
 _STYLE_SRC_RATIONALE = Read(
-    "src/api/security_headers.py",
-    "style-src 'unsafe-inline'  A measured cost",
+    "docs/development/csp-rollout.md",
+    "Tailwind and Vite inject `<style>` elements at runtime in development.",
 )
 
 
@@ -390,15 +766,34 @@ class TestHeadersArePresent:
         for header, value in _STATIC_SECURITY_HEADERS.items():
             assert response.headers.get(header) == value, header
 
-    def test_the_static_set_is_the_three_agreed_headers(self):
+    def test_the_static_set_is_the_two_agreed_headers(self):
         """Pinned by value: each was a deliberate choice documented beside
         ``_STATIC_SECURITY_HEADERS`` in ``src/api/security_headers.py``, and
         ``Referrer-Policy`` in particular had a defensible alternative."""
         assert _STATIC_SECURITY_HEADERS == {
             "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
             "Referrer-Policy": "strict-origin-when-cross-origin",
         }
+
+    def test_frame_options_rides_with_the_api_policy_and_not_the_document_one(
+        self, app
+    ):
+        """The two framing controls must not contradict each other.
+
+        ``X-Frame-Options: DENY`` and the document policy's
+        ``frame-ancestors 'self'`` disagree, and which one wins depends on
+        whether the browser implements CSP framing -- so the blunt header is
+        sent only alongside ``_API_CSP``, whose ``frame-ancestors 'none'`` it
+        agrees with. If the shared policy ever tightens to ``'none'``, this is
+        what should be updated to let the header apply everywhere.
+        """
+        client = app.test_client()
+        assert (
+            client.get("/health").headers.get(_FRAME_OPTIONS_HEADER)
+            == _FRAME_OPTIONS_VALUE
+        )
+        assert _FRAME_OPTIONS_HEADER not in client.get("/__html_probe").headers
+        assert "frame-ancestors 'none'" in _API_CSP
 
 
 class TestStrictTransportSecurity:
@@ -472,7 +867,29 @@ class TestThePolicyMatchesWhatTheResponseIs:
     def test_a_declared_html_document_gets_the_permissive_policy(self, app):
         response = app.test_client().get("/__html_probe")
         assert response.mimetype == "text/html"
-        assert response.headers["Content-Security-Policy"] == _HTML_CSP
+        header = (
+            REPORT_ONLY_HEADER
+            if REPORT_ONLY_HEADER in response.headers
+            else ENFORCING_HEADER
+        )
+        # Compared against the DEV policy, not the production one: this probe
+        # app runs under a TESTING config and `CSP_DEV_RELAXATIONS` defaults to
+        # `TESTING`, so what it ships is `build_csp(dev=True)` plus a
+        # report-uri. The report-uri is dropped before comparing rather than
+        # re-derived, because deriving it here would mean re-implementing
+        # `_flag`'s config-then-environment resolution in the test —
+        # a second copy of the thing under test. Its presence is asserted
+        # separately, which is all this test has an opinion about.
+        shipped = _directives(response.headers[header])
+        assert shipped.pop("report-uri", None), (
+            "the document policy ships no report-uri, so violations go nowhere "
+            "and the report-only rollout reads as zero violations"
+        )
+        assert shipped == _directives(build_csp(dev=True))
+        assert shipped != _directives(_DOCUMENT_CSP), (
+            "the dev and production document policies are identical, so this "
+            "test no longer distinguishes them -- check dev_additions"
+        )
 
     def test_undeclared_html_still_gets_the_strict_policy(self, app):
         """The inversion, stated as a test. Nothing in this app authors HTML,
@@ -520,14 +937,28 @@ class TestThePolicyMatchesWhatTheResponseIs:
         ``@keyframes``); ``script-src`` is the one that stops XSS and has no
         such excuse -- the frontend has no inline script, no eval and no
         worker. If this ever needs loosening, that is a frontend bug first."""
-        script_src = _directive(_HTML_CSP, "script-src")
+        script_src = _directive(_DOCUMENT_CSP, "script-src")
         assert script_src == ["'self'"]
-        assert "'unsafe-eval'" not in _HTML_CSP
-        assert "'unsafe-inline'" not in _directive(_HTML_CSP, "default-src")
+        assert "'unsafe-eval'" not in _DOCUMENT_CSP
+        assert "'unsafe-inline'" not in _directive(_DOCUMENT_CSP, "default-src")
 
-    def test_neither_policy_permits_framing(self):
-        for policy in (_API_CSP, _HTML_CSP):
-            assert _directive(policy, "frame-ancestors") == ["'none'"]
+    def test_the_api_policy_permits_no_framing_at_all(self):
+        """``'none'`` here, and paired with ``X-Frame-Options: DENY`` for the
+        browsers that ignore CSP framing -- see the frame-options test above
+        for why that header rides with this policy and not the other one."""
+        assert _directive(_API_CSP, "frame-ancestors") == ["'none'"]
+
+    def test_the_document_policy_permits_framing_only_by_itself(self):
+        """Deliberately weaker than the API policy's ``'none'``, and pinned so
+        the difference is a decision rather than an oversight.
+
+        The value is the shared one in ``src/resources/csp-policy.json``, which
+        ``frontend/vite.config.js`` reads too, so tightening it is a change to
+        the SPA's policy and not merely to this app's. Nothing frames the game
+        today; ``'self'`` is the conservative default the rollout started from.
+        Anything beyond ``'self'`` would be a real regression, which is what
+        this catches."""
+        assert _directive(_DOCUMENT_CSP, "frame-ancestors") == ["'self'"]
 
 
 class TestTheHookDoesNotFightAnyoneElse:
@@ -568,7 +999,7 @@ class TestTheHookDoesNotFightAnyoneElse:
 
 
 class TestTheHtmlPolicyMatchesTheRealFrontend:
-    """``_HTML_CSP`` is a specification for whoever serves ``index.html`` (it
+    """``_DOCUMENT_CSP`` is a specification for whoever serves ``index.html`` (it
     is never sent by this app -- see the module docstring), so it is worth only
     as much as its agreement with that file. These checks turn "somebody
     eyeballed the frontend once" into something that fails the day a new CDN is
@@ -583,7 +1014,7 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
 
     def test_every_external_host_in_index_html_is_permitted(self):
         """Per directive, not per policy. The version this replaces asked
-        ``host not in _HTML_CSP`` -- a substring test against the whole policy
+        ``host not in _DOCUMENT_CSP`` -- a substring test against the whole policy
         string, which is the very technique ``_directive``'s docstring warns
         about. A host listed only under ``font-src`` and loaded as a stylesheet
         satisfied it while the SPA broke.
@@ -600,14 +1031,14 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
         unlisted = sorted(
             (host, directive)
             for host, directive in fetches
-            if not _permits(_HTML_CSP, directive, host)
+            if not _permits(_DOCUMENT_CSP, directive, host)
         )
         assert unlisted == [], (
             "frontend/index.html loads from hosts the HTML CSP does not allow "
             f"under the governing directive, so the SPA would break: {unlisted}"
         )
 
-        permitted_anywhere = _fetch_hosts(_HTML_CSP)
+        permitted_anywhere = _fetch_hosts(_DOCUMENT_CSP)
         stray_hints = sorted(h for h in hints if h not in permitted_anywhere)
         assert stray_hints == [], (
             "index.html preconnects to hosts no fetch directive permits -- "
@@ -618,8 +1049,8 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
         """Both, and each on the right one: the stylesheet comes from
         googleapis and the faces it references come from gstatic, so allowing
         only one of them still yields a page with no typography."""
-        assert "https://fonts.googleapis.com" in _directive(_HTML_CSP, "style-src")
-        assert "https://fonts.gstatic.com" in _directive(_HTML_CSP, "font-src")
+        assert "https://fonts.googleapis.com" in _directive(_DOCUMENT_CSP, "style-src")
+        assert "https://fonts.gstatic.com" in _directive(_DOCUMENT_CSP, "font-src")
 
     #: The components whose inline ``<style>`` blocks are the entire reason
     #: ``style-src`` carries ``'unsafe-inline'``, as named in the rationale
@@ -640,6 +1071,7 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
         "HeroPanel.jsx",
         "ToastContext.jsx",
         "InteractPanel.jsx",  # document.createElement('style')
+        "HeatMeter.jsx",  # @keyframes heatChip
     }
 
     def test_the_rationale_this_suite_cites_is_still_there(self):
@@ -664,15 +1096,24 @@ class TestTheHtmlPolicyMatchesTheRealFrontend:
             pytest.skip("frontend/src not present")
         return _style_injectors(frontend_src)
 
-    def test_style_src_admits_inline_because_the_frontend_injects_style_tags(self):
-        """Not a rubber stamp on the value -- a check that the justification
-        still holds. If no component injects a <style> element any more, the
-        concession should be removed rather than inherited."""
+    def test_style_src_admits_inline_and_the_cited_second_reason_holds(self):
+        """Not a rubber stamp on the value -- a check that the cited reasoning
+        still describes the codebase.
+
+        The concession is unavoidable on the doc's FIRST reason alone (React
+        inline ``style={{}}`` props become element style attributes, which
+        ``style-src-attr`` governs and neither a nonce nor a hash reaches), so
+        this cannot assert that an empty injector set makes it removable. What
+        it can assert is that the doc's second reason -- components injecting a
+        ``<style>`` element -- is still true of the tree, rather than prose
+        that outlived its subject.
+        """
         assert self._injectors(), (
-            "no component injects a <style> element any more -- style-src's "
-            "'unsafe-inline' has outlived its justification and should go"
+            "no component injects a <style> element any more, so the second "
+            f"reason given in {_STYLE_SRC_RATIONALE} is now false -- rewrite "
+            "the doc to rest on the inline-style-props argument alone"
         )
-        assert "'unsafe-inline'" in _directive(_HTML_CSP, "style-src")
+        assert "'unsafe-inline'" in _directive(_DOCUMENT_CSP, "style-src")
 
     def test_the_rationale_names_exactly_the_components_that_still_inject(self):
         """Fails in both directions on purpose. A component dropped from the

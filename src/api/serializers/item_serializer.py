@@ -2,6 +2,8 @@
 
 from typing import Dict, Any, List
 
+from src.combatant import wire_handle
+
 
 class ItemSerializer:
     """Serialize Item objects to JSON-safe dictionaries."""
@@ -21,7 +23,13 @@ class ItemSerializer:
 
         # Basic item properties
         item_data = {
-            "id": str(id(item)),
+            # Opaque per-object handle, never a heap address (issue #518).
+            # Its resolver half is ``src.combatant.find_by_handle``
+            # (``GameService.interact_with_target``, floor items and
+            # container contents alike) — the two must move together, and
+            # moving only this one does not raise, it just makes every
+            # click on the item answer "Target not found."
+            "id": wire_handle(item),
             "name": getattr(item, "name", "Unknown"),
             "type": type(item).__name__,
             "description": getattr(item, "description", ""),

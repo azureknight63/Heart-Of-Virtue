@@ -1379,7 +1379,13 @@ class TestFlankingManeuverRemainingGaps:
         assert "flank" in capsys.readouterr().out.lower()
 
     def test_execute_side_move_branch(self, capsys):
-        """Lines 708-712: execute reports generic side-move (front/rear angle)."""
+        """execute reports the non-flank bands.
+
+        The enemy at (10, 0) faces east while Jean stands due west of it, so
+        the bearing on its guard is 180 deg -- the rear band (x1.40), the best
+        outcome the move has. This used to print the same "moved to the side"
+        line as a failed head-on approach.
+        """
         import src.moves as moves
 
         p = _player()
@@ -1392,7 +1398,9 @@ class TestFlankingManeuverRemainingGaps:
         fm = moves.FlankingManeuver(p)
         fm.target = enemy
         fm.execute(p)
-        assert "moved to the side" in capsys.readouterr().out.lower()
+        out = capsys.readouterr().out.lower()
+        assert "slipped all the way around" in out
+        assert "(+40% damage)" in out
 
 
 # ---------------------------------------------------------------------------

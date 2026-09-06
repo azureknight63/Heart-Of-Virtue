@@ -34,6 +34,17 @@ from src.moves._ranged import (
     PinningBolt,
     QuickReload,
 )
+from src.moves._base import HIT_CHANCE_CEILING
+
+# Glancing-blow tests pin the hit chance at ``_apply_to_hit_modifiers`` -- the
+# last point every attack passes through before rolling -- rather than
+# hand-computing it from HIT_CHANCE_BASE and pairing it with a literal roll.
+# The hand-computed style encoded a balance number in the test: these paired a
+# roll of 90 with a chance of 98, so when HIT_CHANCE_BASE moved 98 -> 85 every
+# one of them silently became a miss-path test asserting the wrong branch.
+_PINNED_HIT_CHANCE = 90
+#: Roll inside the glancing window: ``0 <= hit_chance - roll < 10``.
+_GLANCING_ROLL = _PINNED_HIT_CHANCE - 8
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -333,32 +344,37 @@ class TestShootBowCalculateHitChance:
         buffed_hit = move.calculate_hit_chance(enemy)
 
         assert buffed_hit > base_hit
-        assert buffed_hit == min(100, int(base_hit * 1.4))
+        assert buffed_hit == min(HIT_CHANCE_CEILING, int(base_hit * 1.4))
 
     def test_hawkeye_state_does_not_push_hit_chance_past_100(self):
-        """The +40% buff is clamped at 100.
+        """The +40% buff is clamped at HIT_CHANCE_CEILING.
 
         The old version used finesse 50 vs finesse 1, whose *unbuffed* chance is
-        already 138 -> clamped to 100, so Hawkeye's multiplication never touched
+        already far above the clamp, so Hawkeye's multiplication never touched
         the clamp at all; combined with ``result <= 100`` the test could not
-        fail. These stats put the unbuffed chance at 81, so 81 * 1.4 = 113 is
-        genuinely what the clamp has to catch.
+        fail. These stats put the unbuffed chance below the ceiling and the
+        buffed one above it, which is the only configuration that exercises
+        the clamp -- asserted explicitly below so a future retune that
+        collapses the two cannot quietly hollow the test out again.
         """
         user, arrow = _make_bow_user(finesse=10, intelligence=5)
         move = ShootBow(user)
         move.mvrange = (6, 50)
         move.decay = 0.05
-        enemy = _make_enemy(finesse=25)
+        enemy = _make_enemy(finesse=20)
         user.eq_weapon.range_base = 20
         user.combat_proximity = {enemy: 15}
 
-        # int(98 - 25 + 0.7*10 + 0.3*5) = 81, inside the bow's range_base so no
+        # int(85 - 20 + 0.7*10 + 0.3*5) = 73, inside the bow's range_base so no
         # accuracy decay applies.
-        assert move.calculate_hit_chance(enemy) == 81
+        unbuffed = move.calculate_hit_chance(enemy)
+        assert unbuffed == 73
+        # The clamp is only under test if the buff genuinely overshoots it.
+        assert unbuffed < HIT_CHANCE_CEILING < int(unbuffed * 1.4)
 
         user.states = [states.Hawkeye(user)]
 
-        assert move.calculate_hit_chance(enemy) == 100
+        assert move.calculate_hit_chance(enemy) == HIT_CHANCE_CEILING
 
 
 # ---------------------------------------------------------------------------
@@ -957,15 +973,17 @@ class TestShootCrossbowExecute:
         mock_hit.assert_not_called()
 
     def test_execute_glancing_blow(self):
-        """hit_chance = max(5, int(98-8+10*0.7+5*0.3)) = 98; roll=90 -> diff=8 < 10
-        (glancing). damage = ((25*1.0) - 2) * 1.0 * 1.0 = 23, halved to 11.
+        """The hit chance is pinned; roll -> diff=8 < 10 (glancing).
+        damage = ((25*1.0) - 2) * 1.0 * 1.0 = 23, halved to 11.
         """
         move, user, enemy = self._setup()
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit") as mock_hit,
             patch("src.moves._ranged.functions.check_parry", return_value=False),
-            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged._apply_to_hit_modifiers",
+                  return_value=_PINNED_HIT_CHANCE),
+            patch("src.moves._ranged.random.randint", return_value=_GLANCING_ROLL),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
@@ -1398,8 +1416,8 @@ class TestShootCrossbowExecuteRealPath:
     def test_execute_glancing_blow_deterministic(self):
         """Lines 451-452: glancing blow via real (non-mocked) viable().
 
-        hit_chance = max(5, int(98-8+10*0.7+5*0.3)) = 98; distance == base_range, no decay.
-        roll=90 -> diff=8 < 10 (glancing). power = max(1, 20+15+int(5*0.3)+int(10*0.5)) = 41.
+        The hit chance is pinned; distance == base_range, so no decay applies
+        either way. diff=8 < 10 (glancing). power = max(1, 20+15+int(5*0.3)+int(10*0.5)) = 41.
         damage = ((41*1.0) - 2) * 1.0 * 1.0 = 39, halved to 19.
         """
         user = _make_crossbow_user(finesse=10, intelligence=5)
@@ -1411,7 +1429,9 @@ class TestShootCrossbowExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch("src.moves._ranged.functions.check_parry", return_value=False),
-            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged._apply_to_hit_modifiers",
+                  return_value=_PINNED_HIT_CHANCE),
+            patch("src.moves._ranged.random.randint", return_value=_GLANCING_ROLL),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
@@ -1511,9 +1531,9 @@ class TestBroadheadBoltExecuteRealPath:
     def test_execute_glancing_blow_deterministic(self):
         """Lines 595-596: glancing blow via real (non-mocked) viable().
 
-        power = max(1, 20+25+int(5*0.3)+int(10*0.5)) = 51. hit_chance = max(5,
-        int(98-8+7+1.5)) = 98; distance == base_range, no decay. roll=90 ->
-        diff=8 < 10 (glancing). damage = ((51*1.0) - 2) * 1.0 * 1.0 = 49, halved to 24.
+        power = max(1, 20+25+int(5*0.3)+int(10*0.5)) = 51. The hit chance is
+        pinned; distance == base_range, no decay. diff=8 < 10 (glancing).
+        damage = ((51*1.0) - 2) * 1.0 * 1.0 = 49, halved to 24.
         """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
@@ -1523,7 +1543,9 @@ class TestBroadheadBoltExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch("src.moves._ranged.functions.check_parry", return_value=False),
-            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged._apply_to_hit_modifiers",
+                  return_value=_PINNED_HIT_CHANCE),
+            patch("src.moves._ranged.random.randint", return_value=_GLANCING_ROLL),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
@@ -1788,9 +1810,9 @@ class TestPinningBoltExecuteRealPath:
     def test_execute_glancing_blow_deterministic(self):
         """Lines 895-896: glancing blow via real (non-mocked) viable().
 
-        power = max(1, 20+10+int(5*0.3)+int(10*0.5)) = 36. hit_chance = max(5,
-        int(98-8+7+1.5)) = 98; distance == base_range, no decay. roll=90 ->
-        diff=8 < 10 (glancing). damage = ((36*1.0) - 2) * 1.0 * 1.0 = 34, halved to 17.
+        power = max(1, 20+10+int(5*0.3)+int(10*0.5)) = 36. The hit chance is
+        pinned; distance == base_range, no decay. diff=8 < 10 (glancing).
+        damage = ((36*1.0) - 2) * 1.0 * 1.0 = 34, halved to 17.
         A hit on a live target also applies Disoriented via the real (unmocked)
         states.Disoriented constructor.
         """
@@ -1803,7 +1825,9 @@ class TestPinningBoltExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch("src.moves._ranged.functions.check_parry", return_value=False),
-            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged._apply_to_hit_modifiers",
+                  return_value=_PINNED_HIT_CHANCE),
+            patch("src.moves._ranged.random.randint", return_value=_GLANCING_ROLL),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)

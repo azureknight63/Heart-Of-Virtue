@@ -455,24 +455,49 @@ class TestNorecursedirsProseMatchesPytestIni:
             "Prose disagrees with pytest.ini's norecursedirs:\n" + "\n".join(mismatches)
         )
 
-    def test_tests_api_is_not_excluded(self):
-        """The specific regression: tests/api runs in the gate. Keep it that way."""
-        assert "tests/api" not in pytest_ini_norecursedirs()
+    def test_tests_api_is_excluded_and_prose_says_why(self):
+        """tests/api is excluded ON PURPOSE, and the reason travels with it.
+
+        This assertion has been both ways round. It was briefly "tests/api must
+        NOT be excluded", on the premise that an excluded directory rots -- true
+        of the contents, false of the exclusion, which exists because building a
+        real session mutates module-level item and merchant registries and
+        pollutes downstream shop and spawn tests. What makes the exclusion safe
+        is not that it is written down but that the directory still RUNS, one
+        process per file, in its own CI job. So both halves are asserted: the
+        exclusion, and the job that redeems it.
+        """
+        assert "tests/api" in pytest_ini_norecursedirs()
+        workflow = (
+            REPO_ROOT / ".github" / "workflows" / "api-tests.yml"
+        ).read_text(encoding="utf-8")
+        assert "tests/api" in workflow, (
+            "tests/api is excluded from the default suite and no CI workflow "
+            "walks it -- that is the state the exclusion was removed to fix"
+        )
+        ini = (REPO_ROOT / "pytest.ini").read_text(encoding="utf-8")
+        assert "api-tests.yml" in ini, (
+            "pytest.ini excludes tests/api without pointing at the job that "
+            "runs it, which is how the directory went uncovered before #522"
+        )
 
     def test_stale_enumeration_is_caught(self):
         """Guard the guard: the pre-fix prose must still fail this checker."""
         real = pytest_ini_norecursedirs()
         stale = (
-            "backend default suite (excludes tests/api, tests/broken, tests/uat, "
+            "backend default suite (excludes tests/broken, tests/uat, "
             "tests/integration)"
         )
         found = find_exclusion_enumerations(stale, real)
         assert found, "checker no longer recognises an exclusion enumeration at all"
-        assert any("tests/api" in named for _, named in found)
+        assert any("tests/api" not in named for _, named in found)
 
     def test_current_enumeration_is_accepted(self):
         real = pytest_ini_norecursedirs()
-        good = "excludes `tests/broken`, `tests/uat` and `tests/integration`"
+        good = (
+            "excludes `tests/api`, `tests/broken`, `tests/uat` and "
+            "`tests/integration`"
+        )
         found = find_exclusion_enumerations(good, real)
         assert found, "checker fails to recognise a correct enumeration"
         for _, named in found:

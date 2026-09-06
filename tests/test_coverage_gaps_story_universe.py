@@ -388,6 +388,9 @@ class TestCh01PostRumblerRep:
         tile = _make_tile()
         fake_npc = Mock()
         tile.spawn_npc = Mock(return_value=fake_npc)
+        # The event spawns into the player's *current* room; point it at the
+        # same tile so spawn calls are observable on one mock.
+        player.current_room = tile
         return self.cls(player=player, tile=tile), player, tile
 
     def test_instantiate(self):
@@ -410,20 +413,30 @@ class TestCh01PostRumblerRep:
             ev.check_combat_conditions()
             mock_pass.assert_not_called()
 
-    def test_stage1_spawns_and_increments_iteration(self):
+    def test_stage1_announces_without_spawning(self):
+        """The warning must land before the wave does (issue #506)."""
         ev, player, tile = self._make()
         initial_iteration = ev.iteration
-        with patch("src.functions.add_enemies_to_combat"):
+        with patch("src.functions.add_enemies_to_combat") as mock_add:
             ev.process(user_input=None)
         assert ev._announcement_stage == 2
         assert ev.needs_input is True
-        assert ev.iteration == initial_iteration + 1
+        # Nothing enrolled yet, and the announcement is not held behind the
+        # combat delay that would let the battlefield render first.
+        tile.spawn_npc.assert_not_called()
+        mock_add.assert_not_called()
+        assert ev.delay_mode is None
+        assert ev.iteration == initial_iteration
 
-    def test_stage2_resets_for_next_trigger(self):
+    def test_stage2_spawns_then_resets_for_next_trigger(self):
         ev, player, tile = self._make()
-        with patch("src.functions.add_enemies_to_combat"):
-            ev.process(user_input=None)  # stage 1
-        ev.process(user_input="continue")  # stage 2
+        initial_iteration = ev.iteration
+        with patch("src.functions.add_enemies_to_combat") as mock_add:
+            ev.process(user_input=None)  # stage 1 — announce
+            ev.process(user_input="continue")  # stage 2 — spawn
+        assert tile.spawn_npc.call_count == initial_iteration
+        mock_add.assert_called_once()
+        assert ev.iteration == initial_iteration + 1
         assert ev.needs_input is False
         assert ev._announcement_stage == 1
 

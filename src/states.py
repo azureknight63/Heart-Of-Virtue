@@ -153,16 +153,31 @@ class State:  # master class for all states
         """
         return getattr(self, "_tactical_mechanics", "")
 
-    def _capture_bases(self, target, *attrs):
+    def _capture_bases(self, target, **stat_to_bonus):
         """Record the target stats this state's modifiers are being taken from.
 
         ``_applied_pct`` divides by these to report the fraction the engine
         really applied, so every state that renders live captures them. One
         named call rather than the same pair of lines (and the same pair of
         comment lines) copied into each such state.
+
+        Captured through :func:`stat_without_state_bonus`, with the SAME
+        ``(stat, add_*)`` pairing the ``add_*`` derivations below use, and not
+        with a bare ``getattr(target, attr)``. The two have to be the same
+        number or the reported fraction is wrong in a new way: on a
+        re-application, ``refresh_stat_bonuses`` has already moved the live
+        stat by this state's earlier contribution, so a bare read divides the
+        new modifier by an already-penalised base and quotes a penalty deeper
+        than the one applied. Keyword form because the pairing is the point --
+        ``finesse="add_fin"`` cannot be miscounted the way two positional
+        lists could drift out of step.
         """
-        for attr in attrs:
-            setattr(self, "_base_" + attr, getattr(target, attr))
+        for attr, bonus_attr in stat_to_bonus.items():
+            setattr(
+                self,
+                "_base_" + attr,
+                stat_without_state_bonus(target, attr, bonus_attr, type(self)),
+            )
 
     def _applied_pct(self, add_attr, base_attr, nominal_pct):
         """``add_attr`` as a percentage of the stat it was taken from.
@@ -270,11 +285,106 @@ class State:  # master class for all states
                     self.on_removal(target)
 
 
+#: A state whose bonus is a percentage (or offset) of one of the target's stats
+#: must never read that stat straight off the target: ``functions.reset_stats``
+#: recomputes ``strength``/``finesse``/``speed``/``protection`` as
+#: ``base + sum(add_* from equipped items and active states)``, so an already
+#: active instance of the very same state is *folded into the number its own*
+#: ``__init__``/``compound`` *reads back*. Re-application then feeds the bonus
+#: into itself:
+#:
+#:   * A ``compounding`` state keeps the existing instance and calls
+#:     ``compound()`` on it (see ``functions.inflict``), so the feedback is
+#:     geometric and unbounded. Measured on a 20-strength target, ``Fervent``
+#:     ran +6, +9, +13, +17, +22, +28, +35, +43 strength over eight
+#:     re-applications -- the per-cast increment *accelerating* -- where the
+#:     design intent ("the fire burns hotter") is a flat +15% per re-cast.
+#:   * A non-compounding state is replaced wholesale, so the feedback converges
+#:     rather than exploding, but it converges on the wrong number:
+#:     ``SecretPlansState`` settled at +8 strength instead of the +6 a single
+#:     cast grants (re-casting bought a free buff), while the percentage
+#:     *debuffs* -- ``Disoriented``, ``Resonant`` -- got weaker on re-application
+#:     because they were taking their cut of an already reduced stat.
+#:
+#: Every such bonus in this module therefore goes through
+#: :func:`stat_without_state_bonus`, which strips the state's own contribution
+#: before the percentage is taken. It deliberately keeps contributions from
+#: equipment and from *other* states: that scaling is designed -- a -25%
+#: protection mark should scale with the armour actually being worn.
+#:
+#: Deriving from the ``*_base`` attributes instead (``finesse_base`` etc. do
+#: exist and are maintained) would also strip gear and other states, silently
+#: retuning every one of these effects for any equipped target; and Player has
+#: no ``protection_base`` at all -- its gear protection is recomputed by
+#: ``refresh_protection_rating`` -- so the four protection-scaling states could
+#: not use that route anyway. Half a rule is what produced this defect once
+#: already.
+def stat_without_state_bonus(target, stat_attr, bonus_attr, state_cls):
+    """Read ``target.<stat_attr>`` with ``state_cls``'s own contribution removed.
+
+    :param target: the player/NPC carrying the stat and a ``states`` list.
+    :param stat_attr: live stat to read, e.g. ``"finesse"``.
+    :param bonus_attr: the ``add_*`` attribute through which ``state_cls`` feeds
+        that stat, e.g. ``"add_fin"``.
+    :param state_cls: the state class whose contribution to exclude. Pass
+        ``type(self)`` -- that is exactly the class-matching rule
+        ``functions.inflict`` uses to decide an instance is already active.
+    :return: the stat as it would read with no instance of ``state_cls``
+        active, floored at 0. Non-numeric stats and targets without an
+        iterable ``states`` (test doubles, partially built combatants) are
+        returned untouched.
+    """
+    value = getattr(target, stat_attr, 0)
+    if not isinstance(value, (int, float)):
+        return value
+    try:
+        active = list(getattr(target, "states", ()) or ())
+    except TypeError:
+        return value
+    for existing in active:
+        if isinstance(existing, state_cls):
+            contribution = getattr(existing, bonus_attr, 0)
+            if isinstance(contribution, (int, float)):
+                value -= contribution
+    return max(0, value)
+
+
+#: Evasion granted by :class:`Dodging` to a combatant with no finesse at all,
+#: and the rate at which that grant decays as the dodger's own finesse rises.
+#:
+#: The bonus is *diminishing* in finesse (``BASE - int(finesse / DIVISOR)``)
+#: rather than growing with it. The old shape, ``50 + int(finesse / 3)``, let
+#: base finesse enter the to-hit expression twice — once as the defender
+#: term and again, amplified, through the bonus — so the bestiary's evasion
+#: spread compounded instead of flattening: a dodging Cave Bat (finesse 24) was
+#: about 14% hittable and a dodging Wail Wraith (finesse 40) about 6%, i.e.
+#: effectively untouchable, while a dodging King Slime was still easy prey.
+#:
+#: Decay keeps every dodger inside a single band. Against Jean at base stats
+#: (finesse 11, intelligence 10, ``_base.HIT_CHANCE_BASE`` 85) the dodging
+#: bestiary now sits at 33.7%–51.5% hittable, and Jean dodging drops incoming
+#: hostile accuracy from roughly 70–87% to roughly 34–50%. Dodging is therefore
+#: worth a beat for anyone and decisive for no one.
+#:
+#: Decay also makes the state self-limiting under re-application, and
+#: :func:`stat_without_state_bonus` makes it exactly idempotent: ``__init__``
+#: subtracts any active Dodging grant before reading finesse, so re-applying
+#: re-derives the same number instead of oscillating toward a larger one.
+DODGE_EVASION_BASE = 42
+DODGE_EVASION_FINESSE_DIVISOR = 2
+#: Floor so the state is never worthless (or negative). It binds once decay
+#: would drop the grant below it — finesse above 54 at the values above.
+DODGE_EVASION_MIN = 15
+
+
 class Dodging(State):
     # Flat finesse points the stance is worth, plus a share of the holder's own
     # finesse -- a nimble character gets more out of a dodge than a clumsy one.
-    _FINESSE_BONUS_POINTS = 50
-    _FINESSE_SCALING_DIVISOR = 3
+    # Named for tests/test_combat_strategist_coverage.py, which pins the
+    # advisor's _DEFENSIVE_STANCE_BEATS against it. The evasion numbers are
+    # module constants beside their rationale (DODGE_EVASION_*), because the
+    # decay they describe is a bestiary-wide balance property rather than a
+    # per-class tuning knob.
     _DURATION_BEATS = 7
 
     def __init__(
@@ -285,14 +395,25 @@ class Dodging(State):
             target=target,
             beats_max=self._DURATION_BEATS,
             hidden=True,
-            # Deliberately qualitative: the bonus is a flat term plus a share
-            # of the holder's own finesse, so no single percentage or point
-            # value describes it honestly.
-            tactical_mechanics="+evasion (large finesse bonus) while the stance holds",
         )
-        self.add_fin = self._FINESSE_BONUS_POINTS + int(
-            target.finesse / self._FINESSE_SCALING_DIVISOR
+        self.add_fin = max(
+            DODGE_EVASION_MIN,
+            DODGE_EVASION_BASE
+            - int(
+                stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+                / DODGE_EVASION_FINESSE_DIVISOR
+            ),
         )
+
+    def _render_tactical_mechanics(self):
+        """Quote the grant this instance actually carries.
+
+        A fixed string used to say "+evasion (large finesse bonus)". The decay
+        makes that exactly backwards for a nimble dodger -- the nimbler the
+        holder, the SMALLER the grant -- and the advisor was being told the
+        opposite of the mechanic it was reasoning about.
+        """
+        return f"+{self.add_fin} finesse (evasion) while the stance holds"
 
 
 class Parrying(State):
@@ -546,8 +667,14 @@ class Disoriented(State):
                 f"−{_pct(self._PROTECTION_PENALTY_PCT)} protection"
             ),
         )
-        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY_PCT)
-        self.add_protection = -int(target.protection * self._PROTECTION_PENALTY_PCT)
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
+        )
+        self.add_protection = -int(
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_PENALTY_PCT
+        )
 
     def on_application(self, target):
         cprint(
@@ -613,9 +740,15 @@ class Slimed(State):
         )
         self.tick = 0
         self.execute_on = self._EXECUTE_ON
-        self._capture_bases(target, "finesse", "protection")
-        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY_PCT)
-        self.add_protection = -int(target.protection * self._PROTECTION_PENALTY_PCT)
+        self._capture_bases(target, finesse="add_fin", protection="add_protection")
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
+        )
+        self.add_protection = -int(
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_PENALTY_PCT
+        )
 
     def _render_tactical_mechanics(self):
         finesse = self._applied_pct(
@@ -647,10 +780,19 @@ class Slimed(State):
             target.hp -= damage
 
     def compound(self, target):
+        # Worsening on re-application is intended (compounding=True, "Worsens if
+        # reapplied"). Each coat costs a further 5% of the *unslimed* stats, so
+        # the escalation is linear per re-application rather than a fraction of
+        # the already-slimed value -- which decayed toward zero finesse and, at
+        # ordinary stat magnitudes, truncated to a no-op after the first coat.
         cprint("The slime coating on {} thickens!".format(target.name), "cyan")
-        self.add_fin -= int(target.finesse * self._COMPOUND_FINESSE_PENALTY_PCT)
+        self.add_fin -= int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._COMPOUND_FINESSE_PENALTY_PCT
+        )
         self.add_protection -= int(
-            target.protection * self._COMPOUND_PROTECTION_PENALTY_PCT
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._COMPOUND_PROTECTION_PENALTY_PCT
         )
         self._extend_compounded_duration()
         functions.refresh_stat_bonuses(target)
@@ -689,7 +831,10 @@ class Resonant(State):
         )
         self.tick = 0
         self.execute_on = self._EXECUTE_ON
-        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY_PCT)
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -791,10 +936,21 @@ class Petrified(State):
         )
         self.tick = 0
         self.execute_on = self._EXECUTE_ON
-        self._capture_bases(target, "finesse", "speed", "protection")
-        self.add_fin = -int(target.finesse * self._FINESSE_PENALTY_PCT)
-        self.add_speed = -int(target.speed * self._SPEED_PENALTY_PCT)
-        self.add_protection = int(target.protection * self._PROTECTION_BONUS_PCT)
+        self._capture_bases(
+            target, finesse="add_fin", speed="add_speed", protection="add_protection"
+        )
+        self.add_fin = -int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
+        )
+        self.add_speed = -int(
+            stat_without_state_bonus(target, "speed", "add_speed", type(self))
+            * self._SPEED_PENALTY_PCT
+        )
+        self.add_protection = int(
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_BONUS_PCT
+        )
 
     def _render_tactical_mechanics(self):
         finesse = self._applied_pct(
@@ -840,10 +996,21 @@ class Petrified(State):
             "The mineral sediment deepens its grip on {}.".format(target.name),
             "white",
         )
-        self.add_fin -= int(target.finesse * self._COMPOUND_FINESSE_PENALTY_PCT)
-        self.add_speed -= int(target.speed * self._COMPOUND_SPEED_PENALTY_PCT)
+        # Deepening on re-application is intended (compounding=True, "Worsens if
+        # reapplied"); each layer is a share of the *uncrusted* stats, so the crust
+        # thickens linearly. Taken off the already-crusted values, the protection
+        # term in particular grew geometrically and without bound.
+        self.add_fin -= int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._COMPOUND_FINESSE_PENALTY_PCT
+        )
+        self.add_speed -= int(
+            stat_without_state_bonus(target, "speed", "add_speed", type(self))
+            * self._COMPOUND_SPEED_PENALTY_PCT
+        )
         self.add_protection += int(
-            target.protection * self._COMPOUND_PROTECTION_BONUS_PCT
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._COMPOUND_PROTECTION_BONUS_PCT
         )
         self._extend_compounded_duration()
         functions.refresh_stat_bonuses(target)
@@ -955,9 +1122,15 @@ class Fervent(State):
         )
         self.tick = 0
         self.execute_on = self._EXECUTE_ON
-        self._capture_bases(target, "strength", "finesse")
-        self.add_str = int(target.strength * self._STRENGTH_BONUS_PCT)
-        self.add_fin = int(target.finesse * self._FINESSE_BONUS_PCT)
+        self._capture_bases(target, strength="add_str", finesse="add_fin")
+        self.add_str = int(
+            stat_without_state_bonus(target, "strength", "add_str", type(self))
+            * self._STRENGTH_BONUS_PCT
+        )
+        self.add_fin = int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_BONUS_PCT
+        )
         self.add_endurance = -self._ENDURANCE_PENALTY_POINTS
 
     def _render_tactical_mechanics(self):
@@ -1003,8 +1176,16 @@ class Fervent(State):
             target.fatigue = max(0, target.fatigue - fatigue_drain)
 
     def compound(self, target):
+        # Burning hotter on re-application is intended (compounding=True), but
+        # the increment is a flat 15% of the *unfervent* strength. Read off the
+        # already-fervent value it compounded geometrically: +6, +9, +13, +17,
+        # +22, +28, +35, +43 strength over eight re-applications on a
+        # 20-strength target, with no ceiling.
         cprint("The fire in {} burns hotter!".format(target.name), "red")
-        self.add_str += int(target.strength * self._COMPOUND_STRENGTH_BONUS_PCT)
+        self.add_str += int(
+            stat_without_state_bonus(target, "strength", "add_str", type(self))
+            * self._COMPOUND_STRENGTH_BONUS_PCT
+        )
         self.add_endurance -= self._COMPOUND_ENDURANCE_PENALTY_POINTS
         self.beats_left = min(
             self.beats_max, self.beats_left + self._COMPOUND_DURATION_BEATS
@@ -1083,17 +1264,38 @@ class WarCryStunned(State):
         self._stunned = True
 
 
+#: Default lifetime of a Staggered state, in beats. Long enough for the Heavy
+#: Handed passive, whose victim is expected to cast again shortly. Read by
+#: src/moves/_utility.py, which is why it is a module constant rather than a
+#: class attribute like the rest of this file's tuning values.
+STAGGERED_DEFAULT_BEATS = 3
+
+
 class Staggered(State):
-    """Applied by Heavy Handed passive. Target's next moves are slower to wind up."""
+    """Target's next move has +5 prep beats.
 
+    Applied by the Heavy Handed passive and by Disrupt's braced read.
+
+    ``beats_max`` is a parameter because the penalty is only consumed at the
+    target's next ``Move.cast()``, so a fixed lifetime silently no-ops whenever
+    the target has more than that many beats of committed animation left to
+    burn. Disrupt hits exactly that case -- its braced branch deliberately lets
+    the current wind-up resolve, which always takes more than the default three
+    beats -- so it passes a duration derived from the target's own remaining
+    stage beats. Heavy Handed keeps the default.
+    """
+
+    #: Prep beats added to the target's next move. Named because it is quoted
+    #: three times -- the description, the tactical_mechanics line the advisor
+    #: reads, and the penalty itself -- and those three had no way to disagree
+    #: only while it was one value.
     _PREP_PENALTY_BEATS = 5
-    _DURATION_BEATS = 3
 
-    def __init__(self, target):
+    def __init__(self, target, beats_max=STAGGERED_DEFAULT_BEATS):
         super().__init__(
             name="Staggered",
             target=target,
-            beats_max=self._DURATION_BEATS,
+            beats_max=beats_max,
             compounding=False,
             combat=True,
             world=False,
@@ -1142,9 +1344,18 @@ class SecretPlansState(State):
                 f"+{_pct(self._STAT_BONUS_PCT)} speed"
             ),
         )
-        self.add_str = int(target.strength * self._STAT_BONUS_PCT)
-        self.add_fin = int(target.finesse * self._STAT_BONUS_PCT)
-        self.add_speed = int(target.speed * self._STAT_BONUS_PCT)
+        self.add_str = int(
+            stat_without_state_bonus(target, "strength", "add_str", type(self))
+            * self._STAT_BONUS_PCT
+        )
+        self.add_fin = int(
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._STAT_BONUS_PCT
+        )
+        self.add_speed = int(
+            stat_without_state_bonus(target, "speed", "add_speed", type(self))
+            * self._STAT_BONUS_PCT
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -1208,7 +1419,10 @@ class Quarried(State):
             ),
             tactical_mechanics=f"−{_pct(self._PROTECTION_PENALTY_PCT)} protection",
         )
-        self.add_protection = -int(target.protection * self._PROTECTION_PENALTY_PCT)
+        self.add_protection = -int(
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_PENALTY_PCT
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)

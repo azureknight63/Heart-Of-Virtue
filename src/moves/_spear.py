@@ -9,12 +9,23 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    apply_glancing_blow,
+    resolve_pipeline_strike,
+    apply_facing_damage,
     Move,
     PassiveMove,
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
     to_hit_chance,
+    resolve_damage,
+    target_protection,
 )  # noqa: F401
+
+
+#: Keep Away's damage as a fraction of a full swing. Half a swing is the most
+#: a pure control move gets: the reason to press it is the shove that restores
+#: the spear's fighting distance, not the hit that carries it.
+KEEP_AWAY_POWER_FACTOR = 0.50
 
 
 class KeepAway(Move):
@@ -22,6 +33,14 @@ class KeepAway(Move):
 
     The spear is weakest when enemies close in. Keep Away deals a glancing
     hit and shoves the target back, restoring the engagement distance.
+
+    Utility-first, and priced accordingly. It used to deal half a swing's
+    damage *at a full swing's price* — twelve beats and the roster's worst
+    damage-per-fatigue — which made the control effect something you paid a
+    penalty for rather than a tool. The damage is still deliberately minor
+    (50% of a full swing); the cycle and the fatigue are now minor to match,
+    so shoving an attacker back out to spear range is a cheap reflex instead
+    of a wasted turn.
     """
     display_name = 'Keep Away'
 
@@ -32,10 +51,10 @@ class KeepAway(Move):
             "Strike the approaching enemy aside and force them back, "
             "restoring your spear's optimal fighting distance."
         )
-        prep = 1
-        execute = 2
+        prep = 2
+        execute = 1
         recoil = 1
-        cooldown = 4
+        cooldown = 3
         super().__init__(
             name="Keep Away",
             description=description,
@@ -66,18 +85,23 @@ class KeepAway(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 2, 1, 4]
+            self.stage_beat = [2, 1, 1, 3]
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=-10,
+            base_power=0,
             base_damage_type="piercing",
+            mod_prep=-2,
+            mod_recoil=-1,
+            mod_cd=-2,
+            mod_fatigue=-40,
+            floor_fatigue=12,
         )
         # Keep Away is a control move that deals reduced damage (issue #397).
-        # Apply the 45% reduction as a numeric factor here rather than via a
+        # Apply the reduction as a numeric factor here rather than via a
         # percent-string mod_power, whose branch multiplied power by a *negative*
         # factor (-45/100) and clamped the resulting damage to 0.
-        self.power = max(1, int(evaluation[0] * 0.55))
+        self.power = max(1, int(evaluation[0] * KEEP_AWAY_POWER_FACTOR))
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name
         self.stage_announce[1] = colored(
@@ -86,7 +110,6 @@ class KeepAway(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -108,18 +131,10 @@ class KeepAway(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
@@ -187,7 +202,12 @@ class Lunge(Move):
     """Step forward and deliver a thrusting strike, closing distance mid-attack.
 
     Bridges the gap when the target retreats just outside spear reach.
-    Moves the user 3 units toward the target then delivers a standard thrust.
+    Moves the user 3 units toward the target then delivers a thrust.
+
+    Mobility-first: 70% of a full swing on an eight-beat cycle, so its
+    damage-per-beat sits just under the basic Attack's. You press it to *get
+    somewhere* — closing three units and attacking in one action, instead of
+    spending a separate move on the approach — not because it hits harder.
     """
     display_name = 'Lunge'
 
@@ -198,10 +218,10 @@ class Lunge(Move):
             "Step sharply toward your target and drive your spear forward. "
             "Closes the gap and delivers a piercing strike in one motion."
         )
-        prep = 1
-        execute = 2
+        prep = 2
+        execute = 1
         recoil = 2
-        cooldown = 4
+        cooldown = 3
         super().__init__(
             name="Lunge",
             description=description,
@@ -238,12 +258,17 @@ class Lunge(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 2, 2, 4]
+            self.stage_beat = [2, 1, 2, 3]
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
             base_power=0,
             base_damage_type="piercing",
+            mod_power="70%",
+            mod_prep=-2,
+            mod_cd=-2,
+            mod_fatigue=-30,
+            floor_fatigue=15,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -253,7 +278,6 @@ class Lunge(Move):
         )
 
     def execute(self, player):
-        glance = False
         self.prep_colors()
 
         # Step toward target
@@ -306,31 +330,17 @@ class Lunge(Move):
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - self.target.protection
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(player, self.target, power, self.base_damage_type)
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -340,9 +350,18 @@ class Lunge(Move):
 class Impale(Move):
     """Penetrating thrust that ignores most of the target's protection.
 
-    The spear tip finds the gap between armour plates. Deals full weapon
-    damage against only 40% of normal protection — devastating against
-    heavily armoured foes.
+    The spear tree's heavy: roughly twice the basic Attack's damage for
+    roughly twice its beat cost, against only 40% of the target's protection.
+    Nearly all of that cost is visible on the beat timeline as a nine-beat
+    wind-up and a four-beat recovery, which is what makes a whiff genuinely
+    expensive — an enemy that reads the telegraph gets a very long window.
+
+    ``__init__`` has always declared a slow ``[2, 1, 3, 5]``, but ``evaluate()``
+    used to overwrite it with the plain weapon-derived timing, so the move the
+    docstring calls "slow and committing" actually ran on exactly the same
+    twelve beats as everything else in the roster. The ``mod_prep`` /
+    ``mod_recoil`` arguments below put the commitment back, and route it
+    through ``standard_evaluate_attack`` so it scales with weapon weight.
     """
     display_name = 'Impale'
 
@@ -391,13 +410,23 @@ class Impale(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [2, 1, 3, 5]
-            self.fatigue_cost = 10
+            self.stage_beat = [9, 2, 4, 5]
+            self.fatigue_cost = 25
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=10,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="190%",
+            mod_prep=5,
+            mod_recoil=2,
+            mod_fatigue=40,
+            floor_fatigue=25,
         )
+        # A two-beat execute stage. ``standard_evaluate_attack`` hard-codes
+        # execute to 1 for every move it evaluates, so the heavies re-assert it
+        # here; assigning a literal into the freshly-built list it just
+        # returned keeps evaluate() idempotent.
+        self.stage_beat[1] = 2
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name
@@ -406,8 +435,18 @@ class Impale(Move):
             "green",
         )
 
+    def preview_damage(self, target=None):
+        """Impale scores only 40% of the target's protection — the same
+        override its ``execute()`` passes into ``resolve_damage``. Left on
+        the default full-armour line, the preview understated the move
+        against exactly the armoured targets it exists for.
+        """
+        resolved = target if target is not None else getattr(self, "target", None)
+        return self._standard_preview_damage(
+            resolved, protection=target_protection(resolved) * 0.4
+        )
+
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -431,32 +470,20 @@ class Impale(Move):
         roll = random.randint(0, 100)
 
         # Ignore 60% of protection
-        effective_prot = self.target.protection * 0.4
-        damage = (
-            (
-                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
-                - effective_prot
-            )
-            * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        effective_prot = target_protection(self.target) * 0.4
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(
+            player, self.target, power, self.base_damage_type, protection=effective_prot
+        )
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 10
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -483,6 +510,13 @@ class ArmorPierce(Move):
 
     The pick's pointed tip finds the hairline gap. Protection is set to
     zero in the damage calculation — raw weapon power and resistance apply.
+
+    Situational by construction: at 70% of a full swing on an eight-beat cycle
+    its raw damage-per-beat is *below* the basic Attack's, so against an
+    unarmoured target it is simply the worse button. It overtakes Attack the
+    moment the target's protection reaches roughly four, and never stops
+    scaling after that. That is the whole design — a move that is the clear
+    answer to one problem rather than a marginal improvement on everything.
     """
     display_name = 'Armor Pierce'
 
@@ -493,9 +527,9 @@ class ArmorPierce(Move):
             "Drive the pick's point into an armour gap, bypassing all protection. "
             "Lower raw damage than a full swing but ignores every point of armour."
         )
-        prep = 1
+        prep = 3
         execute = 1
-        recoil = 2
+        recoil = 1
         cooldown = 3
         super().__init__(
             name="Armor Pierce",
@@ -531,12 +565,18 @@ class ArmorPierce(Move):
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
             self.power = 0
-            self.stage_beat = [1, 1, 2, 3]
+            self.stage_beat = [3, 1, 1, 3]
             self.fatigue_cost = 10
             return
         evaluation = self.standard_evaluate_attack(
-            base_power=-5,
+            base_power=0,
             base_damage_type="piercing",
+            mod_power="70%",
+            mod_prep=-1,
+            mod_recoil=-1,
+            mod_cd=-2,
+            mod_fatigue=-40,
+            floor_fatigue=15,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -545,8 +585,15 @@ class ArmorPierce(Move):
             f"{self.user.name} drives his {wpn} through the gap!", "green"
         )
 
+    def preview_damage(self, target=None):
+        """Armor Pierce ignores protection entirely (``protection=0`` in its
+        ``execute()``'s ``resolve_damage`` call). On the default full-armour
+        preview its card could read 0 against exactly the heavily-armoured
+        targets the move is the answer to.
+        """
+        return self._standard_preview_damage(target, protection=0)
+
     def execute(self, player):
-        glance = False
         self.prep_colors()
         narrate(self.stage_announce[1])
 
@@ -570,27 +617,19 @@ class ArmorPierce(Move):
         roll = random.randint(0, 100)
 
         # Ignore protection entirely
-        damage = (
-            (self.power * functions.combat_resistance(self.target, self.base_damage_type)) * player.heat
-        ) * random.uniform(0.8, 1.2)
-        damage = max(0, damage)
-        if hit_chance >= roll and hit_chance - roll < 10:
-            damage /= 2
-            glance = True
-        damage = int(damage)
+        # Facing/angle damage (#394) - see apply_facing_damage.
+        power = apply_facing_damage(self.user, self.target, self.power)
+        damage = resolve_damage(
+            player, self.target, power, self.base_damage_type, protection=0
+        )
+        damage, glance = apply_glancing_blow(damage, hit_chance, roll)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
             _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
 
-        if hit_chance >= roll:
-            if functions.check_parry(self.target):
-                self.parry()
-            else:
-                self.hit(damage, glance)
-        else:
-            self.miss()
+        resolve_pipeline_strike(self, damage, glance, hit_chance, roll)
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
