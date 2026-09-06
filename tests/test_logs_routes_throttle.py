@@ -15,6 +15,8 @@ guards — a throttle that refused everything, or a floor that never swept, woul
 satisfy the negative assertions and break the endpoint.
 """
 
+import ast
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -174,3 +176,116 @@ class TestTheSweepRunsOnAnIntervalFloor:
             lambda: (_ for _ in ()).throw(RuntimeError("cleanup fail")),
         )
         assert client.post(_PATH, json=_PAYLOAD).status_code == 200
+
+
+def _print_and_warn_sites():
+    """Where ``print`` is called in ``logs.py``, and where ``_warn`` is.
+
+    Structural rather than behavioural because the property is structural: the
+    claim ":func:`_maybe_cleanup` never raises" is about every line that can
+    execute inside its handler, and a test that drives one handler says nothing
+    about the next one somebody adds.
+    """
+    source = Path(logs_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    in_warn = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "_warn":
+            in_warn = {
+                id(c)
+                for c in ast.walk(node)
+                if isinstance(c, ast.Call)
+            }
+
+    prints_outside_warn, warns_in_handlers = [], []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ExceptHandler):
+            for call in ast.walk(node):
+                if not isinstance(call, ast.Call):
+                    continue
+                if isinstance(call.func, ast.Name) and call.func.id == "_warn":
+                    warns_in_handlers.append(call.lineno)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "print":
+            continue
+        if id(node) not in in_warn:
+            prints_outside_warn.append(node.lineno)
+    return prints_outside_warn, warns_in_handlers
+
+
+class TestAHandledFailureCannotBecomeAnUnhandledOne:
+    """``_maybe_cleanup`` promised "never raises". It could.
+
+    Seven error paths in this module report with ``print``, all of them inside
+    an ``except`` block whose whole purpose is to swallow — and ``print`` is
+    not exception-free. It raises ``UnicodeEncodeError`` on a cp1252 Windows
+    console (this repo has hit that from the terminal engine's ``cprint``) and
+    ``ValueError`` on a stdout a WSGI server has closed. Either turned a
+    swallowed housekeeping failure into a 500 on the request that happened to
+    trigger the sweep.
+
+    The docstring's other claim was wrong in a quieter way: "returns True when
+    a sweep ran" described a value the function has never returned. It returns
+    True when a sweep was *attempted*, failures included, so that a
+    persistently failing sweep is not retried on every request.
+    """
+
+    def test_a_failing_sweep_survives_a_failing_print(self, monkeypatch):
+        """The regression, with both faults live at once: the sweep raises,
+        and so does the diagnostic that reports it."""
+
+        def _explode(*_args, **_kwargs):
+            raise UnicodeEncodeError("cp1252", "─", 0, 1, "not encodable")
+
+        monkeypatch.setattr(
+            logs_module.cleanup_manager,
+            "cleanup",
+            lambda: (_ for _ in ()).throw(OSError("disk full")),
+        )
+        monkeypatch.setattr("builtins.print", _explode)
+        assert logs_module._maybe_cleanup() is True
+
+    def test_the_diagnostic_is_reached_at_all(self, monkeypatch):
+        """Non-vacuity for the test above, which would pass just as well if
+        ``_warn`` were never called."""
+        seen = []
+        monkeypatch.setattr(
+            logs_module.cleanup_manager,
+            "cleanup",
+            lambda: (_ for _ in ()).throw(OSError("disk full")),
+        )
+        monkeypatch.setattr(logs_module, "_warn", seen.append)
+        assert logs_module._maybe_cleanup() is True
+        assert seen and "disk full" in seen[0], seen
+
+    def test_a_successful_sweep_also_returns_true(self, monkeypatch):
+        """The control on the corrected docstring: True means attempted, and
+        both outcomes are attempts."""
+        monkeypatch.setattr(logs_module.cleanup_manager, "cleanup", lambda: None)
+        assert logs_module._maybe_cleanup() is True
+
+    def test_print_is_called_in_exactly_one_place(self):
+        """The floor on the increment.
+
+        Fixing the seven sites is worth nothing if the eighth is written the
+        old way, so what is banned is ``print`` anywhere in this module outside
+        ``_warn`` — not the seven instances that happened to be found.
+        """
+        prints_outside_warn, _ = _print_and_warn_sites()
+        assert prints_outside_warn == [], (
+            "src/api/routes/logs.py calls print() at line(s) %s outside _warn. "
+            "Every diagnostic in this module runs inside an except block, and "
+            "print raises (UnicodeEncodeError on a cp1252 console, ValueError "
+            "on a closed stdout) — which escapes the handler and fails the "
+            "request. Use _warn."
+            % ", ".join(str(n) for n in prints_outside_warn)
+        )
+
+    def test_the_module_still_reports_its_failures(self):
+        """Non-vacuity for the floor above: it is satisfied trivially by a
+        module that reports nothing at all."""
+        _, warns_in_handlers = _print_and_warn_sites()
+        assert len(warns_in_handlers) >= 6, warns_in_handlers

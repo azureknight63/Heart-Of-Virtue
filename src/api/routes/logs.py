@@ -105,11 +105,46 @@ _cleanup_lock = threading.Lock()
 _last_cleanup_at = 0.0
 
 
+def _warn(message):
+    """Report a handled failure to stderr, without ever raising.
+
+    Every error path in this module reports with ``print`` rather than through
+    the app logger, and the reason written beside them -- "to avoid circular
+    logging" -- is not the true one. Nothing in the Python logging path
+    re-enters ``POST /api/logs/browser``; the app logger writes to a file
+    handler and no ``HTTPHandler`` is installed anywhere. The reason that DOES
+    hold is narrower and worth keeping: the faults reported here are faults of
+    the log directory itself (a failed sweep, an unwritable file), which is
+    where the app logger's own handler writes, so reporting through it is
+    reporting through the thing that is broken.
+
+    What ``print`` is not, however, is exception-free, and every call site sits
+    inside an ``except`` block whose entire job is to swallow. ``print`` raises
+    ``UnicodeEncodeError`` on a cp1252 Windows console -- this repo has been
+    bitten by exactly that from the terminal engine's ``cprint`` -- and
+    ``ValueError: I/O operation on closed file`` when a WSGI server has closed
+    stdout. Either one escaped the handler and turned a swallowed housekeeping
+    failure into a 500 on the request that triggered it.
+    """
+    try:
+        print(message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
+
 def _maybe_cleanup():
     """Run the retention sweep if the interval floor has elapsed.
 
-    Returns True when a sweep ran. Never raises: cleanup is housekeeping and
-    must not fail the write that triggered it.
+    Returns True when a sweep was ATTEMPTED -- the floor had elapsed and
+    ``cleanup_manager.cleanup()`` was called -- and NOT when it succeeded. A
+    sweep that raises is swallowed and still returns True, deliberately: the
+    return value paces the floor, and a sweep failing for a persistent reason
+    (an unwritable directory, say) must not then be retried on every single
+    request. The old wording, "returns True when a sweep ran", described a
+    value this function has never returned.
+
+    Never raises, and now means it -- see :func:`_warn`, which exists because
+    the ``print`` in the handler below could.
     """
     global _last_cleanup_at
     now = time.monotonic()
@@ -120,8 +155,10 @@ def _maybe_cleanup():
     try:
         cleanup_manager.cleanup()
     except Exception as cleanup_error:
-        # Don't use the app logger here to avoid circular logging.
-        print(f"Warning: Log cleanup failed: {str(cleanup_error)}")
+        # Reported through _warn, not the app logger: see _warn's docstring
+        # for why (the fault is usually in the log directory the logger writes
+        # to) and for why a bare print here was not safe.
+        _warn(f"Warning: Log cleanup failed: {str(cleanup_error)}")
     return True
 
 
@@ -244,8 +281,8 @@ def receive_browser_logs():
         )
 
     except Exception as e:
-        # Don't use app logger here to avoid circular logging
-        print(f"Error writing browser logs: {str(e)}")
+        # Reported through _warn, not the app logger -- see _warn.
+        _warn(f"Error writing browser logs: {str(e)}")
         return jsonify({"error": "Failed to write logs"}), 500
 
 
@@ -272,7 +309,7 @@ def list_browser_log_files():
         return jsonify({"files": log_files}), 200
 
     except Exception as e:
-        print(f"Error listing browser log files: {str(e)}")
+        _warn(f"Error listing browser log files: {str(e)}")
         return jsonify({"error": "Failed to list log files"}), 500
 
 
@@ -312,7 +349,7 @@ def get_browser_log_file(filename):
             content = f.read()
         return jsonify({"filename": log_filepath.name, "content": content}), 200
     except OSError as e:
-        print(f"Error reading browser log file: {str(e)}")
+        _warn(f"Error reading browser log file: {str(e)}")
         return jsonify({"error": "Failed to read log file"}), 500
 
 
@@ -360,7 +397,7 @@ def cleanup_logs():
         return jsonify({"message": "Cleanup completed", "result": result}), 200
 
     except Exception as e:
-        print(f"Error during manual cleanup: {str(e)}")
+        _warn(f"Error during manual cleanup: {str(e)}")
         return jsonify({"error": "Failed to cleanup logs"}), 500
 
 
@@ -387,7 +424,7 @@ def get_log_stats():
         )
 
     except Exception as e:
-        print(f"Error getting log stats: {str(e)}")
+        _warn(f"Error getting log stats: {str(e)}")
         return jsonify({"error": "Failed to get log stats"}), 500
 
 
@@ -413,5 +450,5 @@ def delete_browser_log_file(filename):
             200,
         )
     except OSError as e:
-        print(f"Error deleting browser log file: {str(e)}")
+        _warn(f"Error deleting browser log file: {str(e)}")
         return jsonify({"error": "Failed to delete log file"}), 500
