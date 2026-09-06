@@ -17,7 +17,7 @@ A hulking, quadrupedal behemoth covered in jagged, stone-like plates. The Rock R
 ## Special Abilities & Traits
 - Natural heavy protection and brute force damage — designed as a durable frontline enemy.
 - Armor interactions:
-  - Highly resistant to slashing and piercing strikes and to many elemental attacks (see [`RockRumbler`](src/npc.py) resistance settings).
+  - Highly resistant to slashing and piercing strikes and to many elemental attacks (see [`RockRumbler`](src/npc/_enemies.py) resistance settings).
   - Significantly affected by crushing attacks — its bulk makes it susceptible to weapons that deliver concentrated blunt force.
 - Combat repertoire reflects its tactics:
   - Uses direct attacks (`NpcAttack`) as primary offense.
@@ -37,7 +37,7 @@ A hulking, quadrupedal behemoth covered in jagged, stone-like plates. The Rock R
 - Awareness: decent (awareness ~25)
 - Aggro: True — will engage when encountering the player
 - XP Award: moderate (exp_award ~100)
-See the implementation in [src/npc.py](src/npc.py) for the canonical values and move set.
+See the implementation in [src/npc/_enemies.py](src/npc/_enemies.py) for the canonical values and move set.
 
 ## Encounter & Lore Notes
 - The Rock Rumbler class is used as an early threatening encounter; the player meets similar creatures in cavern tiles described in the Verdette caverns tileset and story scenes (see [src/tilesets/verdette_caverns.py](src/tilesets/verdette_caverns.py) and [src/story/ch01.py](src/story/ch01.py)).
@@ -49,8 +49,8 @@ See the implementation in [src/npc.py](src/npc.py) for the canonical values and 
 - Consider pairing them with faster, flanking enemies (e.g., bats or lurkers) to negate the Rumbler's slow pace.
 
 ## References
-- Code: [`RockRumbler` class](src/npc.py)  
-- Moves: [`Advance`](src/moves.py), [`Withdraw`](src/moves.py), [`NpcAttack`](src/moves.py)  
+- Code: [`RockRumbler` class](src/npc/_enemies.py)  
+- Moves: [`Advance`](src/moves/), [`Withdraw`](src/moves/), [`NpcAttack`](src/moves/)  
 - Story: [AfterTheRumblerFight event](src/story/ch01.py)  
 - Tile examples: [Verdette caverns tileset](src/tilesets/verdette_caverns.py)
 // ...existing code...

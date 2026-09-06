@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import React from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -93,8 +97,12 @@ describe('BattlefieldGrid', () => {
             <BattlefieldGrid combat={positionless} tab="overview" zoom="fit" mapSize={9} />
         );
 
+        // 10, not 9: `map_size` is the engine's INCLUSIVE grid bound, so a
+        // 9-bound arena spans columns 0..9. The derivation lives in "the
+        // engine's grid bound" below, which reads that from src/positions.py
+        // instead of asserting it here.
         const grid = container.querySelector('[style*="grid-template-columns"]');
-        expect(grid.style.gridTemplateColumns).toBe('repeat(9, minmax(0, 1fr))');
+        expect(grid.style.gridTemplateColumns).toBe('repeat(10, minmax(0, 1fr))');
     });
 
     it('keeps the fit framing stable while combatants stay inside it', () => {
@@ -308,6 +316,61 @@ describe('BattlefieldGrid', () => {
         });
     });
 
+    // -------------------------------------------------------------------------
+    // Engine numbers, read from the Python rather than transcribed
+    //
+    // The falloff fixtures used to hand-type the Crossbow's plateau and decay
+    // rate, and the expected fade was computed with the component's own
+    // formula — so the assertion could only ever prove the component agreed
+    // with itself. Worst of all it agreed about a floor the component did not
+    // have: the engine clamps a decayed shot at ENGINE_HIT_CHANCE_FLOOR points
+    // and the fill fell all the way to transparent.
+    // -------------------------------------------------------------------------
+    const ENGINE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'src');
+
+    /** The Crossbow's plateau and per-foot decay, from src/items.py. */
+    const crossbowFalloff = () => {
+        const source = readFileSync(join(ENGINE_ROOT, 'items.py'), 'utf8');
+        const body = source.split('\nclass Crossbow(Weapon):')[1];
+        expect(body, 'could not find class Crossbow in src/items.py').toBeTruthy();
+        const read = (field) => {
+            const hit = body.match(
+                new RegExp(`self\\.${field}: Union\\[int, float\\] = ([\\d.]+)`)
+            );
+            expect(hit, `Crossbow in src/items.py declares no ${field}`).toBeTruthy();
+            return Number(hit[1]);
+        };
+        const plateau = read('range_base');
+        const perFt = read('range_decay');
+        // Guard-the-guard: a regex that matched a 0 would make every derived
+        // expectation below trivially true.
+        expect(plateau).toBeGreaterThan(0);
+        expect(perFt).toBeGreaterThan(0);
+        return { plateau, perFt };
+    };
+
+    /**
+     * The floor the engine clamps a decayed ranged shot back up to, in
+     * hit-chance points, from src/moves/_ranged.py.
+     *
+     * Both ranged families write it as the same `if hit_chance < N` /
+     * `hit_chance = N` pair, so the population is collected and required to
+     * agree — one shared floor is the premise the fill's bottom stop rests on.
+     */
+    const engineHitChanceFloor = () => {
+        const source = readFileSync(join(ENGINE_ROOT, 'moves', '_ranged.py'), 'utf8');
+        const floors = [...source.matchAll(/if hit_chance < (\d+):\s*\n\s*hit_chance = \1\b/g)]
+            .map((m) => Number(m[1]));
+        expect(floors.length, 'found no hit-chance floor in src/moves/_ranged.py').toBeGreaterThan(0);
+        expect(new Set(floors).size, `src/moves/_ranged.py floors disagree: ${floors}`).toBe(1);
+        return floors[0];
+    };
+
+    /** The four gradient stop alphas: [core, plateau edge, retention, feather]. */
+    const gradientAlphas = (indicator) => indicator.style.background
+        .match(/rgba\([^)]*\)/g)
+        .map((stop) => parseFloat(stop.split(',').pop()));
+
     describe('decaying reach renders as a gradient, not a ring', () => {
         // A bow has no hard maximum: it can be fired at any distance and
         // accuracy simply bleeds away past `start`. mvrange.max is where a
@@ -478,13 +541,13 @@ describe('BattlefieldGrid', () => {
 
         it('tracks the real engine decay rate for a production payload', () => {
             // The fixtures above are hand-picked to make the transition land
-            // inside a 13-cell view. This one uses the engine's real numbers
-            // (Crossbow: plateau 15 ft, 1.65 points of hit chance per foot past
-            // it — see tests/test_ranged_falloff_balance.py) in the wide fit
+            // inside a 13-cell view. This one uses the Crossbow's real numbers,
+            // READ OUT OF src/items.py rather than typed here, in the wide fit
             // frame where the treatment actually ships. The fade has to track
             // that decay: visible, because a crossbow really does lose a third
             // of its accuracy across a large arena, but still proportional
             // rather than decorative.
+            const { plateau, perFt } = crossbowFalloff();
             const spread = {
                 player: { ...mockCombat.player, position: { x: 0, y: 0, facing: 0 } },
                 enemies: [{
@@ -493,8 +556,10 @@ describe('BattlefieldGrid', () => {
                     current_move: {
                         name: 'ShootCrossbow', category: 'Offensive',
                         current_stage: 0, beats_left: 2,
-                        mvrange: { min: 1, max: 76 },
-                        falloff: { start: 15, per_ft: 1.65 },
+                        // get_effective_range_max: the plateau plus the distance
+                        // 100 points of decay take to spend.
+                        mvrange: { min: 1, max: Math.round(plateau + 100 / perFt) },
+                        falloff: { start: plateau, per_ft: perFt },
                     },
                 }],
             };
@@ -505,22 +570,24 @@ describe('BattlefieldGrid', () => {
             const indicator = container.querySelector('[data-testid="range-ring"]');
             expect(indicator.dataset.shape).toBe('falloff');
 
-            // Stops are [core, plateau-edge, retention, feather-to-nothing].
-            const alphas = indicator.style.background
-                .match(/rgba\([^)]*\)/g)
-                .map((stop) => parseFloat(stop.split(',').pop()));
+            const alphas = gradientAlphas(indicator);
             expect(alphas[2]).toBeGreaterThan(0);
 
-            // Rather than assert a magnitude band — which would be an arbitrary
-            // window that has to be retuned every time the engine is balanced —
-            // derive the expected fade from what was actually drawn and check
-            // proportionality. The plateau stop is `start / drawRadius`, so the
-            // rendered gradient tells us the radius it was sized to.
+            // The rendered gradient reports the radius it was sized to (the
+            // plateau stop is `start / drawRadius`), so the accuracy the engine
+            // says the distance costs can be computed from ENGINE numbers and
+            // compared with what was drawn.
+            //
+            // What this can and cannot show, said plainly: `1 - lost / 100` IS
+            // the stated contract of the fill, so restating it here proves
+            // proportionality, not the contract. What it no longer does is take
+            // `plateau`, `perFt` or the floor from the component — all three now
+            // come from the engine, and the floor is the half that was wrong.
             const plateauPct = Number(
                 indicator.style.background.match(/([\d.]+)%/g)[1].replace('%', '')
             );
-            const drawRadius = 15 / (plateauPct / 100);
-            const expectedRetention = 1 - ((drawRadius - 15) * 1.65) / 100;
+            const drawRadius = plateau / (plateauPct / 100);
+            const expectedRetention = 1 - ((drawRadius - plateau) * perFt) / 100;
 
             const retentionRatio = alphas[2] / alphas[0];
             // Loose enough only for 8-bit alpha quantisation (two decimals in
@@ -528,6 +595,68 @@ describe('BattlefieldGrid', () => {
             expect(Math.abs(retentionRatio - expectedRetention)).toBeLessThan(0.03);
             // ...and it must actually be a fade, not a flat tint.
             expect(retentionRatio).toBeLessThan(1);
+        });
+
+        it('never fades below the accuracy the engine still grants the shot', () => {
+            // The engine floors a decayed ranged shot rather than letting it
+            // reach zero, so the fill must bottom out at the same share. It used
+            // to be `Math.max(0, …)`: a shot the engine still resolves at the
+            // floor painted fully transparent, i.e. as no threat at all.
+            //
+            // Both the floor and the decay rate come from the Python. Only the
+            // per_ft here is exaggerated — far past anything a real weapon
+            // sheds — because the point is to drive the expression PAST its
+            // floor, which no shipped weapon does inside a viewport.
+            const floor = engineHitChanceFloor();
+            const runaway = {
+                player: { ...mockCombat.player, position: { x: 0, y: 0, facing: 0 } },
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    position: { x: 40, y: 40, facing: 180 },
+                    current_move: {
+                        name: 'ShootCrossbow', category: 'Offensive',
+                        current_stage: 0, beats_left: 2,
+                        mvrange: { min: 1, max: 200 },
+                        falloff: { start: 1, per_ft: 50 },
+                    },
+                }],
+            };
+            const { container } = render(
+                <BattlefieldGrid combat={runaway} tab="overview" zoom="fit" />
+            );
+            fireEvent.click(screen.getByText('G'));
+            const indicator = container.querySelector('[data-testid="range-ring"]');
+            expect(indicator.dataset.shape).toBe('falloff');
+
+            const alphas = gradientAlphas(indicator);
+            const retentionRatio = alphas[2] / alphas[0];
+
+            // Guard-the-guard, computed from the gradient that was actually
+            // drawn rather than assumed: this fixture must genuinely overrun the
+            // floor, or an unfloored implementation would satisfy the assertion
+            // below by arithmetic alone.
+            const plateauPct = Number(
+                indicator.style.background.match(/([\d.]+)%/g)[1].replace('%', '')
+            );
+            const drawRadius = 1 / (plateauPct / 100);
+            const unfloored = 1 - ((drawRadius - 1) * 50) / 100;
+            expect(unfloored, 'this fixture never reaches the floor').toBeLessThan(floor / 100);
+
+            // An exact magnitude is not assertable this close to zero: the
+            // floor's alpha (the core alpha times 2%) is under one 8-bit step, so
+            // the serialized rgba quantises it upward and any equality check
+            // would be measuring the rounding, not the floor. The floor's actual
+            // content is an inequality, and that is what is asserted.
+            expect(
+                retentionRatio,
+                'BattlefieldGrid.jsx edgeRetention fell to '
+                + `${retentionRatio}, under the ${floor}% src/moves/_ranged.py `
+                + 'still grants the shot at any distance'
+            ).toBeGreaterThanOrEqual(floor / 100);
+            expect(alphas[2]).toBeGreaterThan(0);
+            // ...and it is still a near-empty disc, not a flat tint that happens
+            // to clear the floor.
+            expect(retentionRatio).toBeLessThan(0.25);
         });
 
         it('treats a zero decay rate as no decay at all', () => {
@@ -1478,6 +1607,109 @@ describe('BattlefieldGrid', () => {
         // derive the size from positions — would leave only 81 lit.)
         const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
         expect(cells.length).toBe(169);
+    });
+
+    // -------------------------------------------------------------------------
+    // The engine's grid bound
+    // -------------------------------------------------------------------------
+    //
+    // `map_size` on the wire is `combat_grid_size[0]` -- the engine's grid
+    // BOUND, not a cell count -- and the engine's bound is inclusive. This grid
+    // read it as exclusive, so a combatant standing on the last legal column
+    // rendered on a cell the background layer had dimmed as off-map. Nothing
+    // caught it because every fixture put its combatants comfortably inside.
+    //
+    // The expectation below is read out of src/positions.py, so it flips on its
+    // own if the engine ever narrows the bound -- rather than being a second
+    // hand-written copy of a rule the engine owns.
+    describe("the engine's grid bound", () => {
+        const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+        const POSITIONS_PY = join(REPO_ROOT, 'src', 'positions.py');
+
+        /** Columns in a `bound`-wide arena, per src/positions.py. */
+        const arenaColumns = (bound) => {
+            const source = readFileSync(POSITIONS_PY, 'utf8');
+
+            // What the engine will ACCEPT: CombatPosition.__post_init__.
+            const validator = source.match(/if not \(0 <=? self\.x (<=?) bound\)/);
+            expect(
+                validator,
+                'could not find the coordinate range check in src/positions.py'
+            ).toBeTruthy();
+            const inclusive = validator[1] === '<=';
+
+            // ...and what it will actually PRODUCE, which is the half that makes
+            // the bound reachable rather than merely legal: the pincer/ambush
+            // flank zones run out to (grid_width, grid_height) and are filled
+            // with randint, whose upper end is inclusive.
+            expect(source).toContain('(grid_width, grid_height),');
+            expect(source).toContain('random.randint(x_min, x_max)');
+
+            return inclusive ? bound + 1 : bound;
+        };
+
+        it('spans one more column than the bound it publishes', () => {
+            const BOUND = 5;
+            const columns = arenaColumns(BOUND);
+            // Guard-the-guard: if the derivation ever collapses to the exclusive
+            // reading, the assertion below stops distinguishing the two.
+            expect(columns).not.toBe(BOUND);
+
+            // One combatant on the arena's far corner -- the cell the exclusive
+            // reading dims. In fit mode the whole small arena sits inside the
+            // 13-cell floor frame, so every legal cell is on screen and the lit
+            // count IS the arena's area.
+            const cornerFight = {
+                player: {
+                    id: 'player', name: 'Jean', hp: 100, max_hp: 100,
+                    position: { x: BOUND, y: BOUND, facing: 'N' },
+                },
+                enemies: [],
+            };
+            const { container } = render(
+                <BattlefieldGrid combat={cornerFight} tab="overview" zoom="fit" mapSize={BOUND} />
+            );
+
+            const lit = container.querySelectorAll(
+                '[style*="background-color: rgba(255, 255, 255, 0.03)"]'
+            );
+            expect(
+                lit.length,
+                'BattlefieldGrid.jsx resolvedMapSize/gridBgCells: the on-map region is '
+                + `${Math.sqrt(lit.length)} cells wide, but src/positions.py makes a `
+                + `map_size of ${BOUND} ${columns} cells wide -- the last legal column `
+                + 'renders as off-map'
+            ).toBe(columns * columns);
+        });
+
+        it('draws the dashed extent marker around the whole arena', () => {
+            // The marker and the dimming are two renderings of the same edge, so
+            // a fix that moved only one of them would leave a lit cell outside
+            // the rectangle that is supposed to enclose the map.
+            const BOUND = 5;
+            const columns = arenaColumns(BOUND);
+            const { container } = render(
+                <BattlefieldGrid
+                    combat={{
+                        player: {
+                            id: 'player', name: 'Jean', hp: 100, max_hp: 100,
+                            position: { x: BOUND, y: BOUND, facing: 'N' },
+                        },
+                        enemies: [],
+                    }}
+                    tab="overview" zoom="fit" mapSize={BOUND}
+                />
+            );
+            const marker = container.querySelector('[style*="dashed"]');
+            expect(marker).not.toBeNull();
+            const gridCols = Number(
+                container
+                    .querySelector('[style*="grid-template-columns"]')
+                    .style.gridTemplateColumns.match(/repeat\((\d+)/)[1]
+            );
+            expect(marker.style.width).toBe(`${(columns / gridCols) * 100}%`);
+            expect(marker.style.height).toBe(`${(columns / gridCols) * 100}%`);
+        });
     });
 
     it('clamps the fit frame inside the arena instead of framing empty void', () => {

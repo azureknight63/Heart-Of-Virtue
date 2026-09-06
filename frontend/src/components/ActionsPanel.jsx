@@ -4,6 +4,8 @@ import { useAudio } from '../context/AudioContext'
 import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
+import { apiErrorMessage } from '../utils/apiError'
+import { lookupOr } from '../utils/lookup'
 
 /**
  * The commands this panel knows about — one entry per command, carrying both
@@ -122,7 +124,7 @@ export default function ActionsPanel({ location, onClose }) {
       if (response.data && response.data.success) {
         setTimedMessage(response.data.message || 'Game saved successfully!', 3000)
       } else {
-        setTimedMessage(response.data?.error || 'Save failed.', 3000)
+        setTimedMessage(apiErrorMessage(response.data, 'Save failed.'), 3000)
       }
     } catch (err) {
       // apiEndpoints.saves.save() rejects for any non-2xx response (403 no
@@ -131,8 +133,7 @@ export default function ActionsPanel({ location, onClose }) {
       // and gets replaced with an uninformative "Command failed." toast that
       // hides the real, often actionable, backend error message (e.g. "Maximum
       // number of manual saves reached (20)."). Surface it here instead.
-      const backendMessage = err.response?.data?.error
-      setTimedMessage(backendMessage || 'Save failed. Please try again.', 3000)
+      setTimedMessage(apiErrorMessage(err, 'Save failed. Please try again.'), 3000)
     }
   }
 
@@ -145,7 +146,18 @@ export default function ActionsPanel({ location, onClose }) {
     playSFX('click')
 
     try {
-      const handler = COMMAND_HANDLERS[command.name]
+      // `lookupOr`, not `COMMAND_HANDLERS[command.name]`. `command.name`
+      // arrives off the wire in the server's command list, and this is the
+      // one place in the app where the inherited value is not merely
+      // stringified but CALLED: a command named `constructor`, `toString`,
+      // `valueOf`, `hasOwnProperty` or `propertyIsEnumerable` resolves to a
+      // function from Object.prototype, passes `if (handler)`, and gets
+      // invoked — silently skipping the "unknown command" branch.
+      //
+      // The source audit cannot see this shape: it reports `T[k] || fallback`
+      // and `T[k] ?? fallback`, and `const v = T[k]` followed by `if (v)` is
+      // named as out of scope in its own docstring.
+      const handler = lookupOr(COMMAND_HANDLERS, command.name, null)
       if (handler) {
         await handler()
       } else {
@@ -185,7 +197,11 @@ export default function ActionsPanel({ location, onClose }) {
             color: colors.gold,
             textAlign: 'center',
             boxShadow: '0 0 15px rgba(255, 170, 0, 0.2)',
-            animation: 'fadeIn 0.3s ease-out'
+            // Declared in styles/index.css. Named `fadeIn` until it was found
+            // to be declared only inside a <style> tag local to
+            // ItemDetailDialog, so this message animated only while an item
+            // dialog happened to be open.
+            animation: 'fade-in-scale 0.3s ease-out'
           }}>
             {actionMessage}
           </div>
@@ -269,7 +285,7 @@ export default function ActionsPanel({ location, onClose }) {
                         boxShadow: `0 0 15px ${colors.primary}66`,
                         pointerEvents: 'none'
                       }}>
-                        {COMMAND_TOOLTIPS[command.name] || 'General interaction command.'}
+                        {lookupOr(COMMAND_TOOLTIPS, command.name, 'General interaction command.')}
                         {/* Arrow */}
                         <div style={{
                           position: 'absolute',

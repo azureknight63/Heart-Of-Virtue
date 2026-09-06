@@ -32,6 +32,7 @@ legacy import only.
 
 import io
 import os
+import sys
 import types
 import struct
 import hashlib
@@ -148,6 +149,77 @@ _SAFE_STDLIB = frozenset({
 _allowlist_cache = None
 
 
+def _public_module(obj):
+    """Return the public module a class is exported from.
+
+    CPython relocates stdlib implementations into private submodules between
+    releases -- ``pathlib.Path.__module__`` is ``pathlib`` through 3.12 and
+    ``pathlib._local`` on 3.13+. Recording the raw ``__module__`` therefore made
+    the generated manifest interpreter-dependent, so the drift check passed only
+    on whichever version wrote the file (CI's 3.11) and failed everywhere else.
+
+    Only rewrites when the private module's parent genuinely re-exports the same
+    object, so a class that is only ever reachable at a private path keeps it.
+    Walks *every* trailing private component, not just the last one: a nested
+    relocation (``pkg._impl._local``) collapsed one level still contains a
+    private component, and ``tests/test_secure_pickle.py`` rejects a private
+    component anywhere in the path -- so stopping at one level would reproduce
+    the interpreter-dependent manifest this function exists to end, one
+    release later.
+
+    Engine modules are unaffected: their paths are ours and do not move.
+    """
+    module = obj.__module__
+    if not isinstance(module, str):
+        # Vanishingly rare (some C-extension types), but the caller previously
+        # stored __module__ verbatim and could not fail here. Preserve that
+        # rather than letting a string operation abort allow-list construction,
+        # which would break save loading outright.
+        return module
+    # Engine paths are ours and do not move between interpreters. They must be
+    # left alone: src/moves/__init__.py re-exports every class from its private
+    # submodules, so the parent-re-export check below would happily collapse
+    # ("src.moves._dagger", "Backstab") to ("src.moves", "Backstab") and rewrite
+    # 300+ engine entries.
+    if _is_engine_module(module):
+        return module
+    # A top-level module has no parent to be re-exported from.
+    if "." not in module:
+        return module
+
+    candidate = module
+    while "." in candidate:
+        parent, _, tail = candidate.rpartition(".")
+        if not tail.startswith("_"):
+            break
+        try:
+            # The parent of an already-imported submodule is already in
+            # sys.modules -- importlib.import_module() would just look it up
+            # there anyway, so check the cache directly and only pay for a real
+            # import on the (rare) miss.
+            parent_mod = sys.modules.get(parent)
+            if parent_mod is None:
+                parent_mod = importlib.import_module(parent)
+        except Exception:  # pragma: no cover - defensive; parent may not import
+            logger.debug("Allow-list: could not resolve public parent of %s", candidate)
+            break
+        # Re-run the identity check at every level: the rewrite is only valid
+        # for as long as each successive parent really re-exports this object.
+        if getattr(parent_mod, obj.__name__, None) is not obj:
+            break
+        candidate = parent
+
+    # Nothing qualified -- keep the path pickle would actually record.
+    if candidate == module or _has_private_component(candidate):
+        return module
+    return candidate
+
+
+def _has_private_component(module):
+    """True if any dotted component of ``module`` starts with an underscore."""
+    return any(part.startswith("_") for part in module.split("."))
+
+
 def _collect_module(mod_name, allowed):
     """Add every class object reachable from ``mod_name`` (and, for packages,
     its immediate submodules) to ``allowed``."""
@@ -158,7 +230,7 @@ def _collect_module(mod_name, allowed):
         return
     for obj in vars(mod).values():
         if isinstance(obj, type):
-            allowed.add((obj.__module__, obj.__name__))
+            allowed.add((_public_module(obj), obj.__name__))
     for info in pkgutil.iter_modules(getattr(mod, "__path__", [])):
         _collect_module(f"{mod_name}.{info.name}", allowed)
 
@@ -168,9 +240,22 @@ def _build_allowlist():
 
     The module set is derived from ``LEGACY_BARE_MODULES`` (the canonical list of
     engine top-level modules) so a newly added module is covered automatically.
-    Each entry is a ``(module, name)`` tuple keyed on the class's real
-    ``__module__`` (which is what pickle stores), so canonical rewrites line up
-    with allow-list membership.
+
+    Each entry is a ``(module, name)`` tuple keyed on :func:`_public_module`,
+    **not** on the raw ``__module__``. That distinction is the whole point of the
+    function: ``__module__`` is what pickle stores, but it is not
+    interpreter-stable (``pathlib.Path.__module__`` is ``pathlib`` through 3.12
+    and ``pathlib._local`` on 3.13+), so keying the manifest on it made the file
+    reproduce only on the interpreter that wrote it -- a developer on a newer
+    Python regenerated it, the drift test went green locally, and CI (pinned to
+    3.11) failed on the same commit. :func:`_public_module` canonicalizes the
+    known cases; extend it rather than re-keying on ``__module__``.
+
+    This set is an inventory for the drift manifest and for tooling/tests. It
+    is **not** the enforcement gate: nothing on the save-load path consults
+    :func:`get_allowlist`. Strict-mode enforcement is :func:`_is_allowed`,
+    which applies the broader engine-module rule to whatever path pickle
+    actually recorded.
     """
     allowed = set(_SAFE_STDLIB)
     for bare in LEGACY_BARE_MODULES:

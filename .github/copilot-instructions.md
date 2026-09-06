@@ -104,7 +104,7 @@ Objects are (typically) non-movable, persistent world elements that players can 
 
 ### Combat System
 - Turn-based with `combat_list` (enemies) and `combat_list_allies` (player party)
-- **Moves**: Defined in `src/moves.py`, use `cast()` method and `advance()` for cooldowns
+- **Moves**: Defined in the `src/moves/` package (`_base.py` owns `Move`/`PassiveMove`), use `cast()` and `advance()` for cooldowns
 - **States**: Status effects (poison, stun, sleep, etc.) managed in `src/states.py`
 - **Resistance**: Damage types (`fire`, `ice`, `piercing`, etc.) and status resistances (both 1.0 = normal, 0.5 = half damage, 2.0 = double)
 - **Distance system**: `combat_proximity` lists track range between combatants
@@ -179,28 +179,27 @@ pip install -r requirements-api.txt
 python tools/run_api.py                     # uses CONFIG_FILE from .env or config_dev.ini
 python tools/run_api.py config_eastern_descent_test.ini
 
-# Access Swagger UI (interactive docs)
-open http://localhost:5000/api/docs
-
-# Get OpenAPI schema
-curl http://localhost:5000/api/openapi.json
+# There is no Swagger UI and no /api/openapi.json endpoint. The API reference is
+# hand-written: docs/API_DOCUMENTATION.md
 ```
 
 ### API Testing
 
 ```bash
-# All API tests
-pytest tests/api/ -v --cov=src/api
+# All API tests (tests/api is NOT excluded from the default suite -- it runs in the gate)
+python -m pytest tests/api/ -v --cov=src/api
 
 # Test specific file
-pytest tests/api/test_validators.py -v
+python -m pytest tests/api/test_combat_routes_integration.py -v
 
 # Test specific function
-pytest tests/api/test_validators.py::test_validate_direction_valid -v
+python -m pytest tests/test_validators_and_sanitizer.py::test_validate_direction_valid -v
 
 # With coverage report
-pytest tests/api/ --cov=src/api --cov-report=term-missing
+python -m pytest tests/api/ --cov=src/api --cov-report=term-missing
 ```
+
+Always `python -m pytest`, never bare `pytest` -- the venv may not expose the binary.
 
 ### Extending the API
 
@@ -210,19 +209,19 @@ pytest tests/api/ --cov=src/api --cov-report=term-missing
 3. Validate input with validators from `services/validators.py`
 4. Call GameService method
 5. Return JSON response with `{success: true, data: {...}}`
-6. Write integration test in `tests/api/test_routes_integration.py`
+6. Write a real-engine-through-HTTP integration test in `tests/api/` (pattern:
+   `tests/api/test_combat_routes_integration.py`); route tests that mock
+   `session_manager` go in `tests/` proper
 
 **Add a new validator:**
 1. Create function in `src/api/services/validators.py`
 2. Return tuple: `(is_valid: bool, error_message: Optional[str])`
-3. Add unit tests in `tests/api/test_validators.py`
+3. Add unit tests in `tests/test_validators_and_sanitizer.py`
 4. Export from `src/api/services/__init__.py`
 
-**Update OpenAPI schema:**
-1. Edit `src/api/schemas/openapi.py`
-2. Update endpoint definition in `paths` dict
-3. Add request/response schemas
-4. Schema auto-served at `/api/openapi.json`
+There is no OpenAPI schema module and no `/api/openapi.json` or `/api/docs`
+endpoint. `docs/API_DOCUMENTATION.md` is the hand-written API reference; update it
+when you add or change an endpoint.
 
 ## Development Workflows
 
@@ -252,7 +251,7 @@ pytest tests/test_universe.py -v
 ```
 
 **Test structure:**
-- `tests/conftest.py` sets up module shims and coverage hooks
+- `tests/conftest.py` puts the project root on `sys.path` and blanks credentials (provider keys, `GITHUB_TOKEN`, `TURSO_*`). It installs **no** module shims: every local import uses the canonical `src.` path, enforced statically by `tests/test_no_bare_local_imports.py`
 - `tests/api/conftest.py` sets up Flask test fixtures
 - Fixtures in individual test files or conftest
 - Use `monkeypatch` for path/file mocking
@@ -298,8 +297,14 @@ from src.universe import Universe  # type: ignore
 
 
 ### Running the Game
+
+The game is web-only. The old terminal entry point (a `game.py` under the engine
+package) and its siblings were deleted in the terminal teardown; there is no
+single-command way to play. Start both halves:
+
 ```bash
-python src/game.py
+python tools/run_api.py            # Flask API on :5000
+cd frontend && npm run dev         # React SPA on :3000
 ```
 
 **Save files**: Pickle format (`.sav`) stored in project root. Use `functions.saves_list()` to enumerate.
@@ -466,33 +471,31 @@ return jsonify({"success": True, "data": result}), 200
 - **Game Engine Core:**
   - `src/functions.py` - Utility functions (saves, item stacking, input validation, serialization helpers)
   - `src/universe.py` - Map loading, JSON deserialization, tile management
-  - `src/player.py` - Player class with inventory, combat, stats, skill trees
+  - `src/player/` - Player package (inventory, combat, stats, skill trees; mixins over `combatant.py`)
   - `src/items.py` - Item hierarchy and equipment system
-  - `src/npc.py` - NPC/enemy classes and AI
+  - `src/npc/` - NPC package (`_base.py`, `_enemies.py`, `_friends.py`, `_merchants.py`, AI)
 - **API Layer (NEW):**
   - `src/api/app.py` - Flask app factory (entry point)
   - `src/api/services/game_service.py` - Game logic wrapper (18 core methods)
   - `src/api/services/session_manager.py` - Session lifecycle management
   - `src/api/services/validators.py` - Input validation functions (10 total)
   - `src/api/handlers/error_handler.py` - Global error handlers (8 HTTP codes)
-  - `src/api/schemas/openapi.py` - OpenAPI 3.0 schema generator
   - `src/api/routes/` - 6 blueprint modules (17 total endpoints)
   - `run_api.py` - Flask development server entry point
 - **Testing:**
   - `tests/conftest.py` - Test environment setup and module shimming
   - `tests/api/conftest.py` - Flask test configuration
-  - `tests/api/test_session_manager.py` - SessionManager tests (12)
-  - `tests/api/test_game_service.py` - GameService tests (15)
-  - `tests/api/test_validators.py` - Validator tests (28)
-  - `tests/api/test_routes_integration.py` - Integration tests (27)
-  - `tests/api/test_error_handlers.py` - Error handler tests (9)
+  - `tests/api/` - real-engine-through-HTTP integration tests only. Unit-level
+    cover for services, serializers, validators and routes lives in `tests/`
+    proper (`test_session_manager_coverage.py`, `test_validators_and_sanitizer.py`,
+    `test_world_routes_coverage.py`, `test_error_handler_logging.py`, ...).
 - **Other:**
   - `ai/llm_client.py` - LLM adapter implementation
   - `utils/map_generator.py` - Map editor GUI
   - `src/story/` - Story-specific events and dialogues
   - `docs/` - Design docs and architecture notes
   - `docs/lore/` - In-game lore and story background
-  - `docs/MILESTONE1_COMPLETE.md` - API Phase 1 progress report
+  - `docs/archive/MILESTONE1_COMPLETE.md` - API Phase 1 progress report (archived)
   - `ARCHITECTURE_DIAGRAM.md` - Visual architecture guide
 
 ## Quick Reference
@@ -519,23 +522,23 @@ return jsonify({"success": True, "data": result}), 200
 3. Extract session/player using `get_session_and_player()` helper
 4. Call GameService method to perform action
 5. Return JSON: `{success: true, data: {...}}`
-6. Add integration test in `tests/api/test_routes_integration.py`
-7. Update OpenAPI schema in `src/api/schemas/openapi.py` (paths section)
+6. Add a real-engine integration test in `tests/api/` (pattern: `tests/api/test_combat_routes_integration.py`)
+7. Document the endpoint in `docs/API_DOCUMENTATION.md` (there is no OpenAPI schema module)
 
 **Add a new validator (NEW):**
 1. Create function in `src/api/services/validators.py`
 2. Return `(is_valid: bool, error_message: Optional[str])`
-3. Add unit tests in `tests/api/test_validators.py`
+3. Add unit tests in `tests/test_validators_and_sanitizer.py`
 4. Export from `src/api/services/__init__.py`
 
 **Test a specific function:**
 ```bash
-pytest tests/test_functions.py::test_function_name -v
+python -m pytest tests/test_functions_utilities.py::test_function_name -v
 ```
 
 **Test a specific API validator:**
 ```bash
-pytest tests/api/test_validators.py::test_validate_direction_valid -v
+python -m pytest tests/test_validators_and_sanitizer.py::test_validate_direction_valid -v
 ```
 
 ## Repository Reference

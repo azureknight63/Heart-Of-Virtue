@@ -7,9 +7,12 @@ Strategy: minimal Flask app with mocked session_manager and auth_service,
 async routes need AsyncMock for auth_service calls.
 """
 
+import logging
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from flask import Flask
+from werkzeug.wrappers import Request
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -138,10 +141,16 @@ class TestRegister:
         assert data["error"] == "conflict_error"
 
     def test_register_validation_error_from_service(self, app):
+        """``RegistrationValidationError``, because the route echoes a message
+        on the strength of its TYPE now, not on its wording surviving a
+        five-substring deny-list. A plain ValueError is infrastructure until
+        declared otherwise -- see test_register_infra_value_error_is_masked."""
+        from src.api.services.auth_service import RegistrationValidationError
+
         with patch(
             "src.api.routes.auth.auth_service.create_user",
             new_callable=AsyncMock,
-            side_effect=ValueError("Username too short"),
+            side_effect=RegistrationValidationError("Username too short"),
         ):
             with app.test_client() as c:
                 rv = c.post(
@@ -151,6 +160,27 @@ class TestRegister:
         assert rv.status_code == 400
         data = rv.get_json()
         assert data["error"] == "validation_error"
+
+    def test_register_infra_value_error_is_masked(self, app):
+        """The other half of the same contract, in the suite that covers this
+        route generally: an undeclared ValueError is never echoed."""
+        leak = "could not connect to postgres://svc:hunter2@db.internal:5432/hov"
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            side_effect=ValueError(leak),
+        ):
+            with app.test_client() as c:
+                rv = c.post(
+                    "/auth/register",
+                    json={
+                        "username": "abcd",
+                        "password": "pw",
+                        "email": "x@test.com",
+                    },
+                )
+        assert rv.status_code == 503
+        assert leak not in rv.data.decode()
 
     def test_register_service_unavailable_env_error(self, app):
         with patch(
@@ -386,7 +416,15 @@ class TestLoginPerIpThrottle:
                     environ_base=self._ATTACKER,
                 )
         assert rv.status_code == 429
-        assert rv.get_json()["error"] == "rate_limited"
+        body = rv.get_json()
+        assert body["error"] == "rate_limited"
+        # `message`, not `error`, carries the prose. LoginPage.jsx renders
+        # `data.message` for any non-401 / non-5xx auth failure, so a body
+        # without it degrades silently to the generic "Authentication
+        # failed" copy and the player is never told they are throttled.
+        assert body["message"] == (
+            "Too many failed login attempts. Please try again later."
+        )
 
     def test_successful_login_does_not_clear_ip_counter(self, app):
         """A valid login clears only the per-account key; the IP evidence of an
@@ -428,32 +466,27 @@ class TestLoginPerIpThrottle:
         assert rv.status_code == 429
         assert _ip_limiter.is_limited(ip_key) is True
 
-    def test_client_ip_outside_request_context_is_unknown(self):
-        """Direct helper calls (no request context) must not raise."""
-        from src.api.routes.auth import _client_ip
+    def test_login_key_collapses_ipv6_to_the_same_64_prefix_as_the_ip_tier(self):
+        """The username+IP key must key on the same collapsed client identity
+        the IP-only tier uses. Keying this half on the raw ``remote_addr``
+        would hand an IPv6 attacker a fresh per-username budget for every
+        address in their /64.
 
-        assert _client_ip() == "unknown"
-
-    def test_client_ip_collapses_ipv6_to_64_prefix(self):
-        """IPv6 clients are throttled per /64 so an attacker can't rotate the
-        low bits within their allocation to dodge the limit."""
-        from src.api.routes.auth import _client_ip
-
-        app = Flask(__name__)
-        with app.test_request_context(
-            "/auth/login",
-            environ_base={"REMOTE_ADDR": "2001:db8:abcd:1234::dead:beef"},
-        ):
-            assert _client_ip() == "2001:db8:abcd:1234::"
-
-    def test_client_ip_passes_ipv4_through(self):
-        from src.api.routes.auth import _client_ip
+        ``client_ip`` itself is tested in ``tests/test_rate_limiter.py``, where
+        it now lives -- it was previously copy-pasted into both this blueprint
+        and ``npc_chat.py``.
+        """
+        from src.api.routes.auth import _login_rate_limit_key
 
         app = Flask(__name__)
-        with app.test_request_context(
-            "/auth/login", environ_base={"REMOTE_ADDR": "198.51.100.7"}
-        ):
-            assert _client_ip() == "198.51.100.7"
+        keys = set()
+        for suffix in ("::dead:beef", "::1"):
+            with app.test_request_context(
+                "/auth/login",
+                environ_base={"REMOTE_ADDR": f"2001:db8:abcd:1234{suffix}"},
+            ):
+                keys.add(_login_rate_limit_key("SprayTarget"))
+        assert keys == {"spraytarget:2001:db8:abcd:1234::"}
 
 
 # ===========================================================================
@@ -666,3 +699,326 @@ class TestSettings:
                 headers=NO_AUTH,
             )
         assert rv.status_code == 401
+
+
+# ===========================================================================
+# POST /auth/register -- the throttle
+# ===========================================================================
+
+
+class TestRegisterThrottle:
+    """``/auth/register`` had no throttle at all, which mattered twice over:
+    account creation is unbounded work against the DB (a bcrypt hash per
+    attempt), and a fresh account is a fresh session -- which is how
+    ``feedback.py``'s per-session cap on *real GitHub issue creation* used to
+    be walked past.
+    """
+
+    @pytest.fixture
+    def app(self, auth_app):
+        return auth_app()
+
+    @pytest.fixture(autouse=True)
+    def _clear_limiter(self):
+        from src.api.routes import auth as auth_module
+
+        auth_module._register_limiter.clear_all()
+        yield
+        auth_module._register_limiter.clear_all()
+
+    @staticmethod
+    def _register(client, ip, username="Jean"):
+        return client.post(
+            "/auth/register",
+            json={
+                "username": username,
+                "password": "secret",
+                "email": "j@test.com",
+            },
+            environ_base={"REMOTE_ADDR": ip},
+        )
+
+    def test_the_limiter_exists_and_is_tunable(self):
+        from src.api.rate_limiter import RateLimiter
+        from src.api.routes import auth as auth_module
+
+        assert isinstance(auth_module._register_limiter, RateLimiter)
+        assert auth_module._register_limiter.limit == auth_module._REGISTER_RATE_LIMIT
+
+    def test_the_budget_runs_out(self, app):
+        from src.api.routes import auth as auth_module
+
+        mock_user = {"id": "u", "username": "Jean", "timezone": "America/New_York"}
+        limit = auth_module._register_limiter.limit
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                for i in range(limit):
+                    assert self._register(c, "198.51.100.20").status_code == 201, i
+                rv = self._register(c, "198.51.100.20")
+        assert rv.status_code == 429
+        body = rv.get_json()
+        assert body["error"] == "rate_limited"
+        assert body["message"] == (
+            "Too many registration attempts. Please try again later."
+        )
+
+    def test_it_is_keyed_per_source(self, app):
+        from src.api.routes import auth as auth_module
+
+        mock_user = {"id": "u", "username": "Jean", "timezone": "America/New_York"}
+        limit = auth_module._register_limiter.limit
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                for _ in range(limit + 1):
+                    self._register(c, "198.51.100.21")
+                # A different client is not collateral damage.
+                rv = self._register(c, "198.51.100.22")
+        assert rv.status_code == 201
+
+    def test_a_malformed_payload_spends_the_budget_too(self, app):
+        """The throttle now runs *before* the body is parsed, so it counts.
+
+        This used to assert the opposite -- that a request rejected at shape
+        validation cost nobody anything -- on the argument that a malformed
+        payload is free. It is not free: `/auth/register` takes no credentials,
+        so parsing up to MAX_CONTENT_LENGTH of attacker-chosen JSON was the one
+        piece of work on this route that no throttle gated. And the budget the
+        old ordering protected was never protectable: an attacker exhausting a
+        shared NAT's register budget sends well-formed payloads, which are
+        cheaper to produce and were always counted.
+        """
+        from src.api.routes import auth as auth_module
+
+        limit = auth_module._register_limiter.limit
+        with app.test_client() as c:
+            for i in range(limit):
+                rv = c.post(
+                    "/auth/register",
+                    json={"username": "Jean"},
+                    environ_base={"REMOTE_ADDR": "198.51.100.23"},
+                )
+                assert rv.status_code == 400, i
+            rv = c.post(
+                "/auth/register",
+                json={"username": "Jean"},
+                environ_base={"REMOTE_ADDR": "198.51.100.23"},
+            )
+        assert rv.status_code == 429
+        assert auth_module._register_limiter.is_limited("198.51.100.23") is True
+
+    def test_the_throttle_answers_before_the_body_is_parsed(self, app):
+        """The property the ordering exists for, asserted at the parse itself.
+
+        A 429 that still parsed the body would satisfy the test above while
+        leaving the work ungated, so this watches ``request.get_json`` rather
+        than the status code alone. The over-budget request must not reach it.
+        """
+        from src.api.routes import auth as auth_module
+
+        parses = []
+        real_get_json = Request.get_json
+
+        def _counting_get_json(self, *args, **kwargs):
+            parses.append(self.path)
+            return real_get_json(self, *args, **kwargs)
+
+        limit = auth_module._register_limiter.limit
+        with app.test_client() as c:
+            for _ in range(limit):
+                self._register(c, "198.51.100.24")
+            with patch.object(Request, "get_json", _counting_get_json):
+                rv = self._register(c, "198.51.100.24")
+        assert rv.status_code == 429
+        assert parses == []
+
+
+class TestAHostileBodyWritesNoTraceback:
+    """`/auth/register` is unauthenticated, so anything it logs per request is
+    logged at whatever rate an attacker chooses. With LOG_FILE set (5 MiB x 3
+    rotation, `src/api/app.py`) a flood of tracebacks evicts the audit trail.
+
+    The route's `except Exception: logger.exception(...)` is nonetheless the
+    right thing there, because no *client-controlled* input reaches it. That
+    is the claim under test, and it is not obvious -- it rests on
+    `get_json(silent=True)` returning None rather than raising for every
+    malformed shape, and on the body cap being enforced before the view. Both
+    are somebody else's code, so this asserts the outcome instead of trusting
+    them: a traceback here means a new input path found its way to the
+    catch-all, and the fix is a 4xx at that path, not a quieter log call.
+    """
+
+    @pytest.fixture
+    def app(self, auth_app):
+        return auth_app()
+
+    @pytest.fixture(autouse=True)
+    def _clear_limiter(self):
+        from src.api.routes import auth as auth_module
+
+        auth_module._register_limiter.clear_all()
+        yield
+        auth_module._register_limiter.clear_all()
+
+    #: Every shape a client can put in a body that this route does not want.
+    HOSTILE_BODIES = {
+        "not json at all": (b"<<< not json >>>", "application/json"),
+        "truncated json": (b'{"username": "a", ', "application/json"),
+        "wrong content type": (b"username=a&password=b", "text/plain"),
+        "json null": (b"null", "application/json"),
+        "json scalar": (b"12345", "application/json"),
+        "json list": (b'["username", "password"]', "application/json"),
+        "nulls for strings": (
+            b'{"username": null, "password": null, "email": null}',
+            "application/json",
+        ),
+        "nested objects for strings": (
+            b'{"username": {}, "password": [], "email": 7}',
+            "application/json",
+        ),
+        "empty body": (b"", "application/json"),
+    }
+
+    @pytest.mark.parametrize("label", sorted(HOSTILE_BODIES))
+    def test_no_traceback_is_logged(self, app, caplog, label):
+        body, content_type = self.HOSTILE_BODIES[label]
+        with caplog.at_level(logging.DEBUG):
+            with app.test_client() as c:
+                rv = c.post("/auth/register", data=body, content_type=content_type)
+        assert rv.status_code == 400, rv.get_json()
+        with_tracebacks = [r for r in caplog.records if r.exc_info]
+        assert with_tracebacks == [], [r.getMessage() for r in with_tracebacks]
+
+    def test_a_real_server_fault_still_logs_one(self, app, caplog):
+        """The control. Every assertion above holds for a route that logs
+        nothing at all -- a worse bug than the one they guard against -- so the
+        traceback the catch-all exists for has to still arrive."""
+        with patch(
+            "src.api.routes.auth.auth_service.create_user",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("the database fell over"),
+        ):
+            with caplog.at_level(logging.DEBUG):
+                with app.test_client() as c:
+                    rv = c.post(
+                        "/auth/register",
+                        json={
+                            "username": "Jean",
+                            "password": "secret",
+                            "email": "j@test.com",
+                        },
+                    )
+        assert rv.status_code == 500
+        assert [r for r in caplog.records if r.exc_info]
+
+
+class TestASuccessfulLoginAlsoCostsSomething:
+    """The two original login tiers are FAILURE counters, and that left a hole.
+
+    ``_record_failed_login`` runs only under ``if not user``, so a caller
+    holding one valid credential never touches either budget and can replay
+    that login without limit -- each request costing a full Argon2id verify at
+    the configured memory cost, on a synchronous worker. Credential guessing is
+    bounded by wrong answers; this attack never gives one.
+
+    The property asserted here is the one that was missing, and it is stated
+    against the limiter's own configured ceiling rather than a number written
+    here: a source that keeps logging in SUCCESSFULLY eventually gets a 429.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate_limiters(self):
+        from src.api.routes.auth import (
+            _ip_limiter,
+            _login_attempt_limiter,
+            _login_limiter,
+        )
+
+        for limiter in (_login_limiter, _ip_limiter, _login_attempt_limiter):
+            limiter.clear_all()
+        yield
+        for limiter in (_login_limiter, _ip_limiter, _login_attempt_limiter):
+            limiter.clear_all()
+
+    @pytest.fixture
+    def app(self, auth_app):
+        return auth_app()
+
+    def _login_ok(self, client):
+        return client.post(
+            "/auth/login", json={"username": "Jean", "password": "secret"}
+        )
+
+    def test_the_ceiling_is_a_real_one(self):
+        """Non-vacuity in both directions: a limit of 0 would make the loop
+        below trivially true, and an enormous one would make it untestable."""
+        from src.api.routes.auth import _login_attempt_limiter
+
+        assert 1 < _login_attempt_limiter.limit <= 10_000
+
+    def test_repeated_successful_logins_are_eventually_throttled(self, app):
+        from src.api.routes.auth import _login_attempt_limiter
+
+        ceiling = _login_attempt_limiter.limit
+        mock_user = {"id": "user_001", "username": "Jean", "timezone": "UTC"}
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                statuses = [self._login_ok(c).status_code for _ in range(ceiling + 2)]
+
+        assert 200 in statuses, "no login succeeded; the probe is vacuous"
+        assert 429 in statuses, (
+            "%d consecutive SUCCESSFUL logins from one source were all "
+            "accepted. Every one of them paid for an Argon2 verify, and "
+            "neither failure-counting tier can ever see them."
+            % (ceiling + 2)
+        )
+        # And the throttle arrives at the ceiling, not somewhere arbitrary.
+        assert statuses.index(429) >= ceiling - 1, statuses.index(429)
+
+    def test_the_failure_tiers_are_untouched(self, app):
+        """The control. Adding a third tier must not have moved the behaviour
+        the first two own: a wrong password still trips the failed-attempt
+        counter with its own message."""
+        from src.api.routes.auth import _login_limiter
+
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            with app.test_client() as c:
+                seen = set()
+                for _ in range(_login_limiter.limit + 2):
+                    rv = c.post(
+                        "/auth/login",
+                        json={"username": "Jean", "password": "wrong"},
+                    )
+                    seen.add(rv.status_code)
+                    if rv.status_code == 429:
+                        assert "failed login" in rv.get_json()["message"].lower()
+                        break
+        assert 401 in seen
+        assert 429 in seen
+
+    def test_one_ordinary_login_is_not_throttled(self, app):
+        """The other control: a cost ceiling that refused the first login
+        would satisfy the assertions above and lock everybody out."""
+        mock_user = {"id": "user_001", "username": "Jean", "timezone": "UTC"}
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                assert self._login_ok(c).status_code == 200

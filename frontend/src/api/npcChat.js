@@ -40,11 +40,18 @@ const npcChat = {
   end: (npcKey) => apiClient.post(`${BASE}/end`, { npc_key: npcKey }),
 
   /**
-   * Retrieve conversation history
+   * Retrieve conversation history.
+   *
+   * No production caller: the panel renders its history from the segments it
+   * already holds, which carry the per-turn emotion and flavor the server
+   * record does not (see ConversationHistoryDialog). Kept as the client's
+   * coverage of the endpoint the API actually exposes, and encoded because it
+   * is the one URL here built by interpolation rather than a JSON body.
+   *
    * @param {string} npcKey - Session key returned from /open
    * @returns {Promise} Response with full conversation history
    */
-  history: (npcKey) => apiClient.get(`${BASE}/history/${npcKey}`),
+  history: (npcKey) => apiClient.get(`${BASE}/history/${encodeURIComponent(npcKey)}`),
 }
 
 export default npcChat

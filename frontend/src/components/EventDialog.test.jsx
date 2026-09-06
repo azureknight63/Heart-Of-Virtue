@@ -1,16 +1,28 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import EventDialog, { submissionErrorMessage } from './EventDialog';
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds';
 
 /**
  * EventDialog tests.
  *
- * Timers: this file deliberately uses REAL timers. The typewriter exposes a
- * `finishImmediately` on click, and ConversationStage advances on click, so
- * every "wait for the text" step here is an explicit user gesture with a
- * defined outcome rather than an arbitrary `advanceTimersByTime(5000)` nudge.
- * The previous version fired 30 such nudges; each one was a guess about how
- * long an animation takes, and none of them asserted anything about timing.
+ * Timers: this file deliberately uses REAL timers almost everywhere, and never
+ * waits on the clock. The typewriter exposes a `finishImmediately` on click,
+ * and ConversationStage advances on click, so every "wait for the text" step
+ * here is an explicit user gesture with a defined outcome rather than an
+ * arbitrary `advanceTimersByTime(5000)` nudge. The previous version fired 30
+ * such nudges; each one was a guess about how long an animation takes, and
+ * none of them asserted anything about timing.
+ *
+ * That gesture is also what keeps these tests honest under load. The reveal is
+ * one React re-render per character, so its WALL-CLOCK cost scales with CPU
+ * contention while `waitFor`'s budget does not: awaiting a 28-character beat
+ * (700 ms nominal at speed={25}) inside waitFor's 1000 ms default failed on a
+ * loaded parallel run with 12 of the 28 characters on screen. Never wait for
+ * typed text to arrive — click it in.
+ *
+ * The single exception is the `damage hit effect` block, whose subject IS a
+ * timed effect; it installs fake timers locally and advances them explicitly.
  */
 describe('EventDialog', () => {
   const mockEvent = {
@@ -35,16 +47,8 @@ describe('EventDialog', () => {
   /** Skip the typewriter deterministically: the container finishes on click. */
   const finishText = () => fireEvent.click(screen.getByTestId('event-text-container'));
 
-  /**
-   * The typed prose only. TypewriterOutput also renders an inline <style> blob
-   * for the cursor keyframes, which lands in `textContent` and would otherwise
-   * force every text assertion into a fuzzy `toContain`.
-   */
-  const bodyText = () => {
-    const el = screen.getByTestId('event-text-container').cloneNode(true);
-    el.querySelectorAll('style').forEach((s) => s.remove());
-    return el.textContent.trim();
-  };
+  /** The typed prose only, trimmed of the caret's whitespace. */
+  const bodyText = () => screen.getByTestId('event-text-container').textContent.trim();
 
   const renderDialog = (event = mockEvent, props = {}) =>
     render(
@@ -352,7 +356,7 @@ describe('EventDialog', () => {
       expect(alts).toEqual(['Jean (neutral)', 'Amelia (happy)']);
     });
 
-    it('re-runs the stage from beat one when the next stage arrives on the same mounted dialog', async () => {
+    it('re-runs the stage from beat one when the next stage arrives on the same mounted dialog', () => {
       // The multi-stage soft-lock (Ch02GuideToCitadel / AfterKingSlimeReturn):
       // one Python event calls begin_conversation() several times, so a single
       // mounted EventDialog receives a fresh `segments` array per stage. It
@@ -389,18 +393,18 @@ describe('EventDialog', () => {
       );
       const stage = screen.getByTestId('conversation-stage');
       // One click finishes the current beat's typewriter; the next advances.
-      const skipAndAdvance = async (text) => {
-        await screen.findByText(text);
-        fireEvent.click(stage);
-      };
-
+      // Both are synchronous on purpose. The `await findByText(...)` this
+      // replaced always resolved on its first check (the beat was already
+      // finished by the click above it), but the await still yielded the event
+      // loop mid-beat, where a long enough stall could let the NEXT beat type
+      // itself out and turn the following click into an extra advance.
       fireEvent.click(stage);
       expect(screen.getByText('Stage one, beat one.').textContent).toBe('Stage one, beat one.');
       // Input stays hidden until the stage reaches its last beat.
       expect(screen.queryByText('Go on')).toBeNull();
 
-      await skipAndAdvance('Stage one, beat one.');
-      fireEvent.click(stage);
+      fireEvent.click(stage); // advance to beat two
+      fireEvent.click(stage); // finish beat two's typewriter
       expect(screen.getByText('Stage one, beat two.').textContent).toBe('Stage one, beat two.');
       fireEvent.click(stage);
       expect(buttonFor('Go on').textContent).toBe('[1] Go on');
@@ -415,8 +419,8 @@ describe('EventDialog', () => {
       expect(screen.queryByText('Stage one, beat two.')).toBeNull();
       expect(screen.queryByText('Go on')).toBeNull();
 
-      await skipAndAdvance('Stage two, beat one.');
-      fireEvent.click(stage);
+      fireEvent.click(stage); // advance to beat two
+      fireEvent.click(stage); // finish beat two's typewriter
       expect(screen.getByText('Stage two, beat two.').textContent).toBe('Stage two, beat two.');
       fireEvent.click(stage);
       // The way out reappears — this is the assertion the soft-lock broke.
@@ -447,7 +451,7 @@ describe('EventDialog', () => {
       expect(document.querySelector('pre').textContent).toBe('You always were too stubborn.');
     });
 
-    it('paces long unstaged narration (issue #123) through ConversationStage instead of one big typewriter block', async () => {
+    it('paces long unstaged narration (issue #123) through ConversationStage instead of one big typewriter block', () => {
       // Shape matches what GameService._capture_conversation now returns for a
       // long plain narrate()/cprint() block: multiple in_conversation:false
       // beats, no speaker, no conversation roster.
@@ -477,9 +481,17 @@ describe('EventDialog', () => {
         .toBe('The vault door groans open.');
       expect(screen.queryByText('Dust hangs thick in the air.')).toBeNull();
 
-      // Clicking advances one beat at a time, not straight to the end.
-      fireEvent.click(stage);
-      await screen.findByText('Dust hangs thick in the air.');
+      // Clicking advances one beat at a time, not straight to the end. Two
+      // clicks, same as beat one: the first steps to beat two, the second
+      // finishes ITS typewriter. Awaiting the animation instead (28 chars ×
+      // 25 ms = 700 ms) spent most of waitFor's 1000 ms default on wall clock
+      // and lost the rest under a loaded parallel run — the reveal is a React
+      // re-render per character, so its duration scales with CPU contention
+      // while the budget does not.
+      fireEvent.click(stage); // advance to beat two
+      fireEvent.click(stage); // finish beat two's typewriter
+      expect(screen.getByText('Dust hangs thick in the air.').textContent)
+        .toBe('Dust hangs thick in the air.');
       expect(screen.queryByText('A relic hums on the plinth.')).toBeNull();
       expect(screen.queryByText('The vault door groans open.')).toBeNull();
     });
@@ -581,27 +593,57 @@ describe('EventDialog', () => {
     });
   });
 
+  // The one corner of this file the click gesture cannot settle: the damage
+  // flash is a TIMED effect (classes on, 500 ms, classes off) that only starts
+  // once the typewriter has revealed a whole "Jean suffers N damage!" line.
+  // Waiting for that on wall clock made both halves racy — the reveal is a
+  // React re-render per character, so a loaded box stretches it arbitrarily,
+  // and a stall longer than 500 ms can swallow the on-then-off window whole
+  // between two waitFor polls. Fake timers make every step exact instead.
   describe('damage hit effect', () => {
     const damageEvent = { ...mockEvent, needs_input: false, output_text: 'Jean suffers 12 damage!' };
+    const SPEED_MS = 25; // EventDialog's speed={25}
+    // The tick on which the final character of the damage line lands.
+    const REVEAL_MS = damageEvent.output_text.length * SPEED_MS;
+    // handleDamageHit's own removal delay.
+    const REMOVAL_MS = 500;
+    const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
 
-    it('adds and removes damage-shake/flash body classes when a damage line appears', async () => {
+    beforeEach(() => vi.useFakeTimers());
+    // Restored unconditionally: a fake clock leaking out of this block would
+    // hang every real-timer test after it.
+    afterEach(() => vi.useRealTimers());
+
+    it('adds and removes damage-shake/flash body classes when a damage line appears', () => {
       renderDialog(damageEvent);
 
-      await waitFor(() => {
-        expect(document.body.classList.contains('damage-shake')).toBe(true);
-        expect(document.body.classList.contains('damage-flash-active')).toBe(true);
-      }, { timeout: 3000 });
+      // Nothing fires until the whole damage line is on screen.
+      tick(REVEAL_MS - SPEED_MS);
+      expect(document.body.classList.contains('damage-shake')).toBe(false);
 
-      await waitFor(() => {
-        expect(document.body.classList.contains('damage-shake')).toBe(false);
-        expect(document.body.classList.contains('damage-flash-active')).toBe(false);
-      }, { timeout: 3000 });
+      // The last character lands, which queues TypewriterOutput's 0 ms hit
+      // stagger — queued during the render, so not yet run.
+      tick(SPEED_MS);
+      expect(document.body.classList.contains('damage-shake')).toBe(false);
+
+      tick(0);
+      expect(document.body.classList.contains('damage-shake')).toBe(true);
+      expect(document.body.classList.contains('damage-flash-active')).toBe(true);
+
+      // Still lit one millisecond short of the removal delay, dark on it.
+      tick(REMOVAL_MS - 1);
+      expect(document.body.classList.contains('damage-shake')).toBe(true);
+      tick(1);
+      expect(document.body.classList.contains('damage-shake')).toBe(false);
+      expect(document.body.classList.contains('damage-flash-active')).toBe(false);
     });
 
-    it('removes damage body classes on unmount mid-animation', async () => {
+    it('removes damage body classes on unmount mid-animation', () => {
       const { unmount } = renderDialog(damageEvent);
 
-      await waitFor(() => expect(document.body.classList.contains('damage-shake')).toBe(true), { timeout: 3000 });
+      tick(REVEAL_MS);
+      tick(0);
+      expect(document.body.classList.contains('damage-shake')).toBe(true);
 
       unmount();
       expect(document.body.classList.contains('damage-shake')).toBe(false);
@@ -613,7 +655,7 @@ describe('EventDialog', () => {
       // already removed the classes) but it threw "document is not defined"
       // once vitest tore the environment down mid-flight. Drain it here so the
       // leak cannot masquerade as an unrelated failure.
-      await new Promise((r) => setTimeout(r, 600));
+      tick(REMOVAL_MS + 100);
       expect(document.body.classList.contains('damage-shake')).toBe(false);
     });
   });
@@ -887,7 +929,7 @@ describe('EventDialog', () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined);
       const combatEvent = {
         ...mockEvent,
-        event_id: 'combat_init',
+        event_id: COMBAT_INIT_EVENT_ID,
         input_options: [{ label: 'Fight', value: 'combat_start' }]
       };
       render(<EventDialog event={combatEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />);
@@ -898,7 +940,7 @@ describe('EventDialog', () => {
       fireEvent.click(fight);
 
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-      expect(onSubmit).toHaveBeenCalledWith('combat_init', 'combat_start');
+      expect(onSubmit).toHaveBeenCalledWith(COMBAT_INIT_EVENT_ID, 'combat_start');
       expect(fight.disabled).toBe(true);
       expect(screen.queryByText(/Failed to submit input/i)).toBeNull();
     });

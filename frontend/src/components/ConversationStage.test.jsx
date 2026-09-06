@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import ConversationStage, { computeStage } from './ConversationStage'
 import { portraitUrl } from '../utils/portraits'
 import { portraitManifestPairs } from '../test/portraitManifest'
+import { expectNoNaNStyles } from '../test/styleAssertions'
 
 const CAST = [
     { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
@@ -448,6 +449,147 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByAltText(/Jean \(surprised\)/i)).toBeDefined()
     })
 
+    it('renders separate flavor text without treating it as spoken dialogue', () => {
+        render(
+            <ConversationStage
+                segments={[{
+                    text: 'The road is open.',
+                    flavor: 'She studies the dust before answering.',
+                    speaker: 'Mara',
+                    in_conversation: true,
+                }]}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+
+        expect(screen.getByTestId('conversation-flavor')).toHaveTextContent(
+            'She studies the dust before answering.'
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('The road is open.')).toBeInTheDocument()
+    })
+
+    it('can render as a non-interactive live stage without an advance hint', () => {
+        // `mode` is the whole behavioural contract: interactivity, the advance
+        // hint and tail-following always travel together, so there are no
+        // separate props to switch off.
+        render(
+            <ConversationStage
+                segments={[{ text: 'Live line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                mode="live"
+            />
+        )
+
+        expect(screen.queryByTestId('conversation-advance-hint')).not.toBeInTheDocument()
+        expect(screen.getByTestId('conversation-stage')).not.toHaveAttribute('tabindex')
+    })
+
+    it('supports a wide layout with explicit portrait columns and dialogue area', () => {
+        render(
+            <ConversationStage
+                segments={[{ text: 'A wide line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                layout="wide"
+            />
+        )
+
+        const stage = screen.getByTestId('conversation-stage')
+        // THE RULE, as stated in styles/index.css: every property the phone
+        // breakpoint retunes is owned by `.conversation-stage--wide` there, so
+        // the media query wins by ordinary cascade instead of out-shouting an
+        // inline style with a stack of `!important` declarations. index.css is
+        // where that rule is written down and where its scope is defined; this
+        // asserts it, and neither place restates the historical count of
+        // `!important`s, which is unverifiable now that they are gone.
+        //
+        // jsdom loads no stylesheet, so a test can only ever check the ABSENCE
+        // of an inline value, never that a rule supplied one. Absence is
+        // nonetheless the whole of the contract: an inline value is exactly
+        // what would beat the breakpoint.
+        expect(stage).toHaveClass('conversation-stage--wide')
+        for (const prop of ['display', 'gap', 'minHeight', 'gridTemplateColumns', 'gridTemplateAreas']) {
+            expect(stage.style[prop], `${prop} must not be set inline on the wide stage`).toBe('')
+        }
+
+        const leftColumn = screen.getByAltText(/Jean/).parentElement.parentElement
+        const rightColumn = screen.getByAltText(/Amelia/).parentElement.parentElement
+        expect(leftColumn).toHaveClass('conversation-stage__portrait-column')
+        expect(leftColumn).toHaveStyle({ gridArea: 'left' })
+        expect(rightColumn).toHaveStyle({ gridArea: 'right' })
+        // The column's own width is retuned at the breakpoint, so CSS owns it.
+        expect(leftColumn.style.minWidth).toBe('')
+        expect(leftColumn.querySelector('img').style.width).toBe('')
+        // The dialogue card takes the middle area and drops its inline padding /
+        // min-height so the breakpoint can retune both.
+        const dialogue = stage.querySelector('.conversation-stage__dialogue')
+        expect(dialogue).toHaveStyle({ gridArea: 'dialogue' })
+        expect(dialogue.style.padding).toBe('')
+        expect(dialogue.style.minHeight).toBe('')
+    })
+
+    it('keeps the internal flex layout of the columns and card inline in both layouts', () => {
+        // The counterpart to the absences above, and the reason THE RULE is
+        // scoped to the stage element rather than to everything on it. These
+        // properties lay a column and the dialogue card out INTERNALLY, no
+        // breakpoint retunes them, and moving them into CSS would create a
+        // claim jsdom could never check. Pinning them here means widening the
+        // rule later is a deliberate edit rather than prose drift.
+        render(
+            <ConversationStage
+                segments={[{ text: 'A wide line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                layout="wide"
+            />
+        )
+
+        const stage = screen.getByTestId('conversation-stage')
+        const column = screen.getByAltText(/Jean/).parentElement.parentElement
+        expect(column).toHaveStyle({ display: 'flex', flexDirection: 'column' })
+        expect(column.style.gap).not.toBe('')
+
+        const dialogue = stage.querySelector('.conversation-stage__dialogue')
+        expect(dialogue).toHaveStyle({ display: 'flex' })
+        // `minWidth: 0` lets the middle grid track actually shrink; without it
+        // a long unbroken line blows the track out past its `minmax(0, 2fr)`.
+        // Matched loosely: jsdom serializes a zero length as "0", other DOMs as
+        // "0px", and which one is not the point being asserted.
+        expect(dialogue.style.minWidth).toMatch(/^0(px)?$/)
+        expect(dialogue.style.gap).not.toBe('')
+    })
+
+    it('renders no NaN in any inline style', () => {
+        // `spacing` is CSS length STRINGS (see the JSDoc in styles/theme.js);
+        // this component interpolates them into padding and gap. Arithmetic on
+        // one yields NaN, which React drops silently in production.
+        const { container } = render(
+            <ConversationStage
+                segments={[{ text: 'A line.', speaker: 'Jean', flavor: 'quietly', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                layout="wide"
+            />
+        )
+
+        expectNoNaNStyles(container)
+    })
+
+    it('keeps the default layout styling itself inline', () => {
+        // The counterpart to the assertion above: only `--wide` handed its
+        // geometry to CSS, so the default layout must still carry its own.
+        render(
+            <ConversationStage
+                segments={[{ text: 'A narrow line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+            />
+        )
+
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage).toHaveClass('conversation-stage--default')
+        expect(stage).toHaveStyle({ display: 'flex', minHeight: '300px' })
+        expect(stage.querySelector('.conversation-stage__dialogue').style.minHeight).toBe('220px')
+    })
+
     it('resets beatIndex and re-arms onComplete when a new segments array arrives mid-conversation', () => {
         // Simulates a multi-stage event (e.g. Ch02GuideToCitadel) where the same
         // mounted ConversationStage receives a fresh segments/conversation payload
@@ -507,6 +649,79 @@ describe('ConversationStage rendering', () => {
         // the player is soft-locked with no way to leave the dialogue.
         click() // final beat -> onComplete fires a second time
         expect(onComplete).toHaveBeenCalledTimes(2)
+    })
+
+    it('resets when the next stage happens to have the same number of beats', () => {
+        // The reset must key on the segments array itself, not its length: two
+        // consecutive stages of an authored event can easily be the same length,
+        // and keying on length left the stage parked on the previous stage's
+        // last beat with onComplete already spent — a soft-lock, because
+        // EventDialog's Continue button never reappears.
+        const stageOne = [
+            { text: 'Stage one, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const stageTwo = [
+            { text: 'Stage two, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage two, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const onComplete = vi.fn()
+        const { rerender } = render(
+            <ConversationStage segments={stageOne} conversation={{ cast: CAST }} onComplete={onComplete} />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage)) // beat one -> beat two
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage)) // last beat -> onComplete
+        expect(onComplete).toHaveBeenCalledTimes(1)
+
+        rerender(
+            <ConversationStage segments={stageTwo} conversation={{ cast: CAST }} onComplete={onComplete} />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText(/Stage two, beat one/i)).toBeDefined()
+
+        act(() => fireEvent.click(stage))
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage))
+        expect(onComplete).toHaveBeenCalledTimes(2)
+    })
+
+    it('shows only the newest segment in live mode when a longer segments array arrives', () => {
+        // Mirrors NpcChatPanel's usage: the stage never shows the full history,
+        // only the latest beat — each new turn hands the same mounted instance
+        // a longer segments array and the display must jump straight to its tail.
+        const initialSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const longerSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Beat two.', speaker: 'Amelia', emotion: 'happy', in_conversation: true },
+            { text: 'Beat three.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const { rerender } = render(
+            <ConversationStage
+                segments={initialSegments}
+                conversation={{ cast: CAST }}
+                mode="live"
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat one.')).toBeInTheDocument()
+
+        rerender(
+            <ConversationStage
+                segments={longerSegments}
+                conversation={{ cast: CAST }}
+                mode="live"
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat three.')).toBeInTheDocument()
+        expect(screen.queryByText('Beat two.')).not.toBeInTheDocument()
+        expect(screen.queryByText('Beat one.')).not.toBeInTheDocument()
     })
 
     // The wrapper <div> around the <img> carries the composed portrait opacity.
@@ -597,6 +812,117 @@ describe('ConversationStage rendering', () => {
         expect(onComplete).not.toHaveBeenCalled()
         act(() => fireEvent.click(stage)) // last beat complete -> onComplete
         expect(onComplete).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('ConversationStage mode prop', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('mode="live" defaults to a non-interactive, hint-less, tail-following display', () => {
+        // Mirrors NpcChatPanel's usage: no click/keyboard advance, no advance
+        // hint, and each new (longer) segments array jumps straight to its
+        // newest beat instead of replaying from the start.
+        const initialSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const longerSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Beat two.', speaker: 'Amelia', emotion: 'happy', in_conversation: true },
+        ]
+        const { rerender } = render(
+            <ConversationStage segments={initialSegments} conversation={{ cast: CAST }} mode="live" />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage).not.toHaveAttribute('tabindex')
+        expect(screen.queryByTestId('conversation-advance-hint')).not.toBeInTheDocument()
+
+        // Non-interactive: a click must not advance the stage.
+        fireEvent.click(stage)
+        expect(screen.getByText('Beat one.')).toBeInTheDocument()
+
+        rerender(
+            <ConversationStage segments={longerSegments} conversation={{ cast: CAST }} mode="live" />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat two.')).toBeInTheDocument()
+        expect(screen.queryByText('Beat one.')).not.toBeInTheDocument()
+    })
+
+    it('never calls onComplete in live mode, even when the blank-beat safety valve fires on the final beat', () => {
+        // The auto-advance timer for a silent (whitespace-only) beat is a
+        // safety valve that stays armed in every mode, but live chat tracks
+        // its own completion off the API response — the stage must not also
+        // call onComplete when that timer walks it off the last beat.
+        const onComplete = vi.fn()
+        const blankTailSegments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: ' ', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        render(
+            <ConversationStage
+                segments={blankTailSegments}
+                conversation={{ cast: CAST }}
+                mode="live"
+                onComplete={onComplete}
+            />
+        )
+        // followTail (live default) parks beatIndex on the blank final beat immediately.
+        act(() => vi.advanceTimersByTime(50)) // typewriter finishes the single space
+        act(() => vi.advanceTimersByTime(500)) // blank-beat safety valve fires -> advance()
+        expect(onComplete).not.toHaveBeenCalled()
+    })
+
+    it('mode="authored" behaves like the default: interactive, hinted, and completes on the last beat', () => {
+        const onComplete = vi.fn()
+        const segments = [
+            { text: 'Line one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Line two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        render(
+            <ConversationStage
+                segments={segments}
+                conversation={{ cast: CAST }}
+                mode="authored"
+                onComplete={onComplete}
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage).toHaveAttribute('tabindex', '-1')
+
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByTestId('conversation-advance-hint')).toBeInTheDocument()
+
+        act(() => fireEvent.click(stage)) // beat 0 complete -> beat 1
+        act(() => vi.advanceTimersByTime(3000))
+        expect(onComplete).not.toHaveBeenCalled()
+        act(() => fireEvent.click(stage)) // last beat complete -> onComplete
+        expect(onComplete).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not bind Enter/Space to advance in live mode', () => {
+        // The click half of non-interactivity is covered above; the keyboard
+        // listener is a separate effect and is the half a player in an NPC chat
+        // actually reaches, because the dialog's focus trap parks focus on the
+        // option buttons behind the stage.
+        const segments = [
+            { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Beat two.', speaker: 'Amelia', emotion: 'happy', in_conversation: true },
+        ]
+        render(
+            <ConversationStage segments={segments} conversation={{ cast: CAST }} mode="live" />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+
+        // Live mode parks on the tail, so "did not advance" means it did not
+        // wrap or re-fire onto anything else; the tail stays put.
+        const stage = screen.getByTestId('conversation-stage')
+        fireEvent.keyDown(stage, { key: 'Enter' })
+        fireEvent.keyDown(stage, { key: ' ' })
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Beat two.')).toBeInTheDocument()
+        expect(stage).not.toHaveAttribute('tabindex')
     })
 })
 

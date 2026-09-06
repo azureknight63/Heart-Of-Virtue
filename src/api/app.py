@@ -1,20 +1,367 @@
 """Flask application factory and initialization."""
 
-import os
 import configparser
+import logging
+import logging.handlers
+import os
+import re
 from pathlib import Path
-from flask import Flask
+from typing import NamedTuple, Tuple
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from src.api.config import DevelopmentConfig, combat_socket_streaming_enabled
-from src.api.services import SessionManager, GameService
+from werkzeug.exceptions import ClientDisconnected
+from werkzeug.http import parse_set_header
+from src.api.config import Config, DevelopmentConfig
 from src.api.security_headers import register_security_headers
+from src.api.services import SessionManager, GameService
+from src.env_bootstrap import PROJECT_ROOT as _REPO_ROOT
 from src.api.structured_log import configure_logging, init_request_logging
 import src.universe as universe_module
 
 # Env-driven (LOG_LEVEL / LOG_FILE / LOG_JSONL_DIR); safe under pytest — it
 # only replaces handlers it installed itself. See src/api/structured_log.py.
 configure_logging()
+
+
+_log = logging.getLogger(__name__)
+
+# LOG_FILE is confined to this directory. See _resolve_log_file_setting.
+_LOG_DIR = _REPO_ROOT / "logs"
+
+# LOG_FILE rotation budget: a DEBUG run must not be able to fill the disk.
+_LOG_FILE_MAX_BYTES = 5 * 1024 * 1024
+_LOG_FILE_BACKUP_COUNT = 3
+
+# Marker stamped on the handlers this module installs. It is written twice
+# (the read in the removal loop, the write in the install loop), so a bare
+# literal in both places would silently stack a handler per create_app() the
+# day one of them is mistyped.
+_HOV_HANDLER_ATTR = "_hov_handler"
+
+# Read for two different questions — "what level?" in _resolve_log_level and
+# "is there anything to neutralise?" in _testing_log_level — so both go
+# through _log_level_setting() below rather than through two literals that can
+# drift apart.
+_LOG_LEVEL_ENV = "LOG_LEVEL"
+
+# Level names only — getattr(logging, name) would happily resolve any module
+# attribute (LOG_LEVEL=BASIC_FORMAT raised at import; NOTSET meant "log
+# everything").
+_LOG_LEVELS = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
+
+# LOG_LEVEL is applied to these namespaces, never to the root logger. Root at
+# DEBUG also turns on urllib3/httpx/openai/werkzeug/engineio wire logging, which
+# LOG_FILE then persists at the default umask. Every logger in the project is
+# named for its module, so these two prefixes cover all of ours and none of
+# anyone else's.
+#
+# What this scoping does NOT do: ``ai`` is *inside* the selected set, and
+# ``ai.llm_client`` logs raw model output at DEBUG. So ``LOG_LEVEL=DEBUG`` plus
+# ``LOG_FILE`` does write player conversation text to disk, and no choice of
+# namespaces here would stop it.
+#
+# What bounds that payload lives in the LLM client, next to the log call, which
+# is the only place that knows what the string is: ``_RAW_LOG_HEAD_CHARS`` in
+# ``ai/llm_client.py`` caps the logged excerpt at an 80-character head by
+# default, and the full body is behind ``LLM_LOG_RAW_BODIES`` — a separate
+# switch on purpose, so that raising the log level to chase an unrelated bug
+# cannot start transcribing dialogue as a side effect. Provider *error* bodies
+# follow the same rule: bounded by ``_ERROR_BODY_LOG_CHARS`` and released in
+# full by the same ``LLM_LOG_RAW_BODIES`` switch, because a provider that
+# echoes the rejected request back is echoing the player's dialogue back.
+_APP_LOG_NAMESPACES = ("src", "ai")
+
+# Blunt scrub for credential-shaped substrings on their way into any handler
+# this module installs. Nothing in the tree is known to log a secret in a
+# message (checked deliberately: the LLM client logs bool(api_key), never the
+# value) — but provider-SDK tracebacks are not written by this tree, and this
+# repo has shipped a live GITHUB_TOKEN in ``.env``, so the scrub covers the
+# credential families actually present here rather than only the OpenAI shape:
+#   sk-…            OpenAI / OpenRouter / Anthropic-style API keys
+#   gsk_…           Groq
+#   ghp_/gho_/…     GitHub OAuth + classic PATs
+#   github_pat_…    GitHub fine-grained PATs
+#   discord webhook the provider digest's Discord sink URL (the path IS the
+#                   credential)
+#   eyJ….….         JWTs, which is how the Turso/libSQL auth token is shaped
+#   Bearer …        anything already framed as a bearer credential
+_SECRET_RE = re.compile(
+    r"""
+      sk-[A-Za-z0-9_\-]{8,}
+    | gsk_[A-Za-z0-9_\-]{8,}
+    | gh[pousr]_[A-Za-z0-9_\-]{8,}
+    | github_pat_[A-Za-z0-9_\-]{8,}
+    | https://(?:\w+\.)*discord(?:app)?\.com/api/webhooks/\S+
+    | eyJ[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]*
+    | Bearer\s+[A-Za-z0-9._\-]{8,}
+    """,
+    re.VERBOSE,
+)
+
+# Used to render ``record.exc_info`` for scrubbing before any handler formats
+# it. A bare Formatter's ``formatException`` is exactly what the real handlers
+# would call, so the text this filter rewrites is the text they will emit.
+_EXC_FORMATTER = logging.Formatter()
+
+
+class _RedactSecretsFilter(logging.Filter):
+    """Replace anything credential-shaped with ``[REDACTED]``.
+
+    Installed on **every** handler this module owns, not just the LOG_FILE
+    one. Filters run per handler, and the StreamHandler is appended first, so a
+    file-handler-only filter emitted the unredacted record to stderr before it
+    ever ran.
+
+    Two payloads are scrubbed, because they travel by different routes:
+
+    * ``record.msg`` (with ``record.args`` dropped, as they have already been
+      merged in by ``getMessage()``).
+    * ``record.exc_text`` — the formatted traceback. This is the one that
+      matters most. Every ``logger.exception`` / ``exc_info=True`` call under
+      ``src/`` and ``ai/`` feeds it — dozens of sites across the tree, so no
+      list of them written here would stay true — and the largest single
+      contributor is not any route module but
+      ``src/api/handlers/error_handler.py``, the app-wide 500 handler that
+      every unhandled exception passes through. Any of them can surface a
+      provider-SDK traceback whose frame locals or request repr carry the API
+      key, and that text is rendered by ``Formatter.format`` *after* every
+      filter has run. Rendering it here and caching the redacted result in
+      ``exc_text`` (which ``Formatter.format`` reuses verbatim when set) is
+      what puts it inside the scrub. ``stack_info`` gets the same treatment
+      for the same reason.
+
+    The ``exc_text`` cache is written only when the scrub actually changed
+    something. That reuse cuts both ways: a non-empty ``exc_text`` freezes the
+    traceback for *every* handler on root, so writing it unconditionally would
+    take ``formatException`` away from handlers that render it differently —
+    caplog's today, and the JSON formatter in ``src/api/structured_log.py``
+    once this branch catches up with master.
+
+    Mutating the record makes it scrubbed for every handler that formats it
+    afterwards as well — the safe direction to be wrong in.
+    """
+
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:  # pragma: no cover - defensive; bad %-format args
+            message = None
+        if message is not None and _SECRET_RE.search(message):
+            record.msg = _SECRET_RE.sub("[REDACTED]", message)
+            record.args = ()
+        self._redact_traceback(record)
+        return True
+
+    @staticmethod
+    def _redact_traceback(record):
+        """Scrub (and, if needed, materialise) the record's traceback text."""
+        text = getattr(record, "exc_text", None)
+        if not text and record.exc_info:
+            try:
+                text = _EXC_FORMATTER.formatException(record.exc_info)
+            except Exception:  # pragma: no cover - defensive
+                text = None
+        if text:
+            redacted = _SECRET_RE.sub("[REDACTED]", text)
+            if redacted != text:
+                record.exc_text = redacted
+
+        # ``stack_info`` is appended verbatim by every formatter rather than
+        # cached, so an unconditional write costs nothing and hides nothing.
+        stack = getattr(record, "stack_info", None)
+        if stack:
+            record.stack_info = _SECRET_RE.sub("[REDACTED]", stack)
+
+
+def _log_level_setting():
+    """The configured LOG_LEVEL, or ``None`` when it is not configured.
+
+    Blank counts as unconfigured. ``LOG_LEVEL=`` in a ``.env`` reads as "no
+    opinion", and the test suite relies on that: ``.env`` ships
+    ``LOG_LEVEL=DEBUG``, and every ``load_project_env()`` in the tree
+    (``db.py``, ``rate_limiter.py``, ``ai/llm_client.py``) runs with
+    ``override=False``, which refills a *deleted* key but leaves an assigned
+    empty one alone. Blanking is therefore the only way ``tests/conftest.py``
+    can say "unset" and have it stick.
+    """
+    raw = os.environ.get(_LOG_LEVEL_ENV)
+    if raw is None or not str(raw).strip():
+        return None
+    return raw
+
+
+def _resolve_log_level(level_name=None):
+    """Return the level to apply, or ``None`` for "leave levels alone".
+
+    Distinguishes *unset* from *unrecognized*: an unset LOG_LEVEL means the
+    caller's levels are none of this module's business (see the root-level
+    note in :func:`_configure_logging`), while ``LOG_LEVEL=TRACE`` is a typo
+    in a variable whose entire purpose is "set this to see more" and used to
+    produce a silent WARNING-level run with no explanation at all.
+    """
+    raw = level_name if level_name is not None else _log_level_setting()
+    if raw is None:
+        return None
+    name = str(raw).strip().upper()
+    if name in _LOG_LEVELS:
+        return _LOG_LEVELS[name]
+    # ASCII only: this can be emitted to a cp1252 Windows console before any
+    # handler with a safer encoding is attached.
+    _log.warning(
+        "Unrecognized LOG_LEVEL %r; using WARNING. Accepted values: %s",
+        raw,
+        ", ".join(_LOG_LEVELS),
+    )
+    return logging.WARNING
+
+
+def _resolve_log_file_setting(log_file):
+    """Return the confined absolute path the LOG_FILE *setting* may write to.
+
+    Not to be confused with ``src.api.routes.logs._resolve_log_file``, which
+    shares this package and answers a different question with an incompatible
+    contract: that one takes a client-supplied filename to *read*, returns
+    ``(path, error)`` and never raises. This one takes an operator-supplied
+    setting to *write*, returns a ``Path`` and raises. The names were
+    interchangeable; the functions never were.
+
+    Raises ValueError when it escapes ``<repo>/logs/``. Unconfined, this path
+    reaches ``mkdir(parents=True)`` — which silently creates a directory tree
+    anywhere the process can write — and a rotating handler, which *renames*
+    ``X`` -> ``X.1`` -> ``X.2`` and so clobbers up to three neighbouring names
+    beside whatever it was pointed at. A relative value is interpreted inside
+    the log directory rather than against the working directory.
+    """
+    candidate = Path(log_file).expanduser()
+    if not candidate.is_absolute():
+        candidate = _LOG_DIR / candidate
+    resolved = candidate.resolve()
+    log_dir = _LOG_DIR.resolve()
+    if resolved == log_dir or log_dir not in resolved.parents:
+        raise ValueError("LOG_FILE must resolve to a path under %s" % log_dir)
+    return resolved
+
+
+def _configure_logging(level_name=None):
+    """Configure application logging from environment variables.
+
+    Called from create_app() rather than at import time: installing handlers
+    on the root logger is not something importing this module should do to
+    the host process.
+
+    Args:
+        level_name: an explicit level that overrides LOG_LEVEL. ``create_app``
+            passes ``"WARNING"`` for a TESTING config *when LOG_LEVEL is
+            actually set*, because ``.env`` reaches pytest through
+            ``src/api/db.py``'s import-time ``load_project_env()`` — so a
+            developer's ``LOG_LEVEL=DEBUG`` used to put the *whole test suite*
+            at DEBUG from the second create_app() call onward, paying
+            formatting and stderr writes for every ``logger.debug`` in the
+            engine. ``None`` means "restore the namespaces to inheriting",
+            which is what makes that pin reversible (see the level block at
+            the end of this function).
+
+    Supported env vars:
+      LOG_LEVEL   - Python log level name, e.g. DEBUG, INFO, WARNING. Applied
+                    to the ``src`` and ``ai`` logger namespaces only. Unset
+                    means "leave the levels inherited", which leaves Python's
+                    WARNING root default in place.
+      LOG_FILE    - Optional file path under ``<repo>/logs/`` to also write
+                    logs to (rotated per ``_LOG_FILE_MAX_BYTES`` /
+                    ``_LOG_FILE_BACKUP_COUNT``, so DEBUG runs cannot grow
+                    without bound).
+    """
+    level = _resolve_log_level(level_name)
+
+    handlers = [logging.StreamHandler()]
+    log_file = os.environ.get("LOG_FILE")
+    if log_file:
+        try:
+            path = _resolve_log_file_setting(log_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(
+                logging.handlers.RotatingFileHandler(
+                    path,
+                    encoding="utf-8",
+                    maxBytes=_LOG_FILE_MAX_BYTES,
+                    backupCount=_LOG_FILE_BACKUP_COUNT,
+                )
+            )
+        except Exception as exc:
+            # Fail safe to stream-only rather than refuse to boot over a
+            # logging destination.
+            _log.warning("Could not attach LOG_FILE handler %s: %s", log_file, exc)
+
+    # Replace only the handlers a previous call installed. basicConfig(
+    # force=True) did the idempotence job but removes *and closes* every root
+    # handler, including ones this process does not own: under pytest that is
+    # caplog's, so any test building an app lost its log capture from that
+    # point on and every later "nothing was logged" assertion passed
+    # vacuously. Tagging our own handlers keeps repeated create_app() calls
+    # from stacking duplicates without touching anyone else's.
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    redactor = _RedactSecretsFilter()
+    root = logging.getLogger()
+    for existing in list(root.handlers):
+        if getattr(existing, _HOV_HANDLER_ATTR, False):
+            root.removeHandler(existing)
+            existing.close()
+    for handler in handlers:
+        setattr(handler, _HOV_HANDLER_ATTR, True)
+        handler.setFormatter(formatter)
+        handler.addFilter(redactor)
+        root.addHandler(handler)
+
+    # The ROOT logger's level is deliberately never touched. Setting it was
+    # the same trespass the handler tagging above exists to avoid, one field
+    # over: `caplog.at_level(INFO)` around a create_app() had every INFO
+    # record dropped, which is the vacuous-pass failure again. Python's root
+    # default is already WARNING, so scoping the level to our own namespaces
+    # gives verbose app logs without dragging in third-party wire logging.
+    #
+    # NOTSET (not "skip the write") is what `level is None` means here, and
+    # that matters twice over. It restores inheritance, so a bare
+    # `caplog.set_level(INFO)` — which raises the *root* level only — reaches
+    # app records instead of being silently outranked by an explicit namespace
+    # level: the same vacuous-pass shape as above, one field over again. And it
+    # makes the TESTING pin reversible: without it, one
+    # `create_app(TestingConfig)` left `src`/`ai` at WARNING for the rest of
+    # the process, and a later non-TESTING create_app() took the
+    # "change nothing" path and never gave them back.
+    #
+    # The caplog half only holds while the suite actually reaches this branch,
+    # which is why `tests/conftest.py` blanks LOG_LEVEL rather than pinning it
+    # to WARNING: a pinned value sends every pytest run down the explicit-level
+    # path instead, and the claim above becomes untestable by the suite that
+    # depends on it.
+    resolved = logging.NOTSET if level is None else level
+    for namespace in _APP_LOG_NAMESPACES:
+        logging.getLogger(namespace).setLevel(resolved)
+
+
+def _testing_log_level(config_class):
+    """The level a TESTING config should pin, or ``None`` to leave levels alone.
+
+    The pin exists for exactly one scenario: ``.env`` reaches pytest (through
+    ``src/api/db.py``'s import-time ``load_project_env()``), so a developer's
+    ``LOG_LEVEL=DEBUG`` used to put the whole suite at DEBUG. When LOG_LEVEL is
+    *not* set there is nothing to neutralise, and pinning anyway would set an
+    explicit level on ``src``/``ai`` that outranks a plain
+    ``caplog.set_level(INFO)`` — which raises only the root level — and make
+    every app record invisible to it.
+    """
+    if not getattr(config_class, "TESTING", False):
+        return None
+    if _log_level_setting() is None:
+        return None
+    return "WARNING"
 
 
 def _apply_proxy_fix(app):
@@ -50,6 +397,645 @@ def _apply_proxy_fix(app):
     return True
 
 
+def _apply_runtime_config(app, config_class):
+    """Overlay the environment-backed settings Config reads at runtime.
+
+    ``config_class`` is not required to be a :class:`~src.api.config.Config`
+    subclass — several tests pass a bare stand-in class — so this is a
+    duck-typed call, not an assumption.
+    """
+    runtime_config = getattr(config_class, "runtime_config", None)
+    if callable(runtime_config):
+        app.config.update(runtime_config())
+
+
+def _init_socketio(app):
+    """Build the SocketIO server and bind it to the app.
+
+    Honors the dedicated SocketIO config keys (issue #436):
+    SOCKETIO_CORS_ALLOWED_ORIGINS falls back to the HTTP CORS origins, and
+    SOCKETIO_MESSAGE_QUEUE (e.g. a Redis URL) fans emits out across workers
+    when set — None keeps the single-process in-memory queue.
+
+    ``max_http_buffer_size`` is the body bound for this half of the app, and it
+    is separate from ``MAX_CONTENT_LENGTH`` because ``/socket.io/*`` never
+    reaches Flask: ``flask_socketio`` sets itself as ``app.wsgi_app`` and
+    answers those paths inside the middleware, so
+    :func:`_register_request_limits`'s ``before_request`` — and every other one
+    — is bypassed for them. Engine.IO's own default is 1,000,000 bytes, near
+    enough to the same number that pinning it here changes nothing today; it is
+    pinned so that a change to ``MAX_CONTENT_LENGTH`` is made in view of both
+    bounds rather than moving one and silently leaving the other where a
+    library author put it.
+    """
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins=app.config.get(
+            "SOCKETIO_CORS_ALLOWED_ORIGINS", app.config["CORS_ORIGINS"]
+        ),
+        message_queue=app.config.get("SOCKETIO_MESSAGE_QUEUE"),
+        max_http_buffer_size=(
+            app.config.get("MAX_CONTENT_LENGTH") or Config.MAX_CONTENT_LENGTH
+        ),
+        async_mode="threading",
+        logger=app.debug,
+        engineio_logger=app.debug,
+    )
+    app.socketio = socketio
+    return socketio
+
+
+class StartConfig(NamedTuple):
+    """The starting state ``CONFIG_FILE`` can override, as a typed record.
+
+    A record rather than a dict because the consumer is
+    :func:`_build_dev_universe`, whose own failures are swallowed by
+    :func:`_init_universe`'s ``except``: a missing key there surfaces only as a
+    universe-less service and one log line about "initialization failed". Field
+    access fails at the name instead.
+    """
+
+    start_x: int = 2
+    start_y: int = 2
+    starting_exp: int = 0
+    starting_map_name: str = "default"
+    starting_gold: int = 0
+    starting_equipment: Tuple[str, ...] = ()
+
+
+def _load_start_config() -> StartConfig:
+    """Read starting position/map/exp/gold/equipment from CONFIG_FILE.
+
+    Returns a :class:`StartConfig`; the defaults come back unchanged when
+    CONFIG_FILE is unset, missing, or unreadable.
+    """
+    defaults = StartConfig()
+    config_file = os.environ.get("CONFIG_FILE")
+    if not config_file:
+        return defaults
+
+    # Accumulated in locals rather than a dict keyed by string literals that
+    # have to match StartConfig's field names. Those literals were the last of
+    # the untyped indirection the NamedTuple was introduced to remove: a
+    # mistyped key built a StartConfig with a silent default and no error.
+    start_x, start_y = defaults.start_x, defaults.start_y
+    starting_exp = defaults.starting_exp
+    starting_map_name = defaults.starting_map_name
+    starting_gold = defaults.starting_gold
+    starting_equipment = defaults.starting_equipment
+
+    try:
+        # Remove quotes if present (from .env file)
+        config_file = config_file.strip("'\"")
+        config_path = Path(config_file)
+
+        # If relative path, make it relative to project root
+        if not config_path.is_absolute():
+            config_path = _REPO_ROOT / config_file
+
+        if config_path.exists():
+            parser = configparser.ConfigParser()
+            parser.read(config_path)
+
+            if parser.has_option("game", "startposition"):
+                pos_str = parser.get("game", "startposition")
+                # Strip parentheses and whitespace
+                pos_str = pos_str.strip("() ")
+                coords = [int(x.strip()) for x in pos_str.split(",")]
+                if len(coords) == 2:
+                    start_x, start_y = coords
+
+            if parser.has_option("game", "starting_exp"):
+                starting_exp = parser.getint("game", "starting_exp")
+
+            if parser.has_option("game", "startmap"):
+                starting_map_name = parser.get("game", "startmap")
+
+            if parser.has_option("game", "starting_gold"):
+                starting_gold = parser.getint("game", "starting_gold")
+
+            if parser.has_option("game", "starting_equipment"):
+                eq_str = parser.get("game", "starting_equipment")
+                starting_equipment = tuple(
+                    item.strip() for item in eq_str.split(",") if item.strip()
+                )
+    except Exception as exc:
+        # Whatever was parsed before the failure is kept; the rest falls back
+        # to the StartConfig defaults.
+        _log.warning("Could not load config: %s", exc)
+
+    return StartConfig(
+        start_x=start_x,
+        start_y=start_y,
+        starting_exp=starting_exp,
+        starting_map_name=starting_map_name,
+        starting_gold=starting_gold,
+        starting_equipment=starting_equipment,
+    )
+
+
+def _apply_starting_equipment(test_player, starting_equipment):
+    """Create, add and auto-equip each well-formed ``Item[:enchantment]`` spec.
+
+    A spec naming a class ``src.items`` does not define is skipped, and a
+    non-integer enchantment falls back to 0. Both are warnings rather than
+    errors: the specs come from ``starting_equipment`` in a hand-edited INI
+    (config_combat_testing.ini and friends), and refusing to build the whole
+    dev universe over one typo is worse than starting without that item. But
+    silence was worse still — a mistyped weapon name produced a weaponless
+    player with nothing said anywhere, in a config whose entire purpose is to
+    hand the player that weapon.
+    """
+    import src.items as items
+
+    for eq_spec in starting_equipment:
+        item_class_name, enchantment_level_str = (
+            eq_spec.split(":") if ":" in eq_spec else (eq_spec, "0")
+        )
+        item_class_name = item_class_name.strip()
+        try:
+            enchantment_level = int(enchantment_level_str.strip())
+        except ValueError:
+            _log.warning(
+                "starting_equipment %r: enchantment %r is not an integer; "
+                "using 0",
+                eq_spec,
+                enchantment_level_str.strip(),
+            )
+            enchantment_level = 0
+
+        # Get the item class from the items module
+        if not hasattr(items, item_class_name):
+            _log.warning(
+                "starting_equipment %r: src.items defines no %r; skipping",
+                eq_spec,
+                item_class_name,
+            )
+            continue
+        item_class = getattr(items, item_class_name)
+        # Create item with enchantment_level
+        item = item_class(enchantment_level=enchantment_level)
+        test_player.inventory.append(item)
+        # Auto-equip armor/weapons for convenience
+        if hasattr(item, "isequipped"):
+            item.isequipped = True
+            if "unequip" not in item.interactions:
+                item.interactions.append("unequip")
+            if "equip" in item.interactions:
+                item.interactions.remove("equip")
+            # Special handling for weapons
+            if hasattr(item, "maintype") and item.maintype == "Weapon":
+                test_player.eq_weapon = item
+
+    # Refresh stat bonuses after equipping all items
+    import src.functions as functions
+
+    functions.refresh_stat_bonuses(test_player)
+
+
+def _make_get_tile(universe):
+    """Build the ``get_tile(x, y)`` accessor the API layer expects.
+
+    Named factory rather than a closure defined inline in
+    :func:`_build_dev_universe`, because the only thing that ever calls the
+    result reaches it as ``universe.get_tile``, and a closure assigned onto an
+    instance from inside a builder is not greppable from the call site.
+
+    Lookups are confined to the player's *current* map: coordinates repeat
+    across maps, so searching all of them would silently return a tile from
+    somewhere the player is not.
+
+    ``Universe.get_tile`` (src/universe.py) declares the same accessor with the
+    same semantics — same current-map confinement, same ``None`` when there is
+    no player or no map — so the assignment in :func:`_build_dev_universe`
+    shadows a real method rather than supplying a missing one, and this factory
+    is redundant. Removing it is a separate change: its branch coverage is
+    pinned by ``TestUniverseBuildSuccessPath::test_get_tile_wrapper_branches``
+    in ``tests/test_app_factory_coverage.py``, which drives the closure through
+    a ``MagicMock`` universe and would pass vacuously against the real method.
+    """
+
+    def get_tile_from_maps(x, y):
+        """Retrieve a tile from the player's current map by coordinates."""
+        if not hasattr(universe, "player") or not universe.player:
+            return None
+
+        player_map = universe.player.map
+        if not player_map:
+            return None
+
+        if (x, y) in player_map:
+            return player_map[(x, y)]
+
+        return None
+
+    return get_tile_from_maps
+
+
+def _build_dev_universe(start: StartConfig):
+    """Build the real game universe around a throwaway "Jean" player.
+
+    Dev/test only — production loads its universe from saved game state. The
+    ``start`` record comes from :func:`_load_start_config`.
+    """
+    # Import Player to create a test player for universe initialization
+    from src.player import Player
+    import src.items as items
+
+    # Create a test player
+    test_player = Player()
+    test_player.name = "Jean"
+
+    # Create universe with test player
+    universe = universe_module.Universe(test_player)
+
+    # Build universe with real maps from JSON files
+    universe.build(test_player)
+
+    # Set universe reference on player
+    test_player.universe = universe
+
+    # Find the starting map by name
+    starting_map = next(
+        (
+            map_item
+            for map_item in universe.maps
+            if map_item.get("name") == start.starting_map_name
+        ),
+        universe.starting_map_default,
+    )
+
+    # Set player to starting map and position from config
+    test_player.map = starting_map
+    test_player.location_x = start.start_x
+    test_player.location_y = start.start_y
+
+    # Apply starting exp (for both leveling and skill learning)
+    if start.starting_exp > 0:
+        # Set experience for leveling system
+        test_player.exp = start.starting_exp
+        # Trigger level-ups if needed (without prompts since we're in API mode)
+        while test_player.exp >= test_player.exp_to_level:
+            test_player._level_up_api()
+        # Set experience for skill tree learning
+        for category in test_player.skilltree.subtypes.keys():
+            test_player.skill_exp[category] = start.starting_exp
+
+    # Apply starting gold
+    if start.starting_gold > 0:
+        test_player.inventory.append(items.Gold(start.starting_gold))
+
+    if start.starting_equipment:
+        _apply_starting_equipment(test_player, start.starting_equipment)
+
+    # Add get_tile method to universe for API layer
+    universe.get_tile = _make_get_tile(universe)
+    return universe
+
+
+def _init_universe(config_class, start: StartConfig):
+    """Return ``(universe, game_service)`` for this config class.
+
+    The dev/test branch is selected by class *name* rather than identity, to
+    avoid import-namespace issues where two copies of the config module would
+    make an ``is`` comparison fail.
+    """
+    is_dev_or_test = config_class.__name__ in ("DevelopmentConfig", "TestingConfig")
+    if not is_dev_or_test:
+        # Production mode - load universe from existing game state if available
+        return None, GameService()
+
+    try:
+        return _build_dev_universe(start), GameService()
+    except Exception:
+        # Fall back to a universe-less service if initialization fails.
+        # Logged with a traceback rather than printed: this is one of the two
+        # most consequential startup failures in the file, and print() +
+        # traceback.print_exc() bypass the LOG_FILE handler entirely.
+        _log.exception("Universe initialization failed")
+        return None, GameService()
+
+
+def _register_blueprints(app):
+    """Register every API blueprint under its URL prefix, plus error handlers."""
+    from src.api.routes import (
+        auth_bp,
+        world_bp,
+        inventory_bp,
+        combat_bp,
+        player_bp,
+        saves_bp,
+        logs_bp,
+        feedback_bp,
+        shop_bp,
+    )
+    from src.api.routes.npc_chat import npc_chat_bp
+
+    app.register_blueprint(auth_bp, url_prefix="/api")
+    app.register_blueprint(world_bp, url_prefix="/api")
+    app.register_blueprint(inventory_bp, url_prefix="/api")
+    app.register_blueprint(combat_bp, url_prefix="/api/combat")
+    app.register_blueprint(player_bp, url_prefix="/api")
+    app.register_blueprint(saves_bp, url_prefix="/api")
+    app.register_blueprint(npc_chat_bp, url_prefix="/api/npc/chat")
+    app.register_blueprint(logs_bp, url_prefix="/api/logs")
+    app.register_blueprint(feedback_bp, url_prefix="/api/feedback")
+    app.register_blueprint(shop_bp, url_prefix="/api/shop")
+
+    # Register error handlers from dedicated module
+    from src.api.handlers.error_handler import register_error_handlers
+
+    register_error_handlers(app)
+
+
+def _register_preflight(app):
+    """Install the global before_request CORS-preflight handler."""
+
+    @app.before_request
+    def handle_preflight():
+        """Handle CORS preflight OPTIONS requests globally."""
+        from flask import make_response, request
+
+        if request.method == "OPTIONS":
+            response = make_response()
+            # Only echo the Origin if it's in the configured allowlist —
+            # otherwise the preflight would undermine the CORS restriction
+            # (esp. ProductionConfig, which locks origins to nexusfidei.dev).
+            allowed = app.config.get("CORS_ORIGINS", [])
+            origin = request.headers.get("Origin")
+            if origin and origin in allowed:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                # Since #493 the credential is a cookie, so the browser only
+                # sends it cross-origin when the preflight allows credentials.
+                # Flask-CORS's after_request short-circuits once ACAO is set,
+                # so it will not add this for us — without it every request
+                # fails in the cross-origin dev setup client.js supports.
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = (
+                    "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+                )
+                response.headers["Access-Control-Allow-Headers"] = (
+                    "Content-Type, Authorization"
+                )
+                response.headers["Access-Control-Max-Age"] = "3600"
+            return response, 200
+
+
+def _register_request_limits(app):
+    """Refuse an oversized request body before any route sees it.
+
+    ``MAX_CONTENT_LENGTH`` (``src/api/config.py``) already stops Werkzeug
+    *reading* past the cap, so the body is never buffered — but on its own it
+    is not enough to make the refusal legible, and for a streamed body it is
+    not even audible. Both halves are handled here, because this is the only
+    place in the request path that runs before a route's ``except Exception``
+    can relabel the answer.
+
+    **Declared length.** ``werkzeug.wsgi.get_input_stream`` raises
+    ``RequestEntityTooLarge`` the moment a body with ``Content-Length`` over
+    the cap is read — which for every route in this API is inside a ``try:``
+    whose ``except Exception`` returns that route's own 500. Checking
+    ``request.content_length`` here moves the refusal in front of the view
+    function entirely.
+
+    **No declared length** (a chunked body). Werkzeug does *not* raise for this
+    case, contrary to what this docstring and ``handlers/error_handler.py``
+    used to claim. ``request.stream`` is a ``LimitedStream(..., is_max=True)``,
+    whose ``readall`` — the thing ``get_data`` calls — stops at the cap and
+    returns; only a *further* read reaches ``on_exhausted`` and raises. So
+    ``get_json`` on a 10 MiB chunked body returns the first megabyte, silently
+    truncated, and the route answers 400 "malformed" for a request that was
+    merely too big. Memory was bounded (that part always worked), but nothing
+    said "too large" and no 413 handler was ever reached. Verified against
+    Werkzeug 3.1.8.
+
+    So this hook reads such a body itself, ``cache=True`` so the route's own
+    ``get_json``/``form`` still sees it (``Request._get_stream_for_parsing``
+    replays the cached bytes), and refuses it if it reached the cap. Reaching
+    the cap *exactly* is treated as too large: a stream truncated at N bytes
+    and a stream that happened to end at N are indistinguishable — Werkzeug
+    says as much in ``LimitedStream.on_disconnect`` — and one wrongly-refused
+    1048576-byte body is the better error.
+
+    That read is gated on ``Transfer-Encoding: chunked`` and not merely on "no
+    Content-Length", which those two conditions are NOT the same: a request
+    with neither header has no body, and reading its stream is exactly how a
+    server whose length-less body reader waits for EOF (gunicorn's
+    ``EOFReader``, on the versions that use it) would block on a POST that had
+    already finished arriving. The narrower gate costs one exotic case — a
+    proxy that strips ``Transfer-Encoding`` and forwards no length — where the
+    answer stays 400-after-truncation rather than 413. Memory is still bounded
+    there, because ``MAX_CONTENT_LENGTH`` bounds it whether or not this hook
+    fires; only the legibility is lost.
+
+    The two endpoints that make any of this matter are the two an
+    unauthenticated client can reach: ``POST /api/logs/browser`` and
+    ``POST /api/auth/register``.
+
+    Not covered: ``/socket.io/*``. ``flask_socketio`` installs itself as
+    ``app.wsgi_app`` (``flask_socketio/__init__.py``, ``app.wsgi_app =
+    self.sockio_mw``) and answers those paths inside the middleware, so Flask's
+    request dispatch — and therefore every ``before_request`` including this
+    one — never runs for them. The Socket.IO frame bound is
+    ``max_http_buffer_size``, set beside ``MAX_CONTENT_LENGTH`` in
+    :func:`_init_socketio`.
+    """
+
+    def _too_large(limit):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "payload_too_large",
+                    "message": ("Request body is too large (limit %d bytes)." % limit),
+                }
+            ),
+            413,
+        )
+
+    @app.before_request
+    def reject_oversized_body():
+        from flask import request
+
+        limit = app.config.get("MAX_CONTENT_LENGTH")
+        if not limit:
+            return None
+
+        length = request.content_length
+        if length is not None:
+            return _too_large(limit) if length > limit else None
+
+        # No ``Content-Length``. Only a *chunked* request is a body here; a
+        # request with neither header has none at all, and reading one anyway
+        # is how a WSGI server whose length-less reader waits for EOF gets to
+        # block on a POST that was already complete. Tested for with Werkzeug's
+        # own parser, since this is the same condition that made
+        # ``request.content_length`` None a few lines up.
+        #
+        # AND-ed with the method, because the chunked test alone put a body
+        # read on EVERY path. ``GET /health`` with ``Transfer-Encoding:
+        # chunked`` and a body that arrives slowly held the single gunicorn
+        # worker for as long as the client cared to dawdle — an unauthenticated
+        # denial of service on the one route a monitor polls. As a conjunction
+        # it cannot reintroduce the hang described above: that needs a
+        # length-less POST *without* the chunked header, and this branch still
+        # requires the header.
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return None
+        if "chunked" not in parse_set_header(
+            request.headers.get("Transfer-Encoding") or ""
+        ):
+            return None
+        # Werkzeug only reads a length-less body when the server terminates the
+        # stream; otherwise ``request.stream`` is an empty BytesIO and there is
+        # nothing to bound. (``get_input_stream``'s "safe fallback".)
+        if "wsgi.input_terminated" not in request.environ:
+            return None
+        try:
+            body = request.get_data(cache=True)
+        except ClientDisconnected:
+            # The client hung up mid-chunk. Werkzeug raises this out of the
+            # read, and out of ``before_request`` it has no handler: it lands
+            # in ``generic_error`` as a 500 plus a ``logger.exception``
+            # traceback, on any path, from an unauthenticated request, against
+            # a rotating LOG_FILE — so anyone who can open a socket can fill
+            # the log with stack traces by disconnecting mid-body. There is
+            # nobody left to answer, so answer nothing and let normal dispatch
+            # take it: whatever the route does with a body that never arrived,
+            # it does without a traceback and without this hook's opinion.
+            return None
+        if len(body) >= limit:
+            return _too_large(limit)
+        return None
+
+
+def session_gauge_visible(config) -> bool:
+    """Whether ``GET /health`` publishes the live session count.
+
+    The gauge is operational telemetry on a route with no auth at all: on a
+    public deployment it is an occupancy oracle for a single-player game —
+    anyone can poll "is the developer online?" and watch the count move. It is
+    genuinely useful locally, so it is kept for the non-production configs and
+    dropped for production. A monitor that needs the number in production
+    should read it from an authenticated route rather than reopening this one.
+
+    Named and exported rather than left inline because it has a SECOND caller
+    with no business guessing: ``tools/harness/scenarios/health.py`` asserts
+    the shape of this payload, and used to require ``sessions``
+    unconditionally. That is only right for the config the harness happens to
+    build; pointed at a production app it reported a phantom missing field.
+    Now both the route and the harness ask the same function.
+    """
+    return bool(config.get("TESTING") or config.get("DEBUG"))
+
+
+def _register_meta_routes(app):
+    """Health and API info — the two unauthenticated public endpoints."""
+
+    @app.route("/health", methods=["GET"])
+    def health():
+        payload = {"status": "healthy"}
+        if session_gauge_visible(app.config):
+            payload["sessions"] = app.session_manager.get_active_session_count()
+        return jsonify(payload)
+
+    # API info endpoint.
+    #
+    # This is also the runtime capability-discovery endpoint (#436/#496): the
+    # frontend's CapabilitiesProvider fetches it once at startup and reads
+    # `features.combat_socket_streaming` to decide whether combat animation
+    # is driven by the Socket.IO beat stream or by the HTTP-only fallback.
+    # A dedicated `/api/capabilities` route was considered and rejected for
+    # now — it would grow the public API surface for a single boolean, with
+    # no other capability planned. Revisit if `features` grows past a couple
+    # of keys, or gains metadata/versioning needs that shouldn't share a
+    # payload with the general info fields above it.
+    @app.route("/api/info", methods=["GET"])
+    def api_info():
+        return jsonify(
+            {
+                "version": "1.0.0",
+                "name": "Heart of Virtue API",
+                "phase": "Phase 1",
+                "description": "Flask-based REST API for Heart of Virtue game engine",
+                "features": {
+                    "combat_socket_streaming": bool(
+                        app.config.get("COMBAT_SOCKET_STREAMING", False)
+                    )
+                },
+            }
+        )
+
+
+def _register_test_routes(app):
+    """Test-only endpoints — these bypass database auth entirely.
+
+    Only called when TESTING=True, so they are never reachable in production.
+    """
+    # Combat-testing / debug endpoints (replaces TheAdjutant's terminal menu).
+    from src.api.routes.debug import debug_bp
+
+    app.register_blueprint(debug_bp, url_prefix="/api/debug")
+
+    @app.route("/api/debug/routes", methods=["GET"])
+    def list_routes():
+        """Dump the URL map. Registered here rather than always-on with an
+        in-body 404, so that "test-only endpoint" has exactly one mechanism in
+        this file instead of two. Unregistered, it 404s through the normal
+        error handler with the same ``success: False`` shape.
+        """
+        routes = []
+        for rule in app.url_map.iter_rules():
+            routes.append(
+                {
+                    "endpoint": rule.endpoint,
+                    "methods": sorted(list(rule.methods - {"HEAD", "OPTIONS"})),
+                    "rule": str(rule),
+                }
+            )
+        return jsonify({"routes": sorted(routes, key=lambda x: x["rule"])})
+
+    @app.route("/api/test/session", methods=["POST"])
+    def test_create_session():
+        from flask import make_response, request as _req
+        from src.api.session_cookie import set_session_cookie
+
+        # silent=True: harnesses POST this with no body and no JSON content
+        # type, which would otherwise raise 415 before the route ran.
+        username = (_req.get_json(silent=True) or {}).get(
+            "username", "inquisitor_test"
+        )
+        session_id, _ = app.session_manager.create_session(username)
+        # Set the same HttpOnly cookie a real login sets (issue #493), so a
+        # browser-driven QA run authenticates exactly the way a player does.
+        # The id stays in the body for the in-process harnesses, which send it
+        # back as a Bearer header instead of keeping a cookie jar.
+        return set_session_cookie(
+            make_response(
+                jsonify({"session_id": session_id, "username": username}), 201
+            ),
+            session_id,
+        )
+
+    @app.route("/api/test/heal", methods=["POST"])
+    def test_heal_player():
+        """Restore player to full HP and fatigue. Test mode only — never active in production."""
+        from src.api.middleware.auth import get_session_and_player
+
+        session_manager, session, player, error = get_session_and_player()
+        if error:
+            return error
+        try:
+            player.hp = player.maxhp
+            player.fatigue = player.maxfatigue
+            return (
+                jsonify({"success": True, "hp": player.hp, "maxhp": player.maxhp}),
+                200,
+            )
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+
 def create_app(config_class=None):
     """Create and configure Flask application.
 
@@ -57,14 +1043,23 @@ def create_app(config_class=None):
         config_class: Configuration class to use (defaults to DevelopmentConfig)
 
     Returns:
-        Configured Flask app instance
+        ``(app, socketio)`` — every caller unpacks both.
     """
     if config_class is None:
         config_class = DevelopmentConfig
 
+    # Logging is configured *after* the config class is known so a TESTING
+    # config can pin the level — see _configure_logging's docstring.
+    _configure_logging(_testing_log_level(config_class))
+
     app = Flask(__name__)
     app.config.from_object(config_class)
-    app.config["COMBAT_SOCKET_STREAMING"] = combat_socket_streaming_enabled()
+    # Every env-backed *app.config value* is read here and only here, because
+    # runtime_config() is the one place that knows which of them a subclass has
+    # already pinned. (_apply_proxy_fix below reads TRUSTED_PROXY_COUNT itself:
+    # it wires WSGI middleware rather than setting a config value, and it
+    # consults app.config first so a config class can still override it.)
+    _apply_runtime_config(app, config_class)
 
     # Honor a reverse proxy's X-Forwarded-* headers so request.remote_addr (and
     # thus the login rate-limit key) reflects the real client. Off by default —
@@ -73,11 +1068,6 @@ def create_app(config_class=None):
 
     # One canonical http.request log line per request (structured_log.py)
     init_request_logging(app)
-
-    # Content-Security-Policy response header (issue #492). Report-only during
-    # the rollout — see src/api/security_headers.py for why the policy is a
-    # header rather than a <meta> tag, and which other servers also emit it.
-    register_security_headers(app)
 
     @app.after_request
     def _slide_session_cookie(response):
@@ -110,378 +1100,32 @@ def create_app(config_class=None):
         supports_credentials=True,
     )
 
-    # Initialize SocketIO for real-time updates. Honor the dedicated SocketIO
-    # config keys (issue #436): SOCKETIO_CORS_ALLOWED_ORIGINS falls back to the
-    # HTTP CORS origins, and SOCKETIO_MESSAGE_QUEUE (e.g. a Redis URL) fans emits
-    # out across workers when set — None keeps the single-process in-memory queue.
-    socketio = SocketIO(
-        app,
-        cors_allowed_origins=app.config.get(
-            "SOCKETIO_CORS_ALLOWED_ORIGINS", app.config["CORS_ORIGINS"]
-        ),
-        message_queue=app.config.get("SOCKETIO_MESSAGE_QUEUE"),
-        async_mode="threading",
-        logger=app.debug,
-        engineio_logger=app.debug,
-    )
-    app.socketio = socketio
+    socketio = _init_socketio(app)
 
-    # Load starting position and map from config file
-    start_x, start_y = 2, 2  # defaults
-    starting_exp = 0
-    starting_map_name = "default"
-    starting_gold = 0
-    starting_equipment = []
-    config_file = os.environ.get("CONFIG_FILE")
+    # Read unconditionally, as before: only the dev/test universe consumes the
+    # values, but a malformed CONFIG_FILE must be reported whatever config is
+    # in use.
+    universe, game_service = _init_universe(config_class, _load_start_config())
 
-    if config_file:
-        try:
-            # Remove quotes if present (from .env file)
-            config_file = config_file.strip("'\"")
-            config_path = Path(config_file)
-
-            # If relative path, make it relative to project root
-            if not config_path.is_absolute():
-                config_path = (
-                    Path(__file__).resolve().parent.parent.parent / config_file
-                )
-
-            if config_path.exists():
-                parser = configparser.ConfigParser()
-                parser.read(config_path)
-
-                if parser.has_option("game", "startposition"):
-                    pos_str = parser.get("game", "startposition")
-                    # Strip parentheses and whitespace
-                    pos_str = pos_str.strip("() ")
-                    coords = [int(x.strip()) for x in pos_str.split(",")]
-                    if len(coords) == 2:
-                        start_x, start_y = coords
-
-                if parser.has_option("game", "starting_exp"):
-                    starting_exp = parser.getint("game", "starting_exp")
-
-                if parser.has_option("game", "startmap"):
-                    starting_map_name = parser.get("game", "startmap")
-
-                if parser.has_option("game", "starting_gold"):
-                    starting_gold = parser.getint("game", "starting_gold")
-
-                if parser.has_option("game", "starting_equipment"):
-                    eq_str = parser.get("game", "starting_equipment")
-                    starting_equipment = [
-                        item.strip() for item in eq_str.split(",") if item.strip()
-                    ]
-        except Exception as e:
-            print(f"Warning: Could not load config: {e}")
-
-    # Initialize game universe and service first
-    # For testing and development, load real game universe
-    # Check by class name to avoid import namespace issues
-    config_class_name = config_class.__name__
-    is_dev_or_test = config_class_name in (
-        "DevelopmentConfig",
-        "TestingConfig",
-    )
-
-    universe = None
-    game_service = None
-
-    if is_dev_or_test:
-        try:
-            # Import Player to create a test player for universe initialization
-            from src.player import Player
-            import src.items as items
-
-            # Create a test player
-            test_player = Player()
-            test_player.name = "Jean"
-
-            # Create universe with test player
-            universe = universe_module.Universe(test_player)
-
-            # Build universe with real maps from JSON files
-            universe.build(test_player)
-
-            # Set universe reference on player
-            test_player.universe = universe
-
-            # Find the starting map by name
-            starting_map = next(
-                (
-                    map_item
-                    for map_item in universe.maps
-                    if map_item.get("name") == starting_map_name
-                ),
-                universe.starting_map_default,
-            )
-
-            # Set player to starting map and position from config
-            test_player.map = starting_map
-            test_player.location_x, test_player.location_y = start_x, start_y
-
-            # Apply starting exp (for both leveling and skill learning)
-            if starting_exp > 0:
-                # Set experience for leveling system
-                test_player.exp = starting_exp
-                # Trigger level-ups if needed (without prompts since we're in API mode)
-                while test_player.exp >= test_player.exp_to_level:
-                    test_player._level_up_api()
-                # Set experience for skill tree learning
-                for category in test_player.skilltree.subtypes.keys():
-                    test_player.skill_exp[category] = starting_exp
-
-            # Apply starting gold
-            if starting_gold > 0:
-                test_player.inventory.append(items.Gold(starting_gold))
-
-            # Apply starting equipment
-            if starting_equipment:
-                for eq_spec in starting_equipment:
-                    item_class_name, enchantment_level_str = (
-                        eq_spec.split(":") if ":" in eq_spec else (eq_spec, "0")
-                    )
-                    item_class_name = item_class_name.strip()
-                    try:
-                        enchantment_level = int(enchantment_level_str.strip())
-                    except ValueError:
-                        enchantment_level = 0
-
-                    # Get the item class from the items module
-                    if hasattr(items, item_class_name):
-                        item_class = getattr(items, item_class_name)
-                        # Create item with enchantment_level
-                        item = item_class(enchantment_level=enchantment_level)
-                        test_player.inventory.append(item)
-                        # Auto-equip armor/weapons for convenience
-                        if hasattr(item, "isequipped"):
-                            item.isequipped = True
-                            if "unequip" not in item.interactions:
-                                item.interactions.append("unequip")
-                            if "equip" in item.interactions:
-                                item.interactions.remove("equip")
-                            # Special handling for weapons
-                            if hasattr(item, "maintype") and item.maintype == "Weapon":
-                                test_player.eq_weapon = item
-
-                # Refresh stat bonuses after equipping all items
-                import src.functions as functions
-
-                functions.refresh_stat_bonuses(test_player)
-
-            # Create a get_tile wrapper for accessing tiles from the player's current map only
-            def get_tile_from_maps(x, y):
-                """Retrieve a tile from the player's current map by coordinates."""
-                if not hasattr(universe, "player") or not universe.player:
-                    return None
-
-                player_map = universe.player.map
-                if not player_map:
-                    return None
-
-                # Only search in the player's current map
-                if (x, y) in player_map:
-                    return player_map[(x, y)]
-
-                return None
-
-            # Add get_tile method to universe for API layer
-            universe.get_tile = get_tile_from_maps
-
-            game_service = GameService()
-        except Exception as e:
-            # Fallback if universe initialization fails
-            import traceback
-
-            print(f"Warning: Universe initialization failed: {e}")
-            traceback.print_exc()
-            game_service = GameService()
-    else:
-        # Production mode - load universe from existing game state if available
-        universe = None
-        game_service = GameService()
-
-    # Initialize session manager (now with universe reference if available)
-    session_manager = SessionManager(universe=universe)
-
-    # Store in app context
-    app.session_manager = session_manager
+    # Store in app context (`app.socketio` is set by _init_socketio).
+    app.session_manager = SessionManager(universe=universe)
     app.game_service = game_service
-    app.socketio = socketio
 
-    # Register blueprints
-    from src.api.routes import (
-        auth_bp,
-        world_bp,
-        inventory_bp,
-        combat_bp,
-        player_bp,
-        saves_bp,
-        logs_bp,
-        feedback_bp,
-        shop_bp,
-    )
-    from src.api.routes.npc_chat import npc_chat_bp
-
-    app.register_blueprint(auth_bp, url_prefix="/api")
-    app.register_blueprint(world_bp, url_prefix="/api")
-    app.register_blueprint(inventory_bp, url_prefix="/api")
-    app.register_blueprint(combat_bp, url_prefix="/api/combat")
-    app.register_blueprint(player_bp, url_prefix="/api")
-    app.register_blueprint(saves_bp, url_prefix="/api")
-    app.register_blueprint(npc_chat_bp, url_prefix="/api/npc/chat")
-    app.register_blueprint(logs_bp, url_prefix="/api/logs")
-    app.register_blueprint(feedback_bp, url_prefix="/api/feedback")
-    app.register_blueprint(shop_bp, url_prefix="/api/shop")
-
-    # Register error handlers from dedicated module
-    from src.api.handlers.error_handler import register_error_handlers
-
-    register_error_handlers(app)
+    _register_blueprints(app)
 
     # Register WebSocket handlers
     from src.api.sockets import register_socket_handlers
 
     register_socket_handlers(socketio)
 
-    # Global before_request handler for CORS preflight
-    @app.before_request
-    def handle_preflight():
-        """Handle CORS preflight OPTIONS requests globally."""
-        from flask import make_response, request
-
-        if request.method == "OPTIONS":
-            response = make_response()
-            # Only echo the Origin if it's in the configured allowlist —
-            # otherwise the preflight would undermine the CORS restriction
-            # (esp. ProductionConfig, which locks origins to nexusfidei.dev).
-            allowed = app.config.get("CORS_ORIGINS", [])
-            origin = request.headers.get("Origin")
-            if origin and origin in allowed:
-                response.headers["Access-Control-Allow-Origin"] = origin
-                # Since #493 the credential is a cookie, so the browser only
-                # sends it cross-origin when the preflight allows credentials.
-                # Flask-CORS's after_request short-circuits once ACAO is set,
-                # so it will not add this for us — without it every request
-                # fails in the cross-origin dev setup client.js supports.
-                response.headers["Access-Control-Allow-Credentials"] = "true"
-                response.headers["Access-Control-Allow-Methods"] = (
-                    "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-                )
-                response.headers["Access-Control-Allow-Headers"] = (
-                    "Content-Type, Authorization"
-                )
-                response.headers["Access-Control-Max-Age"] = "3600"
-            return response, 200
-
-    # Health check endpoint
-    @app.route("/health", methods=["GET"])
-    def health():
-        from flask import jsonify
-
-        return jsonify(
-            {
-                "status": "healthy",
-                "sessions": app.session_manager.get_active_session_count(),
-            }
-        )
-
-    # Test-only session endpoint — bypasses database auth entirely.
-    # Only registered when TESTING=True so it is never reachable in production.
+    # Registered before the preflight hook so nothing runs ahead of the body
+    # bound: before_request callbacks fire in registration order, and this one
+    # is a resource guard.
+    _register_request_limits(app)
+    _register_preflight(app)
+    register_security_headers(app)
+    _register_meta_routes(app)
     if app.config.get("TESTING"):
-
-        # Combat-testing / debug endpoints (replaces TheAdjutant's terminal menu).
-        from src.api.routes.debug import debug_bp
-
-        app.register_blueprint(debug_bp, url_prefix="/api/debug")
-
-        @app.route("/api/test/session", methods=["POST"])
-        def test_create_session():
-            from flask import jsonify, make_response, request as _req
-            from src.api.session_cookie import set_session_cookie
-
-            # silent=True: harnesses POST this with no body and no JSON content
-            # type, which would otherwise raise 415 before the route ran.
-            username = (_req.get_json(silent=True) or {}).get(
-                "username", "inquisitor_test"
-            )
-            session_id, _ = app.session_manager.create_session(username)
-            # Set the same HttpOnly cookie a real login sets (issue #493), so a
-            # browser-driven QA run authenticates exactly the way a player does.
-            # The id stays in the body for the in-process harnesses, which send
-            # it back as a Bearer header instead of keeping a cookie jar.
-            return set_session_cookie(
-                make_response(
-                    jsonify({"session_id": session_id, "username": username}), 201
-                ),
-                session_id,
-            )
-
-        @app.route("/api/test/heal", methods=["POST"])
-        def test_heal_player():
-            """Restore player to full HP and fatigue. Test mode only — never active in production."""
-            from flask import jsonify
-            from src.api.middleware.auth import get_session_and_player
-
-            session_manager, session, player, error = get_session_and_player()
-            if error:
-                return error
-            try:
-                player.hp = player.maxhp
-                player.fatigue = player.maxfatigue
-                return (
-                    jsonify({"success": True, "hp": player.hp, "maxhp": player.maxhp}),
-                    200,
-                )
-            except Exception as exc:
-                return jsonify({"success": False, "error": str(exc)}), 500
-
-    # API info endpoint.
-    #
-    # This is also the runtime capability-discovery endpoint (#436/#496): the
-    # frontend's CapabilitiesProvider fetches it once at startup and reads
-    # `features.combat_socket_streaming` to decide whether combat animation
-    # is driven by the Socket.IO beat stream or by the HTTP-only fallback.
-    # A dedicated `/api/capabilities` route was considered and rejected for
-    # now — it would grow the public API surface for a single boolean, with
-    # no other capability planned. Revisit if `features` grows past a couple
-    # of keys, or gains metadata/versioning needs that shouldn't share a
-    # payload with the general info fields above it.
-    @app.route("/api/info", methods=["GET"])
-    def api_info():
-        from flask import jsonify
-
-        return jsonify(
-            {
-                "version": "1.0.0",
-                "name": "Heart of Virtue API",
-                "phase": "Phase 1",
-                "description": "Flask-based REST API for Heart of Virtue game engine",
-                "features": {
-                    "combat_socket_streaming": bool(
-                        app.config.get("COMBAT_SOCKET_STREAMING", False)
-                    )
-                },
-            }
-        )
-
-    # Debug: List all routes (test-only — avoids leaking the URL map in prod)
-    @app.route("/api/debug/routes", methods=["GET"])
-    def list_routes():
-        from flask import jsonify
-
-        if not app.config.get("TESTING"):
-            return jsonify({"success": False, "error": "Not found"}), 404
-
-        routes = []
-        for rule in app.url_map.iter_rules():
-            routes.append(
-                {
-                    "endpoint": rule.endpoint,
-                    "methods": sorted(list(rule.methods - {"HEAD", "OPTIONS"})),
-                    "rule": str(rule),
-                }
-            )
-        return jsonify({"routes": sorted(routes, key=lambda x: x["rule"])})
+        _register_test_routes(app)
 
     return app, socketio

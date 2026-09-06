@@ -2,15 +2,23 @@
 
 import logging
 
-from flask import Blueprint, request, jsonify, make_response
+from flask import Blueprint, current_app, jsonify, make_response, request
 from src.api.middleware.auth import resolve_session
 from src.api.session_cookie import (
     clear_session_cookie,
     session_id_from_cookie,
     set_session_cookie,
 )
-from src.api.rate_limiter import RateLimiter
-from src.api.services.auth_service import auth_service
+from src.api.rate_limiter import (
+    RateLimiter,
+    client_ip,
+    limiter_from_env,
+    rate_limited_response,
+)
+from src.api.services.auth_service import (
+    RegistrationValidationError,
+    auth_service,
+)
 from functools import wraps
 import asyncio
 
@@ -20,13 +28,23 @@ logger = logging.getLogger(__name__)
 
 # Simple in-memory login throttle: 10 failed attempts per username+IP per 15
 # minutes. Per-worker (not shared across Gunicorn workers) — see GitHub issue
-# #284 and `src.api.rate_limiter` for the bounded-store rationale, shared with
-# feedback.py's submission throttle. Only failed (invalid-credential) attempts
-# count, so retries after a typo or a flaky DB call don't lock out a
-# legitimate player.
+# #284 and `src.api.rate_limiter` for the bounded-store rationale, the
+# `None`-tolerant `RateLimiter.check` and the shared 429 body, all of which
+# feedback.py's submission throttle and npc_chat.py's chat throttles use
+# too. Only failed (invalid-credential) attempts count, so retries after a
+# typo or a flaky DB call don't lock out a legitimate player.
+# The threshold is tunable via LOGIN_RATE_LIMIT_PER_15_MIN, but this throttle
+# cannot be switched off: `allow_disable=False` makes a configured 0 warn and
+# fall back to the default, exactly like a garbled value (see
+# `limiter_from_env`). Both login limiters below are therefore never None.
 _LOGIN_RATE_LIMIT = 10
 _LOGIN_RATE_WINDOW = 900  # 15 minutes
-_login_limiter = RateLimiter(limit=_LOGIN_RATE_LIMIT, window_seconds=_LOGIN_RATE_WINDOW)
+_login_limiter = limiter_from_env(
+    "LOGIN_RATE_LIMIT_PER_15_MIN",
+    _LOGIN_RATE_LIMIT,
+    _LOGIN_RATE_WINDOW,
+    allow_disable=False,
+)
 
 # Second, independent throttle keyed on IP alone. The username+IP limiter above
 # resets its budget every time the username changes, so a single IP can spray
@@ -36,51 +54,109 @@ _login_limiter = RateLimiter(limit=_LOGIN_RATE_LIMIT, window_seconds=_LOGIN_RATE
 # fail in the window, so it's defense-in-depth against spray, not a per-account
 # gate. Same per-worker caveat as above (issue #284): the effective limit is
 # _IP_RATE_LIMIT * worker_count, so treat it as raising the cost of spray, not
-# an airtight cap. It keys on request.remote_addr, which is the direct client
-# IP by default (no proxy/load balancer in this deployment) and automatically
-# becomes the real client IP if the opt-in ProxyFix is ever configured (see
-# _apply_proxy_fix / TRUSTED_PROXY_COUNT and tests/test_proxy_fix.py).
+# an airtight cap. Tunable via LOGIN_IP_RATE_LIMIT_PER_15_MIN and, like the
+# tier above, not disableable by configuration. See
+# `src.api.rate_limiter.client_ip` for how a client is keyed.
 _IP_RATE_LIMIT = 60
 _IP_RATE_WINDOW = 900  # 15 minutes
-_ip_limiter = RateLimiter(limit=_IP_RATE_LIMIT, window_seconds=_IP_RATE_WINDOW)
+_ip_limiter = limiter_from_env(
+    "LOGIN_IP_RATE_LIMIT_PER_15_MIN",
+    _IP_RATE_LIMIT,
+    _IP_RATE_WINDOW,
+    allow_disable=False,
+)
 
 
-def _client_ip() -> str:
-    """The client's IP, collapsed to a /64 prefix for IPv6.
+# Third login tier, and the one that counts EVERY attempt rather than every
+# failure.
+#
+# Both tiers above are spent by `_record_failed_login`, which runs only under
+# `if not user`. So a caller holding ONE valid credential never touches either
+# budget, and can replay that login without limit -- each request costing a
+# full Argon2id verify at the configured memory cost, on a synchronous worker.
+# The two failure tiers are the right shape for credential guessing and the
+# wrong shape for this: guessing is bounded by wrong answers, and this attack
+# never gives one.
+#
+# Keyed on the source alone, because the account is not the thing being abused
+# -- the hasher is. Set far above any human login rate (a shared NAT'd office
+# does not log in 120 times in fifteen minutes) so it is a cost ceiling rather
+# than a per-account gate, and NOT disableable, for the same reason as its two
+# siblings: its absence is an unauthenticated way to spend the server's memory
+# budget.
+_LOGIN_ATTEMPT_RATE_LIMIT = 120
+_LOGIN_ATTEMPT_RATE_WINDOW = 900  # 15 minutes
+_login_attempt_limiter = limiter_from_env(
+    "LOGIN_ATTEMPT_RATE_LIMIT_PER_15_MIN",
+    _LOGIN_ATTEMPT_RATE_LIMIT,
+    _LOGIN_ATTEMPT_RATE_WINDOW,
+    allow_disable=False,
+)
 
-    Full IPv6 addresses (/128) are cheap for an attacker to rotate within their
-    allocation, which would defeat an IP-keyed throttle; a typical end-site is a
-    /64, so keying on that prefix throttles the whole allocation. IPv4 and
-    unparseable values are used verbatim. Returns ``"unknown"`` when called
-    outside a request context (e.g. direct helper calls in tests).
+
+def _is_login_attempt_rate_limited() -> bool:
+    """True if this source has spent its total login-attempt budget.
+
+    ``RateLimiter.check`` counts the call unless already limited, which is what
+    makes this tier count successes too -- the distinction from
+    :func:`_is_login_rate_limited`, which only ever sees what
+    ``_record_failed_login`` has spent.
     """
-    try:
-        ip = request.remote_addr or "unknown"
-    except RuntimeError:  # working outside of request context
-        return "unknown"
-    if ":" in ip:  # IPv6
-        try:
-            import ipaddress
+    return RateLimiter.check(_login_attempt_limiter, client_ip())
 
-            network = ipaddress.ip_network(f"{ip}/64", strict=False)
-            return str(network.network_address)
-        except ValueError:
-            return ip
-    return ip
+
+# Third tier, on the *other* credential-path endpoint. `/auth/register` had no
+# throttle at all, which mattered twice over: account creation is unbounded
+# work against the DB (bcrypt per attempt), and a fresh account is a fresh
+# session — which is how feedback.py's per-session cap on real GitHub issue
+# creation used to be walked past. Keyed on the source alone, since there is no
+# account to key on yet. The ceiling is deliberately far above any human
+# (nobody signs up thirty times an hour) and far below an account farm; unlike
+# the two login tiers this one *is* disableable, because its absence is spam
+# and cost rather than an open door to credential guessing.
+_REGISTER_RATE_LIMIT = 30
+_REGISTER_RATE_WINDOW = 3600  # 1 hour
+_register_limiter = limiter_from_env(
+    "REGISTER_RATE_LIMIT_PER_HOUR",
+    _REGISTER_RATE_LIMIT,
+    _REGISTER_RATE_WINDOW,
+)
+
+
+def _is_register_rate_limited() -> bool:
+    """True if this source has spent its account-creation budget.
+
+    Counts the call unless already limited. ``RateLimiter.check`` carries
+    the ``None`` case — the documented ``REGISTER_RATE_LIMIT_PER_HOUR=0``
+    disable — so it is not re-derived here.
+    """
+    return RateLimiter.check(_register_limiter, client_ip())
 
 
 def _login_rate_limit_key(username: str) -> str:
-    return f"{(username or '').strip().lower()}:{request.remote_addr or 'unknown'}"
+    """Bucket a login attempt by account *and* source.
+
+    Uses the same ``client_ip()`` collapsing as the IP-only tier: keying this
+    half on the raw ``remote_addr`` would let an IPv6 attacker mint a fresh
+    username+IP budget per address in their /64, which is precisely what the
+    collapsing exists to prevent.
+    """
+    return f"{(username or '').strip().lower()}:{client_ip()}"
+
+
+# Neither limiter is ever None (`allow_disable=False` above), so the helpers
+# below dereference them directly. A None guard here would be dead code that
+# reads as though switching a login throttle off were a supported state.
 
 
 def _is_login_rate_limited(key: str) -> bool:
     """True if either the username+IP or the IP-only throttle is tripped."""
-    return _login_limiter.is_limited(key) or _ip_limiter.is_limited(_client_ip())
+    return _login_limiter.is_limited(key) or _ip_limiter.is_limited(client_ip())
 
 
 def _record_failed_login(key: str) -> None:
     _login_limiter.record(key)
-    _ip_limiter.record(_client_ip())
+    _ip_limiter.record(client_ip())
 
 
 def _clear_login_attempts(key: str) -> None:
@@ -90,13 +166,32 @@ def _clear_login_attempts(key: str) -> None:
     _login_limiter.clear(key)
 
 
-# Substrings that mark an internal config/infrastructure error whose text must
-# never reach the client (avoids leaking env-var names, connection URLs, etc).
+# Substrings that suggest an internal config/infrastructure fault. This is a
+# HEURISTIC, and it is no longer what stands between an exception message and
+# the client.
+#
+# It used to be: `register` echoed any ValueError whose text matched none of
+# these five markers, so `could not connect to
+# postgres://svc:<password>@db.internal:5432/hov` -- which matches none of them
+# -- went back to an anonymous caller verbatim. A deny-list over free-form
+# exception text cannot be complete, and a test built from the same five
+# markers cannot notice that it is not. `register` now allow-lists
+# `RegistrationValidationError` instead, and every other failure is masked.
+#
+# What remains is a status-code hint on the login path, where BOTH branches
+# return a generic message and the only thing this chooses is 503 ("infra
+# trouble, retry") versus 500 ("we broke"). A false negative there costs a
+# status code, not a disclosure.
 _CONFIG_LEAK_MARKERS = ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
 
 
 def _is_config_leak(msg: str) -> bool:
-    """True if an error message would expose internal config/infra details."""
+    """True if ``msg`` contains one of :data:`_CONFIG_LEAK_MARKERS`.
+
+    Named for the question it is asked, not for a property it can decide: a
+    message with no marker in it may still be pure infrastructure. Only ever
+    used to pick between two responses that are both generic.
+    """
     return any(marker in msg for marker in _CONFIG_LEAK_MARKERS)
 
 
@@ -185,6 +280,21 @@ async def register():
             }
         }
     """
+    # Spent before the body is parsed and outside the try below, the way
+    # logs.py and feedback.py spend theirs. It used to sit after the shape
+    # validation, on the argument that "a malformed payload costs nothing and
+    # should not spend anyone's budget". The first half of that is not true —
+    # this route is unauthenticated, so parsing up to MAX_CONTENT_LENGTH of
+    # attacker-chosen JSON was the one piece of work no throttle gated — and
+    # the second half bought nothing: an attacker who wants to exhaust a
+    # shared NAT's register budget sends *well-formed* payloads, which are
+    # cheaper for them and always counted. Outside the try so the 429 cannot
+    # be relabelled a 500 by the catch-all at the bottom.
+    if _is_register_rate_limited():
+        return rate_limited_response(
+            "Too many registration attempts. Please try again later."
+        )
+
     try:
         data = request.get_json(silent=True)
 
@@ -226,29 +336,42 @@ async def register():
         # Registration logic using auth_service
         try:
             user = await auth_service.create_user(username, password, email)
-        except ValueError as ve:
-            msg = str(ve)
-            # Don't expose internal config/infrastructure details to users
-            if _is_config_leak(msg):
-                return (
-                    jsonify(
-                        {
-                            "success": False,
-                            "error": "service_unavailable",
-                            "message": "Registration is temporarily unavailable. Please try again later.",
-                        }
-                    ),
-                    503,
-                )
+        except RegistrationValidationError as ve:
+            # The ONLY exception whose text is echoed, and it is echoed because
+            # of its type rather than because its wording passed a filter.
+            # `AuthService` raises it for the five input bounds a caller can
+            # act on; nothing else in the stack raises it.
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": "validation_error",
-                        "message": msg,
+                        "message": str(ve),
                     }
                 ),
                 400,
+            )
+        except ValueError:
+            # Everything else is infrastructure until proven otherwise. This
+            # used to be the other way round -- echo unless the message
+            # contained one of five markers -- and a ValueError reading
+            # `could not connect to postgres://svc:<password>@db.internal:5432`
+            # matched none of them and went back to an anonymous caller with
+            # the credential in it. Logged, not returned: the operator needs
+            # the text and the client does not.
+            logger.exception("Registration failed with a non-validation error")
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "service_unavailable",
+                        "message": (
+                            "Registration is temporarily unavailable. "
+                            "Please try again later."
+                        ),
+                    }
+                ),
+                503,
             )
         except Exception as e:
             if "UNIQUE constraint failed" in str(e):
@@ -263,9 +386,6 @@ async def register():
                     409,
                 )
             raise e
-
-        # Get session manager from app context
-        from flask import current_app
 
         session_manager = current_app.session_manager
 
@@ -360,17 +480,28 @@ async def login():
         username = data["username"].strip()
         password = data["password"]
 
+        # The one throttle in this API that cannot be hoisted above the parse,
+        # and it is not an oversight. This is a *failed-attempt* counter, not a
+        # request counter: `_record_failed_login` runs only on a bad password,
+        # and half the key is the username, which does not exist until the body
+        # is parsed. Moved up, it would check a budget nothing has spent and
+        # key it on nothing. It is inside the try for the same reason. What it
+        # therefore does not gate — the parse of an unauthenticated body — is
+        # gated instead by `MAX_CONTENT_LENGTH` and the `before_request` hook
+        # in `src/api/app.py::_register_request_limits`, which bound the parse
+        # for every route rather than for the throttled ones.
         rate_key = _login_rate_limit_key(username)
         if _is_login_rate_limited(rate_key):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "rate_limited",
-                        "message": "Too many failed login attempts. Please try again later.",
-                    }
-                ),
-                429,
+            return rate_limited_response(
+                "Too many failed login attempts. Please try again later."
+            )
+
+        # Spent on EVERY attempt, and checked before `authenticate_user` so the
+        # Argon2 verify is what it bounds. The two tiers above are failure
+        # counters and a valid credential never touches them.
+        if _is_login_attempt_rate_limited():
+            return rate_limited_response(
+                "Too many login attempts. Please try again later."
             )
 
         # Authenticate using auth_service
@@ -390,9 +521,6 @@ async def login():
             )
 
         _clear_login_attempts(rate_key)
-
-        # Get session manager from app context
-        from flask import current_app
 
         session_manager = current_app.session_manager
 

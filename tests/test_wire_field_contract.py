@@ -44,11 +44,29 @@ target-selection shapes), player (``GameService.get_player_status`` /
 ``serialize_player_sellable`` via a real ``GameService.shop_sell`` call),
 saves (``GameService.list_saves`` cloud-save row shape).
 
+Not every consumer is the React client. ``damage_multiplier`` and
+``tactical_mechanics`` are read by ``ai/combat_strategist.py`` when it builds
+the combat LLM prompt, and they fail in the same silent way a frontend read
+does — worse, actually, because both have a plausible-looking default (``1.0``
+and ``""``). Rename either and the prompt keeps assembling: every telegraphed
+hit is estimated at 1.0x with POTENTIALLY LETHAL never firing, and every status
+effect loses its mechanics. Nothing crashes and no test fails, which is
+precisely the drift class this file exists for, so both are contracted here
+with a VALUE assertion beside the presence check — presence alone cannot tell a
+real multiplier from the default.
+
 === How to read a failure ===
 
-Each contract below is a ``{field: "<component file:line> — how it's read"}``
-dict, built by grepping the frontend files named in each section, not
-invented. If a test here fails:
+Each contract below is a ``{field: Read(...)}`` dict — see ``tests/_cite.py``.
+A ``Read`` names the consuming file and an *anchor*: a literal string that file
+is claimed to contain, normally the member expression the consumer evaluates.
+The line numbers are computed when a failure is printed, so they cannot go
+stale; they used to be written by hand here, and by the time anyone checked,
+roughly half of them pointed at the wrong line. How many citations there are
+is not restated either — ``_reads_written_in_this_file`` counts them and
+``TestCitationProvenance`` asserts the scan sees every one. Where a field
+genuinely has no literal to anchor to, the entry carries a ``note=`` instead
+and is counted by ``TestCitationProvenance`` below. If a test here fails:
 
 - If the serializer/GameService method genuinely renamed or dropped the
   field, either restore it (if the frontend still needs it) or update the
@@ -60,6 +78,8 @@ invented. If a test here fails:
   that defeats the point of the guard.
 """
 
+import ast
+import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -79,19 +99,42 @@ from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
 import src.states as states
+from tests._cite import Read, unverifiable, verify
 from tests._gs_fixtures import GRID_3X3
 from src.narration import capture_narration
 from src.combatant import wire_handle
 
 
+def _describe(why):
+    """Render one contract value for a failure message.
+
+    A ``Read`` computes its own line numbers at call time; a tuple is the
+    two-consumer case (``HeroPanel.jsx`` *and* ``StatsPanel.jsx`` read
+    ``player.hp``). Anything else — the odd inline ``{"current": "..."}``
+    contract below — falls back to plain text.
+    """
+    if isinstance(why, Read):  # a NamedTuple, so this must precede the tuple case
+        return why.describe()
+    if isinstance(why, tuple):
+        return " / ".join(_describe(part) for part in why)
+    return str(why)
+
+
 def _assert_contract(payload: dict, contract: dict, label: str):
-    """Assert every field the frontend reads is present in the real payload.
+    """Assert every field a declared consumer reads is present in the real payload.
+
+    "Consumer" is usually the React client; two fields here are read by the
+    combat prompt builder instead (see the module docstring).
 
     Failure message names the missing fields, what read them, and what to do —
     this is the guard's entire value, so the message has to be actionable
     without the reader re-deriving the citation trail themselves.
     """
-    missing = {field: why for field, why in contract.items() if field not in payload}
+    missing = {
+        field: _describe(why)
+        for field, why in contract.items()
+        if field not in payload
+    }
     assert not missing, (
         f"{label} is missing field(s) the frontend reads: {missing}. "
         "Either the serializer/service renamed or dropped the field (restore "
@@ -115,29 +158,30 @@ def _assert_contract(payload: dict, contract: dict, label: str):
 # Fields useApi.js pulls off the top-level get_combat_state() result, outside
 # battle_state (frontend/src/hooks/useApi.js transformCombatData).
 COMBAT_TOP_LEVEL_CONTRACT = {
-    "battle_state": "useApi.js transformCombatData spreads ...data.battle_state",
-    "log": "useApi.js:11 log: data.log || []",
-    "combat_active": "useApi.js:13 combat_active: data.combat_active",
-    "suggested_moves": "useApi.js:14 suggested_moves: data.suggested_moves || []",
-    "suggestions_loading": "useApi.js:15 suggestions_loading: data.suggestions_loading || false",
-    "last_move_outcome": "useApi.js:17 last_move_outcome: data.last_move_outcome || \"\"",
-    "last_move_name": "useApi.js:18 last_move_name: data.last_move_name || null",
-    "last_move_target_id": "useApi.js:19 last_move_target_id: data.last_move_target_id || null",
+    "battle_state": Read("useApi.js", "data.battle_state"),
+    "log": Read("useApi.js", "data.log"),
+    "combat_active": Read("useApi.js", "data.combat_active"),
+    "suggested_moves": Read("useApi.js", "data.suggested_moves"),
+    "suggestions_loading": Read("useApi.js", "data.suggestions_loading"),
+    "last_move_outcome": Read("useApi.js", "data.last_move_outcome"),
+    "last_move_name": Read("useApi.js", "data.last_move_name"),
+    "last_move_target_id": Read("useApi.js", "data.last_move_target_id"),
 }
 
 # Fields LeftPanel.jsx/CombatManager read off `combat.*`, i.e. off
 # battle_state after the spread (frontend/src/components/LeftPanel.jsx).
 BATTLE_STATE_CONTRACT = {
-    # LeftPanel.jsx:85 — `[combat?.round, combat?.beat]` useEffect deps, with
-    # an explicit comment that these replaced the nonexistent turn_number/
-    # combat_id (bug #1).
-    "round": "LeftPanel.jsx:85 useEffect([combat?.round, combat?.beat])",
-    "beat": "LeftPanel.jsx:85 useEffect([combat?.round, combat?.beat])",
-    "player": "LeftPanel.jsx:134-137 activePlayer = {...player, ...combat.player}",
-    "enemies": "LeftPanel.jsx:129-131 combat.enemies.every(e => (e.distance ?? 0) >= 20)",
-    "awaiting_input": "LeftPanel.jsx:125 combat?.awaiting_input",
-    "input_type": "LeftPanel.jsx:293/488 combat?.input_type / combat.input_type",
-    "available_options": "LeftPanel.jsx:287,720 combat?.available_options",
+    # `[combat?.round, combat?.beat]` useEffect deps, with an explicit comment
+    # that these replaced the nonexistent turn_number/combat_id (bug #1).
+    "round": Read("LeftPanel.jsx", "combat?.round"),
+    "beat": Read("LeftPanel.jsx", "combat?.beat"),
+    # activePlayer = {...player, ...combat.player}
+    "player": Read("LeftPanel.jsx", "combat.player"),
+    # combat.enemies.every(e => (e.distance ?? 0) >= 20) — the canFlee check.
+    "enemies": Read("LeftPanel.jsx", "combat.enemies"),
+    "awaiting_input": Read("LeftPanel.jsx", "combat?.awaiting_input"),
+    "input_type": Read("LeftPanel.jsx", "combat?.input_type"),
+    "available_options": Read("LeftPanel.jsx", "combat?.available_options"),
     # Battlefield.jsx reads combat_id off the TOP-LEVEL combat object and passes
     # it to BattlefieldGrid as an explicit `combatId` prop, which keys the
     # camera-pan reset.
@@ -149,14 +193,14 @@ BATTLE_STATE_CONTRACT = {
     # never saw, and it would not have caught the dep flipping uuid <-> undefined
     # as displayState alternated shape. Cite the component that actually reads
     # the payload, not the one that ends up using the value.
-    "combat_id": "Battlefield.jsx passes combat?.combat_id -> BattlefieldGrid combatId prop",
-    # map_size was the sixth instance of the drift bug and this dict is why it
+    "combat_id": Read("Battlefield.jsx", "combat?.combat_id"),
+    # map_size was another instance of the drift bug, and this dict is why it
     # survived: the adapter emitted it at the TOP LEVEL, transformCombatData's
     # whitelist does not list it, and neither contract dict declared it — so
     # `combat?.map_size` was permanently undefined and BattlefieldGrid fell
     # back to deriving the arena from the bounding box of current positions.
     # It now rides in battle_state, which the spread carries.
-    "map_size": "Battlefield.jsx passes combat?.map_size -> BattlefieldGrid mapSize prop",
+    "map_size": Read("Battlefield.jsx", "combat?.map_size"),
 }
 
 
@@ -332,45 +376,73 @@ class TestCombatWireContract:
 # ----------------------------------------------------------------------------
 # CombatMovePanel.jsx renders each move card off this shape.
 MOVE_CONTRACT = {
-    "name": "CombatMovePanel.jsx:75 move.name || move.display_name",
-    "display_name": "CombatMovePanel.jsx:75,131 displayNameOf(move)",
-    "description": "CombatMovePanel.jsx:140 move.description",
-    "available": "CombatMovePanel.jsx:73 move.available !== false",
+    # move.name || move.display_name, via displayNameOf.
+    "name": Read("CombatMovePanel.jsx", "move.name"),
+    "display_name": Read("CombatMovePanel.jsx", "displayNameOf(move)"),
+    "description": Read("CombatMovePanel.jsx", "move.description"),
+    "available": Read("CombatMovePanel.jsx", "move.available"),
     # Its *wording* is load-bearing too, not just its presence: the reason line
     # renders through GlossaryText, which only attaches the "what is a beat?"
     # explainer (#507) to words combatGlossary.js recognises. Rewording
     # "Available in 5 beats" would leave this contract green while silently
-    # removing the explainer — tests/test_combat_glossary_contract.py runs the
+    # removing the explainer -- tests/test_combat_glossary_contract.py runs the
     # real reason strings against the glossary's own patterns to catch that.
-    "reason": "CombatMovePanel.jsx move.reason (rendered by GlossaryText)",
-    "fatigue_cost": "CombatMovePanel.jsx:133-137 move.fatigue_cost",
-    "targeted": "CombatMovePanel.jsx:80 move.targeted",
-    "viable_targets": "CombatMovePanel.jsx:79-82 move.viable_targets",
-    "requires_target_selection": "CombatMovePanel.jsx:80 move.requires_target_selection",
+    "reason": Read("CombatMovePanel.jsx", "move.reason"),
+    "fatigue_cost": Read("CombatMovePanel.jsx", "move.fatigue_cost"),
+    "targeted": Read("CombatMovePanel.jsx", "move.targeted"),
+    "viable_targets": Read("CombatMovePanel.jsx", "move.viable_targets"),
+    "requires_target_selection": Read(
+        "CombatMovePanel.jsx", "move.requires_target_selection"
+    ),
     # `category` routes the move to a radial button via CATEGORY_GROUPS
     # (utils/categories.js). A category no group claims leaves the move with no
     # button at all — that is how 8 castable moves became unreachable.
-    "category": "CooldownTray.jsx:66,100 / BattlefieldGrid.jsx:89 move.category",
+    "category": (
+        Read("CooldownTray.jsx", "move.category"),
+        Read("BattlefieldGrid.jsx", "move.category"),
+    ),
     # The commitment bar (how many beats a move locks the player out for,
     # shown BEFORE they commit) — named sub-fields, not the engine's raw
     # stage_beat list/index convention. See MOVE_STAGE_BEATS_CONTRACT below.
-    "stage_beats": "CombatMovePanel.jsx MoveCommitmentBar move.stage_beats",
+    #
+    # CombatMovePanel renders the bar but never touches the wire field: the
+    # read is in moveCommitment.js's getStageBeats, which the panel calls.
+    # The old citation named the panel, which is a component this field could
+    # be dropped from without anything here noticing.
+    "stage_beats": Read("moveCommitment.js", "move?.stage_beats"),
 }
 
 ABORTABLE_MOVE_CONTRACT = {
-    "name": "AbortMoveControl.jsx abortable.name",
-    "beats_left": "AbortMoveControl.jsx abortable.beats_left ('lands in N beats')",
-    "beats_invested": "AbortMoveControl.jsx abortable.beats_invested ('forfeits N beats')",
-    "cooldown_beats": "AbortMoveControl.jsx abortable.cooldown_beats ('then N beats cooldown')",
-    "prep_beats": "AbortMoveControl.jsx destructures abortable (unused today, kept on the wire)",
+    # One destructure supplies the whole control:
+    #   const { name, beats_left: beatsLeft, beats_invested: invested,
+    #           cooldown_beats: cooldown } = abortable;
+    # so each anchor is that renaming, not an `abortable.x` expression the
+    # file has never contained.
+    "name": Read("AbortMoveControl.jsx", "const { name, beats_left"),
+    # 'lands in N beats'
+    "beats_left": Read("AbortMoveControl.jsx", "beats_left: beatsLeft"),
+    # 'forfeits N beats'
+    "beats_invested": Read("AbortMoveControl.jsx", "beats_invested: invested"),
+    # 'then N beats cooldown'
+    "cooldown_beats": Read("AbortMoveControl.jsx", "cooldown_beats: cooldown"),
+    "prep_beats": Read(
+        "AbortMoveControl.jsx",
+        note="no consumer at all: the destructure above takes four fields and "
+        "prep_beats is not one of them. Its only appearance anywhere in "
+        "frontend/src is the AbortMoveControl.test.jsx fixture. The old "
+        "citation claimed the component destructured it; it does not.",
+    ),
 }
 
 
+# `getStageBeats(move)` reads `move.stage_beats` into `raw` and then names each
+# stage — those four reads are the contract, and they live in the util, not in
+# the panel that draws the bar.
 MOVE_STAGE_BEATS_CONTRACT = {
-    "prep": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.prep",
-    "execute": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.execute",
-    "recoil": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.recoil",
-    "cooldown": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.cooldown",
+    "prep": Read("moveCommitment.js", "prep: safeBeat(raw.prep)"),
+    "execute": Read("moveCommitment.js", "execute: safeBeat(raw.execute)"),
+    "recoil": Read("moveCommitment.js", "recoil: safeBeat(raw.recoil)"),
+    "cooldown": Read("moveCommitment.js", "cooldown: safeBeat(raw.cooldown)"),
 }
 
 
@@ -477,84 +549,113 @@ class TestMoveWireContract:
 # (LeftPanel.jsx's activePlayer merge) — and StatusEffectsIconPanel/LeftPanel
 # read the nested lists.
 COMBATANT_CONTRACT = {
-    "id": "LeftPanel.jsx:768,773 e.id (matching enemies against last_move_target_id)",
-    "hp": "HeroPanel.jsx:33 player?.hp",
-    "max_hp": "HeroPanel.jsx:34 player?.max_hp",
-    "fatigue": "HeroPanel.jsx:37 player?.fatigue",
-    "max_fatigue": "HeroPanel.jsx:38 player?.max_fatigue",
-    "status_effects": "HeroPanel.jsx:130-133,338-341 player?.status_effects",
-    "passives": "HeroPanel.jsx:109-113,332-336 player?.passives",
-    "distance": "LeftPanel.jsx:131 e.distance (canFlee check on combat.enemies)",
+    # e.id — matching enemies against last_move_target_id.
+    "id": Read("LeftPanel.jsx", "e.id"),
+    "hp": Read("HeroPanel.jsx", "player?.hp"),
+    "max_hp": Read("HeroPanel.jsx", "player?.max_hp"),
+    "fatigue": Read("HeroPanel.jsx", "player?.fatigue"),
+    "max_fatigue": Read("HeroPanel.jsx", "player?.max_fatigue"),
+    "status_effects": Read("HeroPanel.jsx", "player?.status_effects"),
+    "passives": Read("HeroPanel.jsx", "player?.passives"),
+    # e.distance — the canFlee check on combat.enemies.
+    "distance": Read("LeftPanel.jsx", "e.distance"),
     # The battlefield map is the other consumer of a serialized combatant. It
     # was reading `position`/`current_move` all along; `distance` is now shown
     # there too (token tooltip, selected-combatant panel, enemies list and the
     # off-screen edge markers), which is what the positional layer is *for*.
-    "name": "BattlefieldGrid.jsx EntityTooltip / EnemiesList entity.name",
-    "battle_symbol": "BattlefieldGrid.jsx entitiesToRender displaySymbol fallback chain",
-    "position": "BattlefieldGrid.jsx getPos(entity) -> getEntityStyle / fitBox framing",
-    "current_move": "BattlefieldGrid.jsx CombatantMarker telegraph + EntityTooltip",
+    "name": Read("BattlefieldGrid.jsx", "entity.name"),
+    # The displaySymbol fallback chain in entitiesToRender.
+    "battle_symbol": Read("BattlefieldGrid.jsx", "entity.battle_symbol"),
+    # getPos(entity) -> getEntityStyle / fitBox framing.
+    "position": Read("BattlefieldGrid.jsx", "entity?.position"),
+    # CombatantMarker telegraph + EntityTooltip.
+    "current_move": Read("BattlefieldGrid.jsx", "entity.current_move"),
     # Heat meter. This is the RAW FLOAT multiplier applied to Jean's damage
     # by src/moves/_base.py standard_execute_attack.
     #
     # battle_state carries a SECOND, different representation of the same
-    # quantity under its own top-level `heat` key — round(player.heat * 100), set
-    # by ApiCombatAdapter.get_combat_state and absent from the per-beat states
-    # the adapter snapshots via CombatStateSerializer.serialize_combat_state. Reading that one as a
+    # quantity under its own top-level `heat` key -- round(player.heat * 100),
+    # set by ApiCombatAdapter.get_combat_state and absent from the per-beat
+    # states the adapter snapshots via
+    # CombatStateSerializer.serialize_combat_state. Reading that one as a
     # multiplier renders "162.00x"; reading this one is correct. The client has
     # exactly one reader and no `??` chain across the two (see the header
     # comment in frontend/src/utils/heat.js), which is the only reason the
     # duplication is survivable.
-    "heat": "LeftPanel.jsx combat?.player?.heat -> HeatMeter (utils/heat.js)",
+    "heat": Read("LeftPanel.jsx", "combat?.player?.heat"),
 }
 
 # The in-progress move hanging off a combatant (CombatantSerializer.
 # _serialize_active_move). BattlefieldGrid turns this into the *only* readout
 # of enemy intent on the map, so a rename here silently blanks the telegraph.
 ACTIVE_MOVE_CONTRACT = {
-    "display_name": "combatMoveStatus.js displayNameOf(move)",
-    "category": "BattlefieldGrid.jsx MOVE_CATEGORY_GLOW/_COLOR[move.category]",
+    # displayNameOf's `value.display_name || value.name`.
+    "display_name": Read("combatMoveStatus.js", "value.display_name"),
+    # categoryColor/categoryGlow (utils/categories.js) keyed off move.category.
+    "category": Read("BattlefieldGrid.jsx", "move.category"),
     # isMovePending() suppresses the telegraph for stages 2/3 so a spent
     # combatant stops looking like one winding up; beatsUntilResolve() renders
     # the countdown badge on the token.
-    "current_stage": "combatMoveStatus.js isMovePending / formatCombatMoveStatus",
-    "beats_left": "combatMoveStatus.js beatsUntilResolve fallback (stage-less payloads)",
+    "current_stage": Read("combatMoveStatus.js", "move.current_stage"),
+    # beatsUntilResolve's fallback, for stage-less payloads.
+    "beats_left": Read("combatMoveStatus.js", "move.beats_left"),
     # The countdown badge renders THIS, not beats_left: the latter is beats
     # left in the current stage, which for a windup move is a much smaller
     # number than the time until the blow actually lands.
-    "beats_until_resolve": "combatMoveStatus.js beatsUntilResolve -> countdown badge",
-    "falloff": "BattlefieldGrid.jsx RangeRingLayer — gradient vs hard ring",
+    "beats_until_resolve": Read("combatMoveStatus.js", "move.beats_until_resolve"),
+    # RangeRingLayer — gradient vs hard ring.
+    "falloff": Read("BattlefieldGrid.jsx", "move.falloff"),
     # Threat-line/range-ring feature: who the pending move is aimed at, and
     # how far it reaches. target_id MUST be resolved through
     # CombatantSerializer.stream_id (see _serialize_move_target_id) or the
     # frontend can never match it against a combatant's own `id` — the same
     # drift class this whole file exists to catch.
-    "target_id": "BattlefieldGrid.jsx ThreatLineLayer entity.current_move.target_id",
-    "mvrange": "BattlefieldGrid.jsx RangeRingLayer entity.current_move.mvrange",
+    "target_id": Read("BattlefieldGrid.jsx", "move.target_id"),  # ThreatLineLayer
+    "mvrange": Read("BattlefieldGrid.jsx", "move?.mvrange"),  # RangeRingLayer
+    # NOT a frontend read. ai/combat_strategist.py's _estimate_incoming_damage
+    # multiplies the enemy's damage stat by this and raises POTENTIALLY LETHAL
+    # off the result. Renaming Move._DAMAGE_MULTIPLIER degrades it to the 1.0
+    # default rather than failing, so the value is asserted too, below.
+    "damage_multiplier": Read(
+        "ai/combat_strategist.py", 'get("damage_multiplier"'
+    ),
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.
 STATE_EFFECT_CONTRACT = {
-    "name": "StatusEffectsIconPanel.jsx:48,98 effect.name",
-    "type": "StatusEffectsIconPanel.jsx:26-33,55 getEffectColor(effect.type)",
-    "description": "StatusEffectsIconPanel.jsx:101 effect.description",
+    "name": Read("StatusEffectsIconPanel.jsx", "effect.name"),
+    # getEffectColor(effect.type)
+    "type": Read("StatusEffectsIconPanel.jsx", "effect.type"),
+    "description": Read("StatusEffectsIconPanel.jsx", "effect.description"),
     # Bug #3: this component used to read `duration_remaining`, which only
     # serialize_state_with_duration (no callers) emits. The live path is
-    # serialize_state -> beats_left (StatusEffectsIconPanel.jsx:103-107).
-    "beats_left": "StatusEffectsIconPanel.jsx:107,115 effect.beats_left ?? effect.duration_remaining",
+    # serialize_state -> beats_left, read as
+    # `effect.beats_left ?? effect.duration_remaining`.
+    "beats_left": Read("StatusEffectsIconPanel.jsx", "effect.beats_left"),
+    # NOT a frontend read. ai/combat_strategist.py's _format_status_effects
+    # renders this as the mechanical half of every status line in the combat
+    # prompt — the engine-owned numbers the strategist deliberately stopped
+    # hand-copying. It falls back to `description` when empty, so a rename
+    # quietly downgrades the prompt instead of failing; the value is asserted
+    # below as well.
+    "tactical_mechanics": Read(
+        "ai/combat_strategist.py", 'get("tactical_mechanics")'
+    ),
 }
 
 # CombatInputDialog's target_selection cards (combat_adapter._get_available_targets).
 TARGET_CONTRACT = {
-    "id": "CombatInputDialog.jsx:46,60 target.id",
-    "name": "CombatInputDialog.jsx:63 target.name",
-    "distance": "CombatInputDialog.jsx:64-68 target.distance",
-    "health": "CombatInputDialog.jsx:72-82 target.health.current / target.health.max",
+    "id": Read("CombatInputDialog.jsx", "target.id"),
+    "name": Read("CombatInputDialog.jsx", "target.name"),
+    "distance": Read("CombatInputDialog.jsx", "target.distance"),
+    # target.health.current / target.health.max
+    "health": Read("CombatInputDialog.jsx", "target.health.current"),
     # Bug #4: hit_chance is an already-integer percentage (see
-    # ShootBow.calculate_hit_chance) — CombatInputDialog.jsx:86-92 explicitly
-    # does NOT rescale it. If the engine ever starts sending a 0-1 fraction
-    # instead, that comment (and this contract) goes stale silently unless
-    # something asserts the magnitude, which the dedicated test below does.
-    "hit_chance": "CombatInputDialog.jsx:83-92 target.hit_chance (used unscaled)",
+    # ShootBow.calculate_hit_chance) — CombatInputDialog explicitly does NOT
+    # rescale it. If the engine ever starts sending a 0-1 fraction instead,
+    # that comment (and this contract) goes stale silently unless something
+    # asserts the magnitude, which the dedicated test below does.
+    "hit_chance": Read("CombatInputDialog.jsx", "target.hit_chance"),
 }
 
 
@@ -912,6 +1013,55 @@ class TestCombatantWireContract:
         # Shortbow's much longer effective reach would leak in here.
         assert payload["current_move"]["mvrange"]["max"] == int(enemy_move.mvrange[1])
 
+    def test_damage_multiplier_carries_the_moves_own_factor(self):
+        """Presence is not enough: 1.0 is a valid multiplier AND the default.
+
+        A real heavy hitter mid-cast, through the real serializer. If
+        ``Move._DAMAGE_MULTIPLIER`` is ever renamed, ``getattr`` falls through
+        to 1.0 and the Tactical Advisor silently estimates the game's biggest
+        telegraphed attack at its user's bare damage — the exact bug the
+        attribute was added to fix, restored without a single failing test.
+        """
+        from src.moves import SlimeVolley
+
+        player = Player()
+        enemy = Slime()
+        enemy.target = player
+        move = SlimeVolley(enemy)
+        move.current_stage = 0
+        move.beats_left = 2
+        enemy.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+        wire = payload["current_move"]["damage_multiplier"]
+        assert wire == pytest.approx(SlimeVolley._DAMAGE_MULTIPLIER), (
+            f"wire damage_multiplier is {wire} but SlimeVolley declares "
+            f"{SlimeVolley._DAMAGE_MULTIPLIER}"
+        )
+        assert wire != pytest.approx(1.0), (
+            "fixture is degenerate: this move must declare a NON-default "
+            "multiplier or the test cannot distinguish carried from defaulted"
+        )
+
+    def test_tactical_mechanics_carries_the_states_own_summary(self):
+        """Same shape of guard for the status half of the combat prompt.
+
+        ``_format_status_effects`` falls back to ``description`` when this is
+        empty, so a rename costs the model the engine's real numbers and
+        substitutes player-facing prose — a downgrade with no symptom.
+        """
+        player = Player()
+        state = states.Poisoned(player)
+        payload = StateEffectSerializer.serialize_state(state)
+
+        assert payload["tactical_mechanics"] == state.tactical_mechanics
+        assert payload["tactical_mechanics"], (
+            "Poisoned declares a tactical summary; an empty wire value means "
+            "the serializer is no longer reading it"
+        )
+        # The interval is the part the strategist's own table used to get wrong.
+        assert f"every {state.execute_on} beats" in payload["tactical_mechanics"]
+
     def test_status_effect_fields_on_a_real_state(self):
         player = Player()
         state = states.Poisoned(player)
@@ -1030,40 +1180,52 @@ class TestCombatantWireContract:
 # `data.skills` (get_player_skills) — later keys win on overlap. Fields below
 # are cited to the component that reads them.
 
+# HeroPanel guards every read with `?.`; StatsPanel does not — so the same
+# field has a different literal in each consumer, and both are cited.
 PLAYER_STATUS_CONTRACT = {
-    "hp": "HeroPanel.jsx:33 / StatsPanel.jsx:37 player.hp",
-    "max_hp": "HeroPanel.jsx:34 / StatsPanel.jsx:37 player.max_hp",
-    "fatigue": "HeroPanel.jsx:37 / StatsPanel.jsx:38 player.fatigue",
-    "max_fatigue": "HeroPanel.jsx:38 / StatsPanel.jsx:38 player.max_fatigue",
-    "level": "StatsPanel.jsx:40 player.level",
-    "exp": "StatsPanel.jsx:114,120,127 player.exp",
-    "max_exp": "StatsPanel.jsx:109,114,120,127 player.max_exp",
+    "hp": (Read("HeroPanel.jsx", "player?.hp"), Read("StatsPanel.jsx", "player.hp")),
+    "max_hp": (
+        Read("HeroPanel.jsx", "player?.max_hp"),
+        Read("StatsPanel.jsx", "player.max_hp"),
+    ),
+    "fatigue": (
+        Read("HeroPanel.jsx", "player?.fatigue"),
+        Read("StatsPanel.jsx", "player.fatigue"),
+    ),
+    "max_fatigue": (
+        Read("HeroPanel.jsx", "player?.max_fatigue"),
+        Read("StatsPanel.jsx", "player.max_fatigue"),
+    ),
+    "level": Read("StatsPanel.jsx", "player.level"),
+    "exp": Read("StatsPanel.jsx", "player.exp"),
+    "max_exp": Read("StatsPanel.jsx", "player.max_exp"),
 }
 
 PLAYER_STATS_CONTRACT = {
-    "protection": "StatsPanel.jsx:39 player.protection",
-    "attack_damage_min": "StatsPanel.jsx:41 player.attack_damage_min",
-    "attack_damage_max": "StatsPanel.jsx:41 player.attack_damage_max",
-    "hit_accuracy": "StatsPanel.jsx:34,47,51 player.hit_accuracy",
-    "evasion_chance": "StatsPanel.jsx:56 player.evasion_chance",
-    "resistance": "StatsPanel.jsx:29 player.resistance",
-    "states": "StatsPanel.jsx:30,205-217 player.states",
+    "protection": Read("StatsPanel.jsx", "player.protection"),
+    "attack_damage_min": Read("StatsPanel.jsx", "player.attack_damage_min"),
+    "attack_damage_max": Read("StatsPanel.jsx", "player.attack_damage_max"),
+    "hit_accuracy": Read("StatsPanel.jsx", "player.hit_accuracy"),
+    "evasion_chance": Read("StatsPanel.jsx", "player.evasion_chance"),
+    "resistance": Read("StatsPanel.jsx", "player.resistance"),
+    "states": Read("StatsPanel.jsx", "player.states"),
     # Bug #2: ShopDialog used to read `weight_tolerance` (the engine-side
     # attribute name) off the player payload. Neither get_player_status nor
     # get_player_stats ever emitted that key — the real keys are below
-    # (ShopDialog.jsx:308-314, itemUtils.js docstring on WEIGHT_UNIT).
-    "weight_current": "ShopDialog.jsx:308 player?.weight_current",
-    "max_weight": "ShopDialog.jsx:313 player?.max_weight",
-    "carrying_capacity": "ShopDialog.jsx:314 player?.carrying_capacity (fallback)",
+    # (see also itemUtils.js's docstring on WEIGHT_UNIT).
+    "weight_current": Read("ShopDialog.jsx", "player?.weight_current"),
+    "max_weight": Read("ShopDialog.jsx", "player?.max_weight"),
+    # fallback for max_weight
+    "carrying_capacity": Read("ShopDialog.jsx", "player?.carrying_capacity"),
 }
 
-# Each element of player.states (StatsPanel.jsx:215 state.steps_left) — note
-# this is a *different* shape from the combat status_effects/beats_left
-# contract above: get_player_stats's states list is a plain
-# {name, steps_left} pair, not a StateEffectSerializer.serialize_state() dict.
+# Each element of player.states — note this is a *different* shape from the
+# combat status_effects/beats_left contract above: get_player_stats's states
+# list is a plain {name, steps_left} pair, not a
+# StateEffectSerializer.serialize_state() dict.
 PLAYER_STATE_ITEM_CONTRACT = {
-    "name": "StatsPanel.jsx:214 state.name",
-    "steps_left": "StatsPanel.jsx:215 state.steps_left",
+    "name": Read("StatsPanel.jsx", "state.name"),
+    "steps_left": Read("StatsPanel.jsx", "state.steps_left"),
 }
 
 
@@ -1100,34 +1262,39 @@ class TestPlayerWireContract:
 # (stock + buyback_items) and the sell list (serialize_player_sellable).
 
 SHOP_STATE_CONTRACT = {
-    "shop_name": "ShopDialog.jsx:402 shopState?.shop_name",
-    "sell_modifier": "ShopDialog.jsx:711 shopState?.sell_modifier",
-    "stock": "ShopDialog.jsx:282,406 shopState.stock",
-    "buyback_items": "ShopDialog.jsx:282,405,578 shopState.buyback_items",
-    "merchant_gold": "ShopDialog.jsx:317 shopState?.merchant_gold",
-    "player_gold": "ShopDialog.jsx:308 shopState?.player_gold",
-    "player_weight_current": "ShopDialog.jsx:309 shopState?.player_weight_current",
-    "player_weight_max": "ShopDialog.jsx:313 shopState?.player_weight_max",
+    "shop_name": Read("ShopDialog.jsx", "shopState?.shop_name"),
+    "sell_modifier": Read("ShopDialog.jsx", "shopState?.sell_modifier"),
+    "stock": Read("ShopDialog.jsx", "shopState.stock"),
+    "buyback_items": Read("ShopDialog.jsx", "shopState.buyback_items"),
+    "merchant_gold": Read("ShopDialog.jsx", "shopState?.merchant_gold"),
+    "player_gold": Read("ShopDialog.jsx", "shopState?.player_gold"),
+    "player_weight_current": Read(
+        "ShopDialog.jsx", "shopState?.player_weight_current"
+    ),
+    "player_weight_max": Read("ShopDialog.jsx", "shopState?.player_weight_max"),
 }
 
 # Fields read off a buy-tab item (stock or buyback_items — both flow through
 # `allBuyItems` in ShopDialog.jsx and are treated identically).
 SHOP_BUY_ITEM_CONTRACT = {
-    "id": "ShopDialog.jsx:288 list.find(i => i.id === selectedId)",
-    "name": "ShopDialog.jsx (item cards render selectedItem.name)",
-    "price": "ShopDialog.jsx:322 selectedItem.price",
-    "weight": "ShopDialog.jsx:299 selectedItem.weight",
-    "count": "ShopDialog.jsx:292 selectedItem.count (buyback effectiveQty)",
-    "is_buyback": "ShopDialog.jsx:292 selectedItem?.is_buyback",
+    # list.find(i => i.id === selectedId)
+    "id": Read("ShopDialog.jsx", "i.id === selectedId"),
+    "name": Read("ShopDialog.jsx", "selectedItem.name"),
+    "price": Read("ShopDialog.jsx", "selectedItem.price"),
+    "weight": Read("ShopDialog.jsx", "selectedItem.weight"),
+    # buyback effectiveQty
+    "count": Read("ShopDialog.jsx", "selectedItem.count"),
+    "is_buyback": Read("ShopDialog.jsx", "selectedItem?.is_buyback"),
 }
 
 # Fields read off a sell-tab item (ShopSerializer.serialize_player_sellable).
 SHOP_SELL_ITEM_CONTRACT = {
-    "id": "ShopDialog.jsx:288 list.find(i => i.id === selectedId)",
-    "name": "ShopDialog.jsx (item cards render selectedItem.name)",
-    "offer": "ShopDialog.jsx:326 selectedItem.offer",
-    "weight": "ShopDialog.jsx:299 selectedItem.weight",
-    "count": "ShopDialog.jsx sell quantity picker",
+    "id": Read("ShopDialog.jsx", "i.id === selectedId"),
+    "name": Read("ShopDialog.jsx", "selectedItem.name"),
+    "offer": Read("ShopDialog.jsx", "selectedItem.offer"),
+    "weight": Read("ShopDialog.jsx", "selectedItem.weight"),
+    # the sell quantity picker's ceiling
+    "count": Read("ShopDialog.jsx", "const available = selectedItem.count"),
 }
 
 
@@ -1201,21 +1368,29 @@ class TestShopWireContract:
 # MainMenuPage used to merge in as a synthetic, display-only row with its own
 # client-minted `isLocal`/`timestampMs` fields never emitted by the server.
 SAVES_ROW_CONTRACT = {
-    "id": "MainMenuPage.jsx:405,408,412,454 save.id (row key, load/delete target)",
-    "name": "MainMenuPage.jsx:440 save.name || 'Untitled Save'",
-    "is_autosave": "MainMenuPage.jsx:442 save.is_autosave && <(Autosave)>",
-    "level": "MainMenuPage.jsx:447 Lvl {save.level}",
-    "map_name": "MainMenuPage.jsx:447 save.map_name",
-    "room_title": "MainMenuPage.jsx:447 save.room_title",
-    "timestamp": "MainMenuPage.jsx:450 formatSaveTimestamp(save)",
+    # row key, load/delete target
+    "id": Read("MainMenuPage.jsx", "save.id"),
+    # save.name || 'Untitled Save'
+    "name": Read("MainMenuPage.jsx", "save.name"),
+    "is_autosave": Read("MainMenuPage.jsx", "save.is_autosave"),
+    "level": Read("MainMenuPage.jsx", "save.level"),
+    "map_name": Read("MainMenuPage.jsx", "save.map_name"),
+    "room_title": Read("MainMenuPage.jsx", "save.room_title"),
+    # The row is rendered by the page but the field is read one level down, in
+    # the formatter — cite both, or a rename in localSave.js goes unnoticed
+    # here while MainMenuPage still "reads" a save it never dereferences.
+    "timestamp": (
+        Read("MainMenuPage.jsx", "formatSaveTimestamp(save)"),
+        Read("localSave.js", "row.timestamp"),
+    ),
     # This is the field the "Continue" button's recency sort now keys on
     # (localSave.js saveRowClockValue: row?.timestamp_ms ?? row?.timestamp,
-    # consumed by compareSavesByRecency at MainMenuPage.jsx:88,93). It was
+    # consumed by compareSavesByRecency in MainMenuPage.jsx). It was
     # added alongside the display `timestamp`
     # specifically because `timestamp`'s embedded timezone abbreviation (e.g.
     # "CET") is unparseable by Date.parse for most non-US zones — losing this
     # field silently regresses "Continue" back to that timezone bug.
-    "timestamp_ms": "localSave.js:52 saveRowClockValue: row?.timestamp_ms",
+    "timestamp_ms": Read("localSave.js", "row?.timestamp_ms"),
 }
 
 
@@ -1251,45 +1426,63 @@ class TestSavesWireContract:
 # untouched — which is exactly why a rename here is silent.
 
 ROOM_CONTRACT = {
-    "x": "MapGrid.jsx:93,98,208 location.x; GamePage.jsx:190 tile cache key",
-    "y": "MapGrid.jsx:94,98,209 location.y; GamePage.jsx:190 tile cache key",
-    "name": "CollapsibleRoomDescription.jsx:56 location.name || 'Current Location'",
-    "map_name": "MapGrid.jsx:97,188 location.map_name (grid title + tile key)",
-    "description": "RoomContents.jsx:61 location.description",
-    "exits": "useApi.js:28-30 transformLocationData normalises room.exits -> [direction]",
-    "items": "useApi.js:31 items: room.items ? [...room.items] : []",
-    "npcs": "useApi.js:32 npcs: room.npcs ? [...room.npcs] : []",
-    "objects": "useApi.js:33 objects: room.objects ? [...room.objects] : []",
-    "bgm": "GamePage.jsx:423 const track = location?.bgm || 'adventure'",
+    # MapGrid positions the grid on them; GamePage builds its tile cache key
+    # `${location.map_name}:${location.x},${location.y}` from them.
+    "x": (Read("MapGrid.jsx", "location.x"), Read("GamePage.jsx", "location.x")),
+    "y": (Read("MapGrid.jsx", "location.y"), Read("GamePage.jsx", "location.y")),
+    # location.name || 'Current Location'
+    "name": Read("CollapsibleRoomDescription.jsx", "location.name"),
+    # grid title + tile key
+    "map_name": Read("MapGrid.jsx", "location.map_name"),
+    "description": Read("RoomContents.jsx", "location.description"),
+    # transformLocationData normalises room.exits -> [direction]
+    "exits": Read("useApi.js", "room.exits"),
+    "items": Read("useApi.js", "room.items"),
+    "npcs": Read("useApi.js", "room.npcs"),
+    "objects": Read("useApi.js", "room.objects"),
+    # const track = location?.bgm || 'adventure'
+    "bgm": Read("GamePage.jsx", "location?.bgm"),
 }
 
 # Room items flow through ItemSerializer.serialize_list -> RoomContents /
 # InteractPanel target cards.
 ROOM_ITEM_CONTRACT = {
-    "id": "RoomContents.jsx:44 id: item.id; InteractPanel.jsx:491 takeOne(item.id, …)",
-    "name": "RoomContents.jsx:38,42 item.name",
-    "announce": "RoomContents.jsx:38 item.announce || `There is a ${item.name} here.`",
-    "count": "InteractPanel.jsx:486 item.count > 1 ? `x${item.count}` : ''",
-    "hidden": "InteractPanel.jsx:83 allTargets.filter(t => !t.hidden)",
-    "keywords": "InteractPanel.jsx:512 selectedTarget.keywords.length > 0",
+    "id": (
+        Read("RoomContents.jsx", "id: item.id"),
+        Read("InteractPanel.jsx", "takeOne(item.id"),
+    ),
+    "name": Read("RoomContents.jsx", "item.name"),
+    # item.announce || `There is a ${item.name} here.`
+    "announce": Read("RoomContents.jsx", "item.announce"),
+    # item.count > 1 ? `x${item.count}` : ''
+    "count": Read("InteractPanel.jsx", "item.count"),
+    # allTargets.filter(t => !t.hidden)
+    "hidden": Read("InteractPanel.jsx", "t.hidden"),
+    # selectedTarget.keywords.length > 0
+    "keywords": Read("InteractPanel.jsx", "selectedTarget.keywords"),
 }
 
 # Room NPCs flow through NPCSerializer.serialize_list.
 ROOM_NPC_CONTRACT = {
-    "id": "InteractPanel.jsx:339 key={`${target.id}-${idx}`}",
-    "name": "RoomContents.jsx:28 name: npc.name",
-    "type": "InteractPanel.jsx:78 npc_class: n.type -> NpcChatPanel npcId",
-    "idle_message": "RoomContents.jsx:24,27 if (npc.idle_message) …",
-    "llm_chat_enabled": "InteractPanel.jsx:192 selectedTarget?.llm_chat_enabled",
-    "loquacity_available": "InteractPanel.jsx:193 selectedTarget?.loquacity_available !== false",
+    # key={`${target.id}-${idx}`}
+    "id": Read("InteractPanel.jsx", "target.id"),
+    "name": Read("RoomContents.jsx", "npc.name"),
+    # npc_class: n.type -> NpcChatPanel npcId
+    "type": Read("InteractPanel.jsx", "n.type"),
+    "idle_message": Read("RoomContents.jsx", "npc.idle_message"),
+    "llm_chat_enabled": Read("InteractPanel.jsx", "selectedTarget?.llm_chat_enabled"),
+    "loquacity_available": Read(
+        "InteractPanel.jsx", "selectedTarget?.loquacity_available"
+    ),
 }
 
 # Room objects flow through ObjectSerializer.serialize_list.
 ROOM_OBJECT_CONTRACT = {
-    "id": "InteractPanel.jsx:339 key={`${target.id}-${idx}`}",
-    "name": "RoomContents.jsx:54 name: obj.name",
-    "idle_message": "RoomContents.jsx:50,53 if (obj.idle_message) …",
-    "keywords": "InteractPanel.jsx:62,512 objectState.keywords ?? prev.keywords",
+    "id": Read("InteractPanel.jsx", "target.id"),
+    "name": Read("RoomContents.jsx", "obj.name"),
+    "idle_message": Read("RoomContents.jsx", "obj.idle_message"),
+    # objectState.keywords ?? prev.keywords
+    "keywords": Read("InteractPanel.jsx", "objectState.keywords"),
 }
 
 
@@ -1368,22 +1561,38 @@ class TestRoomWireContract:
 # and ItemDetailDialog (detail pane).
 
 INVENTORY_ITEM_CONTRACT = {
-    "id": "InventoryDialog.jsx:258,280 key={item.id}; ItemDetailDialog.jsx:104 item_id",
-    "name": "InventoryDialog.jsx:407 {item.name}",
-    "type": "ItemDetailDialog.jsx item.type",
-    "maintype": "InventoryDialog.jsx / ItemDetailDialog.jsx item.maintype (slot grouping)",
-    "subtype": "InventoryDialog.jsx / ItemDetailDialog.jsx item.subtype",
-    "quantity": "InventoryDialog.jsx item.quantity (stack count badge)",
-    "rarity": "InventoryDialog.jsx item.rarity (row colour)",
-    "weight": "InventoryDialog.jsx item.weight",
-    "value": "InventoryDialog.jsx item.value",
-    "is_equipped": "InventoryDialog.jsx item.is_equipped; ItemDetailDialog.jsx:159",
-    "is_merchandise": "ItemDetailDialog.jsx item.is_merchandise",
-    "description": "ItemDetailDialog.jsx:489,502 item.description",
-    "can_equip": "ItemDetailDialog.jsx item.can_equip (Equip button gate)",
-    "can_use": "ItemDetailDialog.jsx item.can_use (Use button gate)",
-    "can_read": "ItemDetailDialog.jsx item.can_read (Read button gate)",
-    "can_drop": "ItemDetailDialog.jsx item.can_drop (Drop button gate)",
+    "id": (
+        Read("InventoryDialog.jsx", "key={item.id}"),
+        Read("ItemDetailDialog.jsx", "item_id: item.id"),
+    ),
+    "name": Read("InventoryDialog.jsx", "item.name"),
+    "type": Read("ItemDetailDialog.jsx", "item.type"),
+    # slot grouping
+    "maintype": (
+        Read("InventoryDialog.jsx", "item.maintype"),
+        Read("ItemDetailDialog.jsx", "item.maintype"),
+    ),
+    "subtype": (
+        Read("InventoryDialog.jsx", "item.subtype"),
+        Read("ItemDetailDialog.jsx", "item.subtype"),
+    ),
+    # stack count badge
+    "quantity": Read("InventoryDialog.jsx", "item.quantity"),
+    # row colour
+    "rarity": Read("InventoryDialog.jsx", "item.rarity"),
+    "weight": Read("InventoryDialog.jsx", "item.weight"),
+    "value": Read("InventoryDialog.jsx", "item.value"),
+    "is_equipped": (
+        Read("InventoryDialog.jsx", "item.is_equipped"),
+        Read("ItemDetailDialog.jsx", "item.is_equipped"),
+    ),
+    "is_merchandise": Read("ItemDetailDialog.jsx", "item.is_merchandise"),
+    "description": Read("ItemDetailDialog.jsx", "item.description"),
+    # the four button gates
+    "can_equip": Read("ItemDetailDialog.jsx", "item.can_equip"),
+    "can_use": Read("ItemDetailDialog.jsx", "item.can_use"),
+    "can_read": Read("ItemDetailDialog.jsx", "item.can_read"),
+    "can_drop": Read("ItemDetailDialog.jsx", "item.can_drop"),
 }
 
 
@@ -1452,9 +1661,16 @@ class TestInventoryWireContract:
 # BattlefieldGrid read the move dicts.
 
 SKILLS_CONTRACT = {
-    "known_moves": "CombatMovePanel.jsx move list source",
-    "skill_tree": "SkillsPanel.jsx:31,85,149 skills.skill_tree",
-    "skill_exp": "SkillsPanel.jsx:32,86,135 skills.skill_exp",
+    "known_moves": Read(
+        "SkillsPanel.jsx",
+        note="no literal read anywhere in frontend/src: `known_moves` appears "
+        "only in test/payloads.js. The old citation named CombatMovePanel, "
+        "but that panel's list is LeftPanel's `movesForButtons`, which comes "
+        "from combat.available_options, not from get_player_skills(). Kept in "
+        "the contract because the endpoint still emits it.",
+    ),
+    "skill_tree": Read("SkillsPanel.jsx", "skills.skill_tree"),
+    "skill_exp": Read("SkillsPanel.jsx", "skills.skill_exp"),
 }
 
 # The skills panel's move list is a DIFFERENT payload from the combat move list
@@ -1464,25 +1680,44 @@ SKILLS_CONTRACT = {
 # later definition shadow the earlier one, so whichever test ran against the
 # survivor was silently asserting the wrong contract.
 KNOWN_MOVE_CONTRACT = {
-    "name": "CombatMovePanel.jsx:75 move.name || move.display_name",
-    "display_name": "CombatMovePanel.jsx:75 move.display_name",
+    "name": Read("CombatMovePanel.jsx", "move.name"),
+    "display_name": Read("CombatMovePanel.jsx", "move.display_name"),
     # `category` routes the move to a radial button via CATEGORY_GROUPS
     # (utils/categories.js). A category no group claims leaves the move with no
     # button at all — that is how 8 castable moves became unreachable.
-    "category": "CooldownTray.jsx:66,100 / BattlefieldGrid.jsx:89 move.category",
-    "description": "CombatMovePanel.jsx move tooltip",
-    "fatigue_cost": "CombatMovePanel.jsx:133-135 move.fatigue_cost > 0",
-    "beats_left": "CooldownTray.jsx cooldown countdown",
-    "xp_gain": "SkillsPanel/CombatMovePanel move xp readout",
+    "category": (
+        Read("CooldownTray.jsx", "move.category"),
+        Read("BattlefieldGrid.jsx", "move.category"),
+    ),
+    # move tooltip
+    "description": Read("CombatMovePanel.jsx", "move.description"),
+    # move.fatigue_cost > 0
+    "fatigue_cost": Read("CombatMovePanel.jsx", "move.fatigue_cost"),
+    "beats_left": Read(
+        "CooldownTray.jsx",
+        note="the tray's countdown reads cooldown_remaining/cooldown_max, not "
+        "beats_left, and its `moves` prop is LeftPanel's combat move list "
+        "rather than this payload. Nothing in frontend/src reads "
+        "known_moves[i].beats_left.",
+    ),
+    "xp_gain": Read(
+        "SkillsPanel.jsx",
+        note="no literal read anywhere in frontend/src; `xp_gain` appears only "
+        "in test/payloads.js. Neither SkillsPanel nor CombatMovePanel renders "
+        "an xp figure per move.",
+    ),
 }
 
 SKILL_TREE_ENTRY_CONTRACT = {
-    "name": "SkillsPanel.jsx:175 handleLearn(skill.name, selectedCategory)",
-    "display_name": "SkillsPanel.jsx skill card title",
-    "description": "SkillsPanel.jsx:186 {skill.description}",
-    "required_exp": "SkillsPanel.jsx:180,191 LEARN ({skill.required_exp})",
-    "is_known": "SkillsPanel.jsx:151,161,167,173 skill.is_known",
-    "can_learn": "SkillsPanel.jsx:176,177,189 skill.can_learn",
+    # handleLearn(skill.name, selectedCategory)
+    "name": Read("SkillsPanel.jsx", "skill.name"),
+    # the card title, via displayNameOf's `display_name || name`
+    "display_name": Read("SkillsPanel.jsx", "displayNameOf(skill)"),
+    "description": Read("SkillsPanel.jsx", "skill.description"),
+    # LEARN ({skill.required_exp})
+    "required_exp": Read("SkillsPanel.jsx", "skill.required_exp"),
+    "is_known": Read("SkillsPanel.jsx", "skill.is_known"),
+    "can_learn": Read("SkillsPanel.jsx", "skill.can_learn"),
 }
 
 
@@ -1817,3 +2052,163 @@ class TestWireIdRoundTrip:
         for key in ("npcs", "items", "objects"):
             for entry in room[key]:
                 _assert_opaque(entry["id"], f"room {key}[].id")
+
+
+# The citations themselves
+# ============================================================================
+# Everything above asserts that the SERIALIZER still emits what the client
+# reads. Nothing above notices the other direction: a component that stopped
+# reading a field, or a file that was renamed or deleted. A hand-written
+# `File.jsx:123` could not catch that — a stale number still renders as a
+# plausible reference — which is why the citations below name an anchor
+# instead. These tests close the loop.
+
+#: Every contract dict above, found rather than listed. A hand-maintained
+#: roster is a second place to forget: dropping a name from it would remove
+#: that dict's citations from both guards below with nothing failing, and the
+#: roster and the dicts would still look consistent to a reader.
+ALL_CONTRACTS = tuple(
+    value
+    for name, value in sorted(globals().items())
+    if name.endswith("_CONTRACT") and isinstance(value, dict)
+)
+
+
+def _source() -> str:
+    with io.open(__file__, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _reads_written_in_this_file() -> int:
+    """How many ``Read(...)`` calls this file's own source contains.
+
+    The floor on the INCREMENT, not just the base. ``ALL_CONTRACTS`` scans
+    globals, so a dict renamed out of the ``*_CONTRACT`` shape — or one built
+    somewhere the scan cannot see — would drop out silently while its Reads
+    stayed in the file. Parsed rather than counted with ``str.count`` so the
+    ``Read(...)`` in the module docstring above is not mistaken for one.
+    """
+    return sum(
+        1
+        for node in ast.walk(ast.parse(_source()))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "Read"
+    )
+
+
+def _all_reads():
+    """Every Read in every contract above, two-consumer tuples flattened.
+
+    Strict on purpose: a plain string slipped back into a contract would be
+    skipped silently by both guards below, which is exactly the hole this
+    file was converted to close.
+    """
+    for contract in ALL_CONTRACTS:
+        for field, why in contract.items():
+            multi = isinstance(why, tuple) and not isinstance(why, Read)
+            for part in (why if multi else (why,)):
+                if not isinstance(part, Read):
+                    raise TypeError(
+                        f"contract entry {field!r} is {part!r}, not a Read — "
+                        "provenance in this file is derived, not written; see "
+                        "tests/_cite.py"
+                    )
+                yield part
+
+
+ALL_READS = tuple(_all_reads())
+
+# Citations that carry a `note=` instead of an anchor, i.e. the fields this
+# file cannot check a consumer for. An unchecked citation is acceptable — some
+# fields genuinely have no consumer to point at. An UNCOUNTED one is not: a
+# citation nobody is counting is precisely how the defect class this file was
+# converted to close got started. Change this number only alongside the note
+# that justifies it.
+EXPECTED_UNVERIFIABLE = 4
+
+
+def _citation_count_mismatch(reached: int, written: int) -> str:
+    """Why the two ``Read`` counts disagree -- which depends on the direction.
+
+    The assertion they feed is an equality, so it fires both ways, and the two
+    ways have opposite causes and opposite fixes. Describing only one of them
+    left the other rendered as its own mirror image ("5 Read(...) calls are
+    written in this file but only 30 reached the guards"), which is nonsense at
+    the moment somebody most needs the message to be readable.
+    """
+    if written > reached:
+        return (
+            f"{written} Read(...) calls are written in this file but only "
+            f"{reached} reached the guards. A citation that is not in a "
+            "module-level `*_CONTRACT` dict is checked by nothing."
+        )
+    return (
+        f"{reached} Read(...) citations reached the guards but only {written} "
+        "Read(...) call(s) are written in this file. "
+        "`_reads_written_in_this_file` counts call SITES, so one site "
+        "standing for many citations lands here: a Read built inside a loop, a "
+        "comprehension or a helper that a contract dict then spreads. Write "
+        "the citations out one per field -- a generated citation names "
+        "whatever the generator was handed rather than a consumer somebody "
+        "checked -- or teach that counter to see the construct and say here "
+        "why it is trustworthy."
+    )
+
+
+def _contracts_declared_in_this_file():
+    """The ``*_CONTRACT = {...}`` names this file's own source assigns."""
+    return {
+        target.id
+        for node in ast.parse(_source()).body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict)
+        for target in node.targets
+        if isinstance(target, ast.Name) and target.id.endswith("_CONTRACT")
+    }
+
+
+class TestCitationProvenance:
+    def test_the_scan_sees_every_contract_and_every_citation(self):
+        """Guard the guards: both of the tests below take a SET as input.
+
+        ``verify([])`` is ``[]`` and ``unverifiable([])`` is ``[]``, so an
+        input set that quietly emptied would leave both passing while checking
+        nothing. Neither half of the size is written down here — the contract
+        roster is compared against the dicts this file declares, and the
+        citation count against the ``Read(...)`` calls it contains — so the
+        floor cannot go stale the way a literal number would.
+        """
+        declared = _contracts_declared_in_this_file()
+        assert declared, "parsed no contract dicts out of this file's source"
+        assert len(ALL_CONTRACTS) == len(declared), (
+            f"{len(ALL_CONTRACTS)} contract dict(s) reached the citation scan "
+            f"but {len(declared)} are declared here ({sorted(declared)}) — a "
+            "contract built somewhere the globals scan cannot see contributes "
+            "no citations to either guard below."
+        )
+        written = _reads_written_in_this_file()
+        assert len(ALL_READS) == written, _citation_count_mismatch(
+            len(ALL_READS), written
+        )
+
+    def test_every_anchored_citation_still_finds_its_anchor(self):
+        broken = verify(ALL_READS)
+        assert not broken, (
+            "Contract citations point at reads that no longer exist:\n  "
+            + "\n  ".join(broken)
+            + "\n\nEither the consumer stopped reading the field (drop the "
+            "field from its contract dict, with a comment saying why), or the "
+            "read moved/was renamed (update the anchor to the literal the "
+            "file now contains). Never widen the anchor to something that "
+            "happens to match — an anchor that cannot fail is not a citation."
+        )
+
+    def test_the_unverifiable_set_is_bounded_and_named(self):
+        loose = unverifiable(ALL_READS)
+        listing = "\n  ".join(f"{r.file}: {r.note}" for r in loose)
+        assert len(loose) == EXPECTED_UNVERIFIABLE, (
+            f"{len(loose)} citation(s) carry a note instead of an anchor, "
+            f"expected {EXPECTED_UNVERIFIABLE}:\n  {listing}\n\n"
+            "If you added one, prefer finding the real literal the file "
+            "contains (often the destructured name). If there genuinely isn't "
+            "one, say so in `note=` and raise EXPECTED_UNVERIFIABLE in the "
+            "same commit. If you removed one, lower it."
+        )

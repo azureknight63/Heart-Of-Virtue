@@ -1624,11 +1624,17 @@ class TestResolveStrikeOutcomeSignature:
 class TestProjectedHitHeatSequence:
     """The preview-side replay of Move.hit's heat reward."""
 
-    def test_constant_matches_the_literal_move_hit_passes(self):
-        """``Move.hit`` must keep its literal 1.25 (the heat-tooltip
-        contract counts the literals in _base.py), so the named constant the
-        heat-sequence simulation replays cannot be spliced into that call.
-        This is the pin that keeps the two from drifting apart."""
+    def test_constant_matches_what_move_hit_actually_passes(self):
+        """The pin that keeps ``HEAT_GAIN_ON_HIT`` and ``Move.hit`` together.
+
+        Written against the VALUE reaching ``change_heat``, whether it arrives
+        as a literal or through a name. It used to require a literal, on the
+        reasoning that the heat-tooltip contract counts literals in `_base.py`
+        — but that contract now resolves names too (a scan that accepted only
+        literals silently found none the day the nine tuning values were
+        lifted into named attributes), so pinning the SHAPE here rather than
+        the value forbade the very refactor that made the other scan honest.
+        """
         import ast
         import inspect
         import textwrap
@@ -1636,17 +1642,26 @@ class TestProjectedHitHeatSequence:
         from src.moves._base import HEAT_GAIN_ON_HIT
 
         tree = ast.parse(textwrap.dedent(inspect.getsource(Move.hit)))
-        literals = [
-            node.args[0].value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and getattr(node.func, "attr", None) == "change_heat"
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-        ]
-        assert HEAT_GAIN_ON_HIT in literals, (
-            f"Move.hit's change_heat literals {literals} no longer include "
-            f"HEAT_GAIN_ON_HIT={HEAT_GAIN_ON_HIT} -- retune both together"
+        passed = []
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "attr", None) == "change_heat"
+                and node.args
+            ):
+                continue
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant):
+                passed.append(arg.value)
+            elif isinstance(arg, ast.Name):
+                passed.append(getattr(Move, arg.id, arg.id))
+            elif isinstance(arg, ast.Attribute):
+                passed.append(getattr(Move, arg.attr, arg.attr))
+
+        assert HEAT_GAIN_ON_HIT in passed, (
+            f"Move.hit's change_heat arguments resolve to {passed}, which no "
+            f"longer include HEAT_GAIN_ON_HIT={HEAT_GAIN_ON_HIT} -- retune "
+            "both together"
         )
 
     def test_replays_jeans_real_change_heat_and_restores_it(self):

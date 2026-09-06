@@ -1,0 +1,49 @@
+# Code points src/text_safety.py must strip, as ranges (START..END, inclusive, hex).
+#
+# GENERATED. Do not hand-edit; regenerate with the snippet in
+# tests/test_text_safety.py::TestTheClassMatchesItsAuthority.
+#
+# The authority is Unicode's Default_Ignorable_Code_Point property --
+# the property the standard actually defines for 'renders as nothing'
+# -- unioned with the Cc, Cf, Zl and Zp general categories and the
+# whole tag block.
+#
+# This file exists so the guard is not the implementation's own
+# opinion written twice. A previous version derived the class from a
+# category set the author picked, then asserted the regex agreed with
+# that same set -- a consistency check, not a coverage check, and it
+# passed while U+FE00, U+E0100, U+3164, U+034F and U+115F each carried
+# a </player_input> fence close through both sanitising layers intact.
+#
+# Neither Cc nor Cf is a subset of Default_Ignorable (U+0600-U+0604
+# are Cf and not DI; no Cc is DI), so the union is required in both
+# directions rather than one property standing in for the rest.
+#
+# Unicode 15.1.0, 4273 code points in 27 ranges.
+0000..001F
+007F..009F
+00AD..00AD
+034F..034F
+0600..0605
+061C..061C
+06DD..06DD
+070F..070F
+0890..0891
+08E2..08E2
+115F..1160
+17B4..17B5
+180B..180F
+200B..200F
+2028..202E
+2060..206F
+3164..3164
+FE00..FE0F
+FEFF..FEFF
+FFA0..FFA0
+FFF0..FFFB
+110BD..110BD
+110CD..110CD
+13430..1343F
+1BCA0..1BCA3
+1D173..1D17A
+E0000..E0FFF

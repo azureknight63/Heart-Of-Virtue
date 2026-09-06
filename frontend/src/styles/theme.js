@@ -133,6 +133,25 @@ export const shadows = {
     inset: 'inset 0 2px 10px rgba(0, 0, 0, 0.5)',
 }
 
+/**
+ * The spacing scale. Every value is a CSS length STRING, not a number:
+ * interpolate them (`` `${spacing.xs} ${spacing.sm}` ``, `padding: spacing.lg`),
+ * never do arithmetic on them. `-spacing.sm` is `NaN`, not `'-8px'`, and
+ * `spacing.sm * 2` is `NaN` too — React drops a NaN style silently in
+ * production and only warns in dev, so a broken layout is the first symptom.
+ * (This is not hypothetical: `marginRight: -spacing.sm` shipped once.) For a
+ * negative offset write the string: `` `-${spacing.sm}` ``.
+ *
+ * A stylesheet cannot import from here, so a key ALSO needed by a rule in
+ * styles/index.css is restated there as a `--space-*` custom property. Only
+ * SOME keys are: the roster is whatever that stylesheet's `:root` block
+ * actually declares, and is deliberately not repeated here as a list or a
+ * count, because the previous version of this sentence claimed all six were
+ * mirrored when two were. Every restatement carries a `theme:` annotation
+ * naming the key it copies, and styles/themeVars.test.js both checks those
+ * agree and rejects any UNannotated literal in that block that matches a token
+ * defined in this file — so a hand-copied duplicate cannot be added silently.
+ */
 export const spacing = {
     xs: '4px',
     sm: '8px',
@@ -150,6 +169,21 @@ export const fonts = {
 export const accessibility = {
     touchTarget: '44px', // Apple/Google HIG minimum touch target size
 }
+
+/**
+ * The custom property that owns the conversation stage portrait's width.
+ *
+ * The NAME lives here; the VALUE lives in styles/index.css, which is the only
+ * place that can express the wide layout's `clamp()` and its mobile override.
+ * Named rather than spelled at each site so ConversationStage's default-layout
+ * `width`, ConversationTranscript's "far below the stage portrait" note and
+ * the test that checks it all read the live value instead of restating a
+ * number that outlives the value it described.
+ *
+ * It sits in theme.js rather than beside any one consumer because it has more
+ * than one.
+ */
+export const STAGE_PORTRAIT_WIDTH_VAR = '--stage-portrait-width'
 
 export const commonStyles = {
     typewriterBox: {
@@ -177,6 +211,20 @@ export const commonStyles = {
         border: `1px solid rgba(255, 68, 68, 0.3)`,
         fontFamily: fonts.main,
     },
+    /**
+     * The small uppercase caption that labels a block without competing with
+     * it — "Previously", a speaker's name over their line, "3 turns on record".
+     * Spread it and override only what genuinely differs (size, colour,
+     * weight); it was copied out by hand across the conversation UI before it
+     * lived here. No count is given: the last one drifted from the adopters
+     * within a round, and `grep -rn eyebrowLabel src/` answers it exactly.
+     */
+    eyebrowLabel: {
+        fontFamily: fonts.main,
+        fontSize: '11px',
+        letterSpacing: '1px',
+        textTransform: 'uppercase',
+    },
     infoCard: {
         backgroundColor: 'rgba(0, 0, 0, 0.3)',
         border: `1px solid ${colors.border.light}`,
@@ -199,5 +247,6 @@ export default {
     spacing,
     fonts,
     accessibility,
-    commonStyles
+    commonStyles,
+    STAGE_PORTRAIT_WIDTH_VAR
 }

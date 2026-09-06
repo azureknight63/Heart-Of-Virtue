@@ -18,7 +18,6 @@ Exit codes:
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -32,23 +31,45 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Silence Mynx LLM calls during harness runs.
-os.environ.setdefault("MYNX_LLM_ENABLED", "0")
-os.environ.setdefault("MYNX_FALLBACK_DELAY", "0")
-os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
+# Never let the harness reach a real LLM provider.
+#
+# This used to be three ``setdefault``s on MYNX_* and nothing else, which was
+# the third instance of one recurring mistake: a hand-listed credential set in
+# this file falling behind the derived one in tests/llm_doubles.py. The first
+# two cost real GitHub issues and real rows in the production database. This
+# one cost provider spend and shipped harness-authored dialogue off-box —
+# ``NpcChatLLMAdapter._ENABLED_ENV_VARS`` is ``("NPC_CHAT_LLM_ENABLED",)``
+# alone, this branch's working configuration sets it to 1 in .env, and the
+# npc_chat scenario POSTs a real npc_id to /api/npc/chat/open. Pinning MYNX_*
+# never touched it.
+#
+# So derive the vocabulary instead of restating it. tests/llm_doubles.py owns
+# the gate/setting/credential sets and both conftests already read them; a
+# provider added to the registry is covered here the day it lands.
+#
+# ORDERING: this import pulls in ai.llm_client, whose module body calls
+# load_project_env() — so .env is fully loaded by the time the blanking below
+# runs. That is deliberate and is what makes assignment work: db.py's later
+# load_dotenv(override=False) skips keys already *present*, so an assigned
+# empty value survives while a popped one would be silently refilled.
+# The sweep itself lives in tests/llm_doubles.py, with the pins, so that the
+# six tools that need it cannot drift apart -- which is what happened when
+# tools/measure_llm_tokens.py grew a second, smaller derivation of its own and
+# left ANTHROPIC_API_KEY, OPENAI_API_KEY, OLLAMA_BASE_URL, GITHUB_TOKEN and
+# TURSO_* live.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
 
-# Never let the harness file real GitHub issues. src/api/routes/feedback.py's
-# _create_github_issue() only checks os.environ["GITHUB_TOKEN"] directly (no
-# TESTING-mode guard — that's intentional, so pytest can mock requests.post
-# at the network boundary and still exercise the real success path). If a
-# real token is present — e.g. from the repo's own .env file, which
-# src/api/db.py loads via load_dotenv() the moment create_app() is imported
-# below — the `feedback` scenario's well-formed submission actually succeeds
-# and spams the real tracker. Set (not pop) to an empty string: dotenv's
-# default override=False only skips keys already *present* in os.environ
-# regardless of value, so popping here would just let load_dotenv() refill it
-# moments later during the create_app() import chain, silently undoing this.
-os.environ["GITHUB_TOKEN"] = ""
+blank_outbound_env()
+
+# GITHUB_TOKEN and TURSO_* used to be blanked here by name, a paragraph each.
+# Both are in OUTBOUND_CREDENTIAL_ENVS now, so the sweep above covers them:
+# the GitHub token because feedback.py's issue-filing path has no TESTING
+# guard by design (it once filed 20 real issues), and the Turso pair because
+# auth_service.create_user has none either (it once wrote real rows to the
+# production database). Spelling them again here is exactly how they came to
+# be maintained in two files at once, which tests/test_credential_blanking.py
+# now fails on.
+
 
 # ---------------------------------------------------------------------------
 # Now safe to import project modules.
@@ -128,7 +149,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # Create the Flask app (TestingConfig: no real DB, no external calls).
+    # Create the Flask app. TestingConfig is NOT what makes this safe -- it
+    # gates the background services and the analytics digest, but auth_service
+    # and feedback.py have no TESTING guard by design, and NpcChatLLMAdapter
+    # reads its own env gate. The blanking at the top of this file is the
+    # control; TestingConfig is the second layer.
     try:
         app, _ = create_app(TestingConfig)
     except Exception as exc:

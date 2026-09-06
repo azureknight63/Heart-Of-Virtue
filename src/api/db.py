@@ -2,9 +2,20 @@ import logging
 import os
 import threading
 import libsql_client
-from dotenv import load_dotenv
 
-load_dotenv()
+from src.env_bootstrap import load_project_env
+
+# Not a bare ``load_dotenv()``. That resolves ``.env`` through ``find_dotenv()``,
+# which walks up from the *working directory*, so a process started anywhere but
+# the project root loads nothing at all and boots with none of the project's
+# settings — no error, no log line. ``load_project_env`` resolves from
+# ``__file__`` and cannot miss.
+#
+# This module in particular: ``create_app()`` -> routes -> auth_service -> db
+# makes it the first ``.env`` load in almost every process that is not one of
+# the two entry points, the test suite included. That is why ``tests/conftest.py``
+# has to blank the provider credentials and ``LOG_LEVEL`` before importing it.
+load_project_env()
 
 logger = logging.getLogger(__name__)
 

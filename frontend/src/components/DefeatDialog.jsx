@@ -5,6 +5,7 @@ import { useAudio } from '../context/AudioContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
+import { apiErrorMessage } from '../utils/apiError'
 
 const SKULL_ART = `
                .o oOOOOOOOo                                            OOOo
@@ -103,7 +104,7 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
         await onLoadedSave()
       }
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to load save.')
+      setError(apiErrorMessage(e, e?.message || 'Failed to load save.'))
     } finally {
       setIsSubmitting(false)
     }

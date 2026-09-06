@@ -15,6 +15,10 @@ class GameClient:
         self._client = app.test_client()
         self._session_manager = app.session_manager
         self.session_id: Optional[str] = None
+        #: The config of the app under test. Scenarios whose expectations are
+        #: config-dependent read it rather than assuming the mode the harness
+        #: normally runs in — see ``scenarios/health.py``.
+        self.app_config = app.config
 
     # ------------------------------------------------------------------
     # Session lifecycle

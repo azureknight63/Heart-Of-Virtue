@@ -6,9 +6,11 @@
  * fallback chain: the tagged emotion image -> that speaker's `neutral.png`
  * -> the generic placeholder. This lets speakers ship partial emotion sets
  * (or none at all) and still render something recognizable before falling
- * back to the art-agnostic placeholder. Callers must set `data-speaker-slug`
- * and `data-emotion` (the normalized emotion) on the `<img>` for the chain
- * to resolve correctly — see `ConversationStage.jsx`.
+ * back to the art-agnostic placeholder. The chain reads `data-speaker-slug`
+ * and `data-emotion` (the normalized emotion) off the `<img>`, and
+ * `PortraitImage.jsx` is the only sanctioned place that sets them — every
+ * surface that shows a face renders through it. Do not hand-roll an `<img>`
+ * against this module; extend `PortraitImage` instead.
  */
 
 /**
@@ -71,7 +73,12 @@ export function handlePortraitError(e) {
     // URL) against a freshly-built relative path would never match, causing
     // a redundant re-request of the same broken URL.
     if (!stage && img.dataset.emotion !== 'neutral') {
-        const slug = img.dataset.speakerSlug
+        // Re-slugged rather than trusted as read back: this builds a URL, and
+        // the invariant that the attribute was written by `speakerSlug` lives
+        // in the caller, not here. `speakerSlug` is idempotent, so this costs
+        // nothing when the attribute is already well-formed and neutralises
+        // `../`, `javascript:` and `//host` if it ever isn't.
+        const slug = speakerSlug(img.dataset.speakerSlug)
         if (slug) {
             img.dataset.fallback = 'neutral'
             img.src = assetPath(`/assets/portraits/${slug}/neutral.png`)

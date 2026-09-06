@@ -9,66 +9,41 @@ Tests for the NPC LLM chat review changes:
 - Adapter ``generate_turn`` parsing / clamping
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
+from tests._npc_fixtures import chat_player, qc_npc, wired_chat_npc
+from tests.llm_doubles import make_chat_adapter
 
 
 def _make_npc(**overrides):
-    """Build a minimally-wired chat NPC whose helper methods are stubbed."""
+    """A minimally-wired chat host: :func:`wired_chat_npc` with this file's values.
 
-    class TestNPC(ConversationalNPCMixin):
-        def __init__(self):
-            self.name = "TestNPC"
-            self.charisma = 10
-            self.wisdom = 10
-            self.keywords = []
-            self._chat_config_path = None
-            self._chat_char_config = None
-            self._chat_world_facts = {}
-            self._chat_personality = {"given_name": "Ren", "voice": "dry"}
-            self._chat_history = [{"npc": "Hello", "jean": ""}]
-            self._chat_npc_key = None
-            self._chat_adapter = None
-            self._chat_fallback_idx = 0
-            self._prohibited_patterns = []
-            self.loquacity_current = 50
-            self.loquacity_max = 100
-            self.loquacity_threshold = 20
-            self.loquacity_recovery = 2
+    This was a 50-line inline ``class TestNPC(ConversationalNPCMixin)`` that
+    re-implemented the shared builder wholesale, in a file that already imported
+    from the same harness. Every difference was expressible as an override,
+    because ``wired_chat_npc`` sets its method stubs as plain instance
+    attributes -- so the copy bought nothing and drifted freely.
 
-        def _compute_loquacity(self, player):
-            pass
-
-        def _get_npc_key(self, player):
-            return "test_key"
-
-        def _load_history_from_persistence(self, player):
-            pass
-
-        def _ensure_personality(self, player):
-            pass
-
-        def _build_system_prompt(self, player):
-            return "System prompt"
-
-        def _get_chapter(self, player):
-            return "1"
-
-        def _save_exchange_to_persistence(self, player, npc, jean, tick, chapter):
-            pass
-
-        def _display_name(self):
-            return self.name
-
-    npc = TestNPC()
-    for k, v in overrides.items():
-        setattr(npc, k, v)
-    return npc
+    ``_build_system_prompt`` and ``_display_name`` are no longer stubbed; the
+    real ones run, which is what every other chat test does. Nothing here
+    asserts on either.
+    """
+    adapter = overrides.pop("_chat_adapter", None)
+    defaults = {
+        "name": "TestNPC",
+        "_chat_world_facts": {},
+        "_chat_personality": {"given_name": "Ren", "voice": "dry"},
+        "_chat_history": [{"npc": "Hello", "jean": ""}],
+        "_chat_npc_key": None,
+        "_get_npc_key": lambda player: "test_key",
+        "_get_chapter": lambda player: "1",
+        "loquacity_current": 50,
+        "loquacity_max": 100,
+        "loquacity_threshold": 20,
+        "loquacity_recovery": 2,
+    }
+    defaults.update(overrides)
+    return wired_chat_npc(adapter, **defaults)
 
 
 class _CombinedAdapter:
@@ -106,12 +81,14 @@ class _CombinedAdapter:
 
 
 def _player():
-    player = MagicMock()
-    player.universe.game_tick = 10
-    player.universe.story = {}
-    player.npc_chat_histories = {}
-    player.reputation = {}
-    return player
+    """The player handed to ``chat_open``/``chat_respond`` in this file.
+
+    Delegates to the shared :func:`chat_player` rather than being a fifth
+    hand-rolled ``MagicMock``. The mixin reads exactly three attributes off a
+    player, and a bare MagicMock answers every *other* attribute too -- so a
+    typo in the code under test gets a Mock back instead of an AttributeError.
+    """
+    return chat_player(persist=True, universe=MagicMock(story={}, game_tick=10))
 
 
 # ---------------------------------------------------------------------------
@@ -206,31 +183,33 @@ class TestGracefulClosure:
 
 class TestProperNounQC:
     def _npc(self):
-        class QCNPC(ConversationalNPCMixin):
-            def __init__(self):
-                self.name = "TestNPC"
-                self._chat_world_facts = {"allowed_proper_nouns": []}
-                self._prohibited_patterns = []
-
-        return QCNPC()
+        return qc_npc(allowed_proper_nouns=[])
 
     def test_sentence_initial_words_preserved(self):
         npc = self._npc()
-        result = npc._qc_npc_text("The storm is coming. She warned us before.", [])
+        result = npc._qc_npc_text("The storm is coming. She warned us before.", []).text
         assert "The" in result
         assert "She" in result
         assert "they" not in result.split()
 
     def test_common_words_preserved_midsentence(self):
         npc = self._npc()
-        result = npc._qc_npc_text("I trust in God when the North wind rises.", [])
+        result = npc._qc_npc_text("I trust in God when the North wind rises.", []).text
         assert "God" in result
         assert "North" in result
 
     def test_invented_noun_still_scrubbed(self):
+        """``result`` is the QC'd STRING here.
+
+        This assertion used to run against the ``QcResult`` NamedTuple, where
+        ``"Xanthor" not in result`` compares against the three *fields* and is
+        therefore true no matter what the pipeline produced.
+        """
         npc = self._npc()
-        result = npc._qc_npc_text("I saw Xanthor near the ridge.", [])
+        result = npc._qc_npc_text("I saw Xanthor near the ridge.", []).text
+        assert isinstance(result, str)
         assert "Xanthor" not in result
+        assert "someone" in result or "that place" in result
 
 
 # ---------------------------------------------------------------------------
@@ -250,33 +229,100 @@ class TestLoquacityRecovery:
         player.__dict__["_active_chat_npc_id"] = None
         player.npc_chat_histories = {
             "Mara": {
-                "loquacity_current": 40,
-                "loquacity_max": 100,
-                "loquacity_recovery": 5,
+                "loquacity_current": 6,
+                "loquacity_max": 12,
+                "loquacity_recovery": 1,
+                "loquacity_scale": 15,
             }
         }
         svc._recover_npc_loquacity(player)
-        assert player.npc_chat_histories["Mara"]["loquacity_current"] == 45
+        assert player.npc_chat_histories["Mara"]["loquacity_current"] == 7
 
     def test_recovery_respects_max(self):
         svc = self._service()
         player = MagicMock()
         player.__dict__["_active_chat_npc_id"] = None
         player.npc_chat_histories = {
-            "Mara": {"loquacity_current": 98, "loquacity_max": 100, "loquacity_recovery": 5}
+            "Mara": {
+                "loquacity_current": 14,
+                "loquacity_max": 15,
+                "loquacity_recovery": 1,
+                "loquacity_scale": 15,
+            }
         }
         svc._recover_npc_loquacity(player)
-        assert player.npc_chat_histories["Mara"]["loquacity_current"] == 100
+        assert player.npc_chat_histories["Mara"]["loquacity_current"] == 15
+
+    def test_recovery_migrates_old_scale_before_ticking(self):
+        svc = self._service()
+        player = MagicMock()
+        player.__dict__["_active_chat_npc_id"] = None
+        player.npc_chat_histories = {
+            "Mara": {
+                "loquacity_current": 72,
+                "loquacity_max": 80,
+                "loquacity_recovery": 2,
+            }
+        }
+        svc._recover_npc_loquacity(player)
+        assert player.npc_chat_histories["Mara"] == {
+            "loquacity_current": 12,
+            "loquacity_max": 12,
+            "loquacity_recovery": 1,
+            "loquacity_scale": 15,
+        }
+
+    def test_old_scale_exhausted_value_scales_to_zero_then_recovers(self):
+        """Scaling rounds an exhausted value to 0; the tick then lifts it to 1.
+
+        Two separate claims, and the end state distinguishes them: had the
+        rescale rounded 0 up to 1, recovery would land on 2. So asserting 1
+        still pins the original intent of this test -- that the migration does
+        not invent conversation out of an exhausted NPC.
+
+        What changed is the second half. This previously asserted 0, codifying
+        an undocumented ``loq_cur > 0`` guard that made recovery skip exhausted
+        entries entirely, leaving the NPC below ``loquacity_threshold`` for the
+        life of the save. Three things say that was not intended:
+        ``loquacity_tick``, which this function's docstring says it mirrors,
+        does not special-case 0; ``_chat_llm.py:749-751`` says in as many words
+        that a recovery reaching 0 "would leave an exhausted NPC permanently
+        mute"; and the guard carried no comment. Permanent muteness is a
+        player-facing defect, not a budget.
+        """
+
+        svc = self._service()
+        player = MagicMock()
+        player.__dict__["_active_chat_npc_id"] = None
+        player.npc_chat_histories = {
+            "Mara": {
+                "loquacity_current": 0,
+                "loquacity_max": 80,
+                "loquacity_recovery": 2,
+            }
+        }
+        svc._recover_npc_loquacity(player)
+        assert player.npc_chat_histories["Mara"] == {
+            "loquacity_current": 1,
+            "loquacity_max": 12,
+            "loquacity_recovery": 1,
+            "loquacity_scale": 15,
+        }
 
     def test_no_recovery_during_active_chat(self):
         svc = self._service()
         player = MagicMock()
         player.__dict__["_active_chat_npc_id"] = "Mara"
         player.npc_chat_histories = {
-            "Mara": {"loquacity_current": 40, "loquacity_max": 100, "loquacity_recovery": 5}
+            "Mara": {
+                "loquacity_current": 6,
+                "loquacity_max": 12,
+                "loquacity_recovery": 1,
+                "loquacity_scale": 15,
+            }
         }
         svc._recover_npc_loquacity(player)
-        assert player.npc_chat_histories["Mara"]["loquacity_current"] == 40
+        assert player.npc_chat_histories["Mara"]["loquacity_current"] == 6
 
     def test_meta_key_skipped(self):
         svc = self._service()
@@ -331,12 +377,9 @@ class TestLoquacityRecovery:
 
 class TestAdapterGenerateTurn:
     def _adapter(self, raw):
-        import ai.llm_client as llm
-
-        adapter = llm.NpcChatLLMAdapter.__new__(llm.NpcChatLLMAdapter)
-        adapter.enabled = True
-        adapter._call_llm = lambda *a, **k: raw
-        return adapter
+        return make_chat_adapter(
+            provider=None, api_key=None, _call_llm=lambda *a, **k: raw
+        )
 
     def test_parses_and_clamps(self):
         adapter = self._adapter(
@@ -367,3 +410,17 @@ class TestAdapterGenerateTurn:
     def test_none_raw_returns_none(self):
         adapter = self._adapter(None)
         assert adapter.generate_turn("sys", [], is_opening=True) is None
+
+    def test_preserves_optional_narrative_flavor_separately_from_dialogue(self):
+        adapter = self._adapter(
+            '{"npc_text": "The road is open.", "npc_flavor": "She studies the dust before answering.", '
+            '"conversation_quality": "neutral", "jean_options": []}'
+        )
+        result = adapter.generate_turn("sys", [], is_opening=True)
+        assert result["npc_text"] == "The road is open."
+        assert result["npc_flavor"] == "She studies the dust before answering."
+
+    def test_missing_narrative_flavor_defaults_to_empty_string(self):
+        adapter = self._adapter('{"npc_text": "The road is open.", "jean_options": []}')
+        result = adapter.generate_turn("sys", [], is_opening=True)
+        assert result["npc_flavor"] == ""

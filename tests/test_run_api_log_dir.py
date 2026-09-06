@@ -27,9 +27,17 @@ print(os.environ.get("LOG_JSONL_DIR", "<unset>"))
 def _probe(flask_env):
     env = {"FLASK_ENV": flask_env} if flask_env else {}
     if flask_env == "production":
-        # src/api/config.py fails closed without this in production; not
-        # what this test is about, just satisfying that unrelated guard.
+        # src/api/config.py fails closed without these in production; neither
+        # is what this test is about, they just satisfy the unrelated guards.
+        # ENCRYPTION_KEY joined SECRET_KEY when runtime_config started checking
+        # it too — a guard added on one branch while this list lived on
+        # another, which is the whole reason the assert prints result.stderr.
         env["SECRET_KEY"] = "test-secret-not-real"
+        # A real Fernet key shape, not a placeholder string: src/api/crypto.py
+        # constructs Fernet(...) eagerly and rejects anything that is not 32
+        # url-safe base64 bytes. Generated once and pinned here; it encrypts
+        # nothing, because this probe never reaches a save.
+        env["ENCRYPTION_KEY"] = "ZuIulKyhqUNUtY-iqTwPnFZ7tyfCzR-n_S7I6M8sHr4="
     result = subprocess.run(
         [sys.executable, "-c", _SCRIPT, str(_ROOT)],
         capture_output=True,

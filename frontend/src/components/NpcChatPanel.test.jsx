@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import React from 'react'
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import NpcChatPanel from './NpcChatPanel'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
+import NpcChatPanel, { collapseTerminatorRun, TERMINATOR_RUN_RE } from './NpcChatPanel'
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
 
 // Mock the npcChat API
@@ -13,18 +16,72 @@ vi.mock('../api/npcChat', () => ({
   },
 }))
 
+// TIMERS / the typewriter. ConversationStage runs in `mode="live"` here, which
+// is deliberately NON-interactive: there is no click-to-finish gesture, so
+// "wait for the line to land on the stage" could only ever mean "wait out
+// length x 20 ms of wall clock". That is not a wait for a state change, it is
+// a wait for one React re-render per character, and its cost scales with CPU
+// load while waitFor's budget does not — which is exactly how the sibling
+// panels' 1000 ms waits lost the race under a loaded parallel run. The 5000 ms
+// budgets that used to sit here were the same bet at longer odds.
+//
+// So the hook hands back the finished line instead. The panel's behaviour has
+// nothing to do with the animation: the reveal itself is covered character by
+// character, on fake timers, in hooks/useTypewriter.test.js and
+// components/ConversationStage.test.jsx. `typewriter.mode = 'partial'` freezes
+// the stage mid-line for the one test that needs to tell the typed text apart
+// from the announced text.
+const typewriter = vi.hoisted(() => ({ mode: 'complete', PREFIX_CHARS: 8 }))
+vi.mock('../hooks/useTypewriter', () => ({
+  default: (text = '') => {
+    const full = String(text ?? '')
+    const partial = typewriter.mode === 'partial'
+    return {
+      displayedText: partial ? full.slice(0, typewriter.PREFIX_CHARS) : full,
+      isComplete: !partial,
+      finishImmediately: () => {},
+      reset: () => {},
+    }
+  },
+}))
+
+// SCOPE. Everything the API state machine owns — phase transitions, payload
+// defaults, supersession, unmount guards, the emotion tables, retry replay,
+// the auto-close timer — is tested one level down, against the hook itself, in
+// hooks/useNpcChat.test.js. This file covers what the PANEL owns: which props
+// it hands BaseDialog, the recap strip, the loquacity bar and its colours, the
+// relationship badge, the history dialog and what it gates, which controls go
+// inert, the live region, and that dismissal ends the session server-side.
+// Anything asserted in both places was removed from here, not from there.
+//
 // Stand-ins for the presentational children. They must stay FAITHFUL to the
 // real components' contract, or the panel's own logic stops being observable:
-//   - BaseDialog exposes close as a dedicated control. The previous mock fired
+//   - BaseDialog exposes close as a dedicated control. An earlier mock fired
 //     `onClose` from a click anywhere in the dialog, which meant every option
 //     click also "closed" the panel and four downstream tests had to clear the
 //     spy to work around their own mock.
+//   - `width` is forwarded RAW, not re-derived: BaseDialog computes its own
+//     `min(94vw, maxWidth)` default, and a mock that copied that formula would
+//     only be asserting against its own copy of it. What the panel owns is
+//     which props it sends, so that is what is asserted below.
 //   - GameButton must honour `disabled`, otherwise the panel's loading gate is
 //     invisible to the test and a regression that lets the player double-submit
 //     an option would pass.
+// ConversationStage / ConversationTranscript / PortraitImage are deliberately
+// NOT mocked: the panel composes them, and mocking them out would leave the
+// recap strip and the staged conversation unobservable. (Only the leaf
+// `useTypewriter` inside the stage is stubbed — see the timers note above.
+// The stage itself, portraits and all, is the real component.) The tone -> emotion
+// and quality -> emotion mappings themselves are asserted directly against the
+// tables in the hook suite, not inferred from an alt attribute here.
 vi.mock('./BaseDialog', () => ({
-  default: ({ children, title, onClose }) => (
-    <div data-testid="base-dialog">
+  default: ({ children, title, onClose, maxWidth = '400px', width, className }) => (
+    <div
+      data-testid="base-dialog"
+      data-max-width={maxWidth}
+      data-width={width}
+      className={className}
+    >
       <h2>{title}</h2>
       <button data-testid="dialog-close" onClick={onClose}>
         ×
@@ -42,16 +99,13 @@ vi.mock('./GameButton', () => ({
   ),
 }))
 
-vi.mock('./TypewriterOutput', () => ({
-  default: ({ text }) => <div data-testid="typewriter">{text}</div>,
-}))
-
 import npcChat from '../api/npcChat'
 
 describe('NpcChatPanel', () => {
   const mockNpcId = 'Mynx'
   const mockNpcName = 'Mynx'
   const mockOnClose = vi.fn()
+  let consoleError
 
   // Realistic wire payloads. `npc_key` is the NPC key the engine mints, the
   // tones are the only three `_qc_jean_options` ever emits, and the shape
@@ -84,9 +138,45 @@ describe('NpcChatPanel', () => {
   /** The loquacity fill element — the only place loquacity is rendered. */
   const loquacityBar = (container) => container.querySelector('[style*="height: 100%"]')
 
+  /**
+   * Jean's dialogue options, scoped to the container that holds them.
+   *
+   * Every button in the panel is a GameButton and so shares one testid. This
+   * used to subtract three known labels instead, which meant any button added
+   * to the action row or the error box in future would have joined the option
+   * list unannounced — and the assertions here are about the option COUNT.
+   */
+  const optionButtons = () => {
+    const list = screen.queryByTestId('npc-chat-options')
+    return list ? within(list).getAllByTestId('game-button') : []
+  }
+
+  /**
+   * Wait for a line to land on the stage.
+   *
+   * The only wait left is for the mocked API promise to put the stage in the
+   * DOM — one state transition, not `text.length` of them. With the typewriter
+   * stubbed (see the top of the file) the prose is there the moment the stage
+   * is, so the text assertion is synchronous and cannot lose a race.
+   */
+  const findStageText = async (text) => {
+    const stage = await screen.findByTestId('conversation-stage')
+    expect(stage).toHaveTextContent(text)
+    return stage
+  }
+
   beforeEach(() => {
+    typewriter.mode = 'complete'
     vi.clearAllMocks()
+    // The hook logs the server's detail on every failure path and never renders
+    // it. Silenced here so an expected-failure test does not spew, and spied so
+    // "logged instead of shown" can actually be asserted.
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     npcChat.open.mockResolvedValue(mockOpenResponse)
+    // Every path out of the panel now ends the session, including the ones
+    // that unmount it, so `end` must resolve for every test — not only the
+    // handful that assert on it.
+    npcChat.end.mockResolvedValue({ data: { success: true } })
     npcChat.respond.mockResolvedValue({
       data: makeNpcChatRespond({
         npc_response: 'A measured reply.',
@@ -98,15 +188,23 @@ describe('NpcChatPanel', () => {
   })
 
   afterEach(() => {
+    consoleError.mockRestore()
     vi.clearAllMocks()
   })
 
   describe('Component Initialization', () => {
-    it('opens the conversation for exactly the npcId it was given', async () => {
+    it('uses a wide dialog for the desktop portrait-backed conversation stage', async () => {
       renderPanel()
 
-      await waitFor(() => expect(npcChat.open).toHaveBeenCalledWith(mockNpcId))
-      expect(npcChat.open).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toBeInTheDocument())
+      const dialog = screen.getByTestId('base-dialog')
+      expect(dialog).toHaveAttribute('data-max-width', '1100px')
+      // No explicit `width`: BaseDialog derives `min(94vw, maxWidth)` itself, so
+      // restating a pixel value here would just be a second copy of that
+      // default, free to drift. (Nor is the derived value observable in jsdom —
+      // cssstyle drops `min()` outright, leaving `style.width` empty.)
+      expect(dialog).not.toHaveAttribute('data-width')
+      expect(screen.getByTestId('conversation-stage')).toHaveClass('conversation-stage--wide')
     })
 
     it('shows the npcName prop as the title until the server sends npc_name', async () => {
@@ -122,65 +220,73 @@ describe('NpcChatPanel', () => {
       expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Mynx the Swift')
     })
 
-    it('renders the server npc_opening as the NPC first line', async () => {
+    it('renders the server npc_opening as the NPC first line, attributed to the server name', async () => {
       renderPanel()
 
-      const line = await screen.findByTestId('typewriter')
-      expect(line).toHaveTextContent('Well, well, what do we have here?')
+      const stage = await findStageText('Well, well, what do we have here?')
       // Attributed to the server's display name, not the prop.
-      expect(line.parentElement).toHaveTextContent('Mynx the Swift:')
+      expect(stage).toHaveTextContent('Mynx the Swift')
     })
 
-    it('shows the pulsing placeholder, and no options, while open() is in flight', async () => {
+    it('shows the loading affordance, and no options, while open() is in flight', async () => {
       let resolveOpen
       npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
 
       renderPanel()
 
-      // loading && messages.length === 0 -> the ellipsis placeholder.
-      expect(screen.getByText('…')).toBeInTheDocument()
+      // loading && segments.length === 0 -> the block loading indicator.
+      expect(screen.getByTestId('npc-chat-loading')).toBeInTheDocument()
       expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
       // End Conversation exists but is inert during the 'opening' phase.
       expect(screen.getByText('End Conversation')).toBeDisabled()
 
       await act(async () => { resolveOpen(mockOpenResponse) })
-      expect(screen.queryByText('…')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('npc-chat-loading')).not.toBeInTheDocument()
       expect(screen.getByText('End Conversation')).toBeEnabled()
+    })
+
+    it('shows an inline loader over the existing stage while a reply is pending', async () => {
+      let resolveRespond
+      npcChat.respond.mockReturnValue(new Promise((resolve) => { resolveRespond = resolve }))
+      renderPanel()
+
+      fireEvent.click(await screen.findByText('Hi there'))
+
+      // The stage keeps the conversation so far; the loader stacks under it.
+      expect(screen.getByTestId('npc-chat-loading')).toBeInTheDocument()
+      expect(screen.getByTestId('conversation-stage')).toBeInTheDocument()
+
+      await act(async () => {
+        resolveRespond({
+          data: makeNpcChatRespond({ npc_response: 'Done.', jean_options: [] }),
+        })
+      })
+      expect(screen.queryByTestId('npc-chat-loading')).not.toBeInTheDocument()
     })
   })
 
   describe('Message Display', () => {
-    it('appends Jean line then NPC reply, in order, with the tone tag', async () => {
-      npcChat.respond.mockResolvedValue({
-        data: makeNpcChatRespond({ npc_response: 'You have my attention.', jean_options: [] }),
-      })
-      const { container } = renderPanel()
-
-      fireEvent.click(await screen.findByText('Hi there'))
-      await screen.findByText(/You have my attention/)
-
-      const transcript = container.querySelectorAll('[style*="line-height: 1.5"]')
-      expect(transcript).toHaveLength(3)
-      expect(transcript[0]).toHaveTextContent('Mynx the Swift: Well, well, what do we have here?')
-      // Jean's chosen line carries the option's tone, straight off the payload.
-      expect(transcript[1]).toHaveTextContent('Jean: Hi there[open]')
-      expect(transcript[2]).toHaveTextContent('Mynx the Swift: You have my attention.')
-    })
-
-    it('typewrites only the latest NPC line and leaves earlier ones static', async () => {
+    it('stages the newest beat only, with the speaker in the dialogue card', async () => {
       npcChat.respond.mockResolvedValue({
         data: makeNpcChatRespond({ npc_response: 'The newest line.', jean_options: [] }),
       })
       renderPanel()
 
       fireEvent.click(await screen.findByText('Hi there'))
-      await screen.findByText(/The newest line/)
+      const stage = await findStageText('The newest line.')
 
-      // Exactly one typewriter, and it is the newest NPC line — the opening
-      // has settled into plain text.
-      const typewriters = screen.getAllByTestId('typewriter')
-      expect(typewriters).toHaveLength(1)
-      expect(typewriters[0]).toHaveTextContent('The newest line.')
+      // The opening has scrolled off the stage into the recap/history.
+      expect(stage).not.toHaveTextContent('Well, well, what do we have here?')
+    })
+
+    it('renders NPC portraits in the portrait-backed conversation stage', async () => {
+      renderPanel()
+
+      const stage = await screen.findByTestId('conversation-stage')
+      await waitFor(() =>
+        expect(within(stage).getByAltText('Mynx the Swift (neutral)')).toBeInTheDocument()
+      )
+      expect(within(stage).getByAltText('Jean (neutral)')).toBeInTheDocument()
     })
 
     it('shows the waiting placeholder when the server sends no opening line', async () => {
@@ -188,8 +294,8 @@ describe('NpcChatPanel', () => {
 
       renderPanel()
 
-      expect(await screen.findByText('Waiting for NPC to speak...')).toBeInTheDocument()
-      expect(screen.queryByTestId('typewriter')).not.toBeInTheDocument()
+      expect(await screen.findByText('Waiting for NPC to speak…')).toBeInTheDocument()
+      expect(screen.queryByTestId('conversation-stage')).not.toBeInTheDocument()
     })
   })
 
@@ -198,29 +304,14 @@ describe('NpcChatPanel', () => {
       renderPanel()
 
       await screen.findByText('Hi there')
-      const optionButtons = screen
-        .getAllByTestId('game-button')
-        .filter((b) => b.textContent !== 'End Conversation')
+      const buttons = optionButtons()
 
-      expect(optionButtons).toHaveLength(2)
-      expect(optionButtons[0]).toHaveTextContent('Hi there[open]')
-      expect(optionButtons[1]).toHaveTextContent('Leave me alone[guarded]')
+      expect(buttons).toHaveLength(2)
+      expect(buttons[0]).toHaveTextContent('Hi there[open]')
+      expect(buttons[1]).toHaveTextContent('Leave me alone[guarded]')
     })
 
-    it('sends the clicked option\'s text and tone with the session npc_key', async () => {
-      renderPanel()
-
-      fireEvent.click(await screen.findByText('Leave me alone'))
-
-      await waitFor(() =>
-        // npc_key comes from the open response, NOT the npcId prop; text and
-        // tone come from the option that was clicked, not the first one.
-        expect(npcChat.respond).toHaveBeenCalledWith('npc_session_123', 'Leave me alone', 'guarded')
-      )
-      expect(npcChat.respond).toHaveBeenCalledTimes(1)
-    })
-
-    it('withdraws the options while the NPC is composing a reply', async () => {
+    it('withdraws the options and disables End Conversation while the NPC composes a reply', async () => {
       let resolveRespond
       npcChat.respond.mockReturnValue(new Promise((resolve) => { resolveRespond = resolve }))
       renderPanel()
@@ -244,16 +335,6 @@ describe('NpcChatPanel', () => {
       expect(screen.getByText('End Conversation')).toBeEnabled()
     })
 
-    it('ignores an option click that arrives before the session key exists', async () => {
-      let resolveOpen
-      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
-      renderPanel()
-
-      // No options render during 'opening', so nothing can be dispatched.
-      expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
-      expect(npcChat.respond).not.toHaveBeenCalled()
-      await act(async () => { resolveOpen(mockOpenResponse) })
-    })
   })
 
   describe('Loquacity Tracking', () => {
@@ -265,128 +346,132 @@ describe('NpcChatPanel', () => {
       expect(loquacityBar(container).style.width).toBe('40%')
     })
 
-    it('redraws the bar from the respond payload, not the open payload', async () => {
-      npcChat.respond.mockResolvedValue({
-        data: makeNpcChatRespond({
-          npc_response: 'A measured reply.',
-          jean_options: [],
-          loquacity_current: 1,
-          loquacity_max: 5,
-        }),
-      })
-      const { container } = renderPanel()
-
-      fireEvent.click(await screen.findByText('Hi there'))
-      await screen.findByText(/A measured reply/)
-
-      // 1 of 5 -> 20%, down from the opening's 40%.
-      expect(loquacityBar(container).style.width).toBe('20%')
-    })
   })
 
   describe('Error Handling', () => {
-    it('surfaces the server error body verbatim when open fails', async () => {
+    it('shows fixed local copy and logs the server detail when open fails', async () => {
       npcChat.open.mockRejectedValue({ response: { data: { error: 'NPC not found' } } })
 
       renderPanel()
 
-      expect(await screen.findByText('NPC not found')).toBeInTheDocument()
-      // The error ends the panel: no options, and the End Conversation button
-      // is gone because phase === 'ended'.
+      // The server's `error` field is diagnostic detail — endpoint, model id,
+      // status body, request id — and the panel holds whether or not the
+      // server sanitised it. It is logged, never rendered.
+      expect(await screen.findByText('Failed to open conversation')).toBeInTheDocument()
+      expect(screen.queryByText('NPC not found')).not.toBeInTheDocument()
+      expect(consoleError).toHaveBeenCalledWith('[npcChat] open failed:', 'NPC not found')
       expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
-      expect(screen.queryByText('End Conversation')).not.toBeInTheDocument()
-      expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
     })
 
-    it('falls back to the generic message when the error body carries none', async () => {
-      npcChat.open.mockRejectedValue({ response: {} })
+    it('reads a failed open as failed, not as a finished conversation', async () => {
+      npcChat.open.mockRejectedValue({ response: { data: { error: 'NPC not found' } } })
 
       renderPanel()
 
-      expect(await screen.findByText('Failed to open conversation')).toBeInTheDocument()
+      await screen.findByText('Failed to open conversation')
+      // phase 'failed' is deliberately distinct from 'ended': "Conversation
+      // ended." with End Conversation withdrawn described a finished chat that
+      // Retry could never clear.
+      expect(screen.queryByText('Conversation ended.')).not.toBeInTheDocument()
+      expect(screen.getByText('End Conversation')).toBeInTheDocument()
+      expect(screen.getByText('Retry')).toBeInTheDocument()
     })
 
-    it('falls back to the generic message for a transport error with no response', async () => {
-      npcChat.open.mockRejectedValue(new Error('Network error'))
-
-      renderPanel()
-
-      expect(await screen.findByText('Failed to open conversation')).toBeInTheDocument()
-      // The raw JS error text must never leak into the UI.
-      expect(screen.queryByText(/Network error/)).not.toBeInTheDocument()
-    })
   })
 
   describe('Closing Conversation', () => {
-    it('calls onClose once when the dialog close control is used', async () => {
+    // Every door out of the panel is the same door. BaseDialog's `onClose` is
+    // ✕, the overlay click AND Escape — by far the most common way out — and
+    // wired straight to the panel's own `onClose` it dismissed without ever
+    // calling `POST /npc/chat/end`, leaving `player._active_chat_npc_id` and
+    // the conversation record set server-side. The button was the only one
+    // that closed properly, so both are asserted against the same claim.
+    //
+    // Only the ✕ is exercised here, because BaseDialog is mocked at the top of
+    // this file down to a single close button. That is enough: the three
+    // gestures are ONE prop as far as this panel is concerned, and that they
+    // all reach it is BaseDialog's own contract — asserted in
+    // BaseDialog.test.jsx ("calls onClose when overlay is clicked", "calls
+    // onClose when Escape is pressed").
+    const dismissals = [
+      ["the dialog's ✕ (BaseDialog's onClose, shared with overlay and Escape)", () => screen.getByTestId('dialog-close')],
+      ['the End Conversation button', () => screen.getByText('End Conversation')],
+    ]
+
+    it.each(dismissals)('ends the session server-side when closed through %s', async (_door, control) => {
       renderPanel()
 
+      // Wait on the RENDER, not on the call: open() having fired says nothing
+      // about the panel having consumed the response.
       await screen.findByText('Hi there')
+      fireEvent.click(control())
+
+      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('still closes on dismissal when there is no session to end', async () => {
+      // `/open` never resolved, so there is nothing server-side to end and
+      // routing the ✕ through the end handler must not trap the player.
+      let resolveOpen
+      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
+      renderPanel()
+
       fireEvent.click(screen.getByTestId('dialog-close'))
 
-      expect(mockOnClose).toHaveBeenCalledTimes(1)
-      // Dismissing the dialog is not the same as ending the session server-side.
       expect(npcChat.end).not.toHaveBeenCalled()
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+
+      await act(async () => { resolveOpen(mockOpenResponse) })
     })
-  })
 
-  describe('Conversation Flow States', () => {
-    it('walks opening -> waiting_jean -> waiting_npc -> waiting_jean', async () => {
-      let resolveRespond
-      npcChat.respond.mockReturnValue(new Promise((resolve) => { resolveRespond = resolve }))
-      renderPanel()
+    it('ends the conversation the server opened after the panel was already gone', async () => {
+      // The owner unmounts the panel on close — `InteractPanel` renders it as
+      // `{showChatPanel && <NpcChatPanel/>}` — so a dismissal mid-`/open` left
+      // the response landing on a hook with nowhere to put the `npc_key`. It
+      // was dropped, `/end` was never sent, and `_active_chat_npc_id` stayed
+      // set server-side.
+      let resolveOpen
+      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
 
-      // opening: placeholder, no options.
-      expect(screen.getByText('…')).toBeInTheDocument()
+      function ChatHost() {
+        const [open, setOpen] = React.useState(true)
+        return open ? (
+          <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={() => setOpen(false)} />
+        ) : null
+      }
+      render(<ChatHost />)
 
-      // waiting_jean: options are live.
-      expect(await screen.findByText('Hi there')).toBeInTheDocument()
+      fireEvent.click(screen.getByTestId('dialog-close'))
+      expect(screen.queryByTestId('base-dialog')).not.toBeInTheDocument()
 
-      fireEvent.click(screen.getByRole('button', { name: /Hi there/ }))
-      // waiting_npc: Jean's line is on stage as transcript, options withdrawn.
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: /Hi there/ })).not.toBeInTheDocument()
-      )
-      expect(screen.getByText('Hi there', { selector: 'em' })).toBeInTheDocument()
+      await act(async () => { resolveOpen(mockOpenResponse) })
 
-      await act(async () => {
-        resolveRespond({
-          data: makeNpcChatRespond({
-            npc_response: 'And so it goes.',
-            jean_options: [makeJeanOption({ text: 'Go on.', tone: 'direct' })],
-          }),
-        })
-      })
-      // waiting_jean again, with the server's fresh option list.
-      expect(screen.getByText('Go on.')).toBeInTheDocument()
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
     })
   })
 
   describe('Props Handling', () => {
-    it('re-opens against the new npcId when the prop changes', async () => {
+    it('clears the previous NPC off the stage before the new open() resolves', async () => {
       const { rerender } = renderPanel()
 
-      await waitFor(() => expect(npcChat.open).toHaveBeenCalledWith(mockNpcId))
+      await screen.findByText('Hi there')
 
-      npcChat.open.mockResolvedValue({
-        data: makeNpcChatOpen({
-          npc_key: 'npc_session_999',
-          npc_name: 'Gorran',
-          npc_opening: 'You again.',
-          jean_options: [makeJeanOption({ text: 'Peace, Gorran.', tone: 'open' })],
-        }),
-      })
+      let resolveOpen
+      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
       rerender(
-        <NpcChatPanel npcId="Gorran" npcName={mockNpcName} onClose={mockOnClose} />
+        <NpcChatPanel npcId="Gorran" npcName="Gorran" onClose={mockOnClose} />
       )
 
-      await waitFor(() => expect(npcChat.open).toHaveBeenCalledWith('Gorran'))
-      expect(npcChat.open).toHaveBeenCalledTimes(2)
-      // The new conversation replaces the old one wholesale — options and title
-      // both come from the second response.
-      expect(await screen.findByText('Peace, Gorran.')).toBeInTheDocument()
+      // The synchronous reset at the top of the open effect: for the whole
+      // round trip the stage used to keep drawing the PREVIOUS NPC's portraits,
+      // options and npc_key.
+      expect(screen.queryByTestId('conversation-stage')).not.toBeInTheDocument()
       expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('relationship-badge')).not.toBeInTheDocument()
       expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Gorran')
+
+      await act(async () => { resolveOpen(mockOpenResponse) })
     })
   })
 
@@ -442,77 +527,24 @@ describe('NpcChatPanel', () => {
 
     it('omits the badge when no relationship data is present', async () => {
       npcChat.open.mockResolvedValue({
-        data: {
-          ...mockOpenResponse.data,
-          relationship: undefined,
-        },
+        data: makeNpcChatOpen({ ...openData, relationship: undefined }),
       })
 
       renderPanel()
 
       // Wait for the OPENING LINE, not for base-dialog: base-dialog renders
-      // before open() resolves, so the old wait let the negative assertion run
+      // before open() resolves, so waiting on it let the negative assertion run
       // against a panel that had not received the payload yet — it would have
       // passed even if the badge appeared a tick later.
-      expect(await screen.findByTestId('typewriter')).toHaveTextContent(
-        'Well, well, what do we have here?'
-      )
+      await findStageText('Well, well, what do we have here?')
       expect(screen.queryByTestId('relationship-badge')).not.toBeInTheDocument()
-    })
-  })
-
-  describe('Ending the conversation', () => {
-    it('calls npcChat.end and onClose when End Conversation is clicked', async () => {
-      npcChat.end.mockResolvedValue({ data: { success: true } })
-      renderPanel()
-
-      // Wait on the RENDER, not on the call: open() having fired says nothing
-      // about the panel having consumed the response.
-      await screen.findByText('Hi there')
-      fireEvent.click(screen.getByText('End Conversation'))
-
-      await waitFor(() => {
-        expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
-        expect(mockOnClose).toHaveBeenCalledTimes(1)
-      })
-    })
-
-    it('still closes silently when npcChat.end throws', async () => {
-      npcChat.end.mockRejectedValue(new Error('offline'))
-      renderPanel()
-
-      // Wait on the RENDER, not on the call: open() having fired says nothing
-      // about the panel having consumed the response.
-      await screen.findByText('Hi there')
-      fireEvent.click(screen.getByText('End Conversation'))
-
-      await waitFor(() => {
-        expect(mockOnClose).toHaveBeenCalledTimes(1)
-      })
-      // The server call still went out; only its rejection was swallowed.
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
-    })
-
-    it('does nothing when End Conversation is clicked before the session key is ready', () => {
-      let resolveOpen
-      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
-      render(
-        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
-      )
-
-      fireEvent.click(screen.getByText('End Conversation'))
-
-      expect(npcChat.end).not.toHaveBeenCalled()
-      resolveOpen(mockOpenResponse)
     })
   })
 
   describe('Retrying a failed action', () => {
     it('retries opening the conversation when Retry is clicked after a failed open', async () => {
       npcChat.open.mockRejectedValueOnce(new Error('Network error'))
-      render(
-        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
-      )
+      renderPanel()
 
       await waitFor(() => expect(screen.getByText(/Failed to open conversation/i)).toBeInTheDocument())
       expect(npcChat.open).toHaveBeenCalledTimes(1)
@@ -521,84 +553,15 @@ describe('NpcChatPanel', () => {
       fireEvent.click(screen.getByText('Retry'))
 
       await waitFor(() => expect(npcChat.open).toHaveBeenCalledTimes(2))
-    })
-
-    it('retries the same option when Retry is clicked after a failed response', async () => {
-      npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
-      renderPanel()
-
-      // Wait on the RENDER, not on the call: open() having fired says nothing
-      // about the panel having consumed the response.
-      await screen.findByText('Hi there')
-      fireEvent.click(screen.getByText('Hi there'))
-
-      await waitFor(() => expect(screen.getByText(/NPC did not respond/i)).toBeInTheDocument())
-      expect(npcChat.respond).toHaveBeenCalledTimes(1)
-
-      npcChat.respond.mockResolvedValue({
-        data: {
-          npc_response: 'Ah, welcome back.',
-          jean_options: [],
-          loquacity_current: 3,
-          loquacity_max: 5,
-          conversation_ended: false,
-        },
-      })
-      fireEvent.click(screen.getByText('Retry'))
-
-      await waitFor(() => expect(npcChat.respond).toHaveBeenCalledTimes(2))
-    })
-
-    it('prefers the server error message over the generic fallback when respond fails with a response body', async () => {
-      const err = new Error('Bad Request')
-      err.response = { data: { error: 'Mynx refuses to answer.' } }
-      npcChat.respond.mockRejectedValueOnce(err)
-      renderPanel()
-
-      // Wait on the RENDER, not on the call: open() having fired says nothing
-      // about the panel having consumed the response.
-      await screen.findByText('Hi there')
-      fireEvent.click(screen.getByText('Hi there'))
-
-      await waitFor(() => expect(screen.getByText('Mynx refuses to answer.')).toBeInTheDocument())
-    })
-
-    it('does not duplicate Jean\'s line when a failed option is retried', async () => {
-      npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
-      renderPanel()
-
-      // Wait on the RENDER, not on the call: open() having fired says nothing
-      // about the panel having consumed the response.
-      await screen.findByText('Hi there')
-      fireEvent.click(screen.getByText('Hi there'))
-      await waitFor(() => expect(screen.getByText(/NPC did not respond/i)).toBeInTheDocument())
-
-      npcChat.respond.mockResolvedValue({
-        data: {
-          npc_response: 'Ah, welcome back.',
-          jean_options: [{ text: 'Hi there', tone: 'curious' }],
-          loquacity_current: 3,
-          loquacity_max: 5,
-          conversation_ended: false,
-        },
-      })
-      fireEvent.click(screen.getByText('Retry'))
-      await waitFor(() => expect(npcChat.respond).toHaveBeenCalledTimes(2))
-
-      // The optimistic line is rolled back on failure, so the retry re-adds it
-      // exactly once instead of stacking a second copy in the transcript.
-      const jeanLines = screen
-        .getAllByText(/Hi there/)
-        .filter((node) => node.tagName === 'EM')
-      expect(jeanLines).toHaveLength(1)
+      // Retry must actually leave the 'failed' phase, not just re-fire the call.
+      expect(await screen.findByText('Hi there')).toBeInTheDocument()
+      expect(screen.queryByText(/Failed to open conversation/i)).toBeNull()
     })
 
     it('clears the error and restores the dialogue options after a successful retry', async () => {
       npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
       renderPanel()
 
-      // Wait on the RENDER, not on the call: open() having fired says nothing
-      // about the panel having consumed the response.
       await screen.findByText('Hi there')
       fireEvent.click(screen.getByText('Hi there'))
       await waitFor(() => expect(screen.getByText(/NPC did not respond/i)).toBeInTheDocument())
@@ -607,16 +570,13 @@ describe('NpcChatPanel', () => {
       expect(screen.queryByText('Leave me alone')).toBeNull()
 
       npcChat.respond.mockResolvedValue({
-        data: {
+        data: makeNpcChatRespond({
           npc_response: 'Ah, welcome back.',
           jean_options: [
-            { text: 'Tell me more', tone: 'curious' },
-            { text: 'Leave me alone', tone: 'hostile' },
+            makeJeanOption({ text: 'Tell me more', tone: 'direct' }),
+            makeJeanOption({ text: 'Leave me alone', tone: 'guarded' }),
           ],
-          loquacity_current: 3,
-          loquacity_max: 5,
-          conversation_ended: false,
-        },
+        }),
       })
       fireEvent.click(screen.getByText('Retry'))
 
@@ -647,11 +607,12 @@ describe('NpcChatPanel', () => {
 
       // The NPC's parting line stays on screen and the End Conversation button
       // is withdrawn, but the panel is NOT closed yet.
-      expect(screen.getByTestId('typewriter')).toHaveTextContent('Farewell.')
+      await findStageText('Farewell.')
       expect(screen.queryByText('End Conversation')).not.toBeInTheDocument()
-      // The 2s auto-close timer itself is pinned with fake timers in
-      // "fires the delayed onClose when the conversation ends while mounted";
-      // burning 2s of real wall time here would only duplicate it.
+      // The 2s delay itself is pinned with fake timers against the hook, in
+      // useNpcChat.test.js's "closes exactly 2s after the server reports the
+      // conversation ended"; burning 2s of real wall time here would only
+      // duplicate it. What the panel owns is the state on screen meanwhile.
       expect(mockOnClose).not.toHaveBeenCalled()
     })
   })
@@ -659,103 +620,71 @@ describe('NpcChatPanel', () => {
   describe('response fallback defaults', () => {
     it('falls back to the npcName prop when the open response has no npc_name', async () => {
       npcChat.open.mockResolvedValue({
-        data: { ...mockOpenResponse.data, npc_name: undefined },
+        data: makeNpcChatOpen({ ...openData, npc_name: undefined }),
       })
-      render(<NpcChatPanel npcId={mockNpcId} npcName="Fallback Name" onClose={mockOnClose} />)
+      renderPanel({ npcName: 'Fallback Name' })
 
       // The prop must survive the response landing, and must be used to
       // attribute the NPC's line too — not just appear somewhere on screen.
-      expect(await screen.findByTestId('typewriter')).toHaveTextContent(
-        'Well, well, what do we have here?'
-      )
+      const stage = await findStageText('Well, well, what do we have here?')
       expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Fallback Name')
-      expect(screen.getByTestId('typewriter').parentElement).toHaveTextContent('Fallback Name:')
+      expect(within(stage).getByAltText('Fallback Name (neutral)')).toBeInTheDocument()
     })
 
-    it('defaults loquacity and jean_options when absent from the open response', async () => {
-      npcChat.open.mockResolvedValue({
-        data: {
-          npc_key: 'npc_session_123',
-          npc_name: 'Mynx the Swift',
-          npc_opening: 'Hello.',
-          conversation_ended: false,
-        },
-      })
-      const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
-
-      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('Hello.'))
-      // loquacity_current/max both default (0/1) -> 0% width, danger color
-      const bar = container.querySelector('[style*="height: 100%"]')
-      expect(bar.style.width).toBe('0%')
-      expect(bar.style.backgroundColor).toBe('rgb(255, 68, 68)')
-      // jean_options defaults to [] -> no option buttons rendered
-      expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
-    })
-
-    it('defaults loquacity and jean_options when absent from a respond response', async () => {
-      npcChat.respond.mockResolvedValue({
-        data: { npc_response: 'A terse reply.', conversation_ended: false },
-      })
-      const { container } = renderPanel()
-
-      fireEvent.click(await screen.findByText('Hi there'))
-
-      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('A terse reply.'))
-      const bar = container.querySelector('[style*="height: 100%"]')
-      expect(bar.style.width).toBe('0%')
-      expect(screen.queryByText('Leave me alone')).not.toBeInTheDocument()
-    })
   })
 
   describe('loquacity bar color', () => {
     const renderWithLoquacity = async (current, max) => {
       npcChat.open.mockResolvedValue({
-        data: { ...mockOpenResponse.data, loquacity_current: current, loquacity_max: max },
+        data: makeNpcChatOpen({ ...openData, loquacity_current: current, loquacity_max: max }),
       })
       const { container } = renderPanel()
       await screen.findByText('Hi there')
-      return container
+      return loquacityBar(container)
     }
 
     it('shows the primary color when loquacity is above 60%', async () => {
-      const container = await renderWithLoquacity(4, 5)
-      const bar = container.querySelector('[style*="height: 100%"]')
+      const bar = await renderWithLoquacity(4, 5)
       expect(bar.style.width).toBe('80%')
       expect(bar.style.backgroundColor).toBe('rgb(0, 255, 136)')
     })
 
     it('shows the secondary color when loquacity is between 30% and 60%', async () => {
-      const container = await renderWithLoquacity(2, 5)
-      const bar = container.querySelector('[style*="height: 100%"]')
+      const bar = await renderWithLoquacity(2, 5)
+      expect(bar.style.width).toBe('40%')
       expect(bar.style.backgroundColor).toBe('rgb(255, 170, 0)')
     })
 
     it('shows the danger color when loquacity is at or below 30%', async () => {
-      const container = await renderWithLoquacity(1, 5)
-      const bar = container.querySelector('[style*="height: 100%"]')
+      const bar = await renderWithLoquacity(1, 5)
+      expect(bar.style.width).toBe('20%')
       expect(bar.style.backgroundColor).toBe('rgb(255, 68, 68)')
     })
 
-    it('shows the primary color when loquacity max is zero', async () => {
-      const container = await renderWithLoquacity(0, 0)
-      const bar = container.querySelector('[style*="height: 100%"]')
-      expect(bar.style.backgroundColor).toBe('rgb(0, 255, 136)')
+    it('reads a zero loquacity max as spent, not as full', async () => {
+      // `barColorFor` is a pure function of the percentage now, so the
+      // malformed `max: 0` payload lands on 0% -> danger like any other empty
+      // meter. (The old special case claimed "primary" for a bar that is
+      // zero-width and therefore invisible either way.)
+      const bar = await renderWithLoquacity(0, 0)
+      expect(bar.style.width).toBe('0%')
+      expect(bar.style.backgroundColor).toBe('rgb(255, 68, 68)')
     })
   })
 
   describe('relationship badge color', () => {
     const renderWithAttitude = async (attitude) => {
       npcChat.open.mockResolvedValue({
-        data: {
-          ...mockOpenResponse.data,
-          relationship: { ...mockOpenResponse.data.relationship, attitude },
-        },
+        data: makeNpcChatOpen({
+          ...openData,
+          relationship: makeRelationship({ ...openData.relationship, attitude }),
+        }),
       })
       renderPanel()
       return await screen.findByTestId('relationship-badge')
     }
 
-    it('colors a wary/hostile/enemy attitude with the danger color', async () => {
+    it('colors a hostile attitude with the danger color', async () => {
       const badge = await renderWithAttitude('hostile')
       expect(badge.style.color).toBe('rgb(255, 68, 68)')
     })
@@ -778,92 +707,246 @@ describe('NpcChatPanel', () => {
     })
   })
 
-  describe('Unmount safety', () => {
-    // These exercise the isMountedRef / endTimeoutRef guards: async callbacks
-    // that resolve (or a scheduled close that fires) after the panel has been
-    // unmounted must not call state setters or onClose.
-    it('does not update state or throw when open() resolves after unmount', async () => {
+  describe('Announcing the reply to assistive tech', () => {
+    // The dialog SHELL is accessible (focus trap, Escape, aria-modal,
+    // per-instance labelling, role="status" on the loader). The feature's
+    // PAYLOAD — the NPC's reply — landed in a plain <div>, so a screen-reader
+    // user was told a reply was being fetched and never told it had arrived.
+    const announcer = () => screen.getByTestId('npc-chat-announcer')
+
+    it('announces the NPC line politely, without stealing focus', async () => {
+      renderPanel()
+
+      await waitFor(() =>
+        expect(announcer()).toHaveTextContent('Well, well, what do we have here?')
+      )
+      expect(announcer()).toHaveAttribute('aria-live', 'polite')
+      // atomic: the region is re-read whole, so a reply is never announced as
+      // a diff against the previous one.
+      expect(announcer()).toHaveAttribute('aria-atomic', 'true')
+    })
+
+    it('announces the COMPLETED line, not the typewriter text', async () => {
+      // ConversationStage types the line out at 20ms/char. Feeding a polite
+      // live region that per-character stream would re-announce on every
+      // keystroke, which is worse than saying nothing at all.
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          npc_key: 'npc_session_123',
+          npc_name: 'Mynx the Swift',
+          npc_opening: 'A rather long opening line, delivered slowly.',
+          jean_options: [makeJeanOption({ text: 'Hi there', tone: 'open' })],
+        }),
+      })
+      // Freeze the stage mid-line. The old version of this test only waited
+      // for the animation to catch up, so nothing in it ever asserted that the
+      // stage and the announcement disagreed — the claim in its name.
+      typewriter.mode = 'partial'
+      renderPanel()
+
+      const stage = await screen.findByTestId('conversation-stage')
+      // Mid-type: the stage is still partway through the line...
+      expect(stage).toHaveTextContent('A rather')
+      expect(stage).not.toHaveTextContent('delivered slowly.')
+      // ...but the announcement is already the whole of it.
+      expect(announcer().textContent).toBe('A rather long opening line, delivered slowly.')
+    })
+
+    it('names the aside as an aside instead of speaking it as part of the line', async () => {
+      // The branch's standing decision is that an aside is FLAVOR, NOT SPEECH:
+      // the stage gives it its own italic slot above the line. A live region
+      // has no typography, so it says so in words — otherwise a screen-reader
+      // user hears the stage direction as something the NPC said out loud.
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          ...openData,
+          npc_opening: 'Coin first.',
+          npc_flavor: 'She does not look up.',
+        }),
+      })
+      renderPanel()
+
+      await waitFor(() =>
+        // And exactly one terminator at the seam: joining the two with a bare
+        // '. ' produced "…look up.. Coin first." for every flavor the server
+        // had already terminated, which is most of them.
+        expect(announcer().textContent).toBe('Aside: She does not look up. Coin first.')
+      )
+    })
+
+    it('spares a deliberate ellipsis and an aside that ends on its own mark', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          ...openData,
+          npc_opening: 'Coin first.',
+          npc_flavor: 'She weighs the purse...',
+        }),
+      })
+      const { rerender } = renderPanel()
+
+      await waitFor(() =>
+        expect(announcer().textContent).toBe('Aside: She weighs the purse... Coin first.')
+      )
+
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          ...openData,
+          npc_key: 'npc_session_456',
+          npc_opening: 'Coin first.',
+          npc_flavor: 'She laughs!',
+        }),
+      })
+      rerender(<NpcChatPanel npcId="Gorran" npcName="Gorran" onClose={mockOnClose} />)
+
+      await waitFor(() =>
+        expect(announcer().textContent).toBe('Aside: She laughs! Coin first.')
+      )
+    })
+
+    it('adds a terminator to an aside the server left unpunctuated', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          ...openData,
+          npc_opening: 'Coin first.',
+          npc_flavor: 'She does not look up',
+        }),
+      })
+      renderPanel()
+
+      await waitFor(() =>
+        expect(announcer().textContent).toBe('Aside: She does not look up. Coin first.')
+      )
+    })
+
+    it('announces the reply, not Jean\'s own words', async () => {
+      // Jean's line is the option the player just clicked; re-reading it back
+      // interrupts the reply they are actually waiting on.
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({ npc_response: 'You have my attention.', jean_options: [] }),
+      })
+      renderPanel()
+      await screen.findByText('Hi there')
+
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(announcer()).toHaveTextContent('You have my attention.'))
+      expect(announcer()).not.toHaveTextContent('Hi there')
+    })
+
+    it('says nothing while the opening line is still being fetched', async () => {
       let resolveOpen
-      npcChat.open.mockReturnValue(
-        new Promise((resolve) => {
-          resolveOpen = resolve
-        })
-      )
+      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
+      renderPanel()
 
-      const { unmount } = render(
-        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
-      )
+      // Empty, not absent: a live region has to be in the DOM before the text
+      // lands, or the change that arrives with it is never announced.
+      expect(announcer()).toBeInTheDocument()
+      expect(announcer().textContent).toBe('')
 
-      unmount()
-      // Resolve after unmount — the isMountedRef guard should short-circuit
-      // before any setState (no "state update on unmounted component" warning).
-      await act(async () => {
-        resolveOpen(mockOpenResponse)
+      await act(async () => { resolveOpen(mockOpenResponse) })
+    })
+  })
+
+  describe('Conversation history', () => {
+    const respondWith = (text) =>
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({
+          npc_response: text,
+          jean_options: [makeJeanOption({ text: 'Go on', tone: 'open' })],
+          loquacity_current: 1,
+          conversation_quality: 'positive',
+        }),
       })
 
-      expect(mockOnClose).not.toHaveBeenCalled()
+    const openAndAnswer = async () => {
+      renderPanel()
+      await screen.findByText('Hi there')
+      fireEvent.click(screen.getByText('Hi there'))
+      await waitFor(() => expect(npcChat.respond).toHaveBeenCalled())
+    }
+
+    it('shows no preceding line on the opening beat', async () => {
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toBeInTheDocument())
+      expect(screen.queryByTestId('npc-chat-previous-line')).not.toBeInTheDocument()
     })
 
-    it('does not update state when open() rejects after unmount', async () => {
-      let rejectOpen
-      npcChat.open.mockReturnValue(
-        new Promise((_resolve, reject) => {
-          rejectOpen = reject
-        })
-      )
+    it("keeps Jean's line on screen above the NPC's reply", async () => {
+      respondWith('Coin first.')
+      await openAndAnswer()
 
-      const { unmount } = render(
-        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
-      )
+      const previous = await screen.findByTestId('npc-chat-previous-line')
+      await waitFor(() => expect(previous).toHaveTextContent('Hi there'))
+      expect(within(previous).getByText('Jean')).toBeInTheDocument()
+      // The `open` tone maps to the `curious` portrait — the only place the
+      // TONE_EMOTIONS table is observable from the panel.
+      expect(within(previous).getByRole('img')).toHaveAttribute('alt', 'Jean (curious)')
 
-      unmount()
-      await act(async () => {
-        rejectOpen(new Error('late failure'))
-      })
-
-      expect(mockOnClose).not.toHaveBeenCalled()
+      // The newest line still belongs to the stage, not the recap strip.
+      expect(previous).not.toHaveTextContent('Coin first.')
+      await findStageText('Coin first.')
     })
 
-    it('does not update state when respond() resolves after unmount', async () => {
-      let resolveRespond
-      npcChat.respond.mockReturnValue(
-        new Promise((resolve) => {
-          resolveRespond = resolve
-        })
-      )
+    it('opens the full transcript, with a portrait thumbnail per turn', async () => {
+      respondWith('Coin first.')
+      await openAndAnswer()
+      await screen.findByTestId('npc-chat-previous-line')
 
-      const { unmount } = render(
-        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
-      )
+      expect(screen.queryByTestId('conversation-history')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByText('View History'))
 
-      // Wait for the opening to finish so an option is clickable
-      const option = await screen.findByText('Hi there')
-      fireEvent.click(option)
-
-      unmount()
-      await act(async () => {
-        resolveRespond({
-          data: makeNpcChatRespond({
-            npc_response: 'late reply',
-            jean_options: [],
-            loquacity_current: 1,
-            conversation_ended: true,
-          }),
-        })
-      })
-
-      // Guard at the post-await check returns before scheduling the
-      // end-of-conversation onClose timer. Nothing has ever closed the panel,
-      // so this is an exact zero rather than "no further calls".
-      expect(mockOnClose).not.toHaveBeenCalled()
+      const history = screen.getByTestId('conversation-history')
+      const entries = within(history).getAllByTestId('transcript-entry')
+      expect(entries).toHaveLength(3)
+      expect(entries[0]).toHaveTextContent('Well, well, what do we have here?')
+      expect(entries[1]).toHaveTextContent('Hi there')
+      expect(entries[2]).toHaveTextContent('Coin first.')
+      expect(within(entries[0]).getByRole('img')).toHaveAttribute('alt', 'Mynx the Swift (neutral)')
+      expect(within(entries[1]).getByRole('img')).toHaveAttribute('alt', 'Jean (curious)')
+      expect(within(entries[2]).getByRole('img')).toHaveAttribute('alt', 'Mynx the Swift (happy)')
+      expect(screen.getByTestId('conversation-history-count')).toHaveTextContent('3 turns')
     })
 
-    it('fires the delayed onClose when the conversation ends while mounted', async () => {
+    it('locks the dialogue options while the transcript is open', async () => {
+      renderPanel()
+      await screen.findByText('Hi there')
+
+      fireEvent.click(screen.getByText('View History'))
+
+      // The transcript covers the panel, but nothing makes the options behind it
+      // inert — a stray Enter would otherwise spend a turn the player never saw.
+      expect(screen.getByText('Hi there').closest('button')).toBeDisabled()
+      fireEvent.click(screen.getByText('Hi there'))
+      expect(npcChat.respond).not.toHaveBeenCalled()
+    })
+
+    it('locks Retry while the transcript is open', async () => {
+      // Retry re-issues a PAID `/open` or `/respond`. It was the one live
+      // control left behind the stacked transcript — the options and End
+      // Conversation were both already gated — so a click landing on the panel
+      // underneath spent a provider turn the player never saw.
+      npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
+      renderPanel()
+      await screen.findByText('Hi there')
+      fireEvent.click(screen.getByText('Hi there'))
+      await waitFor(() => expect(screen.getByText('Retry')).toBeInTheDocument())
+      expect(screen.getByText('Retry').closest('button')).toBeEnabled()
+
+      fireEvent.click(screen.getByText('View History'))
+
+      expect(screen.getByText('Retry').closest('button')).toBeDisabled()
+      npcChat.respond.mockClear()
+      fireEvent.click(screen.getByText('Retry'))
+      expect(npcChat.respond).not.toHaveBeenCalled()
+    })
+
+    it('suspends the end-of-conversation auto-close while the transcript is open', async () => {
       vi.useFakeTimers()
       try {
         npcChat.respond.mockResolvedValue({
           data: makeNpcChatRespond({
-            npc_response: 'farewell',
+            npc_response: 'Farewell.',
             jean_options: [],
             loquacity_current: 0,
             conversation_ended: true,
@@ -871,23 +954,175 @@ describe('NpcChatPanel', () => {
         })
 
         renderPanel()
-
-        // Flush the open() microtask so an option renders (no real time passes).
         await act(async () => {})
         fireEvent.click(screen.getByText('Hi there'))
         await act(async () => {})
+        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
 
-        // Conversation ended → a 2s close timer is scheduled. One millisecond
-        // short of it the panel must still be open; the exact delay is the
-        // contract, not "eventually".
-        await act(async () => { vi.advanceTimersByTime(1999) })
+        fireEvent.click(screen.getByText('View History'))
+        await act(async () => {
+          vi.advanceTimersByTime(5000)
+        })
+
+        // Still reading: the panel must not close underneath the transcript.
         expect(mockOnClose).not.toHaveBeenCalled()
+        expect(screen.getByTestId('conversation-history')).toBeInTheDocument()
 
-        await act(async () => { vi.advanceTimersByTime(1) })
+        // Dismissing the transcript closes the panel at once — no timer
+        // advance below, because the 2s delay is not re-armed.
+        const closers = screen.getAllByTestId('dialog-close')
+        fireEvent.click(closers[closers.length - 1])
         expect(mockOnClose).toHaveBeenCalledTimes(1)
       } finally {
         vi.useRealTimers()
       }
     })
+
+    it('titles the history with the NPC display name', async () => {
+      renderPanel()
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByText('View History'))
+
+      expect(screen.getByText('Mynx the Swift — Conversation')).toBeInTheDocument()
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The cross-language duplicate
+// ---------------------------------------------------------------------------
+
+/**
+ * `collapseTerminatorRun` against `_collapse_terminator_run`, read out of the
+ * Python source rather than restated.
+ *
+ * The panel's copy is a line-for-line reimplementation of a function in
+ * `src/npc/_chat_llm.py`, written because the same seam exists on both sides:
+ * the server splices clauses out of a generated line and leaves two
+ * terminators glued together, and the announcer splices a stage direction in
+ * front of a spoken line and does the same. The duplication was acknowledged
+ * in a comment and pinned by nothing, so the two could be retuned apart in
+ * silence — a run the server now keeps as an ellipsis coming out of the
+ * announcer as a full stop, or worse, a character the server started
+ * collapsing that the client does not recognise at all.
+ *
+ * Same shape as the JEAN_TONES check in hooks/useNpcChat.test.js: parse the
+ * engine, do not copy it. What is parsed here is the pair of facts the
+ * behaviour actually turns on — the terminator ALPHABET (from
+ * `_TERMINATOR_RUN_PATTERN`) and the ELLIPSIS THRESHOLD (from the branch
+ * inside the function) — plus the function's statement-by-statement SHAPE.
+ *
+ * The shape check is what keeps the rest honest. The reference rule below is
+ * still JavaScript, so on its own it would be a third copy of the same logic;
+ * asserting the Python body is exactly the four statements it was translated
+ * from means a fifth statement, or a reworked branch, fails HERE rather than
+ * being silently mirrored by a reference that was written to match the old
+ * one. A structural change is meant to make somebody read both functions.
+ */
+describe('collapseTerminatorRun mirrors src/npc/_chat_llm.py', () => {
+  const CHAT_LLM_PY = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'src', 'npc', '_chat_llm.py'),
+    'utf8'
+  )
+
+  /**
+   * `_collapse_terminator_run`'s body, one trimmed statement per entry, with
+   * the docstring dropped.
+   */
+  function pythonBody() {
+    const lines = CHAT_LLM_PY.split('\n')
+    const start = lines.findIndex((line) => line.startsWith('def _collapse_terminator_run('))
+    expect(start, 'src/npc/_chat_llm.py declares no _collapse_terminator_run').toBeGreaterThan(-1)
+    const body = []
+    for (let i = start + 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === '') continue
+      if (!lines[i].startsWith('    ')) break
+      body.push(lines[i].trim())
+    }
+    if (body[0]?.startsWith('"""')) {
+      const close = body[0].length > 3 && body[0].endsWith('"""')
+        ? 0
+        : body.findIndex((line, i) => i > 0 && line.endsWith('"""'))
+      expect(close, 'the docstring never closes').toBeGreaterThan(-1)
+      body.splice(0, close + 1)
+    }
+    return body
+  }
+
+  const body = pythonBody()
+
+  // The terminator alphabet, from the pattern that decides which runs ever
+  // reach the function at all.
+  const patternMatch = CHAT_LLM_PY.match(
+    /^_TERMINATOR_RUN_PATTERN\s*=\s*re\.compile\(r"\[([^\]]+)\]\{(\d+),\}"\)/m
+  )
+
+  it('found the pattern and the function body it was translated from', () => {
+    // Guard the guard. Every comparison below is driven by these parses, so a
+    // regex that quietly matched nothing would leave the suite green and the
+    // duplication unpinned again — the exact failure mode this replaces.
+    expect(patternMatch, 'could not find _TERMINATOR_RUN_PATTERN in src/npc/_chat_llm.py').toBeTruthy()
+    expect(patternMatch[1].length).toBeGreaterThan(1)
+    expect(body.length).toBeGreaterThan(2)
+  })
+
+  const alphabet = [...(patternMatch?.[1] ?? '')]
+
+  it('recognises exactly the terminators the engine collapses', () => {
+    // The alphabet has to agree before the rule can mean anything: a rule that
+    // handles every character correctly still does nothing for a terminator
+    // the client's own run-matcher never captures.
+    for (const char of alphabet) {
+      expect(
+        TERMINATOR_RUN_RE.test(`Coin first${char}`),
+        `the engine collapses runs of "${char}" and the panel does not match it`
+      ).toBe(true)
+    }
+    // And no wider than the engine's, or the announcer eats punctuation the
+    // server deliberately left alone.
+    for (const char of [',', ';', ':', '…', '"']) {
+      if (alphabet.includes(char)) continue
+      expect(TERMINATOR_RUN_RE.test(`Coin first${char}`), `"${char}" is not a terminator`).toBe(false)
+    }
+  })
+
+  it('is the same four statements it was translated from', () => {
+    expect(body).toEqual([
+      'run = match.group(0)',
+      'if run.count(".") == len(run):',
+      'return "..." if len(run) > 2 else "."',
+      'return run[0]',
+    ])
+  })
+
+  it('agrees with the engine on every run those constants can form', () => {
+    const repeated = body[1].match(/^if run\.count\("(.)"\) == len\(run\):$/)
+    const branch = body[2].match(/^return "([.!?]+)" if len\(run\) > (\d+) else "([.!?])"$/)
+    expect(repeated, 'the pure-run test is no longer a run.count() comparison').toBeTruthy()
+    expect(branch, 'the ellipsis branch is no longer a conditional expression').toBeTruthy()
+    const [, repeatedChar] = repeated
+    const [, longForm, threshold, shortForm] = branch
+
+    /** The engine's rule, with its constants lifted from the engine. */
+    const engineRule = (run) =>
+      [...run].every((char) => char === repeatedChar)
+        ? (run.length > Number(threshold) ? longForm : shortForm)
+        : run[0]
+
+    // Every run of one to four terminators, not a sampled handful: the whole
+    // domain is 120 strings, and the disagreements that matter live at the
+    // boundaries (".." vs "...", ".!" vs "!.") rather than in the middle.
+    let runs = alphabet.slice()
+    const everyRun = [...runs]
+    for (let length = 2; length <= 4; length += 1) {
+      runs = runs.flatMap((run) => alphabet.map((char) => run + char))
+      everyRun.push(...runs)
+    }
+    expect(everyRun.length).toBeGreaterThan(100)
+
+    for (const run of everyRun) {
+      expect(collapseTerminatorRun(run), `the two disagree on "${run}"`).toBe(engineRule(run))
+    }
   })
 })

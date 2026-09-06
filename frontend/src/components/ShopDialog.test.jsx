@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import ShopDialog from './ShopDialog'
@@ -717,6 +721,124 @@ describe('ShopDialog', () => {
     expect(input).toHaveValue(3)
     expect(screen.getByText(/Buy 3 · 30 💰/)).toBeInTheDocument()
     expect(screen.getByText(/Buy 3 · 30 💰/).closest('button')).not.toBeDisabled()
+  })
+
+  // -------------------------------------------------------------------------
+  // Zero is a number, not a missing value
+  // -------------------------------------------------------------------------
+  //
+  // Two reads in this component used `||` on a server-sent NUMBER, so a
+  // legitimate `0` was replaced by a guess: the qty cap treated a free item as
+  // costing one gold, and the sell breakdown labelled a 0% merchant "50%". The
+  // cases below hold each of them to the number that actually arrived.
+
+  /** The repo root, from this test file. */
+  const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+
+  describe('a server-sent zero survives to the screen', () => {
+    it('is a shape the engine can actually author, per src/npc/_merchants.py', () => {
+      // The premise, taken from the engine rather than assumed: `sell_modifier`
+      // is a map-authored override, so whatever float a designer writes into a
+      // map JSON reaches the client verbatim -- `_effective_modifier` scales it
+      // by reputation and floors nothing. A merchant authored at 0 is therefore
+      // a payload the client must render, not a hypothetical.
+      const source = readFileSync(join(REPO_ROOT, 'src', 'npc', '_merchants.py'), 'utf8')
+      const declared = source.match(/MAP_AUTHORED_OVERRIDES\s*=\s*\{([^}]*)\}/)
+      expect(declared, 'could not find MAP_AUTHORED_OVERRIDES in src/npc/_merchants.py').toBeTruthy()
+      const authored = declared[1]
+        .split(',')
+        .map((token) => token.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean)
+      // Guard-the-guard: a regex that matched an empty set would make the
+      // membership check below pass for any name at all.
+      expect(authored.length).toBeGreaterThan(1)
+      expect(authored).toContain('sell_modifier')
+    })
+
+    it('quotes the sell modifier the payload carried, including 0', () => {
+      // Every value is driven through the same assertion rather than one
+      // hand-picked case, so the set cannot be trimmed back to the values that
+      // happen to pass. 0 is the one `|| 0.5` swallowed.
+      for (const modifier of [0, 0.25, 0.5, 0.75, 1]) {
+        useShop.mockReturnValue(makeShopState({
+          shopState: { sell_modifier: modifier },
+          sellInventory: [{
+            id: 'sell-1', name: 'Old Boots', offer: 6, value: 10, weight: 1, count: 1,
+          }],
+        }))
+        const { unmount } = render(
+          <ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />
+        )
+        fireEvent.click(screen.getByText('\u2b06 Sell'))
+        fireEvent.click(screen.getByText('Old Boots'))
+        expect(
+          screen.getByText(`Value 10 \ud83d\udcb0 \u00b7 Offer ${Math.round(modifier * 100)}% = 6 \ud83d\udcb0`),
+          `ShopDialog.jsx sell breakdown misquoted sell_modifier=${modifier}`
+        ).toBeInTheDocument()
+        unmount()
+      }
+    })
+
+    it('says nothing about the percentage when the payload carried none', () => {
+      // The other half of dropping `|| 0.5`: an absent modifier is unknown, not
+      // 50%. `offer` is the authoritative number and is still shown.
+      useShop.mockReturnValue(makeShopState({
+        shopState: { sell_modifier: undefined },
+        sellInventory: [{
+          id: 'sell-1', name: 'Old Boots', offer: 6, value: 10, weight: 1, count: 1,
+        }],
+      }))
+      render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+      fireEvent.click(screen.getByText('\u2b06 Sell'))
+      fireEvent.click(screen.getByText('Old Boots'))
+      expect(screen.getByText('Value 10 \ud83d\udcb0 \u00b7 Offer 6 \ud83d\udcb0')).toBeInTheDocument()
+      expect(screen.queryByText(/Offer 50%/)).not.toBeInTheDocument()
+    })
+
+    it('lets a free stack be taken whole, whatever the purse holds', () => {
+      // `price: 0` with `player_gold: 0`. The qty cap's own `unitPrice > 0`
+      // ternary already says a zero unit cost is bounded by stock alone; `|| 1`
+      // coerced the 0 up to 1 and made that arm unreachable, so the picker
+      // offered a single unit out of five.
+      //
+      // The expectation is the stack COUNT -- a fact about the payload, not a
+      // number read back out of the component's own arithmetic.
+      useShop.mockReturnValue(makeShopState({
+        shopState: {
+          player_gold: 0,
+          stock: [makeShopBuyItem({
+            id: 'free-1', name: 'Free Rations', price: 0, value: 0,
+            count: 5, is_stackable: true,
+          })],
+        },
+      }))
+      const { container } = render(
+        <ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />
+      )
+      fireEvent.click(screen.getByText('Free Rations'))
+      const picker = container.querySelector('input[type="number"]')
+      expect(picker, 'no qty picker rendered -- maxQty collapsed to 1').not.toBeNull()
+      expect(Number(picker.max)).toBe(5)
+    })
+
+    it('lets a merchant take a whole worthless stack, whatever gold he has', () => {
+      // The sell-side twin of the case above, same `|| 1` in the same hook.
+      useShop.mockReturnValue(makeShopState({
+        shopState: { merchant_gold: 0 },
+        sellInventory: [makeShopSellItem({
+          id: 'sell-free', name: 'Old Boots', value: 0, offer: 0,
+          count: 4, is_stackable: true,
+        })],
+      }))
+      const { container } = render(
+        <ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />
+      )
+      fireEvent.click(screen.getByText('\u2b06 Sell'))
+      fireEvent.click(screen.getByText('Old Boots'))
+      const picker = container.querySelector('input[type="number"]')
+      expect(picker, 'no qty picker rendered -- maxQty collapsed to 1').not.toBeNull()
+      expect(Number(picker.max)).toBe(4)
+    })
   })
 
   it('renders an untouched ShopSerializer payload without any test-local overrides', () => {

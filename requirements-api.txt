@@ -27,3 +27,22 @@ argon2-cffi==23.1.0
 cryptography==49.0.0
 asgiref==3.11.1
 tzdata>=2024.1
+
+# WSGI server. Named by Procfile, by deploy.ps1's systemd restart, and by three
+# docstrings under src/api/ -- and until now by no requirements file, so the
+# documented production runtime was never a declared dependency (it is absent
+# from this worktree's .venv). The floor is not cosmetic: app.py's
+# _register_request_limits only reads a chunked body when the server has set
+# `wsgi.input_terminated` in the environ, and gunicorn started setting it in
+# 20.1.0. Under an older one an oversized chunked body is silently truncated at
+# the cap and answered 400 -- the exact bug that branch exists to fix.
+gunicorn>=20.1
+
+# Pinned because _register_request_limits argues its correctness against a
+# specific Werkzeug rather than against a documented contract: that
+# LimitedStream.readall stops at the cap and RETURNS instead of raising, and
+# that get_input_stream hands the app an empty stream when wsgi.input_terminated
+# is absent. Both are internals. Flask 3.1.2 only requires >=3.1, which would
+# let a 3.2 reshaping LimitedStream arrive with no one re-reading that function;
+# ~= holds the minor. The claims in that docstring were checked against 3.1.8.
+Werkzeug~=3.1.0

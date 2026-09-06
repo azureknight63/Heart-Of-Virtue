@@ -11,6 +11,7 @@ import {
 } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
 import { isLiving } from '../utils/combatEntities';
+import { lookupOr } from '../utils/lookup';
 
 // ---------------------------------------------------------------------------
 // The battlefield's concurrent animation scheduler.
@@ -593,7 +594,7 @@ export default function useBattlefieldAnimations({
     if (entry.beat) {
       const schedule = scheduleSfxChain(
         beatSfxFor(entry.beat),
-        (cue) => SFX_DURATIONS[cue] || 0,
+        (cue) => lookupOr(SFX_DURATIONS, cue, 0),
         combatSpeed
       );
       for (const { cue, startMs } of schedule) {
@@ -688,7 +689,7 @@ export default function useBattlefieldAnimations({
 
     const layers = scheduleAnimationLayers(
       entries.map(animationImpactCue),
-      (cue) => SFX_DURATIONS[cue] || 0,
+      (cue) => lookupOr(SFX_DURATIONS, cue, 0),
       combatSpeed
     );
 

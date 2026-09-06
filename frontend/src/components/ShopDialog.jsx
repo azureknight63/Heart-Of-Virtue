@@ -339,16 +339,34 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
 
   // ── Max qty for picker ──────────────────────────────────────────────────────
 
+  // `?? 0`, not `|| 1`. Both branches below already say what a zero unit cost
+  // means — "you are limited only by stock, not by your purse" — and `|| 1`
+  // was what stopped that arm ever running: it coerced a 0 up to 1, so
+  // `unitPrice > 0` was unconditionally true and `: available` was dead code.
+  // The consequence, for a free stack of 5 and a player holding no gold, was a
+  // picker capped at one: `Math.floor(0 / 1)` is 0, and the `Math.max(1, …)`
+  // floor turned that back into a single unit.
+  //
+  // It also disagreed with `buyTotal` twenty lines up, which reads the SAME
+  // field as `selectedItem.price || 0`: one expression priced a free item at
+  // nothing while the other capped its quantity as if it cost a coin.
+  //
+  // The engine happens to floor both numbers at 1 today
+  // (src/api/serializers/shop_serializer.py), so this is not a live player
+  // report — but a client that is only correct while the server keeps a floor
+  // it never told the client about is the duplicated-rule defect, and `?? 0`
+  // needs no such promise. It also stops a MISSING price (a degraded payload)
+  // from silently reading as "costs one gold".
   const maxQty = useMemo(() => {
     if (!selectedItem) return 1
     const available = selectedItem.count || 1
     if (activeTab === 'buy' && !selectedItem.is_buyback) {
-      const unitPrice = selectedItem.price || 1
+      const unitPrice = selectedItem.price ?? 0
       const affordable = unitPrice > 0 ? Math.floor(playerGold / unitPrice) : available
       return Math.max(1, Math.min(available, affordable))
     }
     if (activeTab === 'sell') {
-      const unitOffer = selectedItem.offer || 1
+      const unitOffer = selectedItem.offer ?? 0
       const merchantCan = unitOffer > 0 ? Math.floor(merchantGold / unitOffer) : available
       return Math.max(1, Math.min(available, merchantCan))
     }
@@ -706,10 +724,29 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                     </div>
                   )}
 
-                  {/* Sell breakdown */}
+                  {/* Sell breakdown.
+
+                      The percentage is rendered ONLY when the payload actually
+                      carried one. It used to read `sell_modifier || 0.5`, which
+                      failed in both directions at once: an own `0` — a legal
+                      map-authored override, see MAP_AUTHORED_OVERRIDES in
+                      src/npc/_merchants.py — was discarded and the line claimed
+                      "Offer 50%" beside an offer computed at nothing, and a
+                      payload that omitted the field entirely got the same
+                      confident 50% invented for it.
+
+                      Nor is 0.5 the client's number to invent. It is
+                      _effective_modifier's `base_default` in
+                      src/api/serializers/shop_serializer.py, and that serializer
+                      emits `sell_modifier` on every shop state — so the fallback
+                      could only ever fire for a payload that is already broken,
+                      and its whole effect was to make a broken payload look
+                      normal. `offer` beside it is the authoritative number and
+                      is printed either way. */}
                   {activeTab === 'sell' && !selectedItem.is_buyback && (
                     <div style={{ fontSize: '0.6rem', color: colors.text.dim, marginTop: '3px' }}>
-                      Value {selectedItem.value} 💰 · Offer {Math.round((shopState?.sell_modifier || 0.5) * 100)}% = {selectedItem.offer} 💰
+                      Value {selectedItem.value} 💰 · Offer {Number.isFinite(shopState?.sell_modifier)
+                        && `${Math.round(shopState.sell_modifier * 100)}% = `}{selectedItem.offer} 💰
                     </div>
                   )}
 

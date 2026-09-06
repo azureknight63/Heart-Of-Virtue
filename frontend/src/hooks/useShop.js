@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { shop as shopApi } from '../api/endpoints'
+import { apiErrorMessage } from '../utils/apiError'
 
 /**
  * useShop — manages all shop API interactions for a given merchant NPC.
@@ -32,10 +33,10 @@ export function useShop(npcId) {
         setSellInventory(data.sell_inventory || [])
         setWelcomeMessage(data.message || null)
       } else {
-        setError(data.error || 'Failed to load shop')
+        setError(apiErrorMessage(data, 'Failed to load shop'))
       }
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Network error')
+      setError(apiErrorMessage(err, err.message || 'Network error'))
     } finally {
       setIsLoading(false)
     }
@@ -55,11 +56,11 @@ export function useShop(npcId) {
         setSellInventory(data.sell_inventory || [])
         setTxnMessage({ type: 'success', text: data.message || 'Done.' })
       } else {
-        setTxnMessage({ type: 'error', text: data.error || 'Transaction failed' })
+        setTxnMessage({ type: 'error', text: apiErrorMessage(data, 'Transaction failed') })
       }
       return { success: data.success, message: data.message, [successKey]: data[successKey] }
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || 'Network error'
+      const msg = apiErrorMessage(err, err.message || 'Network error')
       setTxnMessage({ type: 'error', text: msg })
       return { success: false, message: msg }
     }

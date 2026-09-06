@@ -2,6 +2,8 @@
 
 from typing import List
 
+from src.api.app import session_gauge_visible
+
 from .base import Scenario
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
@@ -24,8 +26,17 @@ class HealthScenario(Scenario):
             bugs.append(bug)
         else:
             data = client.parse(resp)
+            # `sessions` is published only for a non-production config — it is
+            # an unauthenticated occupancy oracle otherwise. Asked of the same
+            # predicate the route uses, rather than hard-required here: this
+            # list used to name it unconditionally, which is right only for the
+            # config the harness happens to build and reports a phantom missing
+            # field against any other.
+            expected = ["status"]
+            if session_gauge_visible(client.app_config):
+                expected.append("sessions")
             bugs += self._check_fields(
-                data, ["status", "sessions"], "/health", "GET", "Health check", resp
+                data, expected, "/health", "GET", "Health check", resp
             )
             if data.get("status") != "healthy":
                 bugs.append(self._bug(

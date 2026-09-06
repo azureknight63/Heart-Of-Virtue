@@ -19,13 +19,18 @@ Attributes expected on the host class (provided by Mynx.__init__):
 import importlib
 import importlib.util
 import json
+import logging
 import os
 import random
 import re
 import sys
 import time
 from pathlib import Path
+from typing import List, Optional, Set
 from src.narration import narrate
+from src.text_safety import neutralise_model_text
+
+logger = logging.getLogger(__name__)
 
 
 def _load_llm_client_module(fallback_path=None):
@@ -221,7 +226,11 @@ class MynxLLMMixin:
         """Post-process LLM output to reduce self-referential confusion.
 
         Rules applied in order:
-        - Normalise whitespace.
+        - Neutralise: control characters and prompt-fence tags out, whitespace
+          normalised. This is the same rule ``ai.llm_client`` applies to its
+          own model output, for the same reason — a bare ``re.sub(r"\\s+", " ")``
+          leaves ``\\x1b`` untouched, and this text is narrated, so an ANSI
+          escape in a Mynx line is a colour change nobody authored.
         - Replace all but the first occurrence of the mynx's own name with its pronoun.
         - Remove self-targeting action phrases (e.g. "batting at <name>").
         - Replace disallowed capitalised tokens with the appropriate pronoun.
@@ -241,7 +250,7 @@ class MynxLLMMixin:
             )
             name = self.name
 
-            text = re.sub(r"\s+", " ", text).strip()
+            text = neutralise_model_text(text)
 
             count = 0
 
@@ -595,6 +604,63 @@ class MynxLLMMixin:
 
     # ── Core interaction entry-point ───────────────────────────────────────────
 
+    @staticmethod
+    def _safe_narrate(message: str, context: str = "narration") -> None:
+        """Narrate, logging rather than swallowing a failure.
+
+        ``narrate()`` writes to a terminal that may not exist (API server, test
+        runner), so it has to be allowed to fail — but a bare ``except: pass``
+        made "the debug channel is off" and "the debug channel is broken" the
+        same observable state, which is a poor trait in a debug channel.
+        """
+        try:
+            narrate(message)
+        except Exception as e:
+            logger.debug(
+                "Mynx %s failed (%s: %s).", context, type(e).__name__, e
+            )
+
+    def _append_llm_history_safely(self, prompt, text) -> None:
+        """Record one exchange; a history failure must not cost the reply."""
+        try:
+            self._append_llm_history(prompt, text)
+        except Exception as e:
+            logger.debug(
+                "Mynx history append failed (%s: %s).", type(e).__name__, e
+            )
+
+    def _qc_llm_text(
+        self,
+        text: str,
+        roster_set: Set[str],
+        roster: List[str],
+        prompt: str,
+        label: str,
+    ) -> Optional[str]:
+        """Sanitize, enforce pronouns/names, then QC one LLM reply.
+
+        The structured and plain branches ran an identical three-step pipeline
+        behind identical log lines, differing only in the word
+        "structured"/"plain" — so every change to the pipeline had to be made
+        twice, in two places forty lines apart.
+
+        Returns the cleaned text, or None when QC rejects it.
+        """
+        cleaned = self._sanitize_mynx_llm_text(text, roster_set)
+        logger.debug("Mynx %s raw sanitized. chars=%s", label, len(cleaned or ""))
+        cleaned = self._enforce_pronouns_and_names(cleaned, roster_set)
+        logger.debug(
+            "Mynx %s after pronoun enforcement. chars=%s", label, len(cleaned or "")
+        )
+        checked = self._check_and_correct_mynx_text(cleaned, prompt, roster)
+        if checked is None:
+            logger.warning(
+                "Mynx %s QA rejected text. prompt_chars=%s", label, len(prompt or "")
+            )
+            return None
+        logger.debug("Mynx %s QA passed. final_chars=%s", label, len(checked or ""))
+        return checked
+
     def interact_with_player(
         self, player, prompt: str | None = None, structured: bool = False
     ):
@@ -629,10 +695,7 @@ class MynxLLMMixin:
             action_print = f"Jean {p}."
         else:
             action_print = "Jean interacts with the mynx."
-        try:
-            narrate(action_print)
-        except Exception:
-            pass
+        self._safe_narrate(action_print, "player-action narration")
 
         # Build roster of known NPC names in the room
         roster = []
@@ -642,8 +705,16 @@ class MynxLLMMixin:
                     nm = getattr(npc_inst, "name", None)
                     if isinstance(nm, str):
                         roster.append(nm)
-            except Exception:
-                pass
+            except Exception as e:
+                # A room whose npcs_here is not iterable is a data bug, not a
+                # reason to lose the interaction: the roster degrades to just
+                # this mynx and the name-invention QC runs against a smaller
+                # allow-list. Worth a line, though -- silently is how it stayed
+                # unnoticed.
+                logger.debug(
+                    "Mynx roster build failed (%s: %s); using a name-only roster.",
+                    type(e).__name__, e,
+                )
         if self.name not in roster:
             roster.append(self.name)
         roster_set = set(roster)
@@ -662,6 +733,13 @@ class MynxLLMMixin:
             context = self._build_llm_context(
                 roster_set, p, jean_pronoun_line, jean_snippet
             )
+            logger.info(
+                "Mynx interact start prompt_chars=%s structured=%s adapter=%s model=%s",
+                len(p or ""),
+                structured,
+                type(adapter).__name__,
+                getattr(adapter, "model", None),
+            )
             try:
                 if structured:
                     result = adapter.generate_structured(context=context)
@@ -669,41 +747,28 @@ class MynxLLMMixin:
                         result.get("description"), str
                     ):
                         if _debug:
-                            try:
-                                narrate(
-                                    f"[MYNX_LLM_DEBUG] Raw structured description: {result.get('description')}"
-                                )
-                            except Exception:
-                                pass
-                        desc = self._sanitize_mynx_llm_text(
-                            result["description"], roster_set
-                        )
-                        desc = self._enforce_pronouns_and_names(desc, roster_set)
-                        desc_checked = self._check_and_correct_mynx_text(
-                            desc, p, roster
+                            self._safe_narrate(
+                                f"[MYNX_LLM_DEBUG] Raw structured description: {result.get('description')}",
+                                "debug narration",
+                            )
+                        desc_checked = self._qc_llm_text(
+                            result["description"], roster_set, roster, p, "structured"
                         )
                         if desc_checked is not None:
                             result["description"] = desc_checked
                             self._llm_last_response = result
-                            try:
-                                self._append_llm_history(p, desc_checked)
-                            except Exception:
-                                pass
+                            self._append_llm_history_safely(p, desc_checked)
                             return result
                 else:
                     text_resp = adapter.generate_plain(context=context)
                     if isinstance(text_resp, str) and text_resp:
                         if _debug:
-                            try:
-                                narrate(f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}")
-                            except Exception:
-                                pass
-                        sanitized = self._sanitize_mynx_llm_text(text_resp, roster_set)
-                        sanitized = self._enforce_pronouns_and_names(
-                            sanitized, roster_set
-                        )
-                        checked = self._check_and_correct_mynx_text(
-                            sanitized, p, roster
+                            self._safe_narrate(
+                                f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}",
+                                "debug narration",
+                            )
+                        checked = self._qc_llm_text(
+                            text_resp, roster_set, roster, p, "plain"
                         )
                         if checked is not None:
                             self._llm_last_response = {
@@ -713,16 +778,24 @@ class MynxLLMMixin:
                                 "duration_seconds": 2,
                                 "audible": "soft chitter",
                             }
-                            try:
-                                self._append_llm_history(p, checked)
-                            except Exception:
-                                pass
+                            self._append_llm_history_safely(p, checked)
+                            # Deliberately NOT _safe_narrate. This is the sole
+                            # delivery path for the reply -- the callers in
+                            # src/npc/_friends.py (92, 101, 113) only return the
+                            # string -- so swallowing a failure here would hand
+                            # the player nothing at all and log it at DEBUG.
+                            # It sits inside the try below, which logs the
+                            # error and falls through to the deterministic
+                            # pool, i.e. the player still gets a line. The
+                            # failure reaching that handler is the point.
                             narrate(checked)
                             return checked
             except Exception as e:
+                logger.error("Mynx interact exception prompt_chars=%s error=%s", len(p or ""), e, exc_info=True)
                 if _debug:
-                    narrate(
-                        f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}"
+                    self._safe_narrate(
+                        f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}",
+                        "debug narration",
                     )
 
         # ── Deterministic fallback (offline / test mode) ───────────────────────

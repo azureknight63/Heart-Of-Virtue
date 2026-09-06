@@ -23,9 +23,20 @@
  * three separate copies across two files — the same-shape-built-three-ways
  * pattern CLAUDE.md names as this codebase's dominant defect class — so it
  * gets one home.
+ *
+ * `hp == null`, LOOSE, and that is the whole point: `hp === undefined` covered
+ * only one of the two nullish spellings. `??` collapses a bare `hp: null` into
+ * the fallback, so that shape read as alive by luck — but `health.current` is
+ * the LAST term, and a serialized `{health: {current: null}}` (the serializer
+ * reads `getattr(combatant, "hp", ...)`, which yields JSON `null` for an
+ * unset HP) survived as `null` and was compared with `null > 0`, i.e. dead.
+ * That is the "no HP information at all" case the paragraph above promises to
+ * treat as alive, so the predicate contradicted its own contract for one of
+ * the shapes it names. One `=` fewer covers both spellings and every mixture
+ * of them.
  */
 export const isLiving = (entity) => {
   if (!entity) return false;
   const hp = entity.hp ?? entity.health?.current;
-  return hp === undefined || hp > 0;
+  return hp == null || hp > 0;
 };

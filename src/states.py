@@ -8,12 +8,61 @@ import math
 import random
 import src.functions as functions
 
+# Every percentage a state shows the player (``description``) or the Tactical
+# Advisor (``tactical_mechanics``) is rendered through this, so no percentage in
+# this module is spelled out by hand.
+#
+# The two carry DIFFERENT contracts, and the difference is worth knowing.
+#
+# ``description`` is interpolated from class constants and frozen at
+# construction. It cannot disagree with the ``add_*`` assignment about the
+# FRACTION, because both read the same constant -- but that is the whole of its
+# guarantee. ``int()`` truncation means a 20% penalty on a 7-point stat applies
+# 1 point and not 1.4, and a twice-compounded ``Slimed`` still spells out its
+# FIRST application's numbers, because nothing re-renders the string.
+#
+# ``tactical_mechanics`` is read live, and means one of two things depending on
+# the state (see ``State._render_tactical_mechanics``). For the states whose
+# ``compound()`` moves an ``add_*``, it is derived the other way round -- from
+# the delta actually on the books (see ``State._applied_pct``) -- so what
+# reaches the combat prompt is what the engine applied, compounding included.
+# For the rest it is the NOMINAL class fraction their constructor passed, which
+# is exact for them precisely because nothing can move it.
+#
+# Imported rather than defined here:
+# ai/combat_strategist.py needs the identical renderer for the thresholds IT
+# quotes, and two copies of a rounding rule is one edit away from the drift
+# both copies exist to prevent. src/text_format is dependency-free so neither
+# side drags the other's stack in.
+from src.text_format import pct as _pct
+
+
+# Distinguishes "this state never captured a base stat" from "the base stat it
+# captured was 0". ``getattr(self, base_attr, 0)`` could not tell the two apart,
+# and answered both with the nominal fraction -- so a modifier the engine had
+# provably applied as 0 was reported to the combat prompt as the full class
+# percentage. See ``State._applied_pct``.
+_BASE_NOT_CAPTURED = object()
+
 
 class State:  # master class for all states
     """
     If beats_max is 0 (default), the state will not expire after n beats.
 
     """
+
+    # What a re-application does to a compounding state's CLOCKS: stretch both
+    # ceilings by ``_COMPOUND_DURATION_MULT``, then top each remainder back up
+    # toward its new ceiling by ``1 / _COMPOUND_REFRESH_DIVISOR`` of it.
+    #
+    # Here rather than on each state because ``Poisoned``, ``Slimed`` and
+    # ``Petrified`` all run this identical rule, and three private copies of one
+    # rule is three places to retune and two chances to forget. A state that
+    # wants a different clock rule overrides the constants; one that wants a
+    # different SHAPE (``Enflamed`` refreshes rather than stretches, ``Fervent``
+    # adds a flat beat count) simply does not call the helper.
+    _COMPOUND_DURATION_MULT = 1.1
+    _COMPOUND_REFRESH_DIVISOR = 4
 
     def __init__(
         self,
@@ -30,9 +79,26 @@ class State:  # master class for all states
         compounding=False,
         statustype="generic",
         persistent=False,
+        tactical_mechanics="",
     ):
         self.name = name
         self.description = description
+        # Terse, engine-owned mechanical summary for the combat LLM prompt.
+        #
+        # ``description`` is player-facing prose; this is the same facts written
+        # for a tactical reader — the applied modifiers and the tick interval,
+        # nothing else. It exists because ai/combat_strategist.py used to carry
+        # a hand-typed copy of these numbers, which had already gone stale in
+        # three places (it told the model Poisoned ticks every beat when
+        # ``execute_on`` is 5, that Enflamed ticks every 3 beats when it ticks
+        # every one, and that Slimed drains fatigue, which it has never done).
+        # A wrong number in a combat prompt is worse than a missing one, so the
+        # numbers live here, next to the code that applies them, and the adapter
+        # only chooses a perspective to narrate them from.
+        #
+        # tests/test_states_tactical_mechanics.py fails if this text and the
+        # state's real ``add_*`` deltas or ``execute_on`` interval disagree.
+        self._tactical_mechanics = tactical_mechanics
         self.beats_max = int(beats_max)  # combat beats
         self.beats_left = int(self.beats_max)
         self.steps_max = int(steps_max)  # world steps
@@ -47,6 +113,134 @@ class State:  # master class for all states
         self.world = world
         self.hidden = hidden
         self.statustype = statustype
+
+    @property
+    def tactical_mechanics(self):
+        """The mechanical summary as it stands RIGHT NOW.
+
+        Read, never stored, because a compounding state's modifiers move after
+        ``__init__``: ``Slimed``, ``Petrified`` and ``Fervent`` all deepen an
+        ``add_*`` in ``compound()``. A summary rendered once at application
+        time therefore kept quoting the FIRST application's numbers for the
+        rest of the fight — a stale modifier shipped straight into the combat
+        prompt, which is the exact failure ``tactical_mechanics`` was added to
+        end. Any state whose numbers can change overrides
+        ``_render_tactical_mechanics`` below; the rest fall through to the text
+        their constructor passed.
+        """
+        return self._render_tactical_mechanics()
+
+    def _render_tactical_mechanics(self):
+        """Build the summary from the state's current modifiers.
+
+        This default returns the static string the constructor was passed, so
+        for the states that take it, ``tactical_mechanics`` reports the NOMINAL
+        class fraction. That is exact for them: nothing moves their modifiers
+        after ``__init__``, so nominal and applied are the same number.
+
+        Override in any state whose ``add_*`` values change after ``__init__``,
+        where the two part company. The criterion is mechanical -- does
+        ``compound()`` move an ``add_*``? -- and where it holds, the override
+        renders through ``_applied_pct`` and the property means the APPLIED
+        delta instead. ``Slimed``, ``Petrified`` and ``Fervent`` are today's
+        three; ``tests/test_states_tactical_mechanics.py`` derives that set from
+        the behaviour rather than listing it.
+
+        The ``getattr`` default is for unpickling a save written before this
+        field existed; overrides get the same protection from
+        ``_applied_pct``, which reads every field it needs through ``getattr``
+        for the same reason.
+        """
+        return getattr(self, "_tactical_mechanics", "")
+
+    def _capture_bases(self, target, **stat_to_bonus):
+        """Record the target stats this state's modifiers are being taken from.
+
+        ``_applied_pct`` divides by these to report the fraction the engine
+        really applied, so every state that renders live captures them. One
+        named call rather than the same pair of lines (and the same pair of
+        comment lines) copied into each such state.
+
+        Captured through :func:`stat_without_state_bonus`, with the SAME
+        ``(stat, add_*)`` pairing the ``add_*`` derivations below use, and not
+        with a bare ``getattr(target, attr)``. The two have to be the same
+        number or the reported fraction is wrong in a new way: on a
+        re-application, ``refresh_stat_bonuses`` has already moved the live
+        stat by this state's earlier contribution, so a bare read divides the
+        new modifier by an already-penalised base and quotes a penalty deeper
+        than the one applied. Keyword form because the pairing is the point --
+        ``finesse="add_fin"`` cannot be miscounted the way two positional
+        lists could drift out of step.
+        """
+        for attr, bonus_attr in stat_to_bonus.items():
+            setattr(
+                self,
+                "_base_" + attr,
+                stat_without_state_bonus(target, attr, bonus_attr, type(self)),
+            )
+
+    def _applied_pct(self, add_attr, base_attr, nominal_pct):
+        """``add_attr`` as a percentage of the stat it was taken from.
+
+        Read off the delta on the books rather than re-derived from the class
+        fractions, because the two stop agreeing the moment a state compounds.
+        ``compound()`` scales its extra step by the holder's CURRENT stat, and
+        ``functions.refresh_stat_bonuses`` has already moved that stat by this
+        same state's earlier ``add_*``. Summing the nominal fractions therefore
+        quotes the combat prompt a modifier the engine never applied, and gets
+        it wrong in both directions at once: a twice-compounded ``Petrified``
+        added up to −40% finesse and −55% speed against −35 and −46 really
+        applied, and to +45% protection against +50. Penalties read worse than
+        they were, bonuses weaker, and both went into the prompt as fact.
+
+        ``nominal_pct`` — the class's first-application fraction — is reached
+        in exactly one case: ``base_attr`` is absent, because the state was
+        unpickled from a save written before the base was captured. There is
+        then no delta to divide and nothing better to say. Answering with the
+        nominal beats raising, because ``StateEffectSerializer`` reads this
+        property through ``getattr(state, "tactical_mechanics", "")`` — an
+        exception here would not surface as a failure, it would quietly ship an
+        empty mechanics line.
+
+        A base that was captured and is ZERO is a different case, and used to
+        share that branch. ``int(0 * fraction)`` is 0, so the engine applied
+        nothing; quoting the nominal there told the combat prompt "+25%
+        protection" for a modifier provably worth 0. A wrong number is worse
+        than a missing one, which is the whole reason this property exists, so
+        0 is reported as 0.
+        """
+        base = getattr(self, base_attr, _BASE_NOT_CAPTURED)
+        if base is _BASE_NOT_CAPTURED:
+            return _pct(nominal_pct)
+        if not base:
+            return _pct(0)
+        return _pct(abs(getattr(self, add_attr, 0)) / base)
+
+    def _extend_compounded_duration(self):
+        """Stretch both clocks' ceilings on a re-application and refresh toward them.
+
+        The block this replaces stood byte-identically in three ``compound()``
+        methods. Each state now supplies only what is its own -- the modifier or
+        tick it deepens -- and calls this for the part that is everybody's.
+        """
+        self.beats_max, self.beats_left = self._stretched_clock(
+            self.beats_max, self.beats_left
+        )
+        self.steps_max, self.steps_left = self._stretched_clock(
+            self.steps_max, self.steps_left
+        )
+
+    @classmethod
+    def _stretched_clock(cls, ceiling, remaining):
+        """One clock's new ``(ceiling, remaining)`` after a re-application.
+
+        The refresh is a fraction of the NEW ceiling, and cannot push the
+        remainder past it.
+        """
+        ceiling = int(ceiling * cls._COMPOUND_DURATION_MULT)
+        return ceiling, min(
+            remaining + int(ceiling / cls._COMPOUND_REFRESH_DIVISOR), ceiling
+        )
 
     def effect(self, target):
         """
@@ -184,10 +378,24 @@ DODGE_EVASION_MIN = 15
 
 
 class Dodging(State):
+    # Flat finesse points the stance is worth, plus a share of the holder's own
+    # finesse -- a nimble character gets more out of a dodge than a clumsy one.
+    # Named for tests/test_combat_strategist_coverage.py, which pins the
+    # advisor's _DEFENSIVE_STANCE_BEATS against it. The evasion numbers are
+    # module constants beside their rationale (DODGE_EVASION_*), because the
+    # decay they describe is a bestiary-wide balance property rather than a
+    # per-class tuning knob.
+    _DURATION_BEATS = 7
+
     def __init__(
         self, target
     ):  # increases the target's dodging ability for a short duration
-        super().__init__(name="Dodging", target=target, beats_max=7, hidden=True)
+        super().__init__(
+            name="Dodging",
+            target=target,
+            beats_max=self._DURATION_BEATS,
+            hidden=True,
+        )
         self.add_fin = max(
             DODGE_EVASION_MIN,
             DODGE_EVASION_BASE
@@ -197,15 +405,45 @@ class Dodging(State):
             ),
         )
 
+    def _render_tactical_mechanics(self):
+        """Quote the grant this instance actually carries.
+
+        A fixed string used to say "+evasion (large finesse bonus)". The decay
+        makes that exactly backwards for a nimble dodger -- the nimbler the
+        holder, the SMALLER the grant -- and the advisor was being told the
+        opposite of the mechanic it was reasoning about.
+        """
+        return f"+{self.add_fin} finesse (evasion) while the stance holds"
+
 
 class Parrying(State):
+    _DURATION_BEATS = 7
+
     def __init__(
         self, target
     ):  # parries the next attack, giving the aggressor a large recoil duration
-        super().__init__(name="Parrying", target=target, beats_max=7, hidden=True)
+        super().__init__(
+            name="Parrying",
+            target=target,
+            beats_max=self._DURATION_BEATS,
+            hidden=True,
+            tactical_mechanics="Parry stance active",
+        )
 
 
 class Poisoned(State):
+    # Beat interval between damage ticks. Quoted by tactical_mechanics below,
+    # so the model is never told a rate the effect does not run at.
+    _EXECUTE_ON = 5
+    # What a re-application does to the POISON itself: the tick counter jumps a
+    # quarter, and since effect() scales damage by ``self.tick``, that is where
+    # "worsens if reapplied" is actually spent. The clocks move separately and
+    # by a different factor -- ``State._COMPOUND_DURATION_MULT``, which is 1.1,
+    # not 1.25. The comment that used to sit in compound() called the whole
+    # thing "25%", which was right about the strength and wrong about both
+    # durations.
+    _COMPOUND_TICK_MULT = 1.25
+
     def __init__(self, target):
         duration = random.randint(50, 150)
         steps = random.randint(20, 80)
@@ -219,11 +457,11 @@ class Poisoned(State):
             statustype="poison",
             persistent=True,
             description="Deals escalating HP damage every few beats. Worsens if reapplied.",
+            tactical_mechanics=f"escalating HP DoT every {self._EXECUTE_ON} beats",
         )
         self.tick = 0  # increases at each effect cycle
-        self.execute_on = (
-            5  # when the tick is a multiple of this number, execute the effect
-        )
+        # when the tick is a multiple of this number, execute the effect
+        self.execute_on = self._EXECUTE_ON
 
     def on_application(self, target):
         cprint("{} has been poisoned!".format(target.name), "magenta")
@@ -246,20 +484,9 @@ class Poisoned(State):
             target.hp -= damage
 
     def compound(self, target):
-        #  Increases the strength and duration of the poison by 25% every time it's inflicted
         cprint("{}'s poisoning has gotten worse!".format(target.name), "magenta")
-        self.tick *= 1.25
-        self.tick = int(self.tick)
-        self.beats_max *= 1.1
-        self.beats_max = int(self.beats_max)
-        self.steps_max *= 1.1
-        self.steps_max = int(self.steps_max)
-        self.beats_left += int((self.beats_max / 4))
-        if self.beats_left > self.beats_max:
-            self.beats_left = self.beats_max
-        self.steps_left += int((self.steps_max / 4))
-        if self.steps_left > self.steps_max:
-            self.steps_left = self.steps_max
+        self.tick = int(self.tick * self._COMPOUND_TICK_MULT)
+        self._extend_compounded_duration()
 
 
 # Balance constants for Enflamed (issue #343) -- tune here rather than
@@ -299,6 +526,11 @@ class Enflamed(
                 "Deals fire damage every beat, reduced by fire resistance. Each beat "
                 "carries a chance to burn out early based on fire resistance. "
                 "Stacks up to {} times.".format(ENFLAMED_MAX_STACKS)
+            ),
+            # No execute_on gate: effect() runs, and burns, on EVERY beat.
+            tactical_mechanics=(
+                f"fire DoT every beat, stacking up to {ENFLAMED_MAX_STACKS}×; "
+                "reduced by fire resistance"
             ),
         )
         self.stacks = 1
@@ -361,6 +593,10 @@ class Enflamed(
 
 
 class Clean(State):
+    # Flat stat points (``_POINTS``), not fractions of the holder's stat.
+    _CHARISMA_BONUS_POINTS = 1
+    _MAX_FATIGUE_BONUS_POINTS = 10
+
     def __init__(self, target):
         duration = 0
         steps = random.randint(50, 200)
@@ -374,14 +610,18 @@ class Clean(State):
             world=True,
             statustype="clean",
             persistent=True,
-            description="Charisma +1, Max Fatigue +10. Wears off as you travel.",
+            description=(
+                f"Charisma +{self._CHARISMA_BONUS_POINTS}, "
+                f"Max Fatigue +{self._MAX_FATIGUE_BONUS_POINTS}. "
+                "Wears off as you travel."
+            ),
         )
         self.tick = 0  # increases at each effect cycle
         self.execute_on = (
             0  # when the tick is a multiple of this number, execute the effect
         )
-        self.add_charisma = 1
-        self.add_maxfatigue = 10
+        self.add_charisma = self._CHARISMA_BONUS_POINTS
+        self.add_maxfatigue = self._MAX_FATIGUE_BONUS_POINTS
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -402,6 +642,10 @@ class Disoriented(State):
     suffering reduced finesse and protection until the status expires.
     """
 
+    # Fractions of the holder's own stat (``_PCT``), not flat points.
+    _FINESSE_PENALTY_PCT = 0.30
+    _PROTECTION_PENALTY_PCT = 0.25
+
     def __init__(self, target):
         duration = random.randint(8, 15)
         super().__init__(
@@ -413,17 +657,23 @@ class Disoriented(State):
             world=False,
             statustype="disoriented",
             persistent=False,
-            description="Finesse -30%, Protection -25%. Defensive positioning is compromised.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY_PCT)}, "
+                f"Protection -{_pct(self._PROTECTION_PENALTY_PCT)}. "
+                "Defensive positioning is compromised."
+            ),
+            tactical_mechanics=(
+                f"−{_pct(self._FINESSE_PENALTY_PCT)} finesse, "
+                f"−{_pct(self._PROTECTION_PENALTY_PCT)} protection"
+            ),
         )
-        # 30% / 25% of the *undisoriented* stats -- see stat_without_state_bonus.
         self.add_fin = -int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.3
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
         )
         self.add_protection = -int(
-            stat_without_state_bonus(
-                target, "protection", "add_protection", type(self)
-            )
-            * 0.25
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_PENALTY_PCT
         )
 
     def on_application(self, target):
@@ -441,7 +691,13 @@ class Hawkeye(State):
     def __init__(
         self, target
     ):  # increases the target's accuracy with a ranged weapon for a short duration
-        super().__init__(name="Hawkeye", target=target, beats_max=30, description="Ranged accuracy greatly increased.")
+        super().__init__(
+            name="Hawkeye",
+            target=target,
+            beats_max=30,
+            description="Ranged accuracy greatly increased.",
+            tactical_mechanics="+ranged accuracy",
+        )
 
 
 class Slimed(State):
@@ -450,6 +706,14 @@ class Slimed(State):
     The slime doesn't wash off. It seeps into every joint, every stitched seam,
     filling cracks Jean didn't know he had. The smell alone is enough to turn the stomach.
     """
+
+    # Fractions of the holder's own stat (``_PCT``), not flat points. The
+    # ``_COMPOUND_*`` pair is what each RE-application adds on top.
+    _FINESSE_PENALTY_PCT = 0.20
+    _PROTECTION_PENALTY_PCT = 0.15
+    _COMPOUND_FINESSE_PENALTY_PCT = 0.05
+    _COMPOUND_PROTECTION_PENALTY_PCT = 0.05
+    _EXECUTE_ON = 6
 
     def __init__(self, target):
         duration = random.randint(30, 80)
@@ -464,18 +728,38 @@ class Slimed(State):
             world=True,
             statustype="slimed",
             persistent=True,
-            description="Finesse -20%, Protection -15%. Deals periodic acid damage. Worsens if reapplied.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY_PCT)}, "
+                f"Protection -{_pct(self._PROTECTION_PENALTY_PCT)}. "
+                "Deals periodic acid damage. Worsens if reapplied."
+            ),
+            # tactical_mechanics is rendered by _render_tactical_mechanics
+            # below, not passed here: compound() deepens both penalties, and a
+            # summary frozen at first application would go on quoting the
+            # original numbers for the rest of the fight.
         )
         self.tick = 0
-        self.execute_on = 6
+        self.execute_on = self._EXECUTE_ON
+        self._capture_bases(target, finesse="add_fin", protection="add_protection")
         self.add_fin = -int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.20
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
         )
         self.add_protection = -int(
-            stat_without_state_bonus(
-                target, "protection", "add_protection", type(self)
-            )
-            * 0.15
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_PENALTY_PCT
+        )
+
+    def _render_tactical_mechanics(self):
+        finesse = self._applied_pct(
+            "add_fin", "_base_finesse", self._FINESSE_PENALTY_PCT
+        )
+        protection = self._applied_pct(
+            "add_protection", "_base_protection", self._PROTECTION_PENALTY_PCT
+        )
+        return (
+            f"−{finesse} finesse, −{protection} protection, "
+            f"acid DoT every {self._EXECUTE_ON} beats"
         )
 
     def on_application(self, target):
@@ -503,18 +787,14 @@ class Slimed(State):
         # ordinary stat magnitudes, truncated to a no-op after the first coat.
         cprint("The slime coating on {} thickens!".format(target.name), "cyan")
         self.add_fin -= int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.05
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._COMPOUND_FINESSE_PENALTY_PCT
         )
         self.add_protection -= int(
-            stat_without_state_bonus(
-                target, "protection", "add_protection", type(self)
-            )
-            * 0.05
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._COMPOUND_PROTECTION_PENALTY_PCT
         )
-        self.beats_max = int(self.beats_max * 1.1)
-        self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
-        self.steps_max = int(self.steps_max * 1.1)
-        self.steps_left = min(self.steps_max, self.steps_left + int(self.steps_max / 4))
+        self._extend_compounded_duration()
         functions.refresh_stat_bonuses(target)
 
 
@@ -524,6 +804,10 @@ class Resonant(State):
     A vibration that has no interest in your armor, that moves through iron and bone
     with equal indifference. The wail does not stop at the skin.
     """
+
+    # Fraction of the holder's own finesse (``_PCT``), not flat points.
+    _FINESSE_PENALTY_PCT = 0.25
+    _EXECUTE_ON = 5
 
     def __init__(self, target):
         duration = random.randint(12, 22)
@@ -536,12 +820,20 @@ class Resonant(State):
             world=False,
             statustype="stun",
             persistent=False,
-            description="Finesse -25%. Deals periodic armor-bypassing damage from resonant vibration.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY_PCT)}. Deals periodic "
+                "armor-bypassing damage from resonant vibration."
+            ),
+            tactical_mechanics=(
+                f"−{_pct(self._FINESSE_PENALTY_PCT)} finesse, "
+                f"armor-piercing DoT every {self._EXECUTE_ON} beats"
+            ),
         )
         self.tick = 0
-        self.execute_on = 5
+        self.execute_on = self._EXECUTE_ON
         self.add_fin = -int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.25
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
         )
 
     def on_application(self, target):
@@ -610,6 +902,17 @@ class Petrified(State):
     costs too much. The crust is heavier than it looks. It is also harder.
     """
 
+    # Fractions of the holder's own stat (``_PCT``), not flat points. The
+    # ``_COMPOUND_*`` trio is what each RE-application adds on top.
+    _FINESSE_PENALTY_PCT = 0.20
+    _SPEED_PENALTY_PCT = 0.35
+    _PROTECTION_BONUS_PCT = 0.25
+    _COMPOUND_FINESSE_PENALTY_PCT = 0.10
+    _COMPOUND_SPEED_PENALTY_PCT = 0.10
+    _COMPOUND_PROTECTION_BONUS_PCT = 0.10
+    _EXECUTE_ON = 6
+    _FATIGUE_DRAIN_PCT = 0.05
+
     def __init__(self, target):
         duration = random.randint(20, 45)
         steps = random.randint(15, 30)
@@ -623,21 +926,43 @@ class Petrified(State):
             world=True,
             statustype="stone",
             persistent=False,
-            description="Finesse -20%, Speed -35%, Protection +25%. Drains Fatigue every few beats. Worsens if reapplied.",
+            description=(
+                f"Finesse -{_pct(self._FINESSE_PENALTY_PCT)}, "
+                f"Speed -{_pct(self._SPEED_PENALTY_PCT)}, "
+                f"Protection +{_pct(self._PROTECTION_BONUS_PCT)}. "
+                "Drains Fatigue every few beats. Worsens if reapplied."
+            ),
+            # Rendered live below: compound() deepens all three modifiers.
         )
         self.tick = 0
-        self.execute_on = 6
+        self.execute_on = self._EXECUTE_ON
+        self._capture_bases(
+            target, finesse="add_fin", speed="add_speed", protection="add_protection"
+        )
         self.add_fin = -int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.20
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_PENALTY_PCT
         )
         self.add_speed = -int(
-            stat_without_state_bonus(target, "speed", "add_speed", type(self)) * 0.35
+            stat_without_state_bonus(target, "speed", "add_speed", type(self))
+            * self._SPEED_PENALTY_PCT
         )
         self.add_protection = int(
-            stat_without_state_bonus(
-                target, "protection", "add_protection", type(self)
-            )
-            * 0.25
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_BONUS_PCT
+        )
+
+    def _render_tactical_mechanics(self):
+        finesse = self._applied_pct(
+            "add_fin", "_base_finesse", self._FINESSE_PENALTY_PCT
+        )
+        speed = self._applied_pct("add_speed", "_base_speed", self._SPEED_PENALTY_PCT)
+        protection = self._applied_pct(
+            "add_protection", "_base_protection", self._PROTECTION_BONUS_PCT
+        )
+        return (
+            f"−{finesse} finesse, −{speed} speed, +{protection} protection, "
+            f"fatigue drain every {self._EXECUTE_ON} beats"
         )
 
     def on_application(self, target):
@@ -656,7 +981,7 @@ class Petrified(State):
     def effect(self, target):
         self.tick += 1
         if self.tick % self.execute_on == 0:
-            drain = int(target.maxfatigue * 0.05)
+            drain = int(target.maxfatigue * self._FATIGUE_DRAIN_PCT)
             target.fatigue = max(0, target.fatigue - drain)
             if drain > 0:
                 cprint(
@@ -672,25 +997,22 @@ class Petrified(State):
             "white",
         )
         # Deepening on re-application is intended (compounding=True, "Worsens if
-        # reapplied"); each layer is 10% of the *uncrusted* stats, so the crust
-        # thickens linearly. Taken off the already-crusted values, the
-        # protection term in particular grew geometrically and without bound.
+        # reapplied"); each layer is a share of the *uncrusted* stats, so the crust
+        # thickens linearly. Taken off the already-crusted values, the protection
+        # term in particular grew geometrically and without bound.
         self.add_fin -= int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.10
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._COMPOUND_FINESSE_PENALTY_PCT
         )
         self.add_speed -= int(
-            stat_without_state_bonus(target, "speed", "add_speed", type(self)) * 0.10
+            stat_without_state_bonus(target, "speed", "add_speed", type(self))
+            * self._COMPOUND_SPEED_PENALTY_PCT
         )
         self.add_protection += int(
-            stat_without_state_bonus(
-                target, "protection", "add_protection", type(self)
-            )
-            * 0.10
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._COMPOUND_PROTECTION_BONUS_PCT
         )
-        self.beats_max = int(self.beats_max * 1.1)
-        self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
-        self.steps_max = int(self.steps_max * 1.1)
-        self.steps_left = min(self.steps_max, self.steps_left + int(self.steps_max / 4))
+        self._extend_compounded_duration()
         functions.refresh_stat_bonuses(target)
 
 
@@ -700,6 +1022,12 @@ class Hollowed(State):
     The absence of feeling that follows overwhelming loss. In Aurelion, it manifests
     as a wound that can be inflicted and — with enough time, or the right presence — healed.
     """
+
+    # Flat stat points (``_POINTS``), not fractions of the holder's stat.
+    _FAITH_PENALTY_POINTS = 3
+    _CHARISMA_PENALTY_POINTS = 2
+    _ENDURANCE_PENALTY_POINTS = 2
+    _EXECUTE_ON = 8
 
     def __init__(self, target):
         duration = random.randint(40, 80)
@@ -714,13 +1042,24 @@ class Hollowed(State):
             world=True,
             statustype="apathy",
             persistent=True,
-            description="Faith -3, Charisma -2, Endurance -2. Drains HP and Fatigue every few beats.",
+            description=(
+                f"Faith -{self._FAITH_PENALTY_POINTS}, "
+                f"Charisma -{self._CHARISMA_PENALTY_POINTS}, "
+                f"Endurance -{self._ENDURANCE_PENALTY_POINTS}. "
+                "Drains HP and Fatigue every few beats."
+            ),
+            tactical_mechanics=(
+                f"−{self._FAITH_PENALTY_POINTS} faith, "
+                f"−{self._CHARISMA_PENALTY_POINTS} charisma, "
+                f"−{self._ENDURANCE_PENALTY_POINTS} endurance; "
+                f"HP+fatigue drain every {self._EXECUTE_ON} beats"
+            ),
         )
         self.tick = 0
-        self.execute_on = 8
-        self.add_faith = -3
-        self.add_charisma = -2
-        self.add_endurance = -2
+        self.execute_on = self._EXECUTE_ON
+        self.add_faith = -self._FAITH_PENALTY_POINTS
+        self.add_charisma = -self._CHARISMA_PENALTY_POINTS
+        self.add_endurance = -self._ENDURANCE_PENALTY_POINTS
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -749,6 +1088,18 @@ class Fervent(State):
     that counts for something.
     """
 
+    # ``_PCT`` values are fractions of the holder's own stat; ``_POINTS``
+    # values are flat stat points. The two sat side by side under one naming
+    # convention, which read as though endurance dropped by 3%.
+    _STRENGTH_BONUS_PCT = 0.30
+    _FINESSE_BONUS_PCT = 0.15
+    _ENDURANCE_PENALTY_POINTS = 3
+    # What each RE-application adds on top.
+    _COMPOUND_STRENGTH_BONUS_PCT = 0.15
+    _COMPOUND_ENDURANCE_PENALTY_POINTS = 2
+    _COMPOUND_DURATION_BEATS = 10
+    _EXECUTE_ON = 5
+
     def __init__(self, target):
         duration = random.randint(25, 50)
         super().__init__(
@@ -760,17 +1111,40 @@ class Fervent(State):
             world=False,
             statustype="enraged",
             persistent=False,
-            description="Strength +30%, Finesse +15%. Endurance -3. Drains HP and Fatigue every few beats.",
+            description=(
+                f"Strength +{_pct(self._STRENGTH_BONUS_PCT)}, "
+                f"Finesse +{_pct(self._FINESSE_BONUS_PCT)}. "
+                f"Endurance -{self._ENDURANCE_PENALTY_POINTS}. "
+                "Drains HP and Fatigue every few beats."
+            ),
+            # Rendered live below: compound() raises strength and deepens the
+            # endurance cost.
         )
         self.tick = 0
-        self.execute_on = 5
+        self.execute_on = self._EXECUTE_ON
+        self._capture_bases(target, strength="add_str", finesse="add_fin")
         self.add_str = int(
-            stat_without_state_bonus(target, "strength", "add_str", type(self)) * 0.30
+            stat_without_state_bonus(target, "strength", "add_str", type(self))
+            * self._STRENGTH_BONUS_PCT
         )
         self.add_fin = int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.15
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._FINESSE_BONUS_PCT
         )
-        self.add_endurance = -3
+        self.add_endurance = -self._ENDURANCE_PENALTY_POINTS
+
+    def _render_tactical_mechanics(self):
+        strength = self._applied_pct(
+            "add_str", "_base_strength", self._STRENGTH_BONUS_PCT
+        )
+        finesse = self._applied_pct("add_fin", "_base_finesse", self._FINESSE_BONUS_PCT)
+        # Endurance is flat points, so compound() moves the applied value and
+        # the reported one by the same amount; there is no stat to divide by.
+        return (
+            f"+{strength} strength, +{finesse} finesse, "
+            f"−{abs(self.add_endurance)} endurance; "
+            f"HP+fatigue drain every {self._EXECUTE_ON} beats"
+        )
 
     def on_application(self, target):
         functions.refresh_stat_bonuses(target)
@@ -809,14 +1183,21 @@ class Fervent(State):
         # 20-strength target, with no ceiling.
         cprint("The fire in {} burns hotter!".format(target.name), "red")
         self.add_str += int(
-            stat_without_state_bonus(target, "strength", "add_str", type(self)) * 0.15
+            stat_without_state_bonus(target, "strength", "add_str", type(self))
+            * self._COMPOUND_STRENGTH_BONUS_PCT
         )
-        self.add_endurance -= 2
-        self.beats_left = min(self.beats_max, self.beats_left + 10)
+        self.add_endurance -= self._COMPOUND_ENDURANCE_PENALTY_POINTS
+        self.beats_left = min(
+            self.beats_max, self.beats_left + self._COMPOUND_DURATION_BEATS
+        )
         functions.refresh_stat_bonuses(target)
 
 
 class PhoenixRevive(State):
+    # Fractions, not percentages already multiplied out: _pct renders them.
+    _REVIVE_CHANCE = 0.25
+    _REVIVE_HP_PCT = 0.50
+
     def __init__(self, target):
         super().__init__(
             name="Phoenix Revive",
@@ -828,9 +1209,14 @@ class PhoenixRevive(State):
             world=False,
             statustype="revive",
             persistent=True,
-            description="25% chance to revive at 50% HP upon fatal damage. Consumed on use.",
+            description=(
+                f"{_pct(self._REVIVE_CHANCE)} chance to revive at "
+                f"{_pct(self._REVIVE_HP_PCT)} HP upon fatal damage. Consumed on use."
+            ),
         )
-        self.chance = 0.25  # 25% chance per battle
+        # Instance attribute so a caller can buff a single revive's odds; the
+        # class constant is the value the description quotes.
+        self.chance = self._REVIVE_CHANCE
 
     def on_removal(self, target):
         # Remove the revive state after it triggers
@@ -841,7 +1227,7 @@ class PhoenixRevive(State):
 
     def try_revive(self, target):
         if target.hp <= 0 and random.random() < self.chance:
-            target.hp = int(target.maxhp * 0.5)
+            target.hp = int(target.maxhp * self._REVIVE_HP_PCT)
             cprint(
                 "A warm, golden light envelopes {}, who is healed for {} HP!".format(
                     target.name, target.hp
@@ -879,7 +1265,9 @@ class WarCryStunned(State):
 
 
 #: Default lifetime of a Staggered state, in beats. Long enough for the Heavy
-#: Handed passive, whose victim is expected to cast again shortly.
+#: Handed passive, whose victim is expected to cast again shortly. Read by
+#: src/moves/_utility.py, which is why it is a module constant rather than a
+#: class attribute like the rest of this file's tuning values.
 STAGGERED_DEFAULT_BEATS = 3
 
 
@@ -897,6 +1285,12 @@ class Staggered(State):
     stage beats. Heavy Handed keeps the default.
     """
 
+    #: Prep beats added to the target's next move. Named because it is quoted
+    #: three times -- the description, the tactical_mechanics line the advisor
+    #: reads, and the penalty itself -- and those three had no way to disagree
+    #: only while it was one value.
+    _PREP_PENALTY_BEATS = 5
+
     def __init__(self, target, beats_max=STAGGERED_DEFAULT_BEATS):
         super().__init__(
             name="Staggered",
@@ -907,9 +1301,15 @@ class Staggered(State):
             world=False,
             statustype="stun",
             persistent=False,
-            description="Reeling from a heavy blow — next moves are slower.",
+            description=(
+                "Reeling from a heavy blow — the next move takes "
+                f"+{self._PREP_PENALTY_BEATS} prep beats."
+            ),
+            tactical_mechanics=(
+                f"next move costs +{self._PREP_PENALTY_BEATS} prep beats, once"
+            ),
         )
-        self.prep_penalty = 5
+        self.prep_penalty = self._PREP_PENALTY_BEATS
         self.penalty_consumed = False
 
     def on_application(self, target):
@@ -917,28 +1317,44 @@ class Staggered(State):
 
 
 class SecretPlansState(State):
-    """Applied by Secret Plans. +30% strength, finesse, speed for 25 beats."""
+    """Applied by Secret Plans: one bonus fraction across three stats."""
+
+    # One fraction of the holder's own stat, applied to all three.
+    _STAT_BONUS_PCT = 0.30
+    _DURATION_BEATS = 25
 
     def __init__(self, target):
         super().__init__(
             name="Secret Plans",
             target=target,
-            beats_max=25,
+            beats_max=self._DURATION_BEATS,
             compounding=False,
             combat=True,
             world=False,
             statustype="generic",
             persistent=False,
-            description="Strength +30%, Finesse +30%, Speed +30% for 25 beats.",
+            description=(
+                f"Strength +{_pct(self._STAT_BONUS_PCT)}, "
+                f"Finesse +{_pct(self._STAT_BONUS_PCT)}, "
+                f"Speed +{_pct(self._STAT_BONUS_PCT)} for {self._DURATION_BEATS} beats."
+            ),
+            tactical_mechanics=(
+                f"+{_pct(self._STAT_BONUS_PCT)} strength, "
+                f"+{_pct(self._STAT_BONUS_PCT)} finesse, "
+                f"+{_pct(self._STAT_BONUS_PCT)} speed"
+            ),
         )
         self.add_str = int(
-            stat_without_state_bonus(target, "strength", "add_str", type(self)) * 0.30
+            stat_without_state_bonus(target, "strength", "add_str", type(self))
+            * self._STAT_BONUS_PCT
         )
         self.add_fin = int(
-            stat_without_state_bonus(target, "finesse", "add_fin", type(self)) * 0.30
+            stat_without_state_bonus(target, "finesse", "add_fin", type(self))
+            * self._STAT_BONUS_PCT
         )
         self.add_speed = int(
-            stat_without_state_bonus(target, "speed", "add_speed", type(self)) * 0.30
+            stat_without_state_bonus(target, "speed", "add_speed", type(self))
+            * self._STAT_BONUS_PCT
         )
 
     def on_application(self, target):
@@ -977,29 +1393,35 @@ class BloodOfMartyrsState(State):
 
 class Quarried(State):
     """Applied by Marked Quarry (Mara's ally signature move). The target's
-    weak points are called out: protection reduced by 25% for 15 beats.
+    weak points are called out, reducing their protection.
 
     A perception mark rather than a mental/physical status — applied with
     force=True, bypassing status resistance (there is no resisting being
     seen clearly)."""
 
+    # Fraction of the holder's own protection, not flat points.
+    _PROTECTION_PENALTY_PCT = 0.25
+    _DURATION_BEATS = 15
+
     def __init__(self, target):
         super().__init__(
             name="Quarried",
             target=target,
-            beats_max=15,
+            beats_max=self._DURATION_BEATS,
             compounding=False,
             combat=True,
             world=False,
             statustype="generic",
             persistent=False,
-            description="Weak points exposed — protection reduced by 25%.",
+            description=(
+                "Weak points exposed — protection reduced by "
+                f"{_pct(self._PROTECTION_PENALTY_PCT)}."
+            ),
+            tactical_mechanics=f"−{_pct(self._PROTECTION_PENALTY_PCT)} protection",
         )
         self.add_protection = -int(
-            stat_without_state_bonus(
-                target, "protection", "add_protection", type(self)
-            )
-            * 0.25
+            stat_without_state_bonus(target, "protection", "add_protection", type(self))
+            * self._PROTECTION_PENALTY_PCT
         )
 
     def on_application(self, target):

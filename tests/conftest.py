@@ -15,11 +15,134 @@ sys.path.insert(0, PROJECT_ROOT_STR)
 if "utils" in sys.modules and not hasattr(sys.modules["utils"], "__path__"):
     sys.modules.pop("utils")
 
-# Disable LLM and reduce delays for tests
-os.environ["MYNX_LLM_ENABLED"] = "0"
+# Reduce delays for tests. The LLM gates themselves are pinned further down,
+# after .env has been loaded — see the sweep below for why that ordering is
+# load-bearing.
 os.environ["MYNX_FALLBACK_DELAY"] = "0"
-# Prevent CombatStrategist from making discovery requests
+# Blank the REAL provider credentials .env loads at import (ai/llm_client.py,
+# src/api/db.py): the provider chain treats a present key as dialable, so a
+# leaked key would let a unit test spend real quota. Set to "" rather than
+# .pop() — load_dotenv(override=False) refills keys that are *absent* (the
+# GITHUB_TOKEN lesson). tests/integration/conftest.py restores them from the
+# .env file itself for the opt-in live suite.
+#
+# Derived from the provider registry, not transcribed: a hand-maintained list
+# here silently stops covering the chain the moment a fourth provider is
+# registered, which is the failure this blanking exists to prevent. Importing
+# ai.llm_client runs its load_project_env() first, so .env is fully loaded
+# before the loop below overwrites it — assignment wins over override=False
+# either way.
+#
+# CREDENTIAL_ENVS, not PROVIDER_KEY_ENVS: GITHUB_TOKEN rides in on the same
+# .env, and feedback.py's issue-filing path has no TESTING guard by design, so
+# a live token plus a test that forgets to patch requests.post files a REAL
+# GitHub issue. That is not hypothetical — it is how the harness once filed 20
+# of them. tools/bug_hunt.py blanks it for its own runs; until now the pytest
+# suite did not, leaving "the author remembered to patch" as the only control.
+from tests.llm_doubles import (  # noqa: E402
+    CREDENTIAL_ENVS,
+    LLM_SETTING_ENVS,
+    llm_gate_envs,
+)
+
+for _key_env in CREDENTIAL_ENVS:
+    os.environ[_key_env] = ""
+
+# The database is a credential too, and it is the one that writes.
+#
+# CREDENTIAL_ENVS covers the provider keys and GITHUB_TOKEN -- the things that
+# SPEND or POST. It stopped one variable short of the thing that PERSISTS:
+# src/api/db.py reads TURSO_DATABASE_URL/TURSO_AUTH_TOKEN straight from the
+# environment (not from Flask config), and auth_service.create_user has no
+# TESTING guard, so any test that reaches POST /api/auth/register writes a real
+# row to the live Turso database. tests/api/ was excluded from the default run
+# for months, which hid that; un-excluding it put such a test in the gate.
+#
+# Same shape as the GITHUB_TOKEN incident above, one layer down. Blank both, so
+# an unguarded DB write fails loudly with "TURSO_DATABASE_URL is not set"
+# instead of succeeding against production.
+# (The Turso pair is in CREDENTIAL_ENVS now and is blanked by the loop
+#  above. It used to be spelled here AND in tools/bug_hunt.py -- the
+#  duplication that vocabulary exists to end.)
+
+# Neutralise every per-feature LLM gate, plus the host, the settings and the
+# model pins that do not follow the gate naming convention, then pin the three
+# the suite relies on by name.
+#
+# Pinning MYNX_LLM_ENABLED=0 and MYNX_LLM_PROVIDER=none used to be the whole of
+# it, on the assumption that every adapter read those. That stopped being true
+# when adapters started declaring their own variables: GenericLLMClient
+# subclasses name a gate/provider/model trio and resolve it with "first
+# non-empty wins", so CombatLLMAdapter's ("COMBAT_LLM_ENABLED",
+# "MYNX_LLM_ENABLED") means a developer whose .env sets COMBAT_LLM_ENABLED=1
+# walks straight past both pins — measured: _resolve_enabled() True, provider
+# groq, model whatever .env named, on a plain `pytest` run. The comment that
+# used to sit on the MYNX_LLM_PROVIDER line claiming it stopped the combat
+# strategist from making discovery requests had simply gone stale.
+#
+# Swept by suffix rather than from a list of adapter classes. The names follow
+# a convention (<FEATURE>_LLM_ENABLED / _PROVIDER / _MODEL) that all eight
+# declared names in the tree obey, and a suffix sweep needs no reference to the
+# adapter classes, so a feature adapter added tomorrow — or one whose module is
+# mid-refactor and does not currently import — is covered anyway. Sweeping only what is *present* is
+# sufficient: ai.llm_client's load_project_env() has already run by this line
+# (that is what the import above triggers), so anything .env can contribute is
+# in os.environ now, and a later load_dotenv(override=False) cannot add to it.
+#
+# The suffix convention and the list of names that do NOT obey it are owned by
+# tests/llm_doubles.py, because the OTHER half of this arrangement --
+# tests/integration/conftest.py, which puts these back for the opt-in live
+# suite -- has to describe the same set. It used to hand-spell its own tuple,
+# so a newly added feature adapter got blanked here and restored by nobody,
+# and the live suite ran it disabled. See LLM_SETTING_ENVS for why each
+# non-conforming name is on the list and why the NPC_CHAT_TEMP_* five are not.
+#
+# The one that was actually live: OLLAMA_BASE_URL. _provider_chain() appends
+# ollama to the fallback chain unless this is explicitly BLANK, and
+# _provider_available() reads nothing else, so a developer running a local
+# Ollama had unit tests dialling it -- while tests/integration/conftest.py, the
+# suite that is *allowed* to reach a provider, had blanked it for exactly that
+# reason. The opt-in suite was better protected than the default one.
+#
+# "Unless blank" and not "whenever set": ollama needs no credential, so
+# ai.llm_client._ollama_base_url reads an UNSET variable as the default
+# localhost port -- the address __init__ has always assigned to self.base_url.
+# The assignment two lines down is therefore the whole control; deleting the
+# name would arm the local host rather than disarm it.
+#
+# Assigned "" rather than popped, for the reason spelled out above: a deleted
+# key is refilled from .env, an assigned empty one is not. Empty reads as unset
+# to every consumer — _first_env() strips and skips it, and the enabled gate
+# compares against ("1", "true", "True").
+for _name in llm_gate_envs(os.environ) + LLM_SETTING_ENVS:
+    os.environ[_name] = ""
+
+# The explicit pins, applied after the sweep so it cannot blank them.
+# "none" is PROVIDER_DISABLED and is stronger than empty: empty falls
+# through to DEFAULT_PROVIDER ("ollama"), so a test that constructs an
+# adapter with `enabled` forced True would probe a local Ollama if one
+# happens to be running. "none" leaves nothing to probe.
+os.environ["MYNX_LLM_ENABLED"] = "0"
 os.environ["MYNX_LLM_PROVIDER"] = "none"
+os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
+# Same reason, different cost: .env ships LOG_LEVEL=DEBUG, so once db.py's
+# load_dotenv() has run the whole suite pays formatting and stderr writes for
+# every logger.debug in the engine.
+#
+# Blanked rather than set to "WARNING". Both silence the suite -- Python's root
+# default is already WARNING and src/api/app.py never raises it -- but a pinned
+# value puts every pytest run down create_app()'s *explicit level* path, so
+# `_configure_logging`'s `level is None` -> NOTSET branch never executed under
+# pytest at all. That branch is what lets a bare `caplog.set_level(INFO)` reach
+# app records, and app.py documents it as such; pinning made the documented
+# behaviour true only in tests that first deleted this variable.
+#
+# Blanked, not .pop()ed, for the reason above: `load_project_env()` runs again
+# at src/api/rate_limiter.py import time with dotenv's `override=False`, which
+# refills a *deleted* key straight from .env (measured: LOG_LEVEL comes back as
+# DEBUG) and leaves an assigned empty one alone. `_log_level_setting()` in
+# app.py reads blank as unset for exactly this reason.
+os.environ["LOG_LEVEL"] = ""
 
 # Hermes itself exposes a top-level utils.py; the project map editor uses the
 # repository's utils/ package. Remove the already-loaded helper module so the
@@ -209,33 +332,22 @@ def gorran_npc():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Flask App Fixtures for API Testing
+# Flask app fixtures for API testing: see `make_api_app` below.
 # ─────────────────────────────────────────────────────────────────────────────
-
-@pytest.fixture
-def flask_app():
-    """Create a Flask app instance for testing."""
-    from src.api.app import create_app
-    from src.api.config import TestingConfig
-    app = create_app(TestingConfig)
-    return app
-
-
-@pytest.fixture
-def flask_client(flask_app):
-    """Create a Flask test client."""
-    return flask_app.test_client()
-
-
-@pytest.fixture
-def app_with_session(flask_app):
-    """Create a Flask app with test session support."""
-    with flask_app.app_context():
-        from src.api.services.session_manager import SessionManager
-        # Initialize session manager if needed
-        session_mgr = SessionManager()
-        flask_app.session_manager = session_mgr
-    return flask_app
+# There were three more here — `flask_app`, `flask_client` and
+# `app_with_session` — and all three were broken from the day they were written.
+# `flask_app` did `app = create_app(TestingConfig)`, but `create_app` returns
+# `(app, socketio)`, so the fixture yielded a 2-tuple and the other two
+# AttributeError'd on `.test_client()` / `.app_context()` the moment anything
+# asked for them. Nothing ever did; the two apparent `app_with_session`
+# consumers are class-local fixtures of the same name that unpack the tuple
+# themselves.
+#
+# They are not replaced, because `make_api_app` already is the replacement and
+# says so in its docstring. Deleted rather than fixed on purpose: three fixtures
+# with the most obvious names in the suite, sitting in the file every test file
+# loads, all of them landmines. A new test file that guessed `flask_client`
+# would have got an AttributeError from a conftest it never opened.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -262,9 +374,20 @@ def app_with_session(flask_app):
 # line and without re-deriving its own copy.
 #
 # Naming rule for this section: every fixture added here uses a name that no
-# test file in tests/ currently defines, so promoting them cannot shadow a
-# file-local fixture and cannot change the resolution of any existing test.
-# `game_service` is the single deliberate exception — see its docstring.
+# test file in tests/ currently defines. `game_service` is the single
+# deliberate exception — see its docstring.
+#
+# The rule is NOT about shadowing, and an earlier note claiming it was had
+# pytest's resolution order backwards. Resolution runs from the most specific
+# scope outward — the test module's own definition first, then a same-directory
+# conftest, then each parent conftest — so nothing added to this file can
+# shadow a file-local fixture. The file-local one always wins.
+#
+# What the rule actually buys is the quieter direction: a generic name added
+# here is silently INHERITED by any file that has not defined its own, so a
+# test that meant to build its own object instead passes against one chosen in
+# a file its author never opened. Keeping the names unused elsewhere means no
+# existing test changes what it resolves to on the day this section landed.
 
 
 # --- Real engine objects: combatants -----------------------------------------
@@ -438,19 +561,21 @@ def game_service():
     """A fresh ``GameService``.
 
     This is the one fixture in this section whose name is already defined
-    elsewhere (36 file-local copies plus one in ``tests/conftest_game_service``).
-    Promoting it is safe because every one of those copies has the identical
-    body — ``return GameService()`` — and ``GameService.__init__`` is literally
+    elsewhere. ``grep -rn "def game_service" tests/`` finds four occurrences:
+    this one, one in ``tests/conftest_game_service.py``, and two file-local
+    copies (``test_merchandise_system.py``, ``test_view_map.py``). Promoting it
+    is safe because every one of those copies has the identical body —
+    ``return GameService()`` — and ``GameService.__init__`` is literally
     ``pass``: the class holds no instance state at all, so two instances are
     indistinguishable. File-local definitions still take precedence under normal
-    pytest resolution; this exists so a new test file does not need a 37th copy.
+    pytest resolution; this exists so a new test file does not need a third
+    copy.
 
     Kept function-scoped rather than session-scoped on purpose. Construction is
     free (``__init__`` is ``pass``), so caching buys nothing, while a shared
     instance would let a test that assigns ``game_service.some_method = Mock()``
-    without restoring it corrupt every later test. The six ``_cached_game_service``
-    session fixtures in the suite are that same non-optimisation and should be
-    dropped rather than copied.
+    without restoring it corrupt every later test. Do not add a session-scoped
+    cache of this object in a test file.
 
     Reminder: ``GameService`` has no ``self.universe``. The universe lives on
     ``player.universe``; reach it via ``GameService._story(player)`` /
@@ -672,6 +797,139 @@ def _restore_os_environ():
     if os.environ != snapshot:
         os.environ.clear()
         os.environ.update(snapshot)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Closed-vocabulary drift guard
+# ─────────────────────────────────────────────────────────────────────────────
+# The recurring bug this exists to stop, four rounds running: a module declares a
+# closed vocabulary as a ``Literal``, then keys three or four lookup tables on it
+# with ``dict.get(...)`` or a ``.get(x, default)`` fallback. Add a member to the
+# ``Literal`` and forget one table and nothing raises — the missing row silently
+# takes the default. That is a FAIL-OPEN table: the guard that was supposed to
+# fire just does not, in the one situation it was written for.
+#
+# ``ai/combat_strategist.py``'s ``HeatBand`` is the live instance (four tables,
+# one of them deliberately partial); ``src/npc/_chat_guard.py``'s category
+# tables were the previous one. Each round closed its own instance with its own
+# bespoke test, which is how there came to be four of them.
+#
+# Modelled on ``src/narration.py``'s ``EMOTIONS``, the repo's exemplar drift
+# guard: ONE owner of the vocabulary, every copy named in one place, a stated
+# membership rule, and an explicit prohibition on writing a further copy. The
+# prohibition here: do not write a fifth bespoke closed-table test. Add the
+# table's name to an ``assert_closed_over`` call.
+
+
+@pytest.fixture
+def assert_closed_over():
+    """Assert lookup tables are keyed over exactly a ``Literal``'s members.
+
+    ::
+
+        assert_closed_over(module, literal_name, *table_names, partial=None)
+
+    ``module`` is the module object that owns both the ``Literal`` alias and the
+    tables; ``literal_name`` and each ``table_names`` entry are attribute names
+    on it. Names rather than objects on purpose — it is what lets the failure
+    message say *which* table drifted, it makes a typo an ``AttributeError``
+    rather than a silent pass, and it is the form ``monkeypatch.setattr(module,
+    name, ...)`` already uses, so a negative-control test needs no new idiom.
+
+    Usage, from a test that imports the module under guard::
+
+        def test_every_heat_table_covers_every_band(assert_closed_over):
+            assert_closed_over(
+                combat_strategist,
+                "HeatBand",
+                "_HEAT_OFFENSIVE_BONUS",
+                "_HEAT_LABEL_BODY",
+                "_HEAT_OFFENSIVE_NOTE",
+                partial={"_HEAT_ALERTS": {"BLAZING", "COLD"}},
+            )
+
+    Args:
+        module: the module owning the vocabulary and the tables.
+        literal_name: attribute name of the ``Literal`` alias. It must really be
+            a ``Literal`` — a plain ``str`` alias, or a ``Union``, is rejected
+            rather than passing vacuously over an empty member set.
+        *table_names: attribute names of mappings that must be keyed over
+            **every** member and nothing else.
+        partial: opt-in for a table that is deliberately incomplete, as
+            ``{table_name: expected_key_set}``. The exact set is required, not
+            merely "this one may be short": a table allowed to be any subset
+            would drift back to fail-open the moment a member was added. Stating
+            the set means adding a member forces a decision about this table
+            too, and every key in it is still checked for membership, so a
+            renamed member fails here as well. Say at the call site *why* the
+            table is partial — for ``_HEAT_ALERTS`` it is that only the two
+            extreme bands warrant a line in the alert block.
+
+    Raises:
+        AssertionError: naming the module, the vocabulary, the table, and the
+            keys that are missing or extra.
+    """
+    from typing import Literal, get_args, get_origin
+
+    def _assert_closed_over(module, literal_name, *table_names, partial=None):
+        where = getattr(module, "__name__", module)
+        alias = getattr(module, literal_name)
+        if get_origin(alias) is not Literal:
+            raise AssertionError(
+                "%s.%s is %r, not a Literal — there is no closed vocabulary to "
+                "check against, so this assertion would pass vacuously."
+                % (where, literal_name, alias)
+            )
+        members = frozenset(get_args(alias))
+
+        partial = dict(partial or {})
+        both = sorted(set(table_names) & set(partial))
+        if both:
+            raise AssertionError(
+                "%s named in both table_names and partial=: %s. A table is "
+                "either complete or deliberately partial, not both."
+                % (where, ", ".join(both))
+            )
+        if not table_names and not partial:
+            raise AssertionError(
+                "assert_closed_over(%s, %r) named no tables — it would assert "
+                "nothing." % (where, literal_name)
+            )
+
+        expectations = [(name, members) for name in table_names]
+        for name, expected in partial.items():
+            expected = frozenset(expected)
+            stray = expected - members
+            if stray:
+                raise AssertionError(
+                    "%s: partial={%r: ...} expects %s, which %s does not "
+                    "contain. Its members are %s."
+                    % (where, name, sorted(stray), literal_name, sorted(members))
+                )
+            expectations.append((name, expected))
+
+        for name, expected in expectations:
+            keys = frozenset(getattr(module, name))
+            if keys == expected:
+                continue
+            raise AssertionError(
+                "%s.%s is not keyed over %s.\n"
+                "  missing (fails open to a default): %s\n"
+                "  not a member of %s:               %s\n"
+                "  %s members: %s"
+                % (
+                    where,
+                    name,
+                    literal_name,
+                    sorted(expected - keys) or "none",
+                    literal_name,
+                    sorted(keys - expected) or "none",
+                    literal_name,
+                    sorted(members),
+                )
+            )
+
+    return _assert_closed_over
 
 
 # ---------------------------------------------------------------------------

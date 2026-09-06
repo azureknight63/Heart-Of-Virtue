@@ -12,60 +12,19 @@
  *   node scripts/generate-sfx-durations.mjs --check   # fail if stale (CI/prebuild)
  *
  * See docs/development/combat-streaming-plan.md.
+ *
+ * This file is a CLI entry point and nothing else: the duration-computation
+ * logic lives in ./sfx-durations-core.mjs so it can be imported from tests
+ * without dragging in the shebang line above — see that module's header
+ * comment for why that matters. Do not import from here; import the core.
  */
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { computeDurations } from './sfx-durations-core.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SOUNDS_DIR = join(__dirname, '..', 'public', 'assets', 'sounds', 'sfx');
 const OUT_FILE = join(__dirname, '..', 'src', 'utils', 'sfxDurations.js');
-
-/**
- * Exact duration (ms) of a PCM WAV from its header: data-chunk bytes / byteRate.
- * Walks the RIFF chunk list (chunks aren't always adjacent). Returns null for a
- * non-PCM / unparseable file so the caller can warn rather than emit a wrong number.
- */
-export function wavDurationMs(buffer) {
-  if (buffer.length < 12 || buffer.toString('ascii', 0, 4) !== 'RIFF') return null;
-  if (buffer.toString('ascii', 8, 12) !== 'WAVE') return null;
-
-  let byteRate = null;
-  let dataSize = null;
-  let offset = 12;
-  while (offset + 8 <= buffer.length) {
-    const id = buffer.toString('ascii', offset, offset + 4);
-    const size = buffer.readUInt32LE(offset + 4);
-    const body = offset + 8;
-    if (id === 'fmt ' && body + 16 <= buffer.length) {
-      byteRate = buffer.readUInt32LE(body + 8);
-    } else if (id === 'data') {
-      dataSize = size;
-    }
-    // Chunks are word-aligned: a padding byte follows an odd size.
-    offset = body + size + (size % 2);
-  }
-  if (!byteRate || dataSize == null) return null;
-  return Math.round((dataSize / byteRate) * 1000);
-}
-
-const cueOf = (filename) => filename.replace(/\.wav$/, '');
-
-/** Map cue -> duration_ms for every WAV in the SFX directory. */
-export function computeDurations(soundsDir = SOUNDS_DIR) {
-  const durations = {};
-  const warnings = [];
-  for (const name of readdirSync(soundsDir)) {
-    if (!name.endsWith('.wav')) continue;
-    const ms = wavDurationMs(readFileSync(join(soundsDir, name)));
-    if (ms == null) {
-      warnings.push(name);
-      continue;
-    }
-    durations[cueOf(name)] = ms;
-  }
-  return { durations, warnings };
-}
 
 function renderManifest(durations) {
   const entries = Object.keys(durations)
@@ -92,13 +51,32 @@ function main() {
   const next = renderManifest(durations);
 
   if (check) {
+    // Fail on warnings BEFORE comparing. An unparseable WAV is omitted from
+    // both the freshly computed map and (because the last generator run
+    // skipped it too) the committed manifest, so the two match and the gate
+    // would otherwise pass while a shipped cue has no duration at all.
+    if (warnings.length) {
+      console.error(
+        `[sfx-durations] ${warnings.length} WAV file(s) could not be parsed, so they ` +
+          'have no duration in the manifest. Fix or re-render them.'
+      );
+      process.exit(1);
+    }
+
     let current = '';
     try {
       current = readFileSync(OUT_FILE, 'utf8');
-    } catch {
-      /* missing file -> stale */
+    } catch (err) {
+      // Only a MISSING manifest means "stale". EACCES/EISDIR/a decode failure
+      // are real faults; reporting them as staleness sends the operator to
+      // `npm run sfx:durations`, which cannot fix a permissions problem.
+      if (err.code !== 'ENOENT') throw err;
     }
-    if (current !== next) {
+    // Compare with CRLF normalized to LF: on a Windows checkout with
+    // core.autocrlf=true, the on-disk file has CRLF line endings while
+    // `next` (freshly rendered here) is always LF-only, which would
+    // otherwise report every fresh checkout as stale.
+    if (current.replace(/\r\n/g, '\n') !== next) {
       console.error(
         '[sfx-durations] sfxDurations.js is stale. Run: npm run sfx:durations'
       );
@@ -114,6 +92,4 @@ function main() {
   );
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
-}
+main();

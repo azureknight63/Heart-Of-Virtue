@@ -80,8 +80,15 @@ export default function GamePage() {
     onEnded: applyCombatState,
     onUpdate: applyCombatState,
     onSessionInvalid: () => {
-      // Same teardown as the axios 401 path and logout, through the one
-      // shared helper rather than a third hand-written copy of it.
+      // The THIRD teardown path -- `utils/session.js` names only two, its
+      // own words being "AuthContext.logout() and the axios 401 interceptor",
+      // and this one carried a hand-written key list besides. The lists
+      // happened to agree, so nothing leaked; the failure the module exists to
+      // prevent is a fourth session-scoped key updating two paths out of
+      // three, and the one it misses stranding a credential or handing the
+      // prior account's identifier to the next user. Master added
+      // `redirectToLogin` -- clearLocalSession plus the BASE_URL redirect, in
+      // one place -- which is exactly the helper this comment was asking for.
       redirectToLogin()
     },
     fetchStatus: fetchCombatStatus,

@@ -283,6 +283,17 @@ class InventoryItemSerializer:
         return item_data
 
 
+# The engine has no slot-based inventory: carrying capacity is purely a weight
+# budget (`Player.weight_tolerance` / `weight_current`), and nothing under src/
+# defines or assigns `inventory_slots` on a Player. `slots_total` was therefore
+# `getattr(player, "inventory_slots", 20)` — a read that could only ever return
+# its default, dressed up as if it were querying the engine. The wire field is
+# kept because `tools/harness/scenarios/inventory.py` asserts its presence, but
+# it is now honestly a constant. If the engine ever grows a real slot limit,
+# read it here instead of this constant.
+_NOMINAL_INVENTORY_SLOTS = 20
+
+
 class InventorySerializer:
     """Serialize player's complete inventory."""
 
@@ -310,13 +321,15 @@ class InventorySerializer:
         # 20.0); nothing anywhere defines `carrying_capacity` on a Player, so
         # reading it alone always fell through to the 100.0 default. That made
         # weight_limit five times the real cap and weight_percentage five times
-        # too small — a player at their limit reported 20% load. `items.py` and
-        # `player/_inventory.py` already use this same fallback ordering.
-        capacity = getattr(
-            player,
-            "weight_tolerance",
-            getattr(player, "carrying_capacity", 100.0),
-        )
+        # too small — a player at their limit reported 20% load.
+        #
+        # The `carrying_capacity` secondary fallback that used to sit between
+        # the two is gone: a fallback to a name with no writer anywhere under
+        # src/ can only ever mask a real AttributeError behind a plausible
+        # default. The 100.0 last resort stays — `MinimalPlayer` (the degraded
+        # session-restore stand-in) really has no `weight_tolerance`, and that
+        # is the object the default exists for.
+        capacity = getattr(player, "weight_tolerance", 100.0)
         return {
             "total_weight": round(total_weight, 2),
             "weight_limit": capacity,
@@ -325,7 +338,7 @@ class InventorySerializer:
             ),
             "item_count": len(items),
             "slots_used": len([i for i in items if i]),
-            "slots_total": getattr(player, "inventory_slots", 20),
+            "slots_total": _NOMINAL_INVENTORY_SLOTS,
             "items": items,
         }
 

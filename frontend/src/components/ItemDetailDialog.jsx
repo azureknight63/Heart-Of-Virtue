@@ -4,6 +4,8 @@ import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 import { ItemStatGrid, ItemSection } from './ItemStatGrid'
 import { formatWeight } from '../utils/itemUtils'
+import { apiErrorMessage } from '../utils/apiError'
+import { lookupOr } from '../utils/lookup'
 
 // Display labels for the scalar stat-bonus keys the backend emits (see
 // inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
@@ -23,6 +25,19 @@ const BONUS_STAT_LABELS = {
 // Equip-comparison recommendation styling (see inventory.py's ItemComparisonSerializer)
 const REC_COLORS = { upgrade: '#00ff88', downgrade: '#ff6666', sidegrade: '#ffcc00' }
 const REC_LABELS = { upgrade: '↑ UPGRADE', downgrade: '↓ DOWNGRADE', sidegrade: '↔ SIDEGRADE' }
+
+/**
+ * The action-message line for an inventory request that THREW.
+ *
+ * The server's own prose goes up bare; the ✗ prefix marks the cases where all
+ * we have is the transport's complaint ("Network Error"), so a player can tell
+ * "the game said no" from "the request never landed".
+ *
+ * Shared by use-on-ally, equip, the generic use handler and drop, which had
+ * four verbatim copies of it — a distinction this fine is exactly the kind that
+ * drifts in one of four places and is never noticed in the other three.
+ */
+const actionFailureMessage = (err) => apiErrorMessage(err, '') || `✗ Error: ${err.message}`
 
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 const formatSigned = (value) => `${value >= 0 ? '+' : ''}${value}`
@@ -117,14 +132,10 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         if (onItemRemoved) onItemRemoved(item.id)
         if (onRefetch) await onRefetch()
       } else {
-        setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot use this item'))
       }
     } catch (err) {
-      if (err.response?.data?.error) {
-        setActionMessage(err.response.data.error)
-      } else {
-        setActionMessage('✗ Error: ' + err.message)
-      }
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
     }
@@ -167,15 +178,10 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         // We no longer auto-close/timeout here because the dialog handles it
         // when the user clicks Ok
       } else {
-        setActionMessage('✗ ' + (data.error || 'Failed to equip'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Failed to equip'))
       }
     } catch (err) {
-      // For server responses with error messages (400s), show without ✗ prefix
-      if (err.response?.data?.error) {
-        setActionMessage(err.response.data.error)
-      } else {
-        setActionMessage('✗ Error: ' + err.message)
-      }
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
     }
@@ -198,14 +204,10 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           if (shouldRemoveItem && onItemRemoved) onItemRemoved(item.id)
           if (onRefetch) await onRefetch()
         } else {
-          setActionMessage('✗ ' + (data.error || errorMsg))
+          setActionMessage('✗ ' + apiErrorMessage(data, errorMsg))
         }
       } catch (err) {
-        if (err.response?.data?.error) {
-          setActionMessage(err.response.data.error)
-        } else {
-          setActionMessage('✗ Error: ' + err.message)
-        }
+        setActionMessage(actionFailureMessage(err))
       } finally {
         setIsLoading(false)
       }
@@ -225,10 +227,10 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       if (data.success) {
         setBookReaderData({ title: item.name, text: stripBookWrapper(data.message) })
       } else {
-        setActionMessage('✗ ' + (data.error || 'Cannot read this item'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot read this item'))
       }
     } catch (err) {
-      setActionMessage('✗ ' + (err.response?.data?.error || err.message || 'Unknown error'))
+      setActionMessage('✗ ' + apiErrorMessage(err, err.message || 'Unknown error'))
     } finally {
       setIsLoading(false)
     }
@@ -257,15 +259,10 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         // Refresh room contents to show dropped item
         if (onRefetch) onRefetch()
       } else {
-        setActionMessage('✗ ' + (data.error || 'Failed to drop'))
+        setActionMessage('✗ ' + apiErrorMessage(data, 'Failed to drop'))
       }
     } catch (err) {
-      // For server responses with error messages (400s), show without ✗ prefix
-      if (err.response?.data?.error) {
-        setActionMessage(err.response.data.error)
-      } else {
-        setActionMessage('✗ Error: ' + err.message)
-      }
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
       setShowDropConfirm(false)
@@ -372,7 +369,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         {item.comparison && (
           <div style={{
             backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            border: `1px solid ${REC_COLORS[item.comparison.recommendation] || '#664400'}`,
+            border: `1px solid ${lookupOr(REC_COLORS, item.comparison.recommendation, '#664400')}`,
             borderRadius: '4px',
             padding: '8px 10px',
           }}>
@@ -380,8 +377,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase' }}>
                 vs. Equipped{item.comparison.current ? `: ${item.comparison.current.name}` : ''}
               </span>
-              <span style={{ color: REC_COLORS[item.comparison.recommendation] || '#ffee99', fontWeight: 'bold', fontSize: '12px' }}>
-                {REC_LABELS[item.comparison.recommendation] || item.comparison.recommendation}
+              <span style={{ color: lookupOr(REC_COLORS, item.comparison.recommendation, '#ffee99'), fontWeight: 'bold', fontSize: '12px' }}>
+                {lookupOr(REC_LABELS, item.comparison.recommendation, item.comparison.recommendation)}
               </span>
             </div>
             {item.comparison.reason && (
@@ -396,7 +393,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                 <DiffChip label="WT" value={item.comparison.differences.weight_diff} invert />
                 <DiffChip label="VAL" value={item.comparison.differences.value_diff} suffix="g" />
                 {Object.entries(item.comparison.differences.bonus_diffs || {}).map(([stat, diff]) => (
-                  <DiffChip key={`bonus-${stat}`} label={BONUS_STAT_LABELS[stat] || capitalize(stat)} value={diff} />
+                  <DiffChip key={`bonus-${stat}`} label={lookupOr(BONUS_STAT_LABELS, stat, capitalize(stat))} value={diff} />
                 ))}
                 {Object.entries(item.comparison.differences.resistance_diffs || {}).map(([type, diff]) => (
                   <DiffChip key={`res-${type}`} label={`${capitalize(type)} Res`} value={diff} percent />
@@ -430,7 +427,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           <ItemSection title="Bonuses">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {Object.entries(item.bonuses).map(([stat, value]) => (
-                <DiffChip key={stat} label={BONUS_STAT_LABELS[stat] || capitalize(stat)} value={value} />
+                <DiffChip key={stat} label={lookupOr(BONUS_STAT_LABELS, stat, capitalize(stat))} value={value} />
               ))}
             </div>
           </ItemSection>
@@ -719,8 +716,11 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
-            // animate fadeIn
-            animation: 'fadeIn 0.2s ease-out',
+            // `fade-in-scale` is index.css's. It used to be declared as
+            // `fadeIn` by a <style> tag at the bottom of this component, which
+            // meant ActionsPanel's action message — the other user of that
+            // name — only animated while this dialog was mounted.
+            animation: 'fade-in-scale 0.2s ease-out',
             boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
           }}>
             {/* Message */}
@@ -775,12 +775,6 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               </button>
             </div>
           </div>
-          <style>{`
-            @keyframes fadeIn {
-              from { opacity: 0; transform: scale(0.9); }
-              to { opacity: 1; transform: scale(1); }
-            }
-          `}</style>
         </div>
       )}
       {showDropConfirm && (

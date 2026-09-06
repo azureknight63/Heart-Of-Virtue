@@ -25,6 +25,15 @@ pytest-timeout==2.4.0
 
 # Code quality
 flake8==7.3.0
+# black is a documented step in CLAUDE.md's test block (`python -m black --check src/`)
+# and pyproject.toml configures it (line-length 88, target py311), but it was in no
+# requirements file -- so the documented check could not run on a clean install.
+black==26.5.1
 
 # Inquisitor browser harness (requires: python -m playwright install chromium)
 playwright>=1.49.0
+
+# LLM token-budget baseline (tools/measure_llm_tokens.py). Upper bound because the
+# script pins the o200k_base encoding by name; a major bump is free to change what
+# that resolves to, which would silently move every number in the token table.
+tiktoken>=0.8.0,<1.0

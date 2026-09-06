@@ -1,7 +1,14 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
-import { colors, spacing, fonts } from '../styles/theme'
-import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from '../utils/portraits'
+import PortraitImage from './PortraitImage'
+import { castMember } from './ConversationTranscript'
+import { DEFAULT_EMOTION } from '../utils/conversationSegment'
+import { colors, spacing, fonts, commonStyles, STAGE_PORTRAIT_WIDTH_VAR } from '../styles/theme'
+
+// Referentially stable stand-in for "no initial roster". `computeStage` is
+// memoized on its arguments, and a fresh `[]` per render would miss that cache
+// on every keystroke of the typewriter — which is the whole point of the memo.
+const EMPTY_CAST = []
 
 // A fading exit with no author-supplied span ghosts for one extra beat before
 // leaving. Span 1 would drop the member on the exit beat itself — visually
@@ -42,7 +49,7 @@ export function computeStage(segments, idx, initialCast) {
             id: c.id,
             name: c.name || c.id,
             side: c.side || 'right',
-            emotion: c.emotion || 'neutral',
+            emotion: c.emotion || DEFAULT_EMOTION,
             // The opening roster is already on stage when beat 0 renders, so it
             // must never register as "entering" (enteredAt can't be any beat).
             enteredAt: -1,
@@ -57,7 +64,7 @@ export function computeStage(segments, idx, initialCast) {
                 id: op.id,
                 name: op.name || op.id,
                 side: op.side || 'right',
-                emotion: op.emotion || 'neutral',
+                emotion: op.emotion || DEFAULT_EMOTION,
                 enteredAt: k,
                 enterTransition: isInstant(op) ? 'instant' : 'fade',
             })
@@ -127,27 +134,13 @@ function useEnterFade(nodeRef, entering, targetOpacity) {
     }, [nodeRef, entering, targetOpacity])
 }
 
-function Portrait({ member, isSpeaker }) {
+function Portrait({ member, isSpeaker, wide = false }) {
     // Dim & scale: the speaker is full ink/size; listeners fade, shrink, and
     // desaturate slightly. An exit fade multiplies the base opacity.
     const baseOpacity = isSpeaker ? 1 : 0.85
     const opacity = member.opacity * baseOpacity
     const wrapperRef = useRef(null)
     useEnterFade(wrapperRef, member.entering && member.enterTransition === 'fade', opacity)
-    const imgRef = useRef(null)
-
-    // Keep the same <img> node across emotion changes instead of keying on
-    // emotion (which forced a full unmount/remount and flickered every beat
-    // a speaker's emotion changed). handlePortraitError tracks fallback
-    // progress via dataset.fallback on the node, so it must be cleared here
-    // whenever we swap to a new emotion's src — otherwise a stale
-    // 'placeholder'/'neutral' flag from a previous emotion's failed load
-    // wrongly short-circuits the fallback chain for the new one.
-    useEffect(() => {
-        if (imgRef.current) {
-            delete imgRef.current.dataset.fallback
-        }
-    }, [member.id, member.emotion])
 
     return (
         <div
@@ -162,16 +155,17 @@ function Portrait({ member, isSpeaker }) {
                 transform: isSpeaker ? 'scale(1)' : 'scale(0.9)',
             }}
         >
-            <img
-                ref={imgRef}
-                src={portraitUrl(member.id, member.emotion)}
-                data-speaker-slug={speakerSlug(member.id)}
-                data-emotion={normalizeEmotion(member.emotion)}
-                onError={handlePortraitError}
-                alt={`${member.name} (${member.emotion})`}
-                draggable={false}
+            <PortraitImage
+                speaker={member.id}
+                name={member.name}
+                emotion={member.emotion}
                 style={{
-                    width: '130px',
+                    // Wide-layout width is owned by CSS (index.css's
+                    // `.conversation-stage--wide .conversation-stage__portrait-column img`,
+                    // including its mobile override) so it isn't duplicated
+                    // here with a competing inline value. The default layout's
+                    // width reads the same custom property the CSS clamp does.
+                    width: wide ? undefined : `var(${STAGE_PORTRAIT_WIDTH_VAR})`,
                     height: 'auto',
                     borderRadius: '6px',
                     border: `2px solid ${isSpeaker ? colors.secondary : colors.border.light}`,
@@ -199,6 +193,140 @@ function Portrait({ member, isSpeaker }) {
 }
 
 /**
+ * PortraitColumn — one flank of the stage: the cast standing on `area`'s side.
+ *
+ * The flex `display`/`gap` that stack the portraits inside the column are set
+ * here in both layouts, deliberately: no breakpoint retunes them. What the
+ * wide layout does hand to CSS is the column's `min-width`/`width`, which the
+ * phone media query does retune — see THE RULE in styles/index.css.
+ */
+function PortraitColumn({ members, area, activeSpeaker, isWide, staged }) {
+    return (
+        <div
+            className="conversation-stage__portrait-column"
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: spacing.md,
+                // In wide layout the grid track governs the column's width;
+                // `.conversation-stage--wide .conversation-stage__portrait-column`
+                // in index.css owns min-width/width there instead.
+                minWidth: isWide ? undefined : (staged ? '150px' : '0'),
+                gridArea: isWide ? area : undefined,
+                transition: 'min-width 0.35s ease',
+            }}
+        >
+            {members.map((m) => (
+                <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} wide={isWide} />
+            ))}
+        </div>
+    )
+}
+
+/**
+ * StageDialogueCard — the centre panel: speaker label, flavor, prose, hint.
+ *
+ * Everything here is a pure function of the current beat, which is why it
+ * splits cleanly off the stage: the stage owns beat progression and cast
+ * state, this owns how one beat reads.
+ *
+ * `padding` and `min-height` are the two values the phone breakpoint retunes,
+ * so in the wide layout CSS owns them and they are absent from this inline
+ * style — the absence is the contract, and the test asserts it.
+ */
+function StageDialogueCard({
+    speaker,
+    speakerName,
+    flavor,
+    text,
+    isThought,
+    isWide,
+    showHint,
+    hintText,
+    hintVisible,
+}) {
+    const isDialogue = Boolean(speaker)
+    return (
+        <div
+            className="conversation-stage__dialogue"
+            style={{
+                flex: isWide ? undefined : 1,
+                minWidth: 0,
+                gridArea: isWide ? 'dialogue' : undefined,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                gap: spacing.sm,
+                border: `2px solid ${colors.secondary}`,
+                borderRadius: '8px',
+                backgroundColor: colors.bg.panelDeep,
+                transition: 'min-height 0.3s ease',
+                ...(isWide ? {} : { padding: spacing.lg, minHeight: '220px' }),
+            }}
+        >
+            {isDialogue && (
+                <span
+                    style={{
+                        ...commonStyles.eyebrowLabel,
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        color: colors.secondary,
+                    }}
+                >
+                    {speakerName}
+                </span>
+            )}
+            {flavor && (
+                <div
+                    data-testid="conversation-flavor"
+                    style={{
+                        color: colors.text.muted,
+                        fontSize: '13px',
+                        lineHeight: 1.45,
+                        fontStyle: 'italic',
+                        textAlign: isDialogue ? 'left' : 'center',
+                        padding: `${spacing.xs} ${spacing.sm}`,
+                        borderLeft: `2px solid ${colors.border.light}`,
+                    }}
+                >
+                    {flavor}
+                </div>
+            )}
+            <div
+                style={{
+                    color: isDialogue ? colors.text.main : colors.success,
+                    fontSize: '16px',
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                    textAlign: isDialogue ? 'left' : 'center',
+                    fontStyle: isDialogue && !isThought ? 'normal' : 'italic',
+                }}
+            >
+                {text}
+            </div>
+            {showHint && (
+                <span
+                    data-testid="conversation-advance-hint"
+                    style={{
+                        marginTop: spacing.sm,
+                        fontSize: '12px',
+                        color: colors.text.muted,
+                        fontStyle: 'italic',
+                        textAlign: 'center',
+                        opacity: hintVisible ? 1 : 0,
+                        transition: 'opacity 0.3s ease',
+                    }}
+                >
+                    {hintText}
+                </span>
+            )}
+        </div>
+    )
+}
+
+/**
  * ConversationStage — visual-novel staged conversation renderer.
  *
  * Shows the full cast flanking the prose (Jean + party left, others right),
@@ -206,20 +334,65 @@ function Portrait({ member, isSpeaker }) {
  * emphasized; listeners persist, dimmed, until a beat changes their emotion.
  * Pre-conversation beats (no `in_conversation`) render as plain centered prose.
  *
- * @param {Array}    segments   - ordered beats from the event payload
- * @param {Object}   conversation - { cast: [...] } initial roster (optional)
- * @param {Function} onComplete - called once after the final beat is revealed
- * @param {number}   [speed]    - typewriter speed (ms/char)
+ * `mode` is the whole behavioural contract, because interactivity, the advance
+ * hint and tail-following always travel together for a given caller:
+ * `"authored"` (default) is a clickable scene that starts at beat 0, shows the
+ * advance hint, and fires `onComplete` once the final beat is revealed —
+ * EventDialog's authored events. `"live"` is a non-interactive, tail-following
+ * display with no advance hint that never fires `onComplete` — NpcChatPanel's
+ * streamed chat, which tracks its own completion off the API response rather
+ * than the stage.
+ *
+ * The blank-beat safety-valve timer (auto-advancing a silent enter/exit beat
+ * after its fade has a moment to play) stays armed in both modes — a blank
+ * frame must always resolve on its own — but completion is mode-gated: in
+ * `"live"` mode `onComplete` is never invoked, even when that timer walks the
+ * stage off its final beat.
+ *
+ * Segments follow the shared contract in utils/conversationSegment. The stage
+ * is the renderer that honours ALL of it — `reactions`, `in_conversation`,
+ * `thought`, `enter` and `exit` included — where `ConversationTranscript`
+ * deliberately reads only the four per-line fields. That module is where a new
+ * field gets declared.
+ *
+ * @param {Object} props
+ * @param {import('../utils/conversationSegment').ConversationSegment[]} props.segments
+ *   - ordered beats from the event payload
+ * @param {?Object} props.conversation - { cast: [...] } initial roster (optional)
+ * @param {Function} props.onComplete - called once after the final beat is revealed (never in `"live"` mode)
+ * @param {number} [props.speed] - typewriter speed (ms/char)
+ * @param {'authored'|'live'} [props.mode] - interactive+hinted+from-beat-0, or non-interactive+tail-following
+ * @param {'default'|'wide'} [props.layout] - layout density for the conversation stage
  */
-function ConversationStage({ segments = [], conversation = null, onComplete, speed = 25 }) {
+function ConversationStage({
+    segments = [],
+    conversation = null,
+    onComplete,
+    speed = 25,
+    mode = 'authored',
+    layout = 'default',
+}) {
+    const isLive = mode === 'live'
+
     const [beatIndex, setBeatIndex] = useState(0)
     const completedRef = useRef(false)
     const containerRef = useRef(null)
 
-    const initialCast = conversation?.cast || []
+    const initialCast = conversation?.cast || EMPTY_CAST
     const lastIndex = segments.length - 1
     const current = segments[beatIndex] || {}
-    const { members, activeSpeaker, staged } = computeStage(segments, beatIndex, initialCast)
+    // Memoized because `computeStage` replays the conversation from beat 0 and
+    // `useTypewriter` below re-renders once per character: unmemoized, a
+    // 300-character reply replayed the whole conversation ~300 times, each
+    // replay allocating two Maps and a spread per cast member.
+    const { members, activeSpeaker, staged, leftMembers, rightMembers } = useMemo(() => {
+        const stage = computeStage(segments, beatIndex, initialCast)
+        return {
+            ...stage,
+            leftMembers: stage.members.filter((m) => m.side === 'left'),
+            rightMembers: stage.members.filter((m) => m.side === 'right'),
+        }
+    }, [segments, beatIndex, initialCast])
 
     const { displayedText, isComplete, finishImmediately } = useTypewriter(current.text || '', speed)
 
@@ -230,11 +403,14 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
     // beatIndex/completedRef must reset whenever a new segments array arrives
     // — otherwise the stage resumes at a stale index and onComplete (gated by
     // completedRef) never fires again for the new conversation.
+    // Keyed on the array itself, never on its length: consecutive stages of one
+    // event are often the same length, and a length-keyed reset leaves the stage
+    // parked on the previous stage's last beat with onComplete already spent.
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset above is the whole point: EventDialog reuses one mounted ConversationStage across stages, so a new `segments` array must rewind beatIndex/completedRef or onComplete never fires again (soft-lock).
-        setBeatIndex(0)
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset above is the whole point: EventDialog reuses one mounted ConversationStage across stages, so a new `segments` array must rewind beatIndex/completedRef or onComplete never fires again (soft-lock). In live mode the newest segment is the one to show, so it rewinds to the end rather than the start.
+        setBeatIndex(isLive ? Math.max(0, segments.length - 1) : 0)
         completedRef.current = false
-    }, [segments])
+    }, [segments, isLive])
 
     const advance = useCallback(() => {
         if (!isComplete) {
@@ -245,9 +421,12 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
             setBeatIndex((i) => i + 1)
         } else if (!completedRef.current) {
             completedRef.current = true
-            onComplete?.()
+            // Live chat tracks its own completion off the API response; the
+            // stage itself must never fire onComplete for it (guarded here,
+            // the only call site).
+            if (!isLive) onComplete?.()
         }
-    }, [isComplete, finishImmediately, beatIndex, lastIndex, onComplete])
+    }, [isComplete, finishImmediately, beatIndex, lastIndex, onComplete, isLive])
 
     // Auto-advance text-less beats (silent enter/exit) once their fade has a
     // moment to play, so the player isn't asked to click through blank frames.
@@ -260,6 +439,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
 
     // Enter/Space advance the conversation while it is active.
     useEffect(() => {
+        if (isLive) return undefined
         const node = containerRef.current
         if (!node) return undefined
         const onKey = (e) => {
@@ -271,109 +451,57 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
         }
         node.addEventListener('keydown', onKey)
         return () => node.removeEventListener('keydown', onKey)
-    }, [advance])
+    }, [advance, isLive])
 
-    const leftMembers = members.filter((m) => m.side === 'left')
-    const rightMembers = members.filter((m) => m.side === 'right')
-
-    const renderColumn = (cols) => (
-        <div
-            style={{
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: spacing.md,
-                minWidth: staged ? '150px' : '0',
-                transition: 'min-width 0.35s ease',
-            }}
-        >
-            {cols.map((m) => (
-                <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} />
-            ))}
-        </div>
-    )
-
-    const isDialogue = Boolean(current.speaker)
     const isThought = Boolean(current.thought)
+    const isWide = layout === 'wide'
+
+    const columnProps = { activeSpeaker, isWide, staged }
 
     return (
         <div
             ref={containerRef}
             data-testid="conversation-stage"
-            tabIndex={-1}
+            tabIndex={isLive ? undefined : -1}
             onClick={(e) => {
                 e.stopPropagation()
-                advance()
+                if (!isLive) advance()
             }}
+            className={`conversation-stage conversation-stage--${layout}`}
             style={{
-                display: 'flex',
-                alignItems: 'stretch',
-                gap: spacing.lg,
-                cursor: 'pointer',
+                cursor: isLive ? 'default' : 'pointer',
                 outline: 'none',
-                minHeight: '300px',
+                // This element's own geometry (display, grid tracks, gap,
+                // min-height) is exactly what the phone breakpoint retunes, so
+                // in the wide layout index.css's `.conversation-stage--wide`
+                // rules own it and none of it appears here — the media query
+                // then wins by ordinary cascade rather than by out-shouting an
+                // inline style. The default layout styles itself inline: no
+                // breakpoint touches it. THE RULE in index.css is the full
+                // statement of which properties this covers.
+                ...(isWide ? {} : {
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    gap: spacing.lg,
+                    minHeight: '300px',
+                }),
             }}
         >
-            {staged && renderColumn(leftMembers)}
+            {staged && <PortraitColumn members={leftMembers} area="left" {...columnProps} />}
 
-            <div
-                style={{
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    gap: spacing.sm,
-                    padding: spacing.lg,
-                    border: `2px solid ${colors.secondary}`,
-                    borderRadius: '8px',
-                    backgroundColor: colors.bg.panelDeep,
-                    minHeight: '220px',
-                    transition: 'min-height 0.3s ease',
-                }}
-            >
-                {isDialogue && (
-                    <span
-                        style={{
-                            fontFamily: fonts.main,
-                            fontSize: '13px',
-                            fontWeight: 'bold',
-                            color: colors.secondary,
-                            textTransform: 'uppercase',
-                            letterSpacing: '1px',
-                        }}
-                    >
-                        {(members.find((m) => m.id === activeSpeaker) || {}).name || current.speaker}
-                    </span>
-                )}
-                <div
-                    style={{
-                        color: isDialogue ? colors.text.main : colors.success,
-                        fontSize: '16px',
-                        lineHeight: 1.6,
-                        whiteSpace: 'pre-wrap',
-                        textAlign: isDialogue ? 'left' : 'center',
-                        fontStyle: isDialogue && !isThought ? 'normal' : 'italic',
-                    }}
-                >
-                    {displayedText}
-                </div>
-                <span
-                    style={{
-                        marginTop: spacing.sm,
-                        fontSize: '12px',
-                        color: colors.text.muted,
-                        fontStyle: 'italic',
-                        textAlign: 'center',
-                        opacity: isComplete ? 1 : 0,
-                        transition: 'opacity 0.3s ease',
-                    }}
-                >
-                    {beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
-                </span>
-            </div>
+            <StageDialogueCard
+                speaker={current.speaker}
+                speakerName={castMember(members, current.speaker).name}
+                flavor={current.flavor}
+                text={displayedText}
+                isThought={isThought}
+                isWide={isWide}
+                showHint={!isLive}
+                hintVisible={isComplete}
+                hintText={beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
+            />
 
-            {staged && renderColumn(rightMembers)}
+            {staged && <PortraitColumn members={rightMembers} area="right" {...columnProps} />}
         </div>
     )
 }

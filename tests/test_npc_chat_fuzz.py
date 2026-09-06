@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 from flask import Flask
 
 from src.api.routes.npc_chat import npc_chat_bp
+from tests.llm_doubles import make_chat_adapter
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +134,22 @@ def _patched_auth():
                  return_value=(sm, session, player, None))
 
 
+@pytest.fixture(autouse=True)
+def _disable_chat_rate_limit(monkeypatch):
+    """This fuzz suite intentionally replays hundreds of requests per seed
+    against a single fixed session id (see ``_patched_auth``). It exercises
+    input handling, not the /open + /respond LLM-call rate limiter added in
+    npc_chat.py — leaving the limiter live would trip on fuzz volume alone
+    and mask the 400/500 assertions these tests actually care about.
+
+    Both tiers must be nulled: they are independent, so disabling only the
+    identity tier leaves the IP tier (every test request arrives from the same
+    address) free to 429 the run.
+    """
+    monkeypatch.setattr("src.api.routes.npc_chat._chat_limiter", None)
+    monkeypatch.setattr("src.api.routes.npc_chat._chat_ip_limiter", None)
+
+
 @pytest.mark.parametrize("seed", [1, 7, 1337])
 def test_route_input_fuzz_never_500(seed):
     rng = random.Random(seed)
@@ -173,12 +190,9 @@ def test_non_string_fields_return_400_not_500():
 # ---------------------------------------------------------------------------
 
 def _adapter(raw):
-    import ai.llm_client as llm
-
-    adapter = llm.NpcChatLLMAdapter.__new__(llm.NpcChatLLMAdapter)
-    adapter.enabled = True
-    adapter._call_llm = lambda *a, **k: raw
-    return adapter
+    return make_chat_adapter(
+        provider=None, api_key=None, _call_llm=lambda *a, **k: raw
+    )
 
 
 @pytest.mark.parametrize("seed", [2, 99, 20240101])

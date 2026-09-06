@@ -10,19 +10,26 @@ import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
 import { cleanTerminalLineBreaks } from '../utils/entityUtils'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
+import { apiErrorMessage } from '../utils/apiError'
 
 const SUBMIT_FAILED_MESSAGE = 'Failed to submit input. Please try again.'
 
 /**
  * Build the retry banner text for a failed input submission.
+ *
  * The event manager returns `{ success: false }` (server rejection, already
- * toasted) or `{ success: false, error }` (network/transport failure).
+ * toasted) or `{ success: false, error }` (network/transport failure), where
+ * `error` is a bare string or the thrown error itself — a third shape on top
+ * of the two `apiErrorMessage` already reconciles, and the reason the helper
+ * takes a string.
+ *
+ * The thrown error's own `.message` is the fallback rather than the answer:
+ * when the request DID reach a route, that route's prose (or the prose half of
+ * a 429) beats axios's "Request failed with status code 429".
  */
 export function submissionErrorMessage(result) {
     const err = result?.error
-    if (typeof err === 'string' && err.trim()) return err
-    if (err?.message) return err.message
-    return SUBMIT_FAILED_MESSAGE
+    return apiErrorMessage(err, err?.message || SUBMIT_FAILED_MESSAGE)
 }
 
 /**

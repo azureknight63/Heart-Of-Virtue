@@ -1,13 +1,17 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useApi'
 import { colors } from '../styles/theme'
+import { USERNAME_KEY } from '../utils/session'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
 export default function AccountDialog({ player, onClose }) {
   const navigate = useNavigate()
   const { logout } = useAuth()
-  const username = localStorage.getItem('username') || 'Unknown'
+  // Read by its named key, like every other consumer. The literal is the
+  // session module's to own -- a read that spells it inline is one more place
+  // to update if the key ever changes, and the one that gets missed.
+  const username = localStorage.getItem(USERNAME_KEY) || 'Unknown'
 
   const handleLogout = async () => {
     await logout()

@@ -4,6 +4,7 @@ import { colors, spacing } from '../styles/theme';
 import GameText from './GameText';
 import { strikeFlashFor } from '../utils/animationConfigs';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
+import { lookupOr } from '../utils/lookup';
 import useDoubleRaf from '../hooks/useDoubleRaf';
 import useBattlefieldAnimations, {
   // Re-exported below so existing import sites (and their tests) keep resolving
@@ -298,7 +299,7 @@ const CombatantMarker = React.memo(({
     if (typeof entity.position.facing === 'number') {
       facing = entity.position.facing;
     } else {
-      facing = FACING_MAP[entity.position.facing] || 0;
+      facing = lookupOr(FACING_MAP, entity.position.facing, 0);
     }
   }
 
@@ -1360,24 +1361,46 @@ const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) =>
 //
 //   Decaying move (falloff present): reach is *unbounded*. A bow can be fired
 //   at any distance; accuracy simply bleeds away at `per_ft` hit-chance points
-//   for every foot past `start`, down to the engine's 2% floor. Drawing a ring
-//   at mvrange.max would invent a wall that does not exist. It renders instead
-//   as a disc that is solid out to `start` — the plateau where accuracy is
-//   untouched — and then dissolves outward, reaching transparent exactly where
-//   the falloff would have eaten a full 100 points. The gradient IS the hit
-//   chance: how solid the fill is at a given radius is how likely the shot is.
+//   for every foot past `start`, down to the engine's floor. Drawing a ring at
+//   mvrange.max would invent a wall that does not exist. It renders instead as
+//   a disc that is solid out to `start` — the plateau where accuracy is
+//   untouched — and then dissolves outward as the distance eats into it.
+//
+// What the fill DOES and DOES NOT say. Its density is the share of a nominal
+// 100-point accuracy budget the distance has not yet taken: `per_ft` points per
+// foot past `start`, which are the only two numbers a move payload carries
+// (CombatantSerializer._serialize_move_falloff passes `get_accuracy_falloff`
+// straight through). The 100 is the engine's own denominator, not one invented
+// here — `get_effective_range_max` puts the ceiling at `range_base + 100 /
+// decay`, so the disc runs out exactly where the engine stops offering the
+// shot. It is NOT the hit chance. The engine starts a ranged shot
+// at `to_hit_chance(user, enemy)` — `HIT_CHANCE_BASE` plus the attacker's
+// finesse and intelligence, minus the target's finesse, in src/moves/_base.py —
+// which is neither 100 nor derivable from the move alone, and then applies
+// close-range halving, Hawkeye and facing modifiers this layer never sees. So
+// the disc answers "how much has the range cost this shot", not "how likely is
+// it to land". That distinction used to be written the other way round, which
+// is the sort of claim a comment can make and a renderer cannot keep.
 //
 // Anchored like JeanSpotlight: a getEntityStyle cell rect flex-centers a
 // percentage-sized element, so both shapes inherit camera/pan/fit position.
 // ---------------------------------------------------------------------------
 
-// Fill alpha at full accuracy. The gradient's outer stop is this scaled by the
-// accuracy actually remaining there, so the fill's density is a direct readout
-// of hit chance rather than a decorative fade.
+// Fill alpha inside the plateau, where distance has cost the shot nothing. The
+// gradient's outer stop is this scaled by the share still un-eaten there, so
+// the fade is proportional to the range penalty rather than decorative.
 // Kept low deliberately: this fill can cover the entire viewport. It sits
 // under the tokens (z 20+) and over the breadcrumb (z 5) and threat-line
 // (z 6) layers, so it must not compete with either.
 const FALLOFF_CORE_ALPHA = 0.12;
+// The engine's floor on a decayed ranged shot, in hit-chance points: however
+// far past the plateau the target stands, `_apply_crossbow_range_decay` and
+// ShootBow.calculate_hit_chance (both src/moves/_ranged.py) clamp the result
+// back up to this. The fill bottoms out at the same share rather than reaching
+// nothing, because a disc that fades to invisible says "no shot here" about a
+// distance at which the engine still lets one land. Pinned to the engine by
+// BattlefieldGrid.test.jsx.
+const ENGINE_HIT_CHANCE_FLOOR = 2;
 // Radius percentage at which the fill stops encoding retention and starts
 // feathering out, so the disc has no hard rim.
 const FALLOFF_EDGE_FEATHER_PCT = 88;
@@ -1454,10 +1477,15 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   // so the outer ring drawn on it — stays on screen.
   const drawRadius = Math.min(maxRange, visibleRadiusCells);
   const plateauFraction = Math.min(MAX_PLATEAU_FRACTION, Math.max(0, falloff.start / drawRadius));
-  // Remaining hit chance at the drawn edge, as a fraction of a full 100
-  // points. This is the engine's own linear decay, so the alpha at any radius
-  // really is how likely the shot is at that distance.
-  const edgeRetention = Math.max(0, 1 - ((drawRadius - falloff.start) * falloff.per_ft) / 100);
+  // The share of a nominal 100-point accuracy budget the distance out to the
+  // drawn edge has NOT eaten — see the header on what this does and does not
+  // claim. Floored at the engine's own floor rather than at 0: a shot the
+  // engine still resolves at ENGINE_HIT_CHANCE_FLOOR% used to paint as fully
+  // transparent, i.e. as no threat at all.
+  const edgeRetention = Math.max(
+    ENGINE_HIT_CHANCE_FLOOR / 100,
+    1 - ((drawRadius - falloff.start) * falloff.per_ft) / 100
+  );
   const diameterCells = drawRadius * 2;
 
   return (
@@ -1725,17 +1753,38 @@ function BattlefieldGrid({
   // needs a way back — and needs to know they are looking away from Jean.
   const [isPanned, setIsPanned] = useState(false);
 
-  // Resolve effective map size: API value → bounding box of entity positions → 9
+  // Resolve the arena's width in CELLS: API value → bounding box of entity
+  // positions → 9.
+  //
+  // Everything downstream — the on-map test, the fit-frame clamp, the dashed
+  // extent rectangle — reads this as a COUNT, i.e. legal columns are
+  // `0 .. resolvedMapSize - 1`. The wire's `map_size` is not that number. It is
+  // `combat_grid_size[0]`, the engine's grid *bound*, and the engine's bound is
+  // INCLUSIVE: `CombatPosition.__post_init__` accepts `0 <= x <= bound`,
+  // `clamp_position` clamps with `min(max_w, x)`, and the pincer/ambush spawn
+  // zones run to `(grid_width, grid_height)` and are filled with
+  // `random.randint`, which includes its upper end (all in src/positions.py).
+  // A `width`-wide arena therefore has `width + 1` columns, and a combatant
+  // really can spawn on the last one.
+  //
+  // The conversion belongs here, once, at the wire boundary. Adjusting the
+  // handful of comparisons downstream instead is how the bound came to be read
+  // as exclusive in one place (`worldX < resolvedMapSize`, which dimmed a
+  // combatant standing on the last legal column as though it were off the map)
+  // and inclusive in the next (`topY > resolvedMapSize - 1`).
   const resolvedMapSize = useMemo(() => {
-    // Clamped like the derived branch below: this value drives a gridCols^2
-    // cell loop and that many DOM nodes, so an out-of-range map_size from a
-    // regressed server would hang the tab rather than degrade.
-    if (mapSize && mapSize > 0) return Math.min(MAX_MAP_SIZE, Math.floor(mapSize));
+    // MAX_MAP_SIZE clamps the BOUND before the conversion, so the node-count
+    // guard still means what it says: this value drives a gridCols^2 cell loop,
+    // and an out-of-range map_size from a regressed server must degrade rather
+    // than hang the tab.
+    if (mapSize && mapSize > 0) return Math.min(MAX_MAP_SIZE, Math.floor(mapSize)) + 1;
+    // The derived branch already produced a count — `maxCoord` is an inclusive
+    // observed maximum, so the arena is one cell wider than it.
     let maxCoord = 8; // floor at 9×9
     for (const e of allCombatants) {
       if (e?.position) maxCoord = Math.max(maxCoord, e.position.x, e.position.y);
     }
-    return Math.min(MAX_MAP_SIZE, maxCoord + 1);
+    return Math.min(MAX_MAP_SIZE, maxCoord) + 1;
   }, [mapSize, allCombatants]);
 
   // Touch pan handlers — attached via useEffect so touchmove can be non-passive

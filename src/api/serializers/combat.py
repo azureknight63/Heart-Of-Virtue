@@ -114,33 +114,49 @@ class CombatStateSerializer:
             Dict with full combat state
         """
         allies = allies or []
+        # Serialize each entity ONCE. `player`/`allies`/`enemies` and the flat
+        # `combatants` list are four views of the same three lists of dicts, so
+        # they cannot disagree, and the expensive per-combatant walk (inventory,
+        # known_moves, states, plus the engine's get_effective_range_max /
+        # get_accuracy_falloff queries for the active move) is paid once per
+        # entity per snapshot instead of twice.
+        #
+        # This matters because the call site is inside ApiCombatAdapter's
+        # `while beats_processed < max_beats` loop (max_beats = 20, see
+        # combat_adapter.py:1286), which serializes a fresh snapshot per beat —
+        # so a single player action paid the duplicate up to 20 times over.
+        #
+        # Aliasing is safe: nothing mutates a per-combatant dict after
+        # construction (the adapter only ever assigns TOP-LEVEL keys on the
+        # returned state — "log", "combat_id", "beat", "heat", … — and
+        # combat_beat_stream's diff_combatants only reads), and
+        # `harden_serializer` runs json_safe over the whole payload on the way
+        # out, which deep-copies it, so the wire sees independent objects
+        # regardless.
+        serialized_player = CombatantSerializer.serialize_combatant(player)
         serialized_allies = [
             CombatantSerializer.serialize_combatant(a, reference=player) for a in allies
         ]
+        serialized_enemies = [
+            CombatantSerializer.serialize_combatant(e, reference=player)
+            for e in enemies
+        ]
+        serialized_combatants = (
+            [serialized_player] + serialized_allies + serialized_enemies
+        )
         return {
             "status": "active",
             "round": round_number,
             "current_turn_index": current_turn_index,
-            "player": CombatantSerializer.serialize_combatant(player),
+            "player": serialized_player,
             "allies": serialized_allies,
-            "enemies": [
-                CombatantSerializer.serialize_combatant(e, reference=player)
-                for e in enemies
-            ],
-            "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
-            "combatants": (
-                [CombatantSerializer.serialize_combatant(player)]
-                + serialized_allies
-                + [
-                    CombatantSerializer.serialize_combatant(e, reference=player)
-                    for e in enemies
-                ]
-            ),
+            "enemies": serialized_enemies,
+            "turn_order": CombatStateSerializer._get_turn_order(serialized_combatants),
+            "combatants": serialized_combatants,
             "suggested_moves": getattr(player, "suggested_moves", []),
             "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),
             "last_move_name": getattr(player, "last_move_name", None),
-
             "last_move_target_id": getattr(player, "last_move_target_id", None),
             "player_consumables": CombatStateSerializer._get_consumables(player),
         }
@@ -213,44 +229,68 @@ class CombatStateSerializer:
         }
 
     @staticmethod
-    def _get_turn_order(player: "Player", enemies: List["NPC"]) -> List[str]:
-        """The ``battle_state.turn_order`` list: the player, then the enemies.
+    def _get_turn_order(serialized_combatants: List[Dict[str, Any]]) -> List[str]:
+        """Wire ids of everyone in the fight, in roster order.
 
-        Named "turn order" historically, but it does not sort by anything --
-        it reports the combat list in its existing order, which is the order
-        the engine resolves beats in. Nothing on the client reads the field
-        today; it is still emitted on every poll, so its entries must be real
-        wire ids.
+        NOT an initiative order, despite what this docstring used to claim.
+        The engine is beat-based (``Move.advance`` / ``player.combat_beat``);
+        there is no per-round initiative sequence for this layer to mirror, and
+        synthesising a speed sort here would be the API inventing game logic the
+        engine does not have. The previous implementation built ``(name, speed)``
+        pairs, never sorted them, and returned only the names — so the "speed"
+        half was pure decoration.
 
-        They are minted through :meth:`CombatantSerializer.stream_id` for that
-        reason. This used to interpolate the enemy's *list index*
-        (``f"enemy_{i}"``) -- a fourth spelling of a combat id that no
-        resolver accepts, and one that renames every enemy whenever a
-        combatant leaves the list.
+        Derived from the already-serialized roster so ``turn_order[i]`` is
+        always ``combatants[i]["id"]``. The ids it used to emit were hand-rolled
+        ``enemy_<list index>``, which matched neither
+        ``CombatantSerializer.stream_id`` (``enemy_<id(obj)>``, what the
+        ``combatants``/``enemies`` payloads and the beat streamer use) nor
+        ``GameService``'s own ``turn_order`` (game_service.py:2438), and left
+        allies out of the roster entirely. ``frontend/src/test/payloads.js``
+        already documents the intended contract as
+        ``[player.id, enemies[0].id]``.
+
+        ``.get`` rather than ``[...]``: ``harden_serializer`` turns a combatant
+        that fails to serialize into ``{}``, and index alignment with
+        ``combatants`` matters more than hiding that — a ``null`` in the slot
+        says "this one degraded" without taking the whole combat state down
+        with it (which subscripting would, via the ``_safe`` boundary).
         """
-        return [CombatantSerializer.stream_id(player)] + [
-            CombatantSerializer.stream_id(enemy) for enemy in enemies
-        ]
+        return [c.get("id") for c in serialized_combatants]
 
     @staticmethod
     def _get_available_actions(combatant: Any) -> List[str]:
-        """Get available actions for combatant this turn."""
+        """Get available actions for combatant this turn.
+
+        The engine attribute is ``known_moves`` (src/combatant.py); there is no
+        ``moves`` on Player, NPC or Combatant, so the branch that read it never
+        fired and a real combatant with twelve castable moves reported none of
+        them. Passive moves are excluded — they are not actions anyone chooses
+        (they are reported separately by ``_serialize_passives``) — and the wire
+        carries the move's display name, matching every other move-name field in
+        this module.
+        """
         actions = ["attack", "defend", "flee"]
-        if hasattr(combatant, "moves"):
-            actions.extend(getattr(combatant, "moves", []))
+        for move in getattr(combatant, "known_moves", None) or []:
+            if not getattr(move, "passive", False):
+                actions.append(display_name_of(move))
         if hasattr(combatant, "inventory"):
             actions.append("use_item")
         return actions
 
     @staticmethod
     def _calculate_experience(enemies: List["NPC"]) -> int:
-        """Calculate total experience from defeated enemies."""
+        """Total experience awarded by the defeated enemies.
+
+        The engine attribute is ``exp_award`` (``NPC.__init__``,
+        src/npc/_base.py). This read ``exp_reward`` and fell back to
+        ``level * 10``; NPCs have neither name, so every real battle summary
+        awarded 0. There is no ``level`` fallback any more for the same
+        reason — an NPC's award is the only thing the engine actually stores.
+        """
         total = 0
         for enemy in enemies:
-            if hasattr(enemy, "exp_reward"):
-                total += enemy.exp_reward
-            elif hasattr(enemy, "level"):
-                total += enemy.level * 10
+            total += int(_num(enemy, "exp_award"))
         return total
 
     @staticmethod
@@ -268,7 +308,11 @@ class CombatStateSerializer:
                             "subtype": getattr(item, "subtype", None),
                             "weight": getattr(item, "weight", None),
                             "value": getattr(item, "value", None),
-                            "enchantment_count": getattr(item, "_enchantment_count", getattr(item, "enchantment_count", 0)),
+                            "enchantment_count": getattr(
+                                item,
+                                "_enchantment_count",
+                                getattr(item, "enchantment_count", 0),
+                            ),
                             "description": getattr(item, "description", ""),
                         }
                     )
@@ -364,23 +408,23 @@ class CombatantSerializer:
             "battle_symbol": getattr(combatant, "battle_symbol", None),
             "type": "player" if is_player else "npc",
             "level": getattr(combatant, "level", 1),
+            # `hp`/`maxhp`/`maxfatigue` are the engine's own names (see
+            # src/combatant.py). The secondary `health`/`max_health`/
+            # `max_fatigue` fallbacks these reads used to chain into named
+            # nothing: no class under src/ defines them and nothing anywhere
+            # assigns them, so they could only ever have masked a real
+            # AttributeError with a plausible-looking default. Removed rather
+            # than kept "just in case" — a fallback to a name with no writer is
+            # not defence, it is a silent wrong answer waiting to happen.
             "health": {
-                "current": getattr(combatant, "hp", getattr(combatant, "health", 0)),
-                "max": getattr(
-                    combatant, "maxhp", getattr(combatant, "max_health", 100)
-                ),
+                "current": getattr(combatant, "hp", 0),
+                "max": getattr(combatant, "maxhp", 100),
             },
-            "hp": getattr(combatant, "hp", getattr(combatant, "health", 0)),
-            "max_hp": getattr(
-                combatant, "maxhp", getattr(combatant, "max_health", 100)
-            ),
+            "hp": getattr(combatant, "hp", 0),
+            "max_hp": getattr(combatant, "maxhp", 100),
             "fatigue": getattr(combatant, "fatigue", 0),
-            "max_fatigue": getattr(
-                combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)
-            ),
-            "maxfatigue": getattr(
-                combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)
-            ),
+            "max_fatigue": getattr(combatant, "maxfatigue", 100),
+            "maxfatigue": getattr(combatant, "maxfatigue", 100),
             # Heat multiplier. Only the player has one — `standard_execute_attack`
             # (src/moves/_base.py) multiplies Jean's damage by it and nothing scales
             # NPC damage, so enemies report the neutral 1.0.
@@ -438,6 +482,9 @@ class CombatantSerializer:
                 "target_id": CombatantSerializer._serialize_move_target_id(move),
                 "mvrange": CombatantSerializer._serialize_move_range(move),
                 "falloff": CombatantSerializer._serialize_move_falloff(move),
+                "damage_multiplier": (
+                    CombatantSerializer._serialize_damage_multiplier(move)
+                ),
             }
         return None
 
@@ -473,6 +520,50 @@ class CombatantSerializer:
         """
         method = CombatantSerializer._move_method(move, name)
         return method(*args) if method is not None else None
+
+    @staticmethod
+    def _serialize_damage_multiplier(move: Any) -> float:
+        """Power multiple this move applies to its user's base damage.
+
+        Read off the move object so the number has exactly one owner. The
+        Tactical Advisor estimates incoming damage from this to decide whether
+        a telegraphed hit is potentially lethal; it used to carry its own
+        ``{move name: multiplier}`` table instead, which was keyed on CLASS
+        names while the wire carries ``move.name`` (the runtime *instance*
+        name) — so ``SlimeVolley`` arrived as ``"Slime Volley"``, missed the
+        table, and the heaviest hits in the game were estimated at 1.0x.
+
+        ``Move`` (src/moves/_base.py) declares ``_DAMAGE_MULTIPLIER = 1.0``,
+        so every move answers this and the default below is only a coercion
+        guard. ANY move that hits for more or less than its user's raw damage
+        must override it — that is not a ``TelegraphedSurge`` privilege. Most
+        of the declarations in src/moves/_npc.py are on plain ``Move``
+        subclasses (NpcAttack, GorranClub, VenomClaw, SpiderBite, BatBite,
+        SeismicSlam, TwinFangs), so an audit that only looks at the surge
+        family will miss them and leave a new heavy move understating itself
+        at 1.0.
+
+        Two ways to declare it, both in src/moves/_npc.py:
+          * a move with a fixed factor states it outright (SlimeVolley,
+            TidalSurge, WailStrike, SeismicSlam, TwinFangs);
+          * a move that rolls a range declares ``_POWER_ROLL_MIN``/``_MAX``
+            and derives this as their midpoint, so retuning the roll moves
+            the wire value with it (NpcAttack, GorranClub, VenomClaw,
+            SpiderBite, BatBite).
+        Either way the number is a MIDPOINT on the user's raw damage, never a
+        ceiling: the surge family's factor is applied on top of a power
+        ``NpcAttack.evaluate`` has already rolled through ``uniform(0.8,
+        1.2)``, and ``_estimate_incoming_damage`` renders the wire value as a
+        ±20% band and flags lethality off that band's midpoint.
+
+        ``tests/test_npc_moves_coverage.py::TestDeclaredDamageMultiplier``
+        discovers the declaring classes by reflection and pins each against
+        what ``evaluate()`` really rolls, so it cannot go stale by omission.
+        """
+        try:
+            return float(getattr(move, "_DAMAGE_MULTIPLIER", 1.0))
+        except (TypeError, ValueError):
+            return 1.0
 
     @staticmethod
     def _serialize_move_target_id(move: Any) -> Optional[str]:
@@ -618,35 +709,19 @@ class CombatantSerializer:
         """
         return [CombatantSerializer.serialize_combatant(c) for c in combatants]
 
-    @staticmethod
-    def serialize_health_bar(combatant: Any) -> Dict[str, Any]:
-        """
-        Serialize health bar information for UI display.
-
-        Args:
-            combatant: Player or NPC
-
-        Returns:
-            Dict with HP percentage and status
-        """
-        current_hp = getattr(combatant, "health", 0)
-        max_hp = getattr(combatant, "max_health", 100)
-
-        hp_percent = (current_hp / max_hp * 100) if max_hp > 0 else 0
-        status = "healthy"
-        if hp_percent <= 25:
-            status = "critical"
-        elif hp_percent <= 50:
-            status = "wounded"
-        elif hp_percent <= 75:
-            status = "injured"
-
-        return {
-            "current": current_hp,
-            "max": max_hp,
-            "percent": hp_percent,
-            "status": status,
-        }
+    # `serialize_health_bar` was removed (issue #430 class).
+    #
+    # It read `combatant.health` / `combatant.max_health` — names no engine
+    # class defines and nothing under src/ ever assigns — so every real
+    # combatant serialized as {"current": 0, "max": 100, "percent": 0.0,
+    # "status": "critical"}, a full-health Jean included. It had no production
+    # caller: nothing in src/ or frontend/ consumed it, and no frontend code
+    # spoke its "healthy/injured/wounded/critical" vocabulary. Deleted rather
+    # than repaired to `hp`/`maxhp`, because the bucket thresholds were a
+    # display policy invented here with no engine counterpart, and
+    # `serialize_combatant` already publishes the raw `health.current` /
+    # `health.max` the client actually renders from. tools/serializer_fuzzer.py
+    # still calls it and must drop that call.
 
     @staticmethod
     def _serialize_combat_stats(combatant: Any) -> Dict[str, Any]:
@@ -714,12 +789,19 @@ class CombatantSerializer:
 
     @staticmethod
     def _serialize_status_effects(combatant: Any) -> List[Dict[str, Any]]:
-        """Serialize active status effects on combatant."""
-        effects = []
-        if hasattr(combatant, "states"):
-            for state in getattr(combatant, "states", []):
-                effects.append(StateEffectSerializer.serialize_state(state))
-        return effects
+        """Serialize a combatant's PLAYER-VISIBLE active status effects.
+
+        Delegates the whole list — including the ``hidden`` filter — to
+        ``StateEffectSerializer.serialize_state_list``, which is the single
+        owner of State->wire translation. This used to serialize every state
+        unfiltered while ``GameService._serialize_active_states`` dropped the
+        hidden ones, so ``Dodging`` and ``Parrying`` (the engine's only two
+        ``hidden=True`` states, src/states.py:287 and :308) appeared on the
+        combat payload and vanished from the player-status payload.
+        """
+        return StateEffectSerializer.serialize_state_list(
+            getattr(combatant, "states", None)
+        )
 
     @staticmethod
     def _serialize_combat_equipment(combatant: Any) -> Dict[str, Any]:
@@ -795,6 +877,12 @@ class CombatantSerializer:
 # "generic" is the State default and is used by both buffs (Dodging,
 # SecretPlansState, StoneBulwarkState) and debuffs (Quarried), so it is
 # resolved from the state's own modifiers instead — see `_GENERIC_STATUSTYPE`.
+#
+# EVERY other statustype src/states.py can construct must appear below. The
+# `.get(..., "debuff")` fallback in `_get_effect_type` is a coercion guard for
+# a mocked or third-party state, NOT a licence to leave a real one unmapped —
+# it is what let "death" serialize as a moderate debuff. Both directions are
+# pinned by tests/test_npc_moves_coverage.py::TestStatustypeCategoryTable.
 _STATUSTYPE_CATEGORY = {
     "poison": "ailment",
     "enflamed": "ailment",
@@ -806,6 +894,11 @@ _STATUSTYPE_CATEGORY = {
     "clean": "buff",
     "enraged": "buff",
     "revive": "buff",
+    # Not a stat penalty and not a tick — DeathKnell's execute, which zeroes HP
+    # on application. Categorised with the ailments so it reads as gold/severe
+    # rather than as a moderate debuff, which is what the `.get(...)` default
+    # below silently gave it.
+    "death": "ailment",
 }
 
 # The catch-all statustype whose polarity must be inferred per state.
@@ -830,6 +923,16 @@ class StateEffectSerializer:
         """
         Serialize individual status effect.
 
+        ``description`` is the player-facing prose the status panel shows;
+        ``tactical_mechanics`` is the engine's own terse statement of what the
+        effect actually does — the applied modifiers and the tick interval —
+        which ai/combat_strategist.py puts in the combat LLM prompt. Both live
+        on ``State`` (src/states.py) and are interpolated from the same class
+        constants the ``add_*`` assignments use, so neither can drift from the
+        real numbers; the strategist used to hand-copy that column and had
+        already gone stale on three effects. Defaults to "" for a state that
+        declares none, which the strategist falls back out of.
+
         Args:
             state: State object from states.py
 
@@ -837,25 +940,72 @@ class StateEffectSerializer:
             Dict with state information
         """
         return {
-            "name": getattr(state, "name", "Unknown Effect"),
+            "name": str(getattr(state, "name", "Unknown Effect")),
             "type": StateEffectSerializer._get_effect_type(state),
+            # The engine's own `statustype` verbatim ("poison", "stun", …),
+            # alongside the mapped buff/debuff/ailment `type` above. They are
+            # NOT two names for one value: `type` is this layer's UI polarity
+            # vocabulary, `status_type` is the engine's effect identity, and
+            # the frontend matches on the raw one (ItemDetailDialog.jsx:949 and
+            # :1029 compare `s.status_type === 'poison'`). Emitting both is what
+            # lets GameService._serialize_active_states delegate here instead of
+            # keeping the second, divergent copy of this translation.
+            "status_type": str(getattr(state, "statustype", _GENERIC_STATUSTYPE)),
             "description": getattr(state, "description", ""),
+            "tactical_mechanics": getattr(state, "tactical_mechanics", ""),
             "severity": StateEffectSerializer._get_severity(state),
-            "beats_left": getattr(state, "beats_left", 0),
+            "beats_left": StateEffectSerializer._beats_left(state),
         }
 
     @staticmethod
+    def _beats_left(state: "State") -> float:
+        """Remaining beats as a number, never a string or ``None``.
+
+        A degraded/legacy save can carry junk here; the client counts down
+        against it, so a non-number has to become 0 rather than reach the wire.
+        ``bool`` is excluded explicitly — it is an ``int`` subclass, and
+        ``True`` is not a duration.
+        """
+        beats = getattr(state, "beats_left", 0)
+        if isinstance(beats, bool) or not isinstance(beats, (int, float)):
+            return 0
+        return beats
+
+    @staticmethod
+    def is_hidden(state: "State") -> bool:
+        """Whether the engine marks this state as not shown to the player.
+
+        ``State.__init__`` takes ``hidden`` (src/states.py:78/114) and only
+        ``Dodging`` (:287) and ``Parrying`` (:308) set it. The flag is the
+        engine's decision, so every State->wire path must honour it — this is
+        the single place that reads it.
+        """
+        return bool(getattr(state, "hidden", False))
+
+    @staticmethod
     def serialize_state_list(states: List["State"]) -> List[Dict[str, Any]]:
-        """
-        Serialize multiple status effects.
+        """Serialize the player-visible states of a list, dropping hidden ones.
 
-        Args:
-            states: List of State objects
+        The ``hidden`` filter lives here rather than at each call site: it used
+        to exist only in ``GameService._serialize_active_states``, so the same
+        ``Dodging``/``Parrying`` state was suppressed on the player-status wire
+        and published on the combat wire.
 
-        Returns:
-            List of serialized states
+        Tolerates ``None`` and a non-sequence ``states`` (a corrupt save must
+        not 500 the request — issue #295); individual unserializable entries are
+        skipped rather than taking the whole list down with them.
         """
-        return [StateEffectSerializer.serialize_state(s) for s in states]
+        if not isinstance(states, (list, tuple)):
+            return []
+        result = []
+        for state in states:
+            try:
+                if StateEffectSerializer.is_hidden(state):
+                    continue
+                result.append(StateEffectSerializer.serialize_state(state))
+            except Exception:  # noqa: BLE001 - skip an unserializable state
+                logger.warning("state serialization failed", exc_info=True)
+        return result
 
     @staticmethod
     def serialize_state_with_duration(

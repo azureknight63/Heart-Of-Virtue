@@ -205,11 +205,20 @@ class MiloCurioDealer(Merchant):
         self._collect_player_merchandise(player)
 
 
-class JamboHealsU(Merchant):
+class JamboHealsU(ConversationalNPCMixin, Merchant):
     """Apothecary-style merchant who always keeps core potions in stock
 
     Always-stock is limited to common consumable potions; only a few
     spare/random slots are filled on restock (small stock_count).
+
+    ConversationalNPCMixin is mixed in (as on Kaelen and Vespera) so the
+    frontend's Talk action opens the LLM Conversation dialog instead of the
+    bare scripted line. No ``jambo.json`` is authored: like the generic
+    nomads, Jambo falls back to a generated personality (see
+    ``_ensure_personality``), so the chat identity is a working generic/story
+    one without prompting another agent's authored config. ``talk`` stays as
+    the deterministic fallback for when the chat is unavailable, and the
+    shop (buy/sell/trade) is unchanged.
     """
 
     def __init__(self):
@@ -241,6 +250,12 @@ class JamboHealsU(Merchant):
             intelligence=14,
         )
         self.shop_name = "Jambo Heals U"
+        # No ``_chat_config_path``: Jambo uses the generic/story chat identity
+        # (generated personality) rather than an authored config. Keeping this
+        # call is what makes him a ConversationalNPCMixin instance the
+        # serializer reports as ``llm_chat_enabled`` and the frontend routes to
+        # the LLM Conversation dialog on Talk.
+        self._init_chat_attrs()
 
     def talk(self, player):  # pragma: no cover - simple flavor
         on_nomad_camp = (

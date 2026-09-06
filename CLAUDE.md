@@ -1,113 +1,40 @@
 # Heart of Virtue — CLAUDE.md
 
-## Project Overview
+Text-based adventure RPG (retro terminal aesthetic) following the crusader Jean Claire. Played **entirely via the web app**: a Flask REST/Socket.IO API wraps the Python game engine and a React SPA renders it. The terminal play mode is gone (history in `docs/development/engine-history.md`).
 
-Text-based Adventure RPG (ASCII/retro aesthetic) following a crusader named Jean Claire. The game is played **entirely via the web app** — a Flask REST API wrapping the Python game engine, with a React SPA frontend. (The original terminal/CLI play mode has been removed; see "Terminal-mode removal" below.)
+**The Python engine is the source of truth.** `src/api/` adapts engine state to JSON; it never reimplements game logic. Engine output flows through the narration sink (`src/narration.py`) as structured `{text, color, type}` messages — nothing scrapes stdout.
 
-The Python game engine is the source of truth. The web layer wraps it without rewriting it. Engine output flows through the **narration sink** (`src/narration.py`) as structured messages rather than terminal `print`; the API reads those messages directly instead of scraping stdout.
+Deep, path-specific guidance lives in `.claude/rules/*.md` and loads automatically when you touch matching files (API layer, combat engine, frontend, story/content, saves, testing, audio, LLM prompts). Project skills in `.claude/skills/` self-describe — invoke them instead of re-deriving their workflows (table at the end).
 
-## Tech Stack
+## Design pillars — the decision filter
 
-| Layer | Technology |
-|---|---|
-| Game engine | Python (Flask 3.1.2, Flask-CORS, Flask-SocketIO) |
-| Frontend | React 18, Vite, Tailwind CSS, Axios, Socket.IO client |
-| Database | LibSQL (Turso) via `libsql-client` |
-| Testing (backend) | pytest, pytest-cov |
-| Testing (frontend) | Vitest, React Testing Library |
-| Code quality | flake8 (linter) |
-| AI integration | OpenAI/OpenRouter for Mynx NPC ambient behavior |
+Derived from `docs/lore/`, `src/resources/outline.md`, and the map-design principles (edit if they misstate the vision). A change that serves none of these is scope creep — not because it's bad, but because it's not this game.
 
-## Project Structure
+1. **Lore first, mechanics second.** `docs/lore/` is canon; `src/resources/outline.md` is the chapter spine. Check them before writing dialogue, naming anything, or placing content. Contradictions are bugs — `/narrative-review` finds them.
+2. **Jean's arc carries the story.** Chapters follow Jean's grief/faith journey; story beats anchor to tiles and events, not detached cutscenes.
+3. **Tactical, legible combat.** Turn-based and positional (distance/facing/flanking); every number is explainable and the UI can show every roll. Fairness over spectacle: no unwarned deaths.
+4. **Exploration is the UI.** Descriptions, objects, and NPC text teach the rules. Puzzles may look like dead ends, but every puzzle is hinted in-text.
+5. **Retro terminal, web-native, mobile-playable.** Lime/cyan/orange on near-black; 44px touch targets; nothing conveyed by color alone.
+6. **Ship the game.** Harden the existing vertical slice before adding systems. A new system needs a pillar, a test, and a place in the chapter spine.
 
-```
-src/
-├── api/                    # Flask API layer (web-api branch focus)
-│   ├── app.py              # Flask factory (create_app)
-│   ├── combat_adapter.py   # Wraps terminal combat → JSON
-│   ├── routes/             # REST endpoints (auth, combat, world, inventory, ...)
-│   ├── services/           # Business logic (game_service, session_manager, ...)
-│   ├── serializers/        # Entity → JSON serialization
-│   ├── handlers/           # Error/event handlers
-│   ├── middleware/         # Auth middleware
-│   └── schemas/            # Shared schema definitions (combat beat streaming)
-├── combatant.py            # Base class for Player + NPC (shared resistance/state logic)
-├── moves/                  # Combat abilities/moves — package (was moves.py, ~252KB)
-│   ├── __init__.py         # Re-exports all 73+ classes; callers use `import moves` unchanged
-│   ├── _base.py            # Move, PassiveMove base classes; _ensure_weapon_exp, default_animations
-│   ├── _utility.py         # StrategicInsight, Check, Wait, Rest, UseItem, Attack
-│   ├── _movement.py        # Dodge, Parry, Advance, Withdraw, BullCharge, TacticalRetreat, …
-│   ├── _unarmed.py         # PowerStrike, Jab; passives: IronFist, CleaveInstinct, HeavyHanded
-│   ├── _dagger.py          # Slash, Backstab, FeintAndPivot; passive: ShadowStep
-│   ├── _sword.py           # PommelStrike, Thrust, DisarmingSlash, Riposte, …
-│   ├── _scythe.py          # Reap, ReapersMark, DeathsHarvest; passives: GrimPersistence, …
-│   ├── _spear.py           # KeepAway, Lunge, Impale, ArmorPierce; passive: SentinelsVigil
-│   ├── _pick.py            # ChipAway, ExploitWeakness, Stupefy, WorkTheGap
-│   ├── _ranged.py          # ShootBow, ShootCrossbow, AimedShot, …; passives: EagleEye, …
-│   ├── _polearm.py         # OverheadSmash, Sweep, BracePosition, HalberdSpin; passive: ReachMastery
-│   └── _npc.py             # NpcAttack, NpcRest, TelegraphedSurge, SlimeVolley, TidalSurge, …
-├── states.py               # Status effects (buffs/debuffs)
-├── player/                 # Player class — package, inherits Combatant
-│   ├── __init__.py         # Re-exports Player; callers use `from src.player import Player`
-│   ├── _combat.py          # Combat state, damage application
-│   ├── _inventory.py       # Equip/use/drop, weight
-│   ├── _leveling.py        # gain_exp, attribute allocation, skill unlocks
-│   ├── _movement.py        # Position and tile transitions
-│   ├── _exploration.py     # Look/search/interact helpers
-│   ├── _world.py           # Universe and tile access
-│   └── _debug.py           # Debug-endpoint operations
-├── npc/                    # NPC class — package, inherits Combatant
-│   ├── __init__.py         # Re-exports NPC and all concrete NPCs
-│   ├── _base.py            # NPC base class
-│   ├── _combat.py          # NPC combat AI
-│   ├── _enemies.py         # Hostile NPCs
-│   ├── _friends.py         # Allies (Gorran, …)
-│   ├── _adjutant.py        # TheAdjutant — debug/test-arena operations
-│   ├── _merchants.py       # Merchant + pricing (buy/sell modifiers, shop_name)
-│   ├── _shop.py            # Shop inventory logic
-│   ├── _loot.py            # Drop tables
-│   ├── _progression.py     # NPC scaling
-│   ├── _chat_llm.py        # NPC chat via LLM
-│   ├── _llm.py             # Mynx ambient LLM behavior
-│   └── _eastern_descent.py # Chapter-specific NPCs
-├── items.py                # Item definitions (~152KB)
-├── universe.py             # World/map system
-└── interface.py            # Thin shim: get_gold/transfer_gold/transfer_item
+## Stack
 
-frontend/src/
-├── pages/                  # LandingPage, LoginPage, MainMenuPage, GamePage
-├── components/             # Battlefield, WorldMap, CombatLog, PlayerStatus, MobileTabBar, CollapsibleRoomDescription, ...
-├── hooks/                  # useApi, useCombat, useFetchCombatStatus, useMobile, ...
-├── api/                    # Axios client + endpoint definitions
-└── context/                # AuthContext, AudioContext, ToastContext, CapabilitiesContext
-```
+Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwind (+ react-three-fiber battlefield) · LibSQL/Turso · pytest / Vitest · flake8 (`--extend-ignore=E501`) — no autoformatter, see Coding conventions · OpenRouter/Groq/Cerebras/Ollama for NPC chat and Mynx ambient behaviour (`MYNX_LLM_ENABLED`; see `.env.example`).
 
-Root:
-```
-config_combat_testing.ini   # Combat testing config (agent-only; pass CONFIG_FILE= to activate)
-```
+## Layout — only the non-obvious parts
 
-## Running the Project
+- `src/` engine: `moves/` (combat abilities; `_base.py` owns `Move`, `PassiveMove`, to-hit), `player/` and `npc/` (packages; both inherit `combatant.py`), `states.py`, `events.py`, `story/ch0N.py`, `tiles.py`/`universe.py`, `narration.py`, `secure_pickle.py`/`save_format.py`, `resources/maps/*.json`.
+- `src/api/`: `app.py` (`create_app`), `combat_adapter.py` (engine→JSON bridge), `routes/`, `services/` (`game_service`, `session_manager`), `serializers/`, `schemas/`, `routes/debug.py` (TESTING-only).
+- `frontend/src/`: `pages/`, `components/`, `hooks/` (`useApi`, `useCombat`, …), `utils/` (contracts: `animationConfigs.js`, `categories.js`, `combatBeatSchema.js`), `styles/theme.js` (design tokens), `data/changelog.js`.
+- `tools/`: `run_api.py`, `bug_hunt.py` + `harness/scenarios/`, `inquisitor.py`, `*_fuzzer.py`, `audio_engine/` + `songs/`, `acceptance_test_generator.py`.
+- `docs/`: `lore/` (canon), `development/` (plans, mockups, history), `coverage/`, `qa/`. Root `config_*.ini` are game configs for dev/test; `.env` from `.env.example` (never commit it).
+
+## Running
 
 ```bash
-# API server (localhost:5000) — the game runs entirely through this
-python tools/run_api.py [CONFIG_FILE]
-
-# With a specific game config (starting position, equipment, story flags)
-python tools/run_api.py config_eastern_descent_test.ini
-
-# Omit CONFIG_FILE to fall back to CONFIG_FILE from .env, or config_dev.ini
-python tools/run_api.py
-
-# Frontend dev server (localhost:3000)
-cd frontend && npm install && npm run dev
-
-# One-shot: launch both servers via PowerShell
-.\tools\start_servers.ps1 [CONFIG_FILE]
-
-# Live condensed debug feed — merges backend + browser JSONL logs
-python tools/logcat.py --tail    # --json (agents), --errors, --grep X, --since 5m
-                                  # --session <id>, --src be|fe, --level, --limit N
+python tools/run_api.py [config_dev.ini]      # API on :5000; arg > CONFIG_FILE env > config_dev.ini
+cd frontend && npm install && npm run dev     # SPA on :3000
+.\tools\start_servers.ps1 [CONFIG_FILE]       # both, PowerShell
 ```
 
 Debug logging uses one JSONL envelope (schema authority: `src/api/structured_log.py`).
@@ -121,855 +48,154 @@ console ships to `logs/browser/*.jsonl`. New frontend debug output goes through
 ## Running Tests
 
 ```bash
-# Backend (fast — excludes tests/api, tests/broken, tests/uat per pytest.ini)
-python -m pytest -q
-
-# Backend with coverage
-python -m pytest --cov=src --cov=ai --cov-report=term-missing
-
-# Backend with HTML coverage report
-python -m pytest --cov=src --cov=ai --cov-report=html
-# Then open htmlcov/index.html
-
-# Frontend
-cd frontend && npm test
-
-# Frontend with coverage
-cd frontend && npm test -- --run --coverage
-# View at frontend/coverage/index.html
-
-# Lint (the only Python style gate — same command CI runs)
-python -m flake8 --extend-ignore=E501 src/
+python -m pytest -q                                   # backend default suite (excludes tests/api, tests/broken, tests/uat, tests/integration)
+python -m pytest --cov=src --cov=ai --cov-report=term-missing --cov-fail-under=85 -q   # what CI enforces
+cd frontend && npm test -- --run                      # frontend; add --coverage for the 95% thresholds in vite.config.js
+python -m flake8 --extend-ignore=E501 src/          # the whole Python style gate; no autoformatter
+python tools/bug_hunt.py [--scenario NAME] [--headless --output bugs.json]   # in-process API harness, 22 scenarios
+python tools/inquisitor.py --headless --output tools/browser_findings.json   # real-browser QA; setup in docs/qa/inquisitor.md
+python tools/logcat.py --tail                         # merged backend+browser JSONL feed; --json (agents), --errors, --grep, --since, --session, --src be|fe
 ```
 
-Use `python -m pytest` rather than bare `pytest` — the virtualenv may not expose the
-`pytest` binary on PATH, causing silent import failures.
-
-There is no Python autoformatter. flake8 is the whole Python lint gate; `src/` is not
-kept in any formatter's style (see Coding Conventions → Python).
-
-Known Windows-environment failures (present on clean master — not regressions):
-`test_secure_pickle.py::test_allowlist_manifest_matches_code`,
-`::test_rlimit_preexec_sets_address_space_limit` (POSIX-only `resource` module),
-and frontend `sfxDurations.test.js` (collection SyntaxError). Don't chase these
-after a change; compare against master before assuming a regression.
-
-The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs. **Full-app integration tests that build a real session/universe** (via `create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/` — creating a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests in the default suite. The other route tests avoid this by using a *mocked* `session_manager`.
-
-**Every unseeded RNG-dependent assertion is a latent flake.** `pytest-randomly` (4.1.0)
-is installed and active, and its `pytest_runtest_setup` reseeds the stdlib `random`
-module before *every* test from `run_seed + crc32(nodeid)`, where the run seed is fresh
-per invocation. So a test that draws from `random` without seeding it gets a different
-stream on every run, and its failure rate is set purely by how much margin its assertion
-has. This is why such a test "fails once, then passes twenty times in isolation" — and why
-re-running it is not evidence of anything. Reproduce a specific failure with
-`--randomly-seed=N` (the seed is printed in the run header), and sweep seeds to measure a
-rate: `tests/test_attack_glance_sfx.py::test_keeps_more_body_than_the_parry_ring` failed
-1 run in 960 (seed 897, ratio 1.1954 against a 1.2 threshold) before being seeded.
-Seed the fixture rather than loosening the bound. Where a single seeded draw would pin an
-assertion to an arbitrary point in a wide distribution — that file's glance/parry ratio
-ranges 1.40-1.99 across draws — average over N seeded renders instead, so the assertion
-measures the thing under test rather than one lucky sample. `tests/_combat_fixtures.py`'s
-`seeded(seed=...)` is the established helper, but note it imports `src.items`/`src.npc`/
-`src.player`, whose instantiation mutates module-level registries (see the pollution
-gotcha below) — a test that needs no engine objects should seed locally instead.
-
-**`tests/api/conftest.py` disables `time.sleep` and `pbkdf2_hmac` for the whole
-process.** Both are `patch(...).start()`ed at module import and never stopped or
-registered for cleanup, so for every test in that directory `time.sleep` is a
-no-op `MagicMock` and password hashing returns a constant. Two consequences worth
-knowing before writing a test there: any wait budget expressed as
-`for _ in range(N): time.sleep(x)` is **fictitious** — it costs microseconds, not
-`N*x` seconds — and because a `MagicMock` call does not release the GIL (a real
-`time.sleep` does), the whole spin can complete inside one interpreter switch
-interval without a background thread ever being scheduled. That makes any test
-waiting on a worker thread a latent flake. Wait on `threading.Event().wait(x)`
-instead: it is untouched by the `time.sleep` patch and genuinely yields.
-
-**Test-pollution gotcha:** stray root-level scripts (`test_*_fix.py`, `reproduce_*.py`, etc.) that do `sys.modules['flask'] = MagicMock()` at import will poison every Flask test in a full run — pytest collects them from the rootdir, so each later route/serializer test sees a `MagicMock` app and fails (while passing in isolation). `pytest.ini`'s `addopts` ignore-list neutralizes the known ones; add new such scripts there. To find a collection-time culprit, hook `pytest_collection_finish` and check `type(sys.modules['flask'])`.
-
-## Test Coverage Strategy
-
-### Coverage Targets
-
-| Layer | Current | Target | CI Minimum |
-|-------|---------|--------|-----------|
-| Backend (Python) | 96% | 85% | 85% |
-| Frontend (React) | 99% | 95% | 95% |
-| Total Tests | 13,083 (10,419 backend + 2,664 frontend) | - | - |
-
-### Backend Coverage Enforcement
-
-**CI/CD Rule**: Every PR and push to `master`, `develop`, or `web-api` must pass coverage checks:
-- Minimum 85% coverage (via `--cov-fail-under=85`)
-- All tests must pass
-- Coverage must not decrease from the previous commit
-
-Run locally before pushing:
-```bash
-python -m pytest \
-  --cov=src \
-  --cov=ai \
-  --cov-report=term-missing \
-  --cov-fail-under=85 \
-  -q
-```
-
-(Measured 2026-09-02: `python -m pytest --cov=src --cov=ai` reports 96% over 24,448 statements
-(866 missed); **10,419 backend tests passed, 1 xfailed, 0 failed, plus 2,664 frontend across 116
-files, and zero skips**. Frontend is 99.46% lines / ~95.3% branches (95.27-95.29 across runs — thin margin over the 95% floor). The backend suite runs in
-~100s here because pytest.ini sets `-n auto --dist loadfile`; use `-n0` when debugging a single
-test. Re-measure before quoting these — earlier recorded figures were repeatedly stale.
-A partial dependency install is the usual cause of phantom failures: without `pytest-asyncio`
-alone, ~95 tests fail that CI passes, so run `pip install -r requirements-dev.txt` first.
-Per-module figures: `docs/coverage/coverage-dashboard.md`.
-
-The suite previously carried **565 skips**, ~517 of them whole-file or whole-class
-`pytestmark = pytest.mark.skip` with reasons like "coverage requirements already met" and
-"test isolation issues". Those reasons were, without exception, false: the tests failed for
-stale API signatures, mislabelled story flags, an unrestored class attribute, and one
-infinite loop. Do not add a blanket skip to make the suite green — it hides defects for
-years and the count only ever grows.)
-
-Coverage is now high across the board — the old "low-coverage areas" list (story/ at 18%,
-states.py at 40%, npc at 54%) is obsolete: `src/story/` is 95%, `src/states.py` 99%,
-`src/npc/` 96%, and `ai/` 99%. **Do not cite "narrative is intentionally sparse" as a
-reason to skip story tests.**
-
-Remaining gaps, all still above the 85% floor in aggregate:
-- `src/tilesets/grondelith_mineral_pools.py` — 53%
-- `src/api/routes/combat.py` — 74%; `src/api/routes/player.py` — 78%
-- `src/genericng.py` — 80%; `src/api/utils/log_cleanup.py` — 81%
-- `src/story/ch03.py` — 84%; `src/objects.py` and `src/events.py` — 87%
-- Frontend: `src/api/socketClient.js` — 71% (reconnect/error paths are hard to hit in jsdom)
-
-### Frontend Coverage Enforcement
-
-**CI/CD Rule**: Frontend tests must pass with 95%+ coverage:
-- Run via `npm test -- --run --coverage` in CI
-- Enforced via `coverage.thresholds` (95% lines/statements/functions/branches) in `frontend/vite.config.js` — the build fails below this
-
-High-coverage components (>80%):
-- `pages/` — Login, menu, game pages
-- `hooks/useApi` — API integration
-
-Low-coverage components (<75%):
-- `NpcChatPanel.jsx` — Complex async state (target: 80%)
-- `MobileTabBar.jsx` — Touch interactions (target: 85%)
-
-### Pre-Commit Hook (Local)
-
-A pre-commit hook (`.git/hooks/pre-commit`) runs quick tests before each commit:
-- Runs `python -m pytest -q` (~2-3 seconds)
-- Fails commit if tests fail
-- Bypass with `git commit --no-verify` (use sparingly)
-
-The hook is installed automatically the first time you clone. If missing, manually set up:
-```bash
-cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-set -e
-echo "🧪 Running pre-commit tests..."
-python -m pytest -q --tb=line || exit 1
-echo "✅ Tests passed!"
-EOF
-chmod +x .git/hooks/pre-commit
-```
-
-### Coverage Dashboard
-
-See `docs/coverage/coverage-dashboard.md` for:
-- Detailed coverage by module
-- Monthly trend tracking
-- Improvement plan with effort estimates
-- Badge and reporting setup
-
-### Why These Numbers?
-
-- **85% backend minimum**: High confidence in core logic (combat, inventory, movement); catches regressions early
-- **95%+ frontend**: User-facing code must be reliable
-- **Story intentionally low**: Narrative branches are hard to test; we focus on mechanics
-
-## Coding Conventions
-
-### Python
-- snake_case for functions/variables, PascalCase for classes
-- Docstrings on public methods (existing style — don't strip them)
-- Conventional Commits format: `refactor(backend):`, `feat(frontend):`, `fix(states):`, etc.
-- Debug statements marked `###DEBUG###` — don't leave new ones in
-- **No autoformatter.** flake8 (`python -m flake8 --extend-ignore=E501 src/`) is the only Python style gate; match the surrounding file's formatting by hand. black was configured but never installed or enforced, and 69 of 119 files in `src/` did not conform — issue #501 dropped it rather than reformat the tree. Don't reintroduce it (or any formatter) without a maintainer decision, and don't run a formatter over `src/` or `tests/` as a side effect of another change.
-- Error handling: try/except with logging; prefer silent recovery over crashing the game loop
-- Do not add type annotations to files that don't already use them heavily
-- **All local imports use the canonical `src.` path** (`from src.items import Item`, `import src.functions as functions`) — including dynamic ones (`importlib.import_module("src.tiles")`) and `patch()` target strings. Never import an engine module by bare name: bare imports create a *duplicate module object* (separate classes, separate module-level state) whenever `src/` lands on `sys.path`, silently breaking `isinstance` checks and registries across the API/engine boundary. Enforced by `tests/test_no_bare_local_imports.py` (static AST scan) and `tests/test_import_sync_production.py` (production-entry subprocess). Persisted data is the one exception: map JSON `__module__` fields and legacy pickles store bare names by contract — resolve them through `functions.canonical_module_name()` (used by `Universe._deserialize_saved_instance` and `SafeUnpickler`).
-- When a test needs to stub an engine module that code imports via `import src.x as m`, patching `sys.modules["src.x"]` is not enough — that import form binds through `getattr(src, "x")`, so patch the `src` package attribute too (see `_fake_engine_modules` in `tests/test_session_manager_coverage.py`). To make a mock pass an engine `isinstance` check, assign the real class to `mock.__class__` or build the instance with `RealClass.__new__(RealClass)`.
-
-### JavaScript/React
-- camelCase variables/functions, PascalCase components
-- Custom hooks for stateful logic (don't inline API calls in components)
-- Tailwind CSS utility classes inline; retro terminal palette: lime `#00FF00`, cyan `#00FFFF`, orange `#FF8800` on `#0a0a0a`
-- Functional components only
-
-### Architecture rules
-- Game logic lives in the Python engine. The API layer adapts; it does not reimplement.
-- `CombatAdapter` is the bridge between terminal output and JSON — changes to combat serialization go there
-- `Combatant` base class owns shared resistance/status-effect logic for Player and NPC. Do not duplicate this in subclasses.
-- New passive moves (flag-only, never castable, `viable()→False`) must inherit `PassiveMove` from `src/moves/_base.py`, not `Move` directly. Subclasses only supply `name` and `description`.
-- **Combat animations**: every castable move declares a `web_animation` class attribute (e.g. `web_animation = "pierce"`). Valid types are the keys of `ANIMATION_CONFIGS` in `frontend/src/utils/animationConfigs.js` (attack, quick_attack, heavy_attack, pierce, sweep, charge, projectile, shockwave, dash, defend, buff, debuff, drain, heal, pulse, death) — contract-tested by `tests/test_move_web_animations.py`. When adding a move, pick an existing type; when adding a type, define its config (phases/motion/effect/sfx) in the frontend first. Unknown types fall back to `pulse` client-side; a missing declaration falls back to attack/pulse in the adapter.
-- `GameService` + `SessionManager` abstract the game loop for stateless API calls
-- **To-hit arithmetic lives in `src/moves/_base.py`, never in the API layer.** `to_hit_chance(user, target, base=, floor=)` is the real roll; `attacker_accuracy(finesse, intelligence, base=)` is the display-only rating the character sheet renders. The expression was previously inlined at ~20 call sites *and* re-implemented in `game_service`, which is the exact reimplementation CLAUDE.md forbids. Two traps if you touch this: (1) the sites are **not** uniform — bases of 85/90/95/98/105 and floors of 1/5/none are all in use, and which move takes which is not guessable from its weapon class. Do not trust any enumeration of them, here or in the docstring: the docstring's list was wrong twice (it named `Riposte` as an 85 site when it takes the default 98 — reconciling code to that would have cost it 13 points of accuracy — and after that was fixed it still omitted `PowerStrike`), so it was deleted in favour of `grep -rn "to_hit_chance" src/moves/`; (2) **term order is load-bearing** — `base - target.finesse` is evaluated before the weighted attacker terms are added, and folding the attacker terms first shifts the truncated result by one point for ~0.7% of integer stat pairs, so `to_hit_chance` must never be "simplified" into `attacker_accuracy(...) - target.finesse`. Situational modifiers (ranged accuracy decay, Hawkeye, Aimed Shot's flat bonus, the crossbow close-range halving) stay at the call sites because several interpose before `_apply_to_hit_modifiers` and the clamps.
-- **Every wire id is an opaque handle, and there is exactly ONE per object.** `src/combatant.py::wire_handle(entity)` lazily mints a `uuid4().hex` into `entity.__dict__` via `setdefault` (atomic under the GIL, so two threads cannot ship two ids for one object), persists it through pickling, and falls back to a `WeakKeyDictionary` for objects that cannot hold an attribute. `combatant_handle` is an **alias** of it, not a parallel scheme (#511 minted combatants; #518 widened it to room NPCs, world objects, floor and inventory items, container contents, merchants, shop stock and events). The `Slime` in `tile.npcs_here` is the same instance as the one in `combat_list`, so the room id and the combat id name it identically — the combat payload just prefixes the same handle (`enemy_<handle>` via `CombatantSerializer.stream_id`). Never mint a wire id from `str(id(x))`: heap addresses leak process layout and, worse, CPython **recycles** them, so a client-held id for a freed entity resolves to whatever was allocated at that address (`tests/test_entity_wire_handles.py` forces exactly that reuse). Client ids are resolved back through `src.combatant.find_by_handle`, never by comparing `id()`. The trap when changing this: the mint and the lookup are in *different files*, and moving only one half does not raise — `interact_with_target` simply answers "Target not found." for everything in the room. `tests/test_wire_field_contract.py::TestWireIdRoundTrip` feeds each real serializer's id back to its real resolver so that half-move fails loudly.
-- **The buyback ledger is the only persisted wire id.** `merchant._buyback_ledger[*]["item_id"]` lives on the merchant and pickles into saves; every other id is minted fresh per response, so a stale one at worst costs one failed lookup the client re-fetches past. `ShopSerializer.flush_stale_buyback` is the chokepoint every ledger read passes through and it calls `repoint_stale_buyback_ids`, which re-points an entry whose `item_id` no longer names a stocked item at the same-named stock item. That migrates pre-#518 saves (decimal ids that can never match a handle again) and covers the identical live case of `stack_inv_items` merging the item away between the sale and the next request. Unmigrated the symptom is not a crash but a double listing: the stock subtraction in `serialize_state` misses and the just-sold item is offered twice in the BUY tab, once at full price and once at the buyback price.
-- **`combat_id` identifies a fight, not a call.** It is minted in `ApiCombatAdapter.initialize_combat`'s `not reinit` branch, alongside the beat and log reset, so it survives a reinit (wave transition, reinforcement spawn — the same fight) and changes only when a genuinely new combat starts. `get_combat_state` publishes it inside `battle_state`. Do not mint one per call: the client uses it to tell "new fight" from "same fight, next beat".
-
-### GameService patterns (critical gotchas)
-- `GameService.__init__` is `pass` — no `self.universe`. Universe lives on `player.universe`.
-- To access universe data from a service method, use the static helpers: `self._story(player)` (returns `player.universe.story` or `{}`) and `self._game_tick(player)` (returns `player.universe.game_tick` or `0`). Never reference `self.universe.*` directly.
-- Routes must not reach into player internals. Use `game_service.some_method(player)` — not `getattr(player, "attribute", default)` in routes. Player attribute traps: `player.attack` **does not exist at all** (the verb was removed in the terminal teardown; `hasattr(Player(), "attack")` is `False`); `player.health` doesn't exist (it's `player.hp`); `player.stamina`, `player.defense`, `player.accuracy`, `player.evasion` are also absent. When in doubt, add a method to GameService.
-- `player.reputation` doesn't exist initially. Methods that write to it initialize `player.reputation = {}` first. Read-only uses should do `getattr(player, 'reputation', {})`.
-- **Cooldown timing trap**: cooldowns must only drain during active combat beats. Any code path that calls cooldown drain outside the combat loop (e.g., during rest, world movement, or save/load) will silently corrupt move availability. Guard all drain calls with an active-combat check.
-
-### Frontend patterns (critical gotchas)
-- **`ConversationStage` reset trap**: `ConversationStage.jsx` renders staged (portrait) dialogue and tracks its position with `beatIndex` (`useState`) and a `completedRef` (`useRef`) that gates `onComplete` to fire exactly once. `EventDialog.jsx` mounts it with no `key` prop, so React reuses the same instance across re-renders instead of remounting it when `segments`/`conversation` change. This was harmless as long as every event handed it exactly one `segments` array for its whole life — but any event that calls `begin_conversation()` more than once across separate stages (multiple `process_event_input` round-trips within a single event, e.g. `Ch02GuideToCitadel`, `AfterKingSlimeReturn`) hands the *same mounted instance* a fresh `segments` array per stage. Without a reset, the next stage resumes at the previous stage's stale `beatIndex` (skipping or blanking beats) and `completedRef.current` is already `true`, so `onComplete` never fires again — soft-locking the player with no way to advance. `ConversationStage.jsx` now has a `useEffect` keyed on `segments` that resets both `beatIndex` and `completedRef.current` on every new stage (each API response builds a fresh array, so reference-equality naturally fires this once per stage). Any new component that holds per-conversation/per-stage state across a `segments`/`conversation` prop change needs the same reset-on-prop-change guard.
-- **Wire-field-name drift is this codebase's dominant bug class.** The client reads a field name the serializer never emits; because reads sit behind `??`/`||` chains, the miss is swallowed silently and the feature just quietly does nothing — no error, no crash, no failing test. Five instances have shipped: `combat.turn_number`/`combat_id` (neither existed client-side), `weight_tolerance` (the *engine* attribute name, not a serialized key), `duration_remaining` vs `beats_left`, `hit_chance` rescaled as a 0–1 fraction when the engine sends an integer percentage, and `BattlefieldGrid`'s `combat_id` pan-reset dep. **Every one was invisible to the suite because the test fixtures encoded the same wrong field name as the component** — a mock cannot catch a mock agreeing with itself. `tests/test_wire_field_contract.py` is the guard: it builds payloads from *real* engine objects and asserts the frontend's declared field list is a subset of what actually comes back. When adding a client read of an API field, add it there.
-- **`transformCombatData` silently drops top-level keys.** `useApi.js`'s `transformCombatData` spreads `data.battle_state` and then whitelists a fixed set of top-level keys. Anything emitted at the top level of the combat payload but absent from that whitelist never reaches the client. This caused two of the five drift bugs above. **Put new per-poll combat fields inside `battle_state`**, where the spread carries them automatically; only add to the whitelist for genuinely top-level concerns.
-- **Move-category → button routing has one source of truth**: `CATEGORY_GROUPS` + `movesInGroup`/`groupHasMoves` in `frontend/src/utils/categories.js`, consumed by both `LeftPanel` (button gating) and `CombatMovePanel` (panel contents). It was previously duplicated across those two files and had already drifted. `tests/test_move_categories_ui_contract.py` AST-parses `src/moves/` and fails if any castable category maps to no group, or if a group filters for a category the engine never emits — the absence of that check is how 8 castable moves became unreachable. Note `MOVE_CATEGORY_COLOR/_GLOW/_ICON` intentionally carry `Special`/`Supernatural` entries with no moves yet; the contract test does not reach those maps by design.
-- **Save-list ordering uses `compareSavesByRecency`, never raw `Date` arithmetic.** Cloud saves render a display string formatted `"%Y-%m-%d %H:%M:%S %Z"`; `Date.parse` returns `Invalid Date` for most non-US timezone abbreviations (CET, CEST, JST, IST, AEST, PKT), which sorted every row as `NaN` and could point "Continue" at the wrong save. `list_saves` now emits `timestamp_ms` (epoch, derived *before* `astimezone(user_tz)`, so it is display-timezone-independent) and the comparator prefers it.
-
-### Auth (session cookie) — critical gotchas
-- **The session credential is an `HttpOnly` cookie (`hov_session`), not `localStorage.authToken`** (issue #493). `session_token()` in `src/api/middleware/auth.py` is the single place that decides which credential a request carries — cookie first, `Authorization: Bearer <session_id>` second. The Bearer path is kept deliberately, not left over: the bug-hunt harness, API-only Inquisitor mode and the several hundred route tests hold a session id from `/api/test/session` and have no cookie jar. The cookie wins when both are present, so a stale header from a previous sign-in can never override the cookie the browser was just issued. `src/api/sockets.py` resolves *almost* the same way — cookie, then a payload `session_id` — but its payload fallback is gated on `app.config["TESTING"]`, unlike the HTTP Bearer path. The reason for the asymmetry is that nothing outside the test suite needs it: the browser has sent `{}` since #493, and nothing in `tools/` speaks Socket.IO at all (the harnesses hold a session id for the HTTP header only). Ungated it was an unauthenticated join — a caller with no cookie could name any session and be put in `combat_<that session>`, receiving the whole battle stream. Don't reintroduce a client-side token store — `AUTH_TOKEN_KEY` survives in `frontend/src/utils/session.js` only so a browser carrying a pre-#493 value gets it cleared on the next logout or 401.
-- **`Path=/` is load-bearing.** The Socket.IO handshake is served from the app root (`/socket.io/...`), outside the SPA's base path, and it authenticates by reading this cookie. Scope the cookie to the base path and the browser simply does not send it on the handshake: the socket still connects, `join_combat` is refused, and nothing on the client listens for that `error` event — so the combat beat stream goes to nobody with no visible failure anywhere.
-- **A route that issues the cookie needs `make_response(...)` + `set_session_cookie`** (`src/api/session_cookie.py`), and any clear must repeat the same path/secure/samesite: a browser matches a deletion against an existing cookie by name *and* attributes, so a bare `delete_cookie(name)` leaves the cookie in place and logout returns 200 while the player stays signed in. `clear_session_cookie` already repeats them — use it rather than deleting by hand.
-- **Cookie-config traps.** Flask predefines `SESSION_COOKIE_SAMESITE` as `None` in *every* app's config, so `config.get("SESSION_COOKIE_SAMESITE", "Lax")` returns `None` and the default is never reached — write `config.get(...) or "Lax"`. And `PERMANENT_SESSION_LIFETIME` may be an `int` of seconds or a `timedelta` depending on who wrote it; assuming the `timedelta` raises `AttributeError` on *every* response, which is a total outage caused by a config style choice.
-- **`logout` is deliberately not `@require_auth`.** That decorator 401s before the body runs whenever the cookie names an expired or unknown session — so the cookie was never cleared, and since #493 the page cannot clear an `HttpOnly` cookie itself, leaving the browser pinned to a dead credential with no way out. Logout always clears and returns 200; only a genuine server fault (no session manager — a 5xx from `resolve_session`) returns an error. The knowing trade-off is that an unauthenticated cross-site POST can force a logout: a nuisance, not a disclosure, and `SameSite=Lax` withholds the cookie on cross-site POST anyway.
-
-### Content-Security-Policy
-- **New external origins go in `src/resources/csp-policy.json`, never into one emitter.** Both `src/api/security_headers.py` (`build_csp`) and `frontend/vite.config.js` (`cspHeaders`) read that file, and `tests/test_security_headers.py` fails if the Vite config ever inlines a directive copy. Dev-server-only relaxations belong in `dev_additions`, which the production policy never merges.
-- **The production SPA *document* receives no CSP from this repo.** The Flask header covers API responses (and the HTML Werkzeug renders for errors); Vite's `server`/`preview` headers cover the document in development and QA. Production static hosting is not configured from here — the document's policy is a hand-maintained nginx snippet in `docs/development/csp-rollout.md`. Editing the JSON does not update production: the snippet has to be regenerated (that doc carries the one-liner that prints it) and redeployed, and nothing enforces this today.
-- **`CSP_REPORT_ONLY` as an environment variable is inert.** `_flag` reads `app.config.get(key, os.environ.get(key))`, and the base `Config` defines `CSP_ENABLED`/`CSP_REPORT_ONLY`/`CSP_REPORT_URI`/`CSP_DEV_RELAXATIONS`, so every config subclass carries the key and config always wins — the environment fallback is only reachable for a key no `Config` defines. Flipping report-only to enforcing is an edit in `src/api/config.py`, not a deploy-time env var.
-
-## Completed Milestones
-
-Key architectural work already merged into the codebase:
-- `Combatant` base class introduced (eliminates Player/NPC resistance duplication)
-- Blueprint URL prefixes fixed (reputation, npc, quests, quest-chains were all misrouted)
-- `GameService._story(player)` / `_game_tick(player)` helpers added (universe attribute fix)
-- Automated bug-hunt harness live in `tools/` with 11 scenarios
-- Combat testing arena added (`src/resources/maps/combat-testing-arena.json`) with `/combat-test` skill
-- Cooldown drain bug fixed: cooldowns now only tick during active combat beats, not during resting/non-combat states
-- Beta QA pass complete (v0.0.4.0): 5 combat API bugs fixed (`awaiting_input` stale after victory/defeat, proximity gap on reinforcement spawn, `current_stage` deadlock on mid-beat event, `pending_move_index` stale on wave transition)
-- `NPCSpawnerEvent.evaluate_for_map_entry` tile fallback added — uses `self.tile` when `spawn_tile` is `None` (JSON deserialization issue), fixing Lurker and map-entry spawners via the API
-- `GameService.move_player` calls `player.universe.game_tick_events()` on every move — required for map-entry spawners (NPCSpawnerEvents) to fire; mirrors the terminal game loop
-- `src/moves.py` split into `src/moves/` package (13 submodules, 73 classes) — `PassiveMove` base class added to eliminate ~200 lines of repeated passive-move boilerplate; all callers unchanged via `__init__.py` re-exports
-- Frontend code scrub (all 7 chunks): ~20 correctness fixes across combat rendering, combat coordination, item/shop dialogs, panels/HUD/map, pages/contexts, events/narrative and the API layer. Notable player-facing ones: a mobile tab-key mismatch that blanked the screen mid-combat, an `isSubmitting` flag never cleared on a failed event submission (an unrecoverable soft-lock — every affordance was gated on it), a cross-account leak where the local autosave survived logout, and 8 castable moves (7 `Mastery` + `ReapersMark`) that had no button because the SPECIAL filter matched three categories the engine never emits. Shared code extracted: `useAttributeAllocation`/`AttributePointAllocator`, `ItemStatGrid`/`ItemSection`, `formatWeight` + `WEIGHT_UNIT`. 63 vacuous tests (which rendered inline `<div>` literals and asserted React's own semantics) replaced with ~100 real ones. Three new contract tests guard the recurring failure modes: `test_wire_field_contract.py`, `test_move_categories_ui_contract.py`, `test_player_stat_derivations.py`. **Known gap:** the `/code-scrubber` run that reviewed this work executed as a single reviewer, not the 5-way dimension fanout the skill designs for — see "Code Review Gate" for why that happens and what to do instead.
-- `hov_local_autosave` hardened, then retired (issues #487, #489): the blob was write-only — nothing ever restored from it — so it was first hardened as untrusted input (size cap before `JSON.parse`, own-key checks, `__proto__`/`constructor` rejection, per-field bounds, control-character stripping) and excluded from the Load Game list, then deleted outright in favor of closing the exposure window server-side. `useAutosave` (`frontend/src/hooks/useApi.js`) no longer writes to `localStorage` at all; it now triggers a cloud autosave (UPSERT of a single `is_autosave=TRUE` row per user) every `AUTOSAVE_TICK_THRESHOLD` (3) meaningful transitions — movement and combat actions — down from the previous 20, bounding worst-case unsaved progress to 2 transitions. A failed cloud save now surfaces to the player via `useToast` instead of `console.error` alone, since no local backstop remains. `frontend/src/utils/localSave.js` keeps only `saveSortValue`/`compareSavesByRecency`/`formatSaveTimestamp` for ordering cloud rows; `parseLocalSave`/`readLocalSave` and the `LOCAL_SAVE_KEY` clearing in `AuthContext`/`utils/session.js` are gone. Continue always targets the newest cloud save.
-- Terminal-mode teardown (Phase 2): all four `interface.py` menu classes removed, dead `combat()` loop deleted, `TheAdjutant` menu converted to the `/api/debug` blueprint, event capture moved fully onto the narration sink + structured protocol (see "Terminal-mode removal" below for details and what remains)
-- Portrait-dialog rollout (Phase 2, ch02.py): staged `say()`/`narrate()`/`begin_conversation()` conversion extended to `ch02.py`'s `self.description`-driven events (Votha Krr introduction/farewell, King Slime memory flash, `AfterDefeatingKingSlime`). Uncovered and fixed the `ConversationStage` reset trap above, a Gorran/Votha-Krr name-reveal spoiler (canonical speaker id leaking onto the portrait before the in-fiction naming beat), a missing fade `span` on a stage-exit op, and a dropped narration sentence from a `narrate()` split.
-- Save-deserialization hardening (issue #13, all phases): `SafeUnpickler` + legacy-module resolution extracted into `src/secure_pickle.py`. It adds an auto-derived engine **class allow-list**, opt-in **strict mode** (`HOV_STRICT_UNPICKLE` env var) that rejects off-list classes and disables placeholder synthesis, a `HOVS` magic+version+**sha256 integrity header** on new saves (`serialize_for_save()`; loader validates and still reads legacy headerless saves), a 5 MB **size cap**, tagged legacy placeholders (`_legacy_placeholder=True`) with per-class fresh mutable containers, structured **event logging** + process **telemetry**, and an optional **sandboxed-subprocess** loader (`load_in_subprocess` → `src/_unpickle_worker.py`). `functions.py` re-exports the moved names for backward compat and routes `_safe_pickle_load`/`save` through it; `game_service.save_game` writes headered saves. Phase 3 data-only JSON prototype (`src/save_format.py`, behind `HOV_SAVE_V2`): `player_to_data`/schema validation/version negotiation/one-shot sidecar conversion, capturing a documented player+world **subset** (not yet the full world graph — pickle stays source of truth). Allow-list drift guarded by `tools/gen_allowlist_manifest.py` + `docs/development/save-allowlist-manifest.json`. Strict-mode enforcement is **engine-module-based** (any global from an `src.<engine module>` is trusted — classes *and* functions/methods — plus a curated `_SAFE_STDLIB` set; `os`/`subprocess`/`builtins.eval`/`getattr` are blocked). A save fuzzer (`tools/save_fuzzer.py` + `tests/test_save_fuzz.py`) populates saves with random real classes/values and adversarial payloads (disallowed globals, malicious `__reduce__`, tampered headers, oversize, garbage) and asserts zero **security** invariant breaches while treating benign strict-mode rejections as informational **coverage gaps**. It surfaced (and drove fixes for) the engine-method/`_SAFE_STDLIB` gaps, a malformed-module-path crash (`find_class` now catches `ImportError/AttributeError/ValueError/TypeError`), and an allocation-DoS (sandbox now sets `RLIMIT_AS`). See `SECURITY.md`. **Any new top-level `src/` module must be added to `LEGACY_BARE_MODULES` in `src/secure_pickle.py`** (enforced by `tests/test_no_bare_local_imports.py`).
-
-### Terminal-mode removal (mostly complete)
-
-The game is web-API-only; the terminal play mode is being dismantled in phases:
-- **Done:** CLI entry points deleted (`game.py`, `intro_scene.py`, `open_terminal.py`); inventory helpers extracted to `src/inventory_utils.py`; **narration sink** added (`src/narration.py`) — engine emits structured `{text, color, type}` messages via `cprint`/`narrate` into a context-local buffer (`capture_narration()`), echoing to stdout only when no capture is active (keeps `capsys` tests working). ~470 `print()` calls and ~35 modules repointed off `neotermcolor`. The combat adapter consumes the narration buffer via a live listener instead of scraping stdout (`_capture_output`).
-- **Done:** all four terminal menu classes deleted from `interface.py` — `ContainerLootInterface` (loot verbs route through `events.LootEvent`), `ShopInterface` (+`ShopBuyMenu`/`ShopSellMenu`; pricing moved onto the `Merchant` — `buy_modifier`/`sell_modifier`/`shop_name` — read by `GameService.shop_buy/sell` + `ShopSerializer`), `RoomTakeInterface` (web uses `Item.take()` + `interact_with_target`), and `InventoryInterface`/`InventoryCategorySubmenu`/`BaseInterface` (web uses the `/inventory` routes). `interface.py` is now a thin shim re-exporting `get_gold`/`transfer_gold`/`transfer_item`. The dead `Player.take`/`Player.print_inventory`/`Player.attack` verbs and their `actions.py` action classes (`ViewInventory`/`Take`/`Attack`) were removed too.
-- **Done:** dead terminal `combat()` loop deleted (`src/combat.py` removed; the web client drives combat through `ApiCombatAdapter`). `CombatEvent`'s terminal fallback removed (always `combat_start` in web).
-- **Done:** `TheAdjutant` debug menu converted to a **test-only debug endpoint** (`src/api/routes/debug.py`, `debug_bp`, registered only when `app.config["TESTING"]`). The Adjutant's input() menu was replaced by parametrized operation methods (`set_hp`, `set_level`, `set_attributes`, `set_heat`, `restore`, `learn_all_skills`, `list_skills`, `player_state`, `arena_rosters`, `add_combatant`, `remove_combatant`, `clear_room`, `set_combatant_stats`).
-- **Done:** event output capture fully on `capture_narration` (last `redirect_stdout` in `move_player` converted); `WhisperingStatue` — the only event that called `input()` directly — converted to the structured protocol.
-- **Done:** de-terminal'd every `input()` in the event/interact-reachable engine modules (`functions.py`, `player/*`, `items.py`) — `Item.drop/take` default to the full stack, `Book.read` is non-interactive, `equip_item`/`use_item` take the first phrase match, `gain_exp` always uses `_level_up_api`; deleted the dead terminal helpers (`confirm`, `load_select`, `save_select`, `enumerate_for_interactions`, `equip_item_menu`, `skillmenu`, `level_up`) and the `SkillMenu` action. **The input-mocking net is removed**: `GameService._build_event_patches` no longer patches `input()` (only `await_input`/`animate`/`time.sleep`), and `_make_mock_input`/`_MOCK_INPUT_CYCLE` are gone.
-- **Done:** removed the terminal `input()` from combat moves (`moves/*`). The adapter drives moves via `cast()`/`advance()` and supplies selections through structured commands (`select_number`/`select_direction`/`select_target`) that set attributes (`duration`/`distance`/`target_direction`/`target`) on the move *before* its stage runs; each move now reads that attribute (defaulting sensibly) instead of prompting. `Turn`'s terminal `_prompt_direction_selection`/`_calculate_direction_to_target` were deleted; `ShootBow` defaults to the preferred/first arrow; `UseItem`'s in-combat item use is the `/inventory/use` route. **`src/` is now free of engine `input()`** — only the `animations.py` `__main__` CLI guard remains.
-- **Done:** removed the dead directional-movement/exploration terminal path — `Player.move`/`move_north`/`move_south`/`move_east`/`move_west`/`move_northeast`/`move_northwest`/`move_southeast`/`move_southwest`, `Player.look`/`view`, `Player.flee`, `Player.commands`, `functions.advise_player_actions`, the corresponding `Action` subclasses (`MoveNorth`…`MoveSouthwest`, `Look`, `View`) in `actions.py`, and `tiles.py`'s `adjacent_moves()` plus its `callerIsApi=False` branch in `available_actions()` (which always returns the API-mode action set now).
-- **Remaining:** `Player.menu` lingers (still reachable outside the deleted paths) but is not API-invoked and no longer calls `input()`.
-
-**Narration gotcha:** `narrate(*parts, color=None, ...)` joins parts like `print`; color must be passed as a keyword (`narrate(text, color="red")`), never positionally. `cprint(text, color)` keeps the old signature.
-
-## Bug-Hunt Harness
-
-An automated in-process harness that plays the game via Flask test client and reports bugs.
-
-```bash
-# Run all scenarios
-python tools/bug_hunt.py
-
-# Run one scenario
-python tools/bug_hunt.py --scenario phase3
-
-# Machine-readable output (for CI / Option B)
-python tools/bug_hunt.py --headless --output bugs.json
-```
-
-Scenarios live in `tools/harness/scenarios/`. Each extends `Scenario` (ABC) and implements `run(client) -> List[BugReport]`. Available helpers on the base class:
-- `_check_status(resp, expected, ...)` — flags wrong HTTP status
-- `_check_no_crash(resp, ...)` — flags 5xx only (use for bad-input probes)
-- `_check_fields(data, fields, ...)` — flags missing JSON fields
-- `_bug(...)` — construct a raw BugReport
-
-Fix-agent prompt is at `tools/harness/prompts/bug_hunt_prompt.txt`. GitHub Actions stub at `.github/workflows/bug-hunt.yml`.
-
-## Inquisitor — Browser Mode
-
-The Inquisitor harness drives the real React + Flask stack through a headless
-Chromium browser, catching UI rendering bugs and JS errors the API layer can't see.
-The harness runs a deterministic probe sequence — no Anthropic API key needed.
-
-```bash
-# Browser run (default — catches JS/rendering bugs)
-python tools/inquisitor.py --headless --output tools/browser_findings.json
-
-# Headed run (shows the browser window — useful for debugging)
-python tools/inquisitor.py
-
-# API-only (faster, no servers needed, misses UI bugs)
-python tools/inquisitor.py --no-browser
-```
-
-### Prerequisites
-
-```bash
-pip install playwright asgiref          # asgiref makes async Flask routes work
-python -m playwright install chromium   # downloads ~150 MB browser binary
-```
-
-**If the Playwright CDN is blocked** (CI/Docker): the harness auto-detects cached
-Chromium builds in `~/.cache/ms-playwright/` and uses the highest available one
-via `executable_path`. If Node.js Playwright is installed separately (e.g. for
-frontend tests), its cached browser will be reused.
-
-### How auth works (no database required)
-
-The browser layer starts Flask with `FLASK_ENV=testing`. In test mode, the app
-registers a `/api/test/session` endpoint (never active in production) that calls
-`session_manager.create_session()` directly — no Turso DB needed. The login flow
-tries the real registration form first; on failure it falls back to this endpoint.
-
-**There is no guest mode.** Production requires registration; every real player session
-has a `db_user_id`. The "no db_user_id" path in the saves routes (which 403s cloud save
-operations) is only reachable via the test session bypass — i.e. QA/Inquisitor runs.
-
-**There is no local autosave.** `hov_local_autosave` was retired in issue #489 — it was
-write-only (nothing ever restored from it, see #487) and added no real recovery. The cloud
-autosave (`is_autosave=TRUE` row per user, written every `AUTOSAVE_TICK_THRESHOLD` — 3 —
-movement/combat transitions) is the only save during active play, including QA runs that use
-the test session bypass; a QA session with no `db_user_id` (see above) has no autosave
-recovery at all, same as it effectively had before.
-
-### Known browser noise (filtered automatically)
-
-These events appear in every run and are **not bugs**:
-- `fonts.googleapis.com` / `fonts.gstatic.com` network failures — CDN is
-  unreachable in offline environments; harmless in production.
-- React Router future-flag warnings — v6→v7 migration notices, tracked upstream.
-
-`get_page_errors` separates these into a `known_noise` key so the agent focuses
-only on `console_errors` and `network_failures` (the significant ones).
-
-### Gotchas
-
-- `asgiref` must be installed or all `async def` Flask routes (auth, saves) will
-  crash with a 500 — they silently work in-process via the test client but fail
-  under a real Werkzeug server. It is listed in `requirements-api.txt`.
-- The Vite dev server is slow to compile on first boot; the harness pre-warms it
-  with an HTTP request before opening the browser, so navigation doesn't race.
-- Screenshots land in `tools/inquisitor_screenshots/<timestamp>/` (gitignored).
-
-## Combat Testing Skill
-
-**Agent-focused combat scenario testing.** The `/combat-test` skill reads `config_combat_testing.ini`, applies any inline overrides, and runs the scenario. **Primary path: `python tools/bug_hunt.py`** (fast, in-process, no browser needed — use for logic/mechanics verification). Full browser `/qa` is the escalation path for UI-layer concerns only.
-
-```bash
-/combat-test                                      # run default scenario (fodder)
-/combat-test scenario=boss                        # high-HP boss pressure test
-/combat-test scenario=status_dummy hp=50          # status effect verification
-/combat-test god_mode=True scenario=ally          # ally AI test, Jean cannot die
-```
-
-### Config file
-
-`config_combat_testing.ini` (project root) is the single control surface. Edit it directly or pass inline overrides. **The game must be started with `CONFIG_FILE=config_combat_testing.ini`** for `startmap`, `testmode`, and `startposition` to take effect — otherwise the game boots on the default map and the arena is unreachable (it has no link to the main game world).
-
-### Arena map
-
-`src/resources/maps/combat-testing-arena.json` — a self-contained 2×2 grid of test tiles:
+- Always `python -m pytest`, never bare `pytest` — the venv may not expose the binary and bare runs fail silently on imports.
+- **Full-app integration tests that build a real session/universe** (`create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/`, which is **excluded from the default suite** and runs one-process-per-file in its own CI job (`.github/workflows/api-tests.yml`). The exclusion is not neglect: building a real session mutates module-level item and merchant registries, so these tests pollute downstream shop and spawn tests. Passing today in one process is not the same as being order-independent, which is what the per-file job actually buys. Other route tests use a *mocked* `session_manager` and stay in `tests/` proper.
+- Coverage gates: backend ≥85% (CI, `--cov-fail-under=85`), frontend ≥95% (`vite.config.js` thresholds). The measured numbers live in `docs/coverage/coverage-dashboard.md` and nowhere else — a second copy here goes stale within the week. Re-measure before quoting either.
+- Tests touching randomness must seed or patch `random` — the engine makes ~220 unseeded `random.*` calls (only `positions.py` seeds). Never assert on an unseeded roll.
+- Mocks that stub an engine module imported as `import src.x as m` must patch both `sys.modules["src.x"]` *and* the `src` package attribute (see `_fake_engine_modules` in `tests/test_session_manager_coverage.py`); to pass an engine `isinstance`, set `mock.__class__` to the real class or build with `RealClass.__new__(RealClass)`.
+
+## Test-Driven Development (Required)
+
+**All changes to source code (`src/`, `ai/`, `frontend/src/`) follow TDD — test first, then implementation.**
+
+1. **Red** — write a test that expresses the desired behavior (new feature) or reproduces the defect (bug fix). Run it and confirm it fails for the expected reason, not a typo, import error, or unrelated crash.
+2. **Green** — write the smallest change that makes the test pass. Don't fix unrelated things in the same step.
+3. **Refactor** — clean up with the suite green throughout, re-running after each change.
+4. Before considering the task done, run the full relevant suite: `python -m pytest -q` (backend) and/or `cd frontend && npm test` (frontend).
+
+**Bug fixes specifically**: the regression test must fail against the pre-fix code. A fix with no test that fails without it is not verified — it's a guess.
+
+**Exceptions** (test-first doesn't apply, though testable changes still need coverage): pure documentation/comment edits, config-only changes (`.ini` files, static JSON data with no logic), generated/vendored files, and one-off scratch/repro scripts outside `src/`/`frontend/src/`/`ai/`. When in doubt, write the test first.
+
+**Review-gate remediation is the one carve-out**: fixes applied by `/code-review` or `/code-scrubber` to land a finding don't need a preceding failing test, but they must leave the suite green, and if the fix changes behaviour it still needs a regression test before the gate passes.
+
+This is enforced at review time by the Code Review Gate below — a change reported complete without a preceding failing test should be flagged, not waved through.
+
+## Verification ladder — give yourself a check you can run
+
+Pick the cheapest rung that can actually observe the change, run it, and show the output as evidence — don't assert success:
+1. Unit and contract tests in `tests/` — the contract guards (`test_wire_field_contract.py`, `test_move_categories_ui_contract.py`, `test_move_web_animations.py`, `test_no_bare_local_imports.py`, `test_player_stat_derivations.py`) exist because mocks agreeing with mocks shipped five silent bugs.
+2. `python tools/bug_hunt.py --scenario …` — the real API in-process (combat, events, shop, saves, NPC chat…). Add a scenario when you add a feature.
+3. `/combat-test` against `config_combat_testing.ini` (arena table below); `python tools/<x>_fuzzer.py` for input hardening.
+4. `python tools/inquisitor.py` or `/qa` — real browser; the only rung that sees JS/rendering bugs.
+Balance or behaviour changes need rung 2 or 3, not just rung 1.
+
+The backend suite runs in ~20s because `pytest.ini` sets `-n auto --dist loadfile`; use `-n0` when
+debugging a single test. Skips are a known, audited quantity, and the quantity is small: **12 skip
+sites in the tree, 3 actual skips in a default run** — two from `tests/api/test_cloud_integration.py`
+(gated on `HOV_LIVE_DB`) and one from `tests/test_secure_pickle.py`'s `importorskip("resource")`,
+which is a Unix-only stdlib module. Seven of the twelve sit in `tests/integration/`, which the default
+run never walks. Do not add a blanket skip to make the suite green: an earlier sweep of this suite
+found that every blanket skip then in the tree ("coverage requirements already met", "test isolation
+issues") was false — those tests were failing for stale API signatures, mislabelled story flags, an
+unrestored class attribute, and one infinite loop.
+
+## Coding conventions
+
+**Python** — snake_case/PascalCase; keep docstrings on public methods; don't add type annotations to files that don't already use them heavily; no `###DEBUG###` left behind; try/except with logging — prefer silent recovery over crashing the game loop. Conventional Commits (`feat(frontend):`, `fix(states):`, `refactor(backend):`).
+- **All local imports use the canonical `src.` path** — `from src.items import Item`, `importlib.import_module("src.tiles")`, `patch("src.x.y")`. Bare names create a duplicate module object once `src/` is on `sys.path`, silently breaking `isinstance` and registries across the API/engine boundary. Enforced by `tests/test_no_bare_local_imports.py` and `tests/test_import_sync_production.py`. Persisted data (map JSON `__module__`, legacy pickles) stores bare names by contract — resolve via `functions.canonical_module_name()`.
+- **No autoformatter.** flake8 is the only Python style gate; match the surrounding file's formatting by hand. black was configured in `pyproject.toml` but never installed and never enforced, and 69 of 119 files in `src/` did not conform — issue #501 dropped it rather than reformat the tree. Don't reintroduce it, or run any formatter over `src/` or `tests/` as a side effect of another change.
+- **Any new top-level `src/` module must be added to `LEGACY_BARE_MODULES` in `src/secure_pickle.py`** (also enforced by `test_no_bare_local_imports.py`).
+- `narrate(*parts, color=None)` joins like `print`; color is keyword-only. `cprint(text, color)` keeps the positional signature.
+
+**JavaScript/React** — camelCase/PascalCase; functional components only; stateful logic in custom hooks (no inline API calls in components); Tailwind utilities plus the design tokens in `styles/theme.js`, never a hard-coded hex — the palette is enumerated once, in `.claude/rules/frontend.md`.
+
+## Architecture rules (gating in code review)
+
+- Game logic lives in the engine (`src/`); `src/api/` adapts, never reimplements. About to re-derive a stat or roll in a route/serializer? Add a `GameService` method or call the engine helper instead.
+- `ApiCombatAdapter` (`src/api/combat_adapter.py`) is the sole engine→JSON bridge for combat; serialization changes go there.
+- `Combatant` owns shared resistance/status-effect logic for `Player` and `NPC` — never duplicate it in a subclass.
+- New passive moves inherit `PassiveMove` (`src/moves/_base.py`), not `Move` — the subclass contract is in `.claude/rules/combat-engine.md`.
+- Every castable move declares a `web_animation` key from `ANIMATION_CONFIGS` — valid keys, fallbacks and the contract test are in `.claude/rules/combat-engine.md`.
+- To-hit arithmetic lives only in `src/moves/_base.py` (`to_hit_chance` is the roll, `attacker_accuracy` the display rating). Term order is load-bearing and per-move bases/floors are not uniform — read `.claude/rules/combat-engine.md` before touching it.
+- `combat_id` identifies a fight, not a call — minting and lifetime rules in `.claude/rules/api-layer.md`.
+- **GameService patterns:** `GameService.__init__` is `pass` — there is no `self.universe`; use `self._story(player)` / `self._game_tick(player)`. Routes never reach into player internals (`getattr(player, …)`) — call `game_service.method(player)`. Attribute traps: `player.attack`, `player.health`, `player.stamina`, `player.defense`, `player.accuracy` and `player.evasion` **do not exist at all** — HP is `player.hp`, and `attack` went out with the terminal teardown along with `Player.take`/`print_inventory`. `player.reputation` is absent until written — `getattr(player, 'reputation', {})` to read, `player.reputation = {}` before writing. Cooldowns drain only during active combat beats — the cooldown timing trap is in `.claude/rules/api-layer.md`.
+- `/api/debug/*` (`routes/debug.py`) registers only under `app.config["TESTING"]`; never add a debug route outside that gate. Any new deserialization path goes through `src/secure_pickle.py`'s `SafeUnpickler` — whose allow-list only *enforces* under `HOV_STRICT_UNPICKLE`, which nothing sets (`.claude/rules/saves-persistence.md`).
+
+## Game-design rules (content and systems work)
+
+- **Content goes where a data path exists**: maps/tiles/placements in `src/resources/maps/*.json` (`docs/development/map-authored-placeholder-schema.md`), loot in `loot_tables.py`, enchantments in `enchant_tables.py`, books in `src/resources/books/`, AI/combat toggles in `config_*.ini`. Story events in `src/story/ch0N.py` use the staged `say()`/`narrate()`/`begin_conversation()` protocol. Prose never lives in routes or serializers.
+- **Tunables are named, centralized, and explained**: balance numbers sit on the move/item/NPC class or in config, never inline in the API; a commit that changes a number says why.
+- **Descriptions are permanent**: tile text must stay true after NPCs die and items are taken — describe durable evidence (stains, claw marks, worn stone), never present-tense behaviour.
+- **Fairness**: warn before lethal danger; every locked or hidden passage has an in-text hint; a dead end with an interactable is a puzzle, not a bug (QA section below).
+- **Save compatibility is a feature**: persisted classes keep backward-compatible defaults (old saves must still load); format changes regenerate the allow-list manifest and get a fixture/fuzz run — `.claude/rules/saves-persistence.md`.
+- **Accessibility**: state is never color-only (pair with icon/text); 44px touch targets; 16px inputs on mobile; readable line lengths in dialogue panels.
+
+## Combat testing arena
+
+`config_combat_testing.ini` is the single control surface for `/combat-test` (other agents edit it freely — never assert on its exact values in tests). Start the API with `CONFIG_FILE=config_combat_testing.ini` or `startmap`/`testmode`/`startposition` won't apply — the arena (`src/resources/maps/combat-testing-arena.json`) has no link to the main world. Roster and stats are driven through `/api/debug/*` (the Adjutant's parametrized ops).
 
 | Tile | Name | Combatants | Purpose |
-|------|------|-----------|---------|
-| `(0, 0)` | Proving Grounds | The Adjutant (ally) | Staging area — stat and roster configuration |
-| `(1, 0)` | Fodder Pit | Slime + CaveBat | Basic move/damage testing |
-| `(2, 0)` | The Crucible | KingSlime + Lurker | Boss-tier HP, complex move sets |
-| `(0, 1)` | Ally Courtyard | Gorran (ally) + Slime | Ally AI, co-op mechanics, friend=True |
-| `(1, 1)` | Status Chamber | Pell (StatusDummy) | Status effects — all resistances stripped to 0 |
-
-### Key NPCs added in `src/npc/`
-
-- **`TheAdjutant`** — friendly NPC at `(0, 0)`. `talk` narrates flavor only; runtime configuration (Jean's HP/level/attributes/heat/skills and the per-tile NPC roster) is driven by the **test-only debug endpoint** (`/api/debug/*`, `src/api/routes/debug.py`), which calls the Adjutant's parametrized operation methods. The endpoint is registered only when `app.config["TESTING"]` is true, so it is never reachable in production. Changes take effect immediately — no restart needed.
-- **`StatusDummy` / "Pell"** — test target at `(1, 1)`. Every status resistance is 0.0 and every damage resistance is 1.0 so effects land reliably. High HP (500), very low damage (3).
-
----
-
-## Map Design Skill
-
-**Expert map designer for generating or auditing game maps.** The `map-design` skill creates hierarchical, lore-integrated map design documents or audits existing maps for improvements. Outputs are actionable jump-off points for implementation agents to create maps quickly and effectively.
-
-### New Map Design
-
-Generate a complete map design document from concept, constraints, and lore hooks:
-
-```bash
-/map-design
-theme: "a sacred spring corrupted by infection"
-size: "medium (40-50 tiles)"
-chapter: 2
-key_encounters: ["The Infestation Queen", "Geode Puzzle Chamber"]
-npcs: ["Gorran", "Conclave Searchers"]
-narrative_moment: "Jean discovers the extent of the corruption"
-```
-
-Or conversationally:
-```bash
-/map-design
-Design a map for Chapter 2 where Jean enters a Golemite sacred space corrupted by slime.
-```
-
-**Output**: Markdown design document (automatically saved to `docs/lore/environments/{region}/{region}-map-design.md`) containing:
-- Executive summary & design philosophy
-- Hierarchical zone breakdown (3–5 zones with ASCII diagrams)
-- Room-by-room specifications (coordinates, prose descriptions, exits, encounters, items, NPCs, objects)
-- **Asset needs & dependencies** (what items/NPCs/enemies/objects must be created)
-- Implementation notes for agents (JSON patterns, mechanics, testing gates)
-- Lore integration checklist
-
-### Map Upgrade/Audit
-
-Analyze an existing map and recommend improvements:
-
-```bash
-/map-design --upgrade
-map: "dark-grotto"
-focus: "deepen lore integration and add secrets"
-```
-
-**Output**: Markdown audit report (saved to `docs/lore/environments/{region}/{map}-audit-report.md`) containing:
-- Current state analysis (tile count, zone structure, NPC/item inventory)
-- Six-dimension audit: thematic coherence, environmental storytelling, NPC balance, puzzle quality, pacing, lore depth
-- Categorized improvement suggestions (High Priority / Medium / Nice-to-Have)
-- Specific placements and effort estimates
-- Before/after ASCII comparisons (where helpful)
-
-### Design Principles
-
-The skill follows these principles:
-- **Lore first, mechanics second**: Every tile has a reason rooted in the world
-- **Sensory prose**: Descriptions invoke touch, sound, smell, not just sight
-- **Environmental storytelling**: Objects, items, NPCs tell history
-- **Progressive complexity**: Early zones tight and readable; later zones layer mechanics
-- **Secrets reward curiosity**: At least one genuinely discoverable secret
-- **Narrative beats embedded**: Story moments anchor to tiles, not separate cutscenes
-- **Descriptions are permanent**: Tile descriptions persist after NPCs are killed and items are picked up. Never write present-tense NPC behaviour ("The bats are aware of Jean", "Gorran places his hand on the crystal", "The Rumblers move through the water") or item references ("The supplies left here") into a description. Instead, describe durable environmental evidence — staining, claw marks, smells, worn stone, old fire rings — that remains true regardless of entity state.
-
-### Output Behavior
-
-By default, the skill **saves output as a markdown file** in the appropriate lore directory:
-- New maps → `docs/lore/environments/{region}/{region}-map-design.md`
-- Map audits → `docs/lore/environments/{region}/{map-name}-audit-report.md`
-
-If you need the output in the conversation instead of as a file, explicitly request it: `"just show me the design"` or `"display the audit report in chat"`.
-
-### Example Output
-
-See [docs/lore/environments/wailing-badlands/wailing-badlands-map-design.md](docs/lore/environments/wailing-badlands/wailing-badlands-map-design.md) for a complete map design document (87 tiles, 5 zones, Anger stage of Jean's grief arc).
-
----
-
-## DevOps Review Skill
-
-**Infrastructure and deployment audit expert.** The `/devops-review` skill performs a comprehensive audit of CI/CD pipelines, dependency health, secrets management, deployment readiness, environment hygiene, and operational risk.
-
-Use when you need to:
-- Audit CI/CD pipeline configuration
-- Review dependency health and security
-- Assess secrets management and configuration
-- Evaluate deployment readiness
-- Identify operational risks and single points of failure
-- Prepare for production deployment
-
-```bash
-/devops-review                                     # full audit (all systems)
-/devops-review --ci-only                          # CI/CD pipelines only
-/devops-review --dependencies-only                # dependency health only
-/devops-review --secrets-only                     # secrets and configuration only
-/devops-review --prod-only                        # production environment only
-/devops-review --quick                            # critical issues only
-```
-
-**Output**: Markdown audit report (saved to `tools/devops-audit-{YYYY-MM-DD}.md`) containing:
-- Executive summary of overall health and top risks
-- CI/CD pipeline audit (grade A-F with findings)
-- Dependency health report (CVE count, outdated packages)
-- Secrets & configuration assessment
-- Deployment readiness evaluation
-- Environment hygiene analysis
-- Operational risk matrix
-- Critical and high-priority remediation steps with effort estimates
-
----
-
-## Narrative Review Skill
-
-**Expert indie game narrative audit.** The `/narrative-review` skill reviews lore, character consistency, and dialogue quality. It compares story implementation against lore documents, flags contradictions, and suggests fixes.
-
-Use when you need to:
-- Audit story coherence and lore consistency
-- Review character voice and dialogue quality
-- Check thematic alignment
-- Verify narrative implementation matches design docs
-- Identify plot holes or contradictions
-
-```bash
-/narrative-review                                  # full narrative audit
-/narrative-review --chapter 1                      # Chapter 1 only
-/narrative-review --character Jean                 # Jean Claire dialogue/voice only
-/narrative-review --lore-only                      # lore documents only
-/narrative-review --dialogue-only                  # dialogue and character voice
-/narrative-review --quick                          # character consistency only
-/narrative-review --deep                           # full audit with stylistic critique
-```
-
-**Output**: Markdown audit report (saved to `.gstack/narrative-reports/narrative-audit-{branch}-{YYYY-MM-DD}.md`) containing:
-- Executive summary of narrative health
-- Lore coherence audit (grade A-F with contradictions flagged)
-- Character consistency analysis (per-character voice profiles and violations)
-- Dialogue quality assessment (exposition, subtext, pacing issues)
-- Thematic alignment evaluation
-- Lore-implementation gaps
-- Prioritized high-impact findings with suggested rewrites
-- Ship-readiness narrative assessment
-
----
-
-## Sound Designer Skill
-
-**Expert indie game sound designer.** The `/sound-designer` skill audits the game's **procedural audio synthesis system**, designs new SFX by implementing Song classes, and works with the project's sound creation tools to generate and test audio.
-
-The project uses a **Wave Synthesis Engine** (`tools/audio_engine/`) for all audio: no external AI generation. The skill writes Song class code that uses `generate_tone()`, `generate_tone_sweep()`, `generate_chord()`, `mix_layers()`, and `generate_percussion_pattern()` to create SFX.
-
-Use when you need to:
-- Audit existing sound design and identify gaps
-- Design SFX for specific locations, events, or narrative moments
-- Implement new Song classes using procedural synthesis
-- Generate and test audio using the project's tools
-- Analyze sonic lore integration (how audio reflects the world and Jean's arc)
-
-```bash
-/sound-designer                                    # full audio audit
-/sound-designer --design
-event: entering the corrupted sacred spring
-emotional_goal: awe mixed with reverent dread
-
-/sound-designer --audit
-Review SFX coverage and identify weak spots
-```
-
-**Output**: Sound design audit reports, Song class implementations (Python code), testing instructions, and integration notes.
-
-**Authority**: The sound designer has **full authority to improve the audio generation tools** (audio_engine, Song system) as needed to meet design goals. If synthesis capabilities are missing, add them.
-
-**Project audio tools**:
-- `tools/audio_engine/core.py` — synthesis functions (generate_tone, generate_tone_sweep, generate_chord, mix_layers) — *can be enhanced*
-- `tools/songs/` — Song classes: `sfx.py`, `ambient.py`, `adventure.py`, `battle.py`, etc. — *can be templated/refactored*
-- `python tools/generate_audio.py` — renders all songs to WAV files
-- `python tools/audio_player.py` — interactive testing GUI (tempo, pitch, visualization)
-- Output: `frontend/public/assets/sounds/`
-
-**Engine capabilities (as of 2026-03):**
-- `generate_tone`: ADSR envelope (attack/decay/sustain_level/release) + vibrato LFO (rate/depth)
-- `generate_tone_sweep`: phase-accumulator sweep from `start_freq` → `end_freq` with full waveform support
-- `generate_chord`: multi-frequency chord with ADSR envelope; ZeroDivision guards for very short envelopes
-- `mix_layers`, `generate_percussion_pattern`: unchanged
-
-**Existing Song classes:**
-- `sfx.py` — combat/game SFX: AttackHitSFX, AttackMissSFX, AttackParrySFX, AttackSwipeSFX, EnemyDeathSFX, MoveSFX, LevelUpSFX, QuestCompleteSFX, ItemUseSFX, HealSFX, StatusHitSFX, PlayerDeathSFX
-- `ambient.py` — ambient BGM: MineralPoolsSong, DreamSpaceSong
-- `adventure.py`, `battle.py`, `dungeon.py` — BGM tracks
-
-Key capabilities:
-- Procedural wave synthesis (sine, square, sawtooth, triangle, noise)
-- ADSR envelope shaping + vibrato LFO modulation
-- Pitch-sweep synthesis (`generate_tone_sweep`) for expressive transients
-- Frequency selection and layering strategies
-- **Audio engine enhancement** (add new synthesis functions, helper classes, templates)
-- Song class architecture and design patterns
-- Audio generation and QA testing
-
----
-
-## Music Designer Skill
-
-**Expert indie game music designer.** The `/music-designer` skill analyzes maps, lore, and story beats to understand BGM needs. Works with AI music generation models with intimate understanding of how to extract exceptional music from each prompt.
-
-Use when you need to:
-- Create a music blueprint (thematic map, emotional arcs)
-- Design music for specific chapters, locations, or narrative moments
-- Generate detailed prompts for AI music generators (Suno, MusicGen, AIVA)
-- Understand model capabilities and limitations
-- Create music integration strategies and quality criteria
-
-```bash
-/music-designer                                    # full music design audit
-/music-designer --blueprint
-scope: chapter 2
-focus: reflect the corruption theme and Jean's growing resolve
-
-/music-designer --generate
-location: dark-grotto
-moment: discovering the sacred spring corrupted
-generator: suno
-```
-
-**Output**: Music design blueprints, AI generation requests with settings, integration guides, and sonic palettes.
-
-Key capabilities:
-- Thematic composition (motifs for characters, locations, emotional states)
-- Narrative pacing and emotional arc design
-- AI music generation mastery (Suno, MusicGen, AIVA, etc.)
-- Prompt engineering for music (model-specific language, iteration strategies)
-- Game audio integration (looping, transitions, adaptive systems)
-
----
-
-## UI Mockup Skill
-
-**Retro terminal UI mockup designer.** The `/mockup` skill generates self-contained HTML mockup files that match the project's design language, saves them to `docs/development/`, and pushes to the remote branch so the user can view them immediately — without checking out code.
-
-Use when you need to:
-- Show what a new component looks like before implementation
-- Explore state variations (collapsed/expanded, hover, empty, error)
-- Get sign-off on a design before writing React code
-- Document a UI design decision for the repo
-
-```bash
-/mockup
-component: move cooldown card
-states: collapsed, expanded
-context: below HeroPanel in LeftPanel
-issue: #127
-
-/mockup
-component: quest tracker panel
-states: no quests, active quest, completed
-```
-
-**Output**: A single HTML file at `docs/development/<name>-mockup.html`, committed and pushed to the current remote branch. Screenshot shown inline if Playwright is available.
-
-**Branch rule**: The skill always pushes before reporting done. A mockup the user cannot view on the remote is not finished.
-
-Key capabilities:
-- Reads `frontend/src/styles/theme.js` for live design tokens (colors, spacing, fonts)
-- Reads adjacent components to match padding and border styles exactly
-- Shows in-context placement, state variations, and annotated close-ups
-- Covers all move category color variants (Attack, Maneuver, Special, Supernatural, Misc)
-
----
-
-## Acceptance Test Skill
-
-**Developer-focused test infrastructure generator.** The `/acceptance-test` skill generates minimal test setup (maps, scenarios, config, scripts) for rapid feature validation. Integrates with the bug-hunt harness (in-process) and browser testing (gstack /qa), letting you catch bugs fast without manual setup.
-
-Use when you need to:
-- Validate a new feature works end-to-end
-- Create a reproducible test case for a bug
-- Set up fast, automated feature regression tests
-- Test combat mechanics, NPC behavior, quest logic, inventory systems, etc.
-
-```bash
-/acceptance-test
-feature: "cooldown drain on passive moves"
-
-/acceptance-test
-feature: "quest completion triggers NPC dialogue"
-worktree: true
-
-/acceptance-test
-feature: "combat status effect stacking"
-worktree: false
-```
-
-**Output**: A complete test directory at `tests/acceptance/<feature-slug>/` containing:
-1. **config.ini** — Game configuration (player stats, starting map, debug flags)
-2. **run.sh** — Test runner script (in-process or browser modes)
-3. **test_plan.json** — Browser test plan for gstack /qa
-4. **acceptance-test-<slug>.json** — Minimal test map (2 tiles)
-5. **acceptance_test_<slug>.py** — Scenario class (extends harness.scenarios.Scenario)
-6. **README.md** — Usage guide and customization instructions
-
-### Running the Test
-
-**In-process (fast, no servers needed):**
-```bash
-cd tests/acceptance/<feature-slug>
-./run.sh
-```
-Output: Console report with any bugs found. Uses the existing bug-hunt harness.
-
-**Browser-based (full UI testing):**
-```bash
-cd tests/acceptance/<feature-slug>
-./run.sh --browser
-```
-Starts API + frontend servers, then runs via gstack /qa. Catches JS errors, rendering bugs, console noise.
-
-**Manual dev testing:**
-Edit `config.ini` to customize player stats, starting map, debug flags. Then:
-```bash
-python tools/run_api.py tests/acceptance/<feature-slug>/config.ini
-```
-
-### Customization
-
-**Edit the scenario class** to add feature-specific assertions:
-- `tools/harness/scenarios/acceptance_test_<slug>.py`
-- The `run(client)` method is where you add test logic
-- Use `self._bug(...)` to flag issues; return `List[BugReport]`
-
-**Edit the config file** to adjust:
-- Player starting stats (hp, strength, finesse, speed, etc.)
-- Debug logging (debug_mode, log_combat_moves, etc.)
-- NPC AI difficulty, arena size, starting positions
-
-**Edit the test map** (if needed):
-- `src/resources/maps/acceptance-test-<slug>.json`
-- Default: 2-tile arena (staging area + test zone)
-- Add NPCs, items, objects as needed for your feature
-
-### Integration with bug-hunt harness
-
-Once your scenario is tested and working, register it in:
-**tools/harness/scenarios/__init__.py**
-
-Add:
-```python
-from .acceptance_test_<slug> import SomeFeatureNameScenario
-
-_ALL_SCENARIOS = [
-    ...
-    SomeFeatureNameScenario(),
-]
-```
-
-Then it becomes part of the standard harness:
-```bash
-python tools/bug_hunt.py --scenario <slug>
-python tools/bug_hunt.py --headless --output bugs.json
-```
-
-### Example Workflow
-
-1. **Generate test infrastructure:**
-   ```bash
-   /acceptance-test
-   feature: "interrupt move during cast"
-   ```
-
-2. **Run in-process to catch basic bugs:**
-   ```bash
-   cd tests/acceptance/interrupt-move-during-cast
-   ./run.sh
-   ```
-
-3. **Fix config.ini and scenario logic:**
-   - Adjust player stats, NPC placement
-   - Add assertions for interrupt mechanics
-   - Test locally with the runner script
-
-4. **Run browser tests to catch UI bugs:**
-   ```bash
-   ./run.sh --browser
-   ```
-
-5. **Register in harness for regression testing:**
-   - Add to `tools/harness/scenarios/__init__.py`
-   - Now part of `python tools/bug_hunt.py`
-
----
+|---|---|---|---|
+| (0,0) | Proving Grounds | The Adjutant (ally) | Staging; configure Jean and per-tile rosters |
+| (1,0) | Fodder Pit | Slime + CaveBat | Basic move/damage testing |
+| (2,0) | The Crucible | KingSlime + Lurker | Boss-tier HP, complex move sets |
+| (0,1) | Ally Courtyard | Gorran (ally) + Slime | Ally AI, co-op, `friend=True` |
+| (1,1) | Status Chamber | Pell (StatusDummy) | Status effects — all resistances 0, HP 500, dmg 3 |
 
 ## Code Review Gate
 
-**Always use the `code-review` skill (or `code-scrubber` for large diffs)** whenever code changes are made. After any task that introduces code changes, invoke the appropriate skill to perform an automated review, then manually verify critical dimensions if needed.
-
-Routing is by diff size (see `.claude/skills/_shared/review_rules/code_review_rules.py`'s `review_depth_for_diff_size()`):
+**Always run the `code-review` skill (or `code-scrubber` for large diffs) after any task that changes code.** Routing is by diff size (`.claude/skills/_shared/review_rules/code_review_rules.py`, `review_depth_for_diff_size()`):
 
 | Diff size | Skill | How it runs |
 |---|---|---|
 | ≤ 1000 changed lines | `code-review` | Inline, single pass, current conversation |
 | > 1000 changed lines | `code-scrubber` | Chunked, 5 dimension subagents per chunk in parallel — **must be orchestrated from the main session** (see below) |
 
-Both skills grade the same core dimensions — DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness — plus two Heart of Virtue-specific additions folded in during migration from this project's old 10-dimension gate: **Architecture** (engine/API separation, no duplication of `Combatant` logic, `PassiveMove`/`web_animation` contracts, `GameService`/`SessionManager` boundaries — gating) and **Correctness** (logic errors, null handling, race conditions, edge cases — graded and reported). The old Convention/Code Quality/Simplicity/Stability/Performance dimensions are subsumed into the ones above rather than tracked separately. Full dimension tables, the confidence filter (score 0–100, only count ≥80 toward a grade), and grading rules live in `.claude/skills/code-review/SKILL.md` and `.claude/skills/code-scrubber/SKILL.md` — don't duplicate them here; edit the skill files and this pointer stays accurate.
+Both grade the six generic dimensions — DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness — but **their seventh dimension is not the same one**. `code-review` adds the Heart of Virtue-specific **Architecture** (the rules above — gating) and **Correctness** (graded, reported). `code-scrubber` adds **Alignment** instead: `GRADING_DIMENSIONS` in `.claude/skills/_shared/review_rules/code_scrubber_rules.py` is the six core keys plus `"Alignment"`, and none of its dimension subagents reviews Architecture. **A diff over 1000 lines therefore never gets an architecture pass from the skill that reviews it.** Run `/code-review` over the architecture-touching subset of a scrubbed diff before calling the gate closed — this is not bookkeeping: the `player.attack` error survived three correction rounds because the review surface itself carried it. Dimension tables, the ≥80 confidence filter, and grading rules live in the two `SKILL.md` files — don't duplicate them here. Non-trivial changes iterate until every gating dimension is A; don't suggest `/commit` before that. If a dimension can't reach A without a user decision, stop and ask. Trivial changes (config, comments): confirm N/A or A and move on.
 
 **Run `code-scrubber` from the main session, not as a dispatched agent.** A dispatched
 agent cannot spawn its own subagents in this environment, so backgrounding the scrubber
 silently degrades it into a single generalist that reviews everything itself and reports
 five dimension grades as if a fanout had happened — the grades look identical, the
-adversarial coverage is not. It has cost us real defects twice: the frontend code scrub,
-and the #492/#493 auth/CSP work (a credential leak, a lockout and a disarmed auth fuzzer
-all passed a self-review). If the diff needs the scrubber, dispatch the dimension
-specialists as top-level agents from the main session and accept that it blocks.
+adversarial coverage is not. It has cost real defects twice: the frontend code scrub, and
+the #492/#493 auth/CSP work (a credential leak, a lockout and a disarmed auth fuzzer all
+passed a self-review). If the diff needs the scrubber, dispatch the dimension specialists
+as top-level agents from the main session and accept that it blocks.
 
-For non-trivial changes, the agent should review the feedback and correct any issues until all gating dimensions reach A or above. Do not suggest `/commit` until then. If a dimension can't reach A without a decision from the user, stop and ask — don't invent a resolution. For trivial changes (config edits, comment fixes), briefly confirm all dimensions are N/A or A and move on without a full table.
+## Session workflow
 
-## Session Workflow
+Worktrees can host concurrent sessions: run `git status` before committing, stage only files that are cleanly yours, and never `git stash` (the stack is shared across worktrees).
 
-Git gotchas: `logs/` is gitignored as a directory, so the *tracked* `logs/README.md`
-and `logs/IMPLEMENTATION_SUMMARY.md` need `git add -f`. The repo root is a bare
-checkout — run git and `/commit` from inside a worktree (Alpha/Bravo/Charlie/Delta),
-never the root.
+Git gotchas: the repo root is a **bare checkout** — run git and `/commit` from inside a worktree (Alpha/Bravo/Charlie/Delta), never the root. `logs/` is gitignored as a directory, so the *tracked* `logs/README.md` and `logs/IMPLEMENTATION_SUMMARY.md` need `git add -f`.
 
-At the end of every task, suggest the appropriate overhead steps before moving on. The goal is to ship and maintain a complete game — treat housekeeping as part of the work, not an afterthought.
+The goal is to ship and maintain a complete game — housekeeping is part of the work. At the end of a meaningful task, suggest what applies: the review gate; `/commit` for changes worth preserving; `/revise-claude-md` when the session revealed something not yet in CLAUDE.md or `.claude/rules/`; confirm the suite is green (the tests already exist from the red-green cycle); flag newly relevant items from `~/.claude/projects/.../pending-improvements.md`. Use judgment — a two-line fix doesn't need a debrief.
 
-Standard closing checklist (use judgment on which apply):
-- **`code-review` / `code-scrubber` skills** — use the size-appropriate skill to review all code changes (mandatory for any non-trivial changes; see "Code Review Gate" above)
-- **`/commit`** — if there are uncommitted changes worth preserving
-- **`/revise-claude-md`** — if the session revealed something about the project that isn't in CLAUDE.md (new patterns, gotchas, decisions made)
-- **Tests** — remind to run `python -m pytest -q` or `cd frontend && npm test` if the changes touch testable code
-- **Pending improvements** — flag any items from `~/.claude/projects/.../pending-improvements.md` that became newly relevant
+## QA — known intentional behaviors
 
-Don't suggest all of these robotically after every small change. Use judgment: a two-line fix doesn't need a full debrief. A significant architectural change does.
-
-## QA — Known Intentional Behaviors
-
-When running `/qa` or any exploratory testing, check this section before filing bugs
-related to blocked movement, missing exits, unresponsive objects, or apparent dead ends.
-This is an RPG — many things that look broken are puzzles.
-
-### Explorer heuristic (apply before filing any game-interaction bug)
-
-1. **Read first.** Tile descriptions, object descriptions, NPC dialogue, and environmental
-   text are the game's UI. An object that "does nothing" on click may have description text
-   hinting at how to use it.
-2. **Interact before concluding an exit is missing.** If a tile has no exit in some direction
-   but contains interactive objects (depressions, levers, inscriptions, switches), attempt
-   interaction before filing a missing-exit bug.
-3. **Track leads.** "Dead end with an interactive object" is a lead, not a confirmed bug.
-   Note it, try interacting, revisit if new context (a key, clue, or NPC hint) emerges.
-4. **Flag ambiguity correctly.** If still uncertain, file as "possible intentional mechanic —
-   needs verification" rather than a confirmed bug. Ask the user before closing it out.
-
-### Confirmed intentional mechanics
+This is an RPG: many things that look broken are puzzles. Before filing a bug for blocked movement, a missing exit, an unresponsive object, or a dead end: **read** the tile/object/NPC text (it is the UI); **interact** with every object on the tile; treat "dead end with an interactable" as a lead, not a bug; if still unsure, file as "possible intentional mechanic — needs verification" and ask.
 
 | Location | Apparent issue | Actual behavior |
 |---|---|---|
-| Wall Depression (Dark Grotto) | No eastward exit | Interacting triggers "Jean hears a faint 'click.'" and unlocks the eastern passage — hidden passage mechanic |
+| Wall Depression (Dark Grotto) | No eastward exit | Interacting yields "Jean hears a faint 'click.'" and unlocks the eastern passage |
 
-### General patterns (apply to all maps)
+General: locked doors may need a key/quest state/NPC; sparse rooms are only bugs if they also lack a description; some passages are one-way; gated content appears only after story progress.
 
-- **Dead ends with nearby interactables** — try the object before concluding it's a dead end
-- **Locked doors** — may require a key item, quest state, or NPC interaction to open
-- **Empty rooms** — some are intentionally sparse; absence of content is only a bug if the room also lacks a description
-- **One-way passages** — some exits are directional by design
-- **Gated content** — areas/items/NPCs may only appear after story progress; early absence is not a bug
+## Skills (project-local unless noted)
+
+| Skill | Use for |
+|---|---|
+| `/code-review`, `/code-scrubber` | The review gate above |
+| `/combat-test` | Arena scenarios from `config_combat_testing.ini` |
+| `/mockup` | Retro-terminal HTML mockups → `docs/development/`, pushed to the branch |
+| `/narrative-review` | Lore/character/dialogue audit against `docs/lore/` |
+| `/devops-review` | CI, dependency, secrets, deploy audit → `tools/devops-audit-*.md` |
+| `/map-design` (user-global) | Map design docs and audits → `docs/lore/environments/<region>/` |
+| `/sound-designer`, `/music-designer` | Procedural SFX (Song classes) / BGM blueprints and generation prompts |
+| `python tools/acceptance_test_generator.py --feature "…" --output tests/acceptance/<slug>` | Scaffolds config + 2-tile map + harness scenario; register the scenario in `tools/harness/scenarios/__init__.py` |
 
 ## Licenses
 
-- Code: PolyForm Noncommercial
-- Story/assets: CC BY-NC-ND 4.0
-
-Do not suggest or add open-source-incompatible dependencies without flagging it.
+Code: PolyForm Noncommercial. Story/assets: CC BY-NC-ND 4.0. Flag any open-source-incompatible dependency before adding it.
 
 ## Skill routing
 

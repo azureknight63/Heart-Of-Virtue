@@ -81,6 +81,15 @@ def _load_auth_module():
     _stubs["src.api.services"].GameService = MagicMock()
     _stubs["src.api.services.session_manager"].SessionManager = MagicMock(return_value=sm_mock)
     _stubs["src.api.services.auth_service"].auth_service = auth_svc
+    # The real class, not a look-alike. auth.py's `except` clause resolves the
+    # name through this stub module, so a locally-defined stand-in would make
+    # every test below agree with itself while telling you nothing about the
+    # exception AuthService actually raises.
+    from src.api.services.auth_service import RegistrationValidationError
+
+    _stubs[
+        "src.api.services.auth_service"
+    ].RegistrationValidationError = RegistrationValidationError
     _stubs["src.api.middleware.auth"].require_session = lambda f: f
     # auth.py also imports resolve_session (issue #408); the stub must provide
     # it or exec_module raises at fixture setup, skipping teardown and leaking
@@ -244,16 +253,22 @@ class TestAuthConfigMasking:
         assert "Something unexpected happened" not in response.data.decode()
 
     def test_register_validation_error_still_400(self, auth_setup, auth_client):
-        """A non-infra ValueError from register is passed through verbatim at 400.
+        """A declared validation failure is passed through verbatim at 400.
 
-        This is the deliberate counterweight to the masking above: real
-        validation feedback ("Username must be at least 3 characters") is the
-        message the user needs, so assert it actually reaches them rather than
-        merely that the status is 400.
+        The deliberate counterweight to the masking above: real validation
+        feedback is the message the user needs, so assert it actually reaches
+        them rather than merely that the status is 400.
+
+        Raised as ``RegistrationValidationError`` because that -- not the
+        wording -- is now what marks a message safe to echo.
         """
+        from src.api.services.auth_service import RegistrationValidationError
+
         auth_mod, auth_svc, _ = auth_setup
         auth_svc.create_user = AsyncMock(
-            side_effect=ValueError("Username must be at least 3 characters")
+            side_effect=RegistrationValidationError(
+                "Username must be at least 3 characters"
+            )
         )
         response = auth_client.post(
             "/api/auth/register",
@@ -267,6 +282,106 @@ class TestAuthConfigMasking:
             "message": "Username must be at least 3 characters",
         }
         _assert_no_infra_leak(response)
+
+    #: An infrastructure failure whose text contains NONE of
+    #: ``_CONFIG_LEAK_MARKERS``. This is the case the marker list could not see
+    #: and the case a test built from that same marker list could not think to
+    #: ask about -- which is why it is written out here as its own probe rather
+    #: than added to LEAKY_MESSAGES.
+    UNMARKED_INFRA_MESSAGE = (
+        "could not connect to postgres://svc:hunter2@db.internal:5432/hov"
+    )
+
+    def test_an_infra_message_with_no_marker_is_masked_too(
+        self, auth_setup, auth_client
+    ):
+        """The regression. Measured before the fix: 400, with the message --
+        and the password inside it -- returned verbatim to an anonymous POST.
+
+        A plain ``ValueError`` now means "not a declared validation failure",
+        so it is masked whatever it says. The five markers decide nothing here
+        any more.
+        """
+        auth_mod, auth_svc, _ = auth_setup
+        auth_svc.create_user = AsyncMock(
+            side_effect=ValueError(self.UNMARKED_INFRA_MESSAGE)
+        )
+        response = auth_client.post(
+            "/api/auth/register",
+            json={
+                "username": "testuser",
+                "password": "testpassword1234",
+                "email": "t@t.com",
+            },
+        )
+        assert response.status_code == 503
+        assert json.loads(response.data) == {
+            "success": False,
+            "error": "service_unavailable",
+            "message": (
+                "Registration is temporarily unavailable. Please try again later."
+            ),
+        }
+        _assert_no_infra_leak(response, self.UNMARKED_INFRA_MESSAGE)
+
+    def test_the_probe_message_really_is_invisible_to_the_markers(
+        self, auth_setup
+    ):
+        """Non-vacuity for the test above.
+
+        If the probe happened to contain a marker it would be masked by the
+        old mechanism too, and would prove nothing about the new one.
+        """
+        auth_mod, _, _ = auth_setup
+        assert auth_mod._is_config_leak(self.UNMARKED_INFRA_MESSAGE) is False
+        present = [
+            m for m in auth_mod._CONFIG_LEAK_MARKERS
+            if m in self.UNMARKED_INFRA_MESSAGE
+        ]
+        assert present == [], present
+
+    def test_every_validation_raise_in_create_user_is_the_declared_type(self):
+        """Floor on the increment.
+
+        The route now echoes exactly one exception type, so a sixth input
+        bound added to ``create_user`` as a plain ``ValueError`` would not
+        reach the user as advice -- it would be masked into an unhelpful 503.
+        Derived from the source so the sixth one is caught on arrival.
+        """
+        import ast
+
+        source = (ROOT / "src" / "api" / "services" / "auth_service.py").read_text(
+            encoding="utf-8"
+        )
+        create_user = next(
+            node
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "create_user"
+        )
+        # Only the validation prologue -- the bounds checks that run before any
+        # database work. Failures after that point are infrastructure.
+        raises = [
+            node
+            for node in ast.walk(create_user)
+            if isinstance(node, ast.Raise)
+            and isinstance(node.exc, ast.Call)
+            and isinstance(node.exc.func, ast.Name)
+        ]
+        assert raises, "no raises found in create_user; the scan has drifted"
+        wrong = sorted(
+            {
+                node.exc.func.id
+                for node in raises
+                if node.exc.func.id == "ValueError"
+            }
+        )
+        assert wrong == [], (
+            "create_user raises plain %s for what looks like input validation. "
+            "routes/auth.py echoes RegistrationValidationError and masks "
+            "everything else, so this message would reach the user as a 503 "
+            "with no explanation." % ", ".join(wrong)
+        )
 
     def test_register_non_value_error_does_not_echo_the_exception(
         self, auth_setup, auth_client

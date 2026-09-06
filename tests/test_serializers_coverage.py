@@ -143,8 +143,8 @@ class TestCombatStateSerializer:
 
     def setup_method(self):
         from src.api.serializers.combat import (
-            CombatStateSerializer,
             CombatantSerializer,
+            CombatStateSerializer,
         )
 
         self.CombatStateSerializer = CombatStateSerializer
@@ -208,23 +208,49 @@ class TestCombatStateSerializer:
         assert result["experience_gained"] == 0
         assert result["items_dropped"] == []
 
-    def test_get_turn_order(self):
-        """Entries are canonical combat wire ids, not list indices.
+    def test_turn_order_is_the_serialized_roster_in_order(self):
+        """`turn_order[i]` must be `combatants[i]["id"]`, allies included.
 
-        ``enemy_<i>`` was a fourth spelling no resolver accepted, and it
-        renamed every enemy whenever one left the list.
+        Derived from the payload it accompanies rather than rebuilt, so the two
+        cannot drift. The previous implementation hand-rolled `enemy_<list
+        index>` ids that matched neither `CombatantSerializer.stream_id` (what
+        `combatants`/`enemies` and the beat streamer carry) nor
+        `GameService`'s own `turn_order`, and omitted allies entirely.
         """
         player = _combatant()
+        ally = _combatant(name="Ally", is_player=False, friend=True)
         enemy = _combatant(name="Goblin", is_player=False)
 
-        order = self.CombatStateSerializer._get_turn_order(player, [enemy])
+        state = self.CombatStateSerializer.serialize_combat_state(
+            player, [enemy], allies=[ally]
+        )
 
-        assert order == [
-            self.CombatantSerializer.stream_id(player),
-            self.CombatantSerializer.stream_id(enemy),
+        assert state["turn_order"] == [c["id"] for c in state["combatants"]]
+        assert state["turn_order"] == [
+            self.CombatantSerializer.stream_id(c) for c in (player, ally, enemy)
         ]
-        assert order[0] == "player"
-        assert order[1] != "enemy_0"
+        # Not vacuous: the ids carry the side prefix and the combatant's own
+        # stable handle, not a positional label. Compared against
+        # `wire_handle`, never `id()` — heap addresses stopped being wire ids
+        # in #511/#518, and a test that still spelled `f"ally_{id(ally)}"`
+        # would fail here for a reason that has nothing to do with turn order.
+        from src.combatant import wire_handle
+
+        assert state["turn_order"][0] == "player"
+        assert state["turn_order"][1] == f"ally_{wire_handle(ally)}"
+        assert state["turn_order"][2] == f"enemy_{wire_handle(enemy)}"
+
+    def test_turn_order_survives_a_combatant_that_fails_to_serialize(self):
+        """A degraded combatant costs its own slot, not the whole payload.
+
+        `harden_serializer` turns a failed `serialize_combatant` into `{}`;
+        subscripting that in `_get_turn_order` would raise and blank the entire
+        combat state at the `_safe` boundary.
+        """
+        order = self.CombatStateSerializer._get_turn_order(
+            [{"id": "player"}, {}, {"id": "enemy_7"}]
+        )
+        assert order == ["player", None, "enemy_7"]
 
     def test_get_available_actions_with_inventory(self):
         combatant = _combatant()
@@ -232,67 +258,87 @@ class TestCombatStateSerializer:
         assert actions[:3] == ["attack", "defend", "flee"]
         assert "use_item" in actions  # real Player has an `inventory`
 
-    def test_get_available_actions_omits_moves_because_it_reads_a_dead_name(self):
-        """KNOWN WIRE-FIELD DEFECT — src/api/serializers/combat.py:212.
+    def test_get_available_actions_lists_the_real_castable_moves(self):
+        """The engine attribute is `known_moves`, not `moves`.
 
-        `_get_available_actions` extends the action list from
-        `combatant.moves`. No engine class defines `moves`; the real
-        attribute is `known_moves` (src/combatant.py). Fed a real Player with
-        twelve castable moves, the helper therefore reports none of them.
-
-        The previous test used a bare `MagicMock()`, which materialised
-        `.moves` on demand and so could never see this. Asserting on a real
-        Player is the proof. If the serializer is corrected to read
-        `known_moves`, this test fails — update it then.
+        `_get_available_actions` used to branch on `hasattr(combatant,
+        "moves")`. No engine class defines `moves` (src/combatant.py), so a
+        real Player with a dozen castable moves reported none of them and the
+        branch never executed at all. The test this replaces asserted that
+        broken output; the assertion below is taken from the Player's own move
+        list, so it follows the engine rather than restating the serializer.
         """
+        import src.moves as moves
+        from src.moves._base import display_name_of
+
         combatant = _combatant()
-        assert combatant.known_moves, "real Player starts with castable moves"
         assert not hasattr(combatant, "moves")
+        castable = [m for m in combatant.known_moves if not m.passive]
+        assert castable, "real Player starts with castable moves"
+        # A fresh Player knows no passive, so learn a real one — passives are
+        # reported by `_serialize_passives` and must not be listed as actions.
+        passive = _move(moves.IronFist, user=combatant)
+        assert passive.passive is True
+        combatant.known_moves = list(combatant.known_moves) + [passive]
 
         actions = self.CombatStateSerializer._get_available_actions(combatant)
 
-        assert actions == ["attack", "defend", "flee", "use_item"]
-        assert not any(
-            m.name in actions for m in combatant.known_moves
+        assert actions == (
+            ["attack", "defend", "flee"]
+            + [display_name_of(m) for m in castable]
+            + ["use_item"]
         )
+        assert display_name_of(passive) not in actions
 
-    def test_calculate_experience_reads_a_dead_name_on_real_npcs(self):
-        """KNOWN WIRE-FIELD DEFECT — src/api/serializers/combat.py:227-231.
+    def test_calculate_experience_sums_the_engines_own_award(self):
+        """The engine attribute is `exp_award` (`NPC.__init__`).
 
-        `_calculate_experience` sums `enemy.exp_reward`, falling back to
-        `enemy.level * 10`. Real NPCs define **neither**: the engine attribute
-        is `exp_award` (see `NPC.__init__`) and NPCs carry no `level` at all.
-        Every real battle summary therefore awards 0 experience.
-
-        The two tests this replaces set `exp_reward`/`level` on a bare
-        MagicMock and asserted the number back — the mock agreeing with
-        itself. Real NPCs are the only way to see the drift.
+        `_calculate_experience` used to sum `enemy.exp_reward` and fall back to
+        `enemy.level * 10`; real NPCs define neither, so every real battle
+        summary awarded 0. The expectation below is read off the NPCs rather
+        than written as a literal, so it follows a retuned `exp_award`.
         """
         slime, goblin = _npc(name="Slime"), _npc(name="Goblin")
         for enemy in (slime, goblin):
-            assert enemy.exp_award == 50
             assert not hasattr(enemy, "exp_reward")
             assert not hasattr(enemy, "level")
+        goblin.exp_award = 120
 
-        assert self.CombatStateSerializer._calculate_experience([slime, goblin]) == 0
+        total = self.CombatStateSerializer._calculate_experience([slime, goblin])
+
+        assert total == slime.exp_award + goblin.exp_award
+        assert total > 0, "not vacuous: real NPCs award real experience"
+
+    def test_calculate_experience_reaches_the_battle_summary(self):
+        """The whole point of the sum: it is what the victory payload reports."""
+        player = _combatant()
+        enemy = _npc(name="Slime")
+        enemy.hp = 0
+
+        summary = self.CombatStateSerializer.serialize_battle_summary(
+            player, [enemy], victory=True
+        )
+
+        assert summary["experience_gained"] == enemy.exp_award > 0
 
     @pytest.mark.parametrize(
         "attrs, expected",
         [
-            ({"exp_reward": 100}, 100),
-            ({"exp_reward": 30}, 30),
-            ({"level": 5}, 50),
+            ({"exp_award": 100}, 100),
+            ({"exp_award": 30}, 30),
+            # A degraded/legacy enemy carrying junk must not poison the total.
+            ({"exp_award": None}, 0),
+            ({"exp_award": "lots"}, 0),
             ({}, 0),
         ],
-        ids=["exp_reward", "exp_reward_small", "level_fallback", "neither"],
+        ids=["award", "award_small", "none", "junk", "missing"],
     )
     def test_calculate_experience_arithmetic(self, attrs, expected):
         """The summing arithmetic itself, on spec-locked stand-ins.
 
         `spec=list(attrs)` is what makes this meaningful: the stand-in exposes
-        *only* the listed attributes, so the `hasattr` branch under test is
-        genuinely taken (or not) instead of being satisfied by MagicMock's
-        auto-attribute.
+        *only* the listed attributes, so a missing award is genuinely missing
+        instead of being satisfied by MagicMock's auto-attribute.
         """
         enemy = MagicMock(spec=list(attrs))
         for key, value in attrs.items():
@@ -590,59 +636,24 @@ class TestCombatantSerializer:
         result = self.CombatantSerializer.serialize_combatant_list([p, e])
         assert len(result) == 2
 
-    @pytest.mark.parametrize(
-        "current, maximum, percent, status",
-        [
-            (90, 100, 90.0, "healthy"),
-            (76, 100, 76.0, "healthy"),   # just above the injured boundary
-            (75, 100, 75.0, "injured"),   # boundary is inclusive
-            (65, 100, 65.0, "injured"),
-            (50, 100, 50.0, "wounded"),
-            (40, 100, 40.0, "wounded"),
-            (25, 100, 25.0, "critical"),
-            (20, 100, 20.0, "critical"),
-            (0, 0, 0, "critical"),        # zero max must not divide by zero
-        ],
-    )
-    def test_serialize_health_bar_bucket_boundaries(
-        self, current, maximum, percent, status
-    ):
-        """Bucket arithmetic, including every inclusive boundary.
+    def test_health_bar_helper_is_gone_and_the_hp_block_is_the_wire_contract(self):
+        """`serialize_health_bar` was deleted, not repaired.
 
-        `spec=[...]` locks the stand-in to exactly the two attributes the
-        helper reads, so nothing else can leak in.
+        It read `combatant.health` / `combatant.max_health` — names no engine
+        class defines and nothing under src/ assigns — so every real combatant
+        serialized as 0/100, 0%, "critical". It had no production caller and no
+        frontend spoke its healthy/injured/wounded/critical vocabulary; the
+        client renders from the `health` block below, which reads the engine's
+        real `hp`/`maxhp`. The tests this replaces asserted the broken output.
         """
-        combatant = MagicMock(spec=["health", "max_health"])
-        combatant.health = current
-        combatant.max_health = maximum
+        assert not hasattr(self.CombatantSerializer, "serialize_health_bar")
 
-        result = self.CombatantSerializer.serialize_health_bar(combatant)
+        player = _combatant(hp=37)
+        result = self.CombatantSerializer.serialize_combatant(player)
 
-        assert result["percent"] == percent
-        assert result["status"] == status
-        assert result["current"] == current
-        assert result["max"] == maximum
-
-    def test_serialize_health_bar_reads_dead_names_on_real_combatants(self):
-        """KNOWN WIRE-FIELD DEFECT — src/api/serializers/combat.py:411-412.
-
-        `serialize_health_bar` reads `health` / `max_health`. CLAUDE.md is
-        explicit that neither exists: HP is `hp` / `maxhp`. Fed a real
-        full-health Player it reports 0% and "critical".
-
-        The five tests this consolidates each built a bare `MagicMock()` and
-        set `.health` on it, so they only ever proved MagicMock works.
-        """
-        player = _combatant()
-        assert player.hp == player.maxhp == 100
-        assert not hasattr(player, "health")
-        assert not hasattr(player, "max_health")
-
-        result = self.CombatantSerializer.serialize_health_bar(player)
-
-        assert result["current"] == 0
-        assert result["percent"] == 0.0
-        assert result["status"] == "critical"
+        assert result["health"] == {"current": player.hp, "max": player.maxhp}
+        assert result["hp"] == player.hp == 37
+        assert result["max_hp"] == player.maxhp
 
     def test_serialize_passives(self):
         """A real PassiveMove (`passive is True`) is reported as a passive."""
@@ -839,6 +850,21 @@ class TestStateEffectSerializer:
         )
         assert result["active"] is False
 
+    def test_a_statustype_already_in_the_wire_vocabulary_passes_straight_through(self):
+        """`_get_effect_type` has three branches; this is the first.
+
+        A state whose `statustype` is already one of the frontend's three
+        categories is returned verbatim — no lookup in `_STATUSTYPE_CATEGORY`,
+        no `_generic_effect_type` inference. The other two branches (the
+        "generic" sentinel, and an engine statustype needing translation) are
+        covered below and in the category-table tests; without this one the
+        pass-through could be deleted and only an engine state that happens to
+        name a wire category would notice.
+        """
+        for wire_category in ("buff", "debuff", "ailment"):
+            state = _state(statustype=wire_category)
+            assert self.StateEffectSerializer._get_effect_type(state) == wire_category
+
     def test_get_severity_light(self):
         state = _state(statustype="revive")
         result = self.StateEffectSerializer._get_severity(state)
@@ -956,10 +982,14 @@ class TestNPCSerializer:
         assert result["is_hostile"] is False
         assert "keywords" not in result
 
-    def test_max_hp_fallback_for_an_object_without_maxhp(self):
-        """No real NPC lacks `maxhp`; the `max_hp` branch exists for degraded
-        or legacy-unpickled objects, so it is exercised with a plain namespace
-        rather than a mock that would satisfy both branches at once."""
+    def test_max_hp_is_not_a_recognised_name(self):
+        """The `max_hp` fallback branch was removed as unreachable.
+
+        No class under src/ defines `max_hp` and nothing assigns it — the
+        engine's name is `maxhp` (src/combatant.py) — so the branch could only
+        ever have dressed a broken object up with a plausible number. An object
+        carrying only `max_hp` now correctly reports no max at all.
+        """
         from types import SimpleNamespace
 
         stand_in = SimpleNamespace(
@@ -968,7 +998,7 @@ class TestNPCSerializer:
         result = self.NPCSerializer.serialize(stand_in)
 
         assert result["health"] == 30
-        assert result["max_health"] == 90
+        assert "max_health" not in result
 
     def test_object_with_no_hp_attributes_omits_the_health_block(self):
         from types import SimpleNamespace

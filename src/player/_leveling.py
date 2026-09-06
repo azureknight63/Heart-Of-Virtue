@@ -6,6 +6,30 @@ from src.combatant import exp_needed_for_level  # type: ignore
 from src.narration import cprint
 
 
+#: The attributes a level-up distributes points across, and their display
+#: labels. THE ENGINE OWNS THIS.
+#:
+#: It was written out three times: here inside ``_level_up_api``, and twice
+#: more in ``GameService.allocate_level_up_points`` -- once as the set of keys
+#: the route will accept and once as the list it randomises over. Adding an
+#: eighth attribute to the engine therefore left the API silently refusing it
+#: with "Invalid attribute", which is the architecture rule (the engine is the
+#: source of truth; the API adapts) failing in the direction that is hardest to
+#: notice, because nothing errors.
+LEVEL_UP_ATTRIBUTES = (
+    ("strength_base", "Strength"),
+    ("finesse_base", "Finesse"),
+    ("speed_base", "Speed"),
+    ("endurance_base", "Endurance"),
+    ("charisma_base", "Charisma"),
+    ("intelligence_base", "Intelligence"),
+    ("faith_base", "Faith"),
+)
+
+#: Just the attribute names, for callers that do not want the labels.
+LEVEL_UP_ATTRIBUTE_NAMES = tuple(name for name, _label in LEVEL_UP_ATTRIBUTES)
+
+
 class PlayerLevelingMixin:
     """Experience gain, leveling-up, and skill-tree learning for the Player."""
 
@@ -72,17 +96,8 @@ class PlayerLevelingMixin:
 
         # Apply random bonus increases to base stats
         bonuses = {}
-        attributes = [
-            ("strength_base", "Strength"),
-            ("finesse_base", "Finesse"),
-            ("speed_base", "Speed"),
-            ("endurance_base", "Endurance"),
-            ("charisma_base", "Charisma"),
-            ("intelligence_base", "Intelligence"),
-            ("faith_base", "Faith"),
-        ]
 
-        for attr, _label in attributes:
+        for attr, _label in LEVEL_UP_ATTRIBUTES:
             bonus = random.randint(0, 2)
             if bonus:
                 setattr(self, attr, getattr(self, attr) + bonus)

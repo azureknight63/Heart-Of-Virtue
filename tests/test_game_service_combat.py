@@ -26,9 +26,12 @@ deliberately not asserted — hit rolls are random — but every structural inva
 (whose three flee tests asserted only ``isinstance(result, dict)``).
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from src.events import Event
+from src.items import Restorative
 from src.npc import NPC, Slime
 from src.api.serializers.combat import CombatantSerializer
 from tests._gs_fixtures import GRID_3X3, live_world
@@ -90,6 +93,43 @@ class TestStartCombat:
     def test_unknown_enemy_id_is_an_error(self, game_service, player, slime):
         assert game_service.start_combat(player, "not-an-id") == {"error": "Enemy not found"}
         assert player.in_combat is not True
+
+    def test_enemy_is_resolved_from_current_room_when_the_universe_tile_has_none(
+        self, game_service, player, world
+    ):
+        """The second of ``start_combat``'s two lookups.
+
+        The universe tile at the player's coordinates is consulted first; only
+        when it holds no matching NPC does ``player.current_room`` get asked.
+        That fallback is what an event relies on when it stages a fight in a
+        room the player has been placed into without their coordinates having
+        caught up. Every other test here satisfies the first lookup, so without
+        this one the fallback could be deleted and nothing would notice until
+        an event tried to use it.
+        """
+        tiles = world[1]
+        staged_room = tiles[(1, 0)]
+        enemy = Slime()
+        bystander = Slime()
+        bystander.aggro = True
+        staged_room.npcs_here = [enemy, bystander]
+        # Leave the coordinate tile empty so the first lookup genuinely misses.
+        # It is still a real tile, so the miss does not leave ``tile`` unbound.
+        coordinate_room = tiles[(player.location_x, player.location_y)]
+        coordinate_room.npcs_here = []
+        player.current_room = staged_room
+
+        result = game_service.start_combat(player, enemy_id(enemy))
+
+        assert player.combat_list[0] is enemy
+        assert result["combat_active"] is True
+        # The room the enemy was resolved from is the room the fight happens in:
+        # the empty coordinate tile must not displace it, or NPC death cleanup
+        # and event callbacks would run against a room holding no combatants.
+        assert player.current_room is staged_room
+        # Every other hostile standing with the enemy is enrolled, which is only
+        # possible if the roster was gathered from the staged room.
+        assert set(player.combat_list) == {enemy, bystander}
 
     def test_other_aggro_hostiles_join_the_fight(self, game_service, player, tile):
         clicked, bystander = Slime(), Slime()
@@ -419,6 +459,52 @@ class TestTriggerCombatEvents:
         # The error is recorded on the event data, but a silent failure produces
         # no output, so it is not surfaced as a triggered event.
         assert game_service.trigger_combat_events(player) == []
+
+
+class TestStrategistContext:
+    """What the adapter hands the tactical strategist for a live fight.
+
+    Lives here rather than beside the other adapter tests because the fight this
+    asserts against is the real one this module already knows how to start, and
+    the adapter's context is only assembled once combat is under way.
+    """
+
+    def test_the_players_consumables_reach_the_strategist_context(
+        self, game_service, player, slime
+    ):
+        """A carried consumable must appear in the context the strategist reads.
+
+        The strategist's prompt reads ``context["player"]["consumables"]`` and
+        renders a ``Consumables:`` line from it, while its system prompt tells the
+        model to prefer ``UseItem``. ``serialize_combatant`` has no such key, so
+        unless the adapter attaches the list the model is told to use items it can
+        never see.
+        """
+        potion = Restorative()
+        player.inventory.append(potion)
+        game_service.start_combat(player, enemy_id(slime))
+        adapter = player._combat_adapter
+
+        captured = {}
+
+        def capture(context, **kwargs):
+            captured["ctx"] = context
+            return []
+
+        # Run the suggestion worker inline; it is threaded in production.
+        with patch("threading.Thread") as thread, patch.object(
+            adapter.strategist, "get_suggestions", side_effect=capture
+        ):
+            thread.side_effect = lambda target, **kw: MagicMock(
+                start=lambda: target()
+            )
+            adapter.refresh_suggestions()
+
+        consumables = captured["ctx"]["player"]["consumables"]
+        assert consumables, "strategist context carried no consumables"
+        assert potion.name in [c["name"] for c in consumables]
+        # The strategist reads exactly these two keys off each entry.
+        assert all("name" in c and "qty" in c for c in consumables)
 
 
 if __name__ == "__main__":

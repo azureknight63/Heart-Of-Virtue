@@ -65,4 +65,19 @@ describe('TypewriterOutput', () => {
 
         expect(screen.getByText('SHOUT')).toBeInTheDocument()
     })
+    it('defines no keyframes of its own', () => {
+        // Keyframe names are document-global no matter which element injects
+        // them, so a component-local `@keyframes blink` shadowed index.css's
+        // definition app-wide for as long as any typewriter was mid-line —
+        // the same collision NpcChatPanel's `pulse` caused for HeroPanel and
+        // BattlefieldGrid. The caret animation is named here and OWNED there.
+        const { container } = render(<TypewriterOutput text="typing" speed={10} />)
+
+        expect(container.querySelector('style')).toBeNull()
+        expect(container.innerHTML).not.toContain('@keyframes')
+        const caret = Array.from(container.querySelectorAll('span')).find((el) =>
+            el.style.animation.includes('blink')
+        )
+        expect(caret, 'no caret carrying the blink animation').toBeDefined()
+    })
 })

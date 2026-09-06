@@ -141,17 +141,50 @@ describe('portrait manifest (every expression that actually exists on disk)', ()
         expect(characters).toEqual(expect.arrayContaining(['jean', 'liss', 'mara', 'devet', 'gorran']))
     })
 
-    it('jean, liss, mara, and devet ship the full 8-expression set', () => {
-        for (const character of ['jean', 'liss', 'mara', 'devet']) {
-            expect(manifest[character]).toEqual(
-                expect.arrayContaining([
-                    'angry', 'concerned', 'curious', 'happy', 'neutral', 'sad', 'skeptical', 'surprised',
-                ])
+    /**
+     * Characters whose art rollout is knowingly incomplete. This is the ONLY
+     * hand-maintained name in this block — everyone else is expected to cover
+     * the whole vocabulary, and is derived from what is on disk.
+     *
+     * Deriving the full-set roster the other way round (`characters.filter(c =>
+     * EMOTIONS.every(e => manifest[c].includes(e)))`) reads like the same
+     * thing, but the coverage assertion it feeds is then true by construction
+     * and can never fail: add an emotion, and instead of going red the roster
+     * simply empties and the loop passes vacuously. Excluding the known gap is
+     * independent of EMOTIONS, so the assertion below stays falsifiable.
+     */
+    const PARTIAL_ROLLOUT = ['gorran']
+    const fullSet = characters.filter((c) => !PARTIAL_ROLLOUT.includes(c))
+
+    it('guards every character that is not a known partial rollout', () => {
+        // Pins the size so a NEW character surfaces here as a deliberate
+        // decision — either it ships complete art, or it joins PARTIAL_ROLLOUT
+        // — instead of quietly widening or narrowing what is guarded below.
+        expect(fullSet).toHaveLength(9)
+        expect(PARTIAL_ROLLOUT.every((c) => characters.includes(c))).toBe(true)
+    })
+
+    it('every character outside the known rollout gap ships the full EMOTIONS vocabulary', () => {
+        // The character list is derived from disk and the expression list from
+        // EMOTIONS, so neither a new emotion nor a new character slips past.
+        // The hand-written version named four of the nine, which meant adding
+        // an emotion went red for those four and silently 404'd to neutral for
+        // the other five — the exact failure this test exists to catch, caught
+        // less than half the time.
+        // `utils/combatSfx`'s ALL_COMBAT_CUES is the same pattern.
+        expect(EMOTIONS.length).toBeGreaterThan(0)
+        for (const character of fullSet) {
+            expect(manifest[character], `${character} is missing portrait art`).toEqual(
+                expect.arrayContaining([...EMOTIONS])
             )
         }
     })
 
     it('gorran currently only ships a partial set (documents the known rollout gap)', () => {
+        // The one name in PARTIAL_ROLLOUT above, and the reason that list is
+        // hand-maintained rather than derived. Cutting the rest of gorran's art
+        // makes this go red — at which point the name comes off the list too.
+        expect(PARTIAL_ROLLOUT).toEqual(['gorran'])
         expect(manifest.gorran).toEqual(['angry', 'neutral'])
     })
 

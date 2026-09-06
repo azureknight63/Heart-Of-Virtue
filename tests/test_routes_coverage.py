@@ -184,13 +184,39 @@ class TestSavesRoutes:
         rv = client.post("/api/saves", headers=AUTH, json={})
         assert rv.status_code == 400
 
-    def test_create_save_value_error_limit(self, app):
-        app._test_gs.save_game = AsyncMock(side_effect=ValueError("Too many saves"))
+    def test_create_save_limit_is_echoed_at_403(self, app):
+        """The declared type is echoed, because the player can act on it.
+
+        Raised as `SaveLimitReached` rather than a plain ValueError: the route
+        decides what is safe to show by TYPE now, not by the message surviving
+        a filter. See test_create_save_infra_value_error_is_masked.
+        """
+        from src.api.services.auth_service import SaveLimitReached
+
+        app._test_gs.save_game = AsyncMock(
+            side_effect=SaveLimitReached("Too many saves")
+        )
         with app.test_client() as c:
             rv = c.post("/api/saves", headers=AUTH, json={"name": "Extra"})
         assert rv.status_code == 403
         data = rv.get_json()
         assert "Too many saves" in data["error"]
+
+    def test_create_save_infra_value_error_is_masked(self, app):
+        """The other half of the contract, and the regression it closes.
+
+        `save_game` reaches `db.get_client()`, which raises
+        `ValueError("TURSO_DATABASE_URL is not set")`. This route used to
+        answer that verbatim in a 403 body -- the registration leak, one route
+        over, mislabelled as the save limit.
+        """
+        leak = "could not connect to postgres://svc:hunter2@db.internal:5432/hov"
+        app._test_gs.save_game = AsyncMock(side_effect=ValueError(leak))
+        with app.test_client() as c:
+            rv = c.post("/api/saves", headers=AUTH, json={"name": "Extra"})
+        assert rv.status_code == 503
+        assert leak not in rv.data.decode()
+        assert "hunter2" not in rv.data.decode()
 
     def test_create_save_no_auth(self, client):
         rv = client.post("/api/saves", headers=NO_AUTH, json={"name": "X"})
@@ -425,6 +451,28 @@ class TestSavesRoutes:
 class TestLogsRoutes:
     """Tests for routes/logs.py."""
 
+    @pytest.fixture(autouse=True)
+    def _isolate_module_state(self, monkeypatch):
+        """Reset the two pieces of ``logs.py`` state that outlive a request.
+
+        Both are module-level and therefore shared with every other test in
+        this process:
+
+        * ``_browser_log_limiter`` — 60 posts per minute per source, and every
+          test here posts from the same address. A 429 would surface as
+          whatever assertion the test happened to make about the body.
+        * ``_last_cleanup_at`` — the retention sweep now runs on an interval
+          floor rather than once per request, so whichever test posted first
+          would otherwise be the only one that reaches ``cleanup()`` at all.
+          ``test_receive_logs_cleanup_failure`` below is about that call and
+          would silently stop exercising it.
+        """
+        from src.api.routes import logs as logs_module
+
+        monkeypatch.setattr(logs_module, "_last_cleanup_at", 0.0)
+        if logs_module._browser_log_limiter is not None:
+            logs_module._browser_log_limiter.clear_all()
+
     @pytest.fixture
     def app(self, minimal_app):
         from src.api.routes.logs import logs_bp
@@ -462,6 +510,39 @@ class TestLogsRoutes:
         assert rv.status_code == 200
         data = rv.get_json()
         assert "1 log" in data["message"]
+
+    def test_receive_logs_skips_non_dict_entries(self, client, tmp_path):
+        """A hostile or buggy client can put bare strings in the logs array.
+
+        The writer indexes every entry with ``.get()``, so a non-dict entry
+        would raise mid-write and take the whole batch down with it — including
+        the well-formed entries either side of it. It is skipped instead, and
+        the count in the response reflects only what was actually written.
+        """
+        payload = {
+            "logs": [
+                "not-a-dict",
+                {"timestamp": "2026-01-01T00:00:00Z", "level": "LOG", "message": "kept"},
+                42,
+            ],
+            "session_id": "test_session",
+        }
+        with (
+            patch("src.api.routes.logs.LOGS_DIR", tmp_path),
+            patch("src.api.routes.logs.cleanup_manager") as mock_cm,
+        ):
+            mock_cm.cleanup.return_value = {}
+            rv = client.post("/api/logs/browser", json=payload)
+
+        assert rv.status_code == 200
+        written = "".join(p.read_text(encoding="utf-8") for p in tmp_path.glob("*.jsonl"))
+        assert "kept" in written
+        assert "not-a-dict" not in written
+        # The sentence above about the count is an assertion, not a claim: the
+        # route used to report len(logs) -- 3 written for a batch where 1 was.
+        # Phrasing matches the single-entry case pinned in
+        # tests/test_api_routes_and_serializers.py.
+        assert rv.get_json()["message"] == "Successfully wrote 1 log entries"
 
     def test_receive_logs_no_logs_key(self, client):
         rv = client.post("/api/logs/browser", json={"session_id": "x"})

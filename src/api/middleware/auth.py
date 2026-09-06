@@ -1,10 +1,19 @@
 """Shared session/auth resolution for API routes."""
 
-from flask import current_app, g, jsonify, request
+from typing import Any, Optional, Tuple
+
+from flask import Response, current_app, g, jsonify, request
 from src.api.session_cookie import session_id_from_cookie
 
+#: The error half of the ``(value, error)`` contract these helpers return: the
+#: exact ``(response, status)`` pair Flask accepts from a view, so a caller
+#: forwards it with a bare ``return error``. Named because it appears in every
+#: signature below and, unannotated, the contract that every call site in
+#: ``src/api/routes/`` depends on existed only in prose.
+RouteError = Tuple[Response, int]
 
-def _bearer_token():
+
+def _bearer_token() -> Optional[str]:
     """Return the Bearer token from the request's Authorization header.
 
     Returns the raw token string, or None if the header is missing or not a
@@ -46,7 +55,7 @@ def session_token():
     return session_id_from_cookie() or _bearer_token()
 
 
-def resolve_session():
+def resolve_session() -> Tuple[Optional[Any], Optional[Any], Optional[RouteError]]:
     """Resolve the session manager and session for the current request.
 
     Session-only counterpart to :func:`get_session_and_player`: does NOT
@@ -96,7 +105,9 @@ def resolve_session():
     return session_manager, session, None
 
 
-def get_session_and_player():
+def get_session_and_player() -> Tuple[
+    Optional[Any], Optional[Any], Optional[Any], Optional[RouteError]
+]:
     """Resolve the session manager, session, and player for the current request.
 
     Reads the session id via :func:`session_token` (``HttpOnly`` cookie, then
@@ -137,3 +148,39 @@ def get_session_and_player():
         )
 
     return session_manager, session, player, None
+
+
+def require_game_service() -> Tuple[Optional[Any], Optional[RouteError]]:
+    """Resolve ``current_app.game_service`` for the current request.
+
+    Companion to :func:`get_session_and_player`, and returns the same
+    ``(value, error)`` shape so a route reads the two the same way::
+
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+    ``gs_error``, not ``error``: the overwhelming majority of routes call this
+    in a scope that already holds an ``error`` from
+    :func:`get_session_and_player`, and binding both to the same name discards
+    the first one's 401/404 in favour of this one's 500. Every call site in
+    ``src/api/routes/`` spells it this way.
+
+    ``create_app`` always assigns ``app.game_service``, but
+    :func:`~src.api.app._init_universe` falls back to a universe-less service
+    when startup fails, and several tests substitute a falsy one — so routes
+    check. That check was copy-pasted, verbatim and including the error
+    string, into fifteen handlers across ``world.py`` and ``player.py``; a
+    fix or a rewording had fifteen places to reach, which is fourteen chances
+    to miss one.
+
+    Returns:
+        Tuple of (game_service, None) on success, or (None, (response, 500)).
+    """
+    game_service = getattr(current_app, "game_service", None)
+    if not game_service:
+        return (
+            None,
+            (jsonify({"success": False, "error": "Game service not initialized"}), 500),
+        )
+    return game_service, None

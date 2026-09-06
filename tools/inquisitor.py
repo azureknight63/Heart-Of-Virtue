@@ -30,7 +30,6 @@ Optional environment variables (email report):
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -44,10 +43,25 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Silence Mynx LLM calls during harness runs.
-os.environ.setdefault("MYNX_LLM_ENABLED", "0")
-os.environ.setdefault("MYNX_FALLBACK_DELAY", "0")
-os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
+# Never let the harness reach a provider, a database, a mailbox or GitHub.
+#
+# Three setdefaults on MYNX_* used to be the whole of it, and they covered one
+# adapter of several. NPC_CHAT_LLM_ENABLED (set to 1 in this branch's .env) was
+# untouched; so were GITHUB_TOKEN, TURSO_*, every provider API key,
+# OLLAMA_BASE_URL, and the INQUISITOR_SMTP_* credentials this very file's
+# docstring documents -- which send_report() at the end of a run uses to
+# authenticate to a real mail server. Each of those is one of the three
+# incidents in tests/test_credential_blanking.py's docstring, or the next one.
+#
+# ORDERING: the import below pulls in ai.llm_client, whose module body calls
+# load_project_env() -- so the real .env is fully loaded by the time the sweep
+# runs. That is deliberate: blank_outbound_env ASSIGNS "" rather than popping,
+# and load_dotenv(override=False) skips keys that are already present, so an
+# assigned blank survives every later loader while a popped one would be
+# refilled. See blank_outbound_env's docstring.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
+
+blank_outbound_env()
 
 # ---------------------------------------------------------------------------
 # Now safe to import project modules.

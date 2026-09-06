@@ -1,8 +1,8 @@
 # Heart of Virtue
 
 [![CI](https://github.com/azureknight63/heart-of-virtue/actions/workflows/ci.yml/badge.svg)](https://github.com/azureknight63/heart-of-virtue/actions/workflows/ci.yml)
-[![Backend Coverage](https://img.shields.io/badge/backend--coverage-96%25-brightgreen?style=flat-square)](docs/coverage/coverage-dashboard.md)
-[![Frontend Coverage](https://img.shields.io/badge/frontend--coverage-99%25-brightgreen?style=flat-square)](docs/coverage/coverage-dashboard.md)
+[![Backend Coverage](https://img.shields.io/badge/backend--coverage-see%20dashboard-lightgray?style=flat-square)](docs/coverage/coverage-dashboard.md)
+[![Frontend Coverage](https://img.shields.io/badge/frontend--coverage-see%20dashboard-lightgray?style=flat-square)](docs/coverage/coverage-dashboard.md)
 [![License: PolyForm NC](https://img.shields.io/badge/code-PolyForm%20NC-blue?style=flat-square)](LICENSE-CODE)
 
 Adventure RPG. Follow former crusader Jean Claire into a strange and dangerous world
@@ -42,10 +42,12 @@ structured `{text, color, type}` messages rather than terminal `print`, and the 
 reads those messages directly instead of scraping stdout.
 
 ## Requirements
+- Python 3.11 (see `.python-version`; CI pins 3.11 in all four workflows). Not a style preference: the save allow-list manifest is derived from `__module__`, which CPython moves between releases, so regenerating it on a newer interpreter fixes your box by breaking CI. See `docs/LOCAL_DEV_SETUP.md`.
+- See requirements.txt for dependencies
 
 | Component | Version |
 |---|---|
-| Python | 3.13 (see `.python-version`; CI runs 3.11, so keep code 3.11-compatible) |
+| Python | 3.11 (pinned in `.python-version`; all four CI workflows match) |
 | Node.js | 22 (per CI) |
 
 Dependency manifests:

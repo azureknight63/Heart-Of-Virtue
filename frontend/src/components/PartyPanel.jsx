@@ -2,6 +2,7 @@ import { useState } from 'react'
 import BaseDialog from './BaseDialog'
 import { colors } from '../styles/theme'
 import apiClient from '../api/client'
+import { apiErrorMessage } from '../utils/apiError'
 
 /**
  * PartyPanel - View current party members and their vital stats.
@@ -26,6 +27,20 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
 
   // Stack duplicate item instances (same name) into a single entry with a summed quantity,
   // mirroring the inventory's stacking convention so the picker doesn't show repeated rows.
+  // Seeded with a null-prototype object, because `item.name` is wire data
+  // and this accumulator is indexed by it. With a plain `{}`:
+  //
+  //   * an item named `constructor` makes `existing` the global Object
+  //     constructor, and the line below then writes `quantity` ONTO IT —
+  //     server-controlled mutation of a process-wide global — while the item
+  //     itself vanishes from the picker;
+  //   * an item named `__proto__` makes the else-branch invoke the `__proto__`
+  //     setter and reparent the accumulator instead of adding a key.
+  //
+  // `lookupOr` is the helper for reading a lookup TABLE; this is a bag being
+  // built, so the fix is at the seed rather than at the read. The source audit
+  // cannot see it either way — it resolves receivers to object literals at
+  // their declaration, and a `reduce` seed is not one.
   const stackedConsumables = Object.values(
     consumables.reduce((stacks, item) => {
       const existing = stacks[item.name]
@@ -35,7 +50,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
         stacks[item.name] = { ...item, quantity: item.quantity || 1 }
       }
       return stacks
-    }, {})
+    }, Object.create(null))
   )
 
   const handleUseItem = async (item, member) => {
@@ -55,11 +70,11 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
         setUseItemTarget(null)
         if (onRefetch) await onRefetch()
       } else {
-        setActionResult({ error: data.error || 'Failed to use item' })
+        setActionResult({ error: apiErrorMessage(data, 'Failed to use item') })
         setUseItemTarget(null)
       }
     } catch (err) {
-      setActionResult({ error: err.response?.data?.error || err.message })
+      setActionResult({ error: apiErrorMessage(err, err.message) })
       setUseItemTarget(null)
     } finally {
       setIsLoading(false)

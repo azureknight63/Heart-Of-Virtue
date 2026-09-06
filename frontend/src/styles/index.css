@@ -9,6 +9,35 @@
   font-style: normal;
 }
 
+/*
+ * The handful of values shared between this stylesheet and the inline styles
+ * in styles/theme.js. Anything a rule here and a component both need to agree
+ * on belongs in this block rather than being re-typed as a literal in each.
+ *
+ * A stylesheet cannot import from JS, so the value IS restated here — but not
+ * silently. Each restatement carries a trailing `theme:` annotation naming the
+ * dotted path in styles/theme.js it copies, and styles/themeVars.test.js
+ * resolves that path and asserts the two agree. The annotation is the whole
+ * mechanism: an unannotated declaration in this block whose value matches any
+ * token in theme.js fails the same test, so a hand-copied literal cannot be
+ * added here without either a pin or a deliberate argument for it.
+ *
+ * Only the keys a rule below actually needs are mirrored; there is no
+ * obligation to restate the rest of a theme.js table just because part of it
+ * appears here.
+ */
+:root {
+  /* Owned HERE, not in theme.js: the wide layout's clamp() and its mobile
+     override cannot be expressed as an inline style. styles/theme.js's
+     STAGE_PORTRAIT_WIDTH_VAR names this property so its consumers and the test
+     that checks it read the live value. */
+  --stage-portrait-width: 130px;
+  --space-md: 12px; /* theme: spacing.md */
+  --space-lg: 16px; /* theme: spacing.lg */
+  --color-secondary: #ffaa00; /* theme: colors.secondary */
+  --color-border-light: rgba(255, 170, 0, 0.1); /* theme: colors.border.light */
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -69,6 +98,108 @@ input, select, textarea {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #666;
+}
+
+/*
+ * ConversationStage desktop layout.
+ *
+ * Authored scenes keep their compact default stage. LLM chat opts into the
+ * wide variant so desktop dialogs have room for portraits on both sides and
+ * readable dialogue in the center. At phone widths the same stage becomes a
+ * two-column portrait row above a full-width dialogue card.
+ *
+ * THE RULE — scoped deliberately narrowly, to exactly what is true and what a
+ * test can check. CSS owns every property the phone breakpoint below retunes:
+ * the stage element's own `display`, grid tracks and areas, `gap` and
+ * `min-height`; the dialogue card's `padding` and `min-height`; the portrait
+ * image's `width`; the portrait column's `min-width`/`width`. For
+ * `layout="wide"` ConversationStage.jsx sets NONE of those inline, so the
+ * media query wins on source order alone rather than needing a stack of
+ * `!important` declarations to outrank an inline style. (This is the one
+ * historical claim here with no number attached on purpose: the `!important`s
+ * are gone, so any count is unverifiable prose.)
+ *
+ * What the component DOES still set inline on the wide stage, legitimately,
+ * because no breakpoint ever changes it: the flex `display`/`gap` that lay a
+ * portrait column and the dialogue card out internally, `min-width: 0`, the
+ * `grid-area` each column is assigned, and per-member dynamic values (opacity,
+ * transform, speaker border). Widening the rule past that would make it a
+ * claim nothing could verify — jsdom does not load this stylesheet, so a test
+ * can only assert that a property is ABSENT from the inline style, never that
+ * a rule here supplied it. ConversationStage.test.jsx asserts exactly those
+ * absences; keep the two in step.
+ */
+.conversation-stage--wide {
+  display: grid;
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-areas: "left dialogue right";
+  gap: var(--space-lg);
+  min-height: 360px;
+}
+
+.conversation-stage--wide .conversation-stage__portrait-column {
+  min-width: 0;
+  width: 100%;
+}
+
+.conversation-stage--wide .conversation-stage__portrait-column img {
+  width: clamp(var(--stage-portrait-width), 12vw, 185px);
+}
+
+.conversation-stage--wide .conversation-stage__dialogue {
+  min-height: 220px;
+  padding: var(--space-lg);
+}
+
+@media (max-width: 767px) {
+  .conversation-stage--wide {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "left right"
+      "dialogue dialogue";
+    gap: var(--space-md);
+    min-height: 0;
+  }
+
+  .conversation-stage--wide .conversation-stage__portrait-column {
+    min-height: 150px;
+  }
+
+  .conversation-stage--wide .conversation-stage__portrait-column img {
+    width: min(38vw, 150px);
+  }
+
+  .conversation-stage--wide .conversation-stage__dialogue {
+    min-height: 190px;
+    padding: var(--space-md);
+  }
+}
+
+/*
+ * NPC chat "gathering a reply" spinner. Lives here rather than in a React
+ * `<style>` tag inside NpcChatPanel: keyframe names are document-global no
+ * matter which element injects them, so a component-local `@keyframes` block
+ * silently competes with every other definition of the same name in the app.
+ * (The `pulse` that used to sit alongside this rule did exactly that to
+ * HeroPanel's and BattlefieldGrid's animations; the chat now uses the shared
+ * `pulse-opacity` below instead.)
+ */
+.npc-chat-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-border-light);
+  border-top-color: var(--color-secondary);
+  border-radius: 50%;
+  animation: npc-chat-spin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
+@keyframes npc-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Utility classes for the retro terminal aesthetic */
@@ -157,6 +288,34 @@ input, select, textarea {
   animation: fade-in 0.3s ease-out;
 }
 
+/*
+ * The other fade-in: opacity plus a scale-up, for things that pop into being
+ * rather than sliding into place (a confirmation modal, a transient action
+ * message). Named apart from `fade-in` above because they are different
+ * motions, and lives here rather than in a component `<style>` tag for the
+ * usual reason — it was declared inside ItemDetailDialog's confirm modal and
+ * used from ActionsPanel, so the action message only animated while an item
+ * dialog happened to be mounted. Keyframe names are document-global; where
+ * they are declared is not.
+ */
+@keyframes fade-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/*
+ * The typewriter caret's blink. Defined ONLY here: TypewriterOutput used to
+ * inject its own `@keyframes blink` from a component `<style>` tag, and
+ * keyframe names are document-global, so that copy shadowed this one app-wide
+ * for as long as any typewriter was mid-line.
+ */
 @keyframes blink {
 
   0%,

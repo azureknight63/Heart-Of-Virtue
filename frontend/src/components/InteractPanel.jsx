@@ -16,6 +16,76 @@ import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
  */
 const SHOP_KEYWORDS = new Set(['buy', 'sell', 'trade'])
 
+// Keywords that all open the SAME conversation. `handleActionClick` routes
+// every one of them to the LLM chat panel, so an NPC carrying more than one
+// rendered two buttons that did the identical thing — which is how the
+// nomad-camp NPCs shipped a duplicate "chat" beside their "talk". The backend
+// data fix landed, but content drifts and the frontend should not depend on it.
+const CHAT_KEYWORDS = new Set(['talk', 'chat'])
+
+/**
+ * The action buttons a target actually earns, de-duplicated.
+ *
+ * Several separate reductions, in one place because they all answer "should
+ * this keyword get a button". One bullet per `return false` in the filter,
+ * each led by the identifier that clause turns on rather than by its position,
+ * so the two lists are matched by name and a reordering cannot transpose them:
+ *
+ *   - `is_container` — a container's own Loot / Take_all duplicate the
+ *     contents list it already renders.
+ *   - `action_aliases` — aliases the engine marks as aliases are folded into
+ *     their primary. NOTE: this is live for objects and items, whose
+ *     serializers forward the field, and INERT for NPCs —
+ *     `src/api/serializers/npc_serializer.py` forwards `keywords` and never
+ *     emits `action_aliases`, so the check reads `undefined` and passes
+ *     everything through. That is why the chat collapse below cannot be
+ *     delegated to it.
+ *   - `CHAT_KEYWORDS` / `chatKept` — the two chat aliases collapse to ONE
+ *     keyword, and the survivor is CHOSEN, not first-won: "talk" beats "chat"
+ *     whenever both are served, in whichever order the payload lists them, so
+ *     the button always reads "Talk". A lone "chat" survives on its own so the
+ *     action stays reachable. A plain `new Set(keywords)` would NOT have
+ *     caught the reported duplicate — "talk" and "chat" are distinct strings
+ *     that merely share a handler — and this is the half that matters.
+ *   - `seen.has` — case-folded duplicates keep their FIRST spelling:
+ *     `['Open', 'open']` renders one button reading "Open".
+ *
+ * `tests/test_jambo_tent_navigation.py` parses these clauses out of the source
+ * and asserts every one of them is named above, so a rule added without a
+ * bullet fails there rather than leaving this list quietly short.
+ *
+ * Exported because it is a pure function over one serialized row and is worth
+ * asserting on directly — a rendered-button count cannot say WHICH rule
+ * dropped a keyword.
+ *
+ * @param {Object} target - The selected room target as the serializers sent it.
+ * @returns {string[]} Keywords to render, in served order and original casing.
+ */
+export function actionKeywords(target) {
+    const seen = new Set()
+    const keywords = target?.keywords || []
+    // Collapse the "talk"/"chat" aliases into ONE control, independent of the
+    // LLM capability flag. Both verbs converge on the backend chat fallback
+    // (NPC.talk / ConversationalNPCMixin.chat — the latter calls talk() when
+    // the LLM panel is not opened), so rendering both is a duplicate button
+    // with no distinct outcome. Prefer the "Talk" spelling when present (keep
+    // the first "talk" entry's original casing); a lone legacy "chat" is
+    // preserved so the action stays reachable.
+    const chatKw = keywords.filter((k) => CHAT_KEYWORDS.has(String(k).toLowerCase()))
+    // Prefer the canonical Talk label when both aliases are present, even if
+    // an older serialized payload listed Chat first.
+    const chatKept = chatKw.find((k) => String(k).toLowerCase() === 'talk') || chatKw[0]
+    return keywords.filter((keyword) => {
+        const action = String(keyword).toLowerCase()
+        if (target?.is_container && (action === 'loot' || action === 'take_all')) return false
+        if (target?.action_aliases?.includes(keyword)) return false
+        if (CHAT_KEYWORDS.has(action) && keyword !== chatKept) return false
+        if (seen.has(action)) return false
+        seen.add(action)
+        return true
+    })
+}
+
 function InteractPanel({
     location,
     onInteractionComplete,
@@ -127,7 +197,13 @@ function InteractPanel({
                         }, 0)
                     }
                 } else {
-                    // Target is gone! Clear it so we don't try to interact with it again
+                    // Target is gone! Clear it so we don't try to interact with it again.
+                    // This also takes NpcChatPanel off screen without routing
+                    // through its End Conversation handler — which used to leave
+                    // the server-side conversation open. useNpcChat's unmount
+                    // cleanup now ends it, so the clear stays unconditional
+                    // rather than being gated on `showChatPanel` (a value this
+                    // effect does not depend on and must not start reading stale).
                     setSelectedTarget(null)
                 }
             }
@@ -205,7 +281,7 @@ function InteractPanel({
 
         // Open LLM chat panel for talk or chat action on LLM-capable NPCs
         if (
-            (action.toLowerCase() === 'talk' || action.toLowerCase() === 'chat') &&
+            CHAT_KEYWORDS.has(action.toLowerCase()) &&
             selectedTarget?.llm_chat_enabled &&
             selectedTarget?.loquacity_available !== false
         ) {
@@ -252,6 +328,14 @@ function InteractPanel({
             default: return '❓'
         }
     }
+
+    // The NPC's class key, which is what `/api/npc/chat/open` receives as
+    // `npc_key`; the instance id would 404 it. `npc_class` is the remap of the
+    // serializer's `type` applied above, and the display name is the fallback
+    // for a row that predates it. Written once because the panel needs the same
+    // value twice — as its React key and as its `npcId` — and the two silently
+    // disagreeing would remount on every render.
+    const chatNpcId = selectedTarget?.npc_class || selectedTarget?.name
 
     return (<>
         <BaseDialog
@@ -527,15 +611,15 @@ function InteractPanel({
                         {/* Action Buttons */}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.md }}>
                             {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
-                                selectedTarget.keywords
-                                    .filter(keyword => {
-                                        const action = keyword.toLowerCase();
-                                        if (selectedTarget.is_container && (action === 'loot' || action === 'take_all')) return false;
-                                        return !selectedTarget.action_aliases?.includes(keyword);
-                                    })
-                                    .map((keyword, idx) => (
+                                actionKeywords(selectedTarget)
+                                    .map((keyword) => (
                                         <GameButton
-                                            key={idx}
+                                            // Keyed on the keyword, which
+                                            // `actionKeywords` has already made
+                                            // unique, rather than on the index —
+                                            // the list is rebuilt whenever the
+                                            // room resyncs.
+                                            key={keyword}
                                             onClick={() => handleActionClick(keyword)}
                                             disabled={loading || isLocked}
                                             variant="primary"
@@ -668,7 +752,13 @@ function InteractPanel({
         </BaseDialog>
         {showChatPanel && selectedTarget && (
             <NpcChatPanel
-                npcId={selectedTarget.npc_class || selectedTarget.name}
+                // Keyed on the NPC so switching targets remounts the panel
+                // instead of mutating its props in place — a conversation is
+                // per-NPC state, and reusing the instance left the previous
+                // NPC's portraits and options on screen for the whole of the
+                // new `/open` round trip.
+                key={chatNpcId}
+                npcId={chatNpcId}
                 npcName={selectedTarget.name}
                 onClose={() => {
                     setShowChatPanel(false)

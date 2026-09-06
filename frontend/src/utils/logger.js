@@ -17,6 +17,197 @@ const FAILURE_BACKOFF_MS = 30000;
 // duplicating nearly every debug line).
 const DEDUPE_WINDOW_MS = 2000;
 
+const REDACTED = '[redacted]';
+
+/**
+ * Keys whose VALUE *is* a credential.
+ *
+ * This is a credential leak, not tidiness. Roughly thirty sites across the app
+ * write `console.error('...', err)` with a raw rejected request, and axios's
+ * `AxiosError.prototype.toJSON` — which `JSON.stringify` calls for us — emits
+ * `config`, whose `headers` carried the `Authorization: Bearer <session id>`
+ * a request interceptor in api/client.js attached. So a single failed request
+ * used to POST the player's live session token to /api/logs/browser, where it
+ * landed in a file on disk.
+ *
+ * That interceptor is gone -- the credential is an HttpOnly cookie the browser
+ * attaches and this code cannot read (issue #493), and `withCredentials: true`
+ * is what api/client.js sets instead. The redaction stays, and is keyed on the
+ * header NAME rather than on where the header came from: the API still accepts
+ * the Bearer form for non-browser callers, an axios error can carry a header
+ * this app never set (a proxy, an extension, a hand-built request), and a
+ * scrub that only covers the one path that has since been removed is a scrub
+ * that covers nothing. This transport has
+ * only ever run in development — main.jsx gates `logger.init()` on
+ * `import.meta.env.DEV` — so the file was a developer's, not a production
+ * server's. A real bearer token in a real file on disk is still worth closing,
+ * and the gate is one edit away from being relaxed.
+ *
+ * It is redacted HERE rather than at the call sites because the call sites are
+ * not the hazard: the next `console.error(msg, err)` anyone writes reopens it.
+ */
+const CREDENTIAL_KEYS = [
+    'authorization',
+    'cookie',
+    'set-cookie',
+];
+
+/**
+ * Keys whose value merely CARRIES a credential somewhere inside it.
+ *
+ * `config` and `request` go whole (an XHR/config object is diagnostic noise
+ * that happens to carry secrets); `headers` goes by name so a bare header bag
+ * passed on its own is covered too. The cost is that a domain object with a
+ * `config` field logs as `[redacted]` — an acceptable trade for a class of
+ * leak that cannot be closed by remembering to be careful.
+ *
+ * Split from {@link CREDENTIAL_KEYS} because the two have different reach.
+ * Both halves are redacted by key when an argument is an OBJECT; only the
+ * credential half is meaningful in free TEXT, where `request: timed out` is a
+ * diagnosis and `authorization: Bearer …` is a secret.
+ */
+const CREDENTIAL_CARRIER_KEYS = [
+    'config',
+    'request',
+    'headers',
+];
+
+/** The union, which is what the object path redacts. Derived, not restated. */
+const REDACTED_KEYS = new Set([...CREDENTIAL_KEYS, ...CREDENTIAL_CARRIER_KEYS]);
+
+/**
+ * `JSON.stringify` replacer that blanks the values above.
+ *
+ * Runs AFTER `toJSON()` on each value (that is the serialization order the
+ * spec defines), so it sees the object graph `AxiosError.toJSON()` actually
+ * produces rather than the error's own enumerable properties.
+ */
+function redactCredentials(key, value) {
+    if (typeof key === 'string' && REDACTED_KEYS.has(key.toLowerCase())) {
+        return REDACTED;
+    }
+    return value;
+}
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Credential shapes recognised inside a STRING, and what replaces them.
+ *
+ * The key-based replacer above only sees an object graph. Three things reach
+ * the wire as text and never pass through it: a string argument
+ * (`console.log('Authorization: ' + header)`), the `String(arg)` fallback for
+ * an argument `JSON.stringify` refused, and the URL / User-Agent attached
+ * beside the message. A key-based rule cannot help there — there are no keys.
+ *
+ * BE CLEAR ABOUT WHAT THIS IS: a net, not a proof. It recognises the shapes a
+ * credential is written in; a secret written in some other shape (a bare token
+ * on its own, with nothing naming it) still goes out. The key-based replacer
+ * remains the primary defence and this is the second layer for the paths it
+ * structurally cannot reach.
+ *
+ * The first pattern is BUILT FROM {@link CREDENTIAL_KEYS} rather than
+ * restating them, so the object path and the text path cannot drift apart —
+ * adding a key there covers both, and logger.test.js asserts that by
+ * iterating the exported set rather than a copy of it.
+ */
+const SECRET_PATTERNS = [
+    {
+        // `authorization: <value>`, `cookie="<value>"`, `"Set-Cookie": "…"`.
+        // The value runs to the next `,`/`;` or the end of the string: a
+        // credential with a space in it (`Bearer <id>`) is the normal case, so
+        // stopping at whitespace would redact the word `Bearer` and ship the
+        // token after it.
+        re: new RegExp(
+            '\\b(' + CREDENTIAL_KEYS.map(escapeRegExp).join('|') + ')'
+            + '("?\\s*[:=]\\s*)'
+            + '("[^"]*"|\'[^\']*\'|[^\\s,;][^,;\\n]*)',
+            'gi'
+        ),
+        replace: (_match, key, separator, value) => (
+            /^["']/.test(value)
+                ? key + separator + value[0] + REDACTED + value[0]
+                : key + separator + REDACTED
+        ),
+    },
+    {
+        // A bearer token with nothing naming it — the exact thing axios puts
+        // in the header, so the exact thing that appears when someone
+        // interpolates that header into a message. The scheme word goes with
+        // it: `Bearer [redacted]` still says "a token was here", and the
+        // suite asserts the wire body contains no `Bearer` at all.
+        re: /\bBearer\s+[\w\-.~+/]+=*/gi,
+        replace: () => REDACTED,
+    },
+    {
+        // A query or fragment parameter whose NAME looks like a credential.
+        // This is the URL half: `?api_key=…` in `window.location.href`.
+        // Substring matching, so `?monkey_auth=` is caught and `?auth_ok=` is
+        // redacted needlessly — failing toward a useless log line rather than
+        // a leaked one.
+        re: /([?&#][^?&#=\s]*(?:token|secret|password|passwd|apikey|api[_-]key|auth|session|signature|credential)[^?&#=\s]*=)[^&#\s"']*/gi,
+        replace: (_match, name) => name + REDACTED,
+    },
+];
+
+/**
+ * Every recognised credential shape in `text`, blanked.
+ *
+ * Exported for logger.test.js, which drives it directly as well as through the
+ * transport — a pattern that only ever runs behind three layers of queueing is
+ * a pattern nobody can tell is broken.
+ */
+export function scrubSecrets(text) {
+    let scrubbed = text;
+    for (const { re, replace } of SECRET_PATTERNS) {
+        scrubbed = scrubbed.replace(re, replace);
+    }
+    return scrubbed;
+}
+
+/** The key sets, exported so the suite can derive its cases instead of copying them. */
+export const REDACTION_KEYS = Object.freeze({
+    credential: Object.freeze([...CREDENTIAL_KEYS]),
+    carrier: Object.freeze([...CREDENTIAL_CARRIER_KEYS]),
+});
+
+/**
+ * Scrub every string field of a log entry.
+ *
+ * Written over `Object.entries(entry)` rather than over a list of field names
+ * on purpose. `url` and `userAgent` were attached BESIDE the redacted message
+ * and went out untouched; naming those two here would fix those two and leave
+ * the next field somebody attaches in exactly the same position. The rule is
+ * "every string this module puts on the wire", and the population is read from
+ * the entry itself so a new field is covered the day it is added -- which is
+ * how `event`/`data` arrived already covered.
+ *
+ * Recursive for the same reason. The first version walked one level and
+ * scrubbed strings, on the stated grounds that no entry field was an object;
+ * structured logging then added `data`, whose contents are whatever the caller
+ * passed. The flush-time `redactCredentials` replacer still blanks anything
+ * under a credential-shaped KEY at any depth, so the gap is narrower than it
+ * looks -- but a token under an innocuous key, inside `data`, was scrubbed by
+ * nothing at all. Depth is bounded by the JSON the caller could serialise, and
+ * `event()` has already rejected cycles by this point.
+ */
+function scrubEntry(entry) {
+    if (typeof entry === 'string') {
+        return scrubSecrets(entry);
+    }
+    if (Array.isArray(entry)) {
+        return entry.map(scrubEntry);
+    }
+    if (entry === null || typeof entry !== 'object') {
+        return entry;
+    }
+    const scrubbed = {};
+    for (const [key, value] of Object.entries(entry)) {
+        scrubbed[key] = scrubEntry(value);
+    }
+    return scrubbed;
+}
+
 class BrowserLogger {
     constructor() {
         this.logQueue = [];
@@ -101,21 +292,24 @@ class BrowserLogger {
             return;
         }
 
-        const entry = {
+        const raw = {
             timestamp: new Date().toISOString(),
             level: upperLevel,
             url: window.location.href
         };
         if (message !== undefined) {
-            entry.message = message;
+            raw.message = message;
         }
         if (structured) {
-            entry.event = structured.event;
+            raw.event = structured.event;
             if (structured.data !== undefined) {
-                entry.data = structured.data;
+                raw.data = structured.data;
             }
         }
-        // Dedupe key: non-enumerable so JSON.stringify never ships it
+        const entry = scrubEntry(raw);
+        // Dedupe key: non-enumerable so JSON.stringify never ships it. Set
+        // AFTER scrubEntry, which copies enumerable properties only and would
+        // otherwise drop it.
         Object.defineProperty(entry, '_sig', { value: sig, enumerable: false });
 
         this.logQueue.push(entry);
@@ -137,10 +331,34 @@ class BrowserLogger {
     }
 
     /**
-     * Format console arguments into a condensed single-line string
+     * Format console arguments into a condensed single-line string, with
+     * credentials stripped.
+     *
+     * Everything here is shipped to a server-side log file, so no argument may
+     * carry an auth header into it. TWO rules are needed, because an argument
+     * reaches this in two forms and the key-based replacer only sees one:
+     *
+     *   an OBJECT      `redactCredentials` blanks it by key, at any depth.
+     *   anything else   `String(arg)` -- a string, a number, a function, an
+     *                   Error, or an object `JSON.stringify` refused (a cycle,
+     *                   a BigInt). There are no keys to match, so the
+     *                   `scrubSecrets` below reads the credential shapes out
+     *                   of the text instead.
+     *
+     * The second rule used to be omitted, justified by "an error's
+     * `toString()` is its name and message, never its request config". That
+     * covers exactly one of the values that reach the fallback, and says
+     * nothing at all about the far commoner one: a plain string argument.
+     * `console.log('Authorization: ' + header)` went out verbatim.
+     *
+     * Scrubbing happens once, here, over the joined result -- not inside
+     * `formatArg`. `formatArg` is also called directly by `event()` to build
+     * the dedupe signature, which is non-enumerable and never shipped; the
+     * payload that IS shipped from that path is `entry.data`, and `scrubEntry`
+     * covers it.
      */
     formatArgs(args) {
-        return args.map(arg => this.formatArg(arg)).join(' ');
+        return scrubSecrets(args.map(arg => this.formatArg(arg)).join(' '));
     }
 
     formatArg(arg) {
@@ -149,8 +367,11 @@ class BrowserLogger {
         }
         if (typeof arg === 'object' && arg !== null) {
             try {
-                // Compact: pretty-printed JSON turns one log line into a wall
-                return JSON.stringify(arg);
+                // Compact: pretty-printed JSON turns one log line into a wall.
+                // The replacer is not optional -- it is the only thing that
+                // blanks a credential sitting under a credential-shaped KEY,
+                // which `scrubSecrets` cannot see.
+                return JSON.stringify(arg, redactCredentials);
             } catch (e) {
                 return String(arg);
             }
@@ -160,7 +381,7 @@ class BrowserLogger {
 
     isErrorLike(arg) {
         // instanceof misses cross-realm errors; duck-type on message+stack.
-        // Without this, JSON.stringify(new Error(...)) yields "{}" — the
+        // Without this, JSON.stringify(new Error(...)) yields "{}" -- the
         // error's name, message, and stack are all non-enumerable.
         return Boolean(
             arg &&
@@ -210,9 +431,15 @@ class BrowserLogger {
         };
 
         try {
+            // The last thing that happens before the bytes leave, so the
+            // replacer runs here too. `scrubEntry` reads credential SHAPES out
+            // of values; this blanks whatever sits under a credential-shaped
+            // KEY. Neither subsumes the other, and `session_id` is added here,
+            // after scrubEntry has already run over the entries.
+            const body = JSON.stringify(payload, redactCredentials);
             if (synchronous) {
                 // Use sendBeacon for synchronous sending on page unload
-                const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+                const blob = new Blob([body], { type: 'application/json' });
                 navigator.sendBeacon(LOG_ENDPOINT, blob);
             } else {
                 // Use fetch for normal async sending
@@ -221,7 +448,7 @@ class BrowserLogger {
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(payload)
+                    body
                 });
                 // fetch only rejects on network-level failure — a 500, a 404,
                 // or a proxy returning an error body all resolve normally.

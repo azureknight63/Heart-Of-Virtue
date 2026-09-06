@@ -234,14 +234,21 @@ describe('Advanced Coverage Gap Tests', () => {
     // does NOT assert — the per-type colour table and its fallback — lives
     // here, rather than a second weaker copy of all of it.
     it('colours an entry by its type and falls back for an unknown type', () => {
+      // `damage`/`heal` used to stand here. No combat-log writer in the engine
+      // has ever emitted either: they were the frontend's own invented
+      // vocabulary, asserted against the frontend's own table, and the table
+      // was missing `combat` — the type of nearly every real line. Which types
+      // exist at all is now derived from the Python by CombatLog.test.jsx; this
+      // case keeps only the narrow thing it is here for, that the table is
+      // wired to the rendered colour and that an unknown type still falls back.
       render(<CombatLog log={[
-        { id: 1, type: 'damage', message: 'Took a hit' },
-        { id: 2, type: 'heal', message: 'Patched up' },
+        { id: 1, type: 'system', message: 'Took a hit' },
+        { id: 2, type: 'info', message: 'Patched up' },
         { id: 3, type: 'no-such-type', message: 'Uncategorised' },
       ]} />)
 
-      expect(screen.getByText('Took a hit')).toHaveStyle({ color: colors.danger })
-      expect(screen.getByText('Patched up')).toHaveStyle({ color: colors.success })
+      expect(screen.getByText('Took a hit')).toHaveStyle({ color: colors.gold })
+      expect(screen.getByText('Patched up')).toHaveStyle({ color: colors.text.muted })
       expect(screen.getByText('Uncategorised')).toHaveStyle({ color: colors.text.main })
     })
 

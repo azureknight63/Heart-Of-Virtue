@@ -1,7 +1,8 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import InteractPanel from './InteractPanel';
+import InteractPanel, { actionKeywords } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
+import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
 import React from 'react';
 
 // Mock apiEndpoints
@@ -65,9 +66,24 @@ describe('InteractPanel', () => {
   /**
    * Wait for the interaction output to mount, then finish its typewriter with
    * the click the component exposes for exactly that purpose, and return the
-   * settled node. Waiting out the per-character interval instead (the old
-   * `waitFor(textContent contains ...)`) cost ~0.5-1.5s per test and asserted
-   * nothing the click does not.
+   * settled node.
+   *
+   * Use this for anything the panel routes through `interactionOutput` — the
+   * ONLY text here that TypewriterOutput animates. `waitFor(getByText(...))`
+   * on that text is not a wait for a state change, it is a wait for
+   * `message.length` React re-renders, so its wall-clock cost scales with CPU
+   * load while waitFor's budget does not: 'Action completed.' (17 chars at
+   * 30 ms) nominally needs 510 ms of the default 1000 ms, and a loaded
+   * parallel run measured ~4x slower than nominal, leaving 'Action ' on
+   * screen when the budget ran out. The click settles it in zero wall clock,
+   * asserts nothing the animation does, and cannot lose a race.
+   *
+   * The panel's OTHER two text paths — `error` (the ⚠️ box) and `searchOutput`
+   * — are plain GameText set in one state transition, never animated, so they
+   * keep a plain `waitFor`. Route one through here only when the SAME
+   * interaction also produced an `interactionOutput` (the partial take-all
+   * summary does); otherwise there is no container to click and the wait
+   * cannot resolve.
    */
   const settledOutput = async () => {
     const out = await screen.findByTestId('event-text-container');
@@ -360,9 +376,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Take/i));
     fireEvent.click(screen.getByText(/CONFIRM/i));
 
-    await waitFor(() => {
-      expect(container.textContent).toContain('Item taken');
-    });
+    await settledOutput();
+    expect(container.textContent).toContain('Item taken');
 
     // Switch to fake timers only for the delay itself: the interaction above
     // needs real promise scheduling, but burning 3s of wall clock here was the
@@ -501,9 +516,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/CONFIRM/i));
 
     // Wait for interaction
-    await waitFor(() => {
-      expect(screen.getByText(/Item taken/i)).toBeDefined();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Item taken/i)).toBeDefined();
 
     // 3. Simulate room update where item is gone
     const updatedLocation = {
@@ -565,9 +579,8 @@ describe('InteractPanel', () => {
       render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} />);
       fireEvent.click(screen.getByText(/Take All Items/i));
 
-      await waitFor(() => {
-        expect(screen.getByText(/Too heavy to carry/i).textContent).toBe('⚠️ Too heavy to carry.');
-      });
+      await settledOutput();
+      expect(screen.getByText(/Too heavy to carry/i).textContent).toBe('⚠️ Too heavy to carry.');
       // Take-all stops at the first failure: the second item is never requested.
       expect(apiEndpoints.world.interact).toHaveBeenCalledTimes(2);
       expect(apiEndpoints.world.interact).toHaveBeenLastCalledWith('item2', 'take', 1);
@@ -652,36 +665,56 @@ describe('InteractPanel', () => {
     // /api/npc/chat/open receives as `npc_key`. The previous fixture set
     // `npc_class` directly, which no serializer emits: the remap overwrote it
     // with `undefined` and the assertion silently exercised the name fallback.
-    const chatLocation = {
-      ...mockLocation,
-      npcs: [{ id: 'npc1', name: 'Mynx', type: 'Mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true }],
-    };
+    const chatNpc = (npc) => ({ ...mockLocation, npcs: [{ ...npc, keywords: ['Talk'], llm_chat_enabled: true }] });
+    const chatLocation = chatNpc({ id: 'npc1', name: 'Mynx', type: 'Mynx', description: 'A curious sprite.' });
 
-    it('opens the chat panel keyed by the NPC class, not its instance id', () => {
-      render(<InteractPanel location={chatLocation} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
+    // Three shapes of the same claim, because the failure modes differ: a name
+    // that equals its class hides a remap bug, a name that differs from its
+    // class exposes one, and a merchant reaches this panel down a different
+    // branch (it also serves Buy/Sell) than a plain conversational NPC.
+    const chatFixtures = [
+      ['a class key equal to the display name', chatLocation, 'Mynx', 'Chatting with Mynx (Mynx)', 'npc1'],
+      [
+        'a class key that differs from the display name',
+        chatNpc({ id: 'npc7', name: 'The Adjutant', type: 'TheAdjutant', description: 'A drill sergeant.' }),
+        'The Adjutant',
+        'Chatting with The Adjutant (TheAdjutant)',
+        'npc7',
+      ],
+      [
+        'a merchant that also serves Buy/Sell',
+        {
+          ...mockLocation,
+          npcs: [{
+            id: 'jambo1',
+            name: 'Jambo',
+            type: 'JamboHealsU',
+            description: 'A wiry merchant with a massive grin.',
+            keywords: ['Buy', 'Sell', 'Talk'],
+            llm_chat_enabled: true,
+          }],
+        },
+        'Jambo',
+        'Chatting with Jambo (JamboHealsU)',
+        'jambo1',
+      ],
+    ];
 
-      // The mock panel echoes `Chatting with {npcName} ({npcId})`.
-      const panel = screen.getByTestId('npc-chat-panel').textContent;
-      expect(panel).toContain('Chatting with Mynx (Mynx)');
-      // Sending the instance id would 404 the chat route.
-      expect(panel).not.toContain('npc1');
-      expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
-    });
+    it.each(chatFixtures)(
+      'opens the chat panel keyed by the NPC class, not its instance id — %s',
+      (_shape, location, targetName, expectedEcho, instanceId) => {
+        render(<InteractPanel location={location} onClose={mockOnClose} />);
+        fireEvent.click(screen.getAllByText(new RegExp(targetName, 'i'))[0]);
+        fireEvent.click(screen.getByText(/^Talk$/i));
 
-    it('keeps npcName (display) and npcId (class) distinct', () => {
-      const adjutant = {
-        ...mockLocation,
-        npcs: [{ id: 'npc7', name: 'The Adjutant', type: 'TheAdjutant', description: 'A drill sergeant.', keywords: ['Talk'], llm_chat_enabled: true }],
-      };
-      render(<InteractPanel location={adjutant} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/The Adjutant/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
-
-      expect(screen.getByTestId('npc-chat-panel').textContent)
-        .toContain('Chatting with The Adjutant (TheAdjutant)');
-    });
+        // The mock panel echoes `Chatting with {npcName} ({npcId})`.
+        const panel = screen.getByTestId('npc-chat-panel').textContent;
+        expect(panel).toContain(expectedEcho);
+        // Sending the instance id would 404 the chat route.
+        expect(panel).not.toContain(instanceId);
+        expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
+      }
+    );
 
     it('closes the chat panel and refetches on close', () => {
       render(<InteractPanel location={chatLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
@@ -697,20 +730,25 @@ describe('InteractPanel', () => {
       expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
     });
 
-    it('does not open the chat panel when loquacity is unavailable', () => {
-      const unavailableLocation = {
-        ...mockLocation,
-        npcs: [{ id: 'npc1', name: 'Mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true, loquacity_available: false }],
-      };
-      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Mynx stays quiet.' } });
-      render(<InteractPanel location={unavailableLocation} onClose={mockOnClose} />);
-      fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
-      fireEvent.click(screen.getByText(/^Talk$/i));
+    it.each(chatFixtures)(
+      'falls through to the scripted talk when loquacity is unavailable — %s',
+      (_shape, location, targetName, _expectedEcho, instanceId) => {
+        const unavailable = {
+          ...location,
+          npcs: [{ ...location.npcs[0], loquacity_available: false }],
+        };
+        apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Nothing to say.' } });
+        render(<InteractPanel location={unavailable} onClose={mockOnClose} />);
+        fireEvent.click(screen.getAllByText(new RegExp(targetName, 'i'))[0]);
+        fireEvent.click(screen.getByText(/^Talk$/i));
 
-      expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
-      // Falls through to the ordinary scripted talk instead of the LLM panel.
-      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('npc1', 'Talk', null);
-    });
+        expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
+        // Falls through to the ordinary scripted talk instead of the LLM panel,
+        // and that call carries the INSTANCE id — the world route's key, where
+        // the chat route wants the class.
+        expect(apiEndpoints.world.interact).toHaveBeenCalledWith(instanceId, 'Talk', null);
+      }
+    );
   });
 
   describe('Book read (issue #326)', () => {
@@ -817,6 +855,131 @@ describe('InteractPanel', () => {
     }
   });
 
+  it('closes before showing a Passageway transition event', async () => {
+    const passagewayLocation = {
+      ...mockLocation,
+      npcs: [],
+      objects: [{
+        id: 'passage1',
+        name: 'Stone Arch',
+        description: 'An arch leading to another area.',
+        keywords: ['Enter'],
+      }],
+      items: [],
+    };
+    const transitionEvent = {
+      type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
+      event_id: 'passage-1',
+      name: 'Passage_Stone Arch',
+      needs_input: true,
+    };
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: { success: true, message: '', events_triggered: [transitionEvent] },
+    });
+    const onEventsTriggered = vi.fn();
+    const onRefetch = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    function Harness() {
+      const [open, setOpen] = React.useState(true);
+      return open ? (
+        <InteractPanel
+          location={passagewayLocation}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+          onRefetch={onRefetch}
+          onEventsTriggered={onEventsTriggered}
+        />
+      ) : <div data-testid="interact-panel-closed" />;
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getAllByText(/Stone Arch/i)[0]);
+    fireEvent.click(screen.getByText(/^Enter$/i));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('interact-panel-closed')).toBeInTheDocument();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
+  });
+
+  it('shows the destination room, panel closed, once the transition refetch lands', async () => {
+    // The test above pins the ORDER (close, then refetch, then queue the
+    // event). This one pins the outcome the player sees, and it has to be
+    // driven through `onRefetch` to mean anything: that is the callback the
+    // production path awaits, and in the app it is what pulls the destination
+    // room in. A harness button that swapped the location itself would be
+    // asserting the harness.
+    const sourceLocation = {
+      ...mockLocation,
+      npcs: [],
+      objects: [{ id: 'passage1', name: 'Stone Arch', description: 'An arch to the garden.', keywords: ['Enter'] }],
+      items: [],
+    };
+    const destinationLocation = {
+      name: 'Moonlit Garden',
+      description: 'Silver flowers bloom beneath the moon.',
+      x: 4,
+      y: 2,
+    };
+    const transitionEvent = {
+      type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
+      event_id: 'passage-2',
+      name: 'Passage_Stone Arch',
+      needs_input: true,
+    };
+    const onEventsTriggered = vi.fn();
+    const onRefetch = vi.fn();
+    const onClose = vi.fn();
+
+    function Harness() {
+      const [location, updateLocation] = React.useState(sourceLocation);
+      const [open, setOpen] = React.useState(true);
+      return (
+        <>
+          {open && (
+            <InteractPanel
+              location={location}
+              onClose={() => {
+                onClose();
+                setOpen(false);
+              }}
+              onRefetch={async () => {
+                onRefetch();
+                updateLocation(destinationLocation);
+              }}
+              onEventsTriggered={onEventsTriggered}
+            />
+          )}
+          <div data-testid="left-room-description">{location.description}</div>
+          <div data-testid="right-map-position">{location.x},{location.y}</div>
+        </>
+      );
+    }
+
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: { success: true, message: '', events_triggered: [transitionEvent] },
+    });
+
+    render(<Harness />);
+    fireEvent.click(screen.getAllByText(/Stone Arch/i)[0]);
+    fireEvent.click(screen.getByText(/^Enter$/i));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('left-room-description')).toHaveTextContent(destinationLocation.description);
+    });
+    // The panel is gone and the map has followed the room — a source panel
+    // still on screen here is the bug this flow exists to prevent.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('right-map-position')).toHaveTextContent('4,2');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onRefetch).toHaveBeenCalledTimes(1);
+    expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
+  });
+
   it('updates the selected target locally from the response object_state', async () => {
     const lockableObject = {
       ...mockLocation,
@@ -862,9 +1025,8 @@ describe('InteractPanel', () => {
     fireEvent.change(qtyInput, { target: { value: '3' } });
     fireEvent.click(screen.getByText(/CONFIRM/i));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Took some\./i)).toBeInTheDocument();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Took some\./i)).toBeInTheDocument();
     fireEvent.click(screen.getByText(/← Back/i));
     fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
     expect(screen.getByText(/Take/i).closest('button')).not.toBeDisabled();
@@ -938,9 +1100,8 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getAllByText(/Chest/i)[0]);
       fireEvent.click(screen.getByText('TAKE'));
 
-      await waitFor(() => {
-        expect(screen.getByText(/Took Gold\./i)).toBeInTheDocument();
-      });
+      await settledOutput();
+      expect(screen.getByText(/Took Gold\./i)).toBeInTheDocument();
       // takeOne targets the CONTENTS row's id, not the container's.
       expect(apiEndpoints.world.interact).toHaveBeenCalledWith('gold1', 'take');
       expect(mockOnRefetch).toHaveBeenCalledTimes(1);
@@ -974,9 +1135,8 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getAllByText(/Chest/i)[0]);
       fireEvent.click(screen.getByText('TAKE'));
 
-      await waitFor(() => {
-        expect(screen.getByText(/Took Gold/i)).toBeInTheDocument();
-      });
+      await settledOutput();
+      expect(screen.getByText(/Took Gold/i)).toBeInTheDocument();
     });
 
     it('defaults to "Failed to take item" when the single-item take fails without an error field', async () => {
@@ -1062,9 +1222,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);
     fireEvent.click(screen.getByText(/^Talk$/i));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Action completed\./i)).toBeInTheDocument();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Action completed\./i)).toBeInTheDocument();
     expect(mockOnTypingChange).toHaveBeenCalledWith(true);
     expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
   });
@@ -1108,9 +1267,8 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Door/i)[0]);
     fireEvent.click(screen.getByText(/^Unlock$/i));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Click\./i)).toBeInTheDocument();
-    });
+    await settledOutput();
+    expect(screen.getByText(/Click\./i)).toBeInTheDocument();
     fireEvent.click(screen.getByText(/← Back/i));
     fireEvent.click(screen.getAllByText(/Door/i)[0]);
     expect(screen.getByText(/^Unlock$/i)).toBeInTheDocument();
@@ -1216,5 +1374,70 @@ describe('InteractPanel', () => {
       expect(screen.queryByText(/First message\./)).toBeNull();
       expect((await settledOutput()).textContent).toContain('Second message.');
     });
+  });
+});
+
+
+describe('actionKeywords', () => {
+  // Asserted against the pure function rather than a rendered button count,
+  // because the count cannot say WHICH of the three rules dropped a keyword.
+
+  describe('the chat-alias collapse', () => {
+    it('renders one button for an NPC serving both "Talk" and "chat"', () => {
+      // The shape 22 nomad-camp NPCs shipped with. Both keywords route to the
+      // same LLM chat panel, so the second button did nothing the first did
+      // not. A plain `new Set(keywords)` would NOT have caught this: "Talk"
+      // and "chat" are distinct strings that merely share a handler.
+      expect(
+        actionKeywords({ keywords: ['Talk', 'chat'], llm_chat_enabled: true })
+      ).toEqual(['Talk']);
+    });
+
+    it('keeps a lone "chat" — the collapse drops duplicates, not the action', () => {
+      expect(actionKeywords({ keywords: ['chat'], llm_chat_enabled: true })).toEqual(['chat']);
+    });
+
+    it('collapses Talk/Chat to a single Talk even when chat is not LLM-backed', () => {
+      // The collapse does NOT depend on `llm_chat_enabled`: both verbs
+      // converge on the backend chat fallback (NPC.talk / the mixin's chat(),
+      // which calls talk()), so a duplicate "Chat" button must not survive
+      // just because NPC_CHAT_LLM_ENABLED is off. Regression for the disabled-LLM
+      // case: an NPC serving both keywords must still render one "Talk".
+      expect(actionKeywords({ keywords: ['Talk', 'chat'] })).toEqual(['Talk']);
+    });
+
+    it('prefers Talk when legacy payload order lists Chat first', () => {
+      expect(actionKeywords({ keywords: ['chat', 'Talk'] })).toEqual(['Talk']);
+    });
+
+    it('collapses exact duplicate Talk or Chat entries too', () => {
+      expect(actionKeywords({ keywords: ['Talk', 'Talk', 'Chat'] })).toEqual(['Talk']);
+      expect(actionKeywords({ keywords: ['chat', 'chat'] })).toEqual(['chat']);
+    });
+  });
+
+  it('keeps the first spelling of a case-folded duplicate', () => {
+    expect(actionKeywords({ keywords: ['Open', 'open'] })).toEqual(['Open']);
+  });
+
+  it("drops a container's Loot and Take_all, which duplicate its contents list", () => {
+    expect(
+      actionKeywords({ is_container: true, keywords: ['Loot', 'Take_all', 'Open'] })
+    ).toEqual(['Open']);
+  });
+
+  it('keeps Loot on a target that is not a container', () => {
+    expect(actionKeywords({ keywords: ['Loot', 'Open'] })).toEqual(['Loot', 'Open']);
+  });
+
+  it('drops a keyword the engine marks as an alias of another', () => {
+    expect(
+      actionKeywords({ keywords: ['Open', 'Unlock'], action_aliases: ['Unlock'] })
+    ).toEqual(['Open']);
+  });
+
+  it('returns an empty list for a target with no keywords at all', () => {
+    expect(actionKeywords(undefined)).toEqual([]);
+    expect(actionKeywords({})).toEqual([]);
   });
 });

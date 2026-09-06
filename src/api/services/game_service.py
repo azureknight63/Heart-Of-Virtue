@@ -8,9 +8,15 @@ from unittest.mock import patch
 
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
+from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, wire_handle
 from src.events import purge_orphaned_combat_events
-from src.functions import check_for_combat, signal_combat_wave_pending
+from src.functions import (
+    check_for_combat,
+    end_combat_cleanup,
+    signal_combat_wave_pending,
+)
+from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
 from src.narration import capture_narration, narrate
@@ -34,6 +40,33 @@ from src.moves._base import display_name_of
 from src.api.utils.inventory import get_inventory_list
 
 _log = logging.getLogger(__name__)
+
+#: Manual saves one player may keep. Autosaves are not counted against it.
+#: Named because the number was written twice -- once in the check and once
+#: in the message the player reads -- so they could disagree.
+MAX_MANUAL_SAVES = 20
+
+
+def _warn(message):
+    """Report a handled failure through the app logger, without ever raising.
+
+    These call sites all sit inside an ``except`` block, and they used to call
+    ``print``. ``print`` is not exception-free -- ``UnicodeEncodeError`` on a
+    cp1252 Windows console, ``ValueError`` on a stdout a WSGI server has closed
+    -- so a diagnostic could escape the very handler written to swallow the
+    fault it was describing.
+
+    The logger, not stdout, for the second half of the same reason: every
+    handler this app installs carries ``_RedactSecretsFilter`` (see
+    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    that reason and these were left behind.
+    """
+    try:
+        _log.warning("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
 
 # Internal LLM diagnostic strings that must never reach the UI.
 # Originate from ai/llm_client.py logger calls captured via redirect_stdout,
@@ -166,26 +199,24 @@ class GameService:
         or a wrong type, and entries that are not real ``State`` objects — a
         corrupt save must not 500 the request (issue #295). Fields are coerced to
         JSON-safe primitives.
+
+        DELEGATED, because this used to be a second State->wire translation and
+        the two had diverged: this one filtered ``hidden`` and
+        ``StateEffectSerializer`` did not, so ``Dodging`` and ``Parrying`` --
+        the engine's only two hidden states -- were suppressed on the
+        player-status wire and published on the combat wire. They also
+        disagreed on the field name (``status_type`` here, ``type`` there) and
+        on whether ``beats_left`` was coerced.
+
+        The serializer now owns the filter, the coercion and both field names,
+        so this is a call rather than a copy. Its output is a strict superset
+        of what this returned, with identical values on the three shared keys.
         """
-        states = getattr(combatant, "states", None)
-        if not isinstance(states, (list, tuple)):
-            return []
-        result = []
-        for s in states:
-            try:
-                if getattr(s, "hidden", False):
-                    continue
-                beats = getattr(s, "beats_left", 0)
-                if not isinstance(beats, (int, float)) or isinstance(beats, bool):
-                    beats = 0
-                result.append({
-                    "name": str(getattr(s, "name", "Unknown")),
-                    "status_type": str(getattr(s, "statustype", "generic")),
-                    "beats_left": beats,
-                })
-            except Exception:  # noqa: BLE001 - skip an unserializable state
-                continue
-        return result
+        from src.api.serializers.combat import StateEffectSerializer
+
+        return StateEffectSerializer.serialize_state_list(
+            getattr(combatant, "states", None)
+        )
 
     def _get_event_target_modules(
         self, event, include_animations: bool = True
@@ -2488,29 +2519,37 @@ class GameService:
         enemy = None
         tile = None
 
-        # 1. Try universe tile
+        # 1. Try the universe tile at the player's coordinates. `tile` is bound only
+        # on a match: a tile that exists but holds no matching NPC must not be
+        # mistaken for the room the enemy came from.
         if hasattr(player, "universe") and player.universe:
-            tile = player.universe.get_tile(player.location_x, player.location_y)
-            if hasattr(tile, "npcs_here"):
-                enemy = find_by_handle(tile.npcs_here, enemy_id)
+            coordinate_tile = player.universe.get_tile(
+                player.location_x, player.location_y
+            )
+            if hasattr(coordinate_tile, "npcs_here"):
+                enemy = find_by_handle(coordinate_tile.npcs_here, enemy_id)
+                if enemy:
+                    tile = coordinate_tile
 
         # 2. Try player.current_room (fallback for tests/specific events)
         if not enemy and hasattr(player, "current_room") and player.current_room:
-            if hasattr(player.current_room, "npcs_here"):
-                enemy = find_by_handle(player.current_room.npcs_here, enemy_id)
+            staged_room = player.current_room
+            if hasattr(staged_room, "npcs_here"):
+                enemy = find_by_handle(staged_room.npcs_here, enemy_id)
+                if enemy:
+                    tile = staged_room
 
         if not enemy:
             return {"error": "Enemy not found"}
 
-        # Ensure player.current_room is set to the resolved tile so that downstream
-        # code (NPC death cleanup, event callbacks) always has a valid room reference.
-        # Fall back to the existing player.current_room when universe.get_tile() returned
-        # None (e.g. out-of-bounds coordinates) — at least one of the two will be valid
-        # because we already found `enemy` through one of those two paths above.
-        if tile is None:
-            tile = getattr(player, "current_room", None)
-        if tile is not None:
-            player.current_room = tile
+        # `tile` is the room the enemy was actually standing in — whichever of the two
+        # lookups produced it — and is never None here, because finding `enemy` at all
+        # means one of them matched and bound it. Pointing player.current_room at that
+        # room keeps downstream code (the bystander roster below, NPC death cleanup,
+        # event callbacks) working against the room the fight is really happening in.
+        # A staged room must survive this even when the player's coordinates address a
+        # different, enemy-less tile.
+        player.current_room = tile
 
         # Mark the attacked enemy as aggro so it is always included in the combat roster.
         # Some enemies may already be aggro from room-entry announcements; the clicked one
@@ -2555,11 +2594,13 @@ class GameService:
             }
         ]
         # combat_list_allies[0] is always the player — skip it to avoid a duplicate
-        # entry in the combatants list (same pattern as the [1:] slice at line ~1898).
+        # entry in the combatants list. ``get_player_status`` and ``flee_combat``
+        # take the same slice for the same reason.
+        #
         # Ids come from CombatantSerializer.stream_id, never a hand-rolled
         # f-string: an unconditional ally_/enemy_ prefix mislabels the player
-        # (and any combatant on the "wrong" list), and the client matches
-        # these ids against the serialized combat state's.
+        # (and any combatant on the "wrong" list), and the client matches these
+        # ids against the serialized combat state's.
         for ally in getattr(player, "combat_list_allies", [])[1:]:
             combatants.append(
                 {
@@ -3364,16 +3405,11 @@ class GameService:
             Dictionary with result. On success: {"success": True,
             "remaining_points": int, "stats": {...}}.
         """
-        allowed = {
-            "strength_base",
-            "finesse_base",
-            "speed_base",
-            "endurance_base",
-            "charisma_base",
-            "intelligence_base",
-            "faith_base",
-            "randomize",
-        }
+        # Derived from the engine, not retyped. This set and the list below
+        # were two more copies of `LEVEL_UP_ATTRIBUTES`, so an attribute added
+        # to the engine was silently refused here as "Invalid attribute" --
+        # the API deciding a rule the engine owns.
+        allowed = set(LEVEL_UP_ATTRIBUTE_NAMES) | {"randomize"}
 
         if attribute not in allowed:
             return {"success": False, "error": "Invalid attribute"}
@@ -3386,15 +3422,7 @@ class GameService:
 
             import random
 
-            attributes_list = [
-                "strength_base",
-                "finesse_base",
-                "speed_base",
-                "endurance_base",
-                "charisma_base",
-                "intelligence_base",
-                "faith_base",
-            ]
+            attributes_list = list(LEVEL_UP_ATTRIBUTE_NAMES)
             weights = [random.random() for _ in attributes_list]
             remaining_points = remaining
             for idx, attr in enumerate(attributes_list):
@@ -3438,12 +3466,29 @@ class GameService:
         ):
             player.pending_level_ups = []
 
+        # NOT swallowed. `refresh_stat_bonuses` recomputes every live stat from
+        # its `*_base` value, so it is the step that makes the points the
+        # player just spent actually count. `except Exception: pass` here meant
+        # a failure returned `success: True` alongside a `stats` block computed
+        # from a player whose bonuses had not been recomputed — the player sees
+        # the allocation accepted and the numbers unchanged, with nothing said.
+        #
+        # That is the same mechanism as the combat-exit bug: skipping the
+        # refresh leaves the stat wrong and nothing ever puts it right.
         try:
             from src import functions
 
             functions.refresh_stat_bonuses(player)
         except Exception:
-            pass
+            _log.exception(
+                "refresh_stat_bonuses failed after allocating %s; the points "
+                "are spent but the stats are stale",
+                attribute,
+            )
+            return {
+                "success": False,
+                "error": "Could not apply the allocation. Please try again.",
+            }
 
         return {
             "success": True,
@@ -3546,9 +3591,11 @@ class GameService:
             )
             res = await db.execute(count_sql, [user_id])
             count = res.rows[0][0]
-            if count >= 20:
-                raise ValueError(
-                    "Maximum number of manual saves reached (20). Please delete an existing save to create a new one."
+            if count >= MAX_MANUAL_SAVES:
+                raise SaveLimitReached(
+                    "Maximum number of manual saves reached (%d). Please "
+                    "delete an existing save to create a new one."
+                    % MAX_MANUAL_SAVES
                 )
 
         save_id = str(uuid.uuid4())
@@ -3711,13 +3758,20 @@ class GameService:
                     ally.in_combat = False
                 player.combat_list_allies = [player] + existing_allies
                 player.current_move = None
-                # Strip non-persistent status effects that should have been cleared at
-                # combat end (mirrors combat.py line 624 which the API adapter never runs).
-                player.states = [
-                    s
-                    for s in getattr(player, "states", [])
-                    if getattr(s, "persistent", True)
-                ]
+                # Strip non-persistent status effects that should have been cleared
+                # at combat end. The terminal ``combat()`` loop did this on the way
+                # out; it was deleted with the rest of the terminal driver, and the
+                # API path never had an equivalent, so a save taken mid-fight can
+                # carry combat-only states into the world. ``persistent`` is the
+                # flag every ``State`` sets in ``src/states.py`` — True means the
+                # state is meant to outlive the fight.
+                #
+                # Delegated rather than rebound. Filtering the list here
+                # skipped refresh_stat_bonuses and on_removal, so a state
+                # that left still had its stat delta baked into the live
+                # value — permanently, because the refresh recomputes from
+                # the ``*_base`` fields.
+                end_combat_cleanup(player)
                 # Recharge equip-states (e.g. PhoenixRevive) consumed mid-battle —
                 # combat state is wiped above, so this load is effectively a fresh
                 # start that should restore any equipped item's granted states.
@@ -3733,7 +3787,7 @@ class GameService:
 
             return player
         except Exception as e:
-            print(f"Error loading save {save_id}: {e}")
+            _warn(f"Error loading save {save_id}: {e}")
             return None
 
     async def list_saves(
@@ -3935,10 +3989,16 @@ class GameService:
         # Clear ally combat state — filter to living allies first, then clear their flags.
         # Fight-scoped allies (CombatEventConfig.ally_list, issue #427) are dropped here
         # too — fleeing ends their one-fight enrollment same as victory/defeat would.
+        # `a is not player`, not `[1:]`. The other three exits filter by
+        # identity; flee was the only one depending on "the player is always
+        # index 0", and if that ever broke it would enrol him in his own ally
+        # list twice.
         living_allies = [
             a
-            for a in getattr(player, "combat_list_allies", [])[1:]
-            if a.is_alive() and getattr(a, "event_temp_ally", False) is not True
+            for a in getattr(player, "combat_list_allies", [])
+            if a is not player
+            and a.is_alive()
+            and getattr(a, "event_temp_ally", False) is not True
         ]
         for ally in living_allies:
             ally.in_combat = False
@@ -3946,10 +4006,19 @@ class GameService:
 
         player.current_move = None
 
-        # Strip non-persistent status effects (mirrors end-of-combat cleanup)
-        player.states = [
-            s for s in getattr(player, "states", []) if getattr(s, "persistent", True)
-        ]
+        # The engine owns this rule; the API only calls it. Rebinding the list
+        # here (which is what this used to do) skips refresh_stat_bonuses and
+        # on_removal, leaving a departed state's stat delta baked in for good.
+        end_combat_cleanup(player)
+
+        # Victory and load both did this and flee did not, so a player who
+        # burned a single-use equip state (PhoenixRevive) and then FLED lost it
+        # permanently -- until he won a fight, reloaded, or re-equipped the
+        # item. The teardown being written out once per exit is why a step
+        # could go missing from exactly one of them; `Player.recharge_equip_states`
+        # documents its callers as "victory or session load", which described
+        # the call sites rather than the rule.
+        player.recharge_equip_states()
 
         # Fleeing is the THIRD spelling of end-of-fight state reset (the settle
         # pair's _teardown_combat_roster and initialize_combat's fresh-fight
@@ -4036,9 +4105,16 @@ class GameService:
         it back up via ``_load_history_from_persistence``.
 
         Skipped while a conversation is active so talking to an NPC never also
-        refills them mid-chat.
+        refills them mid-chat. Legacy entries are migrated before the tick: an old
+        maximum/recovery pair must not receive an old-scale recovery increment.
         """
         try:
+            from src.npc._chat_llm import (
+                _DEFAULT_LOQUACITY_RECOVERY,
+                LOQUACITY_SCALE_PERCENT,
+                scale_loquacity,
+            )
+
             if player.__dict__.get("_active_chat_npc_id"):
                 return
             hists = getattr(player, "npc_chat_histories", None)
@@ -4049,16 +4125,57 @@ class GameService:
                     continue
                 loq_max = entry.get("loquacity_max", 0)
                 loq_cur = entry.get("loquacity_current", 0)
-                if not loq_max or loq_cur >= loq_max:
+                if not loq_max:
                     continue
-                recovery = entry.get("loquacity_recovery", 2) or 2
-                entry["loquacity_current"] = min(loq_max, loq_cur + recovery)
-        except Exception as e:
-            import logging as _logging
-
-            _logging.getLogger(__name__).debug(
-                "loquacity recovery skipped: %s", e
-            )
+                # `_DEFAULT_LOQUACITY_RECOVERY`, not a literal 2. The mixin's
+                # default is `scale_loquacity(2)`, which is 1 -- so an entry
+                # written without an explicit recovery regenerated at TWICE
+                # the live rate while the player was elsewhere. And since the
+                # wisdom term is inert (see `_LOQUACITY_RECOVERY_*`), 1 is the
+                # live rate for every NPC in the game, so it was exactly 2x for
+                # every such row.
+                #
+                # `or _DEFAULT...` is kept off deliberately: a persisted 0 is a
+                # real value, and the old `or 2` silently promoted it.
+                recovery = entry.get("loquacity_recovery")
+                if recovery is None:
+                    recovery = _DEFAULT_LOQUACITY_RECOVERY
+                # Entries written by this version carry an explicit scale marker.
+                # Only unmarked rows with an old-scale-sized maximum are migrated;
+                # otherwise a current 15% row would be scaled a second time.
+                if (
+                    entry.get("loquacity_scale") != LOQUACITY_SCALE_PERCENT
+                    and loq_max > scale_loquacity(loq_max)
+                ):
+                    scaled_max = scale_loquacity(loq_max)
+                    scaled_current = (
+                        loq_cur * scaled_max + loq_max // 2
+                    ) // loq_max
+                    loq_cur = min(scaled_max, scaled_current)
+                    loq_max = scaled_max
+                    recovery = scale_loquacity(recovery)
+                    entry["loquacity_current"] = loq_cur
+                    entry["loquacity_max"] = loq_max
+                    entry["loquacity_recovery"] = recovery
+                # `loq_cur < loq_max`, deliberately not `loq_cur > 0 and ...`:
+                # an exhausted entry is the one that most needs the tick.
+                # `ConversationalNPCMixin.loquacity_tick`, the live-instance
+                # behaviour this mirrors, recovers whenever `loquacity_max` is
+                # nonzero and does not special-case 0, and
+                # `LOQUACITY_SCALE_PERCENT`'s own note says a recovery that
+                # reaches 0 "would leave an exhausted NPC permanently mute".
+                if loq_cur < loq_max:
+                    entry["loquacity_current"] = min(loq_max, loq_cur + recovery)
+                entry["loquacity_scale"] = LOQUACITY_SCALE_PERCENT
+        except Exception:
+            # WARNING, not DEBUG: this block runs a migration over a
+            # *persisted* save, and the app's own default leaves root at
+            # WARNING unless LOG_LEVEL is set, so a DEBUG line here is
+            # invisible on every deployment that has not opted in — the same
+            # reasoning `src/api/routes/world.py` gives for its background
+            # services. A migration that silently declines to run leaves
+            # old-scale rows in the save for good.
+            _log.warning("loquacity recovery skipped", exc_info=True)
 
     def npc_chat_open(
         self, player: "player_module.Player", npc_id: str
@@ -4099,12 +4216,16 @@ class GameService:
         # Call NPC's chat_open method
         try:
             result = npc.chat_open(player)
-        except Exception as e:
+        except Exception:
             # The conversation never actually started — clear the flag so
             # loquacity recovery isn't stuck disabled for the rest of the
             # session (see #336).
             player.__dict__.pop("_active_chat_npc_id", None)
-            return {"success": False, "error": f"Failed to open chat: {str(e)}"}
+            # str(e) on a provider SDK exception carries the endpoint URL, the
+            # model id, the upstream status/body and a request id, and this
+            # string is rendered verbatim in the player-facing error panel.
+            _log.error("npc_chat_open failed for npc_id=%r", npc_id, exc_info=True)
+            return {"success": False, "error": "Could not start that conversation."}
 
         # Mirror npc_chat_respond's teardown: a failed open or an immediate
         # brush-off (loquacity exhausted) ends the "conversation" before it
@@ -4151,8 +4272,11 @@ class GameService:
             if result.get("conversation_ended"):
                 player.__dict__.pop("_active_chat_npc_id", None)
             return self._enrich_chat_result_with_relationship(result, npc)
-        except Exception as e:
-            return {"success": False, "error": f"Failed to respond: {str(e)}"}
+        except Exception:
+            # Same disclosure risk as npc_chat_open above: log the detail, send
+            # the player a fixed string.
+            _log.error("npc_chat_respond failed for npc_key=%r", npc_key, exc_info=True)
+            return {"success": False, "error": "Could not deliver that reply."}
 
     def _enrich_chat_result_with_relationship(
         self, result: Dict[str, Any], npc

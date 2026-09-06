@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import apiClient from '../api/client'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
+import { apiErrorMessage } from '../utils/apiError'
 import logger from '../utils/logger'
 
 // Constants
@@ -353,7 +354,7 @@ export function useEventManager({
             })
 
             if (!data.success) {
-                showError(data.error || 'Event processing failed')
+                showError(apiErrorMessage(data, 'Event processing failed'))
                 return { success: false }
             }
 

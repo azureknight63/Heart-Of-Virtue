@@ -4,14 +4,15 @@ Integration tests for CombatStrategist against a real LLM provider.
 These tests make actual network/process calls and are EXCLUDED from the
 standard pytest run. Run them explicitly:
 
-    python -m pytest tests/integration/test_tactical_advisor_live.py -v
+    HOV_LIVE_LLM=1 python -m pytest tests/integration/test_tactical_advisor_live.py -v
 
-Prerequisites — at least one of:
-  1. Ollama running locally (MYNX_LLM_ENABLED=1 MYNX_LLM_PROVIDER=ollama)
-  2. OpenRouter API key  (MYNX_LLM_ENABLED=1 MYNX_LLM_PROVIDER=openrouter
-                          OPENROUTER_API_KEY=sk-...)
+(Without HOV_LIVE_LLM=1 the same command collects and SKIPS every test —
+a green run proves nothing.)
 
-If neither is configured the tests are skipped (not failed).
+HOV_LIVE_LLM=1 is the opt-in; the provider is read from .env by the live_env
+fixture in conftest.py. Gating on MYNX_LLM_ENABLED instead (as this module
+used to) can never work: tests/conftest.py pins that variable to 0 for the
+whole suite, so the module skipped itself unconditionally.
 
 What these tests validate
 ─────────────────────────
@@ -30,28 +31,43 @@ import os
 import time
 import pytest
 
-# ---------------------------------------------------------------------------
-# Skip entire module if LLM is not configured
-# ---------------------------------------------------------------------------
-
-def _llm_enabled() -> bool:
-    return os.getenv("MYNX_LLM_ENABLED", "0") in ("1", "true", "True")
-
-
 def _make_client():
-    """Return a GenericLLMClient. Returns None if unavailable."""
-    from ai.llm_client import GenericLLMClient
-    client = GenericLLMClient()
+    """Return the client the strategist actually uses in production, or None.
+
+    Deliberately ``CombatLLMAdapter`` and not a bare ``GenericLLMClient``. Two
+    reasons, both of which made this suite measure the wrong thing:
+
+    * ``CombatStrategist`` defaults to ``CombatLLMAdapter``, so a bare client
+      here exercised a different provider/model resolution path than
+      production — and silently ignored ``COMBAT_LLM_PROVIDER``/``_MODEL``,
+      the whole point of which is that combat can be pointed somewhere cheap.
+    * The base client path records no provider usage, so every run of this
+      suite drained the shared account-wide free tier invisibly: the metering
+      that decides whether NPC chat pre-emptively skips a spent provider never
+      saw these calls. The adapter is metered.
+    """
+    from ai.combat_strategist import CombatLLMAdapter
+    client = CombatLLMAdapter()
     if not client.available():
         return None
     return client
 
 
-# All tests in this module are skipped if LLM is not configured/reachable.
-pytestmark = pytest.mark.skipif(
-    not _llm_enabled(),
-    reason="MYNX_LLM_ENABLED not set — skipping live LLM integration tests",
-)
+# Opt-in gate. Duplicated (rather than imported from conftest) because
+# tests/integration has no __init__.py, so a relative import fails at
+# collection; a two-line env read is not worth adding a package for.
+def _live_llm_enabled() -> bool:
+    return os.getenv("HOV_LIVE_LLM", "0") in ("1", "true", "True")
+
+
+# Skip the whole module unless live LLM calls are explicitly opted into.
+# real_sleep: the suite-wide autouse fixture no-ops time.sleep, which would
+# collapse _get's retry pause against a rate-limited free tier.
+pytestmark = [pytest.mark.real_sleep]
+pytestmark.append(pytest.mark.skipif(
+    not _live_llm_enabled(),
+    reason="set HOV_LIVE_LLM=1 to run live LLM integration tests",
+))
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +103,52 @@ _MOVE_ADVANCE = {"name": "Advance", "available": True, "category": "Maneuver",
                  "fatigue_cost": 0, "description": "Move toward the enemy.", "targeted": False}
 _MOVE_PARRY = {"name": "Parry", "available": True, "category": "Defensive",
                "fatigue_cost": 3, "description": "Block and counter.", "targeted": False}
+
+
+def _charging(name, beats_until_resolve, damage_multiplier=1.0):
+    """A telegraphed enemy move, in the shape the real serializer emits.
+
+    ``beats_until_resolve`` is the ENGINE's countdown
+    (``Move.beats_until_resolve``, put on the wire by
+    ``CombatantSerializer._serialize_active_move``) and is the only field
+    ``CombatStrategist._incoming_beats`` reads. These fixtures used to carry
+    ``{"current_stage": ..., "beats_left": ...}`` — the shape of a
+    ``_beats_until_impact`` helper the strategist deleted when it stopped
+    re-walking the stage machine itself. Against the current code that returns
+    None, i.e. "nothing is incoming": the lethal-charge scenario below was
+    asserting that the model prefers Dodge against a prompt that contained no
+    threat at all, and passing.
+
+    ``damage_multiplier`` is the move's own power multiple
+    (``Move._DAMAGE_MULTIPLIER``); without it every telegraphed hit is
+    estimated at 1.0x and POTENTIALLY LETHAL never fires.
+    """
+    return {
+        "name": name,
+        "beats_until_resolve": beats_until_resolve,
+        "damage_multiplier": damage_multiplier,
+    }
+
+
+def _defensive_window_beats():
+    """The strategist's own "act now" threshold, read off the module.
+
+    Hard-coding it here is what broke these fixtures the first time.
+    """
+    from ai.combat_strategist import _DEFENSIVE_WINDOW_BEATS
+
+    return _DEFENSIVE_WINDOW_BEATS
+
+
+def _declared_multiplier(move_cls_name):
+    """A move's own ``_DAMAGE_MULTIPLIER``, read off the engine class.
+
+    Same reason: the serializer reads this attribute, so the fixture should
+    too rather than restating a number that can be retuned without it.
+    """
+    import src.moves as moves
+
+    return getattr(moves, move_cls_name)._DAMAGE_MULTIPLIER
 
 
 def _base_ctx(**overrides):
@@ -241,13 +303,18 @@ class TestTacticalJudgment:
     """
 
     def test_defensive_move_in_top_suggestions_when_lethal_incoming(self, strategist):
-        """A lethal charge (bui=1) should push Dodge or Parry into the top suggestions."""
+        """A lethal charge should push Dodge or Parry into the top suggestions.
+
+        The charge lands exactly ``_DEFENSIVE_WINDOW_BEATS`` beats out: the
+        last beat on which a Dodge cast now still resolves before the blow.
+        That is the situation the prompt's priority 2 is written for, so
+        anything closer would be asking the model to contradict its own
+        instructions rather than follow them.
+        """
         ctx = _base_ctx(available_moves=[_MOVE_SLASH, _MOVE_DODGE, _MOVE_PARRY, _MOVE_ADVANCE])
-        ctx["enemies"][0]["move_in_process"] = {
-            "name": "NpcAttack",
-            "current_stage": 1,
-            "beats_left": 1,  # one beat until impact, stage 1 → bui=1
-        }
+        ctx["enemies"][0]["move_in_process"] = _charging(
+            "NpcAttack", _defensive_window_beats()
+        )
         ctx["enemies"][0]["stats"]["damage"] = 200  # clearly lethal
         # Prompt includes ⚠ INCOMING + ⚠ POTENTIALLY LETHAL alert
         results = _get(strategist, ctx, max_suggestions=2)
@@ -433,11 +500,11 @@ class TestContextReachesLLM:
                     "distance": 2,
                     "position": {"x": 3, "y": 4},
                     "stats": {"damage": 25},
-                    "move_in_process": {
-                        "name": "SlimeVolley",
-                        "current_stage": 0,
-                        "beats_left": 2,
-                    },
+                    "move_in_process": _charging(
+                        "SlimeVolley",
+                        _defensive_window_beats(),
+                        _declared_multiplier("SlimeVolley"),
+                    ),
                     "status_effects": [],
                 },
                 {

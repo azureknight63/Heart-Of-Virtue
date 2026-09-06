@@ -1189,6 +1189,55 @@ class Move:  # master class for all moves
     # Concrete engine moves must declare a player-facing name. Internal `name`
     # values remain stable for command routing and AI logic.
     display_name = None
+    # Power multiple this move applies to its user's base damage.
+    #
+    # Declared HERE, on the base class, so it is part of the Move interface
+    # rather than a private attribute the serializer happens to probe for. The
+    # wire's `damage_multiplier` (src/api/serializers/combat.py) is read off
+    # it, and the Tactical Advisor decides POTENTIALLY LETHAL from that number
+    # — so a heavy move that leaves this at 1.0 understates itself to the
+    # model. Any move that hits for more (or less) than its user's raw damage
+    # overrides it. See TelegraphedSurge and GorranClub in src/moves/_npc.py.
+    #
+    # A move that ROLLS its power declares the band instead, as
+    # `_POWER_ROLL_MIN`/`_POWER_ROLL_MAX`, and derives this as their midpoint
+    # — the factor the hit CENTRES on, which is what the wire means. The
+    # midpoint and not the ceiling: `_estimate_incoming_damage`
+    # (ai/combat_strategist.py) already renders the wire value as a ±20%
+    # band and flags POTENTIALLY LETHAL when that band's midpoint reaches half
+    # the player's HP, so a ceiling here would double-count the high roll and
+    # cry wolf. `_rolled_power()` below is the single place the band is rolled,
+    # so the roll and the number derived from it cannot be retuned apart.
+    _DAMAGE_MULTIPLIER: float = 1.0
+
+    # Heat multipliers the shared outcome handlers below (parry/hit/miss)
+    # apply to Jean's combat heat. `Player.change_heat(mult)` multiplies the
+    # running heat and clamps it to [0.5, 10], so a value above 1 rewards the
+    # outcome and one below 1 punishes it.
+    #
+    # Named rather than inlined because each one prices a tuning decision, and
+    # because ONE of them is read from outside the engine: ai/combat_strategist
+    # quotes the cost of a miss in the combat LLM prompt and used to carry its
+    # own hand-copied 0.85 with nothing holding the pair in step. That is
+    # `_HEAT_MISS_PENALTY` alone; the rest are internal, and named for
+    # consistency rather than because anything else reads them. Values that
+    # repeat are separate constants on purpose — they are independently
+    # tunable outcomes that happen to agree today.
+    #
+    # These eight are every heat outcome that is a FIXED factor. There is a
+    # ninth, and it is deliberately not here: when Jean takes damage, `hit()`
+    # scales his heat by `1 - damage/maxhp`, a proportion of the blow rather
+    # than a constant, so there is no value to name. It stays inline at its
+    # call site, where the two operands are in scope.
+    _HEAT_PARRY_REWARD = 1.4  # Jean parries an incoming attack
+    _HEAT_PARRIED_PENALTY = 0.75  # Jean's own attack is parried
+    _HEAT_HIT_REWARD = 1.25  # Jean lands damage
+    _HEAT_ABSORBED_PENALTY = 0.75  # Jean's hit is fully absorbed by the target
+    _HEAT_ABSORB_REWARD = 1.25  # Jean's armour absorbs an incoming hit
+    _HEAT_DODGE_REWARD = 1.25  # Jean is missed while Dodging (stacks with the next)
+    _HEAT_EVADED_REWARD = 1.1  # Jean is missed at all
+    _HEAT_MISS_PENALTY = 0.85  # Jean's own attack misses
+
     # Damage type the move's weapon deals, derived in evaluate(). Declared here
     # so every read is safe before the first evaluate() -- preview_damage runs
     # for every known move on every combat poll, and a move restored from a
@@ -1784,6 +1833,24 @@ class Move:  # master class for all moves
     ):  # adjusts the move's attributes to match the current game state
         pass
 
+    def _rolled_power(self):
+        """The user's damage rolled through this move's declared power band.
+
+        For moves that declare `_POWER_ROLL_MIN`/`_POWER_ROLL_MAX`. Deliberately
+        NOT given defaults on this class: a move that calls this without
+        declaring a band should raise here rather than silently roll a
+        1.0–1.0 no-op, which would look exactly like a working roll.
+
+        Here rather than in each `evaluate()` because the expression stood
+        identically in five of them, and because `_DAMAGE_MULTIPLIER` is
+        derived from the same two bounds. One roll site means a retune cannot
+        move the roll while leaving the wire's midpoint behind — which is the
+        entire claim those derivations make.
+        """
+        return self.user.damage * random.uniform(
+            self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
+        )
+
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         # Check if user is player generally (by name or class, assuming Player class has no friend attr)
         is_user_player = (
@@ -1820,7 +1887,7 @@ class Move:  # master class for all moves
         )
         self.stage_beat[2] += 10  # add stagger time to the user
         if self.target.name == "Jean":
-            self.target.change_heat(1.4)
+            self.target.change_heat(self._HEAT_PARRY_REWARD)
             # Credit parry experience based on target's weapon if available, otherwise "Basic"
             if hasattr(self.target, "eq_weapon") and self.target.eq_weapon:
                 _ensure_weapon_exp(self.target)
@@ -1828,7 +1895,7 @@ class Move:  # master class for all moves
             else:
                 self.target.combat_exp["Basic"] += 15
         if self.user.name == "Jean":
-            self.user.change_heat(0.75)
+            self.user.change_heat(self._HEAT_PARRIED_PENALTY)
 
     def hit(self, damage, glance):
         # Defense-in-depth (issue #296): damage reaches HP here from many move
@@ -1888,7 +1955,7 @@ class Move:  # master class for all moves
             if hasattr(self.target, "clamp_hp"):
                 self.target.clamp_hp()
             if self.user.name == "Jean":
-                self.user.change_heat(1.25)
+                self.user.change_heat(self._HEAT_HIT_REWARD)
                 _ensure_weapon_exp(self.user)
                 self.user.combat_exp[self.user.eq_weapon.subtype] += damage / 4
             if self.target.name == "Jean":
@@ -1914,9 +1981,9 @@ class Move:  # master class for all moves
                 "yellow",
             )
             if self.user.name == "Jean":
-                self.user.change_heat(0.75)
+                self.user.change_heat(self._HEAT_ABSORBED_PENALTY)
             if self.target.name == "Jean":
-                self.target.change_heat(1.25)
+                self.target.change_heat(self._HEAT_ABSORB_REWARD)
                 self.target.combat_exp["Basic"] += 15
 
     def miss(self):
@@ -1925,13 +1992,13 @@ class Move:  # master class for all moves
         if self.target.name == "Jean":
             for state in self.target.states:
                 if state.name == "Dodging":
-                    self.target.change_heat(1.25)
+                    self.target.change_heat(self._HEAT_DODGE_REWARD)
                     self.target.combat_exp["Basic"] += 10
                     break
-            self.target.change_heat(1.1)
+            self.target.change_heat(self._HEAT_EVADED_REWARD)
             self.target.combat_exp["Basic"] += 5
         if self.user.name == "Jean":
-            self.user.change_heat(0.85)
+            self.user.change_heat(self._HEAT_MISS_PENALTY)
 
     def standard_viability_attack(self, subtypes=()):
         """

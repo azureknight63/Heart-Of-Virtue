@@ -3,7 +3,7 @@
 import logging
 from flask import Blueprint, request, jsonify
 
-from src.api.middleware.auth import get_session_and_player
+from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.services.validators import ensure_dict
 
 logger = logging.getLogger(__name__)
@@ -51,9 +51,9 @@ def start_combat():
 
         enemy_id = data["enemy_id"]
 
-        from flask import current_app
-
-        game_service = current_app.game_service
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         result = game_service.start_combat(
             player, enemy_id, session_id=session.session_id
@@ -120,9 +120,9 @@ def execute_move():
         target_id = data.get("target_id")
         direction = data.get("direction")
 
-        from flask import current_app
-
-        game_service = current_app.game_service
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         result = game_service.execute_move(
             player,
@@ -186,9 +186,9 @@ def get_combat_status():
         if error:
             return error
 
-        from flask import current_app
-
-        game_service = current_app.game_service
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         status = game_service.get_combat_status(
             player, session_id=session.session_id, session_data=session.data
@@ -212,11 +212,13 @@ def toggle_suggestions_pause():
         if error:
             return error
 
-        from flask import current_app
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         data = ensure_dict(request.get_json(silent=True))
         paused = bool(data.get("paused", False))
-        current_app.game_service.set_suggestions_paused(player, paused)
+        game_service.set_suggestions_paused(player, paused)
         return jsonify({"success": True, "paused": paused}), 200
 
     except Exception:
@@ -238,9 +240,11 @@ def abort_move():
         if error:
             return error
 
-        from flask import current_app
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
-        result = current_app.game_service.abort_move(player)
+        result = game_service.abort_move(player)
         if not result.get("success"):
             return jsonify(result), 400
         return jsonify(result), 200
@@ -282,9 +286,10 @@ def collect_loot():
                 400,
             )
 
-        from flask import current_app
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
-        game_service = current_app.game_service
         result = game_service.collect_combat_loot(player, item_names)
         return jsonify(result), 200
 

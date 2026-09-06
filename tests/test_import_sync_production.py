@@ -1,8 +1,11 @@
 """Guard: the production import path yields no bare<->src module duplication.
 
-This must run in a SUBPROCESS. In-process, tests/conftest.py installs a
-bare<->src aliasing hook, which would mask the very split this guards against.
-The subprocess reproduces the real production entry sequence (project root on
+This must run in a SUBPROCESS so it exercises the real production entry
+sequence rather than pytest's. (An earlier revision of this docstring said
+tests/conftest.py installs a bare<->src aliasing hook that the subprocess
+escapes; it does not, and has not since every local import moved to the
+canonical `src.` path -- conftest.py:1-3 says so explicitly.)
+The subprocess reproduces that entry sequence (project root on
 sys.path, no sync hook — src/import_sync.py was retired once every local
 import moved to the canonical `src.` path) and asserts the critical API/engine
 boundary modules resolve to a single object.

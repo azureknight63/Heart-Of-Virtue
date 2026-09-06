@@ -20,7 +20,6 @@ Examples:
 """
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -31,9 +30,21 @@ if str(ROOT) not in sys.path:
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(1, str(SRC_DIR))
 
-os.environ.setdefault("MYNX_LLM_ENABLED", "0")
-os.environ.setdefault("MYNX_FALLBACK_DELAY", "0")
-os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
+# Never let the driver reach a provider, a database, a mailbox or GitHub.
+# Three setdefaults on MYNX_* used to be the whole of it; they covered one
+# adapter and left NPC_CHAT_LLM_ENABLED, GITHUB_TOKEN, TURSO_*, every provider
+# key and OLLAMA_BASE_URL live. Same sweep as tools/inquisitor.py, from the
+# same definition, so the two cannot drift.
+#
+# ORDERING: the import below pulls in ai.llm_client, whose module body calls
+# load_project_env() -- so the real .env is fully loaded by the time the sweep
+# runs. That is deliberate: blank_outbound_env ASSIGNS "" rather than popping,
+# and load_dotenv(override=False) skips keys that are already present, so an
+# assigned blank survives every later loader while a popped one would be
+# refilled. See blank_outbound_env's docstring.
+from tests.llm_doubles import blank_outbound_env  # noqa: E402
+
+blank_outbound_env()
 
 # tkinter stub for headless
 if "tkinter" not in sys.modules:

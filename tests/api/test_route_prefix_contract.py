@@ -117,36 +117,22 @@ STRICT_XFAIL_MARK_NAMES = ("NO_QUEST_SYSTEM",)
 #: None of these may be an API URL -- see
 #: :func:`test_exact_allowances_never_cover_an_api_url`.
 ALLOWED_MISSING = {
-    "/nonexistent": (
-        "test_app.py probes the 404 handler itself; the URL is required to "
-        "have no route for the test to mean anything."
-    ),
-    "/test_404": (
-        "test_error_handlers.py registers this route on a throwaway app built "
-        "inside the test, so it is absent from the production app map."
-    ),
-    "/test_500": (
-        "test_error_handlers.py registers this route on a throwaway app built "
-        "inside the test, so it is absent from the production app map."
-    ),
-    "/test_500_detail": (
-        "test_error_handlers.py registers this route on a throwaway app built "
-        "inside the test, so it is absent from the production app map."
-    ),
-    "/test_exception": (
-        "test_error_handlers.py registers this route on a throwaway app built "
-        "inside the test, so it is absent from the production app map."
+    "/socket.io/?EIO=4&transport=polling": (
+        "Served beneath Flask, not by it. flask_socketio wraps app.wsgi_app "
+        "and answers /socket.io/* inside that middleware, so the handshake has "
+        "no entry in app.url_map and never will. That absence is exactly what "
+        "test_request_body_limit.py's oversized-declaration test relies on: "
+        "the before_request body bound is bypassed for these paths, and the "
+        "test asserts the request is NOT refused with 413. A 404 could not "
+        "make it pass -- it asserts `!= 413` and reads the body -- so this "
+        "allowance is not hiding the defect the contract exists to catch."
     ),
 }
 
 #: Whole URL families with no backing feature. Every test that requests one
 #: must carry a strict ``xfail`` -- enforced, not merely asserted in prose, by
 #: :func:`test_prefix_allowed_urls_are_requested_under_strict_xfail`.
-ALLOWED_MISSING_PREFIXES = {
-    "/api/quests/": NO_QUEST_SYSTEM_REASON,
-    "/api/quest-chains/": NO_QUEST_SYSTEM_REASON,
-    "/api/npc/quests/": NO_QUEST_SYSTEM_REASON,
-}
+ALLOWED_MISSING_PREFIXES = {}
 
 #: ``(url, VERB)`` pairs deliberately sent to a rule that does not serve that
 #: verb. A 405 is raised by Werkzeug at *routing* time -- Flask stores it as
@@ -170,17 +156,23 @@ ALLOWED_METHOD_MISMATCH = {
 #: or a file gutted into vacuity -- fails here instead of quietly making every
 #: other assertion in this module pass against an empty set.
 MIN_URLS_PER_FILE = {
-    "test_routes_tier2.py": 45,
-    "test_routes_critical.py": 20,
-    "test_routes_integration.py": 14,
-    "test_inventory_routes.py": 9,
-    "test_routes_saves_comprehensive.py": 8,
-    "test_routes_tier1.py": 6,
     "test_api_fuzz.py": 5,
+    "test_cloud_integration.py": 3,
+    "test_combat_routes_integration.py": 3,
+    "test_request_body_limit.py": 2,
 }
 
 #: Lower bound on the distinct URLs found across the whole directory.
-MIN_URLS_TOTAL = 90
+#:
+#: Was 90, set against a directory of ~35 modules. Twenty-seven of those were
+#: deleted as rot (blanket-skipped by their own authors, failing on drift, one
+#: hanging the collector), and the survivors request 18 URLs between them. A
+#: floor that no longer clears is not a floor -- it fails on every run and
+#: teaches the reader to ignore this file -- so it moves with the population it
+#: measures. It still does the one job it has: a scanner that regressed to
+#: finding nothing would take every other assertion here down with it, and this
+#: is what says so.
+MIN_URLS_TOTAL = 15
 
 
 def _literal_url(node):

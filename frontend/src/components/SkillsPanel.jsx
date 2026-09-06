@@ -7,6 +7,7 @@ import GameText from './GameText'
 import GamePanel from './GamePanel'
 import { colors, spacing } from '../styles/theme';
 import { displayNameOf } from '../utils/combatMoveStatus';
+import { apiErrorMessage } from '../utils/apiError';
 
 /**
  * SkillsPanel - View and learn character skills categorized by discipline
@@ -52,7 +53,7 @@ export default function SkillsPanel({ player, onClose }) {
       }
     } catch (err) {
       console.error('Failed to learn skill:', err)
-      showError(err.response?.data?.error || 'Failed to learn skill')
+      showError(apiErrorMessage(err, 'Failed to learn skill'))
     }
   }
 

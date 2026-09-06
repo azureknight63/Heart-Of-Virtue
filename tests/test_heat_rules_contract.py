@@ -47,13 +47,45 @@ _FORMULA_MARKER = "("
 _NON_NUMERIC = re.compile(r"[^\d.]")
 
 
+def _numeric_constants(tree):
+    """``{name: value}`` for every numeric constant assigned in ``tree``.
+
+    Covers module-level names (``HEAT_GAIN_ON_HIT``) and class attributes
+    (``Move._HEAT_PARRY_REWARD``) alike, keyed on the bare name, because
+    the call sites reach them as ``NAME`` and ``self.NAME`` respectively and
+    nothing in this file reuses a name across both scopes.
+    """
+    values = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not (
+            isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, (int, float))
+            and not isinstance(node.value.value, bool)
+        ):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                values[target.id] = float(node.value.value)
+    return values
+
+
 def _engine_heat_multipliers():
-    """Every literal multiplier passed to `change_heat()` in the engine.
+    """Every multiplier passed to `change_heat()` in the engine.
 
     Uses `ast` rather than a regex so a reformatted or line-wrapped call site
     is still found -- one of the nine spans multiple lines today.
+
+    Resolves a NAMED argument as well as a literal one. The scan used to accept
+    only `ast.Constant`, on the assumption that every call site spelled its
+    number inline; when the nine tuning values were lifted into named class
+    attributes (`self._HEAT_PARRY_REWARD` and friends) it silently found zero
+    multipliers and this whole contract stopped comparing anything. That is why
+    `test_the_scans_are_not_silently_empty` exists, and it is what caught it.
     """
     tree = ast.parse(ENGINE_SOURCE.read_text())
+    names = _numeric_constants(tree)
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -65,7 +97,11 @@ def _engine_heat_multipliers():
         arg = node.args[0]
         if isinstance(arg, ast.Constant) and isinstance(arg.value, (int, float)):
             found.append(round(float(arg.value), 4))
-        # A computed argument (the `1 - damage/maxhp` case) has no literal to
+        elif isinstance(arg, ast.Name) and arg.id in names:
+            found.append(round(names[arg.id], 4))
+        elif isinstance(arg, ast.Attribute) and arg.attr in names:
+            found.append(round(names[arg.attr], 4))
+        # A computed argument (the `1 - damage/maxhp` case) has no value to
         # compare; it is represented in the tooltip by the formula row.
     return sorted(found)
 

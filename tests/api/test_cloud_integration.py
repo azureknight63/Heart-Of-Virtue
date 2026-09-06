@@ -1,3 +1,32 @@
+"""Registration, login and cloud-save persistence against a REAL database.
+
+This file writes real rows. ``auth_service.create_user`` has no TESTING
+guard, and ``src/api/db.py`` reads ``TURSO_DATABASE_URL`` straight from the
+environment rather than from Flask config, so a process with a configured
+``.env`` INSERTs into whatever database that URL names.
+
+Two things stop that, and only together:
+
+* ``tests/conftest.py`` blanks ``TURSO_DATABASE_URL``/``TURSO_AUTH_TOKEN``
+  unconditionally, so under pytest there is no database to reach.
+* the ``xfail(strict=True)`` below turns that into an EXPECTED failure --
+  and, crucially, into a loud one the day the blanking stops working. An
+  XPASS here means a test just talked to a real database.
+
+That second half is why this is an xfail and not the opt-in skip it was
+briefly rewritten as. A skip reports the same "nothing ran" whether the
+guard is holding or has quietly come off; only the strict xfail can tell
+those apart. An opt-in variable would not have helped either: the blanking
+in ``tests/conftest.py`` is unconditional, so ``HOV_LIVE_DB=1`` alone would
+not have made this run. Running it for real means restoring the credentials
+the way ``tests/integration/conftest.py`` does for the live LLM suite.
+
+The exposure was hidden for months by ``pytest.ini``'s ``norecursedirs``,
+and surfaced when the directory was briefly un-excluded: the coverage
+measurement that justified that rescue never asked whether a rescued module
+had external side effects.
+"""
+
 import logging
 import os
 

@@ -2,15 +2,59 @@
 
 Only 404/405 (raised by Flask's own routing) and 500/generic exceptions
 (raised by unhandled errors) are ever reached through Flask's error-handler
-dispatch. Every other error status (400/401/403/422/429/503) is produced by
-routes and middleware building their own JSON response inline — see
+dispatch. Every other error status (400/401/403/413/422/429/503) is produced
+by routes and middleware building their own JSON response inline — see
 `src/api/middleware/auth.py` for the 401 convention — so no handler is
 registered for those; a registered-but-unreachable handler is worse than no
 handler, since it invites drift between two response shapes for the same
 status code.
+
+413 used to be the exception, and it was that rule's own counterexample. The
+handler was registered for a ``RequestEntityTooLarge`` said to escape a route
+that read a chunked body. No such exception exists on this stack: Werkzeug's
+``LimitedStream.readall`` stops at ``MAX_CONTENT_LENGTH`` and *returns* the
+truncated bytes — only a further read raises, and ``get_data`` never makes one
+(verified against Werkzeug 3.1.8). The handler could not be reached by any
+request, and the test covering it dispatched the exception by hand, so it
+could not fail either. Both are gone;
+``src/api/app.py::_register_request_limits`` now bounds the streamed case too
+and answers it inline, which is the single 413 shape this API emits. If a
+``RequestEntityTooLarge`` ever does escape a view — Werkzeug also raises it
+for ``max_form_memory_size`` and ``max_form_parts``, neither of which this API
+can hit today because no route reads ``request.form`` or ``request.files`` —
+it lands in ``generic_error`` below as a 500, exactly as it did while the 413
+handler was registered.
 """
 
+import logging
+
 from flask import jsonify
+
+# The 500 and unhandled-exception handlers below are the app's highest-volume
+# traceback source. They used to call ``traceback.print_exc()``, which writes
+# straight to stderr and never touches the logging pipeline — so
+# ``src/api/app.py``'s ``_RedactSecretsFilter``, installed on every handler
+# this app owns precisely to keep credentials out of emitted tracebacks, never
+# saw a single one of them. ``logger.exception`` routes the same detail
+# through that filter, and into LOG_FILE with it.
+logger = logging.getLogger(__name__)
+
+
+def _request_label():
+    """``METHOD /path`` for the current request, or ``"<no request>"``.
+
+    ``traceback.print_exc()`` gave the traceback and nothing else, so a 500 in
+    the log could not be tied to the call that produced it. Method and path
+    only, deliberately: a query string or a request body can carry a token,
+    and there is no reason to hand one to the redactor to catch when it need
+    never be logged in the first place.
+    """
+    try:
+        from flask import request
+
+        return "%s %s" % (request.method, request.path)
+    except Exception:  # pragma: no cover - outside a request context
+        return "<no request>"
 
 
 def register_error_handlers(app):
@@ -52,9 +96,7 @@ def register_error_handlers(app):
     def internal_error(error):
         """Handle 500 Internal Server Error."""
         # Log the detail server-side; never leak str(error) to clients.
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Unhandled 500 error serving %s", _request_label())
         return (
             jsonify(
                 {
@@ -70,9 +112,7 @@ def register_error_handlers(app):
     @app.errorhandler(Exception)
     def generic_error(error):
         """Handle any unhandled exceptions."""
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Unhandled exception serving %s", _request_label())
 
         return (
             jsonify(

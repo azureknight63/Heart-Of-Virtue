@@ -1910,7 +1910,22 @@ class TestAllocateLevelUpPointsExtra:
         assert mock_player.pending_attribute_points == 0
         assert mock_player.pending_level_ups == []
 
-    def test_refresh_stat_bonuses_exception_swallowed(self, game_service, mock_player):
+    def test_refresh_stat_bonuses_failure_is_reported_not_swallowed(
+        self, game_service, mock_player
+    ):
+        """This used to assert ``success is True``, and that was the defect.
+
+        ``refresh_stat_bonuses`` recomputes every live stat from its ``*_base``
+        value -- it is the step that makes the points the player just spent
+        actually count. Swallowing its failure returned ``success: True``
+        alongside a ``stats`` block computed from a player whose bonuses had
+        not been recomputed: the allocation accepted, the numbers unchanged,
+        nothing said.
+
+        Same mechanism as the combat-exit bug -- skip the refresh and the stat
+        stays wrong with nothing to put it right -- so it now answers failure
+        and logs the exception for the operator.
+        """
         mock_player.pending_attribute_points = 3
         mock_player.strength_base = 10
 
@@ -1919,7 +1934,10 @@ class TestAllocateLevelUpPointsExtra:
         ), patch.object(game_service, "get_player_stats", return_value={}):
             result = game_service.allocate_level_up_points(mock_player, "strength_base", 1)
 
-        assert result["success"] is True
+        assert result["success"] is False
+        # And no stats block, because the one it could have built is the stale
+        # one the player must not be shown as though it were the new total.
+        assert "stats" not in result
 
 
 # ============================================================================
@@ -2001,7 +2019,12 @@ class TestNpcChat:
         mock_player.current_room.npcs_here = [npc]
         result = game_service.npc_chat_open(mock_player, "Gorran")
         assert result["success"] is False
-        assert "Failed to open chat" in result["error"]
+        # The exception text used to be interpolated into the client-facing
+        # error and rendered verbatim in the player's panel; provider SDK
+        # exceptions stringify to endpoint URL, model id, status body and
+        # request id. The detail now stays in the server log.
+        assert result["error"] == "Could not start that conversation."
+        assert "no llm" not in result["error"]
 
     def test_npc_chat_open_exception_clears_active_chat_flag(self, game_service, mock_player):
         """Regression test for #336: a chat_open() failure must not leave
@@ -2087,7 +2110,8 @@ class TestNpcChat:
         mock_player.current_room.npcs_here = [npc]
         result = game_service.npc_chat_respond(mock_player, "Gorran", "hi")
         assert result["success"] is False
-        assert "Failed to respond" in result["error"]
+        assert result["error"] == "Could not deliver that reply."
+        assert "bad" not in result["error"]
 
     def test_enrich_chat_result_no_reputation_key(self, game_service):
         result = {"success": True}

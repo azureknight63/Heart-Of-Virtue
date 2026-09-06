@@ -1,10 +1,11 @@
 """World navigation routes."""
 
 import logging
+import threading
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
-from src.api.middleware.auth import get_session_and_player
+from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.services.validators import (
     validate_direction,
     validate_string_field,
@@ -13,6 +14,142 @@ from src.api.services.validators import (
 
 world_bp = Blueprint("world", __name__)
 _log = logging.getLogger(__name__)
+
+# One-shot latch for the process-wide background services kicked off by the
+# first real world load. See _ensure_background_services_started.
+#
+# It stays here rather than moving to ``src/api/app.py``, and that is a
+# decision rather than a deferral. Three reasons, heaviest first:
+#
+# 1. The scope of a latch has to match the scope of what it guards, and what it
+#    guards is process-global, not app-global. Both callees are process
+#    singletons — ``NpcChatLLMAdapter``'s prewarm is class-level state, and
+#    ``start_digest_scheduler()`` owns a module-level thread. So the natural
+#    way for app.py to own this (a flag on the ``app``, or ``app.extensions``)
+#    would be the *wrong* scope: the second app built in a process — which the
+#    test suite does constantly — would re-enter both. What is left is a module
+#    global in app.py: the same process-wide mutable it already is, one module
+#    further from its only reader.
+# 2. This is not startup wiring, which is the premise the move rests on.
+#    ``create_app()`` runs in every test and every bug-hunt run, and hanging
+#    real network prewarm off it is exactly what the TESTING gate below exists
+#    to prevent. The work is deliberately lazy and keyed to the first *real*
+#    request; GET /world is that event, so the trigger stays here regardless,
+#    and a latch parked away from its only trigger is harder to follow, not
+#    easier.
+# 3. Reading it from app.py means an import edge from the hottest route in the
+#    game to the heaviest module in the package, to fetch a boolean.
+#
+# The variant worth revisiting is a dedicated ``src/api/background_services.py``
+# owning the latch and both starts together — but only once a second trigger
+# exists. With one trigger it is a module for three lines of state.
+_background_services_lock = threading.Lock()
+_background_services_started = False
+
+
+def _reset_background_services() -> None:
+    """Re-arm the latch. Test-only.
+
+    The latch outlives any one test, so a test that trips it turns every later
+    one into a silent no-op — which is an ordering dependency, not a test. The
+    reset is exposed as a function rather than left to an assignment on
+    ``world._background_services_started`` at the call site, so the
+    invariant has one owner and the global stays private to this module.
+    """
+    global _background_services_started
+    with _background_services_lock:
+        _background_services_started = False
+
+
+def _ensure_background_services_started(app):
+    """Start the process-wide LLM background services, once.
+
+    ``GET /api/world`` is simply the earliest point at which the process is
+    known to be serving a real session, which is why the startup wiring hangs
+    off it — but it is also the hottest route in the game, so everything here
+    is behind a single module-level latch.
+
+    The latch earns its keep on the *imports*, not on the callees. Both
+    services are individually idempotent — ``start_digest_scheduler()`` latches
+    every terminal branch, including the unconfigured ones, and ``prewarm()``
+    claims its attempt under a lock — so re-entering them is cheap. Reaching
+    them is not: ``from ai.llm_client import ...`` pulls in a large module
+    that imports ``requests`` and calls ``load_project_env()``, and an
+    unlatched route would pay that import lookup plus two function calls on the
+    request thread for the rest of the process's life.
+
+    Each service gets its own ``try``, so a failure in one cannot take the
+    other with it. They are unrelated, and one shared block meant an exception
+    raised before ``start_digest_scheduler()`` disabled the digest for the
+    process lifetime behind a single warning about "background services".
+
+    Gated on TESTING (deliberately *without* latching, so a test app can never
+    poison a later real one in the same process): ``prewarm()`` performs real
+    network discovery/validation, so without this every suite or bug-hunt
+    world load would spend free-tier requests and mutate class-level LLM state
+    on a daemon thread, after the per-test reset fixtures have already run.
+    The digest scheduler is gated for the same reason feedback.py's GitHub
+    issue filing is — once a webhook is configured it posts real analytics to
+    Discord.
+    """
+    global _background_services_started
+
+    if _background_services_started or app.config.get("TESTING"):
+        return
+
+    with _background_services_lock:
+        if _background_services_started:
+            return
+        # Latch before the work, not after: a failure here must not re-run on
+        # every subsequent request.
+        _background_services_started = True
+
+        # WARNING, not DEBUG, in both handlers below: WARNING is Python's root
+        # default, which this app deliberately leaves in place
+        # (``app.py::_configure_logging`` sets no level at all unless
+        # ``LOG_LEVEL`` is), so a debug-level record is invisible in exactly
+        # the runs where these services silently failed to start.
+
+        try:
+            from ai.llm_client import NpcChatLLMAdapter
+
+            # Eagerly prewarm the NPC chat LLM adapter so OpenRouter
+            # discovery/validation doesn't run on the first chat request and
+            # add latency there. It runs on a daemon thread because the
+            # constructor does real network discovery and model validation —
+            # seconds of blocking I/O — and gunicorn runs a single worker, so
+            # inline it would stall this response and every concurrent request
+            # behind it. It does not hold a lock for that duration: prewarm()
+            # claims the attempt under _instances_lock and then builds outside
+            # it, so concurrent get_instance()/is_prewarmed() callers are not
+            # starved.
+            if not NpcChatLLMAdapter.is_prewarmed():
+                _log.info("Triggering NPC chat LLM prewarm after map load...")
+                threading.Thread(
+                    target=NpcChatLLMAdapter.prewarm,
+                    name="npc-chat-prewarm",
+                    daemon=True,
+                ).start()
+        except Exception:
+            _log.warning("NPC chat LLM prewarm failed to start", exc_info=True)
+
+        try:
+            from ai.provider_digest import start_digest_scheduler
+
+            # Returns whether a scheduler thread actually started; discarding
+            # it left "webhook configured but nothing scheduled" invisible.
+            if start_digest_scheduler():
+                _log.info("Provider digest scheduler started")
+            else:
+                # The failure case gets the level that is actually visible:
+                # logging "started=False" at INFO reported the outage into a
+                # sink nobody was listening to.
+                _log.warning(
+                    "Provider digest scheduler did not start "
+                    "(no webhook configured, or already running)"
+                )
+        except Exception:
+            _log.warning("Provider digest scheduler failed to start", exc_info=True)
 
 
 @world_bp.route("/world", methods=["GET"])
@@ -40,29 +177,18 @@ def get_current_room():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
-        game_service = None
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         room = game_service.get_current_room(player, session.data)
 
-        # Debug: Check if room has error
         if "error" in room:
             return jsonify({"success": False, "error": room["error"]}), 404
+
+        _ensure_background_services_started(current_app)
 
         return jsonify({"success": True, "room": room}), 200
 
@@ -102,7 +228,7 @@ def move_player():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "direction" not in data:
@@ -126,20 +252,9 @@ def move_player():
         if not is_valid:
             return jsonify({"success": False, "error": direction_error}), 400
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         result = game_service.move_player(
             player, direction, session.data, session_id=session.session_id
@@ -189,7 +304,7 @@ def submit_event_input():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "event_id" not in data or "user_input" not in data:
@@ -229,20 +344,9 @@ def submit_event_input():
         if validation_error:
             return jsonify({"success": False, "error": validation_error}), 400
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         # Process the event with user input
         result = game_service.process_event_input(
@@ -302,7 +406,7 @@ def get_tile():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         # Get query parameters
         x_str = request.args.get("x")
@@ -333,20 +437,9 @@ def get_tile():
                 400,
             )
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         tile = game_service.get_tile(player, x, y)
         if "error" in tile:
@@ -390,17 +483,11 @@ def get_explored_tiles():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify({"success": False, "error": "Game service not initialized"}),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         explored_tiles = game_service.get_explored_tiles(player)
 
@@ -449,7 +536,7 @@ def get_tiles_batch():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "coordinates" not in data:
@@ -487,20 +574,9 @@ def get_tiles_batch():
                 400,
             )
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         tiles = []
         for coord in coordinates:
@@ -555,22 +631,11 @@ def get_available_commands():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         commands_data = game_service.get_available_commands(player)
 
@@ -614,7 +679,7 @@ def interact_with_target():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         data = ensure_dict(request.get_json(silent=True))
         if not data or "target_id" not in data or "action" not in data:
@@ -640,20 +705,9 @@ def interact_with_target():
 
         quantity = data.get("quantity")
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         result = game_service.interact_with_target(
             player,
@@ -701,22 +755,11 @@ def trigger_room_events():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         # Get current tile
         tile = game_service.get_current_tile_object(player)
@@ -765,7 +808,7 @@ def get_pending_events():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
         pending_events = []
         if "pending_events" in session.data:
@@ -799,22 +842,11 @@ def search_room():
     try:
         session_manager, session, player, error = get_session_and_player()
         if error:
-            return error[0], error[1]
+            return error
 
-        from flask import current_app
-
-        game_service = current_app.game_service
-
-        if not game_service:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Game service not initialized",
-                    }
-                ),
-                500,
-            )
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
 
         result = game_service.search(player)
 

@@ -4,13 +4,38 @@ import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameText from './GameText'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
+import { lookupOr } from '../utils/lookup'
 
-const LOG_ENTRY_COLORS = {
-  damage: colors.danger,
-  heal: colors.success,
-  ability: colors.accent,
-  info: colors.text.muted,
-  system: colors.gold
+/**
+ * Colour per log-entry `type`, keyed on the ENGINE'S vocabulary.
+ *
+ * It used to be keyed `damage`/`heal`/`ability`/`info`/`system`, which is a
+ * vocabulary nothing emits three-fifths of: no combat-log writer anywhere in
+ * the engine has ever produced `damage`, `heal` or `ability`. Meanwhile
+ * `combat` — `_add_log_entry`'s default in src/api/combat_adapter.py, and so
+ * the type of very nearly every line the player reads — was absent, and fell
+ * through to the fallback. The table was, in effect, doing nothing.
+ *
+ * The whole vocabulary, and where each is minted:
+ *   combat         src/api/combat_adapter.py's `_add_log_entry` default, plus
+ *                  the narration replayed by src/api/services/game_service.py.
+ *                  The body text of the fight; deliberately the plain reading
+ *                  colour, since colouring the majority colours nothing.
+ *   player_action  the adapter's echo of the move Jean committed to.
+ *   system         victory, defeat, and enemy-alert lines.
+ *   info           the Check-battlefield readouts in src/moves/_utility.py.
+ *   animation      bookkeeping for the battlefield, never rendered — filtered
+ *                  out of `visibleEntries` below, which is why it is the one
+ *                  engine type with no colour here.
+ *
+ * CombatLog.test.jsx derives that list from the Python and fails if this table
+ * and the engine stop agreeing in either direction.
+ */
+export const LOG_ENTRY_COLORS = {
+  combat: colors.text.main,
+  player_action: colors.primary,
+  system: colors.gold,
+  info: colors.text.muted
 }
 
 export default function CombatLog({ log, className = '', allowResize = true, isMyTurn = false }) {
@@ -135,7 +160,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
                 </GameText>
               )}
               {visibleEntries.map((entry, idx) => {
-                const textColor = LOG_ENTRY_COLORS[entry.type] || colors.text.main
+                const textColor = lookupOr(LOG_ENTRY_COLORS, entry.type, colors.text.main)
 
                 return (
                   <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>

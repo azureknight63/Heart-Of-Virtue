@@ -6,6 +6,7 @@ It captures output, manages state between API calls, and processes commands
 without blocking for user input.
 """
 
+from src import functions
 import contextlib
 import uuid
 import threading
@@ -68,6 +69,47 @@ _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 ABORTABLE_MIN_PREP_BEATS = 8
 
 logger = logging.getLogger(__name__)
+
+
+def _warn(message):
+    """Report a handled failure through the app logger, without ever raising.
+
+    These call sites all sit inside an ``except`` block, and they used to call
+    ``print``. ``print`` is not exception-free -- ``UnicodeEncodeError`` on a
+    cp1252 Windows console, ``ValueError`` on a stdout a WSGI server has closed
+    -- so a diagnostic could escape the very handler written to swallow the
+    fault it was describing.
+
+    The logger, not stdout, for the second half of the same reason: every
+    handler this app installs carries ``_RedactSecretsFilter`` (see
+    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    that reason and these were left behind.
+    """
+    try:
+        logger.warning("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
+
+
+def _fault(message):
+    """Log a handled exception WITH its traceback, without ever raising.
+
+    The companion to :func:`_warn`, for the sites that used
+    ``traceback.print_exc()``. That call writes to stderr directly, so the
+    traceback -- the part most likely to contain a path, a connection string
+    or an interpolated secret -- was the one thing bypassing
+    ``_RedactSecretsFilter``. ``exc_info=True`` routes it through the logger
+    instead. ``handlers/error_handler.py`` was moved off ``print_exc`` for
+    exactly this reason; these were left behind.
+
+    Call only from inside an ``except`` block: ``exc_info`` needs a live
+    exception to describe.
+    """
+    try:
+        logger.exception("%s", message)
+    except Exception:  # pragma: no cover - a diagnostic must not have a fault
+        pass
 
 
 #: Strip the ``enemy_``/``ally_`` prefix, leaving the bare combatant handle.
@@ -913,7 +955,7 @@ class ApiCombatAdapter:
                         room = f"combat_{self.session_id}"
                         current_app.socketio.emit(LOG_EVENT, entry, room=room)
                 except Exception as e:
-                    print(f"[SOCKET ERROR] Failed to emit log: {e}")
+                    _warn(f"[SOCKET ERROR] Failed to emit log: {e}")
 
     def _reset_animation_seq(self):
         """Start the per-fight animation sequence over (new combat only).
@@ -1217,7 +1259,7 @@ class ApiCombatAdapter:
                     grid_height=grid_h,
                 )
             except Exception as e:
-                print(f"Warning: Position initialization failed: {e}")
+                _warn(f"Warning: Position initialization failed: {e}")
                 # Fallback to old proximity system
                 for ally in self.player.combat_list_allies:
                     if not hasattr(ally, "combat_proximity"):
@@ -1382,18 +1424,14 @@ class ApiCombatAdapter:
                             room=f"combat_{self.session_id}",
                         )
                 except Exception:
-                    import traceback
-
-                    traceback.print_exc()
+                    _fault("failed to emit the battle state over the socket")
             return result
 
         except Exception as e:
-            import traceback
-
-            error_msg = (
-                f"Combat initialization error: {str(e)}\n{traceback.format_exc()}"
-            )
-            print(error_msg)
+            # `_fault` carries the traceback via exc_info, so it is no
+            # longer formatted into the message by hand.
+            error_msg = f"Combat initialization error: {e}"
+            _fault(error_msg)
             return {
                 "error": "Failed to initialize combat",
                 "details": str(e),
@@ -2794,7 +2832,17 @@ class ApiCombatAdapter:
                     # Gather context
                     all_moves = self._get_available_moves()
                     ctx = {
-                        "player": CombatantSerializer.serialize_combatant(self.player),
+                        "player": {
+                            **CombatantSerializer.serialize_combatant(self.player),
+                            # serialize_combatant carries no consumables key, so
+                            # without this the tactical prompt renders
+                            # "Consumables: [None]" on every turn while telling the
+                            # model to prefer UseItem. Same list the combat state
+                            # sends to the client as `player_consumables`.
+                            "consumables": CombatStateSerializer._get_consumables(
+                                self.player
+                            ),
+                        },
                         "enemies": [
                             CombatantSerializer.serialize_combatant(
                                 e, reference=self.player
@@ -2966,9 +3014,11 @@ class ApiCombatAdapter:
           inside :meth:`_handle_victory`, i.e. *before* its snapshot — the
           victory payload is about exp and drops, not about who is still
           standing.
-        * **Engine state.** Victory awards exp, recharges equip states, resets
-          fatigue and fires the drop/level-up summary; defeat writes a
-          four-key game-over summary and nothing else.
+        * **Engine state.** Victory awards exp, resets fatigue and fires the
+          drop/level-up summary; defeat writes a four-key game-over summary
+          instead. Both strip departed states and recharge single-use equip
+          states -- that half is not a difference, and
+          ``tests/test_end_combat_cleanup.py`` holds all four exits to it.
         """
         with self._beat_lock:
             beat_states = [] if beat_states is None else beat_states
@@ -2999,6 +3049,24 @@ class ApiCombatAdapter:
                 "game_over": True,
             }
 
+            # THE FOURTH EXIT. Defeat is a combat exit like flee, load and
+            # victory, and it is the one that keeps getting missed: the first
+            # pass at this was written against a list of "three exits", and the
+            # guard meant to hold it grepped whole FILES for the name -- so
+            # this file satisfied it through the victory call while the
+            # omission here sat invisible. The docstring above calls the
+            # difference between the two settle_* paths deliberate; this part
+            # of it was not.
+            #
+            # Without these a player defeated with Dodging up keeps the state
+            # and its finesse delta on the live Player: State.process
+            # decrements neither clock outside combat and nothing else removes
+            # it. tests/test_end_combat_cleanup.py finds the exits by AST now,
+            # which is what caught this.
+            functions.end_combat_cleanup(self.player)
+            self.player.recharge_equip_states()
+            self.player.current_move = None
+
             result = self._publish_terminal_state(beat_states)
 
             # Tear the roster down only after the state snapshot, so the defeat
@@ -3028,6 +3096,18 @@ class ApiCombatAdapter:
         self.awaiting_input = False
         self.victory_deferred = False
         self.player.fatigue = self.player.maxfatigue
+        # Victory used to strip NOTHING, so a combat-only state such as
+        # Dodging survived it forever: State.process decrements neither
+        # clock out of combat, and nothing else removes it. Flee and load
+        # stripped (without refreshing); victory did not strip at all.
+        #
+        # There are FOUR exits, not the three that comment used to claim --
+        # defeat (`_execute_move_inner`) is the fourth and was missed by the
+        # first pass. All four now call the engine, and
+        # `tests/test_end_combat_cleanup.py` locates them by AST rather than
+        # by grepping for the name, which is what let a whole file pass on
+        # the strength of one call site.
+        functions.end_combat_cleanup(self.player)
         # Recharge single-use equip states (e.g. PhoenixRevive) consumed this battle
         self.player.recharge_equip_states()
 

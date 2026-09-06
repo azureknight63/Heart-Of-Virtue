@@ -125,6 +125,24 @@ ALLY_PRECISION_HIT_CHANCE_BASE = 83
 class NpcAttack(Move):  # basic attack function, NPCs only
     display_name = 'Attack'
     web_animation = "attack"
+
+    # The generic NPC swing's power band, and _DAMAGE_MULTIPLIER as its
+    # midpoint — the same declaration GorranClub, VenomClaw, SpiderBite and
+    # BatBite make, and documented once on ``Move`` (src/moves/_base.py).
+    #
+    # This class needs it MORE than they do, not less. It is the most common
+    # attack in the game, and it is the base of the TelegraphedSurge family,
+    # whose factors are applied on top of the roll below. It nevertheless sat
+    # outside the convention: the roll was inline, and because the class
+    # declared no _DAMAGE_MULTIPLIER it inherited Move's 1.0 — which the
+    # midpoint of (0.8, 1.2) happens to equal, so the wire was right by
+    # coincidence rather than by construction. Reflection over ``__dict__``
+    # (tests/test_npc_moves_coverage.py) skips inherited values by design, so
+    # the one move every NPC uses was in neither the convention nor its guard.
+    _POWER_ROLL_MIN = 0.8
+    _POWER_ROLL_MAX = 1.2
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     # Subclasses that declare their own mvrange in __init__ (e.g. ranged
     # attacks like MineralSpit/WailStrike) must set this True so evaluate()
     # stops clobbering it back to the NPC's generic melee range every beat
@@ -210,7 +228,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
             narrate(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
             return
 
-        power = self.user.damage * random.uniform(0.8, 1.2)
+        power = self._rolled_power()
         speed = _npc_speed_divisor(self.user)
         prep = int(50 / speed)
         if prep < 1:
@@ -371,7 +389,9 @@ class TelegraphedSurge(NpcAttack):
     constants and supply flavour text; the mechanics are shared here.
 
     Subclass interface:
-        _DAMAGE_MULTIPLIER  float  — final power = NpcAttack power × this
+        _DAMAGE_MULTIPLIER  float  — declared and documented on ``Move``
+                                     (src/moves/_base.py); evaluate() below
+                                     scales NpcAttack's rolled power by it
         _EXTRA_PREP_BEATS   int    — extra beats added to prep phase (dodge window)
         _prep_text(npc)     str    — yellow telegraph line shown during wind-up
         _hit_text(npc, target_name)  str  — red line shown on impact
@@ -381,7 +401,6 @@ class TelegraphedSurge(NpcAttack):
 
     web_animation = "shockwave"
 
-    _DAMAGE_MULTIPLIER = 1.0
     _EXTRA_PREP_BEATS = 0
 
     def _prep_text(self, npc):
@@ -491,6 +510,17 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     display_name = 'Club Strike'
     web_animation = "heavy_attack"
 
+    # Power band and derived midpoint — the convention ``Move`` documents.
+    #
+    # The TelegraphedSurge multipliers above are midpoints on this same scale,
+    # not exact factors: NpcAttack.evaluate has already rolled power through
+    # its own band by the time TelegraphedSurge.evaluate multiplies by them, so
+    # 2.2/2.5/1.8 centre the hit on the user's damage exactly as this midpoint
+    # does. Every declaration in this module means the same thing.
+    _POWER_ROLL_MIN = 1.5
+    _POWER_ROLL_MAX = 3.0
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -559,7 +589,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(1.5, 3)
+        power = self._rolled_power()
         speed = _npc_speed_divisor(self.user)
         prep = int(50 / speed)
         if prep < 1:
@@ -637,6 +667,11 @@ class VenomClaw(Move):  # Poisonous attack
     display_name = 'Venom Claw'
     web_animation = "attack"
 
+    # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
+    _POWER_ROLL_MIN = 0.6
+    _POWER_ROLL_MAX = 1.0
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -699,7 +734,7 @@ class VenomClaw(Move):  # Poisonous attack
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(0.6, 1)
+        power = self._rolled_power()
         speed = _npc_speed_divisor(self.user)
         prep = int(50 / speed)
         if prep < 1:
@@ -784,6 +819,11 @@ class SpiderBite(Move):  # Poisonous attack
     display_name = 'Spider Bite'
     web_animation = "quick_attack"
 
+    # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
+    _POWER_ROLL_MIN = 0.8
+    _POWER_ROLL_MAX = 1.2
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -849,7 +889,7 @@ class SpiderBite(Move):  # Poisonous attack
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(0.8, 1.2)
+        power = self._rolled_power()
         speed = _npc_speed_divisor(self.user)
         prep = int(50 / speed)
         if prep < 1:
@@ -934,6 +974,11 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
     display_name = 'Bat Bite'
     web_animation = "quick_attack"
 
+    # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
+    _POWER_ROLL_MIN = 0.7
+    _POWER_ROLL_MAX = 1.1
+    _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+
     def __init__(self, npc):
         description = "A quick bite that steals a little life from the target."
         prep = 0
@@ -997,7 +1042,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = self.user.damage * random.uniform(0.7, 1.1)
+        power = self._rolled_power()
         speed = _npc_speed_divisor(self.user)
         prep = int(50 / speed)
         if prep < 1:
@@ -1455,6 +1500,10 @@ class SeismicSlam(Move):
 
     _RADIUS = 6
     _STAGGER_CHANCE = 0.25
+    # Power multiple on the user's base damage. Named because the serializer
+    # reads it off the class as the wire's `damage_multiplier`; evaluate()
+    # below is its only other reader, so the number exists once.
+    _DAMAGE_MULTIPLIER = 0.7
 
     def __init__(self, npc):
         description = (
@@ -1507,7 +1556,7 @@ class SeismicSlam(Move):
 
     def evaluate(self):
         if hasattr(self.user, "damage"):
-            self.power = self.user.damage * 0.7
+            self.power = self.user.damage * self._DAMAGE_MULTIPLIER
 
     def execute(self, user):
         cprint(
@@ -1743,6 +1792,23 @@ class TwinFangs(Move):
     web_animation = "quick_attack"
 
     _QUARRY_BONUS = 1.5
+    # Power multiple on the user's base damage, before _QUARRY_BONUS. Named
+    # because the serializer reads it off the class as the wire's
+    # `damage_multiplier`; evaluate() below is its only other reader.
+    #
+    # DELIBERATELY EXCLUDES _QUARRY_BONUS, which execute() applies only when
+    # the target carries Quarried — so against a marked target the wire value
+    # understates the real hit by 50%. Documented rather than fixed, because
+    # the wire field is a property of the MOVE and this factor is a property
+    # of the TARGET: the serializer reads a class attribute with no target in
+    # hand, and folding the bonus in unconditionally would overstate every
+    # unmarked hit instead. It costs nothing today — TwinFangs is Mara's, an
+    # ally, so it is never serialized as an incoming threat and the Tactical
+    # Advisor never estimates damage from it. If an ENEMY ever gets this move,
+    # the honest fix is a per-instance multiplier written in evaluate() from
+    # the actual target's states, which the serializer's ``getattr(move, ...)``
+    # would then pick up off the instance.
+    _DAMAGE_MULTIPLIER = 1.2
 
     def __init__(self, npc):
         description = (
@@ -1791,7 +1857,7 @@ class TwinFangs(Move):
 
     def evaluate(self):
         if hasattr(self.user, "damage"):
-            self.power = self.user.damage * 1.2
+            self.power = self.user.damage * self._DAMAGE_MULTIPLIER
 
     def execute(self, user):
         target = self.target

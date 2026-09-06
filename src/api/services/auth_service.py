@@ -15,29 +15,136 @@ _DUMMY_PASSWORD_HASH = (
     "7KbniMDtZdj7bd8jcqYNPc4AUaZL3Wb7k3WpG2rg18g"
 )
 
+# Upper bounds on the three registration fields. ``create_user`` used to check
+# minimums only, which left every one of them unbounded above:
+#
+# * ``password`` is fed to Argon2, which is *deliberately* expensive — its cost
+#   is the defence. An unauthenticated caller supplying a multi-megabyte
+#   password turns that defence into the attack: the hash is computed over the
+#   whole string, on the request thread, in a single-worker deployment.
+# * ``username`` and ``email`` are written to the database on a path that
+#   is reachable without credentials, and the username is later interpolated
+#   into a GitHub issue by ``routes/feedback.py``.
+#
+# The values: 64 is far above any name a person types and is what
+# ``routes/feedback.py`` bounds its attribution label to; 128 accommodates a
+# generated passphrase from any password manager while keeping the Argon2 input
+# trivial; 254 is the maximum length of an email address in RFC 5321 §4.5.3.1.4.
+#
+# These are checked *before* the hash and the insert, and the request-body cap
+# (``Config.MAX_CONTENT_LENGTH``) sits above them as the coarse bound on the
+# payload that carries them.
+MAX_USERNAME_LENGTH = 64
+MAX_PASSWORD_LENGTH = 128
+MAX_EMAIL_LENGTH = 254
+
+
+class RegistrationValidationError(ValueError):
+    """A registration input the caller supplied and can fix.
+
+    The point of the type is that its *message is safe to echo* to an
+    unauthenticated caller. ``routes/auth.py`` used to decide that by scanning
+    the message for five substrings -- ``_URL``, ``_KEY``, ``_TOKEN``, "not
+    set", "os.environ" -- and echoing anything that matched none of them. A
+    deny-list over free-form exception text cannot be complete, and this one
+    was not: a ``ValueError`` reading ``could not connect to
+    postgres://svc:<password>@db.internal:5432/hov`` contains none of the five
+    markers, so it was returned verbatim, credential included, in a 400 body
+    to an anonymous POST /api/auth/register.
+
+    Subclasses ``ValueError`` so existing callers and their
+    ``pytest.raises(ValueError)`` assertions are unaffected; the route is what
+    changed, and it now allow-lists this type instead of deny-listing text.
+    Anything else out of :meth:`AuthService.create_user` is treated as
+    infrastructure and masked, which is the safe default a deny-list can never
+    give.
+    """
+
+
+class SaveLimitReached(ValueError):
+    """The player has as many manual saves as the game allows.
+
+    Lives beside :class:`RegistrationValidationError` and for the same reason:
+    "this message is safe to show the player" is carried by the TYPE, because
+    carrying it in the message text is what leaked a database password out of
+    the registration route.
+
+    ``routes/saves.py`` had the identical shape one route over -- ``except
+    ValueError as ve: return str(ve), 403`` around a call that reaches
+    ``db.get_client()``, which raises ``ValueError("TURSO_DATABASE_URL is not
+    set")``. An authenticated player against a misconfigured deployment got
+    the internal variable name back in a 403 body, mislabelled as the save
+    limit. The fix for the registration route was applied to the SITE and not
+    to the CLASS, and the AST guard written to hold it was scoped to
+    ``create_user`` alone, so it could not see this.
+
+    Not raised by ``AuthService``; it lives here because this module is where
+    the API's "safe to echo" vocabulary is declared, and a second home for the
+    same idea is how the two would drift.
+    """
+
 
 class AuthService:
     def __init__(self):
         self.ph = PasswordHasher()
-        # Mirrors the SECRET_KEY handling in src/api/config.py: production must
+        # Mirrors the SECRET_KEY *rule* in src/api/config.py: production must
         # set ENCRYPTION_KEY explicitly (an ephemeral key would silently orphan
         # already-encrypted data — e.g. user emails — on every restart). Testing
         # and development fall back to a generated key so the suite/dev server
         # don't need one configured.
+        #
+        # It does NOT mirror the timing, and that difference is the fragile
+        # part. config.py deliberately moved its guard off import time into
+        # runtime_config(), which create_app() calls — the entire premise of
+        # that module's docstring. This one still runs at *import* time,
+        # because the `auth_service = AuthService()` singleton at the bottom of
+        # this file is built in the module body. It reads the right value only
+        # because `from src.api.db import db` at the top of this file happens
+        # to load .env first: the same incidental-import dependency that
+        # src/api/rate_limiter.py's module-level load_project_env() exists to
+        # remove. Reordering that import would silently move this read ahead of
+        # the .env load. Deferring the check into a lazily-built singleton is
+        # the real fix; until then, do not reorder the imports above.
         self.encryption_key = os.getenv("ENCRYPTION_KEY")
         if not self.encryption_key:
-            if os.environ.get("FLASK_ENV") == "production":
+            # normalized_env(), not a bare == "production": this guard is
+            # fail-open, so a case difference silently costs data. FLASK_ENV is
+            # operator-typed and both entry points that select the config class
+            # lowercase it, so "Production" reaches here and, compared raw,
+            # skips this raise and mints an ephemeral Fernet key — orphaning
+            # every already-encrypted email on the next restart, with nothing
+            # reporting the loss. src/api/config.py's SECRET_KEY guard, which
+            # the comment above says this mirrors, had the identical defect and
+            # was normalised; sharing the helper is what stops them drifting
+            # apart a third time.
+            from src.api.config import normalized_env
+
+            if normalized_env() == "production":
                 raise RuntimeError("ENCRYPTION_KEY must be set in production")
             self.encryption_key = Fernet.generate_key()
         self.fernet = Fernet(self.encryption_key)
 
     async def create_user(self, username, password, email) -> Dict[str, Any]:
         """Create a new user in the database."""
-        # Validation
+        # Validation. Every bound is enforced here, before the Argon2 hash and
+        # before the insert — see the MAX_* constants for why the maximums are
+        # not optional.
         if len(username) < 4:
-            raise ValueError("Username must be at least 4 characters")
+            raise RegistrationValidationError("Username must be at least 4 characters")
+        if len(username) > MAX_USERNAME_LENGTH:
+            raise RegistrationValidationError(
+                "Username must be at most %d characters" % MAX_USERNAME_LENGTH
+            )
         if len(password) < 16:
-            raise ValueError("Password must be at least 16 characters")
+            raise RegistrationValidationError("Password must be at least 16 characters")
+        if len(password) > MAX_PASSWORD_LENGTH:
+            raise RegistrationValidationError(
+                "Password must be at most %d characters" % MAX_PASSWORD_LENGTH
+            )
+        if len(email) > MAX_EMAIL_LENGTH:
+            raise RegistrationValidationError(
+                "Email must be at most %d characters" % MAX_EMAIL_LENGTH
+            )
 
         user_id = str(uuid.uuid4())
         password_hash = self.ph.hash(password)

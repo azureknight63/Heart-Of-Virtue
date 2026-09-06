@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import logger from './logger';
+import { AxiosError } from 'axios';
+import logger, { REDACTION_KEYS, scrubSecrets } from './logger';
 
 describe('BrowserLogger', () => {
   beforeEach(() => {
@@ -100,6 +101,180 @@ describe('BrowserLogger', () => {
     circular.self = circular;
     console.log(circular);
     expect(logger.logQueue[0].message).toBe(String(circular));
+  });
+
+  describe('credential redaction', () => {
+    // The leak this closes: ~30 sites across the app write
+    // `console.error('...', err)` with a raw rejected request. Axios defines
+    // `AxiosError.prototype.toJSON`, which `JSON.stringify` calls, and it emits
+    // `config` — carrying the `Authorization: Bearer <session id>` that
+    // api/client.js attaches to every request. Every failed call therefore
+    // wrote the player's live session token into a server-side log file.
+    //
+    // A REAL AxiosError is constructed rather than an error-shaped literal:
+    // the whole hazard is what axios's own `toJSON` chooses to serialize, so an
+    // invented shape would only be testing this file's guess about it.
+    const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.super-secret-session-token';
+
+    const shippedBody = async (...args) => {
+      logger.log('error', ...args);
+      await logger.flush();
+      return global.fetch.mock.calls[0][1].body;
+    };
+
+    const unauthorizedError = () =>
+      new AxiosError(
+        'Request failed with status code 401',
+        'ERR_BAD_REQUEST',
+        {
+          url: '/npc/chat/open',
+          method: 'post',
+          headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+        },
+        {},
+        { status: 401, data: { error: 'unauthorized' } }
+      );
+
+    it('proves axios really does serialize the auth header', () => {
+      // Guard-the-guard. If a future axios stops emitting `config` from
+      // `toJSON`, the assertions below would pass for the wrong reason — they
+      // would be redacting something that was never there.
+      expect(JSON.stringify(unauthorizedError())).toContain(TOKEN);
+    });
+
+    it('never ships an AxiosError’s Authorization header to the log endpoint', async () => {
+      const body = await shippedBody('[npcChat] open failed:', unauthorizedError());
+
+      expect(body).not.toContain(TOKEN);
+      expect(body).not.toContain('Bearer');
+      // Still a useful log line: the redaction takes the credentials, not the
+      // diagnosis.
+      expect(body).toContain('Request failed with status code 401');
+      expect(body).toContain('[npcChat] open failed:');
+    });
+
+    it('redacts a header bag nested at any depth, under any casing', async () => {
+      const body = await shippedBody({
+        outer: {
+          deeper: {
+            response: { CONFIG: { HEADERS: { authorization: `Bearer ${TOKEN}` } } },
+            cookie: `session=${TOKEN}`,
+            'Set-Cookie': `session=${TOKEN}`,
+          },
+        },
+      });
+
+      expect(body).not.toContain(TOKEN);
+      expect(body).toContain('[redacted]');
+    });
+
+    it('leaves ordinary object arguments alone', async () => {
+      const payload = { npcId: 'Mynx', loquacity: 3 };
+      const body = await shippedBody('payload:', payload);
+
+      // Compared against `JSON.stringify(payload)` rather than against a
+      // hand-typed rendering of it. The hand-typed version carried the
+      // two-space indent this module used to pass to JSON.stringify, so
+      // dropping the indent to keep one log line on one line failed a test
+      // whose subject is redaction and which has no opinion about whitespace.
+      const message = JSON.parse(body).logs[0].message;
+      expect(message).toContain(JSON.stringify(payload));
+      expect(message).not.toContain('[redacted]');
+    });
+
+    describe('values that never reach the key-based replacer', () => {
+      // The replacer only ever sees an object graph. Three things go on the
+      // wire as text and have no keys to match on: a string ARGUMENT, the
+      // `String(arg)` fallback for a value JSON.stringify refused, and the
+      // fields attached beside the message. Each was unredacted.
+
+      it('redacts a credential written into a string argument', async () => {
+        const body = await shippedBody(`Authorization: Bearer ${TOKEN}`);
+
+        expect(body).not.toContain(TOKEN);
+        expect(body).toContain('[redacted]');
+      });
+
+      it('redacts a credential in the String() fallback for an unserializable value', async () => {
+        // A cycle makes JSON.stringify throw, so this argument reaches the
+        // wire through `String(arg)` alone.
+        const circular = { toString: () => `session cookie=${TOKEN}` };
+        circular.self = circular;
+
+        const body = await shippedBody(circular);
+
+        expect(body).not.toContain(TOKEN);
+      });
+
+      it('redacts a credential nested inside a structured event payload', async () => {
+        // `logger.event()` ships its payload as a live OBJECT on `entry.data`,
+        // not as text, so none of the three cases above covers it. The
+        // flush-time replacer blanks anything under a credential-shaped KEY;
+        // this one is under `note`, which is not one, so only the scrubber can
+        // see it — and the scrubber has to walk into `data` to get there.
+        logger.init();
+        logger.event('npc.chat.open', {
+          npcId: 'Mynx',
+          note: `retrying with Authorization: Bearer ${TOKEN}`,
+        });
+        await logger.flush();
+
+        const body = global.fetch.mock.calls[0][1].body;
+        expect(body).toContain('npc.chat.open');
+        expect(body).not.toContain(TOKEN);
+        expect(body).toContain('[redacted]');
+      });
+
+      it('recognises the credential shape for every key the object path redacts', () => {
+        // Derived from the module's own key set rather than from a copy of it.
+        // The two consumers — the JSON replacer and the text scrubber — are
+        // built from the same list precisely so they cannot drift, and this is
+        // what would notice if a key were added to one and not the other.
+        expect(REDACTION_KEYS.credential.length).toBeGreaterThan(0);
+        for (const key of REDACTION_KEYS.credential) {
+          const line = `${key}: ${TOKEN}`;
+          expect(scrubSecrets(line), key).not.toContain(TOKEN);
+          // The key survives, so the log line still says what was removed.
+          expect(scrubSecrets(line), key).toContain(key);
+        }
+      });
+
+      it('leaves an ordinary sentence untouched', () => {
+        // The scrubber has to be quiet, or every diagnostic line turns into
+        // `[redacted]` and people stop reading the logs.
+        const line = 'combat: King Slime used Tail Whip for 12 damage';
+        expect(scrubSecrets(line)).toBe(line);
+      });
+
+      it('redacts every string field of an entry, not a hand-listed two', async () => {
+        // `url` and `userAgent` were attached BESIDE the redacted message and
+        // went out verbatim. Fixing those two by name would have left the next
+        // field somebody attaches in the same position, so the rule is applied
+        // over the entry's own fields — and asserted the same way.
+        //
+        // Every source is seeded with a credential in a shape the scrubber
+        // RECOGNISES, because that is what this test is about: whether each
+        // field goes through the scrubber at all. Whether the scrubber
+        // recognises every shape a credential can take is a different question
+        // and a different (weaker) answer — see the module docstring.
+        global.window.location.href = `http://localhost/game?api_key=${TOKEN}`;
+        global.navigator.userAgent = `hov-client/1.0 (Bearer ${TOKEN})`;
+
+        logger.log('error', `Authorization: Bearer ${TOKEN}`);
+        const entry = logger.logQueue[0];
+
+        const strings = Object.entries(entry).filter(([, v]) => typeof v === 'string');
+        // Non-vacuity: the fields have to exist for "none of them leaks" to
+        // mean anything, and each source really did carry the token.
+        expect(strings.length).toBeGreaterThanOrEqual(4);
+        expect(global.window.location.href).toContain(TOKEN);
+        for (const [key, value] of strings) {
+          expect(value, key).not.toContain(TOKEN);
+        }
+        // Still a usable entry: the URL keeps its path, not just its scheme.
+        expect(entry.url).toContain('/game');
+      });
+    });
   });
 
   it('manually logs a message via log()', () => {

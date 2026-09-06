@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useWorldInteract } from './useWorldInteract'
 import apiEndpoints from '../api/endpoints'
+import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -145,6 +146,19 @@ describe('useWorldInteract', () => {
       expect(onRefetch).toHaveBeenCalledTimes(1)
       expect(onInteractionComplete).toHaveBeenCalledTimes(1)
       expect(result.current.takingAllItems).toBe(false)
+    })
+
+    it('surfaces the prose of a throttled response, not the "rate_limited" token', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: false, error: 'rate_limited', message: 'Slow down — too many actions.' },
+      })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.takeAll([{ id: 'item1', name: 'Gold Coin', count: 1 }])
+      })
+
+      expect(result.current.error).toBe('Slow down — too many actions.')
     })
 
     it('stops on the first failure and surfaces the error', async () => {
@@ -294,7 +308,7 @@ describe('useWorldInteract', () => {
       expect(result.current.interactionOutput).toBe('Action completed.')
     })
 
-    it('sets an error on failure, preferring data.error then data.message then a default', async () => {
+    it('sets an error on failure', async () => {
       apiEndpoints.world.interact.mockResolvedValue({ data: { success: false, error: 'You cannot do that.' } })
       const { result } = renderHook(() => useWorldInteract())
 
@@ -303,6 +317,22 @@ describe('useWorldInteract', () => {
       })
 
       expect(result.current.error).toBe('You cannot do that.')
+    })
+
+    it('surfaces the prose of a throttled response, not the "rate_limited" token', async () => {
+      // `rate_limited_response()` (src/api/rate_limiter.py) puts a MACHINE
+      // token in `error` and the player-facing half in `message`. This site
+      // used to read `data.error || data.message`, so the token won.
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: false, error: 'rate_limited', message: 'Slow down — too many actions.' },
+      })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.interact({ id: 'npc1', count: 1 }, 'attack', null)
+      })
+
+      expect(result.current.error).toBe('Slow down — too many actions.')
     })
 
     it('falls back to "Interaction failed" when both error and message are absent', async () => {
@@ -396,6 +426,77 @@ describe('useWorldInteract', () => {
       })
 
       expect(onEventsTriggered).toHaveBeenCalledWith([{ output_text: 'A trap springs!' }])
+    })
+
+    it('closes before refetching when a passageway transition confirmation is returned', async () => {
+      const order = []
+      const passagewayEvent = {
+        type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
+        event_id: 'passage-1',
+        needs_input: true,
+      }
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true, message: '', events_triggered: [passagewayEvent] },
+      })
+      apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } })
+      const onClose = vi.fn(() => order.push('close'))
+      const onRefetch = vi.fn().mockImplementation(async () => order.push('refetch'))
+      const onEventsTriggered = vi.fn(() => order.push('event'))
+      const onInteractionComplete = vi.fn(() => order.push('complete'))
+
+      const { result } = renderHook(() => useWorldInteract({
+        onClose,
+        onRefetch,
+        onEventsTriggered,
+        onInteractionComplete,
+      }))
+
+      await act(async () => {
+        await result.current.interact({ id: 'passage-1', count: 1 }, 'enter', null)
+      })
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(order.slice(0, 4)).toEqual(['close', 'refetch', 'event', 'complete'])
+      expect(apiEndpoints.world.getEvents).not.toHaveBeenCalled()
+      expect(onEventsTriggered).toHaveBeenCalledWith([passagewayEvent])
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
+    })
+
+    it('still shows the transition when the destination refetch fails', async () => {
+      const refetchError = new Error('destination unavailable')
+      const passagewayEvent = {
+        type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
+        event_id: 'passage-1',
+        needs_input: true,
+      }
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true, message: '', events_triggered: [passagewayEvent] },
+      })
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const onClose = vi.fn()
+      const onRefetch = vi.fn().mockRejectedValue(refetchError)
+      const onEventsTriggered = vi.fn()
+      const onInteractionComplete = vi.fn()
+      const { result } = renderHook(() => useWorldInteract({
+        onClose,
+        onRefetch,
+        onEventsTriggered,
+        onInteractionComplete,
+      }))
+
+      await act(async () => {
+        await result.current.interact({ id: 'passage-1', count: 1 }, 'enter', null)
+      })
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(onEventsTriggered).toHaveBeenCalledWith([passagewayEvent])
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Failed to refetch after passageway transition:',
+        refetchError
+      )
+      expect(result.current.loading).toBe(false)
+      errorSpy.mockRestore()
     })
 
     it('chains a getEvents check after interact and forwards displayable events', async () => {

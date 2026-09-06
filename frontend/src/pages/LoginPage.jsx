@@ -113,6 +113,13 @@ export default function LoginPage() {
       } else if (!err.response || err.response.status >= 500) {
         setError('The game server is unreachable. Please try again later.')
       } else {
+        // `message` ONLY, deliberately — not utils/apiError's `message` -> `error`
+        // precedence. Every failure in src/api/routes/auth.py pairs a machine
+        // token in `error` (validation_error, auth_error, conflict_error,
+        // service_unavailable, server_error, rate_limited) with the prose in
+        // `message`, so `error` here is never player copy — falling back to it
+        // would newly show the token on any auth failure that ships without a
+        // `message`. This module's own wording is the right last resort.
         setError(err.response?.data?.message || 'Authentication failed. Please try again.')
       }
     } finally {
@@ -162,11 +169,27 @@ export default function LoginPage() {
           </div>
 
           {!isRegistering ? (
+            /*
+              No `action` and no `method`, deliberately. Submission is
+              `handleSubmit`, which calls `preventDefault()` and posts through
+              api/client.js — but a native `action="/login" method="POST"` is
+              not inert while that works. It is the behaviour the browser falls
+              back to the moment the handler does not run: a JS error thrown
+              before `preventDefault()`, an extension breaking the bundle, a
+              chunk that failed to load. The browser then performs a real
+              navigation and posts the player's username and password to
+              `/login`, which is a client-side route in App.jsx and no server
+              endpoint at all — so the credentials leave the app, land in
+              whatever fronts the SPA, and the player watches the page reload
+              onto a redirect having "logged in" nowhere.
+
+              Nothing here degrades usefully without JS, so there is no
+              progressive-enhancement case for keeping them correct instead of
+              absent. `id` stays: it is the form's identity, not its transport.
+            */
             <form
               key="login-form"
               id="login-form"
-              method="POST"
-              action="/login"
               onSubmit={handleSubmit}
               style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}
             >
@@ -234,11 +257,12 @@ export default function LoginPage() {
               </div>
             </form>
           ) : (
+            /* Same reasoning as the login form above — and `/register` is not
+               even a client route, so the fallback navigation lands on the
+               catch-all redirect. */
             <form
               key="register-form"
               id="register-form"
-              method="POST"
-              action="/register"
               onSubmit={handleSubmit}
               style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}
             >

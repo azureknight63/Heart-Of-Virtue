@@ -141,13 +141,15 @@ src/api/
 └── schemas/
     └── __init__.py
 
-tests/api/
+tests/api/                   # real engine, driven through HTTP
 ├── conftest.py              # Flask test fixtures
-├── test_session_manager.py  # SessionManager tests (12)
-├── test_game_service.py     # GameService tests (15)
-├── test_validators.py       # Validator tests (28)
-├── test_routes_integration.py # Integration tests (27)
-└── test_error_handlers.py   # Error handler tests (9)
+├── test_combat_routes_integration.py
+├── test_combat_command_fuzz.py / test_api_fuzz.py
+├── test_cloud_integration.py   # the only AuthService/DB path in the suite
+└── ...                         # quickswap, repeat-last, map switching
+
+# Unit-level cover for services, serializers, validators and routes lives in
+# tests/ proper -- those run against mocks and are the bulk of the API's tests.
 ```
 
 ---
@@ -952,10 +954,17 @@ Environment variables (in `.env` or `config_dev.ini`):
 
 ```bash
 FLASK_ENV=development
-FLASK_HOST=127.0.0.1
-FLASK_PORT=5000
-FLASK_DEBUG=1
+HOST=127.0.0.1
+PORT=5000
 ```
+
+`HOST` and `PORT` are what `tools/run_api.py` actually reads; `HOST` defaults
+to `127.0.0.1` (loopback only — set `0.0.0.0` for LAN or container access, and
+see `.env.example` for what that exposes with debug on). There is no
+`FLASK_DEBUG`, `FLASK_HOST` or `FLASK_PORT`: nothing in this project reads
+them. `FLASK_ENV` selects the config class, and that class pins `DEBUG`.
+
+See `.env.example` for the full, annotated list of supported variables.
 
 ### Production Deployment
 
@@ -973,30 +982,33 @@ python tools/run_api.py  # Do NOT use in production
 
 ### Unit Tests
 
-Run all API tests:
+Always `python -m pytest`, never bare `pytest` — the venv may not expose the binary
+and a bare run fails silently on imports.
+
+Run all API tests (`tests/api/` runs in the default suite; it is not excluded):
 
 ```powershell
-pytest tests/api/ -v
+python -m pytest tests/api/ -v
 ```
 
 Run specific test file:
 
 ```powershell
-pytest tests/api/test_validators.py -v
+python -m pytest tests/test_validators_and_sanitizer.py -v
 ```
 
 Run with coverage:
 
 ```powershell
-pytest tests/api/ --cov=src/api --cov-report=term-missing
+python -m pytest tests/api/ --cov=src/api --cov-report=term-missing
 ```
 
 ### Integration Tests
 
-Test full flow (auth → action → result):
+Full flow through the real engine over HTTP (auth → action → result):
 
 ```powershell
-pytest tests/api/test_routes_integration.py -v
+python -m pytest tests/api/test_combat_routes_integration.py -v
 ```
 
 ### Manual Testing with cURL

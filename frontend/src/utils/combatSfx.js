@@ -7,12 +7,41 @@
  * and in what order; the client owns which sound file plays. Playback timing
  * (the 75% partial stack) lives in combatTiming.scheduleSfxChain.
  */
-import { getAnimationConfig, impactSfxFor } from './animationConfigs';
+import {
+  ANIMATION_CONFIGS,
+  getAnimationConfig,
+  impactSfxFor,
+} from './animationConfigs';
+import { OUTCOMES } from './combatBeatSchema';
 
 const HEAL_CUE = 'heal';
 const DEATH_CUE = 'enemy_death';
 const STATUS_CUE = 'status_hit';
 const DEFAULT_SWING_CUE = 'attack_swipe';
+
+/**
+ * Every concrete cue name this module can resolve to — DERIVED from the same
+ * three sources the resolvers below read, never hand-listed: the fixed cues
+ * above, `impactSfxFor` applied to every wire outcome, and every non-`'outcome'`
+ * cue any animation config authors.
+ *
+ * `sfxDurations.test.js` iterates this to assert the shipped WAV manifest covers
+ * the whole set. A hand-copied list there could not fail when someone added an
+ * outcome to `impactSfxFor` or an `sfx` entry to a config without shipping the
+ * matching `sfx/<cue>.wav` — which is the only failure that test exists to catch.
+ */
+export const ALL_COMBAT_CUES = new Set([
+  HEAL_CUE,
+  DEATH_CUE,
+  STATUS_CUE,
+  DEFAULT_SWING_CUE,
+  ...OUTCOMES.map((outcome) => impactSfxFor(outcome)),
+  ...Object.values(ANIMATION_CONFIGS).flatMap((cfg) =>
+    Object.values((cfg && cfg.sfx) || {}).filter(
+      (cue) => cue && cue !== 'outcome'
+    )
+  ),
+]);
 
 /**
  * The windup/whoosh cue for an animation type: the first non-`'outcome'` cue the

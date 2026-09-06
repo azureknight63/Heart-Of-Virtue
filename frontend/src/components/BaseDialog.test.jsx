@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import BaseDialog from './BaseDialog'
+import BaseDialog, { resolveDialogWidth } from './BaseDialog'
 import { colors } from '../styles/theme'
 
 /** jsdom normalises inline colours to rgb(); theme.js mixes hex and rgba(). */
@@ -215,6 +215,44 @@ describe('BaseDialog', () => {
       expect(screen.getByText('Content').parentElement.style.overflowY).toBe(expected)
     })
 
+    it.each([
+      // jsdom's cssstyle drops `min()` from style.width outright, so the
+      // viewport branch is asserted on the resolver rather than the DOM.
+      [{ maxWidth: '600px' }, 'min(94vw, 600px)'],
+      [{ maxWidth: '1100px' }, 'min(94vw, 1100px)'],
+      // containerCentered: see the test below for why this must not be 94vw.
+      [{ maxWidth: '600px', containerCentered: true }, '90%'],
+      // An explicit width always wins, either way.
+      [{ maxWidth: '600px', width: '320px' }, '320px'],
+      [{ maxWidth: '600px', width: '320px', containerCentered: true }, '320px'],
+    ])('resolveDialogWidth(%o) -> %s', (props, expected) => {
+      expect(resolveDialogWidth(props)).toBe(expected)
+    })
+
+    it('keeps the width container-relative when containerCentered', () => {
+      // The viewport-relative default is wrong for a dialog centred inside a
+      // positioned ancestor: CombatInputDialog passes maxWidth="600px" AND
+      // containerCentered, so inside a battlefield panel narrower than 600px
+      // `min(94vw, 600px)` resolves to a width wider than its own container
+      // and overflows it. Container-relative is what every caller had before
+      // the viewport default was introduced.
+      const { container } = render(
+        <BaseDialog maxWidth="600px" containerCentered onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(container.querySelector('.modal-content')).toHaveStyle({ width: '90%' })
+    })
+
+    it('lets an explicit width win over either default', () => {
+      const { container } = render(
+        <BaseDialog width="320px" maxWidth="600px" containerCentered onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(container.querySelector('.modal-content')).toHaveStyle({ width: '320px' })
+    })
+
     it('respects containerCentered prop', () => {
       const { container } = render(
         <BaseDialog containerCentered={true} onClose={mockOnClose}>
@@ -246,10 +284,12 @@ describe('BaseDialog', () => {
           <p>Content</p>
         </BaseDialog>
       )
-      const dialog = container.querySelector('.modal-content')
-      expect(dialog.getAttribute('aria-labelledby')).toBe('base-dialog-title')
-      // ...and that id must actually resolve to the visible title.
-      expect(container.querySelector('#base-dialog-title').textContent).toBe('Test Title')
+      const dialog = container.querySelector('[aria-labelledby]')
+      expect(dialog).toBeInTheDocument()
+      const labelId = dialog.getAttribute('aria-labelledby')
+      // useId() emits colons, which are legal in an id but not in a CSS
+      // selector — look the element up by id, not by querySelector.
+      expect(document.getElementById(labelId)).toHaveTextContent('Test Title')
     })
 
     it('omits aria-labelledby entirely when there is no title', () => {
@@ -261,8 +301,239 @@ describe('BaseDialog', () => {
           <p>Content</p>
         </BaseDialog>
       )
-      expect(container.querySelector('.modal-content').hasAttribute('aria-labelledby')).toBe(false)
-      expect(container.querySelector('#base-dialog-title')).toBeNull()
+      const dialog = container.querySelector('.modal-content')
+      expect(dialog.hasAttribute('aria-labelledby')).toBe(false)
+      // No title means the title element itself never renders — nothing to
+      // reference. useId() generates a fresh id per instance, so check for
+      // absence of any id-bearing descendant rather than a hardcoded string.
+      expect(dialog.querySelector('[id]')).toBeNull()
+    })
+
+    it('gives each stacked dialog its own title id', () => {
+      // A dialog opened from inside another dialog (the NPC chat transcript)
+      // mounts both at once; a hardcoded id made the inner one announce the
+      // outer one's title.
+      const { container } = render(
+        <BaseDialog title="Outer" onClose={mockOnClose}>
+          <BaseDialog title="Inner" onClose={mockOnClose}>
+            <p>Content</p>
+          </BaseDialog>
+        </BaseDialog>
+      )
+
+      // Queried on `[role="dialog"]`, not `[aria-modal="true"]`: only the
+      // INNERMOST dialog is modal now, so the outer one reports
+      // aria-modal="false" by design and would drop out of that selector.
+      const [outer, inner] = Array.from(container.querySelectorAll('[role="dialog"]'))
+      expect(outer.getAttribute('aria-modal')).toBe('false')
+      expect(inner.getAttribute('aria-modal')).toBe('true')
+      const outerLabel = outer.getAttribute('aria-labelledby')
+      const innerLabel = inner.getAttribute('aria-labelledby')
+      expect(outerLabel).not.toBe(innerLabel)
+      expect(document.getElementById(outerLabel)).toHaveTextContent('Outer')
+      expect(document.getElementById(innerLabel)).toHaveTextContent('Inner')
+    })
+  })
+
+  describe('Keyboard & Focus', () => {
+    it('calls onClose when Escape is pressed', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not throw on Escape when no onClose is provided', () => {
+      // LootDialog and BetaEndDialog deliberately render without onClose
+      // (the player must use the dialog's own controls to proceed).
+      render(
+        <BaseDialog title="Loot">
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(() => fireEvent.keyDown(document, { key: 'Escape' })).not.toThrow()
+    })
+
+    it('closes only the innermost dialog when stacked', () => {
+      const outerClose = vi.fn()
+      const innerClose = vi.fn()
+      render(
+        <BaseDialog title="Outer" onClose={outerClose}>
+          <BaseDialog title="Inner" onClose={innerClose}>
+            <p>Content</p>
+          </BaseDialog>
+        </BaseDialog>
+      )
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(innerClose).toHaveBeenCalledTimes(1)
+      expect(outerClose).not.toHaveBeenCalled()
+    })
+
+    it('closes only the most-recently-mounted SIBLING dialog on Escape', () => {
+      // The `topLevelStack` path, which nesting never reaches: two dialogs
+      // rendered as Fragment siblings are unrelated by DialogParentContext, so
+      // ordering them relies entirely on the module-level stack. Component
+      // comment names this exact pair (InteractPanel + the NpcChatPanel it
+      // opens alongside itself) as why the stack exists.
+      //
+      // With only one top-level dialog mounted, `topLevelStack[length - 1]` and
+      // `topLevelStack[0]` are indistinguishable — this is the only test that
+      // can tell them apart, or notice a missing `splice` on unmount.
+      const firstClose = vi.fn()
+      const secondClose = vi.fn()
+      const { rerender } = render(
+        <>
+          <BaseDialog title="First" onClose={firstClose}>
+            <p>Behind</p>
+          </BaseDialog>
+          <BaseDialog title="Second" onClose={secondClose}>
+            <p>In front</p>
+          </BaseDialog>
+        </>
+      )
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(secondClose).toHaveBeenCalledTimes(1)
+      expect(firstClose).not.toHaveBeenCalled()
+
+      // ...and the one behind is background content while it is covered.
+      const [first, second] = Array.from(document.querySelectorAll('[role="dialog"]'))
+      expect(first.getAttribute('aria-modal')).toBe('false')
+      expect(first.getAttribute('aria-hidden')).toBe('true')
+      expect(second.getAttribute('aria-modal')).toBe('true')
+      expect(second.hasAttribute('aria-hidden')).toBe(false)
+
+      // Unmounting the top sibling must pop it off the stack, handing Escape
+      // (and modality) back to the one underneath.
+      rerender(
+        <>
+          <BaseDialog title="First" onClose={firstClose}>
+            <p>Behind</p>
+          </BaseDialog>
+        </>
+      )
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(firstClose).toHaveBeenCalledTimes(1)
+      expect(secondClose).toHaveBeenCalledTimes(1)
+      const [remaining] = Array.from(document.querySelectorAll('[role="dialog"]'))
+      expect(remaining.getAttribute('aria-modal')).toBe('true')
+      expect(remaining.hasAttribute('aria-hidden')).toBe(false)
+    })
+
+    it('closes the outer dialog on Escape once the inner one has unmounted', () => {
+      const outerClose = vi.fn()
+      const innerClose = vi.fn()
+      const { rerender } = render(
+        <BaseDialog title="Outer" onClose={outerClose}>
+          <BaseDialog title="Inner" onClose={innerClose}>
+            <p>Content</p>
+          </BaseDialog>
+        </BaseDialog>
+      )
+
+      rerender(
+        <BaseDialog title="Outer" onClose={outerClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(outerClose).toHaveBeenCalledTimes(1)
+      expect(innerClose).not.toHaveBeenCalled()
+    })
+
+    it('moves focus to the first focusable element inside the dialog on mount', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button>Inner Button</button>
+        </BaseDialog>
+      )
+      // The header (with the ✕ close button) precedes children in DOM order.
+      expect(document.activeElement).toHaveTextContent('✕')
+    })
+
+    it('does not let an outer dialog steal focus from one nested inside it', () => {
+      // React fires a CHILD component's effects before its parent's, so when a
+      // nested pair mounts in a single commit the inner dialog focuses first
+      // and the outer one's mount effect runs afterwards. Focusing
+      // unconditionally there dragged the caret out of the dialog on top and
+      // into the one behind it.
+      const { container } = render(
+        <BaseDialog title="Outer" onClose={mockOnClose}>
+          <BaseDialog title="Inner" onClose={mockOnClose}>
+            <button>Inner control</button>
+          </BaseDialog>
+        </BaseDialog>
+      )
+
+      const [outer, inner] = Array.from(container.querySelectorAll('[role="dialog"]'))
+      expect(inner.contains(document.activeElement)).toBe(true)
+      // Not merely "inside the outer subtree" — the inner dialog IS inside it.
+      expect(outer.querySelector(':scope > div > button')).not.toBe(document.activeElement)
+    })
+
+    it('focuses the dialog container itself when it has no focusable elements', () => {
+      const { container } = render(
+        <BaseDialog title="Test" showCloseButton={false}>
+          <p>Static content only</p>
+        </BaseDialog>
+      )
+      const dialog = container.querySelector('[role="dialog"]')
+      expect(document.activeElement).toBe(dialog)
+    })
+
+    it('restores focus to the previously focused element when the dialog closes', () => {
+      const trigger = document.createElement('button')
+      trigger.textContent = 'Open Dialog'
+      document.body.appendChild(trigger)
+      trigger.focus()
+      expect(document.activeElement).toBe(trigger)
+
+      const { unmount } = render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(document.activeElement).not.toBe(trigger)
+
+      unmount()
+      expect(document.activeElement).toBe(trigger)
+
+      document.body.removeChild(trigger)
+    })
+
+    it('wraps Tab from the last focusable element back to the first', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button>First</button>
+          <button>Last</button>
+        </BaseDialog>
+      )
+      const buttons = screen.getAllByRole('button')
+      const closeButton = buttons[0]
+      const lastButton = buttons[buttons.length - 1]
+      lastButton.focus()
+      fireEvent.keyDown(document, { key: 'Tab' })
+      expect(document.activeElement).toBe(closeButton)
+    })
+
+    it('wraps Shift+Tab from the first focusable element back to the last', () => {
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button>First</button>
+          <button>Last</button>
+        </BaseDialog>
+      )
+      const buttons = screen.getAllByRole('button')
+      const closeButton = buttons[0]
+      const lastButton = buttons[buttons.length - 1]
+      closeButton.focus()
+      fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+      expect(document.activeElement).toBe(lastButton)
     })
   })
 })

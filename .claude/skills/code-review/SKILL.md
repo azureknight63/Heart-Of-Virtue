@@ -93,7 +93,7 @@ The first six dimensions below are generic and language-agnostic. **Architecture
 
 ### 3. Optimization
 
-**Evaluate:** N+1 patterns, unnecessary branching, redundant computation, connection reuse. Weigh this hardest in `src/combat.py` / `src/moves/` (the one true hot path in this codebase) and leniently in one-time setup, story events, or admin/debug endpoints.
+**Evaluate:** N+1 patterns, unnecessary branching, redundant computation, connection reuse. Weigh this hardest in `src/combatant.py` / `src/moves/` / `src/api/combat_adapter.py` (the one true hot path in this codebase — the terminal combat loop that used to carry it was deleted in the teardown) and leniently in one-time setup, story events, or admin/debug endpoints.
 
 **Red flags:** N+1 query/API patterns inside a loop; unnecessary branching that a better default would remove; no retry/backoff for transient external calls; expensive work repeated inside the combat loop.
 
@@ -119,11 +119,11 @@ The first six dimensions below are generic and language-agnostic. **Architecture
 
 **Evaluate against CLAUDE.md's architecture rules:**
 - Game logic lives in the Python engine (`src/`); the API layer (`src/api/`) adapts, it does not reimplement.
-- `CombatAdapter` is the sole bridge between terminal output and JSON — combat serialization changes belong there.
+- `ApiCombatAdapter` (`src/api/combat_adapter.py`) is the sole engine→JSON bridge — combat serialization changes belong there. (There is no symbol named `CombatAdapter`, and no terminal output: the terminal loop was removed in the teardown.)
 - `Combatant` base class owns shared resistance/status-effect logic — no duplication in `Player`/`NPC` subclasses.
 - New passive moves inherit `PassiveMove` (from `src/moves/_base.py`), not `Move` directly.
 - Every castable move declares a valid `web_animation` class attribute (a key of `ANIMATION_CONFIGS`).
-- Routes call `game_service.some_method(player)` — never `getattr(player, "attribute", default)` for stats that don't exist (`player.attack` is a method, not a stat; there is no `player.health`/`stamina`/`defense`/`accuracy`/`evasion`).
+- Routes call `game_service.some_method(player)` — never `getattr(player, "attribute", default)` for attributes that don't exist. `player.attack` does not exist **at all** (removed in the terminal teardown; `hasattr(Player(), "attack")` is `False`), and there is no `player.health`/`stamina`/`defense`/`accuracy`/`evasion`. `player.hp` does exist.
 - `GameService` methods use `self._story(player)` / `self._game_tick(player)`, never `self.universe.*`.
 - Cooldown drain is guarded to only run during active combat beats (never on rest/world-movement/save-load paths).
 - All local engine imports use the canonical `src.` path, including dynamic imports and `patch()` targets (enforced by `tests/test_no_bare_local_imports.py`, but worth catching in review too).
