@@ -7,6 +7,20 @@ import { useAudio } from '../context/AudioContext';
 import { useToast } from '../context/ToastContext';
 import { MemoryRouter } from 'react-router-dom';
 
+// `useEventManager` fires `checkPendingEvents` on mount and is not mocked here,
+// so without this the real axios client issues a live XHR for
+// /world/events/pending. That request loses its race with the test teardown on
+// a loaded CI runner and its `finally { setEventsChecked(true) }` lands after
+// the environment is gone — `ReferenceError: window is not defined`, an
+// unhandled rejection that fails the vitest process while every test passes.
+vi.mock('../api/client', () => ({
+    default: {
+        get: vi.fn(() => Promise.resolve({ data: { success: true, events: [] } })),
+        post: vi.fn(() => Promise.resolve({ data: { success: true } })),
+        delete: vi.fn(() => Promise.resolve({ data: { success: true } })),
+    },
+}));
+
 // Mock the hooks
 vi.mock('../hooks/useApi', () => ({
     usePlayer: vi.fn(),
