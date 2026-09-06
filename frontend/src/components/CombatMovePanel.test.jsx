@@ -2,6 +2,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
 import { useAudio } from '../context/AudioContext';
+import { spacing } from '../styles/theme';
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
@@ -263,6 +264,79 @@ describe('CombatMovePanel', () => {
     expect(mockOnTargetHover).not.toHaveBeenCalledWith('enemy_1');
     expect(mockOnTargetHover).not.toHaveBeenCalledWith('enemy_2');
     expect(mockOnTargetHover).not.toHaveBeenCalledWith('ally_1');
+  });
+
+  it('pads the button, not the card, so the whole card face casts the move', () => {
+    // The restructure that moved the reason line outside the (disabled) button
+    // moved the card's 12px padding onto the wrapper and left the button at
+    // padding: 0. That turned the ring around every move into dead space —
+    // no click, and the default cursor instead of pointer/not-allowed.
+    render(
+      <CombatMovePanel
+        moves={mockMoves}
+        category="Offensive"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+
+    const moveBtn = screen.getByText('Slash').closest('button');
+    const card = moveBtn.parentElement;
+    expect(card.style.padding).toBe('0px');
+    expect(moveBtn.style.padding).toBe(spacing.md);
+  });
+
+  it('insets an unavailable move\'s reason line itself, now that the card does not', () => {
+    render(
+      <CombatMovePanel
+        moves={mockMoves}
+        category="Miscellaneous"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+
+    const reason = screen.getByText(/Not enough mana/).closest('div[style]');
+    expect(reason.style.padding).toBe(`0px ${spacing.md} ${spacing.md}`);
+  });
+
+  it('lights the hover chrome from the whole card, not just the button inside it', () => {
+    // The chrome (background, border, glow) is drawn on the wrapper while the
+    // hover handlers sat on the inner button, so a pointer resting on the
+    // padding ring or the reason line left isHovered false — and crossing from
+    // the button onto the ring fired onMouseLeave, blinking both the card
+    // highlight and the battlefield's enemy highlight off under a pointer that
+    // never left the card.
+    const mockOnTargetHover = vi.fn();
+    const moves = [
+      {
+        name: 'Lunge', category: 'Offensive', description: 'Stab', available: true,
+        targeted: true, requires_target_selection: false, viable_targets: [{ id: 'enemy_1' }],
+      },
+    ];
+    render(
+      <CombatMovePanel
+        moves={moves}
+        category="Offensive"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+        onTargetHover={mockOnTargetHover}
+      />
+    );
+
+    const card = screen.getByText('Lunge').closest('button').parentElement;
+    act(() => {
+      fireEvent.mouseEnter(card);
+    });
+    expect(card.style.backgroundColor).toBe('rgba(255, 170, 0, 0.1)');
+    expect(card.style.borderColor).toBe('rgb(255, 170, 0)');
+    expect(mockOnTargetHover).toHaveBeenCalledWith('enemy_1');
+
+    act(() => {
+      fireEvent.mouseLeave(card);
+    });
+    expect(card.style.backgroundColor).toBe('rgba(255, 255, 255, 0.03)');
+    expect(mockOnTargetHover).toHaveBeenLastCalledWith(null);
   });
 
   it('handles hover effects on available moves', () => {
