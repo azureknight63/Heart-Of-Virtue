@@ -1,10 +1,12 @@
 """Regression tests for the non-combat wire-id scheme (issue #518).
 
 Issue #511 replaced ``id(combatant)`` with an opaque handle for the *combat*
-payload. Everything else the API gives the client an identity for — the NPCs,
-world objects and floor items in a room, container contents, inventory rows,
-merchants, shop stock and events — kept minting its id as ``str(id(entity))``.
-That was the same defect in a different payload:
+payload. Everything else the API gives the client an identity for kept minting
+its id as ``str(id(entity))``. (For WHICH entity kinds those are, read
+``src.combatant.wire_handle``'s docstring — it is the single home of that list,
+and re-stating it here is how the copies came to disagree; for the live sites,
+``grep -rn "wire_handle(" src/``.) That was the same defect in a different
+payload:
 
   1. it shipped raw CPython heap addresses to the browser, and
   2. addresses are RECYCLED, so a client-held id for an entity that has since
@@ -41,12 +43,12 @@ from src.combatant import (
     find_by_handle,
     wire_handle,
 )
-from src.items import Restorative, RustedDagger
+from src.items import Gold, Restorative, RustedDagger
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.objects import Container
 from src.player import Player
-from tests._gs_fixtures import live_world
+from tests._gs_fixtures import assert_opaque_wire_id, live_shop, live_world
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +105,31 @@ class TestAddressRecyclingAliasesEntities:
     """The concrete reason #518 is a bug and not a style preference."""
 
     def test_the_old_scheme_hands_a_dead_npcs_id_to_a_live_one(self):
-        dead_address, _, replacement = _force_address_reuse(Slime)
+        """Both schemes, same room, same client-held id — opposite answers.
 
-        # This IS the old wire id, recomputed for a different object. A client
-        # still holding the dead Slime's id would have addressed this one.
-        assert str(id(replacement)) == dead_address
+        ``_force_address_reuse`` guarantees the address equality itself, so
+        asserting only that would restate the helper's own loop-exit
+        condition and could fail only through the helper. What is asserted
+        here instead is what the two *lookups* do with the dead entity's
+        published id: the pre-#511 resolver, spelled out below exactly as it
+        was written, hands back a live Slime that is not the one the client
+        asked for — and it is a different object, not the same one
+        resurrected. ``find_by_handle`` refuses.
+        """
+        dead_address, dead_handle, replacement = _force_address_reuse(Slime)
+        room = [replacement]
+
+        def _pre_511_lookup(entities, wire_id):
+            """The resolver #511 removed: compare the heap address."""
+            return next((e for e in entities if str(id(e)) == wire_id), None)
+
+        aliased = _pre_511_lookup(room, dead_address)
+
+        assert aliased is replacement
+        assert aliased.name == "Replacement", (
+            "the aliased object is a different Slime, not the dead one"
+        )
+        assert find_by_handle(room, dead_handle) is None
 
     def test_a_handle_is_never_reissued_to_the_object_that_inherits_the_address(self):
         _, dead_handle, replacement = _force_address_reuse(Slime)
@@ -178,8 +200,57 @@ class TestOneIdentityPerObject:
     def test_no_payload_id_looks_like_a_heap_address(self):
         for entity in (Slime(), RustedDagger(), Container(name="Chest")):
             handle = wire_handle(entity)
-            assert not handle.isdigit(), f"{handle!r} is a decimal address"
+            assert_opaque_wire_id(handle, type(entity).__name__)
             assert str(id(entity)) not in handle
+
+
+class TestAClassNeverLendsItsHandleToItsInstances:
+    """A handle minted for a CLASS must not become every instance's handle.
+
+    ``wire_handle`` used to read the existing handle with ``getattr``, which
+    resolves through the class. A class object's ``__dict__`` is a read-only
+    ``mappingproxy``, so minting for one fell through to ``setattr`` and
+    stamped the handle on the class itself — after which every instance with no
+    handle of its own answered to that one id. One wire id naming many objects
+    is exactly the aliasing #511/#518 exist to remove, and nothing would have
+    raised.
+
+    Classes reach a serializer in principle: ``_deserialize_saved_instance``
+    returns bare class objects for ``__class_type__`` markers.
+    """
+
+    def test_minting_for_a_class_does_not_stamp_the_class(self):
+        wire_handle(Slime)
+
+        assert COMBAT_HANDLE_ATTR not in Slime.__dict__
+
+    def test_two_instances_of_a_handled_class_get_different_handles(self):
+        class Widget:
+            pass
+
+        class_handle = wire_handle(Widget)
+        first, second = Widget(), Widget()
+
+        assert wire_handle(first) != class_handle
+        assert wire_handle(second) != class_handle
+        assert wire_handle(first) != wire_handle(second)
+
+    def test_a_class_handle_is_still_stable_across_calls(self):
+        class Widget:
+            pass
+
+        assert wire_handle(Widget) == wire_handle(Widget)
+
+    def test_an_inherited_handle_attribute_is_not_read_as_the_instances_own(self):
+        """The same hazard reached by any other route — a class attribute."""
+        class Widget:
+            pass
+
+        setattr(Widget, COMBAT_HANDLE_ATTR, "inherited" * 4)
+        first, second = Widget(), Widget()
+
+        assert wire_handle(first) != wire_handle(second)
+        assert wire_handle(first) != getattr(Widget, COMBAT_HANDLE_ATTR)
 
 
 class TestHandleDurability:
@@ -275,33 +346,55 @@ class TestBuybackLedgerMigration:
         ShopSerializer.flush_stale_buyback(merchant, 0)
         state = ShopSerializer.serialize_state(merchant, player, 0)
 
-        assert [e["id"] for e in state["buyback_items"]] == [wire_handle(item)]
+        # The row's id is the LEDGER ENTRY's handle; its ``item_id`` is the
+        # internal pointer at the stock the entry draws from, and that is what
+        # the repoint migrated.
+        entry = merchant._buyback_ledger[0]
+        assert entry["item_id"] == wire_handle(item)
+        assert [e["id"] for e in state["buyback_items"]] == [wire_handle(entry)]
         assert state["stock"] == [], (
             "the buyback entry must subtract its item from the stock list; "
             "leaving it in offers the same object twice at two prices"
         )
 
     def test_an_entry_naming_stock_the_merchant_no_longer_has_is_left_alone(self):
-        """Nothing to re-point it at — ``shop_buyback`` reports and drops it."""
+        """Nothing to re-point it at — ``shop_buyback`` reports and drops it.
+
+        The id is captured BEFORE the flush. Comparing the ledger to the entry
+        object it already holds (``ledger == [entry]``) is true however much
+        the repoint mutated ``entry["item_id"]`` in place — it proves only that
+        the entry was not dropped, which is not what "left alone" claims.
+        """
         sold_on = Restorative(merchandise=True)
         merchant = _stocked_merchant(RustedDagger())
         entry = _legacy_entry(sold_on)
+        original_item_id = entry["item_id"]
         merchant._buyback_ledger = [entry]
 
         ShopSerializer.flush_stale_buyback(merchant, 0)
 
         assert merchant._buyback_ledger == [entry]
+        assert entry["item_id"] == original_item_id
 
     def test_repointing_does_not_disturb_an_already_current_ledger(self):
-        item = Restorative(merchandise=True)
-        merchant = _stocked_merchant(item)
-        entry = _legacy_entry(item)
-        entry["item_id"] = wire_handle(item)
+        """Two same-named stock items, and the entry names the SECOND.
+
+        With only one stocked item, "skipped the entry" and "rewrote it to the
+        handle it already had" are indistinguishable. The name fallback returns
+        the *first* name match, so pointing the entry at the second is a target
+        an unconditional rewrite could not reproduce.
+        """
+        first, second = Restorative(merchandise=True), Restorative(merchandise=True)
+        merchant = _stocked_merchant(first)
+        merchant.inventory = [first, second]
+        entry = _legacy_entry(second)
+        entry["item_id"] = wire_handle(second)
         merchant._buyback_ledger = [entry]
 
         ShopSerializer.flush_stale_buyback(merchant, 0)
 
-        assert merchant._buyback_ledger[0]["item_id"] == wire_handle(item)
+        assert merchant._buyback_ledger[0]["item_id"] == wire_handle(second)
+        assert merchant._buyback_ledger[0]["item_id"] != wire_handle(first)
 
     def test_a_legacy_ledger_entry_can_still_be_bought_back(self):
         item = Restorative(merchandise=True)
@@ -318,8 +411,107 @@ class TestBuybackLedgerMigration:
         gs = GameService()
         gs._find_merchant = lambda p, nid: merchant
 
-        result = gs.shop_buyback(player, "npc1", wire_handle(item))
+        # The client only ever holds the id the payload published, so redeem
+        # through that rather than through the stock item's handle.
+        row = ShopSerializer.serialize_state(merchant, player, 0)["buyback_items"][0]
+
+        result = gs.shop_buyback(player, "npc1", row["id"])
 
         assert result["success"], result.get("error")
         assert any(getattr(i, "name", None) == "Restorative"
                    for i in player.inventory)
+
+
+# ---------------------------------------------------------------------------
+# A ledger entry claims COUNTS of a stock item, not the object
+# ---------------------------------------------------------------------------
+
+
+def _sell_one(gs, player, merchant, item):
+    """Sell a single unit of ``item`` to ``merchant`` and return the result."""
+    return gs.shop_sell(player, wire_handle(merchant), wire_handle(item), 1)
+
+
+class TestALedgerEntryClaimsCountsNotTheWholeStock:
+    """Selling into a stack must not take the whole stack off the BUY tab.
+
+    ``stack_inv_items`` merges a sold unit into the merchant's pre-existing
+    same-name stack, so the ledger entry ends up naming that whole stack. While
+    ``serialize_state`` excluded any stock object the ledger named, selling one
+    Restorative to a merchant holding five removed all six from the BUY tab and
+    offered a single buyback row in their place — five units of stock the player
+    could no longer buy until the beat advanced.
+    """
+
+    def test_selling_into_a_stack_leaves_the_rest_of_the_stack_on_sale(self):
+        stock = Restorative(count=5, merchandise=True)
+        stock.value = 10
+        player, _, merchant = live_shop(stock=[stock, Gold(500)])
+        goods = Restorative()
+        goods.value = 10
+        player.inventory.append(goods)
+        gs = GameService()
+
+        assert _sell_one(gs, player, merchant, goods)["success"]
+        state = ShopSerializer.serialize_state(merchant, player, 0)
+
+        assert [(r["name"], r["count"]) for r in state["stock"]] == [
+            ("Restorative", 5)
+        ], "the merchant's own stock must survive a sale into it"
+        assert [r["count"] for r in state["buyback_items"]] == [1]
+
+    def test_the_last_claimed_unit_drops_the_row_rather_than_showing_zero(self):
+        player, _, merchant = live_shop(stock=[Gold(500)])
+        goods = Restorative()
+        goods.value = 10
+        player.inventory.append(goods)
+        gs = GameService()
+
+        assert _sell_one(gs, player, merchant, goods)["success"]
+        state = ShopSerializer.serialize_state(merchant, player, 0)
+
+        assert state["stock"] == []
+        assert len(state["buyback_items"]) == 1
+
+
+class TestTwoOffersOnOneStackAreTellableApart:
+    """Two sales of one item name collapse onto one merchant stack.
+
+    While the buyback row's ``id`` was that stack's handle, both rows shipped
+    the SAME id — duplicate list keys on the client, and ``shop_buyback``
+    redeemed whichever entry it scanned first. Clicking the cheaper row charged
+    the dearer row's price. The row id is the ledger ENTRY's handle now.
+    """
+
+    @staticmethod
+    def _two_sales_at_different_prices():
+        player, _, merchant = live_shop(stock=[Gold(500)], player_gold=500)
+        first, second = Restorative(), Restorative()
+        for item in (first, second):
+            item.value = 10
+        player.inventory.extend([first, second])
+        gs = GameService()
+
+        assert _sell_one(gs, player, merchant, first)["success"]
+        merchant.sell_modifier = 0.1  # the second sale is booked cheaper
+        assert _sell_one(gs, player, merchant, second)["success"]
+        return gs, player, merchant
+
+    def test_the_two_rows_carry_different_ids(self):
+        gs, player, merchant = self._two_sales_at_different_prices()
+
+        rows = ShopSerializer.serialize_state(merchant, player, 0)["buyback_items"]
+
+        assert len(rows) == 2
+        assert len({r["id"] for r in rows}) == 2
+        assert {r["price"] for r in rows} == {5, 1}
+
+    def test_buying_back_charges_the_price_of_the_row_that_was_clicked(self):
+        gs, player, merchant = self._two_sales_at_different_prices()
+        rows = ShopSerializer.serialize_state(merchant, player, 0)["buyback_items"]
+        cheap = min(rows, key=lambda r: r["price"])
+
+        result = gs.shop_buyback(player, wire_handle(merchant), cheap["id"])
+
+        assert result["success"], result.get("error")
+        assert result["gold_spent"] == cheap["price"]

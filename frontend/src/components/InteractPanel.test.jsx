@@ -645,7 +645,8 @@ describe('InteractPanel', () => {
   });
 
   describe('NPC chat panel', () => {
-    // NPCSerializer emits `id` (str(id(npc))), `name` (the display name) and
+    // NPCSerializer emits `id` (an opaque wire handle, not a heap address —
+    // issues #511/#518), `name` (the display name) and
     // `type` (the PYTHON CLASS name). InteractPanel remaps `type` onto
     // `npc_class`, and NpcChatPanel's `npcId` is that class key — it is what
     // /api/npc/chat/open receives as `npc_key`. The previous fixture set

@@ -24,10 +24,8 @@ from src.api.serializers.inventory import (
 )
 from src.api.middleware.auth import get_session_and_player
 from src.api.utils.inventory import get_inventory_list
-# Two names for one function: `wire_handle` is the general entity minter,
-# `combatant_handle` its combat-facing alias (see src/combatant.py). Both
-# are imported so each call site reads in the vocabulary of its payload.
-from src.combatant import combatant_handle, wire_handle
+from src.api.serializers.combat import ALLY_ID_PREFIX
+from src.combatant import find_by_handle, index_by_handle
 
 # Create blueprint
 inventory_bp = Blueprint("inventory", __name__)
@@ -51,16 +49,13 @@ def get_item_and_index(player, item_id=None, item_index=None):
     """
     inventory_list = get_inventory_list(player)
 
-    # Try finding by ID first. Enumerated rather than delegated to
-    # find_by_handle because this caller needs the index too, and recovering it
-    # afterwards with list.index() would compare by equality rather than
-    # identity — fine today (no Item defines __eq__) but a silent way to return
-    # the wrong row for a stacked duplicate the day one does.
+    # Try finding by ID first. index_by_handle rather than find_by_handle
+    # because this caller needs the row number too — recovering it afterwards
+    # with list.index() would compare by equality rather than identity, fine
+    # today (no Item defines __eq__) but a silent way to return the wrong row
+    # for a stacked duplicate the day one does.
     if item_id:
-        for idx, item in enumerate(inventory_list):
-            if wire_handle(item) == item_id:
-                return item, idx
-        return None, None
+        return index_by_handle(inventory_list, item_id)
 
     # Fall back to index
     if item_index is not None:
@@ -79,14 +74,20 @@ def _resolve_ally_target(player, target_id: str):
     ``CombatantSerializer.stream_id``, whose suffix is the combatant's stable
     handle rather than a Python ``id()`` (issue #511).  Returns None if not
     found.
+
+    The prefix comes from ``ALLY_ID_PREFIX`` beside the minter rather than a
+    literal spelled here, so this parser cannot drift from it (issue #518
+    scrub). Only the ALLY prefix is stripped — deliberately, not for want of a
+    general ``strip_combatant_prefix``: an ``enemy_``-prefixed id must fall
+    through unstripped and resolve to nobody, or an enemy's wire id would name
+    an ally (the M2 fix, pinned by
+    ``tests/combat/test_ally_healing.py::test_resolve_ally_target_enemy_prefix_not_stripped``).
     """
-    if target_id.startswith("ally_"):
-        target_id = target_id[len("ally_"):]
+    if target_id.startswith(ALLY_ID_PREFIX):
+        target_id = target_id[len(ALLY_ID_PREFIX):]
     # Skip index 0 (the player) — allies start at index 1
-    for ally in getattr(player, "combat_list_allies", [])[1:]:
-        if combatant_handle(ally) == target_id:
-            return ally
-    return None
+    allies = list(getattr(player, "combat_list_allies", []))[1:]
+    return find_by_handle(allies, target_id)
 
 
 @inventory_bp.route("/inventory", methods=["GET"])

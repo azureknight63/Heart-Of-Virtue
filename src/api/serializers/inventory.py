@@ -210,7 +210,9 @@ class InventoryItemSerializer:
         item_data = {
             # Opaque, stable per-object handle — never the heap address,
             # which leaked process layout and was recycled onto later items
-            # (issue #518).
+            # (issue #518). Its resolver half is
+            # ``index_by_handle`` in ``src/api/routes/inventory.py``
+            # (``get_item_and_index``) — the two must move together.
             "id": wire_handle(item),
             "index": index,
             "name": getattr(item, "name", "Unknown Item"),

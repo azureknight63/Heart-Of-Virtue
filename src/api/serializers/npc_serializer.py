@@ -22,6 +22,11 @@ class NPCSerializer:
             return {}
 
         npc_data = {
+            # Opaque per-object handle, never a heap address (issue #518).
+            # Its resolver half is ``src.combatant.find_by_handle``
+            # (``GameService.interact_with_target``/``start_combat``) — the two
+            # must move together, and moving only this one does not raise:
+            # every room interaction just answers "Target not found."
             "id": wire_handle(npc),
             "name": getattr(npc, "name", "Unknown"),
             "type": type(npc).__name__,
