@@ -93,7 +93,10 @@ def test_a_fled_rumbler_chain_does_not_follow_jean_into_another_fight(
             Ch01PostRumbler2(player=player, tile=grotto, params=False, repeat=False),
         ]
         player.hp = max(1, int(player.maxhp * 0.1))
-        session_data = session_manager.get_session(session_id)
+        # `.data` is the Dict[str, Any] the service annotates for; the
+        # Session object itself is not a mapping, so pending events would
+        # be written onto an attribute nothing reads.
+        session_data = session_manager.get_session(session_id).data
 
         triggered = app.game_service.trigger_combat_events(
             player, session_data=session_data
@@ -126,7 +129,10 @@ def test_the_chain_still_fires_in_the_fight_that_armed_it(
         player.universe.story["ch01_rumbler_fight"] = "1"
         player.hp = max(1, int(player.maxhp * 0.1))
 
-        session_data = session_manager.get_session(session_id)
+        # `.data` is the Dict[str, Any] the service annotates for; the
+        # Session object itself is not a mapping, so pending events would
+        # be written onto an attribute nothing reads.
+        session_data = session_manager.get_session(session_id).data
         app.game_service.trigger_combat_events(player, session_data=session_data)
 
         # Gorran's arrival heals Jean to full and arms the choice that follows.

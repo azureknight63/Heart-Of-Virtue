@@ -1,16 +1,12 @@
 """API-mode integration tests for mid-battle events, reinforcements, and move progression."""
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
 from src.moves import Move
 from src.narration import narrate
 from src.combatant import wire_handle
 from src.api.serializers.combat import CombatantSerializer
-
-ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _post_json(client, url, payload, session_id):
@@ -276,6 +272,11 @@ def test_reinforcements_do_not_reset_battle(app, client, authenticated_session):
             session_id,
         )
         assert move_response.status_code == 200
+        # The combat route answers 200 with success=False for every
+        # game-logic refusal (out of range, on cooldown, unaffordable),
+        # so the status code alone cannot tell a move that ran from one
+        # that was declined.
+        assert json.loads(move_response.data)["success"] is True, move_response.data
 
         pending_response = _get_json(client, "/api/world/events/pending", session_id)
         pending_data = json.loads(pending_response.data)
@@ -335,6 +336,11 @@ def test_enemy_move_can_spawn_enemies(app, client, authenticated_session):
             session_id,
         )
         assert move_response.status_code == 200
+        # The combat route answers 200 with success=False for every
+        # game-logic refusal (out of range, on cooldown, unaffordable),
+        # so the status code alone cannot tell a move that ran from one
+        # that was declined.
+        assert json.loads(move_response.data)["success"] is True, move_response.data
 
         assert enemy_move.executed is True
 

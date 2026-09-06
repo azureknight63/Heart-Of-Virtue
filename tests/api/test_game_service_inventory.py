@@ -20,12 +20,7 @@ Coverage:
   `ItemDetailSerializer`, never as a GameService method)
 """
 
-import sys
-from pathlib import Path
 import json
-
-ROOT = Path(__file__).resolve().parent.parent.parent
-
 
 import pytest
 from src.combatant import wire_handle
@@ -151,16 +146,28 @@ class TestGameServiceInventory:
     # ========== take (pickup) tests ==========
 
     def test_take_item_moves_it_from_tile_to_inventory(self, game_service, player):
-        """`interact_with_target(..., "take")` is the real pickup path."""
+        """`interact_with_target(..., "take")` is the real pickup path.
+
+        Seeded with a real non-currency item on purpose. The only thing on the
+        starting tile is `Gold`, which is absorbed into `player.gold` and never
+        lands in `player.inventory` -- so the only assertion the old version
+        could make was that the item left the tile, which a pickup that
+        *deleted* it would satisfy just as well.
+        """
+        from src.items import Restorative
+
         tile = game_service.get_current_tile_object(player)
-        ground_items = list(getattr(tile, "items_here", []))
-        assert ground_items, "the starting tile should have something to pick up"
-        target = ground_items[0]
+        target = Restorative()
+        assert not any(
+            item.name == target.name for item in player.inventory
+        ), "the seeded item must not already be held, or stacking hides the move"
+        tile.items_here.append(target)
 
         result = game_service.interact_with_target(player, wire_handle(target), "take")
 
         assert result.get("success") is True
         assert target not in tile.items_here
+        assert target in player.inventory
 
     # ========== drop_item tests ==========
 
@@ -212,12 +219,34 @@ class TestGameServiceInventory:
         assert result["hp"] == player.hp
         assert result["max_hp"] == player.maxhp
 
-    def test_get_player_stats_with_equipment(self, game_service, player):
-        """Equipment-derived protection is reported alongside the attributes."""
-        result = game_service.get_player_stats(player)
+    def test_get_player_stats_tracks_equipped_protection(self, game_service, player):
+        """Protection in the stats payload follows what is actually equipped.
 
-        assert result["protection"] == round(player.protection)
-        assert result["carrying_capacity"] == player.weight_tolerance
+        The previous version of this test equipped and unequipped nothing --
+        its setup was identical to `test_get_player_stats_success` and its
+        assertion (`result["protection"] == round(player.protection)`) restated
+        the serializer's own expression, so it held for any equipment state.
+        """
+        armour = [
+            item for item in player.inventory
+            if getattr(item, "maintype", None) == "Armor"
+            and getattr(item, "isequipped", False)
+        ]
+        assert armour, "starting player should have armour equipped"
+
+        before = game_service.get_player_stats(player)["protection"]
+        assert before == round(player.protection)
+        assert game_service.get_player_stats(player)["carrying_capacity"] == (
+            player.weight_tolerance
+        )
+
+        for item in armour:
+            item.isequipped = False
+        player.refresh_protection_rating()
+
+        after = game_service.get_player_stats(player)["protection"]
+        assert after == round(player.protection)
+        assert after < before, "stripping armour must lower the reported protection"
 
     # ========== get_player_status tests ==========
 
