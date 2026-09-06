@@ -107,7 +107,15 @@ class TestChestRumblerBattleIntegration:
 
         # Step 2: Take all items from the chest one by one
         items_taken = []
-        while len(chest.inventory) > 0:
+        # Bounded, and asserts progress each pass. An unbounded "until empty"
+        # loop turns a take that reports success without shrinking the
+        # container -- a stack merge, a non-removable entry, or the battle
+        # event restocking it -- into a hang that burns the CI job's whole
+        # --timeout=300 budget instead of failing red on the real defect.
+        for _ in range(initial_item_count + 5):
+            if not chest.inventory:
+                break
+            remaining_before = len(chest.inventory)
             item = chest.inventory[0]
             item_name = item.name
 
@@ -119,6 +127,10 @@ class TestChestRumblerBattleIntegration:
             )
 
             assert result["success"] is True, f"Failed to take {item_name}"
+            assert len(chest.inventory) < remaining_before, (
+                f"take reported success but the chest still holds "
+                f"{len(chest.inventory)} items -- '{item_name}' was not removed"
+            )
             items_taken.append(item_name)
             print(f"Took: {item_name}")
 

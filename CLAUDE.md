@@ -174,6 +174,18 @@ measures the thing under test rather than one lucky sample. `tests/_combat_fixtu
 `src.player`, whose instantiation mutates module-level registries (see the pollution
 gotcha below) — a test that needs no engine objects should seed locally instead.
 
+**`tests/api/conftest.py` disables `time.sleep` and `pbkdf2_hmac` for the whole
+process.** Both are `patch(...).start()`ed at module import and never stopped or
+registered for cleanup, so for every test in that directory `time.sleep` is a
+no-op `MagicMock` and password hashing returns a constant. Two consequences worth
+knowing before writing a test there: any wait budget expressed as
+`for _ in range(N): time.sleep(x)` is **fictitious** — it costs microseconds, not
+`N*x` seconds — and because a `MagicMock` call does not release the GIL (a real
+`time.sleep` does), the whole spin can complete inside one interpreter switch
+interval without a background thread ever being scheduled. That makes any test
+waiting on a worker thread a latent flake. Wait on `threading.Event().wait(x)`
+instead: it is untouched by the `time.sleep` patch and genuinely yields.
+
 **Test-pollution gotcha:** stray root-level scripts (`test_*_fix.py`, `reproduce_*.py`, etc.) that do `sys.modules['flask'] = MagicMock()` at import will poison every Flask test in a full run — pytest collects them from the rootdir, so each later route/serializer test sees a `MagicMock` app and fails (while passing in isolation). `pytest.ini`'s `addopts` ignore-list neutralizes the known ones; add new such scripts there. To find a collection-time culprit, hook `pytest_collection_finish` and check `type(sys.modules['flask'])`.
 
 ## Test Coverage Strategy

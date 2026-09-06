@@ -9,6 +9,8 @@ refusal really is a 200 with the reason attached, and the tactical advisor never
 names a move that would earn one.
 """
 
+import time
+import threading
 import json
 
 import pytest
@@ -191,12 +193,19 @@ def test_suggestions_never_name_an_unavailable_move(
 
         player.suggestions_paused = False
         adapter.refresh_suggestions()
-        for _ in range(200):
-            if not getattr(player, "suggestions_loading", False):
+        # Wait on an Event rather than time.sleep: tests/api/conftest.py starts
+        # a process-wide patch('time.sleep') at import and never stops it, so a
+        # sleep here is a no-op MagicMock. That makes the nominal wait budget
+        # fictitious, and because the mock never releases the GIL the whole
+        # spin can finish inside one switch interval without the daemon worker
+        # in refresh_suggestions ever being scheduled. Event.wait is untouched
+        # by that patch and does yield.
+        deadline = time.monotonic() + 4.0
+        idle = threading.Event()
+        while getattr(player, "suggestions_loading", False):
+            if time.monotonic() > deadline:
                 break
-            import time
-
-            time.sleep(0.02)
+            idle.wait(0.02)
 
         assert not getattr(player, "suggestions_loading", False), (
             "suggestion worker did not finish"

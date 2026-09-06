@@ -129,8 +129,12 @@ class TestListSavesRoute:
             "/api/saves",
             headers={"Authorization": f"Bearer {session_id}"},
         )
-        # Session expiration may result in 401 or 500 depending on error handling
-        assert response.status_code in [401, 500]
+        # Deterministically 401: resolve_session answers "Session not found or
+        # already expired" (src/api/middleware/auth.py:84) for an unknown or
+        # expired session id. The only 500 on that path is a missing session
+        # manager -- a server fault, not an auth outcome -- so accepting 500
+        # here would let a real regression that leaked one through pass.
+        assert response.status_code == 401
 
 
 class TestCreateSaveRoute:
@@ -530,8 +534,12 @@ class TestDeleteSaveRoute:
             "/api/saves/test_save_id",
             headers={"Authorization": f"Bearer {session_id}"},
         )
-        # Session expiration may result in 401 or 500 depending on error handling
-        assert response.status_code in [401, 500]
+        # Deterministically 401: resolve_session answers "Session not found or
+        # already expired" (src/api/middleware/auth.py:84) for an unknown or
+        # expired session id. The only 500 on that path is a missing session
+        # manager -- a server fault, not an auth outcome -- so accepting 500
+        # here would let a real regression that leaked one through pass.
+        assert response.status_code == 401
 
 
 class TestSavesErrorCases:
