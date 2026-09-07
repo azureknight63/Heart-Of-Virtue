@@ -116,3 +116,67 @@ class TestInteractPassagewayBlockedDuringCombat:
             "a normal (non-combat) passageway interaction should still queue "
             "the step-through confirmation event"
         )
+
+
+class TestPassagewayConfirmBlockedDuringCombat:
+    """A queue-time-only guard leaves a gap: combat can start *after* a
+    passageway confirmation was queued (e.g. an aggro NPC on the same tile
+    engages on the very interact call that queued it) and *before* the
+    player submits the confirming input. ``process_event_input`` must also
+    reject the confirm step in that case, not just the initial queuing.
+    """
+
+    def test_confirm_is_rejected_if_combat_started_after_queuing(
+        self, make_world, grid_3x3, game_service
+    ):
+        player, game_map = make_world(grid_3x3)
+        tile = game_map[(0, 0)]
+        passage = Passageway(
+            player, tile, teleport_map="other-map", teleport_tile=(0, 0)
+        )
+        tile.objects_here = [passage]
+
+        # Queue the confirmation while NOT in combat (this must succeed --
+        # it's the existing, already-tested behaviour).
+        session_data = {}
+        queued = game_service.interact_with_target(
+            player, wire_handle(passage), "enter", session_data=session_data
+        )
+        assert queued["success"] is True
+        event_id = next(iter(session_data["pending_events"]))
+
+        # Combat starts (e.g. an aggro NPC on the tile) after the
+        # confirmation was already queued.
+        player.in_combat = True
+
+        result = game_service.process_event_input(player, event_id, "continue", session_data)
+
+        assert result["success"] is False
+        assert "combat" in result.get("error", "").lower()
+        # The player must not have been teleported off the battlefield, and
+        # the pending confirmation must still be there for a later, in-combat
+        # retry to reject the same way (not silently dropped).
+        assert (player.location_x, player.location_y) == (0, 0)
+        assert event_id in session_data["pending_events"]
+
+    def test_confirm_still_works_when_not_in_combat(
+        self, make_world, grid_3x3, game_service
+    ):
+        """Sanity check: the new guard must not block an ordinary confirm."""
+        player, game_map = make_world(grid_3x3)
+        tile = game_map[(0, 0)]
+        passage = Passageway(
+            player, tile, teleport_map="other-map", teleport_tile=(0, 0)
+        )
+        tile.objects_here = [passage]
+
+        session_data = {}
+        queued = game_service.interact_with_target(
+            player, wire_handle(passage), "enter", session_data=session_data
+        )
+        event_id = next(iter(session_data["pending_events"]))
+        assert getattr(player, "in_combat", False) is False
+
+        result = game_service.process_event_input(player, event_id, "continue", session_data)
+
+        assert result["success"] is True

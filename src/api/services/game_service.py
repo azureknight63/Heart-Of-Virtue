@@ -929,7 +929,7 @@ class GameService:
 
         current_map = getattr(player, "map", None)
         map_name = current_map.get("name") if isinstance(current_map, dict) else None
-        tile_key = f"{map_name}:{tile.x},{tile.y}"
+        tile_key = self._tile_mod_key(map_name, tile.x, tile.y)
 
         # Room data is serialized by hand here rather than via a shared serializer class.
 
@@ -1006,7 +1006,7 @@ class GameService:
         session_data["tile_modifications"][tile_key][modification_type] = data
 
     @staticmethod
-    def _tile_mod_key(map_name: Optional[str], x, y) -> str:
+    def _tile_mod_key(map_name: Optional[str], x: int, y: int) -> str:
         """Build a ``tile_modifications`` key, namespaced by map when known (#528).
 
         Mirrors ``explored_tiles``' ``f"{map_name}:{x},{y}"`` scheme (see
@@ -1380,6 +1380,34 @@ class GameService:
             "combat_state": combat_state,
         }
 
+    @staticmethod
+    def _event_had_observable_effect(
+        event: Any,
+        completed_before: bool,
+        error_occurred: bool,
+        clean_output: str,
+    ) -> bool:
+        """Return whether a checked tile event actually did something (#544).
+
+        ``check_conditions()`` runs on EVERY event on a tile on EVERY
+        interact/tile-entry call. A gated event whose condition wasn't met
+        yet (e.g. ``AfterKingSlimeReturn`` before the player has the mineral
+        fragment -- ``src/story/ch02.py`` -- which deliberately never
+        self-destructs while dormant, issue #371) is a pure no-op:
+        ``needs_input``/``completed`` stay at their ``Event.__init__``
+        defaults and no narration is produced. Reporting that no-op in
+        ``events_triggered`` anyway let a dormant event masquerade as "just
+        fired" on every single interact at its tile, and on the frontend
+        that falsely non-empty list was enough (via ``useWorldInteract.js``'s
+        bare ``.length > 0`` check) to blank out real interaction output.
+        """
+        return (
+            error_occurred
+            or bool(getattr(event, "needs_input", False))
+            or (getattr(event, "completed", False) and not completed_before)
+            or bool(clean_output)
+        )
+
     def trigger_tile_events(
         self,
         player: "player_module.Player",
@@ -1539,26 +1567,9 @@ class GameService:
                         queue.append(new_event)
 
                 # Only surface events that actually produced an observable
-                # effect: they asked for input, transitioned to completed,
-                # emitted narration, or blew up. check_conditions() runs on
-                # EVERY event on the tile on EVERY interact/tile-entry call
-                # (see interact_with_target's unconditional recheck), and a
-                # gated event whose condition wasn't met yet (e.g.
-                # AfterKingSlimeReturn before the player has the mineral
-                # fragment -- src/story/ch02.py -- which deliberately never
-                # self-destructs while dormant, issue #371) is a pure no-op:
-                # needs_input/completed stay at their Event.__init__ defaults
-                # and no narration is produced. Reporting that no-op in
-                # events_triggered anyway (issue #544) let a dormant event
-                # masquerade as "just fired" on every single interact at its
-                # tile, and on the frontend that falsely non-empty list was
-                # enough (via useWorldInteract.js's bare `.length > 0` check)
-                # to blank out real interaction output.
-                observed_effect = (
-                    error_occurred
-                    or bool(getattr(event, "needs_input", False))
-                    or (getattr(event, "completed", False) and not completed_before)
-                    or bool(clean_output)
+                # effect -- see _event_had_observable_effect (issue #544).
+                observed_effect = self._event_had_observable_effect(
+                    event, completed_before, error_occurred, clean_output
                 )
                 if observed_effect:
                     events_triggered.append(event_data)
@@ -1601,6 +1612,23 @@ class GameService:
 
         pending = session_data["pending_events"][event_id]
         event = pending["event"]
+
+        # Reject a queued passageway teleport confirmation while combat is
+        # active (#543). interact_with_target refuses to QUEUE a new
+        # PassagewayTransitionEvent while already in combat, but combat can
+        # start (e.g. an aggro NPC on the same tile) *after* a confirmation
+        # was queued and before the player submits this input -- so the
+        # guard belongs here too, at the point where the teleport actually
+        # commits, not only at the point where it was first queued.
+        from src.events import PassagewayTransitionEvent
+
+        if isinstance(event, PassagewayTransitionEvent) and getattr(
+            player, "in_combat", False
+        ):
+            return {
+                "success": False,
+                "error": "Cannot use a passageway while in combat.",
+            }
 
         # Process the event with user input
         result = {"success": True, "event_id": event_id}
@@ -2138,9 +2166,9 @@ class GameService:
         # later, when the client confirms via POST /world/events/input.
         # Refusing to queue the confirmation in the first place keeps that
         # confirm step from ever being reachable while the fight is still on.
-        from src.objects import Passageway as _Passageway
+        from src.objects import Passageway
 
-        if isinstance(target, _Passageway) and getattr(player, "in_combat", False):
+        if isinstance(target, Passageway) and getattr(player, "in_combat", False):
             return {
                 "success": False,
                 "message": "Cannot use a passageway while in combat.",
@@ -2163,7 +2191,7 @@ class GameService:
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                from src.objects import Container, Passageway
+                from src.objects import Container
                 from src.items import Item
                 from src.inventory_utils import transfer_item
                 from src.events import LootEvent

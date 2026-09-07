@@ -338,20 +338,37 @@ class MerchantShopMixin:
         if int(enchantment_points) > 0:
             functions.add_random_enchantments(item, int(enchantment_points))
 
+    @staticmethod
+    def _containers_accepting_type(containers: list[Container], item: Item) -> list[Container]:
+        """Return the subset of ``containers`` whose ``allowed_item_types`` matches ``item``.
+
+        Shared by ``_place_item`` and ``_fill_remaining_stock``'s
+        ``eligible_containers_for`` so the two don't drift into two
+        independent implementations of the same type-matching rule. Callers
+        that also care about a container's own stock cap (as
+        ``eligible_containers_for`` does) must filter for that separately —
+        this only answers "does the item type match", not "is there room".
+        """
+        acceptable: list[Container] = []
+        for container in containers:
+            allowed_types = getattr(container, "allowed_item_types", None)
+            if not allowed_types:
+                continue
+            try:
+                for allowed_type in allowed_types:
+                    if isinstance(item, allowed_type):
+                        acceptable.append(container)
+                        break
+            except Exception:
+                continue
+        return acceptable
+
     def _place_item(self, item: Item, containers: list[Container]) -> bool:
         """Attempt to place item into a randomly selected eligible container.
 
         Returns True if placed; False if no container accepted the item type.
         """
-        acceptable = []
-        for container in containers:
-            allowed_types = getattr(container, "allowed_item_types", None)
-            if not allowed_types:
-                continue
-            for allowed_type in allowed_types:
-                if isinstance(item, allowed_type):
-                    acceptable.append(container)
-                    break
+        acceptable = self._containers_accepting_type(containers, item)
         if acceptable:
             random.choice(acceptable).inventory.append(item)
             return True
@@ -459,21 +476,8 @@ class MerchantShopMixin:
             return None
 
         def eligible_containers_for(item: Item) -> list[Container]:
-            elig: list[Container] = []
-            for ct in containers:
-                if container_slots_remaining(ct) <= 0:
-                    continue
-                allowed = getattr(ct, "allowed_item_types", None)
-                if not allowed:
-                    continue
-                try:
-                    for t in allowed:
-                        if isinstance(item, t):
-                            elig.append(ct)
-                            break
-                except Exception:
-                    continue
-            return elig
+            open_containers = [ct for ct in containers if container_slots_remaining(ct) > 0]
+            return self._containers_accepting_type(open_containers, item)
 
         safety = 0
         while not all_full() and safety < 1000:

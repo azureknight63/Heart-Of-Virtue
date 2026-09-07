@@ -52,7 +52,7 @@ class RealisticUniverse:
         self.map = {(index, 0): room for index, room in enumerate(rooms)}
 
 
-def _merchant_in_world(name="Objects Here Tester", stock_count=0):
+def _merchant_in_world(name="Objects Here Tester", stock_count=0, **merchant_kwargs):
     merchant = Merchant(
         name=name,
         description="desc",
@@ -60,11 +60,32 @@ def _merchant_in_world(name="Objects Here Tester", stock_count=0):
         aggro=False,
         exp_award=0,
         stock_count=stock_count,
+        **merchant_kwargs,
     )
     room = RealisticRoom()
     room.universe = RealisticUniverse([room])
     merchant.current_room = room
     return merchant, room
+
+
+def _stub_spawn_item(room):
+    """Build a ``room.spawn_item`` stand-in that resolves any real item class by name.
+
+    Real rooms resolve ``item_type`` (a class name string) against
+    ``src.items`` -- this mirrors that instead of hardcoding a single class,
+    so every test in this file that needs a spawnable room shares one
+    implementation.
+    """
+
+    def spawn_item(item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
+        import src.items as items_module
+
+        cls = getattr(items_module, item_type)
+        item = cls(merchandise=merchandise)
+        room.items_here.append(item)
+        return item
+
+    return spawn_item
 
 
 # ---------------------------------------------------------------------------
@@ -232,13 +253,7 @@ def test_container_injection_claims_exactly_one_registry_entry():
 
 def test_create_always_stock_item_snapshots_base_value():
     merchant, room = _merchant_in_world()
-
-    def spawn_item(item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
-        item = Restorative(merchandise=merchandise)
-        room.items_here.append(item)
-        return item
-
-    room.spawn_item = spawn_item
+    room.spawn_item = _stub_spawn_item(room)
 
     created = merchant._create_always_stock_item(Restorative)
 
@@ -249,13 +264,7 @@ def test_create_always_stock_item_snapshots_base_value():
 def test_always_stock_items_receive_value_conditions():
     """base_value is what lets value conditions price an item at all."""
     merchant, room = _merchant_in_world()
-
-    def spawn_item(item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
-        item = Restorative(merchandise=merchandise)
-        room.items_here.append(item)
-        return item
-
-    room.spawn_item = spawn_item
+    room.spawn_item = _stub_spawn_item(room)
     created = merchant._create_always_stock_item(Restorative)
     merchant.inventory = [created]
     merchant.shop_conditions["value"] = [
@@ -289,12 +298,8 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
     fill's legitimate use of containers is covered by the existing tests
     above (and by test_merchant.py / test_npc_shop_merchants_coverage.py).
     """
-    merchant = Merchant(
+    merchant, room = _merchant_in_world(
         name="Jambo",
-        description="An apothecary.",
-        damage=1,
-        aggro=False,
-        exp_award=0,
         stock_count=6,
         always_stock=[
             Restorative(count=5, merchandise=True),
@@ -304,19 +309,7 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
         specialties=[Consumable],
         enchantment_rate=0.0,
     )
-    room = RealisticRoom()
-    room.universe = RealisticUniverse([room])
-    merchant.current_room = room
-
-    def spawn_item(item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
-        import src.items as items_module
-
-        cls = getattr(items_module, item_type)
-        item = cls(merchandise=merchandise)
-        room.items_here.append(item)
-        return item
-
-    room.spawn_item = spawn_item
+    room.spawn_item = _stub_spawn_item(room)
 
     crate = Container(
         name="Jambo's Tent Storage",

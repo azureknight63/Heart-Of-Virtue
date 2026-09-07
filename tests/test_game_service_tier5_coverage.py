@@ -30,6 +30,22 @@ from src.events import Event
 pytest_plugins = ["conftest_game_service"]
 
 
+def _make_event_fire(mock_event):
+    """Wire a mocked event's ``check_conditions`` to a genuine fire (not a dormant no-op).
+
+    ``trigger_tile_events``/``process_event_input`` only report events with an
+    observable effect (issue #544), and a mocked ``serialize_with_input``'s
+    canned return value can't carry that signal on its own -- setting
+    ``needs_input`` as a ``check_conditions`` side effect is what makes the
+    mock look like a real fire.
+    """
+
+    def _fires():
+        mock_event.needs_input = True
+
+    mock_event.check_conditions = MagicMock(side_effect=_fires)
+
+
 # ============================================================================
 # get_current_room — initial tile event exception handling
 # ============================================================================
@@ -710,15 +726,7 @@ class TestProcessEventInputExtra:
         }
         followup = MagicMock(spec=["check_conditions", "name", "player", "tile"])
         followup.name = "Followup"
-
-        def _followup_fires():
-            # A genuine fire (asks for input) rather than a dormant no-op --
-            # trigger_tile_events only reports events with an observable
-            # effect (issue #544), and the mocked serialize_with_input below
-            # can't carry that signal since its return values are canned.
-            followup.needs_input = True
-
-        followup.check_conditions = MagicMock(side_effect=_followup_fires)
+        _make_event_fire(followup)
         mock_player.current_room.events_here = [followup]
 
         with patch(
@@ -1331,15 +1339,7 @@ class TestInteractWithTargetExtra:
 
         followup_event = MagicMock(spec=["check_conditions", "name", "player", "tile"])
         followup_event.name = "FollowupEvent"
-
-        def _followup_fires():
-            # A genuine fire (asks for input) rather than a dormant no-op --
-            # trigger_tile_events only reports events with an observable
-            # effect (issue #544), and the mocked serialize_with_input below
-            # can't carry that signal since it always returns the same dict.
-            followup_event.needs_input = True
-
-        followup_event.check_conditions = MagicMock(side_effect=_followup_fires)
+        _make_event_fire(followup_event)
         tile.events_here = [followup_event]
         session_data = {}
 
