@@ -425,6 +425,37 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByText('You worry too much, dear.')).toBeInTheDocument()
     })
 
+    // Issue #530: the "click or press Enter to continue" hint (rendered by
+    // BaseDialog's hint text prop when this stage is hosted inside
+    // EventDialog) advertises Enter, but the two tests above fire the keydown
+    // directly on the stage's own node -- which only proves a listener is
+    // ATTACHED there, not that it ever receives a REAL key press. Nothing in
+    // this component ever calls `.focus()` on `containerRef`, and its
+    // `tabIndex={-1}` explicitly excludes it from BaseDialog's focus trap (see
+    // BaseDialog.jsx's FOCUSABLE_SELECTOR, which excludes `[tabindex="-1"]`),
+    // so real focus never lands inside this node. A real key press bubbles
+    // from wherever focus actually is -- jsdom defaults that to
+    // `document.body` when nothing has claimed it, which is also what
+    // BaseDialog's trap falls back to focusing when the stage has no other
+    // focusable descendant yet. `document.body` is an ANCESTOR of the stage's
+    // own div, not a descendant, so a listener scoped to the stage's node
+    // cannot see an event that originates there.
+    it('advances on Enter when the keydown originates from the actually-focused element, not the stage node itself', () => {
+        render(
+            <ConversationStage
+                segments={stagedSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(document.activeElement).toBe(document.body)
+
+        fireEvent.keyDown(document.body, { key: 'Enter' })
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('You worry too much, dear.')).toBeInTheDocument()
+    })
+
     it('renders a thought beat italicized while keeping the speaker portrait active', () => {
         const thoughtSegments = [
             {

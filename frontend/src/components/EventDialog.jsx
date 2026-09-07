@@ -277,14 +277,22 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             }
         }
 
-        if (dialogRef.current) {
-            dialogRef.current.addEventListener('keydown', handleKeyDown)
-        }
+        // Attached to `document`, not dialogRef.current (issue #530).
+        // BaseDialog's own focus trap (useFocusTrap in BaseDialog.jsx) moves
+        // real DOM focus onto ITS container (`.modal-content`) -- or onto
+        // whichever focusable descendant it finds first -- never onto this
+        // div: dialogRef starts with nothing focusable inside it (showInput is
+        // false until the typewriter finishes) and, once choice buttons do
+        // appear, nothing here ever calls `.focus()` on one. `.modal-content`
+        // is an ANCESTOR of dialogRef, and keydown only bubbles UP from the
+        // focused element to its ancestors, never DOWN into a descendant, so a
+        // listener scoped to dialogRef could never see a real key press. This
+        // matches the document-level pattern BaseDialog's own Escape/Tab trap
+        // and the glossary panels already use.
+        document.addEventListener('keydown', handleKeyDown)
 
         return () => {
-            if (dialogRef.current) {
-                dialogRef.current.removeEventListener('keydown', handleKeyDown)
-            }
+            document.removeEventListener('keydown', handleKeyDown)
         }
     }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice, isSubmitting])
 
@@ -658,7 +666,9 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         {/* Keyboard shortcuts hint */}
                         {inputType === 'choice' && inputOptions.length > 0 && (
                             <GameText variant="muted" size="xs" align="center" style={{ fontStyle: 'italic', marginTop: spacing.xs }}>
-                                Press 1-{Math.min(inputOptions.length, 9)} to select
+                                {inputOptions.length === 1
+                                    ? 'Press 1 to select'
+                                    : `Press 1-${Math.min(inputOptions.length, 9)} to select`}
                             </GameText>
                         )}
                     </div>
