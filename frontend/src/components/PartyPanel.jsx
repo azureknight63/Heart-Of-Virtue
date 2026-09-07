@@ -152,14 +152,25 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                       <span>VITALITY</span>
                       <span>{member.hp || 0} / {member.max_hp || 100}</span>
                     </div>
-                    <div style={{ height: '6px', backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: '3px', overflow: 'hidden', border: '1px solid rgba(255,0,0,0.2)' }}>
-                      <div style={{
-                        width: `${Math.min(100, ((member.hp || 0) / (member.max_hp || 100)) * 100)}%`,
-                        height: '100%',
-                        backgroundColor: '#ff4444',
-                        boxShadow: '0 0 8px #ff444499'
-                      }} />
-                    </div>
+                    {/* hpPct drives the fill color, not just its width — this bar
+                        used to hard-code '#ff4444' (danger red) regardless of
+                        health, so a party member at full HP still read as
+                        critical (issue #536). Thresholds mirror the identical
+                        member-HP bar in ItemDetailDialog.jsx. */}
+                    {(() => {
+                      const hpPct = Math.min(100, ((member.hp || 0) / (member.max_hp || 100)) * 100)
+                      const hpColor = hpPct > 50 ? '#44ff88' : hpPct > 25 ? '#ffaa00' : '#ff4444'
+                      return (
+                        <div style={{ height: '6px', backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: '3px', overflow: 'hidden', border: '1px solid rgba(255,0,0,0.2)' }}>
+                          <div style={{
+                            width: `${hpPct}%`,
+                            height: '100%',
+                            backgroundColor: hpColor,
+                            boxShadow: `0 0 8px ${hpColor}99`
+                          }} />
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
 
