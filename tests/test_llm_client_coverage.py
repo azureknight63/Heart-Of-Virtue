@@ -1614,10 +1614,13 @@ class TestOpenrouterChatSingle:
         mock_post.assert_not_called()
 
     def test_sdk_404_is_logged_at_warning_not_debug(self, monkeypatch, caplog):
-        """Issue #533: a configured model that 404s (or 401/402/403s) is a
+        """Issue #533: a configured model that 404s (or 401/402s) is a
         misconfiguration, not routine noise -- WARNING is default-visible and
         LOG_FILE-persisted, DEBUG is neither, so a dead model used to degrade
-        every chat turn with nothing in a normal log to explain it."""
+        every chat turn with nothing in a normal log to explain it. 403 stays
+        at DEBUG on purpose (a per-request refusal, not proof the model is
+        dead) -- this test only exercises 404, see the 401/402 coverage
+        elsewhere in this class for the rest of _PERMANENT_MODEL_FAILURES."""
         client = self._client(monkeypatch)
 
         class FakeNotFoundError(Exception):

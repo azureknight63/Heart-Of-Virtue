@@ -2,7 +2,7 @@
 Chapter 03 events
 """
 
-from src.events import Event
+from src.events import Event, map_name_for_tile
 from src.functions import print_slow
 from src.narration import (
     narrate,
@@ -28,6 +28,10 @@ _JEAN_GORRAN_LISS = [
     ("Liss", "right", "neutral"),
 ]
 
+# The map (or map-family prefix) previous_tile must belong to for
+# GorranGestureEvent to fire — see check_conditions (#547).
+_GRONDIA_MAP_PREFIX = "grondia"
+
 
 class GorranGestureEvent(Event):
     """
@@ -35,8 +39,10 @@ class GorranGestureEvent(Event):
     Gorran pauses to place his palm against the sealed gate — a moment of farewell,
     or acknowledgment, or something Jean cannot name.
     This is Gorran's first step into the world beyond the stone city.
-    Event fires once on first entry to the tile (any time the player arrives
-    here from another tile), then sets gorran_gesture_done so it won't repeat.
+    Event fires once on first entry to the tile, but only when the player
+    arrived from a Grondia tile (#547) — a previous_tile from any other map
+    does not count, since the scene is specifically this farewell, not a
+    generic "just arrived" beat. Sets gorran_gesture_done so it won't repeat.
     """
 
     def __init__(self, player, tile, params=None, repeat=False, name="GorranGesture"):
@@ -64,10 +70,10 @@ class GorranGestureEvent(Event):
         # incidental false-positive fire (e.g. a previous_tile left over
         # from wandering the destination map itself) would permanently
         # consume gorran_gesture_done and silently hide the real scene.
-        prev_map = getattr(prev, "map", None)
-        prev_map_name = prev_map.get("name") if isinstance(prev_map, dict) else None
+        prev_map_name = map_name_for_tile(prev)
         if not prev_map_name or not (
-            prev_map_name == "grondia" or prev_map_name.startswith("grondia-")
+            prev_map_name == _GRONDIA_MAP_PREFIX
+            or prev_map_name.startswith(_GRONDIA_MAP_PREFIX + "-")
         ):
             return
         self.pass_conditions_to_process()

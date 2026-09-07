@@ -2080,12 +2080,12 @@ class GenericLLMClient:
                 # model itself is dead -- see that set's own comment.
                 # Escalating every one of those would bury the signal this
                 # promotion exists to surface.
-                log = (
+                log_fn = (
                     logger.warning
                     if status in _PERMANENT_MODEL_FAILURES
                     else logger.debug
                 )
-                log(
+                log_fn(
                     "SDK request for %s failed with status %s (deterministic); "
                     "skipping HTTP fallback.",
                     model_id, status,

@@ -4020,6 +4020,22 @@ class ConversationalNPCMixin:
             ended=self.loquacity_current < self.loquacity_threshold,
         )
 
+    @staticmethod
+    def _flavor_only_turn(line: str) -> Tuple[str, str]:
+        """Wrap a line of engine-authored fallback text as ``(npc_text, npc_flavor)``.
+
+        ``npc_text`` is always ``""``: authored fallback pools
+        (``conversation_starters_by_chapter``, ``closing_lines_when_exhausted``,
+        the brush-off line) are written as third-person narration, not
+        first-person speech, so rendering them under the NPC's speaker label
+        would be indistinguishable from something the NPC actually said
+        (issue #532). The three call sites that need this — the loquacity
+        brush-off, a failed opening, and a failed mid-conversation reply —
+        used to each build the ``("", line)`` pair independently; this is
+        the one place the rule now lives.
+        """
+        return "", line
+
     def _resolve_fallback_response(
         self, player, conversation_ended: bool
     ) -> Tuple[str, str, bool]:
@@ -4045,17 +4061,8 @@ class ConversationalNPCMixin:
         has only one entry (rotation itself only guarantees that no two
         *consecutive* draws collide, and only for pools of two or more).
 
-        Returns ``(npc_text, npc_flavor, conversation_ended)``. ``npc_text`` is
-        always ``""``: the authored pools (``conversation_starters_by_chapter``,
-        ``closing_lines_when_exhausted`` — see e.g. ``ai/npc/human/mara.json``)
-        are written as third-person narration ("She glances up briefly, reading
-        Jean's gear before his face."), not first-person speech, and rendering
-        that under the NPC's speaker label is issue #532: the player cannot tell
-        the engine's own narration from a line the NPC actually spoke, or from a
-        live model turn at all. This is the same "asides go to flavor" policy
-        ``_qc_strip_and_check``/``_extract_action_asides`` already apply to a
-        *model*-authored reply that turns out to be entirely a stage direction,
-        applied here to the engine's OWN fallback text instead.
+        Returns ``(npc_text, npc_flavor, conversation_ended)`` — see
+        ``_flavor_only_turn`` for why ``npc_text`` is always ``""``.
         """
         line = self._get_fallback_npc_line(
             is_opening=False, player=player, exhausted=conversation_ended
@@ -4078,7 +4085,8 @@ class ConversationalNPCMixin:
                 "chat_respond fallback pool exhausted; forcing conversation_ended. npc=%s",
                 self.name,
             )
-        return "", line, conversation_ended
+        npc_text, npc_flavor = self._flavor_only_turn(line)
+        return npc_text, npc_flavor, conversation_ended
 
     def _retract_guarded_loquacity_gain(
         self, outcome: "LoquacityOutcome"
@@ -4240,7 +4248,8 @@ class ConversationalNPCMixin:
         """Assemble the /open response body.
 
         The exchange count is always 0: this IS the first exchange. The
-        brush-off path passes a bare :class:`Turn` (no flavor, no options) and
+        brush-off path passes a flavor-only :class:`Turn` (see
+        ``_flavor_only_turn`` — empty ``npc_text``, no ``jean_options``) and
         ``conversation_ended=True``.
         """
         payload = self._base_payload(
@@ -4326,14 +4335,12 @@ class ConversationalNPCMixin:
                     self.loquacity_current,
                     self.loquacity_threshold,
                 )
-                # Same routing as the mid-conversation and failed-opening
-                # fallbacks below: the authored brush-off line is narration
-                # ("A brief shake of the head."), not spoken dialogue, so it
-                # goes to npc_flavor rather than under the speaker label.
+                # See _flavor_only_turn for why this routes to npc_flavor
+                # rather than under the speaker label (issue #532).
                 return self._open_payload(
                     npc_key,
                     player,
-                    Turn("", self._get_brush_off_line()),
+                    Turn(*self._flavor_only_turn(self._get_brush_off_line())),
                     llm_available=False,
                     conversation_ended=True,
                 )
@@ -4370,14 +4377,10 @@ class ConversationalNPCMixin:
                     len(npc_opening),
                 )
             else:
-                # The authored opening pool is narration ("She glances up
-                # briefly..." — ai/npc/human/mara.json), not first-person
-                # speech, so it is routed to npc_flavor rather than shown
-                # under the NPC's speaker label as if it were spoken — see
-                # _resolve_fallback_response's docstring (issue #532).
-                npc_opening = ""
-                fallback_flavor = self._get_fallback_npc_line(
-                    is_opening=True, player=player
+                # See _flavor_only_turn for why this routes to npc_flavor
+                # rather than under the speaker label (issue #532).
+                npc_opening, fallback_flavor = self._flavor_only_turn(
+                    self._get_fallback_npc_line(is_opening=True, player=player)
                 )
                 llm_available = False
                 logger.warning(

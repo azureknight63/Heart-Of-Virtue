@@ -10,7 +10,7 @@ from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, wire_handle
-from src.events import purge_orphaned_combat_events
+from src.events import purge_orphaned_combat_events, map_name_for_tile
 from src.functions import (
     check_for_combat,
     end_combat_cleanup,
@@ -927,8 +927,7 @@ class GameService:
         if not hasattr(player, "explored_tiles"):
             player.explored_tiles = {}
 
-        current_map = getattr(player, "map", None)
-        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+        map_name = self._map_name_for_tile(tile)
         tile_key = self._tile_mod_key(map_name, tile.x, tile.y)
 
         # Room data is serialized by hand here rather than via a shared serializer class.
@@ -1022,15 +1021,14 @@ class GameService:
     def _map_name_for_tile(tile) -> Optional[str]:
         """Return the map name ``tile`` belongs to, or ``None`` if unknown.
 
-        Same derivation ``_record_exploration`` already uses for
-        ``explored_tiles``, just read off ``tile.map`` instead of
-        ``player.map`` — every real ``MapTile`` sets ``self.map`` to the same
-        dict its owning map's tiles all share (``src/tiles.py``,
-        ``src/universe.py``), so the two are the same object once the player
-        is standing on that tile.
+        Thin wrapper over ``src.events.map_name_for_tile`` — the engine-level
+        canonical derivation, also used by ``tile_identity`` and story-event
+        arrival guards (e.g. ``GorranGestureEvent``, issue #547). Kept as a
+        method here (rather than calling the module function directly at
+        every ``GameService`` call site) so existing internal callers don't
+        need updating.
         """
-        tile_map = getattr(tile, "map", None)
-        return tile_map.get("name") if isinstance(tile_map, dict) else None
+        return map_name_for_tile(tile)
 
     @staticmethod
     def _object_roster(tile) -> List[str]:
