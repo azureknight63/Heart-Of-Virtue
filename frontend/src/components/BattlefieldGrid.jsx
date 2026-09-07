@@ -304,7 +304,7 @@ const CombatantMarker = React.memo(({
   }
 
   // HP / Fatigue stats
-  const { hpPct, fatPct } = resolveEntityStats(entity);
+  const { hp, maxHp, hpPct, fatPct } = resolveEntityStats(entity);
 
   const content = displaySymbol || entity.battle_symbol || (entity.name && entity.name[0]) || '?';
 
@@ -326,6 +326,12 @@ const CombatantMarker = React.memo(({
 
   return (
     <div
+      // issue #536 item 1: the default map view's only HP signal was this
+      // torus's colour — no text anywhere, so a player who never hovered or
+      // clicked a token (and the SELECT TARGET sub-dialog was the only place
+      // HP appeared at all) had no way to read it. aria-label carries it to
+      // assistive tech; the badge below carries it to sighted players too.
+      aria-label={`${entity.name}: ${hp}/${maxHp} HP`}
       className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-[3px]${
         pendingGlowColor ? ' battlefield-pending-glow' : ''
       }${targetShake ? ' battlefield-target-shake' : ''}`}
@@ -408,6 +414,34 @@ const CombatantMarker = React.memo(({
           aria-label="Jean"
         >
           ★
+        </div>
+      )}
+
+      {/* HP badge — a visible number alongside the torus's colour, so sighted
+          players get the same value the aria-label above gives assistive
+          tech, with no hover/click/tab required. Skipped in compact mode:
+          the marker itself is too small there for legible text (matches the
+          precedent set by the beat-countdown badge and status icons below). */}
+      {!isCompact && (
+        <div
+          className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
+          style={{
+            bottom: '-5px',
+            left: '-7px',
+            minWidth: '15px',
+            height: '15px',
+            padding: '0 3px',
+            fontSize: '9px',
+            lineHeight: 1,
+            fontWeight: 'bold',
+            fontFamily: 'monospace',
+            color: '#fff',
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            border: '1px solid #ff4444',
+            textShadow: 'none',
+          }}
+        >
+          {hp}/{maxHp}
         </div>
       )}
 

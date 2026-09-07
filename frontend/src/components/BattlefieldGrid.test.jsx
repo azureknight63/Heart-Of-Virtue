@@ -224,6 +224,25 @@ describe('BattlefieldGrid', () => {
             expect(screen.getByText('9 ft')).toBeInTheDocument();
         });
 
+        it('surfaces an HP number for every combatant on the default map view, not just the target picker or a hover/click (issue #536)', () => {
+            // Before this fix, the map view's only HP signal was a colored SVG
+            // torus with no text anywhere — the hover tooltip and the
+            // click-to-select panel both required an interaction, so a player
+            // who never hovered or clicked saw no HP number at all for Jean,
+            // an ally, or an enemy.
+            const combat = {
+                ...mockCombat,
+                player: { ...mockCombat.player, name: 'Jean' },
+                enemies: [{ ...mockCombat.enemies[0], name: 'Goblin', hp: 30, max_hp: 50 }],
+            };
+            render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(screen.getByLabelText('Jean: 100/100 HP')).toBeInTheDocument();
+            expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+            // A visible number, not just an aria-label buried off-screen.
+            expect(screen.getByText('30/50')).toBeInTheDocument();
+        });
+
         it('clears the selection when the map background is clicked', () => {
             const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
 
