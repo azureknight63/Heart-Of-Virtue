@@ -525,6 +525,11 @@ class TestMovePlayerHardening:
         player.location_x = 0
         player.location_y = 0
         player.combat_list_allies = [player]
+        # A bare Mock() answers any attribute access with a (truthy) Mock,
+        # which would trip the #543 in_combat guard in move_player before
+        # this test ever reaches the blocked-tile branch it means to
+        # exercise. Set it explicitly so the two checks stay independent.
+        player.in_combat = False
         current_tile = Mock()
         new_tile = Mock()
         new_tile.is_passable = False

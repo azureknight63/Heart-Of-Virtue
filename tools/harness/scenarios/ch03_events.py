@@ -121,9 +121,17 @@ class Ch03EventsScenario(Scenario):
                 ))
 
         # ==================================================================
-        # 1. GorranGestureEvent — requires a truthy previous_tile to fire
+        # 1. GorranGestureEvent — requires previous_tile to resolve to a
+        # Grondia map to fire (#547 tightened this from "any truthy
+        # previous_tile" to specifically a Grondia-origin tile). A
+        # same-tile self-reference no longer satisfies it, so this is a
+        # standalone stand-in tile whose .map carries the Grondia name the
+        # real map loader assigns to grondia.json (map["name"] == "grondia").
         # ==================================================================
-        player.previous_tile = tile
+        class _GrondiaPrevTile:
+            map = {"name": "grondia"}
+
+        player.previous_tile = _GrondiaPrevTile()
         tile.events_here = [GorranGestureEvent(player, tile, repeat=False)]
 
         resp = trigger_events()
