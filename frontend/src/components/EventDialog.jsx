@@ -293,12 +293,49 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const charLimit = event?.input_max_length ?? 500
     const charCountColor = charCount > charLimit ? colors.danger : charCount > charLimit * 0.9 ? colors.warning : colors.text.muted
 
+    /**
+     * A plain click on the dialog body (including the text itself) doubles as
+     * the typewriter's "click to skip" gesture on the first click and
+     * "continue past a finished event" afterward, so this stays gated on
+     * `isComplete`: making it unconditional would turn the very click that
+     * reveals the text into the click that dismisses the whole dialog.
+     */
     const handleGlobalInteraction = () => {
         if (isSubmitting) return
         if (isComplete && !needsInput) {
             setIsSubmitting(true)
             onClose()
         }
+    }
+
+    /**
+     * ✕, the overlay backdrop click, and Escape — funneled through
+     * BaseDialog's single `onClose` prop — are unambiguous "I want to leave"
+     * gestures: none of them can be triggered by reading or skipping the
+     * text, unlike `handleGlobalInteraction` above. So they do not need to
+     * wait for a staged conversation to reach its last beat.
+     *
+     * A `needs_input:false` event (e.g. the "Event Result" frame built from a
+     * completed submission's output_text, or long arrival narration staged
+     * across several beats) is never persisted server-side as a pending event
+     * — GameService._store_pending_event only stores one when needs_input is
+     * true — so the backend already considers it done the moment it was
+     * produced. Dismissing it early is therefore purely a client-side/display
+     * concern. Requiring full conversation completion here meant that if a
+     * beat-advance click was ever lost, for any reason, the player lost every
+     * dismissal affordance simultaneously, with no independent escape hatch
+     * (issue #529 — soft-locked until page reload).
+     *
+     * A `needs_input` event is unaffected: it still requires an actual
+     * answer, and this function is reachable for it only via the overlay
+     * click (showCloseButton={!needsInput} hides ✕, and Escape shares this
+     * same guard) — which still no-ops, same as before.
+     */
+    const handleDismiss = () => {
+        if (isSubmitting) return
+        if (needsInput) return
+        setIsSubmitting(true)
+        onClose()
     }
 
     // Use wider dialog for memory events due to pre-formatted text
@@ -319,7 +356,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     return (
         <BaseDialog
             title={dialogTitle}
-            onClose={handleGlobalInteraction}
+            onClose={handleDismiss}
             showCloseButton={!needsInput}
             zIndex={3000}
             maxWidth={dialogMaxWidth}
