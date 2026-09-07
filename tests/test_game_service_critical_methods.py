@@ -197,6 +197,10 @@ class TestMoveSideEffects:
 
             def check_conditions(self):
                 self.fired += 1
+                # Genuinely fires (completed transition) rather than being a
+                # dormant no-op -- trigger_tile_events only reports events
+                # with an observable effect (issue #544).
+                self.completed = True
 
         event = ArrivalEvent()
         game_map[(1, 0)].events_here = [event]

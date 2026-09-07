@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { apiErrorMessage } from '../utils/apiError'
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
+import { isDisplayableEvent, filterDisplayableEvents } from '../utils/eventDisplay'
 
 /**
  * useWorldInteract — owns InteractPanel's world-interaction API calls and the
@@ -206,9 +207,7 @@ export function useWorldInteract({
             const eventsResponse = await apiEndpoints.world.getEvents()
             const eventsData = eventsResponse.data
             if (eventsData.success && eventsData.events && eventsData.events.length > 0) {
-                const eventsWithOutput = eventsData.events.filter(
-                    event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
-                )
+                const eventsWithOutput = filterDisplayableEvents(eventsData.events)
                 if (eventsWithOutput.length > 0 && onEventsTriggered) {
                     onEventsTriggered(eventsWithOutput)
                 }
@@ -262,10 +261,14 @@ export function useWorldInteract({
                 return data
             }
 
-            // When events are pending, keep the spinner showing instead of
-            // flashing "Action completed." The event UI takes over when it
-            // renders.
-            const hasPendingEvents = triggeredEvents.length > 0
+            // When a DISPLAYABLE event is pending, keep the spinner showing
+            // instead of flashing "Action completed." The event UI takes
+            // over when it renders. A bare `.length > 0` here used to treat
+            // a dormant/inert entry (checked, but its gate wasn't met -- no
+            // narration, no needs_input) as "an event is pending" and blank
+            // out the real message, even though nothing displayable actually
+            // fired (issue #544).
+            const hasPendingEvents = triggeredEvents.some(isDisplayableEvent)
             const message = hasPendingEvents ? '' : (data.message || 'Action completed.')
             setInteractionOutput(message)
             if (message && onTypingChange) onTypingChange(true)

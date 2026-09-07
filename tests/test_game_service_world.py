@@ -53,7 +53,11 @@ def tile(game_map):
 
 
 class _RecordingEvent(Event):
-    """A real ``Event`` subclass that records that its conditions were checked."""
+    """A real ``Event`` subclass that records that its conditions were checked
+    AND flips ``completed`` False->True, so it's a genuinely-firing event
+    rather than a dormant no-op -- trigger_tile_events only reports events
+    that had an observable effect (issue #544), and a bare "checked" counter
+    with no other state change wouldn't qualify."""
 
     def __init__(self, name="RecordingEvent", **kwargs):
         super().__init__(name=name, **kwargs)
@@ -61,6 +65,7 @@ class _RecordingEvent(Event):
 
     def check_conditions(self):
         self.fired += 1
+        self.completed = True
 
 
 class _LootEvent(Event):
