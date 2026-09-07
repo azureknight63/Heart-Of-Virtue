@@ -58,15 +58,19 @@ function cspHeaders({ dev }) {
 // relative path `/games/HeartOfVirtue/api`), which is what lets `connect-src`
 // stay at 'self'. Both local servers therefore proxy it rather than sending the
 // browser cross-origin.
+// Override for running several API instances side by side (live QA runs give
+// each Vite instance its own backend port). Unset means the usual :5000.
+const API_TARGET = process.env.HOV_API_PROXY_TARGET || 'http://localhost:5000'
+
 const apiProxy = {
   '/games/HeartOfVirtue/api': {
-    target: 'http://localhost:5000',
+    target: API_TARGET,
     changeOrigin: true,
     rewrite: (path) => path.replace(/^\/games\/HeartOfVirtue/, '')
   },
   // Keep this for any hardcoded /api paths just in case
   '/api': {
-    target: 'http://localhost:5000',
+    target: API_TARGET,
     changeOrigin: true
   },
   // Socket.IO is served from the app root, outside the SPA base path, so it
@@ -74,7 +78,7 @@ const apiProxy = {
   // be exercised locally at all — the socket 404s against Vite — which is
   // exactly why a credential leak in the join ack went unnoticed.
   '/socket.io': {
-    target: 'http://localhost:5000',
+    target: API_TARGET,
     changeOrigin: true,
     ws: true
   }
