@@ -145,7 +145,7 @@ export default function StatsPanel({ player, onClose }) {
           <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
             Core Attributes
           </GameText>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.xs }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.sm }}>
             {attributes.map((attr) => {
               const current = player[attr.key] || 10
               const base = player[attr.key + '_base'] || 10
@@ -155,19 +155,22 @@ export default function StatsPanel({ player, onClose }) {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
+                  gap: spacing.sm,
                   padding: `${spacing.xs} ${spacing.sm}`,
                   backgroundColor: 'rgba(0,0,0,0.2)',
                   borderRadius: '8px',
                   fontFamily: fonts.main,
                   cursor: 'help',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
-                    <span style={{ fontSize: '14px' }}>{attr.icon}</span>
-                    <GameText size="sm">{attr.name}</GameText>
+                  {/* minWidth: 0 lets this side truncate instead of forcing
+                      the value column below to wrap and collide with it. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, minWidth: 0, overflow: 'hidden' }}>
+                    <span style={{ fontSize: '14px', flexShrink: 0 }}>{attr.icon}</span>
+                    <GameText size="sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attr.name}</GameText>
                   </div>
-                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', flexShrink: 0, whiteSpace: 'nowrap' }}>
                     <GameText weight="bold" style={{ color }}>{current}</GameText>
-                    <GameText variant="dim" size="xs">BASE: {base}</GameText>
+                    <GameText variant="dim" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
                   </div>
                 </div>
               )
