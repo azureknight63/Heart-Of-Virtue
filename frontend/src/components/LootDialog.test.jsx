@@ -131,6 +131,24 @@ describe('LootDialog', () => {
     Element.prototype.getBoundingClientRect = original
   })
 
+  it('clamps the tooltip within the left viewport edge instead of rendering it off-screen (#540 item 9)', () => {
+    // A row near the left edge (left: 10) that ALSO doesn't fit on the right
+    // (right + 240 + 8 > innerWidth) used to flip to `left - 240 - 8`, a
+    // negative number that clipped ~40% of the popover off the left edge.
+    const original = Element.prototype.getBoundingClientRect
+    Element.prototype.getBoundingClientRect = () => ({
+      top: 100, bottom: 120, left: 10, right: 50, width: 40, height: 20, x: 0, y: 0, toJSON() {},
+    })
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.mouseEnter(screen.getByText('Iron Sword'))
+
+    const tooltipNames = screen.getAllByText('Iron Sword')
+    const tooltip = tooltipNames[tooltipNames.length - 1].parentElement
+    expect(tooltip.style.left).not.toBe('') // sanity: the popover did position itself
+    expect(parseFloat(tooltip.style.left)).toBeGreaterThanOrEqual(8)
+    Element.prototype.getBoundingClientRect = original
+  })
+
   it('hides the tooltip on mouse leave', () => {
     render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     const row = screen.getByText('Iron Sword')
