@@ -152,7 +152,7 @@ export default function StatsPanel({ player, onClose }) {
             borderColor: colors.alpha.secondary[30],
           }}
         >
-          <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
+          <GameText as="h3" variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
             Core Attributes
           </GameText>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.xs }}>
@@ -190,7 +190,7 @@ export default function StatsPanel({ player, onClose }) {
           {/* Damage Resistances */}
           {Object.entries(resistance).filter(([_, v]) => v !== 1).length > 0 && (
             <GamePanel padding="md" style={{ backgroundColor: colors.alpha.info[10], borderColor: colors.alpha.info[30] }}>
-              <GameText variant="info" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
+              <GameText as="h3" variant="info" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
                 Resistances & Weaknesses
               </GameText>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
@@ -214,7 +214,7 @@ export default function StatsPanel({ player, onClose }) {
 
           {/* Active Effects */}
           <GamePanel padding="md" style={{ backgroundColor: colors.alpha.danger[10], borderColor: colors.alpha.danger[30] }}>
-            <GameText variant="danger" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
+            <GameText as="h3" variant="danger" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
               Active Effects
             </GameText>
             <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>

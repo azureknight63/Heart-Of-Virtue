@@ -154,6 +154,15 @@ describe('StatsPanel', () => {
     }
   );
 
+  it('uses h3 headings for its section titles (issue #536)', () => {
+    // h1/h2/h3 all counted zero across the app's DOM. These three section
+    // titles are natural sub-headings within the dialog.
+    render(<StatsPanel player={mockPlayer} />);
+    expect(screen.getByRole('heading', { level: 3, name: 'Core Attributes' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Resistances & Weaknesses' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Active Effects' })).toBeInTheDocument();
+  });
+
   it('drops the resistance chips and shows the empty-effects copy when those fields are null', () => {
     // Asserting only that the header still rendered proved nothing about the
     // null branches this test exists for.
