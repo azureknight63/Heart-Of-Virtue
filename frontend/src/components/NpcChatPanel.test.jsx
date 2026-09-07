@@ -610,10 +610,75 @@ describe('NpcChatPanel', () => {
       await findStageText('Farewell.')
       expect(screen.queryByText('End Conversation')).not.toBeInTheDocument()
       // The 2s delay itself is pinned with fake timers against the hook, in
-      // useNpcChat.test.js's "closes exactly 2s after the server reports the
-      // conversation ended"; burning 2s of real wall time here would only
+      // useNpcChat.test.js's "closes exactly 2s after the panel reports the
+      // final beat rendered"; burning 2s of real wall time here would only
       // duplicate it. What the panel owns is the state on screen meanwhile.
       expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
+    // Issue #531: the panel used to arm the hook's 2s close timer the instant
+    // `conversation_ended` landed, which cut off a closing line still typing
+    // out on the stage. `typewriter.mode = 'partial'` (see the module mock at
+    // the top of this file) freezes BOTH ConversationStage's own typewriter
+    // and the panel's tracking copy mid-line, so this proves the panel never
+    // even tells the hook the beat is done while it is still "typing".
+    it('never signals the final beat rendered while the closing line is still typing (#531)', async () => {
+      vi.useFakeTimers()
+      try {
+        npcChat.respond.mockResolvedValue({
+          data: makeNpcChatRespond({
+            npc_response: 'Farewell, and safe travels on the long road home.',
+            jean_options: [],
+            loquacity_current: 0,
+            conversation_ended: true,
+          }),
+        })
+        typewriter.mode = 'partial'
+
+        renderPanel()
+        await act(async () => {})
+        fireEvent.click(screen.getByText('Hi there'))
+        await act(async () => {})
+        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
+
+        // Generously past the OLD fixed 2s window — the panel must not have
+        // told the hook to close, because the line is still "typing".
+        await act(async () => { vi.advanceTimersByTime(10000) })
+        expect(mockOnClose).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('closes 2s after the closing line finishes typing', async () => {
+      vi.useFakeTimers()
+      try {
+        npcChat.respond.mockResolvedValue({
+          data: makeNpcChatRespond({
+            npc_response: 'Farewell.',
+            jean_options: [],
+            loquacity_current: 0,
+            conversation_ended: true,
+          }),
+        })
+        // Default 'complete' mode (see the top-of-file beforeEach): the line
+        // is fully rendered the moment it lands, same as a short closing line
+        // typed out at normal speed well within the 2s window.
+
+        renderPanel()
+        await act(async () => {})
+        fireEvent.click(screen.getByText('Hi there'))
+        await act(async () => {})
+        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
+
+        await act(async () => { vi.advanceTimersByTime(1999) })
+        expect(mockOnClose).not.toHaveBeenCalled()
+
+        await act(async () => { vi.advanceTimersByTime(1) })
+        expect(mockOnClose).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 
