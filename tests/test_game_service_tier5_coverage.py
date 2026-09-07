@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 from src.api.services.game_service import GameService
 from src.combatant import wire_handle
+from src.events import Event
 
 # tests/conftest_game_service.py is not auto-discovered by pytest (it isn't
 # named conftest.py), so pull in its shared fixtures (game_service,
@@ -709,7 +710,15 @@ class TestProcessEventInputExtra:
         }
         followup = MagicMock(spec=["check_conditions", "name", "player", "tile"])
         followup.name = "Followup"
-        followup.check_conditions = MagicMock()
+
+        def _followup_fires():
+            # A genuine fire (asks for input) rather than a dormant no-op --
+            # trigger_tile_events only reports events with an observable
+            # effect (issue #544), and the mocked serialize_with_input below
+            # can't carry that signal since its return values are canned.
+            followup.needs_input = True
+
+        followup.check_conditions = MagicMock(side_effect=_followup_fires)
         mock_player.current_room.events_here = [followup]
 
         with patch(
@@ -1322,7 +1331,15 @@ class TestInteractWithTargetExtra:
 
         followup_event = MagicMock(spec=["check_conditions", "name", "player", "tile"])
         followup_event.name = "FollowupEvent"
-        followup_event.check_conditions = MagicMock()
+
+        def _followup_fires():
+            # A genuine fire (asks for input) rather than a dormant no-op --
+            # trigger_tile_events only reports events with an observable
+            # effect (issue #544), and the mocked serialize_with_input below
+            # can't carry that signal since it always returns the same dict.
+            followup_event.needs_input = True
+
+        followup_event.check_conditions = MagicMock(side_effect=_followup_fires)
         tile.events_here = [followup_event]
         session_data = {}
 
@@ -1423,6 +1440,93 @@ class TestInteractWithTargetExtra:
             result = game_service.interact_with_target(mock_player, wire_handle(obj), "trigger")
 
         assert result["combat_started"] is True
+
+
+# ============================================================================
+# Issue #544 — a dormant, unconditionally-rechecked tile event must not be
+# reported in events_triggered, and must not blank out real interact output.
+# ============================================================================
+
+
+class _DormantGatedEvent(Event):
+    """Mirrors ``AfterKingSlimeReturn`` (``src/story/ch02.py:1103-1113``): a
+    plain early-return in ``check_conditions()`` when its gate isn't met (no
+    narration, no ``needs_input``, no ``completed`` transition). It never
+    self-destructs while dormant (issue #371), so it sits on its tile and
+    gets rechecked on every single tile-entry / interact call. See #544.
+    """
+
+    def __init__(self, name="DormantGatedEvent"):
+        super().__init__(name=name)
+        self.checked = 0
+
+    def check_conditions(self):
+        self.checked += 1
+        # The gate is never met in these tests -- mirrors AfterKingSlimeReturn
+        # returning immediately when its story-flag/inventory gate fails.
+        return
+
+
+class TestDormantTileEventNotReported:
+    def test_trigger_tile_events_excludes_a_dormant_checked_event(
+        self, game_service, mock_player
+    ):
+        """A checked-but-inert event must not appear in events_triggered."""
+        tile = mock_player.current_room
+        event = _DormantGatedEvent()
+        tile.events_here = [event]
+
+        result = game_service.trigger_tile_events(mock_player, tile)
+
+        assert event.checked == 1, "check_conditions() must still run"
+        assert result == [], (
+            "a dormant event whose check_conditions() was a no-op must not "
+            f"appear in events_triggered, got: {result!r}"
+        )
+
+    def test_interact_events_triggered_excludes_a_dormant_tile_event(
+        self, game_service, mock_player
+    ):
+        """interact_with_target() unconditionally re-checks every tile event
+        after the action runs (to catch e.g. a chest looted / wall opened).
+        A dormant event whose gate isn't met -- like AfterKingSlimeReturn
+        sitting on the Citadel tile forever (issue #371) -- must not show up
+        in the merged events_triggered just because it happened to be
+        rechecked. Real narration must also survive alongside it."""
+
+        def _examine():
+            from src.narration import narrate
+
+            narrate("Jean examines the statue closely.")
+
+        obj = MagicMock(spec=["keywords", "name", "examine"])
+        obj.keywords = ["examine"]
+        obj.name = "Statue"
+        obj.examine = _examine
+
+        tile = mock_player.current_room
+        tile.x, tile.y = mock_player.location_x, mock_player.location_y
+        tile.objects_here = [obj]
+        tile.npcs_here = []
+        tile.items_here = []
+
+        dormant = _DormantGatedEvent(name="AfterKingSlimeReturn")
+        tile.events_here = [dormant]
+
+        result = game_service.interact_with_target(
+            mock_player, wire_handle(obj), "examine"
+        )
+
+        assert dormant.checked == 1, "the dormant event must still be checked"
+        assert result["success"] is True
+        assert "examines the statue" in result["message"].lower(), (
+            "the real narration must render regardless"
+        )
+        assert result["events_triggered"] == [], (
+            "a dormant tile event re-checked at the end of interact_with_target "
+            f"must not appear in the merged events_triggered; got: "
+            f"{result['events_triggered']!r}"
+        )
 
 
 # ============================================================================

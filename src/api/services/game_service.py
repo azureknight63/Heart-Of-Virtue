@@ -1403,6 +1403,12 @@ class GameService:
             # For non-input events, process normally
             # Try to trigger the event and capture output
             if hasattr(event, "check_conditions"):
+                # Captured before check_conditions() runs so we can tell a
+                # genuine completed TRANSITION (issue #544) apart from an
+                # event that was already completed (or stays not-completed)
+                # and merely got rechecked.
+                completed_before = getattr(event, "completed", False)
+                error_occurred = False
                 try:
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
@@ -1448,6 +1454,7 @@ class GameService:
                 except Exception as e:
                     # Log error but continue
                     event_data["error"] = str(e)
+                    error_occurred = True
                     _log.exception(
                         "Event processing failed for %s",
                         getattr(event, "name", type(event).__name__),
@@ -1470,7 +1477,32 @@ class GameService:
                         enqueued_ids.add(id(new_event))
                         queue.append(new_event)
 
-            events_triggered.append(event_data)
+                # Only surface events that actually produced an observable
+                # effect: they asked for input, transitioned to completed,
+                # emitted narration, or blew up. check_conditions() runs on
+                # EVERY event on the tile on EVERY interact/tile-entry call
+                # (see interact_with_target's unconditional recheck), and a
+                # gated event whose condition wasn't met yet (e.g.
+                # AfterKingSlimeReturn before the player has the mineral
+                # fragment -- src/story/ch02.py -- which deliberately never
+                # self-destructs while dormant, issue #371) is a pure no-op:
+                # needs_input/completed stay at their Event.__init__ defaults
+                # and no narration is produced. Reporting that no-op in
+                # events_triggered anyway (issue #544) let a dormant event
+                # masquerade as "just fired" on every single interact at its
+                # tile, and on the frontend that falsely non-empty list was
+                # enough (via useWorldInteract.js's bare `.length > 0` check)
+                # to blank out real interaction output.
+                observed_effect = (
+                    error_occurred
+                    or bool(getattr(event, "needs_input", False))
+                    or (getattr(event, "completed", False) and not completed_before)
+                    or bool(clean_output)
+                )
+                if observed_effect:
+                    events_triggered.append(event_data)
+            else:
+                events_triggered.append(event_data)
 
         return events_triggered
 
