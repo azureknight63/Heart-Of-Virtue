@@ -1490,6 +1490,13 @@ class TestGorranGestureEvent:
         if coming_from_grondia:
             prev_tile = Mock()
             prev_tile.title = "Grondia Passage"
+            # #547: check_conditions() checks previous_tile.map (the real
+            # engine signal for "which map is this tile on" -- see
+            # src/universe.py's map loader, which sets map["name"] from the
+            # JSON file's stem, e.g. "grondia" for grondia.json), not a
+            # fabricated .title. A Mock's .title never corresponded to
+            # anything the real guard reads.
+            prev_tile.map = {"name": "grondia"}
         player.previous_tile = prev_tile
         tile = _make_tile()
         return self.cls(player=player, tile=tile), player, tile
@@ -1513,6 +1520,18 @@ class TestGorranGestureEvent:
             ev.check_conditions()
             mock_pass.assert_not_called()
         assert ev not in tile.events_here
+
+    def test_conditions_skip_when_previous_tile_is_not_from_grondia(self):
+        """#547: a previous_tile that IS set, but is not from Grondia, must
+        not fire the scene — the old guard only checked for non-None.
+        """
+        ev, player, tile = self._make(coming_from_grondia=False)
+        prev_tile = Mock()
+        prev_tile.map = {"name": "eastern-descent"}
+        player.previous_tile = prev_tile
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
 
     def test_conditions_skip_when_no_previous_tile(self):
         """No previous_tile at all (e.g. spawned directly on the tile) —

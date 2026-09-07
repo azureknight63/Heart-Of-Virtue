@@ -53,6 +53,23 @@ class GorranGestureEvent(Event):
         prev = getattr(self.player, "previous_tile", None)
         if prev is None:
             return
+        # A non-None previous_tile is not enough on its own (#547): the
+        # scene is specifically Jean and Gorran's farewell to Grondia, so
+        # previous_tile must actually be a Grondia tile, not just whatever
+        # tile the player happened to leave last. previous_tile is set in
+        # exactly one place in the whole engine (GameService.move_player)
+        # and is never cleared between maps or by Player.teleport(), so
+        # once any move has happened this session it holds *some* tile
+        # forever -- and because this event is one-shot, a single
+        # incidental false-positive fire (e.g. a previous_tile left over
+        # from wandering the destination map itself) would permanently
+        # consume gorran_gesture_done and silently hide the real scene.
+        prev_map = getattr(prev, "map", None)
+        prev_map_name = prev_map.get("name") if isinstance(prev_map, dict) else None
+        if not prev_map_name or not (
+            prev_map_name == "grondia" or prev_map_name.startswith("grondia-")
+        ):
+            return
         self.pass_conditions_to_process()
 
     def process(self):
