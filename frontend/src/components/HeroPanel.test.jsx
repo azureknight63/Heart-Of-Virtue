@@ -203,6 +203,28 @@ describe('HeroPanel', () => {
     expect(hpBar).toBeInTheDocument();
   });
 
+  it('gives the HP and Fatigue bars an accessible progressbar name (issue #536)', () => {
+    // Both bars were bare unlabeled <div>s: no text, no title, no aria-label,
+    // no role. A screen reader (and a sighted player who never hovers/clicks)
+    // had no way to learn Jean's health at all outside the SELECT TARGET
+    // sub-dialog.
+    render(<HeroPanel {...makeProps()} />);
+
+    const hpBar = screen.getByTestId('hp-bar');
+    expect(hpBar).toHaveAttribute('role', 'progressbar');
+    expect(hpBar).toHaveAttribute('aria-valuenow', '80');
+    expect(hpBar).toHaveAttribute('aria-valuemin', '0');
+    expect(hpBar).toHaveAttribute('aria-valuemax', '100');
+    expect(hpBar).toHaveAttribute('aria-label', 'HP: 80 / 100');
+    expect(hpBar).toHaveAttribute('title', 'HP: 80 / 100');
+
+    const fatigueBar = screen.getByTestId('fatigue-bar');
+    expect(fatigueBar).toHaveAttribute('role', 'progressbar');
+    expect(fatigueBar).toHaveAttribute('aria-valuenow', '120');
+    expect(fatigueBar).toHaveAttribute('aria-valuemax', '150');
+    expect(fatigueBar).toHaveAttribute('aria-label', 'Fatigue: 120 / 150');
+  });
+
   it('fills each bar to the served ratio', () => {
     render(<HeroPanel {...makeProps()} />);
 

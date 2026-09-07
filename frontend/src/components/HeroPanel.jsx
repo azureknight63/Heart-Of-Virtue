@@ -32,8 +32,22 @@ function VitalBar({
   testId,
 }) {
   const isLeft = side === 'left'
+  // issue #536 item 1: this bar rendered as a bare, unlabeled capsule — no
+  // text, no title, no aria-label, no role. A screen reader had nothing to
+  // read, and a sighted player had to hover/click/touch it (see `active`
+  // below) just to learn the number. role="progressbar" plus aria-valuenow/
+  // min/max exposes the live value directly; the label/title give every
+  // player (not just assistive tech) an always-available accessible name,
+  // independent of the pinned tooltip.
+  const accessibleLabel = `${label}: ${current.toFixed(0)} / ${max}`
   return (
     <div
+      role="progressbar"
+      aria-valuenow={current.toFixed(0)}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-label={accessibleLabel}
+      title={accessibleLabel}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
       onClick={onToggle}
