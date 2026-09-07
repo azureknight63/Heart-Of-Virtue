@@ -428,6 +428,30 @@ describe('useWorldInteract', () => {
       expect(onEventsTriggered).toHaveBeenCalledWith([{ output_text: 'A trap springs!' }])
     })
 
+    it('still shows the real message when events_triggered contains only dormant/inert entries (#544)', async () => {
+      // A dormant tile event -- gate not met, check_conditions() was a
+      // no-op -- has neither output_text nor needs_input (see
+      // AfterKingSlimeReturn, src/story/ch02.py, and issue #371/#544). A
+      // bare `events_triggered.length > 0` check used to treat this as "an
+      // event is pending" and blank out the real interact message, even
+      // though nothing displayable actually fired.
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: {
+          success: true,
+          message: 'Jean examines the statue closely.',
+          events_triggered: [{ name: 'AfterKingSlimeReturn', needs_input: false, completed: false, description: '' }],
+        },
+      })
+      apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.interact({ id: 'statue1', count: 1 }, 'examine', null)
+      })
+
+      expect(result.current.interactionOutput).toBe('Jean examines the statue closely.')
+    })
+
     it('closes before refetching when a passageway transition confirmation is returned', async () => {
       const order = []
       const passagewayEvent = {
