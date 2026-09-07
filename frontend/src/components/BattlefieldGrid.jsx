@@ -333,7 +333,15 @@ const CombatantMarker = React.memo(({
         // Slightly lighter than panelDeep so the pulsing glow reads through the
         // token edge. panelHeavy keeps the marker legible without muddying the glow.
         backgroundColor: colors.bg.panelHeavy,
-        borderColor: pendingBorderColor || alignmentBorder,
+        // Alignment-only, ALWAYS — never overridden by the pending move's
+        // category color. It used to be `pendingBorderColor || alignmentBorder`,
+        // which put an Offensive ally's ring in the enemy's red and a
+        // Defensive/Maneuver enemy's ring in the ally's lime: a direct
+        // collision with the ally=lime/enemy=red convention this same marker
+        // establishes the instant nothing is pending (issue #535 sub-item 4).
+        // Category is still conveyed — by the pulsing glow below and the
+        // beat-countdown badge's background — just never by this ring.
+        borderColor: alignmentBorder,
         // CSS var drives the pulsing glow animation; falls back to a static
         // thin halo (alignment-colored) when no move is prepared so friend/foe
         // remains visible even without move intent.

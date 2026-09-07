@@ -9,6 +9,7 @@ import BattlefieldGrid from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
 import { CATEGORY_GROUPS, MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { setFlag, resetFlags } from '../utils/featureFlags';
+import { colors } from '../styles/theme';
 
 const { mockPlaySFX } = vi.hoisted(() => ({ mockPlaySFX: vi.fn() }));
 
@@ -839,7 +840,7 @@ describe('BattlefieldGrid', () => {
     const ENGINE_CATEGORIES = Object.values(CATEGORY_GROUPS).flat();
 
     it.each(ENGINE_CATEGORIES.map((c) => [c]))(
-        'borders a token telegraphing a %s move in that category\'s colour',
+        'telegraphs a %s move via the glow, while the ring stays the alignment colour',
         (category) => {
             // The old test used 'Attack', 'Special' and 'Supernatural' —
             // NONE of which the engine emits — and then asserted only that the
@@ -847,6 +848,14 @@ describe('BattlefieldGrid', () => {
             // could not check the styles it was named for. So the mapping it
             // claimed to prove went entirely unexercised, exactly as the
             // CooldownTray fixtures did.
+            //
+            // The ring border used to switch to the category colour too
+            // (`pendingBorderColor || alignmentBorder`), which put an Offensive
+            // ally in the ENEMY's red and a Defensive/Maneuver enemy in the
+            // ALLY's lime — directly colliding with the ally=lime/enemy=red
+            // convention established seconds earlier by the same UI (issue
+            // #535 sub-item 4). The ring is alignment-only now; category is
+            // conveyed by the glow (and the beat-countdown badge) alone.
             render(
                 <BattlefieldGrid
                     combat={{
@@ -858,13 +867,13 @@ describe('BattlefieldGrid', () => {
                 />
             );
             const token = tokenFor('J');
-            expect(token.style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR[category]));
+            expect(token.style.borderColor).toBe(rgb(colors.primary));
             expect(token.style.getPropertyValue('--pending-glow')).toBe(MOVE_CATEGORY_GLOW[category]);
             expect(token.className).toContain('battlefield-pending-glow');
         }
     );
 
-    it('renders several combatants telegraphing different categories at once', () => {
+    it('renders several combatants telegraphing different categories at once, all keeping their OWN alignment colour', () => {
         const multiMoveCombat = {
             player: { ...mockCombat.player, current_move: { category: 'Mastery' } },
             enemies: [
@@ -877,11 +886,36 @@ describe('BattlefieldGrid', () => {
         };
         render(<BattlefieldGrid combat={multiMoveCombat} tab="overview" zoom={1} />);
 
-        // Each token takes its OWN category's colour — a shared/leaked style
-        // would have gone unnoticed under the old presence-only assertions.
-        expect(tokenFor('J').style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR.Mastery));
-        expect(tokenFor('G').style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR.Defensive));
-        expect(tokenFor('O').style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR.Miscellaneous));
+        // Each token takes its own alignment colour — friendly lime for the
+        // player, enemy red for both enemies — regardless of which category
+        // each one is telegraphing. Each still glows in its OWN category's
+        // colour, so the two concerns (who, and what kind of move) stay
+        // independently correct rather than one leaking into the other.
+        expect(tokenFor('J').style.borderColor).toBe(rgb(colors.primary));
+        expect(tokenFor('G').style.borderColor).toBe(rgb(colors.danger));
+        expect(tokenFor('O').style.borderColor).toBe(rgb(colors.danger));
+
+        expect(tokenFor('J').style.getPropertyValue('--pending-glow')).toBe(MOVE_CATEGORY_GLOW.Mastery);
+        expect(tokenFor('G').style.getPropertyValue('--pending-glow')).toBe(MOVE_CATEGORY_GLOW.Defensive);
+        expect(tokenFor('O').style.getPropertyValue('--pending-glow')).toBe(MOVE_CATEGORY_GLOW.Miscellaneous);
+    });
+
+    it('never shows an ally token in the enemy colour, even mid-Offensive-move (issue #535 sub-item 4)', () => {
+        // The single clearest repro from the bug report: an ALLY (not just
+        // the player) charging an Offensive move used to turn its ring red —
+        // the enemy's own colour — directly after the player committed a move.
+        const allyCombat = {
+            ...mockCombat,
+            enemies: [],
+            allies: [
+                {
+                    name: 'Gorran', hp: 60, max_hp: 60, position: { x: 4, y: 6, facing: 'E' },
+                    current_move: { category: 'Offensive' },
+                },
+            ],
+        };
+        render(<BattlefieldGrid combat={allyCombat} tab="overview" zoom={1} />);
+        expect(tokenFor('G').style.borderColor).toBe(rgb(colors.primary));
     });
 
     /** The rotating hover reticle mounts only while a token is hovered. */
