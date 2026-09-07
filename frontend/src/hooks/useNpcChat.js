@@ -228,6 +228,7 @@ function preloadTurnPortraits(npcId, options) {
  *   loading: boolean,
  *   error: ?string,
  *   relationship: ?Object,
+ *   llmAvailable: boolean,
  *   retry: ?Function,
  *   handleOptionClick: (option: Object) => Promise<void>,
  *   handleEndConversation: () => Promise<void>,
@@ -245,6 +246,14 @@ export function useNpcChat(npcId, npcName, onClose) {
   const [loquacity, setLoquacity] = useState({ current: 0, max: 1 })
   const [error, setError] = useState(null)
   const [relationship, setRelationship] = useState(null)
+  // Whether the NPC's LAST turn was a live LLM reply or the engine's own
+  // fallback (issue #533). The server always carried `llm_available` in the
+  // /open and /respond payloads (`_base_payload`, src/npc/_chat_llm.py) but
+  // nothing on this side ever read it, so a misconfigured or 404ing model
+  // degraded every turn with no signal reaching the player at all — not even
+  // this piece of state to build one from. True until told otherwise: there
+  // is no turn yet to have degraded.
+  const [llmAvailable, setLlmAvailable] = useState(true)
   // State, not a ref: NpcChatPanel reads this during render to decide whether
   // the Retry button exists, and a ref mutation does not re-render. (It worked
   // only because each assignment happened to sit next to a `setError` on the
@@ -327,6 +336,10 @@ export function useNpcChat(npcId, npcName, onClose) {
     const options = data.jean_options || []
     setCurrentOptions(options)
     setRelationship(data.relationship || null)
+    // Only an explicit `false` counts as degraded — same convention as every
+    // other field here: a missing/malformed field reads as the healthy
+    // default rather than a false alarm.
+    setLlmAvailable(data.llm_available !== false)
     return options
   }
 
@@ -404,6 +417,7 @@ export function useNpcChat(npcId, npcName, onClose) {
     setCurrentOptions([])
     setLoquacity({ current: 0, max: 1 })
     setRelationship(null)
+    setLlmAvailable(true)
     setError(null)
     setRetry(null)
     setPhase(CHAT_PHASES.OPENING)
@@ -606,6 +620,7 @@ export function useNpcChat(npcId, npcName, onClose) {
     loading,
     error,
     relationship,
+    llmAvailable,
     retry,
     handleOptionClick,
     handleEndConversation,

@@ -541,6 +541,48 @@ describe('NpcChatPanel', () => {
     })
   })
 
+  // ---------------------------------------------------------------------
+  // Issue #533: the server always carried `llm_available` in the /open and
+  // /respond payloads, but nothing in the client ever read it, so a player
+  // had no way to tell a live LLM turn from a dead one beyond the styling
+  // difference #532 gives a fallback beat.
+  // ---------------------------------------------------------------------
+  describe('Degraded LLM turn notice', () => {
+    it('shows a notice when the opening turn is llm_available: false', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ ...openData, llm_available: false }),
+      })
+      renderPanel()
+
+      await findStageText('Well, well, what do we have here?')
+      expect(screen.getByTestId('npc-chat-degraded-notice')).toBeInTheDocument()
+    })
+
+    it('shows no notice while the LLM is answering normally', async () => {
+      renderPanel()
+
+      await findStageText('Well, well, what do we have here?')
+      expect(screen.queryByTestId('npc-chat-degraded-notice')).not.toBeInTheDocument()
+    })
+
+    it('appears after a respond turn degrades, and clears if a later one recovers', async () => {
+      renderPanel()
+      await findStageText('Well, well, what do we have here?')
+
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({
+          npc_response: '',
+          npc_flavor: 'She says nothing.',
+          llm_available: false,
+        }),
+      })
+      fireEvent.click(await screen.findByText('Hi there'))
+      await waitFor(() =>
+        expect(screen.getByTestId('npc-chat-degraded-notice')).toBeInTheDocument()
+      )
+    })
+  })
+
   describe('Retrying a failed action', () => {
     it('retries opening the conversation when Retry is clicked after a failed open', async () => {
       npcChat.open.mockRejectedValueOnce(new Error('Network error'))

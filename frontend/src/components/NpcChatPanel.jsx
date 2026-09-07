@@ -312,6 +312,36 @@ function RelationshipBadge({ relationship }) {
 }
 
 /**
+ * LlmDegradedNotice — tells the player the NPC's last turn came from the
+ * engine's own fallback pool rather than a live model reply (issue #533).
+ *
+ * The narration styling issue #532 gives a fallback beat (no speaker label,
+ * centred italic) already reads as "different", but nothing named WHY —
+ * this is that explicit signal, built from `llm_available`, which the
+ * server always sent and the client silently ignored until now.
+ *
+ * @param {Object} props
+ * @param {boolean} props.llmAvailable
+ */
+function LlmDegradedNotice({ llmAvailable }) {
+  if (llmAvailable) return null
+  return (
+    <div
+      data-testid="npc-chat-degraded-notice"
+      style={{
+        fontFamily: fonts.main,
+        fontSize: '11px',
+        fontStyle: 'italic',
+        color: colors.text.dim,
+        marginBottom: spacing.md,
+      }}
+    >
+      Connection unavailable — this reply is scripted, not generated.
+    </div>
+  )
+}
+
+/**
  * ChatErrorBox — the failure notice and its Retry.
  *
  * The copy is the hook's own fixed string; the server's `error` field carries
@@ -425,6 +455,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     loading,
     error,
     relationship,
+    llmAvailable,
     retry,
     handleOptionClick,
     handleEndConversation,
@@ -545,6 +576,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       <LoquacityBar percentage={loquacityPercentage} />
 
       <RelationshipBadge relationship={relationship} />
+      <LlmDegradedNotice llmAvailable={llmAvailable} />
 
       {/* Recap of the turn just before the one on stage — the question an answer
           is answering, kept in the same visual language as the history dialog. */}

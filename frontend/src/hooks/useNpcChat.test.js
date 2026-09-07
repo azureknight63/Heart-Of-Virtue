@@ -425,6 +425,53 @@ describe('useNpcChat', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Issue #533: the backend always carried `llm_available` in the /open and
+  // /respond payloads (_base_payload, src/npc/_chat_llm.py) so a degraded
+  // turn could be told apart from a live one -- but nothing on this side
+  // ever read the field. It reached this hook and was silently dropped.
+  // -------------------------------------------------------------------------
+  describe('llm_available', () => {
+    it('exposes llm_available: false from the opening response', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ llm_available: false }),
+      })
+      const { result } = await mountOpened()
+
+      expect(result.current.llmAvailable).toBe(false)
+    })
+
+    it('exposes llm_available: true from the opening response', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ llm_available: true }),
+      })
+      const { result } = await mountOpened()
+
+      expect(result.current.llmAvailable).toBe(true)
+    })
+
+    it('updates llm_available from a respond response', async () => {
+      const { result } = await mountOpened()
+      expect(result.current.llmAvailable).toBe(true)
+
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({ npc_response: '', npc_flavor: 'Silence.', llm_available: false }),
+      })
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+
+      expect(result.current.llmAvailable).toBe(false)
+    })
+
+    it('treats a missing llm_available as available, like every other malformed-payload default', async () => {
+      npcChat.open.mockResolvedValue({ data: { npc_key: 'k', npc_opening: 'Hm.' } })
+      const { result } = await mountOpened()
+
+      expect(result.current.llmAvailable).toBe(true)
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // The reset + supersession guard on the open effect
   // -------------------------------------------------------------------------
   describe('switching NPC', () => {
