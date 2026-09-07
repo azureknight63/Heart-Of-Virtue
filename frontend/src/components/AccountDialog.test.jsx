@@ -97,6 +97,7 @@ describe('AccountDialog', () => {
     render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
 
     fireEvent.click(screen.getByText('Log Out'));
+    fireEvent.click(screen.getByText('Yes, Log Out'));
     await waitFor(() => expect(mockLogout).toHaveBeenCalledTimes(1));
     expect(mockLogout).toHaveBeenCalledWith();
     // Ordering is the whole point of the `await` in handleLogout.
@@ -106,6 +107,52 @@ describe('AccountDialog', () => {
     await waitFor(() => expect(mockOnClose).toHaveBeenCalledTimes(1));
     // Logging out is not a navigation — routing is AuthContext's job.
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  describe('#540 item 10 — logout confirmation guard', () => {
+    it('does not log out on the first click — it opens a confirmation instead', () => {
+      render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
+      fireEvent.click(screen.getByText('Log Out'));
+
+      expect(mockLogout).not.toHaveBeenCalled();
+      expect(mockOnClose).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog', { name: 'Confirm log out' })).toBeInTheDocument();
+      expect(screen.getByText('Log Out?')).toBeInTheDocument();
+    });
+
+    it('logs out only after the confirmation is accepted', async () => {
+      // vi.clearAllMocks() in beforeEach clears call history but not a
+      // mockImplementation set by an earlier test — the previous test's
+      // never-resolving logout promise would otherwise leak in here.
+      mockLogout.mockResolvedValue();
+      render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
+      fireEvent.click(screen.getByText('Log Out'));
+      fireEvent.click(screen.getByText('Yes, Log Out'));
+
+      await waitFor(() => expect(mockLogout).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalledTimes(1));
+    });
+
+    it('cancels without logging out, and can be reopened', () => {
+      render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
+      fireEvent.click(screen.getByText('Log Out'));
+      fireEvent.click(screen.getByText('Cancel'));
+
+      expect(mockLogout).not.toHaveBeenCalled();
+      expect(mockOnClose).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog', { name: 'Confirm log out' })).toBeNull();
+      // The account dialog itself is still open, not accidentally dismissed.
+      expect(screen.getByText('⚔️ Account Details')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Log Out'));
+      expect(screen.getByRole('dialog', { name: 'Confirm log out' })).toBeInTheDocument();
+    });
+
+    it('is not visually heavier than the outline Close button — no solid danger fill', () => {
+      render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
+      const logOutBtn = screen.getByText('Log Out');
+      expect(logOutBtn.style.backgroundColor).toBe('transparent');
+    });
   });
 
   it('closes when clicking the overlay', () => {

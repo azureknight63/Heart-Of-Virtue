@@ -26,3 +26,25 @@ export default function useScrollIndicators() {
 
   return { showTop, showBottom, check, ref }
 }
+
+/**
+ * Horizontal counterpart of the default export — tracks whether a
+ * horizontally-scrollable element (e.g. a tab strip) has content to the left
+ * or right of the visible window, so a "scroll for more" affordance can be
+ * shown only when there actually is more (#540 item 5: SkillsPanel's
+ * discipline tab strip could overflow with no way to see it had more tabs).
+ * Same plumbing as the vertical hook above — only the axis differs.
+ */
+export function useHorizontalScrollIndicators() {
+  const [showLeft, setShowLeft] = useState(false)
+  const [showRight, setShowRight] = useState(false)
+
+  const measure = useCallback(el => {
+    setShowLeft(el.scrollLeft > SCROLL_EDGE_EPSILON_PX)
+    setShowRight(el.scrollLeft + el.clientWidth < el.scrollWidth - SCROLL_EDGE_EPSILON_PX)
+  }, [])
+
+  const { ref, check } = useScrollGeometry(measure)
+
+  return { showLeft, showRight, check, ref }
+}

@@ -207,7 +207,11 @@ export default function ActionsPanel({ location, onClose }) {
           </div>
         )}
 
-        {/* Commands Container */}
+        {/* Commands Container. A short command list (often just Menu/Save,
+            once debug-only commands are filtered out — #540 item 6) used to
+            sit at the top of a fixed-height box, reading as "mostly empty"
+            rather than deliberately laid out; centering it fills the box
+            intentionally instead. */}
         <div style={{
           backgroundColor: 'rgba(0, 0, 0, 0.4)',
           border: '1px solid rgba(255, 170, 0, 0.2)',
@@ -216,6 +220,7 @@ export default function ActionsPanel({ location, onClose }) {
           minHeight: '200px',
           display: 'flex',
           flexDirection: 'column',
+          justifyContent: 'center',
           gap: '12px'
         }}>
           {loading ? (
@@ -233,7 +238,10 @@ export default function ActionsPanel({ location, onClose }) {
           ) : (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+              // auto-fit + a capped max (160px) rather than auto-fill + 1fr:
+              // two buttons no longer stretch edge-to-edge to fill the row.
+              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 160px))',
+              justifyContent: 'center',
               gap: '10px'
             }}>
               {commands

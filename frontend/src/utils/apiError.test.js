@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { apiErrorMessage, apiErrorDetail } from './apiError';
+import { apiErrorMessage, apiErrorDetail, autosaveErrorMessage } from './apiError';
 
 /**
  * The two shapes this module exists to reconcile, written the way the server
@@ -265,4 +265,33 @@ describe('apiErrorMessage is total, because its result is rendered', () => {
     expect(apiErrorMessage(err, 'fallback')).toBe('the prose');
   });
 
+});
+
+/**
+ * #540 item 12: autosave failures were reported as "check your connection"
+ * across the board, even for a 403 — a server-side refusal (test/guest
+ * sessions with no db_user_id can't persist; see
+ * project-combat-socket-qa-gotchas.md), not a client network fault.
+ */
+describe('autosaveErrorMessage', () => {
+  it('reports a 403 as a session that cannot save, not a connection problem', () => {
+    const msg = autosaveErrorMessage({ response: { status: 403 } });
+    expect(msg).not.toMatch(/connection/i);
+    expect(msg).toMatch(/session/i);
+  });
+
+  it('keeps the network-flavored copy for an actual transport failure (no response at all)', () => {
+    const msg = autosaveErrorMessage(new Error('Network Error'));
+    expect(msg).toBe('Failed to save your progress. Check your connection.');
+  });
+
+  it('keeps the network-flavored copy for a non-403 server error (e.g. 500)', () => {
+    const msg = autosaveErrorMessage({ response: { status: 500 } });
+    expect(msg).toBe('Failed to save your progress. Check your connection.');
+  });
+
+  it('does not throw on a nullish/undefined error', () => {
+    expect(() => autosaveErrorMessage(undefined)).not.toThrow();
+    expect(() => autosaveErrorMessage(null)).not.toThrow();
+  });
 });

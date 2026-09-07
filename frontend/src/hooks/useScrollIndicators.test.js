@@ -1,12 +1,22 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import useScrollIndicators from './useScrollIndicators'
+import useScrollIndicators, { useHorizontalScrollIndicators } from './useScrollIndicators'
 
 function makeEl(scrollTop, clientHeight, scrollHeight) {
   return {
     scrollTop,
     clientHeight,
     scrollHeight,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }
+}
+
+function makeHEl(scrollLeft, clientWidth, scrollWidth) {
+  return {
+    scrollLeft,
+    clientWidth,
+    scrollWidth,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }
@@ -165,5 +175,55 @@ describe('useScrollIndicators', () => {
     act(() => { result.current.ref(el) })
     rerender()
     expect(result.current.ref).toBe(first)
+  })
+})
+
+describe('useHorizontalScrollIndicators', () => {
+  // Same measurement logic as the vertical hook, on the perpendicular axis —
+  // built for SkillsPanel's discipline tab strip (#540 item 5), which could
+  // overflow with no affordance to see there was more.
+  it('returns false for both when no element is set yet', () => {
+    const { result } = renderHook(() => useHorizontalScrollIndicators())
+    expect(result.current.showLeft).toBe(false)
+    expect(result.current.showRight).toBe(false)
+  })
+
+  it('shows right indicator when content overflows to the right', () => {
+    const el = makeHEl(0, 100, 300)
+    const { result } = renderHook(() => useHorizontalScrollIndicators())
+    act(() => { result.current.ref(el) })
+    expect(result.current.showLeft).toBe(false)
+    expect(result.current.showRight).toBe(true)
+  })
+
+  it('hides both indicators when content fits', () => {
+    const el = makeHEl(0, 300, 100)
+    const { result } = renderHook(() => useHorizontalScrollIndicators())
+    act(() => { result.current.ref(el) })
+    expect(result.current.showLeft).toBe(false)
+    expect(result.current.showRight).toBe(false)
+  })
+
+  it('shows left indicator once scrolled right, and hides right at the end', () => {
+    // scrollLeft(200) + clientWidth(100) == scrollWidth(300) — no right overflow
+    const el = makeHEl(200, 100, 300)
+    const { result } = renderHook(() => useHorizontalScrollIndicators())
+    act(() => { result.current.ref(el) })
+    expect(result.current.showLeft).toBe(true)
+    expect(result.current.showRight).toBe(false)
+  })
+
+  it('check() updates state when called imperatively', () => {
+    const el = makeHEl(0, 100, 100)
+    const { result } = renderHook(() => useHorizontalScrollIndicators())
+    act(() => { result.current.ref(el) })
+    expect(result.current.showRight).toBe(false)
+
+    act(() => {
+      el.scrollWidth = 300
+      result.current.check()
+    })
+
+    expect(result.current.showRight).toBe(true)
   })
 })

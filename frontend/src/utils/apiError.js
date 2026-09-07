@@ -229,3 +229,25 @@ export function apiErrorDetail(err) {
     if (!detail) return describeThrown(err)
     return typeof detail === 'string' ? detail : describeBodyField(detail)
 }
+
+/**
+ * The player-facing message for a failed cloud autosave.
+ *
+ * A 403 here is not a network problem — it is the server refusing to
+ * persist for THIS session (a test/guest session with no `db_user_id`; see
+ * project-combat-socket-qa-gotchas.md / the QA beta configs). Reporting it
+ * as "check your connection" sends the player chasing their wifi for a
+ * refusal their connection had no part in. Any other failure (no
+ * `response` at all — a dropped connection or timeout — or a 5xx) keeps the
+ * network-flavored copy, since those genuinely can be transport failures.
+ *
+ * @param {*} err - The rejected save call, as axios delivers it.
+ * @returns {string} Player-facing autosave failure copy.
+ */
+export function autosaveErrorMessage(err) {
+    if (err?.response?.status === 403) {
+        return 'Your progress could not be saved: this session can\'t save games (guest/test session). '
+            + 'Sign in with a full account to keep your progress.'
+    }
+    return 'Failed to save your progress. Check your connection.'
+}

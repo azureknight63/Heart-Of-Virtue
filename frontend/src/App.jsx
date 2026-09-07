@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useApi'
 import { useCapabilities } from './context/CapabilitiesContext'
@@ -8,10 +9,20 @@ import LandingPage from './pages/LandingPage'
 import LoadingScreen from './components/LoadingScreen'
 import { AudioProvider } from './context/AudioContext'
 import { GlossaryProvider } from './context/GlossaryContext'
+import { useFeatureFlag } from './utils/featureFlags'
 
 function App() {
   const { isAuthenticated, loading } = useAuth()
   const { capabilitiesLoading } = useCapabilities()
+  // The Settings dialog's "Reduced motion" toggle (#540 item 15) needs to
+  // apply everywhere, not just while Settings is open — mounted once here
+  // rather than in any one panel. See the "reduced-motion" class rules in
+  // styles/index.css for what it actually does.
+  const reducedMotion = useFeatureFlag('reducedMotion')
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('reduced-motion', reducedMotion)
+  }, [reducedMotion])
 
   if (loading) {
     return <LoadingScreen />

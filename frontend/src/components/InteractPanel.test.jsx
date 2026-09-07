@@ -1445,6 +1445,71 @@ describe('InteractPanel', () => {
       expect(getComputedStyle(hostilePanel).borderLeftColor).toBe(hexToRgb(colors.danger));
     });
   });
+
+  describe('#540 item 7 — direction keyword visual weight', () => {
+    it('renders a bare compass direction as secondary while the contextual verb stays primary', () => {
+      const location = {
+        ...mockLocation,
+        objects: [
+          { id: 'gate1', name: 'Eastern Gate', description: 'A wide archway leads east.', keywords: ['enter', 'east'] },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Eastern Gate/i)[0]);
+
+      const enterBtn = screen.getByText('enter').closest('button');
+      const eastBtn = screen.getByText('east').closest('button');
+      // GameButton's primary variant is a solid lime fill; secondary is transparent.
+      expect(enterBtn.style.backgroundColor).not.toBe('transparent');
+      expect(eastBtn.style.backgroundColor).toBe('transparent');
+    });
+
+    it('keeps two non-direction keywords both primary', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+
+      const openBtn = screen.getByText('Open').closest('button');
+      const examineBtn = screen.getByText('Examine').closest('button');
+      expect(openBtn.style.backgroundColor).not.toBe('transparent');
+      expect(examineBtn.style.backgroundColor).not.toBe('transparent');
+    });
+  });
+
+  describe('#540 item 8 — target list description styling', () => {
+    it('does not force-uppercase a proper noun in the description, and wraps instead of hard-truncating at ~30 characters', () => {
+      const longDescription =
+        "A statue of Saint O'Malley, weathered by decades of rain — the inscription "
+        + 'runs on well past thirty characters to prove the text is not cut off early.';
+      const location = {
+        ...mockLocation,
+        objects: [
+          { id: 'obj9', name: 'Statue', description: longDescription, keywords: ['Examine'] },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+
+      const desc = screen.getByText(longDescription);
+      // Case is preserved in the rendered style, not forced uppercase by the
+      // surrounding GameButton's own label styling (text-transform inherits).
+      expect(desc.style.textTransform).toBe('none');
+      // No hard single-line cutoff — the full string is present verbatim in
+      // the DOM rather than replaced with a truncated substring.
+      expect(desc.textContent).toBe(longDescription);
+      expect(desc.style.whiteSpace).toBe('normal');
+    });
+  });
+
+  describe('#540 item 14 — nested GameText element', () => {
+    it('renders the "Available: N" line as a span, not a <p> nested in another <p>', async () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+      fireEvent.click(screen.getByText(/Take/i));
+
+      const available = screen.getByText(/Available:/i);
+      expect(available.tagName).toBe('SPAN');
+      expect(available.closest('p')).not.toBeNull();
+    });
+  });
 });
 
 

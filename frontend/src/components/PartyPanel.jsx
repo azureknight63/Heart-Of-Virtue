@@ -149,7 +149,9 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#ff6666', marginBottom: '4px', fontWeight: 'bold' }}>
-                      <span>VITALITY</span>
+                      {/* "HP" to match CHARACTER STATS (StatsPanel), which uses
+                          the same label for the identical stat — see #540 item 3. */}
+                      <span>HP</span>
                       <span>{member.hp || 0} / {member.max_hp || 100}</span>
                     </div>
                     <div style={{ height: '6px', backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: '3px', overflow: 'hidden', border: '1px solid rgba(255,0,0,0.2)' }}>
@@ -187,9 +189,12 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                     style={{
                       width: '100%',
                       padding: '7px',
-                      backgroundColor: '#004466',
-                      color: '#00ccff',
-                      border: '1px solid #0099cc',
+                      // Was a bespoke mid-blue (#004466/#0099cc) with no token
+                      // in styles/theme.js — colors.info/colors.alpha.info are
+                      // the same cyan family already used elsewhere (#540 item 3).
+                      backgroundColor: colors.alpha.info[20],
+                      color: colors.info,
+                      border: `1px solid ${colors.info}`,
                       borderRadius: '4px',
                       cursor: 'pointer',
                       fontSize: '12px',
@@ -200,12 +205,12 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                     }}
                     onMouseEnter={(e) => {
                       if (!isLoading) {
-                        e.target.style.backgroundColor = '#006699'
-                        e.target.style.boxShadow = '0 0 8px rgba(0,204,255,0.5)'
+                        e.target.style.backgroundColor = colors.alpha.info[40]
+                        e.target.style.boxShadow = `0 0 8px ${colors.alpha.info[60]}`
                       }
                     }}
                     onMouseLeave={(e) => {
-                      e.target.style.backgroundColor = '#004466'
+                      e.target.style.backgroundColor = colors.alpha.info[20]
                       e.target.style.boxShadow = 'none'
                     }}
                   >

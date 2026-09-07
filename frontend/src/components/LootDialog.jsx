@@ -21,9 +21,16 @@ function ItemTooltip({ item, anchorRef }) {
     if (!anchorRef.current) return
     const rect = anchorRef.current.getBoundingClientRect()
     const tooltipW = 240
-    const left = rect.right + 8 + tooltipW > window.innerWidth
-      ? rect.left - tooltipW - 8
-      : rect.right + 8
+    const margin = 8
+    const preferredLeft = rect.right + margin + tooltipW > window.innerWidth
+      ? rect.left - tooltipW - margin
+      : rect.right + margin
+    // The flip-to-the-left branch above never checked whether ITS OWN result
+    // fit on screen — a row near the left edge of the dialog (a narrow
+    // viewport, or just the first column) could compute a negative `left`
+    // and render clipped off-screen (#540 item 9). Clamp into the viewport
+    // regardless of which branch produced the candidate position.
+    const left = Math.min(Math.max(preferredLeft, margin), window.innerWidth - tooltipW - margin)
     setPos({ top: rect.top, left })
   }, [anchorRef])
 
@@ -195,8 +202,11 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
 
   const weightColor = totalPct >= 100 ? colors.danger : totalPct >= 80 ? colors.secondary : colors.primary
 
+  // "PHASE 2 OF 2" was an internal detail (attribute allocation, then loot)
+  // leaking into player-facing copy with no phase 1 in sight if there was
+  // nothing to allocate (#540 item 9).
   return (
-    <BaseDialog title="⚔ VICTORY — PHASE 2 OF 2: LOOT" maxWidth="640px" padding="16px" zIndex={2500}>
+    <BaseDialog title="⚔ VICTORY — COLLECT YOUR LOOT" maxWidth="640px" padding="16px" zIndex={2500}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md, fontFamily: fonts.main }}>
 
         {/* Section header */}

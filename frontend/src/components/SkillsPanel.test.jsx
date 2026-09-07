@@ -414,4 +414,113 @@ describe('SkillsPanel', () => {
       expect(mockError).toHaveBeenCalledWith('Failed to learn skill');
     });
   });
+
+  describe('default tab (#540 item 5)', () => {
+    // Two disciplines with XP, category names matching real skilltree.py
+    // weapon-subtype keys (Axe, Sword) — Object.keys order puts Axe first,
+    // which is exactly the bug: the panel opened on Axe even with a Sword
+    // equipped.
+    const weaponSkillsData = {
+      skill_tree: {
+        Axe: [{ name: 'Cleave', display_name: 'Cleave', description: 'x', required_exp: 50, is_known: false, can_learn: true }],
+        Sword: [{ name: 'Thrust', display_name: 'Thrust', description: 'x', required_exp: 50, is_known: false, can_learn: true }],
+      },
+      skill_exp: { Axe: 100, Sword: 100 },
+    };
+
+    it('opens on the tab matching the equipped weapon type instead of always the first category', async () => {
+      apiEndpoints.player.getSkills.mockResolvedValue({ data: { success: true, skills: weaponSkillsData } });
+      const swordPlayer = {
+        ...mockPlayer,
+        inventory: [
+          { id: 'w1', name: 'Rusty Axe', maintype: 'Weapon', subtype: 'Axe', is_equipped: false },
+          { id: 'w2', name: 'Steel Sword', maintype: 'Weapon', subtype: 'Sword', is_equipped: true },
+        ],
+      };
+
+      render(
+        <ToastProvider>
+          <SkillsPanel player={swordPlayer} onClose={() => {}} />
+        </ToastProvider>
+      );
+
+      await waitFor(() => expect(screen.getByText('Thrust')).toBeInTheDocument());
+      expect(screen.queryByText('Cleave')).toBeNull();
+    });
+
+    it('falls back to the first category with XP when nothing is equipped', async () => {
+      apiEndpoints.player.getSkills.mockResolvedValue({ data: { success: true, skills: weaponSkillsData } });
+
+      render(
+        <ToastProvider>
+          <SkillsPanel player={mockPlayer} onClose={() => {}} />
+        </ToastProvider>
+      );
+
+      await waitFor(() => expect(screen.getByText('Cleave')).toBeInTheDocument());
+      expect(screen.queryByText('Thrust')).toBeNull();
+    });
+
+    it('falls back to the first category when the equipped weapon type has no XP to spend', async () => {
+      apiEndpoints.player.getSkills.mockResolvedValue({ data: { success: true, skills: weaponSkillsData } });
+      const daggerPlayer = {
+        ...mockPlayer,
+        inventory: [{ id: 'w1', name: 'Old Dagger', maintype: 'Weapon', subtype: 'Dagger', is_equipped: true }],
+      };
+
+      render(
+        <ToastProvider>
+          <SkillsPanel player={daggerPlayer} onClose={() => {}} />
+        </ToastProvider>
+      );
+
+      await waitFor(() => expect(screen.getByText('Cleave')).toBeInTheDocument());
+      expect(screen.queryByText('Thrust')).toBeNull();
+    });
+  });
+
+  it("tells the player what a skill's LEARN cost is, via a tooltip", async () => {
+    apiEndpoints.player.getSkills.mockResolvedValue({
+      data: { success: true, skills: mockSkillsData },
+    });
+
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => {}} />
+      </ToastProvider>
+    );
+
+    const learnButton = await screen.findByText(/LEARN \(100\)/i);
+    expect(learnButton.closest('button').title).toMatch(/100 Combat skill XP/i);
+  });
+
+  it('shows scroll chevrons for the discipline tab strip only once it overflows, and scrolls on click', async () => {
+    apiEndpoints.player.getSkills.mockResolvedValue({
+      data: { success: true, skills: mockSkillsData },
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => {}} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText('Combat')).toBeInTheDocument());
+    // No overflow yet (jsdom's default scroll geometry is all zeros) — no chevrons.
+    expect(screen.queryByLabelText('Scroll disciplines right')).toBeNull();
+    expect(screen.queryByLabelText('Scroll disciplines left')).toBeNull();
+
+    const strip = container.querySelector('[data-testid="skills-tab-strip"]');
+    Object.defineProperty(strip, 'scrollWidth', { value: 900, configurable: true });
+    Object.defineProperty(strip, 'clientWidth', { value: 300, configurable: true });
+    Object.defineProperty(strip, 'scrollLeft', { value: 0, configurable: true, writable: true });
+    fireEvent.scroll(strip);
+
+    const rightBtn = await screen.findByLabelText('Scroll disciplines right');
+    expect(screen.queryByLabelText('Scroll disciplines left')).toBeNull();
+
+    strip.scrollBy = vi.fn();
+    fireEvent.click(rightBtn);
+    expect(strip.scrollBy).toHaveBeenCalledWith({ left: 120, behavior: 'smooth' });
+  });
 });

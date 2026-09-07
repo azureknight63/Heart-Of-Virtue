@@ -308,11 +308,13 @@ describe('PartyPanel', () => {
     render(<PartyPanel player={player} onClose={mockOnClose} />);
     const useItemButton = screen.getByText('💊 USE ITEM');
 
+    // colors.alpha.info[40] / [20] — the button now uses theme tokens instead
+    // of a bespoke mid-blue with no token in styles/theme.js (#540 item 3).
     fireEvent.mouseEnter(useItemButton);
-    expect(useItemButton.style.backgroundColor).toBe('rgb(0, 102, 153)');
+    expect(useItemButton.style.backgroundColor).toBe('rgba(0, 204, 255, 0.4)');
 
     fireEvent.mouseLeave(useItemButton);
-    expect(useItemButton.style.backgroundColor).toBe('rgb(0, 68, 102)');
+    expect(useItemButton.style.backgroundColor).toBe('rgba(0, 204, 255, 0.2)');
   });
 
   it('does not apply hover styling to a disabled USE ITEM button', async () => {
@@ -328,7 +330,7 @@ describe('PartyPanel', () => {
 
     const useItemButton = screen.getByText('💊 USE ITEM');
     fireEvent.mouseEnter(useItemButton);
-    expect(useItemButton.style.backgroundColor).toBe('rgb(0, 68, 102)');
+    expect(useItemButton.style.backgroundColor).toBe('rgba(0, 204, 255, 0.2)');
 
     await act(async () => resolvePost({ data: { success: true, message: '' } }));
   });

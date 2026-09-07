@@ -46,20 +46,40 @@ const labelStyle = {
   textTransform: 'uppercase',
 }
 
-function FieldLabel({ children }) {
-  return <span style={labelStyle}>{children}</span>
+function FieldLabel({ children, required }) {
+  return (
+    <span style={labelStyle}>
+      {children}
+      {/* Visible required-indicator for a sighted user; the input's own
+          aria-required carries the same fact to a screen reader (#540 item 11). */}
+      {required && <span aria-hidden="true" style={{ color: colors.danger }}> *</span>}
+    </span>
+  )
 }
 
-function TextInput({ value, onChange, placeholder, style }) {
+function TextInput({ value, onChange, placeholder, style, error, required, inputRef }) {
   return (
     <input
+      ref={inputRef}
       type="text"
       value={value}
       onChange={onChange}
       placeholder={placeholder}
-      style={{ ...inputStyle, ...style }}
-      onFocus={(e) => (e.target.style.borderColor = colors.primary)}
-      onBlur={(e) => (e.target.style.borderColor = `${colors.primary}66`)}
+      aria-required={required || undefined}
+      aria-invalid={error || undefined}
+      style={{
+        ...inputStyle,
+        // The error state lives ON the field (border), not only in a toast
+        // ~500px away with no visual cue on the field itself (#540 item 11).
+        // Overrides the full `border` shorthand (not just borderColor) —
+        // inputStyle sets `border`, and mixing the shorthand with a longhand
+        // for the same value trips React's "removing a style property"
+        // warning when the error clears on rerender.
+        ...(error ? { border: `1px solid ${colors.danger}` } : {}),
+        ...style,
+      }}
+      onFocus={(e) => (e.target.style.borderColor = error ? colors.danger : colors.primary)}
+      onBlur={(e) => (e.target.style.borderColor = error ? colors.danger : `${colors.primary}66`)}
     />
   )
 }
@@ -259,6 +279,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
   const validInitialType = TYPES.some(t => t.id === initialType) ? initialType : 'bug'
   const [activeType, setActiveType] = useState(validInitialType)
   const [title, setTitle] = useState('')
+  const [titleError, setTitleError] = useState(false)
   const [anonymous, setAnonymous] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -267,10 +288,17 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
   const [generalFields, setGeneralFields] = useState({ ...EMPTY_GENERAL })
   const [ratings, setRatings] = useState({ ...EMPTY_RATINGS })
   const submittingRef = useRef(false)
+  const titleInputRef = useRef(null)
 
   const handleTypeChange = (type) => {
     setActiveType(type)
     setTitle('')
+    setTitleError(false)
+  }
+
+  const handleTitleChange = (e) => {
+    setTitle(e.target.value)
+    if (titleError) setTitleError(false)
   }
 
   const handleFieldChange = (setter) => (key, value) => {
@@ -293,9 +321,15 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
   const handleSubmit = async () => {
     if (submittingRef.current) return
     if (!title.trim()) {
+      // The toast alone put the error ~500px from the empty field with no
+      // border/focus cue on the field itself (#540 item 11) — put the error
+      // state ON the field too, and move focus there.
+      setTitleError(true)
+      titleInputRef.current?.focus()
       toastError('Please enter a title for your feedback.')
       return
     }
+    setTitleError(false)
     submittingRef.current = true
     setSubmitting(true)
     try {
@@ -362,10 +396,13 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
 
       {/* Title */}
       <div style={{ marginBottom: spacing.md }}>
-        <FieldLabel>Title</FieldLabel>
+        <FieldLabel required>Title</FieldLabel>
         <TextInput
+          inputRef={titleInputRef}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={handleTitleChange}
+          error={titleError}
+          required
           placeholder={
             activeType === 'bug'
               ? 'Short description of the bug...'

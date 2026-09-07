@@ -93,4 +93,17 @@ describe('BeatTimeline', () => {
     render(<BeatTimeline combat={combat} />);
     expect(screen.getByText(/no moves committed/i)).toBeInTheDocument();
   });
+
+  it('explains what the "next"/"+N" column labels mean (#540 item 15)', () => {
+    const combat = {
+      player: { id: 'player', name: 'Jean', hp: 10, current_move: pendingMove({ beats_until_resolve: 1 }) },
+    };
+    render(<BeatTimeline combat={combat} />);
+    expect(screen.getByText(/beats until each action resolves/i)).toBeInTheDocument();
+  });
+
+  it('does not show the legend when the strip itself is empty', () => {
+    render(<BeatTimeline combat={{ player: { id: 'player', name: 'Jean', hp: 10 }, enemies: [] }} />);
+    expect(screen.queryByText(/beats until each action resolves/i)).not.toBeInTheDocument();
+  });
 });
