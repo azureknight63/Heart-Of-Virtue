@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-version: 1.1.0
+version: 1.2.0
 description: |
   Use when the user wants their open GitHub issues worked as a batch rather
   than one named issue fixed. Trigger on any ask to triage, sort, clear out,
@@ -12,8 +12,10 @@ description: |
   once. Also trigger when the user describes the workflow themselves (fan out
   subagents across the issues, batch the decisions back to me).
   It reads every open issue, separates what can be fixed now from what needs
-  the maintainer's call, diagnoses before fixing, revert-proves each fix, and
-  returns the genuine decisions as one batched question instead of guessing.
+  the maintainer's call, diagnoses before fixing, fixes test-first and
+  revert-proves each fix, routes the result through the size-appropriate review
+  gate, and returns the genuine decisions as one batched question instead of
+  guessing.
   Do NOT use it to fix a single specified issue, or to file a new one — that is
   ordinary work.
 allowed-tools:
@@ -108,13 +110,34 @@ docstring, a report — as a claim to check against the line it describes. The
 same goes for a stale `file:line` citation: verify it still points at what it
 names before carrying it forward.
 
-## Step 3 — Fix with worktree-isolated agents
+## Step 3 — Fix test-first, with worktree-isolated agents
+
+**Every fix is test-first.** CLAUDE.md requires TDD for `src/`, `ai/` and
+`frontend/src/`, and a triage pass is where it is most tempting to skip: you
+already know the fix, so writing the test afterwards feels like the same work in
+a different order. It is not. Put the red step in each agent's brief explicitly:
+
+1. **Red** — write the test that reproduces the defect, run it, and confirm it
+   fails *for the reason the issue describes* — not on an import error, a typo,
+   or an unrelated crash. Have the agent paste that failure into its report.
+2. **Green** — the smallest change that makes it pass, and nothing else.
+3. **Refactor** — with the suite green throughout, re-running as you go.
+
+Done in that order the red step **is** Step 4's revert-proof: you have already
+watched the test fail without the fix and you have the message to show for it.
+Step 4 is for tests that arrived any other way.
+
+Test-first does not apply to documentation, comment-only or config-only edits,
+generated and vendored files, or scratch scripts outside those three trees. It
+does apply to everything else, including the one-liner you are certain about.
 
 Dispatch implementation agents with `isolation: "worktree"` so parallel work
 cannot collide. Give each one:
 
 - The diagnosis as established fact, plus **permission to disagree with it** —
   "verify its findings rather than trusting them blindly."
+- The red-green-refactor sequence above, with the failing run required in its
+  report — an agent that reports only a green suite has not shown you anything.
 - The specific fix shape, and the traps around it.
 - The verification commands, and which failures are pre-existing rather than
   theirs.
@@ -149,10 +172,48 @@ Ask for negative controls too. A test that passes both before *and* after the
 fix is not necessarily bad — it may be guarding against over-fixing — but you
 should know which of your tests are which.
 
+`/code-scrubber`'s Step 4.25, *Prove the Guard*, is the long form of this and is
+worth reading whole before writing a regression test. Three of its rules earn
+their place in triage specifically:
+
+- **Derive the expectation from an independent authority.** A test that
+  hand-lists what the code hand-lists is one opinion written twice, and it agrees
+  with itself forever. Read the expectation from the thing that owns it — the
+  engine constant, the registry, the shared JSON, an AST walk. This is the same
+  failure as a mock agreeing with a mock, which CLAUDE.md names as this
+  codebase's dominant bug class.
+- **Prove the derived population is non-empty.** A scan that matches nothing
+  approves of everything, and a guard that has stopped matching reads exactly
+  like a guard that passes.
+- **Watch for fail-open scope.** A guard that greps a whole *file* is satisfied
+  by any line in it. The contract test written to stop false player-facing copy
+  searched the whole of `_movement.py` for a substring that `Advance` satisfies,
+  so it passed while the sentence it guarded was wrong about `Withdraw` — and
+  four more of its tests could not have failed for the reason their names gave.
+
+When a guard has gone quiet, **fix the guard; never narrow the assertion to match
+the new reality.** Narrowing is how a guard retires without anyone deciding to
+retire it, and it is a finding worth reporting rather than a chore.
+
 ## Step 5 — Route the review by diff size, from the main session
 
 Per CLAUDE.md's Code Review Gate: ≤1000 changed lines goes to `/code-review`;
-above that goes to `/code-scrubber`.
+above that goes to `/code-scrubber`. Measure before you route — `git diff --stat`
+against the merge base — and route the **combined** triage branch rather than
+each fix as it lands, because the combined state is what ships. The threshold is
+`DIFF_REDIRECT_THRESHOLD` in
+`.claude/skills/_shared/review_rules/code_review_rules.py`; read it there rather
+than trusting this sentence.
+
+**The scrubber does not review Architecture.** Its seventh dimension is
+Alignment — `SCRUBBER_DIMENSION_ADDITIONS = ["Alignment"]` in
+`code_scrubber_rules.py` — while Architecture (gating) and Correctness are
+`/code-review`'s additions. So the diffs big enough to need the scrubber are
+exactly the ones that get no architecture pass from the skill reviewing them.
+After a scrub, run `/code-review` over the architecture-touching subset —
+anything in `src/api/`, `GameService`, the serializers, a new move or passive —
+before calling the gate closed. Not bookkeeping: the `player.attack` error
+survived three correction rounds because the review surface itself carried it.
 
 **Dispatch the scrubber's dimension agents from the main session.** A dispatched
 agent cannot spawn its own subagents in this environment, so a scrubber handed
@@ -169,6 +230,13 @@ Run the adversarial challenge pass. It exists to stop you making needless risky
 edits, and it earns its keep — it will reject some of your own proposed fixes
 with evidence, and it will catch reviewers overstating a finding. Verify any
 factual dispute between two reviewers yourself before acting on either.
+
+Two further things the scrubber's own design tells you. **Cross-chunk patterns**
+— the same anti-pattern in four files, one config value scattered across three —
+are structurally invisible to per-chunk review, so its aggregate pass is the only
+place they surface; don't skip it because every chunk came back A. And the
+**iteration cap is three per chunk**: a chunk still short of A after three rounds
+is escalated and reported, not ground on.
 
 **Audit the chunk set against the branch diff before you call the review done.**
 Chunking is derived from your own list of what changed, so a file you forgot to
@@ -193,6 +261,13 @@ Some fixes are risky enough to deserve the user's call even when the diagnosis
 is certain: anything that can log every player out, change an auth flow, alter
 persisted data, or shift gameplay balance. Bring those the specific patch, not
 a vague concern.
+
+The scrubber's threshold is the right one to borrow, and it is lower than it
+feels: a fix that could change observable behaviour, a public API, persisted data
+or business logic — **or that you are below roughly 80% confident in** — goes to
+the user with the patch attached rather than into the branch. Where you genuinely
+cannot ask, take the conservative default (don't apply it) and report it as
+deferred, with the finding, the `file:line`, and the patch in prose.
 
 ## Step 7 — Land it, then keep it landed
 
@@ -270,6 +345,11 @@ one command that makes it checkable.
 Report what is verified, distinctly from what is claimed. Name the tests that
 prove each fix, and say plainly which failures are pre-existing — confirm that
 against the base branch rather than asserting it.
+
+**Never report a test result, a grade, or a count you did not produce.** If you
+did not run it, say you did not run it; if a suite was still running when you
+wrote the summary, say that instead of predicting how it ends. A fabricated green
+is worse than a missing one, because it is acted on.
 
 Surface the things the user could not have known to ask about: a diagnosis that
 contradicted the issue's own title, a defect found in your own earlier fix, a
