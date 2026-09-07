@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import InventoryDialog from './InventoryDialog';
 import { WEIGHT_UNIT } from '../utils/itemUtils';
+import { colors } from '../styles/theme';
 
 // Mock ItemDetailDialog. It ECHOES the item it was handed, so the parent's
 // "which item did you open" and "did the update apply" claims are checkable —
@@ -128,16 +129,31 @@ describe('InventoryDialog', () => {
     // close test. The only hover handler InventoryDialog actually owns is this
     // one (the item cards' highlight comes from their own rarity styling), so
     // that is what is asserted.
+    //
+    // The button is now a shared GameButton (#540 item 4: it was rendering
+    // sentence-case grey instead of the app's uppercase lime/orange
+    // convention), so the hover styling is GameButton's own — asserted here
+    // only as "changes on hover, restores on leave", not against a hardcoded
+    // color GameButton doesn't own.
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     const closeBtn = screen.getByText('Close');
     const resting = closeBtn.style.backgroundColor;
 
     fireEvent.mouseEnter(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('rgba(255, 255, 255, 0.1)');
     expect(closeBtn.style.backgroundColor).not.toBe(resting);
 
     fireEvent.mouseLeave(closeBtn);
     expect(closeBtn.style.backgroundColor).toBe(resting);
+  });
+
+  it('renders the Close button with the app-wide uppercase button convention', () => {
+    render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+    const closeBtn = screen.getByText('Close');
+    expect(closeBtn.style.textTransform).toBe('uppercase');
+    // GameButton's secondary variant — highlight-colored outline, not the
+    // previous plain grey. jsdom normalizes the hex literal to rgb().
+    expect(closeBtn.style.color).toBe('rgb(255, 238, 170)');
+    expect(colors.text.highlight).toBe('#ffeeaa'); // ties the literal above to the token
   });
 
   it('shows subtype symbols correctly', () => {
