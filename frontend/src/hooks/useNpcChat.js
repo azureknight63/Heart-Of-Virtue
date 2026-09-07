@@ -415,11 +415,16 @@ export function useNpcChat(npcId, npcName, onClose) {
         setConversationCast(npcCast(npcId, data.npc_name || npcName))
         preloadTurnPortraits(npcId, applyTurnPayload(data))
 
-        if (data.npc_opening) {
+        if (data.npc_opening || data.npc_flavor) {
           setConversationSegments([
             conversationSegment({
               text: data.npc_opening,
-              speaker: npcId,
+              // A total fallback (issue #532) ships "" for npc_opening and
+              // the engine's own narration in npc_flavor — leaving `speaker`
+              // unset is what tells conversationSegment's consumers to
+              // centre it as italic narration instead of putting empty
+              // "spoken" text under the NPC's label.
+              speaker: data.npc_opening ? npcId : null,
               emotion: DEFAULT_EMOTION,
               flavor: data.npc_flavor,
             }),
@@ -484,7 +489,8 @@ export function useNpcChat(npcId, npcName, onClose) {
         ...prev,
         conversationSegment({
           text: data.npc_response,
-          speaker: npcId,
+          // See the matching comment in the /open handler above (issue #532).
+          speaker: data.npc_response ? npcId : null,
           emotion: qualityEmotion(data.conversation_quality),
           flavor: data.npc_flavor,
           reactions: { [JEAN_ID]: toneEmotion(option.tone) },

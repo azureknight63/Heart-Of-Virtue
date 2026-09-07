@@ -394,6 +394,34 @@ describe('useNpcChat', () => {
 
       expect(result.current.conversationSegments[0].flavor).toBe('She does not look up.')
     })
+
+    // Issue #532: a total-fallback opening (llm_available: false) carries its
+    // authored line in npc_flavor with npc_opening left empty — the engine's
+    // own narration, not spoken dialogue. Rendering it under the NPC's
+    // speaker label was the bug; ConversationStage centres a speaker-less
+    // segment as italic narration, so the fix is to leave `speaker` unset
+    // rather than defaulting it to npcId.
+    it('renders a narration-only fallback opening with no speaker label', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          npc_opening: '',
+          npc_flavor: "She glances up briefly, reading Jean's gear before his face.",
+          llm_available: false,
+        }),
+      })
+      const { result } = await mountOpened()
+
+      expect(result.current.conversationSegments).toEqual([
+        {
+          text: '',
+          speaker: null,
+          emotion: 'neutral',
+          flavor: "She glances up briefly, reading Jean's gear before his face.",
+          reactions: {},
+          in_conversation: true,
+        },
+      ])
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -628,6 +656,30 @@ describe('useNpcChat', () => {
       expect(segments[2].reactions).toEqual({ Jean: 'curious' })
       expect(result.current.loquacity).toEqual({ current: 1, max: 5 })
       expect(result.current.phase).toBe('waiting_jean')
+    })
+
+    // Issue #532: same routing rule as the opening turn, for a mid-conversation
+    // fallback.
+    it('renders a narration-only fallback reply with no speaker label', async () => {
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({
+          npc_response: '',
+          npc_flavor: 'She says nothing, just watches the road.',
+          llm_available: false,
+        }),
+      })
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+
+      const segments = result.current.conversationSegments
+      expect(segments[segments.length - 1]).toMatchObject({
+        text: '',
+        speaker: null,
+        flavor: 'She says nothing, just watches the road.',
+      })
     })
 
     it('ignores a click while the NPC is still composing', async () => {

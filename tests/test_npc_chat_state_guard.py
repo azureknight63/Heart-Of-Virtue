@@ -856,10 +856,16 @@ class TestAuthoredFallbackLinesAreNotGuarded:
         adapter = DeadAdapter()
         result = self._authored_npc(adapter).chat_open(chat_player())
 
-        assert result["npc_opening"] == "Come back when you need something sharpened."
+        # Issue #532: the authored fallback line is narration, not spoken
+        # dialogue, so it is routed to npc_flavor (npc_opening stays empty) —
+        # but it still survives VERBATIM, which is what this test is actually
+        # about: the tripwire must not touch it regardless of which field it
+        # lands in.
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"] == "Come back when you need something sharpened."
         assert adapter.revise_calls == 0
         # Proof the line really would have tripped the guard.
-        assert guard.scan_npc_text(result["npc_opening"]) != []
+        assert guard.scan_npc_text(result["npc_flavor"]) != []
 
 
 class TestRevisionGoesThroughTheNormalQC:
@@ -1352,6 +1358,64 @@ class TestReputationIsNotAwardedForAGuardedTurn:
             Turn("Here, take this blade.", "", _opts("Why stay?", "Go on.", "And?")),
         )
         assert dirty.tripped is True
+
+
+# ---------------------------------------------------------------------------
+# Issue #532 — the engine's OWN deterministic fallback text is narration
+# ("She glances up briefly, reading Jean's gear before his face." —
+# ai/npc/human/mara.json's conversation_starters_by_chapter), not spoken
+# dialogue. The existing QC policy already relocates a *model*-authored aside
+# into npc_flavor and leaves npc_text empty when a reply is entirely a stage
+# direction (see _qc_strip_and_check / _extract_action_asides); this is that
+# same policy applied to the authored fallback pool the engine reaches for
+# when the LLM turn fails outright.
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackTextRoutesToFlavorNotSpeech:
+    """When ``chat_respond``/``chat_open`` fall all the way through to the
+    deterministic pool (``llm_available: false``), the authored line must not
+    be rendered under the NPC's speaker label as if it were spoken."""
+
+    def test_a_mid_conversation_llm_failure_routes_the_line_to_flavor(self):
+        # npc_text="" is falsy, so _generate_turn treats every attempt as
+        # producing nothing usable and _run_npc_turn exhausts to None —
+        # exactly the shape a dead/404ing model leaves behind.
+        adapter = _WiredAdapter("", _opts("a?", "b?", "c?"))
+        npc = wired_chat_npc(
+            adapter,
+            _chat_char_config={
+                "conversation_starters_by_chapter": {
+                    "01": [
+                        "She glances up briefly, reading Jean's gear before his face."
+                    ]
+                },
+                "closing_lines_when_exhausted": ["She's done talking."],
+            },
+        )
+        result = npc.chat_respond(chat_player(), "Hello.", "direct")
+        assert result["llm_available"] is False
+        assert result["npc_response"] == ""
+        assert (
+            result["npc_flavor"]
+            == "She glances up briefly, reading Jean's gear before his face."
+        )
+
+    def test_a_failed_opening_routes_the_line_to_flavor(self):
+        adapter = _WiredAdapter("", _opts("a?", "b?", "c?"))
+        npc = wired_chat_npc(
+            adapter,
+            _chat_char_config={
+                "conversation_starters_by_chapter": {
+                    "01": ["Her eyes find Jean and hold there a moment."]
+                },
+                "closing_lines_when_exhausted": [],
+            },
+        )
+        result = npc.chat_open(chat_player())
+        assert result["llm_available"] is False
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"] == "Her eyes find Jean and hold there a moment."
 
 
 # ---------------------------------------------------------------------------

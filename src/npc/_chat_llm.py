@@ -4022,7 +4022,7 @@ class ConversationalNPCMixin:
 
     def _resolve_fallback_response(
         self, player, conversation_ended: bool
-    ) -> Tuple[str, bool]:
+    ) -> Tuple[str, str, bool]:
         """Deterministic reply for a turn the LLM could not produce.
 
         Called only after loquacity is resolved, so the line can tell whether
@@ -4044,28 +4044,41 @@ class ConversationalNPCMixin:
         the single most recent line, which is visible whenever an authored pool
         has only one entry (rotation itself only guarantees that no two
         *consecutive* draws collide, and only for pools of two or more).
+
+        Returns ``(npc_text, npc_flavor, conversation_ended)``. ``npc_text`` is
+        always ``""``: the authored pools (``conversation_starters_by_chapter``,
+        ``closing_lines_when_exhausted`` — see e.g. ``ai/npc/human/mara.json``)
+        are written as third-person narration ("She glances up briefly, reading
+        Jean's gear before his face."), not first-person speech, and rendering
+        that under the NPC's speaker label is issue #532: the player cannot tell
+        the engine's own narration from a line the NPC actually spoke, or from a
+        live model turn at all. This is the same "asides go to flavor" policy
+        ``_qc_strip_and_check``/``_extract_action_asides`` already apply to a
+        *model*-authored reply that turns out to be entirely a stage direction,
+        applied here to the engine's OWN fallback text instead.
         """
-        response = self._get_fallback_npc_line(
+        line = self._get_fallback_npc_line(
             is_opening=False, player=player, exhausted=conversation_ended
         )
         logger.warning(
-            "chat_respond using deterministic fallback response. npc=%s response_chars=%s",
+            "chat_respond using deterministic fallback response, routed to "
+            "npc_flavor (npc_text left empty; see issue #532). npc=%s flavor_chars=%s",
             self.name,
-            len(response or ""),
+            len(line or ""),
         )
         already_said = {
             entry.get("npc") for entry in self._chat_history if entry.get("npc")
         }
-        if not conversation_ended and response in already_said:
+        if not conversation_ended and line in already_said:
             conversation_ended = True
-            response = self._get_fallback_npc_line(
+            line = self._get_fallback_npc_line(
                 is_opening=False, player=player, exhausted=True
             )
             logger.info(
                 "chat_respond fallback pool exhausted; forcing conversation_ended. npc=%s",
                 self.name,
             )
-        return response, conversation_ended
+        return "", line, conversation_ended
 
     def _retract_guarded_loquacity_gain(
         self, outcome: "LoquacityOutcome"
@@ -4165,9 +4178,16 @@ class ConversationalNPCMixin:
             guarded = self._guard_turn(adapter, system, assembled, deadline)
         if guarded.tripped and on_tripped is not None:
             on_tripped()
+        # Persist the flavor/narration text when there was no spoken line —
+        # a total fallback turn (issue #532) now ships "" as npc_text so the
+        # player is not shown narration under a speaker label, but the history
+        # replayed into future prompts, and the dedup check in
+        # _resolve_fallback_response, both need SOMETHING recorded for the
+        # turn or every fallback beat reads as a blank "NPC:" line and no two
+        # fallback beats can ever be told apart.
         self._save_exchange_to_persistence(
             player,
-            guarded.turn.npc_text,
+            guarded.turn.npc_text or guarded.turn.npc_flavor,
             "",
             self._game_tick(player),
             self._get_chapter(player),
@@ -4306,10 +4326,14 @@ class ConversationalNPCMixin:
                     self.loquacity_current,
                     self.loquacity_threshold,
                 )
+                # Same routing as the mid-conversation and failed-opening
+                # fallbacks below: the authored brush-off line is narration
+                # ("A brief shake of the head."), not spoken dialogue, so it
+                # goes to npc_flavor rather than under the speaker label.
                 return self._open_payload(
                     npc_key,
                     player,
-                    Turn(self._get_brush_off_line()),
+                    Turn("", self._get_brush_off_line()),
                     llm_available=False,
                     conversation_ended=True,
                 )
@@ -4337,6 +4361,7 @@ class ConversationalNPCMixin:
                 jean_text=None,
                 deadline=deadline,
             )
+            fallback_flavor = ""
             if model_turn is not None:
                 npc_opening = model_turn.npc_text
                 logger.info(
@@ -4345,12 +4370,20 @@ class ConversationalNPCMixin:
                     len(npc_opening),
                 )
             else:
-                npc_opening = self._get_fallback_npc_line(
+                # The authored opening pool is narration ("She glances up
+                # briefly..." — ai/npc/human/mara.json), not first-person
+                # speech, so it is routed to npc_flavor rather than shown
+                # under the NPC's speaker label as if it were spoken — see
+                # _resolve_fallback_response's docstring (issue #532).
+                npc_opening = ""
+                fallback_flavor = self._get_fallback_npc_line(
                     is_opening=True, player=player
                 )
                 llm_available = False
                 logger.warning(
-                    "chat_open using deterministic fallback opening. npc=%s", self.name
+                    "chat_open using deterministic fallback opening, routed to "
+                    "npc_flavor (npc_opening left empty; see issue #532). npc=%s",
+                    self.name,
                 )
 
             jean_options = self._resolve_jean_options(
@@ -4368,7 +4401,7 @@ class ConversationalNPCMixin:
             # authored fallback opening is exempt.
             assembled = Turn(
                 npc_opening,
-                model_turn.npc_flavor if model_turn else "",
+                model_turn.npc_flavor if model_turn else fallback_flavor,
                 jean_options,
             )
             guarded = self._guard_and_persist(
@@ -4489,8 +4522,11 @@ class ConversationalNPCMixin:
             )
 
             if npc_response is None:
-                npc_response, conversation_ended = self._resolve_fallback_response(
-                    player, conversation_ended
+                # npc_flavor is guaranteed "" here already (model_turn is None,
+                # so outcome is TurnOutcome()'s default) — safe to overwrite
+                # with the fallback's narration rather than merge.
+                npc_response, npc_flavor, conversation_ended = (
+                    self._resolve_fallback_response(player, conversation_ended)
                 )
                 llm_available = False
 
