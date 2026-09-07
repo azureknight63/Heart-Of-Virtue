@@ -97,6 +97,20 @@ describe('EventDialog', () => {
     expect(screen.getByText(/Press 1-2 to select/i).textContent).toBe('Press 1-2 to select');
   });
 
+  // Bug 2 (issue #530): Math.min(inputOptions.length, 9) with no singular
+  // case renders "Press 1-1 to select" for the (very common) single-choice
+  // event, which reads as a typo/glitch even once the shortcut itself works.
+  it('shows a singular hint for a single-choice event instead of "Press 1-1 to select"', () => {
+    renderDialog({
+      ...mockEvent,
+      input_options: [{ label: 'Continue', value: 'go' }],
+    });
+    finishText();
+
+    expect(screen.getByText('Press 1 to select').textContent).toBe('Press 1 to select');
+    expect(screen.queryByText(/Press 1-1/i)).toBeNull();
+  });
+
   it('submits the selected choice value (not its label or index)', () => {
     renderDialog();
     finishText();
@@ -265,6 +279,64 @@ describe('EventDialog', () => {
     fireEvent.keyDown(dialogBody, { key: 'Enter' });
     expect(mockOnSubmitInput).not.toHaveBeenCalled();
     expect(screen.getByText(/Please select an option/i).textContent).toBe('Please select an option');
+  });
+
+  // Issue #530: the tests above prove a listener is ATTACHED to
+  // `.event-dialog-body` (dialogRef), but firing keyDown directly on that
+  // node only proves the listener fires when the node itself is the event's
+  // target -- it says nothing about whether a REAL key press (which
+  // originates from whatever element actually holds DOM focus, then bubbles
+  // upward) ever reaches it. BaseDialog's own focus trap (useFocusTrap in
+  // BaseDialog.jsx) moves real focus onto ITS OWN container (`.modal-content`,
+  // an ANCESTOR of `.event-dialog-body`) whenever the dialog has no focusable
+  // descendant yet -- true here, since showInput starts false and nothing
+  // ever moves focus onto a choice button afterward. Keydown bubbles UP from
+  // the focused element to its ancestors, never DOWN into a descendant, so a
+  // listener scoped to `.event-dialog-body` cannot see a press that
+  // originates on its ancestor.
+  describe('keyboard shortcuts reach the handler regardless of where focus actually lands (issue #530)', () => {
+    it('selects a choice via digit key when the keydown originates from the real focus target, not dialogRef', () => {
+      renderDialog();
+      finishText();
+
+      const focused = document.activeElement;
+      const modalContent = document.querySelector('.modal-content');
+      const dialogBody = document.querySelector('.event-dialog-body');
+      expect(focused).toBe(modalContent);
+      expect(focused).not.toBe(dialogBody);
+
+      fireEvent.keyDown(focused, { key: '2' });
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'leave');
+    });
+
+    it('reports "please select" on Enter with no choice made, when the keydown originates from the real focus target', () => {
+      renderDialog();
+      finishText();
+
+      const focused = document.activeElement;
+      expect(focused).toBe(document.querySelector('.modal-content'));
+
+      fireEvent.keyDown(focused, { key: 'Enter' });
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+      expect(screen.getByText(/Please select an option/i).textContent).toBe('Please select an option');
+    });
+
+    it('submits trimmed text on Enter when the keydown originates from the real focus target (the focused textarea)', () => {
+      renderDialog({ ...mockEvent, input_type: 'text' });
+      finishText();
+
+      // Text/number inputs already receive real DOM focus (the "Focus input
+      // when shown" effect), and that textarea sits INSIDE dialogRef's
+      // subtree, so this path was never broken the way the choice case is --
+      // it is pinned here as a guard against a future regression that moves
+      // the listener somewhere that no longer covers it.
+      const textarea = screen.getByPlaceholderText(/Enter your text here/i);
+      expect(document.activeElement).toBe(textarea);
+
+      fireEvent.change(textarea, { target: { value: 'Hello statue' } });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'Hello statue');
+    });
   });
 
   it('finishes the animation immediately on click and reveals the input at once', () => {

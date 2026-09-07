@@ -438,10 +438,20 @@ function ConversationStage({
     }, [isComplete, current.text, advance])
 
     // Enter/Space advance the conversation while it is active.
+    //
+    // Attached to `document`, not containerRef (issue #530). This div's own
+    // `tabIndex={-1}` explicitly excludes it from BaseDialog's focus trap (see
+    // BaseDialog.jsx's FOCUSABLE_SELECTOR, which excludes `[tabindex="-1"]`),
+    // and nothing here ever calls `.focus()` on it either -- so real DOM focus
+    // never lands on this node. It falls instead to BaseDialog's own container
+    // (an ANCESTOR of this div) or, standalone, to `document.body`. Keydown
+    // only bubbles UP from the focused element to its ancestors, never DOWN
+    // into a descendant, so a listener scoped to this div could never see the
+    // "click or press Enter to continue" hint's advertised key actually
+    // pressed. Matches the document-level pattern BaseDialog's own Escape/Tab
+    // trap and the glossary panels already use.
     useEffect(() => {
         if (isLive) return undefined
-        const node = containerRef.current
-        if (!node) return undefined
         const onKey = (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
@@ -449,8 +459,8 @@ function ConversationStage({
                 advance()
             }
         }
-        node.addEventListener('keydown', onKey)
-        return () => node.removeEventListener('keydown', onKey)
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
     }, [advance, isLive])
 
     const isThought = Boolean(current.thought)
