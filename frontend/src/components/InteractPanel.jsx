@@ -23,6 +23,18 @@ const SHOP_KEYWORDS = new Set(['buy', 'sell', 'trade'])
 // data fix landed, but content drifts and the frontend should not depend on it.
 const CHAT_KEYWORDS = new Set(['talk', 'chat'])
 
+// A raw compass direction is a movement shortcut duplicating whatever the
+// object's own contextual verb already does (e.g. the Eastern Gate's "enter"
+// and "east" both trigger the identical teleport — see
+// src/resources/maps/grondia.json). Rendering both the same bright "primary"
+// made two unequal actions look equally important (#540 item 7); the
+// contextual verb stays primary, the bare direction becomes secondary.
+const DIRECTION_KEYWORDS = new Set([
+    'north', 'south', 'east', 'west',
+    'northeast', 'northwest', 'southeast', 'southwest',
+    'up', 'down',
+])
+
 /**
  * The action buttons a target actually earns, de-duplicated.
  *
@@ -447,12 +459,34 @@ function InteractPanel({
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, width: '100%', textAlign: 'left' }}>
                                         <div style={{ fontSize: '20px' }}>{getTargetIcon(target.type)}</div>
-                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                            <GameText variant="primary" size="sm" weight="bold">
+                                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                                            {/* GameButton's own label styling is uppercase (see baseStyle in
+                                                GameButton.jsx) and text-transform inherits into any descendant
+                                                that doesn't override it — proper nouns and prose were being
+                                                force-uppercased just by living inside this button (#540 item 8).
+                                                Uppercase stays for the type badge below, which IS a label/chip. */}
+                                            <GameText variant="primary" size="sm" weight="bold" style={{ textTransform: 'none' }}>
                                                 {target.name} {target.count > 1 ? `(x${target.count})` : ''}
                                             </GameText>
                                             {target.description && (
-                                                <GameText variant="muted" size="xs" style={{ fontStyle: 'italic', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <GameText
+                                                    variant="muted"
+                                                    size="xs"
+                                                    style={{
+                                                        textTransform: 'none',
+                                                        fontStyle: 'italic',
+                                                        // Was a single hard-truncated line at 250px (~30 characters) —
+                                                        // wrap up to 2 lines instead, so more of the description
+                                                        // actually reaches the player.
+                                                        display: '-webkit-box',
+                                                        WebkitLineClamp: 2,
+                                                        WebkitBoxOrient: 'vertical',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'normal',
+                                                        wordBreak: 'break-word',
+                                                    }}
+                                                >
                                                     {target.description}
                                                 </GameText>
                                             )}
@@ -506,7 +540,10 @@ function InteractPanel({
                             >
                                 <GameText variant="warning" size="sm" weight="bold">
                                     How many would you like to {pendingAction}?
-                                    <GameText variant="muted" size="xs" weight="normal" style={{ display: 'block' }}>
+                                    {/* GameText defaults to a <p> (see its `as` prop, added for #536); a <p>
+                                        nested inside this outer GameText's own <p> is invalid HTML and fired
+                                        React's validateDOMNesting warning on every quantity prompt (#540 item 14). */}
+                                    <GameText as="span" variant="muted" size="xs" weight="normal" style={{ display: 'block' }}>
                                         Available: {selectedTarget.count}
                                     </GameText>
                                 </GameText>
@@ -622,7 +659,7 @@ function InteractPanel({
                                             key={keyword}
                                             onClick={() => handleActionClick(keyword)}
                                             disabled={loading || isLocked}
-                                            variant="primary"
+                                            variant={DIRECTION_KEYWORDS.has(String(keyword).toLowerCase()) ? 'secondary' : 'primary'}
                                             style={{
                                                 flex: '1 0 120px',
                                                 padding: spacing.md,
