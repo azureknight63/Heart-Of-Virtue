@@ -326,16 +326,6 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     )})
                 )}
             </div>}
-
-            {!isCollapsed && <div style={{
-                padding: '10px',
-                textAlign: 'center',
-                fontSize: '9px',
-                color: 'rgba(0, 255, 136, 0.4)',
-                borderTop: '1px solid rgba(0, 255, 136, 0.1)'
-            }}>
-                NEURAL TACTICAL ENGINE ACTIVE
-            </div>}
         </div>
     )
 }
