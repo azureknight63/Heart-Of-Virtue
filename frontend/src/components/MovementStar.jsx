@@ -83,6 +83,11 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
           return (
             <button
               key={key}
+              // issue #536 item 3: shares GameButton's "game-btn" class purely
+              // to pick up index.css's .game-btn:focus-visible ring — this
+              // component keeps its own bespoke inline styling otherwise, so
+              // the class contributes no other rule.
+              className="game-btn"
               aria-label={ariaLabel}
               onClick={() => handleMove(key)}
               onMouseEnter={() => !loading && isValid && setHoveredDirection(key)}
