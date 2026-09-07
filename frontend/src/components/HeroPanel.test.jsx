@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import HeroPanel from './HeroPanel';
 import { makePlayer, makeCombatant, makeStatusEffect } from '../test/payloads';
+import { accessibility } from '../styles/theme';
 
 describe('HeroPanel', () => {
   // Out of combat the `player` prop is usePlayer()'s merged status+stats object;
@@ -155,6 +156,71 @@ describe('HeroPanel', () => {
     fireEvent.mouseLeave(button);
     // Returns to colors.primary #00ff88
     expect(button.style.color).toBe('rgb(0, 255, 136)');
+  });
+
+  describe('mobile touch-target compensation for the radial buttons (issue #542)', () => {
+    // LeftPanel visually shrinks the whole HeroPanel with
+    // `transform: scale(heroScale)` to fit tight mobile combat layouts.
+    // Real QA measured the OFFENSIVE/MANEUVER/etc. buttons rendering at
+    // 40x25px at heroScale ~0.5714 (70*0.5714≈40, 44*0.5714≈25) — the
+    // button's own declared CSS (70x44) is already spec-compliant, but the
+    // ancestor scale shrinks its EFFECTIVE on-screen size well below the
+    // 44px minimum. HeroPanel cannot control that ancestor transform, so it
+    // compensates by scaling its own buttons back up by 1/heroScale; these
+    // tests multiply the button's declared size by heroScale (the ancestor
+    // shrink) and by whatever counter-scale the button applied to itself, to
+    // arrive at the number a real browser would actually render.
+    const SQUEEZE_SCALE = 0.5714; // matches the QA-reported real-world squeeze
+
+    const ownScaleOf = (transformStr) => {
+      const match = transformStr.match(/scale\(([\d.]+)\)/);
+      return match ? parseFloat(match[1]) : 1;
+    };
+
+    const effectiveSize = (button, heroScale) => {
+      const ownScale = ownScaleOf(button.style.transform);
+      return {
+        width: parseFloat(button.style.width) * heroScale * ownScale,
+        height: parseFloat(button.style.height) * heroScale * ownScale,
+      };
+    };
+
+    it('keeps every combat category button at or above 44px effective size when the mobile panel is squeezed', () => {
+      render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: SQUEEZE_SCALE })} />);
+
+      ['OFFENSIVE', 'MANEUVER', 'INVENTORY', 'SPECIAL', 'MISC', 'DEFENSIVE'].forEach((label) => {
+        const { width, height } = effectiveSize(screen.getByText(label), SQUEEZE_SCALE);
+        expect(width).toBeGreaterThanOrEqual(44);
+        expect(height).toBeGreaterThanOrEqual(44);
+      });
+    });
+
+    it('does not touch the transform on desktop, even when heroScale reports a squeeze', () => {
+      render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: false, heroScale: SQUEEZE_SCALE })} />);
+
+      const button = screen.getByText('OFFENSIVE');
+      expect(button.style.transform).not.toMatch(/scale\(/);
+    });
+
+    it('does not compensate when the panel is not actually shrunk (heroScale >= 1)', () => {
+      render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: 1 })} />);
+
+      const button = screen.getByText('OFFENSIVE');
+      expect(button.style.transform).not.toMatch(/scale\(/);
+    });
+
+    it('still meets 44px at the auto-scale floor of 0.4', () => {
+      render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: 0.4 })} />);
+
+      const { width, height } = effectiveSize(screen.getByText('DEFENSIVE'), 0.4);
+      expect(width).toBeGreaterThanOrEqual(44);
+      expect(height).toBeGreaterThanOrEqual(44);
+    });
+
+    it('accessibility.touchTarget is still the declared button height regardless of compensation', () => {
+      render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: SQUEEZE_SCALE })} />);
+      expect(screen.getByText('OFFENSIVE').style.height).toBe(accessibility.touchTarget);
+    });
   });
 
   it('shows the HP tooltip on hover, pin-toggles it on click, and again on touch', () => {

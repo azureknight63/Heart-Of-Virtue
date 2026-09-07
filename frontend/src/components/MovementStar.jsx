@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAudio } from '../context/AudioContext'
+import { accessibility } from '../styles/theme'
 
 const isDirectionValid = (exits, direction) => exits && exits.includes(direction)
 
@@ -8,7 +9,12 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
   const { playSFX } = useAudio()
 
   // Direction configuration with positions for proper 8-point star layout
-  // Container is 220x220px, button is 40x40px
+  // Container is 220x120px, button is 44x44px (accessibility.touchTarget —
+  // issue #542/#536: was 40x40px, below the project's 44px minimum touch
+  // target on every viewport, not just mobile). Position offsets are
+  // unchanged from the 40px layout: the button grows 2px past its old edge
+  // on each side, which only tightens (never closes) the gap between
+  // neighbouring buttons.
   // Calculations center button around the star using calc()
   const directions = [
     // Cardinal directions (distance: 80px from center, accounting for 40px button size)
@@ -90,8 +96,8 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
                 top,
                 left,
                 transform,
-                width: '40px',
-                height: '40px',
+                width: accessibility.touchTarget,
+                height: accessibility.touchTarget,
                 borderRadius: '4px',
                 border: `2px solid ${isValid ? '#00ff88' : '#666666'}`,
                 backgroundColor: isValid

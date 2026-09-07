@@ -97,6 +97,7 @@ function HeroPanel({
   player,
   isMobile,
   inCombat,
+  heroScale = 1,
   hasSpecialMoves,
   hasDefensiveMoves,
   hasOffensiveMoves,
@@ -161,6 +162,23 @@ function HeroPanel({
   ]
 
   const buttons = inCombat ? combatButtons.filter(btn => btn.show !== false) : explorationButtons
+
+  // Mobile touch-target compensation (issue #542).
+  //
+  // LeftPanel wraps this whole component in `transform: scale(heroScale)` so
+  // the radial layout fits whatever room a tight mobile combat screen leaves
+  // it (see useHeroAutoScale) — CombatLog/HeatMeter/SuggestedMovesPanel can
+  // squeeze that container well below its 360x310 base size. That ancestor
+  // scale shrinks these buttons' EFFECTIVE on-screen size right along with
+  // the portrait, even though their own CSS already declares the 44px
+  // minimum (`accessibility.touchTarget` below): a real QA pass measured
+  // 40x25px rendered buttons at heroScale ~0.57 (70*0.57≈40, 44*0.57≈25).
+  // Counter-scaling each button by 1/heroScale cancels the ancestor's shrink
+  // for just these interactive elements, restoring the declared 44px+ target
+  // regardless of how small the portrait itself has to get. A no-op on
+  // desktop (isMobile is false there) and a no-op whenever the panel isn't
+  // actually shrunk (heroScale >= 1), so neither is affected.
+  const touchCompensation = (isMobile && heroScale > 0 && heroScale < 1) ? 1 / heroScale : 1
 
   return (
     <div style={{
@@ -293,6 +311,9 @@ function HeroPanel({
           const isHovered = hoveredButton === key
           const baseColor = color || colors.primary
           const hoverColor = color || '#00ffaa'
+          const buttonTransform = touchCompensation !== 1
+            ? `${transform} scale(${touchCompensation})`
+            : transform
 
           return (
             <button
@@ -304,7 +325,7 @@ function HeroPanel({
                 position: 'absolute',
                 top,
                 left,
-                transform,
+                transform: buttonTransform,
                 width: '70px',
                 height: accessibility.touchTarget,
                 minHeight: accessibility.touchTarget,

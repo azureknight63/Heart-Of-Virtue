@@ -45,6 +45,7 @@ vi.mock('./HeroPanel', () => ({
             <button onClick={props.onMiscellaneousClick}>Miscellaneous Btn</button>
             <button onClick={props.onSpecialClick}>Special Btn</button>
             <span data-testid="hero-player-hp">{props.player?.hp}</span>
+            <span data-testid="hero-scale">{props.heroScale}</span>
             <span data-testid="hero-flags">
                 {[
                     props.hasOffensiveMoves && 'offensive',
@@ -629,6 +630,19 @@ describe('LeftPanel', () => {
         withContainerSize(0, 0, () => {
             render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
             expect(heroScale()).toBe('scale(1)');
+        });
+    });
+
+    // issue #542: HeroPanel counter-scales its own radial buttons by
+    // 1/heroScale on mobile so a squeezed combat layout doesn't shrink their
+    // effective touch target below 44px. That compensation only works if the
+    // real computed scale factor actually reaches HeroPanel as a prop, not
+    // just as the wrapper's own CSS transform.
+    it('forwards the computed heroScale number to HeroPanel, matching the wrapper transform', () => {
+        withContainerSize(720, 465, () => {
+            render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+            expect(heroScale()).toBe('scale(1.5)');
+            expect(screen.getByTestId('hero-scale')).toHaveTextContent('1.5');
         });
     });
 

@@ -1,5 +1,6 @@
 import { useAudio } from '../context/AudioContext'
-import { colors } from '../styles/theme'
+import { colors, accessibility } from '../styles/theme'
+import { useMobile } from '../hooks/useMobile'
 import { COMBAT_SPEED_STEPS } from '../utils/combatTiming'
 import { FEATURE_FLAGS, setFlag, useFeatureFlag } from '../utils/featureFlags'
 import BaseDialog from './BaseDialog'
@@ -52,6 +53,17 @@ export default function SettingsDialog({ onClose }) {
         combatSpeed,
         setCombatSpeed
     } = useAudio()
+    const isMobile = useMobile()
+    // issue #542: measured 31x28px (MUSIC/SFX mute toggles) and 56x32px
+    // (combat-speed segments) on a 375px viewport — both below the 44px
+    // touch-target minimum. Mobile-only so desktop's compact settings layout
+    // is untouched.
+    const mobileTouchTarget = isMobile
+        ? { minWidth: accessibility.touchTarget, minHeight: accessibility.touchTarget }
+        : {}
+    const mobileTouchHeight = isMobile
+        ? { minHeight: accessibility.touchTarget }
+        : {}
 
     return (
         <BaseDialog title="⚙️ SETTINGS" onClose={onClose}>
@@ -80,6 +92,7 @@ export default function SettingsDialog({ onClose }) {
                                 cursor: 'pointer',
                                 fontSize: '12px',
                                 fontWeight: 'bold',
+                                ...mobileTouchTarget,
                             }}
                         >
                             {isMusicMuted ? 'MUTED' : 'ON'}
@@ -131,6 +144,7 @@ export default function SettingsDialog({ onClose }) {
                                 cursor: 'pointer',
                                 fontSize: '12px',
                                 fontWeight: 'bold',
+                                ...mobileTouchTarget,
                             }}
                         >
                             {isSfxMuted ? 'MUTED' : 'ON'}
@@ -181,6 +195,7 @@ export default function SettingsDialog({ onClose }) {
                                     cursor: 'pointer',
                                     fontSize: '12px',
                                     fontWeight: 'bold',
+                                    ...mobileTouchHeight,
                                 }}
                             >
                                 {step}x

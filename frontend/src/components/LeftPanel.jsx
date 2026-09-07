@@ -500,6 +500,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               player={activePlayer}
               isMobile={isMobile}
               inCombat={mode === 'combat'}
+              heroScale={heroScale}
               hasSpecialMoves={hasSpecialMoves}
               hasDefensiveMoves={hasDefensiveMoves}
               hasOffensiveMoves={hasOffensiveMoves}

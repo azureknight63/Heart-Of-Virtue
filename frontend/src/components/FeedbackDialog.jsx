@@ -30,7 +30,12 @@ const inputStyle = {
   borderRadius: '4px',
   padding: `${spacing.sm} ${spacing.md}`,
   fontFamily: fonts.main,
-  fontSize: '13px',
+  // issue #542: was 13px. iOS zooms the whole page on focus below 16px, and
+  // this inline style overrode index.css's sitewide
+  // `input, select, textarea { font-size: 16px }` safeguard, so that rule
+  // never actually reached any field in this dialog (TITLE included, the
+  // only always-visible free-text field on the beta route).
+  fontSize: '16px',
   resize: 'vertical',
   boxSizing: 'border-box',
   outline: 'none',
