@@ -91,9 +91,22 @@ export function qualityEmotion(quality) {
   return mapEmotion(QUALITY_EMOTIONS, quality)
 }
 
-// How long a finished conversation stays on screen before the panel closes
-// itself. NpcChatPanel's `cancelAutoClose` dance (suspending the close while
-// the player reads the transcript) is written against this exact window, so it
+// How long a finished conversation stays on screen, once the player has
+// actually SEEN the closing line, before the panel closes itself.
+//
+// Issue #531: this used to count down from the moment the server responded,
+// not from when the closing line finished typing out. A two-sentence
+// closing line (ai/npc/human/mara.json's `closing_lines_when_exhausted`
+// exists precisely for this beat) types out over more than 2s at the
+// stage's normal speed, so the panel closed over content the player had
+// paid an LLM call for and never got to read. `handleFinalBeatRendered`
+// (below) is the one thing that arms this timer now, and it is NpcChatPanel's
+// job to call it once its own typewriter tracking says the final segment has
+// fully rendered — `settleTurnPhase` only sets the ENDED phase and otherwise
+// leaves the timer unarmed.
+//
+// NpcChatPanel's `cancelAutoClose` dance (suspending the close while the
+// player reads the transcript) is written against this exact window, so it
 // is named once rather than restated as a literal in the timer and in prose.
 const AUTO_CLOSE_DELAY_MS = 2000
 
@@ -200,10 +213,11 @@ function preloadTurnPortraits(npcId, options) {
  * @param {string} npcName - Display name passed by the caller; used as the
  *   title before `/open` resolves, and as a fallback if the response omits one
  * @param {Function} onClose - Called when the conversation auto-closes
- *   (`AUTO_CLOSE_DELAY_MS` after the server reports `conversation_ended`) or
- *   when the panel is dismissed through `handleEndConversation` (whether the
- *   `/end` request succeeds or fails). It is never called directly by the
- *   panel's chrome — see `handleEndConversation`.
+ *   (`AUTO_CLOSE_DELAY_MS` after the caller reports the final beat rendered —
+ *   see `handleFinalBeatRendered`) or when the panel is dismissed through
+ *   `handleEndConversation` (whether the `/end` request succeeds or fails).
+ *   It is never called directly by the panel's chrome — see
+ *   `handleEndConversation`.
  * @returns {{
  *   phase: string,
  *   displayName: string,
@@ -214,10 +228,12 @@ function preloadTurnPortraits(npcId, options) {
  *   loading: boolean,
  *   error: ?string,
  *   relationship: ?Object,
+ *   llmAvailable: boolean,
  *   retry: ?Function,
  *   handleOptionClick: (option: Object) => Promise<void>,
  *   handleEndConversation: () => Promise<void>,
  *   cancelAutoClose: () => void,
+ *   handleFinalBeatRendered: () => void,
  * }}
  */
 export function useNpcChat(npcId, npcName, onClose) {
@@ -230,6 +246,14 @@ export function useNpcChat(npcId, npcName, onClose) {
   const [loquacity, setLoquacity] = useState({ current: 0, max: 1 })
   const [error, setError] = useState(null)
   const [relationship, setRelationship] = useState(null)
+  // Whether the NPC's LAST turn was a live LLM reply or the engine's own
+  // fallback (issue #533). The server always carried `llm_available` in the
+  // /open and /respond payloads (`_base_payload`, src/npc/_chat_llm.py) but
+  // nothing on this side ever read it, so a misconfigured or 404ing model
+  // degraded every turn with no signal reaching the player at all — not even
+  // this piece of state to build one from. True until told otherwise: there
+  // is no turn yet to have degraded.
+  const [llmAvailable, setLlmAvailable] = useState(true)
   // State, not a ref: NpcChatPanel reads this during render to decide whether
   // the Retry button exists, and a ref mutation does not re-render. (It worked
   // only because each assignment happened to sit next to a `setError` on the
@@ -312,6 +336,10 @@ export function useNpcChat(npcId, npcName, onClose) {
     const options = data.jean_options || []
     setCurrentOptions(options)
     setRelationship(data.relationship || null)
+    // Only an explicit `false` counts as degraded — same convention as every
+    // other field here: a missing/malformed field reads as the healthy
+    // default rather than a false alarm.
+    setLlmAvailable(data.llm_available !== false)
     return options
   }
 
@@ -346,6 +374,26 @@ export function useNpcChat(npcId, npcName, onClose) {
     }
     openNpcKeyRef.current = null
     setPhase(CHAT_PHASES.ENDED)
+    // The close timer is NOT armed here — see handleFinalBeatRendered below
+    // and the comment on AUTO_CLOSE_DELAY_MS (issue #531). Arming it the
+    // instant the server responds is exactly the bug: the closing line can
+    // still be typing out on the stage.
+  }
+
+  /**
+   * Arm the auto-close timer now that the final segment has actually
+   * finished rendering on screen.
+   *
+   * NpcChatPanel calls this once its own typewriter tracking (mirroring
+   * ConversationStage's, at the same speed) reports the last beat complete
+   * — see its `handleFinalBeatRendered` wiring. Guarded on the CURRENT
+   * phase rather than trusting the caller: a stale call from a beat that
+   * belonged to a conversation already superseded (NPC switched, or a new
+   * turn already in flight) must not arm a close for the wrong turn.
+   */
+  const handleFinalBeatRendered = () => {
+    if (!isMountedRef.current || phase !== CHAT_PHASES.ENDED) return
+    clearTimeout(endTimeoutRef.current)
     endTimeoutRef.current = setTimeout(() => {
       if (isMountedRef.current) onCloseRef.current()
     }, AUTO_CLOSE_DELAY_MS)
@@ -369,6 +417,7 @@ export function useNpcChat(npcId, npcName, onClose) {
     setCurrentOptions([])
     setLoquacity({ current: 0, max: 1 })
     setRelationship(null)
+    setLlmAvailable(true)
     setError(null)
     setRetry(null)
     setPhase(CHAT_PHASES.OPENING)
@@ -415,11 +464,16 @@ export function useNpcChat(npcId, npcName, onClose) {
         setConversationCast(npcCast(npcId, data.npc_name || npcName))
         preloadTurnPortraits(npcId, applyTurnPayload(data))
 
-        if (data.npc_opening) {
+        if (data.npc_opening || data.npc_flavor) {
           setConversationSegments([
             conversationSegment({
               text: data.npc_opening,
-              speaker: npcId,
+              // A total fallback (issue #532) ships "" for npc_opening and
+              // the engine's own narration in npc_flavor — leaving `speaker`
+              // unset is what tells conversationSegment's consumers to
+              // centre it as italic narration instead of putting empty
+              // "spoken" text under the NPC's label.
+              speaker: data.npc_opening ? npcId : null,
               emotion: DEFAULT_EMOTION,
               flavor: data.npc_flavor,
             }),
@@ -484,7 +538,8 @@ export function useNpcChat(npcId, npcName, onClose) {
         ...prev,
         conversationSegment({
           text: data.npc_response,
-          speaker: npcId,
+          // See the matching comment in the /open handler above (issue #532).
+          speaker: data.npc_response ? npcId : null,
           emotion: qualityEmotion(data.conversation_quality),
           flavor: data.npc_flavor,
           reactions: { [JEAN_ID]: toneEmotion(option.tone) },
@@ -565,10 +620,12 @@ export function useNpcChat(npcId, npcName, onClose) {
     loading,
     error,
     relationship,
+    llmAvailable,
     retry,
     handleOptionClick,
     handleEndConversation,
     cancelAutoClose,
+    handleFinalBeatRendered,
   }
 }
 

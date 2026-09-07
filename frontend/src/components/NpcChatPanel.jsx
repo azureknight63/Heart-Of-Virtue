@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNpcChat, npcCast, JEAN_ID, CHAT_PHASES } from '../hooks/useNpcChat'
+import useTypewriter from '../hooks/useTypewriter'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
@@ -7,6 +8,12 @@ import ConversationStage from './ConversationStage'
 import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
 import { colors, spacing, fonts, commonStyles } from '../styles/theme'
+
+// The typewriter speed handed to ConversationStage below. Named and shared
+// with the panel's own `useTypewriter` tracker (see `handleFinalBeatRendered`
+// below, issue #531) so the two can never drift apart — a mismatch would mean
+// the panel thinks the closing line finished typing before it visually has.
+const CONVERSATION_STAGE_SPEED = 20
 
 /** @typedef {import('../utils/conversationSegment').ConversationSegment} ConversationSegment */
 
@@ -305,6 +312,36 @@ function RelationshipBadge({ relationship }) {
 }
 
 /**
+ * LlmDegradedNotice — tells the player the NPC's last turn came from the
+ * engine's own fallback pool rather than a live model reply (issue #533).
+ *
+ * The narration styling issue #532 gives a fallback beat (no speaker label,
+ * centred italic) already reads as "different", but nothing named WHY —
+ * this is that explicit signal, built from `llm_available`, which the
+ * server always sent and the client silently ignored until now.
+ *
+ * @param {Object} props
+ * @param {boolean} props.llmAvailable
+ */
+function LlmDegradedNotice({ llmAvailable }) {
+  if (llmAvailable) return null
+  return (
+    <div
+      data-testid="npc-chat-degraded-notice"
+      style={{
+        fontFamily: fonts.main,
+        fontSize: '11px',
+        fontStyle: 'italic',
+        color: colors.text.dim,
+        marginBottom: spacing.md,
+      }}
+    >
+      Connection unavailable — this reply is scripted, not generated.
+    </div>
+  )
+}
+
+/**
  * ChatErrorBox — the failure notice and its Retry.
  *
  * The copy is the hook's own fixed string; the server's `error` field carries
@@ -418,11 +455,41 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     loading,
     error,
     relationship,
+    llmAvailable,
     retry,
     handleOptionClick,
     handleEndConversation,
     cancelAutoClose,
+    handleFinalBeatRendered,
   } = useNpcChat(npcId, npcName, onClose)
+
+  // Issue #531: the panel used to auto-close a fixed 2s after the server
+  // responded, which cut off a closing line that was still typing out on
+  // the stage — the player never read content they had already paid an LLM
+  // call for. This mirrors ConversationStage's OWN typewriter (same text, same
+  // CONVERSATION_STAGE_SPEED) purely to know WHEN it finishes; ConversationStage
+  // itself never fires `onComplete` in "live" mode (see its own docstring), so
+  // the panel cannot simply listen for that.
+  const latestSegment = conversationSegments[conversationSegments.length - 1]
+  const { isComplete: latestBeatFullyTyped } = useTypewriter(
+    latestSegment?.text || '',
+    CONVERSATION_STAGE_SPEED
+  )
+  // Edge-triggered on purpose: `handleFinalBeatRendered` arms a fresh 2s
+  // timer every time it is called, so calling it on every render where the
+  // beat happens to already be fully typed (e.g. an unrelated re-render
+  // while `phase` is still ENDED) would keep pushing the close out forever.
+  const finalBeatSignaledRef = useRef(false)
+  useEffect(() => {
+    if (phase !== CHAT_PHASES.ENDED) {
+      finalBeatSignaledRef.current = false
+      return
+    }
+    if (latestBeatFullyTyped && !finalBeatSignaledRef.current) {
+      finalBeatSignaledRef.current = true
+      handleFinalBeatRendered()
+    }
+  }, [phase, latestBeatFullyTyped, handleFinalBeatRendered])
 
   // Opening the transcript CANCELS the "conversation ended" auto-close: the
   // player is reading the log, and the panel closing out from under them takes
@@ -468,7 +535,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       <ConversationStage
         segments={conversationSegments}
         conversation={conversationProp}
-        speed={20}
+        speed={CONVERSATION_STAGE_SPEED}
         mode="live"
         layout="wide"
       />
@@ -509,6 +576,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       <LoquacityBar percentage={loquacityPercentage} />
 
       <RelationshipBadge relationship={relationship} />
+      <LlmDegradedNotice llmAvailable={llmAvailable} />
 
       {/* Recap of the turn just before the one on stage — the question an answer
           is answering, kept in the same visual language as the history dialog. */}

@@ -394,6 +394,81 @@ describe('useNpcChat', () => {
 
       expect(result.current.conversationSegments[0].flavor).toBe('She does not look up.')
     })
+
+    // Issue #532: a total-fallback opening (llm_available: false) carries its
+    // authored line in npc_flavor with npc_opening left empty — the engine's
+    // own narration, not spoken dialogue. Rendering it under the NPC's
+    // speaker label was the bug; ConversationStage centres a speaker-less
+    // segment as italic narration, so the fix is to leave `speaker` unset
+    // rather than defaulting it to npcId.
+    it('renders a narration-only fallback opening with no speaker label', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({
+          npc_opening: '',
+          npc_flavor: "She glances up briefly, reading Jean's gear before his face.",
+          llm_available: false,
+        }),
+      })
+      const { result } = await mountOpened()
+
+      expect(result.current.conversationSegments).toEqual([
+        {
+          text: '',
+          speaker: null,
+          emotion: 'neutral',
+          flavor: "She glances up briefly, reading Jean's gear before his face.",
+          reactions: {},
+          in_conversation: true,
+        },
+      ])
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Issue #533: the backend always carried `llm_available` in the /open and
+  // /respond payloads (_base_payload, src/npc/_chat_llm.py) so a degraded
+  // turn could be told apart from a live one -- but nothing on this side
+  // ever read the field. It reached this hook and was silently dropped.
+  // -------------------------------------------------------------------------
+  describe('llm_available', () => {
+    it('exposes llm_available: false from the opening response', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ llm_available: false }),
+      })
+      const { result } = await mountOpened()
+
+      expect(result.current.llmAvailable).toBe(false)
+    })
+
+    it('exposes llm_available: true from the opening response', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ llm_available: true }),
+      })
+      const { result } = await mountOpened()
+
+      expect(result.current.llmAvailable).toBe(true)
+    })
+
+    it('updates llm_available from a respond response', async () => {
+      const { result } = await mountOpened()
+      expect(result.current.llmAvailable).toBe(true)
+
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({ npc_response: '', npc_flavor: 'Silence.', llm_available: false }),
+      })
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+
+      expect(result.current.llmAvailable).toBe(false)
+    })
+
+    it('treats a missing llm_available as available, like every other malformed-payload default', async () => {
+      npcChat.open.mockResolvedValue({ data: { npc_key: 'k', npc_opening: 'Hm.' } })
+      const { result } = await mountOpened()
+
+      expect(result.current.llmAvailable).toBe(true)
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -628,6 +703,30 @@ describe('useNpcChat', () => {
       expect(segments[2].reactions).toEqual({ Jean: 'curious' })
       expect(result.current.loquacity).toEqual({ current: 1, max: 5 })
       expect(result.current.phase).toBe('waiting_jean')
+    })
+
+    // Issue #532: same routing rule as the opening turn, for a mid-conversation
+    // fallback.
+    it('renders a narration-only fallback reply with no speaker label', async () => {
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({
+          npc_response: '',
+          npc_flavor: 'She says nothing, just watches the road.',
+          llm_available: false,
+        }),
+      })
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+      })
+
+      const segments = result.current.conversationSegments
+      expect(segments[segments.length - 1]).toMatchObject({
+        text: '',
+        speaker: null,
+        flavor: 'She says nothing, just watches the road.',
+      })
     })
 
     it('ignores a click while the NPC is still composing', async () => {
@@ -926,6 +1025,12 @@ describe('useNpcChat', () => {
     beforeEach(() => vi.useFakeTimers())
     afterEach(() => vi.useRealTimers())
 
+    // Issue #531: the closing line is fetched, paid for, then auto-closed
+    // before it can be read — the 2s countdown used to start the instant
+    // `conversation_ended` landed, not once the closing line had actually
+    // finished typing out on screen. The hook no longer arms the timer on
+    // its own; NpcChatPanel calls `handleFinalBeatRendered` once its own
+    // typewriter tracking says the final segment is fully rendered.
     const openEndedTurn = async () => {
       npcChat.respond.mockResolvedValue({
         data: makeNpcChatRespond({
@@ -943,9 +1048,21 @@ describe('useNpcChat', () => {
       return rendered
     }
 
-    it('closes exactly 2s after the server reports the conversation ended', async () => {
+    it('does NOT arm the close timer just because the conversation ended', async () => {
       const { result } = await openEndedTurn()
       expect(result.current.phase).toBe('ended')
+
+      // The old bug: this alone used to start (and finish) a 2s countdown.
+      // A long closing line can still be typing out well past that window,
+      // and nothing has told the hook the player has actually seen it yet.
+      await act(async () => { vi.advanceTimersByTime(60000) })
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('closes exactly 2s after the panel reports the final beat rendered', async () => {
+      const { result } = await openEndedTurn()
+
+      act(() => result.current.handleFinalBeatRendered())
 
       await act(async () => { vi.advanceTimersByTime(1999) })
       expect(onClose).not.toHaveBeenCalled()
@@ -954,8 +1071,22 @@ describe('useNpcChat', () => {
       expect(onClose).toHaveBeenCalledTimes(1)
     })
 
+    it('ignores a stale render-complete signal from before the conversation ended', async () => {
+      const rendered = mount()
+      await act(async () => {})
+      expect(rendered.result.current.phase).toBe('waiting_jean')
+
+      // A late call (e.g. the previous turn's typewriter finally settling)
+      // must not arm a close for a conversation that has not ended.
+      act(() => rendered.result.current.handleFinalBeatRendered())
+      await act(async () => { vi.advanceTimersByTime(60000) })
+
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
     it('cancelAutoClose suspends that close indefinitely', async () => {
       const { result } = await openEndedTurn()
+      act(() => result.current.handleFinalBeatRendered())
 
       act(() => result.current.cancelAutoClose())
       await act(async () => { vi.advanceTimersByTime(60000) })
@@ -964,7 +1095,8 @@ describe('useNpcChat', () => {
     })
 
     it('does not close after unmount', async () => {
-      const { unmount } = await openEndedTurn()
+      const { result, unmount } = await openEndedTurn()
+      act(() => result.current.handleFinalBeatRendered())
 
       unmount()
       await act(async () => { vi.advanceTimersByTime(5000) })
@@ -1088,7 +1220,9 @@ describe('useNpcChat', () => {
         ).toBe('ended')
         expect(result.current.currentOptions).toEqual([])
 
-        // ...and the auto-close actually arms.
+        // ...and the auto-close arms once the panel reports the final beat
+        // rendered (issue #531 — it is no longer armed by ended-phase alone).
+        act(() => result.current.handleFinalBeatRendered())
         await act(async () => { vi.advanceTimersByTime(2000) })
         expect(onClose).toHaveBeenCalledTimes(1)
 
