@@ -130,6 +130,7 @@ export default function GamePage() {
     endState,
     lastEndStateId,
     endStatePendingRef,
+    isResolvingCombatEnd,
     isCombatLogProcessing,
     currentLogIndex,
     hoveredTargetId,
@@ -769,6 +770,7 @@ export default function GamePage() {
         showDefeatDialog={showDefeatDialog}
         showLootDialog={showLootDialog}
         showPreVictoryNarrative={showPreVictoryNarrative}
+        isResolvingCombatEnd={isResolvingCombatEnd}
         endState={endState}
         playerWeight={player?.weight_current ?? 0}
         weightLimit={player?.carrying_capacity ?? 100}

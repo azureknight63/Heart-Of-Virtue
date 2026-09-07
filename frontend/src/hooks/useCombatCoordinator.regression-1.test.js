@@ -130,6 +130,84 @@ describe('useCombatCoordinator — animation gate + endStatePendingRef regressio
         })
     })
 
+    // Issue #535 sub-item 1: after the combat log prints "Victory!", the
+    // screen used to sit with NO visible cue for the whole VICTORY_DIALOG_
+    // DELAY_MS (plus any pending-log/animation wait) before VictoryDialog
+    // mounted — long enough that testers mistook it for a soft-lock.
+    // `isResolvingCombatEnd` mirrors `endStatePendingRef` (same set/reset
+    // points) but as REACTIVE state, so a consumer can render a "resolving…"
+    // indicator for exactly the window nothing else was signaling.
+    describe('isResolvingCombatEnd (visible resolving indicator)', () => {
+        it('is false when no combat has ended', () => {
+            const { result } = renderHook(() => useCombatCoordinator({ ...baseParams }))
+            expect(result.current.isResolvingCombatEnd).toBe(false)
+        })
+
+        it('turns true immediately once an end state is detected, before the dialog delay elapses', () => {
+            const { result } = renderHook(() =>
+                useCombatCoordinator({
+                    ...baseParams,
+                    combat: VICTORY_COMBAT,
+                    inCombat: false,
+                    isBattlefieldAnimating: false,
+                })
+            )
+
+            // No time has advanced yet — the dialog itself is not shown, but the
+            // player must already see SOMETHING.
+            expect(result.current.showVictoryDialog).toBe(false)
+            expect(result.current.isResolvingCombatEnd).toBe(true)
+        })
+
+        it('stays true while gated on pending logs/animations — that is exactly the dead-air window', () => {
+            const { result } = renderHook(() =>
+                useCombatCoordinator({
+                    ...baseParams,
+                    combat: VICTORY_COMBAT,
+                    inCombat: false,
+                    isBattlefieldAnimating: true,
+                })
+            )
+
+            act(() => vi.advanceTimersByTime(10000))
+
+            expect(result.current.showVictoryDialog).toBe(false)
+            expect(result.current.isResolvingCombatEnd).toBe(true)
+        })
+
+        it('turns false once the victory dialog actually shows', () => {
+            const { result } = renderHook(() =>
+                useCombatCoordinator({
+                    ...baseParams,
+                    combat: VICTORY_COMBAT,
+                    inCombat: false,
+                    isBattlefieldAnimating: false,
+                })
+            )
+
+            act(() => vi.advanceTimersByTime(10000))
+
+            expect(result.current.showVictoryDialog).toBe(true)
+            expect(result.current.isResolvingCombatEnd).toBe(false)
+        })
+
+        it('turns false once the defeat dialog actually shows', () => {
+            const defeatCombat = {
+                end_state: { id: 'defeat-resolving-1', status: 'defeat', message: 'You died.' },
+                log: []
+            }
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...baseParams, combat: defeatCombat, inCombat: false })
+            )
+
+            expect(result.current.isResolvingCombatEnd).toBe(true)
+            act(() => vi.advanceTimersByTime(10000))
+
+            expect(result.current.showDefeatDialog).toBe(true)
+            expect(result.current.isResolvingCombatEnd).toBe(false)
+        })
+    })
+
     describe('endStatePendingRef replaces endStatePending state', () => {
         it('exposes endStatePendingRef as a stable ref object (not a boolean)', () => {
             const { result, rerender } = renderHook(() =>
