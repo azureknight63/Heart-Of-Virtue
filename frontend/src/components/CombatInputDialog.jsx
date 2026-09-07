@@ -12,13 +12,39 @@ const INPUT_TYPE_CONFIG = {
 };
 
 /**
+ * HP-bar color by REAL percentage of current/max, not a fixed hue. A target
+ * at full health must read as healthy, not as "about to die" — the same
+ * color-logic bug already found and fixed in the sibling PARTY panel
+ * (issue #536: a real threshold instead of a hardcoded color).
+ */
+function healthBarColor(current, max) {
+    const pct = max > 0 ? current / max : 0;
+    if (pct > 0.5) return colors.success;
+    if (pct > 0.25) return colors.warning;
+    return colors.danger;
+}
+
+/**
  * CombatInputDialog - Versatile dialog for combat-specific inputs (targeting, directions, etc.)
  */
-const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHover }) => {
+const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHover, moveName, moveCategory }) => {
     const { playSFX } = useAudio();
 
     const getTitle = () => {
         return INPUT_TYPE_CONFIG[inputType]?.title || '❓ SELECT OPTION';
+    };
+
+    // The confirm verb on a target card must match what the move actually
+    // DOES. "STRIKE" is only honest for a genuine attack (category
+    // "Offensive" — see utils/categories.js); every other move (Advance,
+    // Guard, etc.) used to show "STRIKE" too, which reads as "attack" even
+    // on an ally card. With no move info at all (e.g. a server-driven
+    // target_selection state with no locally-tracked move), fall back to a
+    // neutral verb rather than guessing "STRIKE".
+    const getConfirmVerb = () => {
+        if (moveCategory === 'Offensive') return 'STRIKE';
+        if (moveName) return moveName;
+        return 'Select';
     };
 
     const handleSelect = (option) => {
@@ -69,17 +95,21 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                 </div>
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                    {target.health && (
-                                        <div style={{ fontSize: '12px', color: '#ff6666', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ minWidth: '30px', opacity: 0.6 }}>HP:</span>
-                                            <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
-                                                {/* Guard the divisor: a combatant serialized with max 0
-                                                    would otherwise put "Infinity%" into the style. */}
-                                                <div style={{ width: `${target.health.max > 0 ? (target.health.current / target.health.max) * 100 : 0}%`, height: '100%', backgroundColor: '#ff6666', borderRadius: '2px' }} />
+                                    {target.health && (() => {
+                                        // Guard the divisor: a combatant serialized with max 0
+                                        // would otherwise put "Infinity%" into the style.
+                                        const hpPct = target.health.max > 0 ? target.health.current / target.health.max : 0;
+                                        const hpColor = healthBarColor(target.health.current, target.health.max);
+                                        return (
+                                            <div style={{ fontSize: '12px', color: hpColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{ minWidth: '30px', opacity: 0.6 }}>HP:</span>
+                                                <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
+                                                    <div style={{ width: `${hpPct * 100}%`, height: '100%', backgroundColor: hpColor, borderRadius: '2px' }} />
+                                                </div>
+                                                <span style={{ fontSize: '10px', color: hpColor }}>{target.health.current}/{target.health.max}</span>
                                             </div>
-                                            <span style={{ fontSize: '10px' }}>{target.health.current}/{target.health.max}</span>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
                                     {target.hit_chance !== undefined && (
                                         <div style={{ fontSize: '12px', color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}>
                                             <span>Accuracy:</span>
@@ -94,9 +124,22 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                     )}
                                 </div>
 
-                                {/* STRIKE button is purely cosmetic — the entire card is the clickable target */}
-                                <GameButton variant="primary" style={{ width: '100%', padding: '8px', pointerEvents: 'none' }}>
-                                    STRIKE
+                                {/* The card itself is also clickable (see onClick above); this
+                                    button used to be `pointerEvents: 'none'` and cosmetic-only,
+                                    which made it invisible to real DOM hit-testing (Playwright's
+                                    actionability check, elementFromPoint) and keyboard/
+                                    screen-reader-inert. It now carries its own onClick — with
+                                    stopPropagation so a real click is not ALSO handled by the
+                                    ancestor card, which would submit the target twice. */}
+                                <GameButton
+                                    variant="primary"
+                                    style={{ width: '100%', padding: '8px' }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelect(target.id);
+                                    }}
+                                >
+                                    {getConfirmVerb()}
                                 </GameButton>
                             </div>
                         ))}

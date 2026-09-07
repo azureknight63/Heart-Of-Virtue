@@ -294,8 +294,14 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       setLocalCombatInput({
         type: 'target_selection',
         options: move.viable_targets || [],
-        moveName: move.name
+        moveName: move.name,
+        moveCategory: move.category
       })
+      // Close the move panel: it and CombatInputDialog are independently
+      // absolutely-positioned over the same screen region, so leaving both
+      // mounted reads as one control nested inside the other (issue #535).
+      setShowCombatMoves(false)
+      setCombatMovesCategory(null)
       return;
     }
 
@@ -570,6 +576,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           <CombatInputDialog
             inputType={localCombatInput ? localCombatInput.type : combat.input_type}
             options={localCombatInput ? localCombatInput.options : (combat.available_options || [])}
+            moveName={localCombatInput ? localCombatInput.moveName : undefined}
+            moveCategory={localCombatInput ? localCombatInput.moveCategory : undefined}
             onTargetHover={onTargetHover}
             onSelect={async (selectedValue) => {
               if (localCombatInput) {

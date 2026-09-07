@@ -59,8 +59,8 @@ vi.mock('./HeroPanel', () => ({
 }));
 vi.mock('./CombatLog', () => ({ default: ({ log }) => <div data-testid="combat-log">{log.map((e, i) => <div key={i}>{e.message}</div>)}</div> }));
 vi.mock('./CombatInputDialog', () => ({
-    default: ({ onSelect, onCancel }) => (
-        <div data-testid="combat-input-dialog">
+    default: ({ onSelect, onCancel, moveName, moveCategory }) => (
+        <div data-testid="combat-input-dialog" data-move-name={moveName ?? ''} data-move-category={moveCategory ?? ''}>
             <button onClick={() => onSelect('target-1')}>Select Target</button>
             <button onClick={onCancel}>Cancel Input</button>
         </div>
@@ -730,6 +730,57 @@ describe('LeftPanel', () => {
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
         expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
+    });
+
+    // Issue #535 sub-item 2: CombatInputDialog needs the move's own name/
+    // category to label its confirm button correctly (STRIKE only for a
+    // genuine attack) instead of a fixed "STRIKE" for every move.
+    it('forwards the selected move\'s name and category to the target-selection dialog', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [makeCombatMove({
+                id: '1', name: 'Advance', category: 'Maneuver', available: true,
+                targeted: true, requires_target_selection: true,
+                viable_targets: [{ id: 'enemy_1' }, { id: 'ally_1' }],
+            })],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        fireEvent.click(screen.getByText('Maneuver Btn'));
+        fireEvent.click(screen.getByText('Advance'));
+
+        const dialog = screen.getByTestId('combat-input-dialog');
+        expect(dialog.getAttribute('data-move-name')).toBe('Advance');
+        expect(dialog.getAttribute('data-move-category')).toBe('Maneuver');
+    });
+
+    // Issue #535 sub-item 5 (optional cleanup): CombatMovePanel and
+    // CombatInputDialog are independently absolutely-positioned over the same
+    // screen region, so leaving the move panel mounted while the target
+    // dialog is open reads as (and, per the a11y tree, nests as) one control
+    // overlapping the other. The completion branch (handleInputSelection)
+    // already closes the move panel; the opening branch did not.
+    it('hides the combat move panel once the local target-selection dialog opens', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [makeCombatMove({
+                id: '1', name: 'Lunge', category: 'Offensive', available: true,
+                targeted: true, requires_target_selection: true,
+                viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }],
+            })],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        expect(screen.getByTestId('combat-move-panel')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Lunge'));
+        expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
+        expect(screen.queryByTestId('combat-move-panel')).not.toBeInTheDocument();
     });
 
     it('sends the local target selection and clears it on success', async () => {
