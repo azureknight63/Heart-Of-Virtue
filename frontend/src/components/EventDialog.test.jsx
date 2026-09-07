@@ -496,6 +496,139 @@ describe('EventDialog', () => {
       expect(screen.queryByText('The vault door groans open.')).toBeNull();
     });
 
+    describe('issue #529 — Event Result soft-lock', () => {
+      // Shaped like the real arrival narration that reproduces issue #529: the
+      // GrondelithEntry description plus its attached Ch02GorranAtPools tile
+      // event combine to ~1000 characters of plain narrate()/cprint() text —
+      // comfortably over _capture_conversation's 400-char chunk threshold —
+      // with no speaker and no conversation roster, same shape as the #123
+      // test above (which stops one beat short of the end). This is the path
+      // the #529 diagnosis flagged as genuinely untested: does reaching the
+      // LAST beat actually unlock every dismissal affordance, and can the
+      // player always get out even if it doesn't?
+      const longNoRosterEvent = {
+        event_id: 'gorran-pools-1',
+        name: 'Event Result',
+        output_text: 'placeholder — segments are what the dialog actually renders',
+        needs_input: false,
+        segments: [
+          {
+            text: 'The mineral pools of Grondelith stretch out before you, their surfaces '
+              + 'glowing faintly with sediment carried up from some deep vein below.',
+            type: 'narration',
+            in_conversation: false,
+          },
+          {
+            text: 'Gorran stands at the water\'s edge, arms crossed, studying the ripples '
+              + 'as though they might rearrange themselves into an answer he has been waiting years for.',
+            type: 'narration',
+            in_conversation: false,
+          },
+          {
+            text: 'He does not turn as you approach. "You made good time," he says at last, '
+              + 'his voice low and rough from disuse.',
+            type: 'narration',
+            in_conversation: false,
+          },
+        ],
+        conversation: null,
+      };
+
+      it('reaches onComplete on the final beat and enables ✕/overlay dismissal', () => {
+        renderDialog(longNoRosterEvent);
+        const stage = screen.getByTestId('conversation-stage');
+
+        // 2 clicks per beat (finish typewriter, then advance) except the
+        // last beat, which needs a 3rd click for advance() to notice
+        // beatIndex === lastIndex and fire onComplete.
+        fireEvent.click(stage); // finish beat 1
+        fireEvent.click(stage); // advance to beat 2
+        fireEvent.click(stage); // finish beat 2
+        fireEvent.click(stage); // advance to beat 3 (last)
+        fireEvent.click(stage); // finish beat 3
+        fireEvent.click(stage); // beatIndex === lastIndex ⇒ onComplete fires
+
+        expect(screen.getByText(/his voice low and rough from disuse/).textContent)
+          .toContain('his voice low and rough from disuse.');
+
+        // isComplete is now true: the Close affordance and its hint render.
+        expect(screen.getByRole('button', { name: /^Close$/i })).not.toBeNull();
+        expect(screen.getByText(/or click anywhere to continue/i)).not.toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: '✕' }));
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+      });
+
+      // The genuine soft-lock: `handleGlobalInteraction` (which ✕, the
+      // overlay, Escape, and a dialog-body click all route through) was a
+      // no-op unless `isComplete` was ALREADY true, and `isComplete` is set
+      // exactly once — by ConversationStage's onComplete firing on the LAST
+      // beat. If a beat-advance click is ever lost, for any reason, the
+      // player loses every dismissal affordance at once, with no independent
+      // escape hatch. Whether or not advance() itself can actually get stuck
+      // (the diagnosis could not prove it either way via static reading), a
+      // needs_input:false event is never persisted server-side as a pending
+      // event — GameService._store_pending_event only stores one when
+      // needs_input is true — so dismissing it early costs nothing on the
+      // backend. Gating ✕/overlay/Escape on full conversation completion was
+      // a bug regardless of whether beat-advance itself is ever the trigger.
+      const driveToBeatTwo = (event) => {
+        const utils = renderDialog(event);
+        const stage = screen.getByTestId('conversation-stage');
+        fireEvent.click(stage); // finish beat 1
+        fireEvent.click(stage); // advance to beat 2
+        fireEvent.click(stage); // finish beat 2's typewriter — last beat NOT reached
+        expect(screen.queryByText(/his voice low and rough from disuse/)).toBeNull();
+        expect(screen.queryByRole('button', { name: /^Close$/i })).toBeNull();
+        return utils.unmount;
+      };
+
+      it('still dismisses via ✕ when the conversation has not reached its last beat', () => {
+        const unmount = driveToBeatTwo({ ...longNoRosterEvent, event_id: 'gorran-pools-2a' });
+        fireEvent.click(screen.getByRole('button', { name: '✕' }));
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+        unmount();
+      });
+
+      it('still dismisses via the overlay click when mid-conversation', () => {
+        const unmount = driveToBeatTwo({ ...longNoRosterEvent, event_id: 'gorran-pools-2b' });
+        fireEvent.click(document.querySelector('.modal-overlay'));
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+        unmount();
+      });
+
+      it('still dismisses via Escape when mid-conversation', () => {
+        const unmount = driveToBeatTwo({ ...longNoRosterEvent, event_id: 'gorran-pools-2c' });
+        fireEvent.keyDown(document, { key: 'Escape' });
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+        unmount();
+      });
+
+      it('does not dismiss mid-conversation for an event that still needs input', () => {
+        // Sanity guard on the fix's scope: the escape hatch is specific to
+        // needs_input:false display frames. A needs_input event must keep
+        // requiring an actual answer — dismissing it early would abandon a
+        // choice the backend is still waiting on.
+        const stillNeedsInput = {
+          ...longNoRosterEvent,
+          event_id: 'gorran-pools-3',
+          needs_input: true,
+          input_type: 'choice',
+          input_options: [{ label: 'Continue', value: 'continue' }],
+        };
+        renderDialog(stillNeedsInput);
+        const stage = screen.getByTestId('conversation-stage');
+        fireEvent.click(stage); // finish beat 1
+        fireEvent.click(stage); // advance to beat 2
+
+        // showCloseButton={!needsInput} hides the ✕ entirely for this event;
+        // the overlay click is still wired to handleGlobalInteraction though.
+        expect(screen.queryByRole('button', { name: '✕' })).toBeNull();
+        fireEvent.click(document.querySelector('.modal-overlay'));
+        expect(mockOnClose).not.toHaveBeenCalled();
+      });
+    });
+
     it('applies Memory Flash flair when presentation is memory_flash', () => {
       renderDialog({
         event_id: 'mem-2',
