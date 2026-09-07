@@ -14,8 +14,11 @@ const INPUT_TYPE_CONFIG = {
 /**
  * HP-bar color by REAL percentage of current/max, not a fixed hue. A target
  * at full health must read as healthy, not as "about to die" — the same
- * color-logic bug already found and fixed in the sibling PARTY panel
- * (issue #536: a real threshold instead of a hardcoded color).
+ * threshold structure as the sibling PARTY panel and item-detail HP bars
+ * (issue #536), but a deliberately different "healthy" shade (`colors.success`,
+ * the brighter primary lime) tested and kept local to this dialog rather than
+ * merged into `entityUtils.getHpBarColor`, which uses PartyPanel/
+ * ItemDetailDialog's own `#44ff88`.
  */
 function healthBarColor(current, max) {
     const pct = max > 0 ? current / max : 0;

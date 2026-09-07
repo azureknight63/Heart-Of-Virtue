@@ -39,11 +39,16 @@ function VitalBar({
   // min/max exposes the live value directly; the label/title give every
   // player (not just assistive tech) an always-available accessible name,
   // independent of the pinned tooltip.
-  const accessibleLabel = `${label}: ${current.toFixed(0)} / ${max}`
+  // Coerce once: `current`/`max` come straight off the wire, and while a
+  // guard upstream handles null/undefined, it doesn't guarantee a number —
+  // a malformed payload calling .toFixed() directly would crash the whole
+  // HUD render rather than just this bar's tooltip.
+  const currentValue = Number(current) || 0
+  const accessibleLabel = `${label}: ${currentValue.toFixed(0)} / ${max}`
   return (
     <div
       role="progressbar"
-      aria-valuenow={current.toFixed(0)}
+      aria-valuenow={currentValue.toFixed(0)}
       aria-valuemin={0}
       aria-valuemax={max}
       aria-label={accessibleLabel}
@@ -100,7 +105,7 @@ function VitalBar({
           boxShadow: `0 0 8px ${color}99`,
           zIndex: 20,
         }}>
-          {label}<br />{current.toFixed(0)}/{max}
+          {label}<br />{currentValue.toFixed(0)}/{max}
         </div>
       )}
     </div>

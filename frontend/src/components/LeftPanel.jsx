@@ -602,6 +602,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             }}
             onCancel={() => {
               if (localCombatInput) {
+                // Backing out of target selection should return the player to
+                // the move-category panel they came from, not leave them with
+                // no move panel open at all (the #535 fix that closes the
+                // category panel when target selection opens never restored
+                // it on cancel, issue found in the scrub of that fix).
+                setCombatMovesCategory(localCombatInput.moveCategory)
+                setShowCombatMoves(true)
                 setLocalCombatInput(null)
               } else {
                 setShowInputDialog(false)

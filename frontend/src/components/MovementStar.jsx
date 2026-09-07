@@ -12,17 +12,18 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
   // Container is 220x120px, button is 44x44px (accessibility.touchTarget,
   // the single source of truth for the value now — issue #542/#536: was
   // 40x40px, below the project's 44px minimum touch target on every
-  // viewport, not just mobile). Position offsets are unchanged from the
-  // 40px layout: the button grows 2px past its old edge on each side,
-  // which only tightens (never closes) the gap between neighbouring
-  // buttons.
+  // viewport, not just mobile). The perpendicular-axis centering offsets
+  // (the "- 20px" halves of a 40px button) are now "- 22px" (half of 44px)
+  // so each button's true center still lands on its intended star point;
+  // the axial distance offsets (-65px / +25px) are a separate, unrelated
+  // layout choice shared with the diagonals and don't scale with button size.
   // Calculations center button around the star using calc()
   const directions = [
     // Cardinal directions (distance: 80px from center, accounting for 40px button size)
-    { key: 'north', label: '↑', top: 'calc(50% - 65px)', left: 'calc(50% - 20px)', transform: 'translate(0, 0)', ariaLabel: 'Move North' },
-    { key: 'east', label: '→', top: 'calc(50% - 20px)', left: 'calc(50% + 25px)', transform: 'translate(0, 0)', ariaLabel: 'Move East' },
-    { key: 'south', label: '↓', top: 'calc(50% + 25px)', left: 'calc(50% - 20px)', transform: 'translate(0, 0)', ariaLabel: 'Move South' },
-    { key: 'west', label: '←', top: 'calc(50% - 20px)', left: 'calc(50% - 65px)', transform: 'translate(0, 0)', ariaLabel: 'Move West' },
+    { key: 'north', label: '↑', top: 'calc(50% - 65px)', left: 'calc(50% - 22px)', transform: 'translate(0, 0)', ariaLabel: 'Move North' },
+    { key: 'east', label: '→', top: 'calc(50% - 22px)', left: 'calc(50% + 25px)', transform: 'translate(0, 0)', ariaLabel: 'Move East' },
+    { key: 'south', label: '↓', top: 'calc(50% + 25px)', left: 'calc(50% - 22px)', transform: 'translate(0, 0)', ariaLabel: 'Move South' },
+    { key: 'west', label: '←', top: 'calc(50% - 22px)', left: 'calc(50% - 65px)', transform: 'translate(0, 0)', ariaLabel: 'Move West' },
     // Diagonal directions (distance: ~57px at 45 degrees)
     { key: 'northeast', label: '↗', top: 'calc(50% - 65px)', left: 'calc(50% + 25px)', transform: 'translate(0, 0)', ariaLabel: 'Move Northeast' },
     { key: 'northwest', label: '↖', top: 'calc(50% - 65px)', left: 'calc(50% - 65px)', transform: 'translate(0, 0)', ariaLabel: 'Move Northwest' },
