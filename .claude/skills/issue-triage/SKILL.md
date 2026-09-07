@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-version: 1.0.0
+version: 1.1.0
 description: |
   Use when the user wants their open GitHub issues worked as a batch rather
   than one named issue fixed. Trigger on any ask to triage, sort, clear out,
@@ -100,6 +100,14 @@ whether it is still live on the current default branch, a concrete minimal fix,
 and which existing tests cover the area. That last one matters — a passing test
 over the broken behaviour tells you the test is wrong too.
 
+**A comment is not the code it sits above.** A wire-contract note claiming the
+server sends `int(player.heat * 100)` was relayed into three further documents
+before anyone opened the serializer, which does `round(...)`. Comments drift and
+nothing fails when they do, so treat every one you plan to repeat — in a fix, a
+docstring, a report — as a claim to check against the line it describes. The
+same goes for a stale `file:line` citation: verify it still points at what it
+names before carrying it forward.
+
 ## Step 3 — Fix with worktree-isolated agents
 
 Dispatch implementation agents with `isolation: "worktree"` so parallel work
@@ -162,6 +170,14 @@ edits, and it earns its keep — it will reject some of your own proposed fixes
 with evidence, and it will catch reviewers overstating a finding. Verify any
 factual dispute between two reviewers yourself before acting on either.
 
+**Audit the chunk set against the branch diff before you call the review done.**
+Chunking is derived from your own list of what changed, so a file you forgot to
+list is never reviewed and nothing anywhere says so — the run reports full
+grades over a partial diff. Diff the branch against the merge base, take the set
+difference against the files actually chunked, and review what falls out. Doing
+that twice on one pass surfaced four unchunked files plus an entire rename,
+and three of the real defects that pass found came out of them.
+
 ## Step 6 — Batch the decisions into one question
 
 Collect every genuine decision and ask them together via `AskUserQuestion`, at
@@ -193,6 +209,15 @@ check-in, because webhooks deliver CI *failures* reliably but not successes.
 Widen the interval as the PR goes quiet — hourly polling of a static, green PR
 waiting on human review just burns budget. Stop the check-ins when it merges.
 
+**A job can fail with every one of its tests green.** `Frontend (vitest)` came
+back red on 2,832 passed / 0 failed: seven unhandled rejections after teardown
+(`ReferenceError: window is not defined`) took the process to exit 1. Read the
+job's conclusion and its `##[error]` lines, never the "N passed" summary — a
+run that is green in the middle and red at the end reads as a pass to anyone
+skimming. That failure was also invisible locally, where the suite is not under
+load, so reproduce the *mechanism* rather than waiting to see the symptom
+again: the dangling promise was a live XHR from a hook the test never mocked.
+
 Two API notes that will otherwise mislead you: `get_status` reads the legacy
 commit-status API and returns `"pending"` with zero statuses on repos that use
 check runs — use `get_check_runs` and the PR's `mergeable_state`. And an
@@ -214,6 +239,31 @@ for it rather than being surprised by it:
 - When re-dispatching, make **"assess and commit what you inherit"** the first
   instruction, and carry the established diagnosis forward so the new agent
   does not re-derive it.
+
+## Measure it before you say it
+
+Every wrong statement in the last pass came from a shortcut in how something was
+counted or searched, not from a wrong belief about the code. The shortcuts are
+worth knowing by name, because each one produces a confident, plausible number.
+
+- **`grep "failed"` matches `xfailed`.** A loop counting failures across ten
+  random-order runs reported ten runs with failures; all ten had passed. Count
+  process **exit codes**, not words in the output — pytest, vitest and npm all
+  tell you the truth in `$?` and lie to a careless regex.
+- **Grep searches contents, not filenames.** A test file was reported as
+  nonexistent because the search was for its name *inside* files. Use `ls` or
+  `find` to answer "does this file exist", and note that a reviewer asserting
+  the same absence at "97% confidence" is not a second source — it is one
+  unverified claim, and confirming it with the same flawed method confirms
+  nothing.
+- **Take the set difference before quoting a gap.** "104 found, 5 missed" was
+  quoted from two counts that were never subtracted; exactly one item was
+  actually exclusive, so the gap was overstated fivefold. If you are about to
+  name a number of missed things, produce the list of them first.
+
+None of these need a second tool call to avoid — they need the *right* one.
+When a number is going into a report, a commit message or a PR body, spend the
+one command that makes it checkable.
 
 ## Reporting
 
