@@ -144,6 +144,12 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
                 height: '100%',
                 overflowY: 'auto',
                 padding: spacing.sm,
+                // Shares ScrollFadeIndicator/useScrollIndicators with
+                // CollapsibleRoomDescription (issue #537): the same
+                // fade+label overlay paints over the last/first visible log
+                // line unless extra space is reserved for it here.
+                paddingBottom: showBottom ? '44px' : spacing.sm,
+                paddingTop: showTop ? '44px' : spacing.sm,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px',

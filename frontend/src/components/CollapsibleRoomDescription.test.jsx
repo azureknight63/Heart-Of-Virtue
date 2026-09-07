@@ -82,4 +82,46 @@ describe('CollapsibleRoomDescription', () => {
     const fadeIndicators = container.querySelectorAll('[style*="linear-gradient"]')
     expect(fadeIndicators.length).toBe(2)
   })
+
+  // Issue #537 — the description box measured clientHeight: 200 with 149px of
+  // unused panel space directly below it, so NPC-presence lines appended
+  // after RoomContents (e.g. "Rock Rumbler Gepijak is shuffling about.") were
+  // never reachable even though there was plenty of room to grow into.
+  it('does not cap the scroll box at the old 200px clip', () => {
+    render(<CollapsibleRoomDescription location={loc} defaultOpen={true} />)
+    const scrollContainer = screen.getByTestId('room-contents').parentElement
+    const maxHeight = parseInt(scrollContainer.style.maxHeight, 10)
+
+    expect(Number.isNaN(maxHeight)).toBe(false)
+    // 200px (the old cap) + the reported 149px of empty panel below it.
+    expect(maxHeight).toBeGreaterThanOrEqual(300)
+  })
+
+  // The persistent "▼ scroll ▼" hint used to paint directly over the last
+  // visible line of text instead of sitting below it. The scroll container
+  // must reserve blank space for the indicator once it overflows, so the
+  // fade/label overlaps empty padding rather than real content.
+  it('reserves space below the text for the bottom scroll hint instead of overlapping it', () => {
+    render(<CollapsibleRoomDescription location={loc} defaultOpen={true} />)
+    const scrollContainer = screen.getByTestId('room-contents').parentElement
+
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 500, configurable: true })
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 100, configurable: true })
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 0, configurable: true, writable: true })
+    fireEvent.scroll(scrollContainer)
+
+    const paddingBottom = parseInt(scrollContainer.style.paddingBottom || '0', 10)
+    expect(paddingBottom).toBeGreaterThan(0)
+  })
+
+  it('does not reserve scroll-hint space when the content does not overflow', () => {
+    render(<CollapsibleRoomDescription location={loc} defaultOpen={true} />)
+    const scrollContainer = screen.getByTestId('room-contents').parentElement
+
+    // No overrides — jsdom's default 0/0 geometry means nothing overflows.
+    fireEvent.scroll(scrollContainer)
+
+    const paddingBottom = parseInt(scrollContainer.style.paddingBottom || '0', 10)
+    expect(paddingBottom).toBe(0)
+  })
 })

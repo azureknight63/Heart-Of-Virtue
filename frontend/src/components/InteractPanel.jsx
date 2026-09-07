@@ -86,6 +86,26 @@ export function actionKeywords(target) {
     })
 }
 
+/**
+ * Whether a target's INTERACT row should read as "will attack you" instead
+ * of being visually identical to a friendly NPC (issue #537).
+ *
+ * The distinction is not invented here: `is_hostile` is already computed
+ * server-side by `NPCSerializer.serialize`
+ * (src/api/serializers/npc_serializer.py), itself derived from the NPC's
+ * `aggro`/`friend` attributes on the Combatant/NPC/Friend hierarchy
+ * (src/combatant.py, src/npc/_base.py) — this only surfaces the flag that is
+ * already on the wire.
+ */
+function isHostileNpc(target) {
+    return target?.type === 'npc' && Boolean(target?.is_hostile)
+}
+
+/** Accent color for a target's chip/icon/border — danger for a hostile NPC, the shared per-type color otherwise. */
+function getTargetAccentColor(target) {
+    return isHostileNpc(target) ? colors.danger : getEntityColor(target?.type)
+}
+
 function InteractPanel({
     location,
     onInteractionComplete,
@@ -320,8 +340,11 @@ function InteractPanel({
         setShowHistory(false)
     }
 
-    const getTargetIcon = (type) => {
-        switch (type) {
+    const getTargetIcon = (target) => {
+        // A hostile NPC gets its own glyph rather than the friendly 👤 — the
+        // two must not read as the same kind of thing (issue #537).
+        if (isHostileNpc(target)) return '⚔️'
+        switch (target?.type) {
             case 'npc': return '👤'
             case 'item': return '📦'
             case 'object': return '🪵'
@@ -446,7 +469,7 @@ function InteractPanel({
                                     }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, width: '100%', textAlign: 'left' }}>
-                                        <div style={{ fontSize: '20px' }}>{getTargetIcon(target.type)}</div>
+                                        <div style={{ fontSize: '20px' }}>{getTargetIcon(target)}</div>
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                                             <GameText variant="primary" size="sm" weight="bold">
                                                 {target.name} {target.count > 1 ? `(x${target.count})` : ''}
@@ -459,8 +482,8 @@ function InteractPanel({
                                         </div>
                                         <div style={{
                                             fontSize: '10px',
-                                            color: getEntityColor(target.type),
-                                            border: `1px solid ${getEntityColor(target.type)}`,
+                                            color: getTargetAccentColor(target),
+                                            border: `1px solid ${getTargetAccentColor(target)}`,
                                             padding: '2px 6px',
                                             borderRadius: '4px',
                                             textTransform: 'uppercase',
@@ -468,7 +491,7 @@ function InteractPanel({
                                             letterSpacing: '1px',
                                             fontFamily: fonts.main,
                                         }}>
-                                            {target.type}
+                                            {isHostileNpc(target) ? 'hostile' : target.type}
                                         </div>
                                     </div>
                                 </GameButton>
@@ -486,7 +509,7 @@ function InteractPanel({
 
                         {/* Target Description */}
                         {selectedTarget.description && (
-                            <GamePanel variant="retro" style={{ borderLeft: `4px solid ${getEntityColor(selectedTarget.type)}` }}>
+                            <GamePanel variant="retro" style={{ borderLeft: `4px solid ${getTargetAccentColor(selectedTarget)}` }}>
                                 <GameText variant="primary" size="md" style={{ lineHeight: '1.5' }}>
                                     {renderTextWithLinks(selectedTarget.description, targets, handleTargetClick, selectedTarget)}
                                 </GameText>

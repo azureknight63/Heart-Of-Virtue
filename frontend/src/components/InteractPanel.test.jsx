@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel, { actionKeywords } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
+import { colors } from '../styles/theme';
 import React from 'react';
 
 // Mock apiEndpoints
@@ -1373,6 +1374,75 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getByText(/Hide History/i));
       expect(screen.queryByText(/First message\./)).toBeNull();
       expect((await settledOutput()).textContent).toContain('Second message.');
+    });
+  });
+
+  describe('hostile vs friendly NPC distinction in the target list (issue #537)', () => {
+    // NPCSerializer (src/api/serializers/npc_serializer.py) already derives
+    // `is_hostile` server-side from the NPC's `aggro`/`friend` attributes on
+    // the Combatant hierarchy — this only has to surface the flag the server
+    // already sends, not invent new hostility logic on the frontend.
+    const mixedLocation = {
+      ...mockLocation,
+      npcs: [
+        { id: 'npc1', name: 'Guard', description: 'A stern guard.', keywords: ['Talk', 'Attack'], is_hostile: false },
+        { id: 'monster1', name: 'Rock Rumbler', description: 'A grinding golem.', keywords: ['Attack'], is_hostile: true },
+      ],
+    };
+
+    const hexToRgb = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    };
+
+    it('gives the hostile NPC row a different chip label and color than the friendly NPC row', () => {
+      render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+
+      const guardRow = screen.getByText('A stern guard.').closest('button');
+      const rumblerRow = screen.getByText('A grinding golem.').closest('button');
+
+      // Friendly NPC keeps the shared "npc" chip in the shared NPC green.
+      const guardBadge = [...guardRow.querySelectorAll('div')].find((el) => el.textContent === 'npc');
+      expect(guardBadge).toBeTruthy();
+      expect(guardBadge.style.color).toBe(hexToRgb(colors.entities.npc));
+
+      // Hostile NPC gets its own label, in the danger color — not identical
+      // to the friendly row's chip. Exact match (not a substring test),
+      // since an ancestor row wrapper's concatenated textContent also
+      // contains "hostile" once the leaf badge does.
+      const rumblerBadge = [...rumblerRow.querySelectorAll('div')].find((el) => el.textContent === 'hostile');
+      expect(rumblerBadge).toBeTruthy();
+      expect(rumblerBadge.style.color).toBe(hexToRgb(colors.danger));
+      expect(rumblerBadge.style.color).not.toBe(guardBadge.style.color);
+    });
+
+    it('gives the hostile NPC a different glyph than a friendly NPC', () => {
+      render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+
+      const guardRow = screen.getByText('A stern guard.').closest('button');
+      const rumblerRow = screen.getByText('A grinding golem.').closest('button');
+
+      expect(guardRow.textContent).toContain('👤');
+      expect(rumblerRow.textContent).not.toContain('👤');
+    });
+
+    it('gives the selected target detail panel a danger-colored accent only when the NPC is hostile', () => {
+      // GamePanel's own `border` shorthand and the caller's `borderLeft`
+      // override land on different longhands (top/right/bottom vs. left),
+      // so jsdom can't re-serialize them back into a single "border-left"
+      // shorthand string — getComputedStyle is what actually resolves the
+      // left edge's color regardless of how the declarations combined.
+      const { container: friendlyContainer } = render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+      const friendlyPanel = friendlyContainer.querySelector('.game-panel');
+      expect(friendlyPanel).toBeTruthy();
+      expect(getComputedStyle(friendlyPanel).borderLeftColor).toBe(hexToRgb(colors.entities.npc));
+
+      const { container: hostileContainer } = render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Rock Rumbler/i)[0]);
+      const hostilePanel = hostileContainer.querySelector('.game-panel');
+      expect(hostilePanel).toBeTruthy();
+      expect(getComputedStyle(hostilePanel).borderLeftColor).toBe(hexToRgb(colors.danger));
     });
   });
 });
