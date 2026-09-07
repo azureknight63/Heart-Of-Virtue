@@ -26,6 +26,16 @@ export default function StatsPanel({ player, onClose }) {
     return colors.gold
   }
 
+  // Buffed/debuffed/at-base used to be distinguished by colour alone (green/
+  // red/orange) — issue #536 item 5. A '+'/'-' prefix carries the same
+  // information as text so colour-blind players and screen readers get it
+  // too; a value exactly at base gets neither, since there is no delta to sign.
+  const getAttributeSign = (current, base) => {
+    if (current > base) return '+'
+    if (current < base) return '-'
+    return ''
+  }
+
   const resistance = player.resistance || {}
   const states = player.states || []
 
@@ -166,7 +176,7 @@ export default function StatsPanel({ player, onClose }) {
                     <GameText size="sm">{attr.name}</GameText>
                   </div>
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
-                    <GameText weight="bold" style={{ color }}>{current}</GameText>
+                    <GameText weight="bold" style={{ color }}>{getAttributeSign(current, base)}{current}</GameText>
                     <GameText variant="dim" size="xs">BASE: {base}</GameText>
                   </div>
                 </div>
