@@ -281,6 +281,20 @@ describe('MovementStar', () => {
   })
 
   describe('Accessibility', () => {
+    it('meets the 44px minimum touch target on every direction button (issue #536)', () => {
+      // Measured at 40x40px in the field (issue #536 / #542) — the most-used
+      // control in the game was the one below the project's own 44px rule
+      // (frontend.md, accessibility.touchTarget).
+      const exits = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']
+      render(<MovementStar exits={exits} onMove={mockOnMove} />)
+
+      const directions = ['North', 'South', 'East', 'West', 'Northeast', 'Northwest', 'Southeast', 'Southwest']
+      for (const dir of directions) {
+        const button = screen.getByLabelText(`Move ${dir}`)
+        expect(button).toHaveStyle({ width: '44px', height: '44px' })
+      }
+    })
+
     it('all buttons have proper aria-labels', () => {
       const exits = ['north', 'south', 'east', 'west']
       render(<MovementStar exits={exits} onMove={mockOnMove} />)

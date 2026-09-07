@@ -64,6 +64,32 @@ describe('PartyPanel', () => {
     expect(fill.style.width).toBe('0%');
   });
 
+  it('colors the HP fill by remaining health instead of a constant danger red (issue #536)', () => {
+    // A party member at full HP must not render in the "danger" color — that
+    // was the accidental default, since the fill's backgroundColor was a
+    // hard-coded '#ff4444' regardless of the actual ratio. Thresholds mirror
+    // the identical member-HP bar in ItemDetailDialog.jsx (hpPct > 50 -> green,
+    // > 25 -> orange, else red), the established pattern for this exact stat.
+    const player = {
+      party_members: [
+        { name: 'Full', hp: 326, max_hp: 326 },
+        { name: 'Mid', hp: 40, max_hp: 100 },
+        { name: 'Low', hp: 10, max_hp: 100 },
+      ],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+
+    const fills = Array.from(
+      document.querySelectorAll('div[style*="height: 100%"][style*="background"]')
+    ).filter((d) => d.style.width.endsWith('%'));
+    const [fullFill, midFill, lowFill] = fills;
+
+    expect(fullFill.style.width).toBe('100%');
+    expect(fullFill.style.backgroundColor).toBe('rgb(68, 255, 136)'); // #44ff88
+    expect(midFill.style.backgroundColor).toBe('rgb(255, 170, 0)'); // #ffaa00
+    expect(lowFill.style.backgroundColor).toBe('rgb(255, 68, 68)'); // #ff4444
+  });
+
   it('calls onClose when close button is clicked', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
     const closeButton = screen.getByText('✕');

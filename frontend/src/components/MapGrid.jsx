@@ -251,56 +251,63 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
         )}
       </div>
 
-      {/* Legend */}
-      <div style={{
-        marginTop: '12px',
-        fontSize: '11px',
-        color: '#ff6600',
-        fontFamily: 'monospace',
-        textAlign: 'center',
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr',
-        gap: '8px',
-      }}>
-        <div>
-          <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>©</span> = You
-        </div>
-        <div>
-          <span style={{ color: '#00ff88', fontWeight: 'bold' }}>●</span> = Visited
-        </div>
-        <div>
-          <span style={{ color: '#00ddaa', fontWeight: 'bold' }}>◆</span> = Items
-        </div>
-        <div>
-          <span style={{ color: '#ff9999', fontWeight: 'bold' }}>◉</span> = NPCs
-        </div>
-        <div>
-          <span style={{ color: '#ffcc88', fontWeight: 'bold' }}>◾</span> = Objects
-        </div>
-      </div>
-
-      {/* Current Location Info */}
-      {location && (
+      {/* issue #536 item 3: the app had zero <footer> landmarks anywhere.
+          The legend + current-location info is always-rendered supplementary
+          content below the grid — exactly what a <footer> is for. Wrapping
+          rather than retagging the individual divs keeps their own inline
+          styles (and the tests that select them by style) unchanged. */}
+      <footer>
+        {/* Legend */}
         <div style={{
           marginTop: '12px',
-          fontSize: '12px',
-          color: '#00ccff',
+          fontSize: '11px',
+          color: '#ff6600',
           fontFamily: 'monospace',
-          borderTop: '1px solid #333',
-          paddingTop: '8px',
-          maxWidth: '100%',
           textAlign: 'center',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr',
+          gap: '8px',
         }}>
-          <div style={{ fontSize: '10px', color: '#666' }}>
-            ({location.x}, {location.y})
+          <div>
+            <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>©</span> = You
           </div>
-          {location.exits && location.exits.length > 0 && (
-            <div style={{ fontSize: '10px', marginTop: '4px' }}>
-              Exits: {location.exits.join(', ')}
-            </div>
-          )}
+          <div>
+            <span style={{ color: '#00ff88', fontWeight: 'bold' }}>●</span> = Visited
+          </div>
+          <div>
+            <span style={{ color: '#00ddaa', fontWeight: 'bold' }}>◆</span> = Items
+          </div>
+          <div>
+            <span style={{ color: '#ff9999', fontWeight: 'bold' }}>◉</span> = NPCs
+          </div>
+          <div>
+            <span style={{ color: '#ffcc88', fontWeight: 'bold' }}>◾</span> = Objects
+          </div>
         </div>
-      )}
+
+        {/* Current Location Info */}
+        {location && (
+          <div style={{
+            marginTop: '12px',
+            fontSize: '12px',
+            color: '#00ccff',
+            fontFamily: 'monospace',
+            borderTop: '1px solid #333',
+            paddingTop: '8px',
+            maxWidth: '100%',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '10px', color: '#666' }}>
+              ({location.x}, {location.y})
+            </div>
+            {location.exits && location.exits.length > 0 && (
+              <div style={{ fontSize: '10px', marginTop: '4px' }}>
+                Exits: {location.exits.join(', ')}
+              </div>
+            )}
+          </div>
+        )}
+      </footer>
     </div>
   )
 }

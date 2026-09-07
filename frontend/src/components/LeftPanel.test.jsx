@@ -189,6 +189,26 @@ describe('LeftPanel', () => {
         expect(screen.queryByTestId(hidden)).toBeNull();
     });
 
+    it('exposes a main landmark with a header/h1 for the panel title (issue #536)', () => {
+        // header/main/h1 all counted zero across the app's DOM. This panel is
+        // the primary narrative/actions surface, so it becomes <main>, with
+        // its title bar as <header>/<h1>.
+        const { container } = render(
+            <LeftPanel
+                player={mockPlayer}
+                location={mockLocation}
+                mode="exploration"
+                combat={{ log: [], beat_states: [{ enemies: [] }] }}
+            />
+        );
+
+        const main = container.querySelector('main');
+        expect(main).not.toBeNull();
+        const heading = screen.getByRole('heading', { level: 1, name: 'Heart of Virtue - Exploration' });
+        expect(main.contains(heading)).toBe(true);
+        expect(heading.closest('header')).not.toBeNull();
+    });
+
     // Each hero-panel button owns one panel; clicking it twice must close it
     // again. The old version clicked all six in a row and only checked each
     // panel appeared — it would have passed with every button wired to the

@@ -43,6 +43,41 @@ describe('CombatMovePanel', () => {
     expect(screen.queryByText('Block')).toBeNull();
   });
 
+  it('gives every move card an accessible name, available or not (issue #536)', () => {
+    // The QA report claimed the Attack card is an unnamed button while a
+    // disabled Shoot Crossbow card gets a name only by accident, from its own
+    // error/disabled-reason text. Every move button here actually renders its
+    // name + description as visible text INSIDE the <button> (the reason line
+    // is a sibling, outside it) — so both an available and an unavailable
+    // move should already carry a real accessible name from that content.
+    // Verifying rather than assuming, using an available move (Slash, this
+    // panel's Attack-equivalent) and a disabled one with a reason (Heal).
+    render(
+      <CombatMovePanel
+        moves={mockMoves}
+        category="Offensive"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+    expect(screen.getByRole('button', { name: /Slash/ })).toBeInTheDocument();
+
+    render(
+      <CombatMovePanel
+        moves={mockMoves}
+        category="Miscellaneous"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+    const healButton = screen.getByRole('button', { name: /Heal/ });
+    expect(healButton).toBeInTheDocument();
+    expect(healButton).toBeDisabled();
+    // The disabled reason itself must NOT be what's naming it — it renders
+    // outside the <button>, so it should be absent from the accessible name.
+    expect(healButton.textContent).not.toContain('Not enough mana');
+  });
+
   it('renders Miscellaneous and Utility moves together', () => {
     render(
       <CombatMovePanel 

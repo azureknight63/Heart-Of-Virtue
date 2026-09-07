@@ -58,6 +58,21 @@ describe('VictoryDialog', () => {
     expect(screen.getByText('Available Points:').nextElementSibling.textContent).toBe('5');
   });
 
+  it('gives the dialog an accessible name matching its visible title (issue #536)', () => {
+    // BaseDialog only wires aria-labelledby when it receives a truthy `title`
+    // — VictoryDialog always does (`✨ ${endState?.message || 'Combat Victory'}`),
+    // so this should already resolve. Verifying rather than assuming, since
+    // the QA report claimed this reads as a bare, unnamed `dialog` role.
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+    expect(screen.getByRole('dialog', { name: '✨ Victory!' })).toBeInTheDocument();
+  });
+
   it('defaults exp_gained/items_dropped/level_ups/message when absent from endState', () => {
     render(
       <VictoryDialog

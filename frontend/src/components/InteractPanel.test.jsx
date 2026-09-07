@@ -199,6 +199,19 @@ describe('InteractPanel', () => {
     expect(screen.queryByText(/^Open$/)).toBeNull();
   });
 
+  it('gives every target row an accessible name from its own visible text (issue #536)', () => {
+    // The QA report claimed the three INTERACT rows read as bare `button`s
+    // with no accessible name. Each row is a real <button> (GameButton) whose
+    // entire visible content — icon, name, description, type badge — IS its
+    // text content, and a button's accessible name is computed from exactly
+    // that unless something overrides it. Verifying rather than assuming.
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+
+    expect(screen.getByRole('button', { name: /Guard/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Chest/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Gold Coin/ })).toBeInTheDocument();
+  });
+
   it('selects a target and offers exactly its own keywords as actions', () => {
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);

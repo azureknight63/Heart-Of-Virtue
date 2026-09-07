@@ -132,6 +132,17 @@ describe('MapGrid', () => {
       expect(screen.getByText('(6, 6)')).toBeInTheDocument()
     })
 
+    it('wraps the legend and current-location info in a footer landmark (issue #536)', () => {
+      // The app had zero <footer> landmarks anywhere in its DOM. The legend +
+      // coordinates/exits block is exactly the kind of supplementary,
+      // always-rendered content a <footer> exists for.
+      const { container } = renderGrid({ onMove })
+      const footer = container.querySelector('footer')
+      expect(footer).not.toBeNull()
+      expect(footer.textContent).toContain('= You')
+      expect(footer.textContent).toContain('(6, 6)')
+    })
+
     it('hands MovementStar the exit list and loading flag, defaulting exits to []', () => {
       const { unmount } = renderGrid({ onMove, loading: true })
       expect(starProps.current.exits).toEqual(['north', 'south', 'east', 'west'])

@@ -491,6 +491,19 @@ input, select, textarea {
   box-shadow: inset 0 0 4px rgba(0, 255, 136, 0.5);
 }
 
+/* issue #536 item 3: keyboard-focus ring for game controls. Before this, the
+   whole stylesheet had three :focus rules total, none targeting an actual
+   game control — tabbing to e.g. the Account button rendered only the
+   browser's default outline. Reuses .input-field:focus's own colors
+   (#00ffaa / rgba(0, 255, 136, ...)) rather than inventing new ones.
+   .game-btn is GameButton's own class, and is also applied directly to
+   MovementStar's d-pad buttons (the other control the issue names). */
+.game-btn:focus-visible {
+  outline: 2px solid #00ffaa;
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+}
+
 /* Status indicators */
 .status-badge {
   display: inline-block;

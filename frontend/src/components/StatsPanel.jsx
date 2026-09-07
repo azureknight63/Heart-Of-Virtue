@@ -26,6 +26,16 @@ export default function StatsPanel({ player, onClose }) {
     return colors.gold
   }
 
+  // Buffed/debuffed/at-base used to be distinguished by colour alone (green/
+  // red/orange) — issue #536 item 5. A '+'/'-' prefix carries the same
+  // information as text so colour-blind players and screen readers get it
+  // too; a value exactly at base gets neither, since there is no delta to sign.
+  const getAttributeSign = (current, base) => {
+    if (current > base) return '+'
+    if (current < base) return '-'
+    return ''
+  }
+
   const resistance = player.resistance || {}
   const states = player.states || []
 
@@ -142,7 +152,7 @@ export default function StatsPanel({ player, onClose }) {
             borderColor: colors.alpha.secondary[30],
           }}
         >
-          <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
+          <GameText as="h3" variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
             Core Attributes
           </GameText>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.sm }}>
@@ -169,7 +179,7 @@ export default function StatsPanel({ player, onClose }) {
                     <GameText size="sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attr.name}</GameText>
                   </div>
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    <GameText weight="bold" style={{ color }}>{current}</GameText>
+                    <GameText weight="bold" style={{ color }}>{getAttributeSign(current, base)}{current}</GameText>
                     <GameText variant="dim" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
                   </div>
                 </div>
@@ -183,7 +193,7 @@ export default function StatsPanel({ player, onClose }) {
           {/* Damage Resistances */}
           {Object.entries(resistance).filter(([_, v]) => v !== 1).length > 0 && (
             <GamePanel padding="md" style={{ backgroundColor: colors.alpha.info[10], borderColor: colors.alpha.info[30] }}>
-              <GameText variant="info" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
+              <GameText as="h3" variant="info" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
                 Resistances & Weaknesses
               </GameText>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
@@ -207,7 +217,7 @@ export default function StatsPanel({ player, onClose }) {
 
           {/* Active Effects */}
           <GamePanel padding="md" style={{ backgroundColor: colors.alpha.danger[10], borderColor: colors.alpha.danger[30] }}>
-            <GameText variant="danger" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
+            <GameText as="h3" variant="danger" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
               Active Effects
             </GameText>
             <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>

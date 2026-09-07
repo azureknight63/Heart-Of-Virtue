@@ -9,12 +9,13 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
   const { playSFX } = useAudio()
 
   // Direction configuration with positions for proper 8-point star layout
-  // Container is 220x120px, button is 44x44px (accessibility.touchTarget —
-  // issue #542/#536: was 40x40px, below the project's 44px minimum touch
-  // target on every viewport, not just mobile). Position offsets are
-  // unchanged from the 40px layout: the button grows 2px past its old edge
-  // on each side, which only tightens (never closes) the gap between
-  // neighbouring buttons.
+  // Container is 220x120px, button is 44x44px (accessibility.touchTarget,
+  // the single source of truth for the value now — issue #542/#536: was
+  // 40x40px, below the project's 44px minimum touch target on every
+  // viewport, not just mobile). Position offsets are unchanged from the
+  // 40px layout: the button grows 2px past its old edge on each side,
+  // which only tightens (never closes) the gap between neighbouring
+  // buttons.
   // Calculations center button around the star using calc()
   const directions = [
     // Cardinal directions (distance: 80px from center, accounting for 40px button size)
@@ -86,6 +87,11 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
           return (
             <button
               key={key}
+              // issue #536 item 3: shares GameButton's "game-btn" class purely
+              // to pick up index.css's .game-btn:focus-visible ring — this
+              // component keeps its own bespoke inline styling otherwise, so
+              // the class contributes no other rule.
+              className="game-btn"
               aria-label={ariaLabel}
               onClick={() => handleMove(key)}
               onMouseEnter={() => !loading && isValid && setHoveredDirection(key)}

@@ -54,4 +54,15 @@ describe('RightPanel', () => {
         render(<RightPanel mode="exploration" showDescription={true} />);
         expect(screen.queryByTestId('collapsible-desc')).toBeNull();
     });
+
+    it('exposes an aside landmark with a level-2 heading (issue #536)', () => {
+        // The app had zero <aside>/<h2> anywhere in its DOM — the map/battlefield
+        // panel was an undifferentiated <div>, giving a screen-reader user no way
+        // to jump straight to it.
+        const { container } = render(<RightPanel mode="exploration" />);
+        const aside = container.querySelector('aside');
+        expect(aside).not.toBeNull();
+        const heading = screen.getByRole('heading', { level: 2, name: 'World Map' });
+        expect(aside.contains(heading)).toBe(true);
+    });
 });
