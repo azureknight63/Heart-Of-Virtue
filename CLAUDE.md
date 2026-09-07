@@ -186,6 +186,7 @@ General: locked doors may need a key/quest state/NPC; sparse rooms are only bugs
 |---|---|
 | `/code-review`, `/code-scrubber` | The review gate above |
 | `/combat-test` | Arena scenarios from `config_combat_testing.ini` |
+| `/orchestrate-qa-testers` | Parallel live-browser play-throughs by tester agents (stacks, driver, primer, triage, issues, `docs/qa/` report) |
 | `/mockup` | Retro-terminal HTML mockups → `docs/development/`, pushed to the branch |
 | `/narrative-review` | Lore/character/dialogue audit against `docs/lore/` |
 | `/devops-review` | CI, dependency, secrets, deploy audit → `tools/devops-audit-*.md` |

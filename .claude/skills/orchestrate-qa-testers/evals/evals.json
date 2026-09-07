@@ -1,0 +1,23 @@
+{
+  "skill_name": "orchestrate-qa-testers",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Live-test the Dark Grotto through the Verdette Caverns in the browser with a few tester agents in parallel. I want a report and issues filed for anything real.",
+      "expected_output": "Clarifying questions on browser surface, scope end, fix-vs-report and hard sections; preflight run; two stacks on accepted ports with a config per start state; a primer and 4-5 tester briefs dispatched concurrently; orchestrator re-verification of contested findings; a docs/qa report, filed issues, memory update, and teardown.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "The nomad camp conversations changed on this branch. Get a couple of agents to play through Mara, Devet and Liss on desktop and on a phone viewport and tell me what broke.",
+      "expected_output": "A pre-seeded leg config starting one tile before the camp transition; desktop + --mobile testers on one stack with the accepted Vite port; LLM exchange budgets stated; voice grading against ai/npc/human/*.json; verification of any Critical on a clean client before reporting.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "One of the testers says combat never ends in the client and the console is full of 400s. Is that real?",
+      "expected_output": "Checks the tester's stack Vite port against Config.CORS_ORIGINS and the API log for 'not an accepted origin' before treating it as a product bug; if it is the origin fault, marks the tester's combat findings contaminated and re-verifies on an accepted port.",
+      "files": []
+    }
+  ]
+}
