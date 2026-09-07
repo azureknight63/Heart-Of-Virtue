@@ -982,6 +982,47 @@ class TestCh02GuideToCitadel:
         player.add_items_to_inventory.assert_called()
         assert ev._stage == 8
 
+    def test_stage7_narrates_handover_before_granting_loot_no_duplicate_summary(self):
+        """Stage 7 must narrate the attendant's hand-over BEFORE granting the
+        items, and must not narrate the grant a second time as a redundant
+        "[Received: ...]" summary line (issue #540 item 18: the mechanical
+        grant used to print before the narration, then again as a summary --
+        the same information rendered three times total).
+        """
+        from src.narration import narrate
+
+        ev, player, tile = self._make(skip_dialog=False)
+        # Six plain calls run stage 6's default choice ("a", same default as
+        # test_stage6_invalid_choice_defaults_to_a) and land the machine on
+        # stage 7, ready but not yet processed.
+        for _ in range(6):
+            ev.process()
+        assert ev._stage == 7
+
+        # The fixture's add_items_to_inventory is a bare Mock, which hides the
+        # real method's own narration entirely -- exactly the kind of double
+        # that let this bug ship "covered". Stand in for the real behaviour
+        # (one narrate() call per granted item) so the ORDER is observable.
+        granted = []
+
+        def fake_add_items(items_received):
+            for item in items_received:
+                narrate(f"GRANT:{item.name}")
+            granted.extend(items_received)
+
+        player.add_items_to_inventory = fake_add_items
+        text = _process_and_capture(ev)  # stage 7 -> 8
+
+        handover_idx = text.index("Grondite attendant")
+        grant_idx = text.index("GRANT:")
+        assert handover_idx < grant_idx, (
+            "the loot was granted before the hand-over was narrated"
+        )
+        assert "[Received:" not in text, (
+            "the grant should not be narrated a second time as a redundant summary"
+        )
+        assert len(granted) == 2
+
     def test_stage8_teleports_and_completes(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(6):

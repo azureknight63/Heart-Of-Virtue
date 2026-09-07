@@ -533,7 +533,7 @@ class DevetIntroEvent(Event):
             time.sleep(1)
 
             print_slow(
-                "Gorran stood where Jean had left him, still. Gradually, he rumbled and sat on the ground while Jean ate."
+                "Gorran stood where Jean had left him, still. Gradually, he rumbled and sat on the ground while Jean ate. "
                 "His presence had settled into the campfire's edge the way large stones settle: without effort, without apology."
             )
             time.sleep(1)
@@ -888,11 +888,6 @@ class IronAndOathIntroEvent(Event):
             say("I'm alright, love.", "Vespera", "sad")
             time.sleep(1)
             react("Kaelen", "concerned")
-            print_slow(
-                "Kaelen noticed her shift instantly. He set the fallen spear down, stepped over, and quietly "
-                "rested a warm, soot-stained hand on the small of her back."
-            )
-            time.sleep(1)
             say(
                 "Right then. As I was saying — Vespera fits the harness, I balance the blade. "
                 "Nobody leaves our counter with gear that fails 'em.",
