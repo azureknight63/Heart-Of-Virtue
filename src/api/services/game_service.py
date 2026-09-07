@@ -1182,6 +1182,16 @@ class GameService:
         if direction_lower not in valid_directions:
             return {"error": f"Invalid direction: {direction}"}
 
+        # Reject world movement while combat is active (#543). The frontend
+        # SPA already hides movement during combat; the backend had no
+        # matching guard, so a direct API call could walk the player off the
+        # battlefield tile while GET /combat/status still reported the fight
+        # as active and the enemy alive. trigger_tile_events() below already
+        # checks player.in_combat (so the walk-off didn't crash), which is
+        # exactly why this was silent instead of loud.
+        if getattr(player, "in_combat", False):
+            return {"error": "Cannot move while in combat"}
+
         tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Cannot move from this location"}
@@ -2035,6 +2045,22 @@ class GameService:
             return {
                 "success": False,
                 "message": f"Cannot {action} this target.",
+            }
+
+        # Reject a Passageway teleport interaction while combat is active
+        # (#543, same root cause as the move_player guard above).
+        # interact_with_target never moves the player itself for a
+        # Passageway target -- it queues a PassagewayTransitionEvent
+        # confirmation, and the actual player.teleport() call only runs
+        # later, when the client confirms via POST /world/events/input.
+        # Refusing to queue the confirmation in the first place keeps that
+        # confirm step from ever being reachable while the fight is still on.
+        from src.objects import Passageway as _Passageway
+
+        if isinstance(target, _Passageway) and getattr(player, "in_combat", False):
+            return {
+                "success": False,
+                "message": "Cannot use a passageway while in combat.",
             }
 
         # Record pre-action location to detect passageway teleportation
