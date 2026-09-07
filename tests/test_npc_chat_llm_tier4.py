@@ -419,23 +419,27 @@ class TestComputeLoquacity:
         npc._compute_loquacity(player)
         assert npc.loquacity_max == scale_loquacity(60)
 
-    def test_compute_loquacity_recovery_from_wisdom(self):
-        """Recovery at wisdom 16 -- which is the same as at every other wisdom.
+    def test_compute_loquacity_recovery_ignores_wisdom(self):
+        """Recovery at wisdom 16 does not depend on wisdom at all (issue #526).
 
-        THIS TEST DOES NOT COVER THE WISDOM TERM, and its name says it does.
-        `scale_loquacity(max(2, w // 8))` is 1 for every `w` below 80, so this
-        assertion holds with `wisdom=16` replaced by 0, 8 or 79. It is kept as
-        a plain regression on the recovery value; the term itself is pinned as
-        the dead branch it is by `TestTheWisdomTermIsInert` in
-        tests/test_npc_chat_merchant_and_loquacity.py, which drives the eleven
-        real host classes instead of a double that invents a wisdom no NPC in
-        the game has.
+        The wisdom-keyed recovery formula this test used to pin was removed
+        for being dead at every value the game contains; recovery is now
+        derived from the pool (`loquacity_max`) instead. Asserted from the
+        module's own formula rather than a hardcoded number, so this can't
+        silently drift from the real implementation the way the old
+        `scale_loquacity(2)` constant did. `wisdom=16` is kept in the fixture
+        only to prove it has zero effect -- the comprehensive per-host check
+        lives in `TestLoquacityRecoveryIsDerivedFromThePool` in
+        tests/test_npc_chat_merchant_and_loquacity.py.
         """
+        from src.npc._chat_llm import _LOQUACITY_RECOVERY_POOL_DIVISOR
+
         npc = chat_npc(wisdom=16)
         player = chat_player(charisma=10, combat_list_allies=[])
 
         npc._compute_loquacity(player)
-        assert npc.loquacity_recovery == scale_loquacity(2)
+        expected = max(1, round(npc.loquacity_max / _LOQUACITY_RECOVERY_POOL_DIVISOR))
+        assert npc.loquacity_recovery == expected
 
     def test_compute_loquacity_min_threshold(self):
         """Test loquacity threshold has minimum."""

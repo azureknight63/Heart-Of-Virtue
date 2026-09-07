@@ -18,13 +18,6 @@ Optional host attributes, read with a default. Each is absent on at least one
 of the eleven real hosts, so the default is the live path there -- see
 ``_HOST_SPECIFIC`` in tests/test_npc_chat_merchant_and_loquacity.py, which
 derives this list from the source and makes every entry carry a reason:
-    self.wisdom              int, and only NomadBoy and NomadGirl set it (both
-                             to 8). This line used to sit above with the
-                             required attributes, claiming wisdom drove
-                             loquacity recovery; nine of the eleven hosts do
-                             not have it and the term is inert at every value
-                             the game contains -- see
-                             _LOQUACITY_RECOVERY_WISDOM_DIVISOR.
     self.level               int (allies only; merchants have no progression)
     self.growth_profile      dict (allies only)
     self.always_stock        list (merchants only)
@@ -1334,37 +1327,23 @@ _LOQUACITY_PARTY_MOD = 10
 #: the second is why the note names the file now.
 _LOQUACITY_FAVOURABLE_EQUIPMENT = ("crucifix", "religious token", "nomad gear")
 
-#: Recovery per beat. THE WISDOM TERM IS INERT AT EVERY VALUE THE GAME
-#: CONTAINS, and this note used to say the opposite ("Recovery per beat is
-#: wisdom-driven"), which is the same kind of false comment that let the
-#: crucifix modifier above look alive for four rounds.
+#: Recovery per beat, derived from the pool (``loquacity_max``) rather than
+#: wisdom (issue #526). The wisdom-keyed formula this replaced was inert at
+#: every value the game contains -- nine of eleven conversational NPCs have
+#: no ``wisdom`` at all, and neither the baseline nor the two authored 8s
+#: could clear either of its two floors -- so every NPC recovered exactly the
+#: same 1 point/beat regardless of the stat the design said should vary it.
 #:
-#: Two floors, either of which alone would flatten it:
-#:
-#: * ``wisdom // 8`` only exceeds :data:`_LOQUACITY_RECOVERY_FLOOR` at wisdom
-#:   24 and above;
-#: * :func:`scale_loquacity` only moves off 1 at an unscaled 10 and above, so
-#:   the wisdom term would have to reach 10 -- wisdom 80 -- to change the
-#:   number that is actually stored.
-#:
-#: Authored wisdom in this game is 8, on NomadBoy and NomadGirl; the other nine
-#: hosts do not set the attribute at all, so they take
-#: :data:`_LOQUACITY_STAT_BASELINE` (10). Every conversational NPC therefore
-#: recovers exactly ``scale_loquacity(2) == 1`` per beat, which is
-#: :data:`_DEFAULT_LOQUACITY_RECOVERY` -- the "pre-computation placeholder"
-#: that computation never moves.
-#:
-#: LEFT AS IS DELIBERATELY. Making the term live means changing the divisor or
-#: the floor, and either doubles or halves how fast every NPC in the game
-#: regains patience: at divisor 1 a wisdom-8 NPC recovers 1 and a wisdom-10 NPC
-#: recovers 2, so the nine hosts that do not declare wisdom would silently
-#: overtake the two that do. That is a balance decision for the designer, not
-#: a scrub. Documented instead, the way
-#: :data:`_LOQUACITY_FAVOURABLE_EQUIPMENT` above is, and pinned by
-#: ``TestTheWisdomTermIsInert`` so that authoring a wise NPC -- or changing
-#: either constant -- turns a test red and makes somebody revisit this note.
-_LOQUACITY_RECOVERY_FLOOR = 2
-_LOQUACITY_RECOVERY_WISDOM_DIVISOR = 8
+#: ``loquacity_max`` (the pool, already scaled -- see :func:`scale_loquacity`)
+#: is the lever that is actually authored (28-150 pre-scale) and already
+#: varies per NPC, unlike wisdom. Dividing by 6 keeps refill time roughly
+#: uniform across the roster (~4-11 beats depending on pool size) while still
+#: reading as a coherent rule: an NPC who will talk for a long time also
+#: becomes willing to talk again sooner. Measured against the real roster
+#: (Devet 15->round(15/6)=2, Liss 22->4, Mara 9->2, NomadGirl 6->1, ...), this
+#: gives real day-one spread with no content-authoring work required. Python's
+#: ``round()`` is round-half-to-even, which is why a pool of 15 lands on 2.
+_LOQUACITY_RECOVERY_POOL_DIVISOR = 6
 
 #: Pre-scale floors, kept as the numbers the design was written in so the scaling
 #: rule is visible at the one place it is applied.
@@ -1895,18 +1874,11 @@ class ConversationalNPCMixin:
             scale_loquacity(_LOQUACITY_THRESHOLD_FLOOR),
             loquacity_max // _LOQUACITY_THRESHOLD_DIVISOR,
         )
-        # The wisdom half of this is currently dead in both directions --
-        # nine of the eleven hosts have no `wisdom` at all, and neither the
-        # baseline nor the two authored 8s can clear either floor. The long
-        # note beside `_LOQUACITY_RECOVERY_WISDOM_DIVISOR` says why it is
-        # written out rather than folded away, and `TestTheWisdomTermIsInert`
-        # fails if that stops being true.
-        self.loquacity_recovery = scale_loquacity(
-            max(
-                _LOQUACITY_RECOVERY_FLOOR,
-                getattr(self, "wisdom", _LOQUACITY_STAT_BASELINE)
-                // _LOQUACITY_RECOVERY_WISDOM_DIVISOR,
-            )
+        # Derived from the pool, not wisdom (issue #526) -- see the note
+        # beside _LOQUACITY_RECOVERY_POOL_DIVISOR. loquacity_max is already
+        # scaled, so no further scale_loquacity() call is needed here.
+        self.loquacity_recovery = max(
+            1, round(loquacity_max / _LOQUACITY_RECOVERY_POOL_DIVISOR)
         )
 
         if self.loquacity_current == 0:
