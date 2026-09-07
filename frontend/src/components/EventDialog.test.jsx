@@ -81,6 +81,30 @@ describe('EventDialog', () => {
     expect(body.textContent).toContain('You see a strange statue.');
   });
 
+  it('gives the dialog an accessible name for a plain event and for the synthetic "Enemy Encounter" alert (issue #536)', () => {
+    // BaseDialog only wires aria-labelledby when it receives a truthy `title`
+    // — EventDialog's `dialogTitle` always is. Verifying rather than
+    // assuming, since the QA report claimed the EVENT and ENEMY ENCOUNTER
+    // dialogs both read as bare, unnamed `dialog` roles. The "Enemy
+    // Encounter" shape below is copied from GamePage.jsx's synthetic alert
+    // event, not invented.
+    renderDialog();
+    expect(screen.getByRole('dialog', { name: '✨ Mysterious Statue' })).toBeInTheDocument();
+
+    const encounterEvent = {
+      event_id: COMBAT_INIT_EVENT_ID,
+      name: 'Enemy Encounter',
+      output_text: 'Enemies draw near! Prepare for combat!',
+      needs_input: true,
+      input_type: 'choice',
+      input_options: [{ label: 'FIGHT FOR YOUR LIFE', value: 'combat_start' }],
+    };
+    render(
+      <EventDialog event={encounterEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />
+    );
+    expect(screen.getByRole('dialog', { name: '✨ Enemy Encounter' })).toBeInTheDocument();
+  });
+
   it('reveals the choice buttons only after the text completes', () => {
     renderDialog();
 
