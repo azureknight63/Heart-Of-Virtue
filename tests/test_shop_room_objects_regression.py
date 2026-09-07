@@ -23,7 +23,10 @@ import logging
 
 from src.items import (
     AncientRelic,
+    Antidote,
+    Consumable,
     DragonHeartGem,
+    Draught,
     Restorative,
     unique_items_spawned,
 )
@@ -262,3 +265,82 @@ def test_always_stock_items_receive_value_conditions():
     merchant._apply_value_conditions()
 
     assert created.value == max(1, int(created.base_value * 2.0))
+
+
+# ---------------------------------------------------------------------------
+# Issue #546 — always_stock items must never be swallowed by a container
+# ---------------------------------------------------------------------------
+
+
+def test_update_goods_always_stock_items_land_in_inventory_not_container():
+    """Regression test for issue #546 (Jambo's Tent sells no healing items).
+
+    Jambo's always_stock potions (Restorative/Draught/Antidote) are all
+    Consumable subclasses, and his back-room storage Crate is authored with
+    allowed_item_types=[Consumable] -- so routing always_stock through
+    _place_item's container-matching logic silently diverts every guaranteed
+    potion into the Crate's inventory. ShopSerializer.serialize_state() and
+    GameService._sellable_items() both read only merchant.inventory, so the
+    Buy tab (and shop_buy/shop_sell) never see them: the potions are always
+    stocked, just never reachable by the shop API.
+
+    _fill_remaining_stock (the random-fill pass) is stubbed out here so this
+    test isolates the always_stock placement path specifically; the random
+    fill's legitimate use of containers is covered by the existing tests
+    above (and by test_merchant.py / test_npc_shop_merchants_coverage.py).
+    """
+    merchant = Merchant(
+        name="Jambo",
+        description="An apothecary.",
+        damage=1,
+        aggro=False,
+        exp_award=0,
+        stock_count=6,
+        always_stock=[
+            Restorative(count=5, merchandise=True),
+            Draught(count=4, merchandise=True),
+            Antidote(count=3, merchandise=True),
+        ],
+        specialties=[Consumable],
+        enchantment_rate=0.0,
+    )
+    room = RealisticRoom()
+    room.universe = RealisticUniverse([room])
+    merchant.current_room = room
+
+    def spawn_item(item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
+        import src.items as items_module
+
+        cls = getattr(items_module, item_type)
+        item = cls(merchandise=merchandise)
+        room.items_here.append(item)
+        return item
+
+    room.spawn_item = spawn_item
+
+    crate = Container(
+        name="Jambo's Tent Storage",
+        merchant=merchant,
+        allowed_subtypes=[Consumable],
+    )
+    room.objects_here.append(crate)
+
+    # Isolate the always_stock path: the random-fill pass legitimately uses
+    # containers and is exercised by other tests, not this one.
+    merchant._fill_remaining_stock = lambda containers: None
+
+    merchant.update_goods()
+
+    inventory_names = {type(it).__name__ for it in merchant.inventory}
+    crate_names = [type(it).__name__ for it in crate.inventory]
+    always_stock_names = {"Restorative", "Draught", "Antidote"}
+
+    assert always_stock_names <= inventory_names, (
+        "always_stock potions must be reachable via merchant.inventory (the "
+        f"Buy tab); merchant.inventory had {inventory_names}, but the Crate "
+        f"(allowed_item_types=[Consumable]) swallowed {crate_names}"
+    )
+    assert not crate_names, (
+        "always_stock items must never be routed into a container; found "
+        f"{crate_names} in the Crate instead of merchant.inventory"
+    )

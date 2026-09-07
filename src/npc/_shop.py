@@ -211,9 +211,18 @@ class MerchantShopMixin:
                 if not item:
                     continue
                 self._maybe_enchant(item)
-                placed = self._place_item(item, containers)
-                if not placed:
-                    self.inventory.append(item)
+                # always_stock is a guarantee that the item is reachable in
+                # the Buy tab, which reads only merchant.inventory (see
+                # ShopSerializer.serialize_state / GameService._sellable_items).
+                # Routing these through _place_item's container-matching logic
+                # would silently divert them into any container whose
+                # allowed_item_types happens to match -- e.g. Jambo's potions
+                # (all Consumable subclasses) vanishing into his storage Crate
+                # (allowed_item_types=[Consumable]), never to be sold (issue
+                # #546). Containers are still legitimately used by the random
+                # fill pass below (_fill_remaining_stock); only the guaranteed
+                # always_stock items skip them.
+                self.inventory.append(item)
                 self._remove_placed_item_from_room(item)
         self._update_shop_conditions()
         self._fill_remaining_stock(containers)
