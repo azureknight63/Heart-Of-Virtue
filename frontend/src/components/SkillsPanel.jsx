@@ -1,13 +1,28 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useToast } from '../context/ToastContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import GamePanel from './GamePanel'
+import { useHorizontalScrollIndicators } from '../hooks/useScrollIndicators'
 import { colors, spacing } from '../styles/theme';
 import { displayNameOf } from '../utils/combatMoveStatus';
 import { apiErrorMessage } from '../utils/apiError';
+
+/**
+ * The equipped weapon's `subtype` (e.g. "Axe", "Sword" — see src/skilltree.py,
+ * whose category keys are exactly these subtype strings) if the player has
+ * one equipped, else null. Reads `player.inventory` the way ItemCard/PartyPanel
+ * do: `maintype`/`subtype`/`is_equipped` off the serialized item, never a
+ * `player.equipped` attribute — that one doesn't exist (issue #430).
+ */
+function equippedWeaponSubtype(player) {
+  const weapon = (player?.inventory || []).find(
+    (it) => it?.is_equipped && it?.maintype === 'Weapon'
+  )
+  return weapon?.subtype || null
+}
 
 /**
  * SkillsPanel - View and learn character skills categorized by discipline
@@ -18,6 +33,8 @@ export default function SkillsPanel({ player, onClose }) {
   const [error, setError] = useState(null)
   const [selectedCategory, setSelectedCategory] = useState(null)
   const { error: showError } = useToast()
+  const tabStripRef = useRef(null)
+  const { showLeft: showTabsLeft, showRight: showTabsRight, ref: tabScrollRef } = useHorizontalScrollIndicators()
 
   useEffect(() => {
     fetchSkills()
@@ -33,7 +50,16 @@ export default function SkillsPanel({ player, onClose }) {
           const exp = response.data.skills.skill_exp || {}
           const categories = Object.keys(response.data.skills.skill_tree).filter(cat => (exp[cat] || 0) > 0)
           if (categories.length > 0) {
-            setSelectedCategory(categories[0])
+            // Open on the tab matching the equipped weapon type when that
+            // discipline has XP to spend; otherwise fall back to the first
+            // one with XP, same as before (#540 item 5 — this used to always
+            // open on whichever category the tree object happened to list
+            // first, e.g. Axe, even with a sword equipped).
+            const equippedType = equippedWeaponSubtype(player)
+            const defaultCategory = equippedType && categories.includes(equippedType)
+              ? equippedType
+              : categories[0]
+            setSelectedCategory(defaultCategory)
           }
         }
       }
@@ -95,28 +121,60 @@ export default function SkillsPanel({ player, onClose }) {
       zIndex={2000}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md, minHeight: '300px' }}>
-        {/* Discipline Tabs */}
-        <div style={{
-          display: 'flex',
-          gap: spacing.xs,
-          overflowX: 'auto',
-          paddingBottom: spacing.xs,
-          borderBottom: `1px solid ${colors.border.light}`,
-        }}>
-          {categories.map(cat => (
+        {/* Discipline Tabs — chevrons appear only when the strip actually has
+            more to scroll to (#540 item 5: it could be cut off mid-word with
+            no way to see there was more). */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: spacing.xs }}>
+          {showTabsLeft && (
             <GameButton
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              variant={selectedCategory === cat ? 'primary' : 'secondary'}
+              onClick={() => tabStripRef.current?.scrollBy({ left: -120, behavior: 'smooth' })}
+              variant="secondary"
               size="small"
-              style={{
-                whiteSpace: 'nowrap',
-                minWidth: '70px',
-              }}
+              aria-label="Scroll disciplines left"
+              style={{ flexShrink: 0, padding: '4px 8px' }}
             >
-              {cat}
+              ‹
             </GameButton>
-          ))}
+          )}
+          <div
+            ref={(node) => { tabStripRef.current = node; tabScrollRef(node) }}
+            data-testid="skills-tab-strip"
+            style={{
+              display: 'flex',
+              gap: spacing.xs,
+              overflowX: 'auto',
+              paddingBottom: spacing.xs,
+              borderBottom: `1px solid ${colors.border.light}`,
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {categories.map(cat => (
+              <GameButton
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                variant={selectedCategory === cat ? 'primary' : 'secondary'}
+                size="small"
+                style={{
+                  whiteSpace: 'nowrap',
+                  minWidth: '70px',
+                }}
+              >
+                {cat}
+              </GameButton>
+            ))}
+          </div>
+          {showTabsRight && (
+            <GameButton
+              onClick={() => tabStripRef.current?.scrollBy({ left: 120, behavior: 'smooth' })}
+              variant="secondary"
+              size="small"
+              aria-label="Scroll disciplines right"
+              style={{ flexShrink: 0, padding: '4px 8px' }}
+            >
+              ›
+            </GameButton>
+          )}
         </div>
 
         {/* XP Header */}
@@ -177,6 +235,12 @@ export default function SkillsPanel({ player, onClose }) {
                     disabled={!skill.can_learn}
                     variant={skill.can_learn ? 'primary' : 'secondary'}
                     size="small"
+                    // "LEARN (50)" never said what the 50 meant (#540 item 5).
+                    // It's this discipline's own skill XP, spent on learning —
+                    // not skill points or gold. A tooltip rather than a wider
+                    // label change, so it doesn't collide with the XP readout
+                    // above whenever the two numbers happen to match.
+                    title={`Costs ${skill.required_exp} ${selectedCategory} skill XP to learn`}
                   >
                     LEARN ({skill.required_exp})
                   </GameButton>
