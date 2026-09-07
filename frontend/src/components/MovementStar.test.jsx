@@ -2,6 +2,7 @@ import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import MovementStar from './MovementStar'
+import { accessibility } from '../styles/theme'
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
@@ -225,6 +226,25 @@ describe('MovementStar', () => {
       fireEvent.mouseEnter(southButton)
 
       expect(southButton).toBeDisabled()
+    })
+  })
+
+  describe('Touch target size (issue #542 / #536)', () => {
+    // Measured 40x40 on both mobile (375px) and desktop viewports — the d-pad
+    // is a fixed-size control, not one that shrinks on mobile, so this is
+    // checked unconditionally rather than behind an isMobile flag.
+    const ALL_DIRECTIONS = [
+      'Move North', 'Move South', 'Move East', 'Move West',
+      'Move Northeast', 'Move Northwest', 'Move Southeast', 'Move Southwest',
+    ]
+
+    it.each(ALL_DIRECTIONS)('%s button meets the 44px minimum touch target', (label) => {
+      const exits = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']
+      render(<MovementStar exits={exits} onMove={mockOnMove} />)
+
+      const button = screen.getByLabelText(label)
+      expect(button.style.width).toBe(accessibility.touchTarget)
+      expect(button.style.height).toBe(accessibility.touchTarget)
     })
   })
 

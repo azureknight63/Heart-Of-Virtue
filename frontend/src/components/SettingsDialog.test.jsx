@@ -3,11 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import SettingsDialog from './SettingsDialog';
 import { useAudio } from '../context/AudioContext';
 import { FEATURE_FLAGS, getFlag, resetFlags } from '../utils/featureFlags';
+import { accessibility } from '../styles/theme';
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
   useAudio: vi.fn()
 }));
+
+const mobileMock = vi.hoisted(() => ({ isMobile: false }));
+vi.mock('../hooks/useMobile', () => ({ useMobile: () => mobileMock.isMobile }));
 
 describe('SettingsDialog', () => {
   const mockSetMusicVolume = vi.fn();
@@ -33,6 +37,7 @@ describe('SettingsDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAudio.mockReturnValue(mockAudioContext);
+    mobileMock.isMobile = false;
   });
 
   it('renders audio settings correctly', () => {
@@ -133,6 +138,42 @@ describe('SettingsDialog', () => {
     const dialogContent = screen.getByText('⚙️ SETTINGS').parentElement;
     fireEvent.click(dialogContent);
     expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  describe('mobile touch targets (issue #542)', () => {
+    // `getAllByText('ON')` also matches the "beatTimeline" experimental flag
+    // toggle (default: true, see utils/featureFlags.js) — that control is
+    // out of scope for this issue, so only check the first two matches
+    // (MUSIC then SFX, by DOM order), same as the existing mute-toggle tests
+    // above index into this same query.
+    const muteToggles = () => screen.getAllByText('ON').slice(0, 2);
+
+    it('grows the MUSIC and SFX mute toggles to 44px on mobile', () => {
+      mobileMock.isMobile = true;
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      muteToggles().forEach((toggle) => {
+        expect(toggle.style.minWidth).toBe(accessibility.touchTarget);
+        expect(toggle.style.minHeight).toBe(accessibility.touchTarget);
+      });
+    });
+
+    it('grows each combat-speed segment to 44px tall on mobile', () => {
+      mobileMock.isMobile = true;
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      expect(screen.getByText('1x').style.minHeight).toBe(accessibility.touchTarget);
+      expect(screen.getByText('0.5x').style.minHeight).toBe(accessibility.touchTarget);
+    });
+
+    it('leaves the toggles and segments at their native size on desktop', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      muteToggles().forEach((toggle) => {
+        expect(toggle.style.minWidth).toBe('');
+      });
+      expect(screen.getByText('1x').style.minHeight).toBe('');
+    });
   });
 
   describe('experimental feature flags', () => {

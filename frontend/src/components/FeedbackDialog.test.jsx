@@ -72,6 +72,15 @@ describe('FeedbackDialog', () => {
     }
   );
 
+  describe('Touch target / iOS zoom prevention (issue #542)', () => {
+    it('renders the TITLE input at 16px so iOS does not zoom the page on focus', () => {
+      render(<FeedbackDialog onClose={mockOnClose} />);
+      const titleInput = screen.getByPlaceholderText(/Short description of the bug/i);
+      expect(titleInput).toBeInstanceOf(HTMLInputElement);
+      expect(titleInput.style.fontSize).toBe('16px');
+    });
+  });
+
   describe('Tab Navigation', () => {
     it('renders all three tabs as buttons', () => {
       render(<FeedbackDialog onClose={mockOnClose} />);
