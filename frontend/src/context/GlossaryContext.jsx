@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import CombatGlossaryPanel from '../components/CombatGlossaryPanel'
+import { isTypingTarget } from '../utils/domFocus'
 
 // Rendered outside a provider — a component test, or any surface that shows a
 // combat string without the game shell — the affordances are inert rather than
@@ -19,12 +20,6 @@ export function useGlossary() {
   return useContext(GlossaryContext)
 }
 
-/** True for a target where "?" is a character the player is typing, not a shortcut. */
-function isTypingTarget(target) {
-  if (!target || !target.tagName) return false
-  const tag = target.tagName.toUpperCase()
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable === true
-}
 
 /**
  * Owns the combat glossary panel (issue #507).

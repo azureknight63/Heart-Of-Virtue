@@ -8,6 +8,7 @@ import ConversationStage from './ConversationStage'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
+import { isTypingTarget, isModifiedKeyEvent } from '../utils/domFocus'
 import { cleanTerminalLineBreaks } from '../utils/entityUtils'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { apiErrorMessage } from '../utils/apiError'
@@ -259,6 +260,18 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         const handleKeyDown = (e) => {
             if (!showInput) return
             if (isSubmitting) return
+            // Guards required by a document-scoped listener (issue #530):
+            // without them, a keydown aimed at an unrelated focused control
+            // (a glossary search box, an NPC chat input open over this
+            // dialog) gets reinterpreted as this dialog's own shortcut —
+            // e.g. typing "2" into a search field silently submits a
+            // narrative choice — and a modifier combo like Ctrl+2 (a
+            // browser tab-switch shortcut) gets hijacked into one too.
+            // This dialog's OWN text/number input (inputRef) is exempt: its
+            // Enter-to-submit behaviour below is the intended shortcut, and
+            // that field genuinely is the real DOM focus target.
+            if (isTypingTarget(e.target) && e.target !== inputRef.current) return
+            if (isModifiedKeyEvent(e)) return
 
             // Handle number keys for choices
             if (inputType === 'choice' && inputOptions.length > 0) {

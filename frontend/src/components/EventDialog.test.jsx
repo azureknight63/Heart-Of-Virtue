@@ -363,6 +363,31 @@ describe('EventDialog', () => {
     });
   });
 
+  describe('document-scoped keydown does not steal keystrokes aimed elsewhere (code-scrubber finding on issue #530)', () => {
+    it('does not select a choice when the digit key is typed into an unrelated focused input', () => {
+      renderDialog();
+      finishText();
+
+      const outsideInput = document.createElement('input');
+      document.body.appendChild(outsideInput);
+      outsideInput.focus();
+
+      fireEvent.keyDown(outsideInput, { key: '2' });
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+
+      document.body.removeChild(outsideInput);
+    });
+
+    it('does not submit on a modifier-held Enter (e.g. a browser/OS shortcut)', () => {
+      renderDialog();
+      finishText();
+
+      const focused = document.activeElement;
+      fireEvent.keyDown(focused, { key: 'Enter', ctrlKey: true });
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+    });
+  });
+
   it('finishes the animation immediately on click and reveals the input at once', () => {
     renderDialog();
 

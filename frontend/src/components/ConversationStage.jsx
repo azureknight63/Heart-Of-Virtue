@@ -5,6 +5,7 @@ import PortraitImage from './PortraitImage'
 import { castMember } from './ConversationTranscript'
 import { DEFAULT_EMOTION } from '../utils/conversationSegment'
 import { colors, spacing, fonts, commonStyles, STAGE_PORTRAIT_WIDTH_VAR } from '../styles/theme'
+import { isTypingTarget, isModifiedKeyEvent } from '../utils/domFocus'
 
 // Referentially stable stand-in for "no initial roster". `computeStage` is
 // memoized on its arguments, and a fresh `[]` per render would miss that cache
@@ -489,9 +490,22 @@ function ConversationStage({
     useEffect(() => {
         if (isLive) return undefined
         const onKey = (e) => {
+            // Guards required by a document-scoped listener (issue #530):
+            // without them, Enter/Space aimed at an unrelated focused text
+            // field (glossary search, NPC chat input, this dialog's own
+            // needs_input textarea) gets swallowed and reinterpreted as
+            // "advance the stage" instead of reaching that field. Once the
+            // stage has already completed (completedRef), a resulting
+            // advance() is a harmless no-op, but preventDefault() is not —
+            // it suppresses Space activating a since-rendered, now-focused
+            // choice button in a sibling subtree (a real keyboard-a11y
+            // regression the code-scrubber pass over #530/#541/#539/#529
+            // caught), so bail before touching the event at all.
+            if (completedRef.current) return
+            if (isTypingTarget(e.target)) return
+            if (isModifiedKeyEvent(e)) return
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
-                e.stopPropagation()
                 advance()
             }
         }
