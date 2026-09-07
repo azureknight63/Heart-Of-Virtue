@@ -978,6 +978,7 @@ class GameService:
         y: int,
         modification_type: str,
         data: Any,
+        map_name: Optional[str] = None,
     ) -> None:
         """Store a tile modification in session data for persistence.
 
@@ -987,15 +988,49 @@ class GameService:
             y: Tile y coordinate
             modification_type: Type of modification (e.g., 'block_exit', 'objects_removed')
             data: The modification data
+            map_name: The name of the map ``(x, y)`` belongs to (#528). Every
+                real caller in this file resolves this via
+                ``_map_name_for_tile`` before calling in, so production keys
+                are always namespaced. Left as ``None`` here (rather than
+                required) only so a bare coordinate with no known map falls
+                back to the legacy unnamespaced key instead of a meaningless
+                literal ``"None:"`` prefix.
         """
         if "tile_modifications" not in session_data:
             session_data["tile_modifications"] = {}
 
-        tile_key = f"{x},{y}"
+        tile_key = self._tile_mod_key(map_name, x, y)
         if tile_key not in session_data["tile_modifications"]:
             session_data["tile_modifications"][tile_key] = {}
 
         session_data["tile_modifications"][tile_key][modification_type] = data
+
+    @staticmethod
+    def _tile_mod_key(map_name: Optional[str], x, y) -> str:
+        """Build a ``tile_modifications`` key, namespaced by map when known (#528).
+
+        Mirrors ``explored_tiles``' ``f"{map_name}:{x},{y}"`` scheme (see
+        ``_record_exploration``) so two maps that reuse the same (x, y) —
+        e.g. Grondia and the Mineral Pools both have a (2, 4) — never collide.
+        Falls back to the legacy bare ``f"{x},{y}"`` key when the map can't be
+        resolved (a bare-coordinate caller, or a tile/test-double without a
+        real ``.map`` dict) rather than writing a literal ``"None:"`` prefix.
+        """
+        return f"{map_name}:{x},{y}" if map_name is not None else f"{x},{y}"
+
+    @staticmethod
+    def _map_name_for_tile(tile) -> Optional[str]:
+        """Return the map name ``tile`` belongs to, or ``None`` if unknown.
+
+        Same derivation ``_record_exploration`` already uses for
+        ``explored_tiles``, just read off ``tile.map`` instead of
+        ``player.map`` — every real ``MapTile`` sets ``self.map`` to the same
+        dict its owning map's tiles all share (``src/tiles.py``,
+        ``src/universe.py``), so the two are the same object once the player
+        is standing on that tile.
+        """
+        tile_map = getattr(tile, "map", None)
+        return tile_map.get("name") if isinstance(tile_map, dict) else None
 
     @staticmethod
     def _object_roster(tile) -> List[str]:
@@ -1021,7 +1056,11 @@ class GameService:
     @staticmethod
     def _tile_modifications(session_data: Dict[str, Any], tile) -> Dict[str, Any]:
         """Return the stored modification dict for ``tile`` (empty if there is none)."""
-        tile_key = f"{getattr(tile, 'x', None)},{getattr(tile, 'y', None)}"
+        tile_key = GameService._tile_mod_key(
+            GameService._map_name_for_tile(tile),
+            getattr(tile, "x", None),
+            getattr(tile, "y", None),
+        )
         stored = (session_data.get("tile_modifications") or {}).get(tile_key)
         return stored if isinstance(stored, dict) else {}
 
@@ -1050,7 +1089,12 @@ class GameService:
             return
 
         self.store_tile_modification(
-            session_data, tile.x, tile.y, "objects_baseline", roster
+            session_data,
+            tile.x,
+            tile.y,
+            "objects_baseline",
+            roster,
+            map_name=self._map_name_for_tile(tile),
         )
 
     def persist_tile_state(self, session_data: Optional[Dict[str, Any]], tile) -> None:
@@ -1069,9 +1113,11 @@ class GameService:
         if not isinstance(session_data, dict) or tile is None:
             return
 
+        map_name = self._map_name_for_tile(tile)
+
         block_exit = tile.block_exit.copy() if hasattr(tile, "block_exit") else []
         self.store_tile_modification(
-            session_data, tile.x, tile.y, "block_exit", block_exit
+            session_data, tile.x, tile.y, "block_exit", block_exit, map_name=map_name
         )
 
         # Objects removed since the baseline snapshot (#328). Computed as a
@@ -1085,7 +1131,12 @@ class GameService:
 
         removed = list((Counter(baseline) - Counter(self._object_roster(tile))).elements())
         self.store_tile_modification(
-            session_data, tile.x, tile.y, "objects_removed", removed
+            session_data,
+            tile.x,
+            tile.y,
+            "objects_removed",
+            removed,
+            map_name=map_name,
         )
 
     def apply_tile_modifications(self, tile, session_data: Dict[str, Any]) -> None:
@@ -1104,7 +1155,7 @@ class GameService:
         if not session_data or "tile_modifications" not in session_data:
             return
 
-        tile_key = f"{tile.x},{tile.y}"
+        tile_key = self._tile_mod_key(self._map_name_for_tile(tile), tile.x, tile.y)
         if tile_key not in session_data["tile_modifications"]:
             return
 

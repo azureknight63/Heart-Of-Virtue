@@ -24,7 +24,9 @@ from src.events import Event
 from src.items import Gold
 from src.npc import NPC
 from src.objects import WallSwitch
+from src.player import Player
 from src.tiles import MapTile
+from src.universe import Universe
 from tests._gs_fixtures import GRID_3X3, live_world, make_tile
 
 
@@ -160,7 +162,7 @@ class TestGetCurrentRoom:
         assert event.fired == 1
 
     def test_session_data_applies_stored_block_exit(self, game_service, player, tile):
-        session_data = {"tile_modifications": {"0,0": {"block_exit": ["west"]}}}
+        session_data = {"tile_modifications": {"gs-test-map:0,0": {"block_exit": ["west"]}}}
         result = game_service.get_current_room(player, session_data)
         assert tile.block_exit == ["west"]
         assert "west" not in result["exits"]
@@ -350,7 +352,7 @@ class TestPersistTileState:
 
         game_service.persist_tile_state(session_data, tile)
 
-        stored = session_data["tile_modifications"]["0,0"]["block_exit"]
+        stored = session_data["tile_modifications"]["gs-test-map:0,0"]["block_exit"]
         assert stored == ["north"]
         # Stored value must be a copy, not the live list.
         assert stored is not tile.block_exit
@@ -406,7 +408,7 @@ class TestPersistTileState:
         tile.objects_here = [keep]
         game_service.persist_tile_state(session_data, tile)
 
-        mods = session_data["tile_modifications"]["0,0"]
+        mods = session_data["tile_modifications"]["gs-test-map:0,0"]
         assert mods["objects_baseline"] == ["Lever", "Rubble"]
         assert mods["objects_removed"] == ["Rubble"]
 
@@ -423,7 +425,7 @@ class TestPersistTileState:
         tile.objects_here = []
         game_service.capture_tile_object_baseline(session_data, tile)
 
-        assert session_data["tile_modifications"]["0,0"]["objects_baseline"] == ["Lever"]
+        assert session_data["tile_modifications"]["gs-test-map:0,0"]["objects_baseline"] == ["Lever"]
 
     def test_empty_tile_gets_no_baseline_entry(self, game_service, tile):
         """Tiles with nothing to remove must not bloat tile_modifications."""
@@ -452,7 +454,7 @@ class TestApplyTileModifications:
         obj = WallSwitch(player, tile)
         tile.objects_here = [obj]
         tile.block_exit = []
-        session_data = {"tile_modifications": {"9,9": {"block_exit": ["south"]}}}
+        session_data = {"tile_modifications": {"gs-test-map:9,9": {"block_exit": ["south"]}}}
         game_service.apply_tile_modifications(tile, session_data)
         assert tile.objects_here == [obj]
         assert tile.block_exit == []
@@ -470,7 +472,7 @@ class TestApplyTileModifications:
         tile.objects_here = [keep, drop]
         session_data = {
             "tile_modifications": {
-                "0,0": {
+                "gs-test-map:0,0": {
                     "objects_baseline": ["Lever", "Rubble"],
                     "objects_removed": ["Rubble"],
                 }
@@ -493,7 +495,7 @@ class TestApplyTileModifications:
         tile.objects_here = [first, second]
         session_data = {
             "tile_modifications": {
-                "0,0": {
+                "gs-test-map:0,0": {
                     "objects_baseline": ["Rock", "Rock"],
                     "objects_removed": ["Rock"],
                 }
@@ -510,7 +512,7 @@ class TestApplyTileModifications:
         tile.objects_here = [spawned]
         session_data = {
             "tile_modifications": {
-                "0,0": {"objects_baseline": ["Rubble"], "objects_removed": ["Rubble"]}
+                "gs-test-map:0,0": {"objects_baseline": ["Rubble"], "objects_removed": ["Rubble"]}
             }
         }
         game_service.apply_tile_modifications(tile, session_data)
@@ -518,7 +520,7 @@ class TestApplyTileModifications:
 
     def test_restores_block_exit_as_a_copy(self, game_service, tile):
         stored = ["south", "east"]
-        session_data = {"tile_modifications": {"0,0": {"block_exit": stored}}}
+        session_data = {"tile_modifications": {"gs-test-map:0,0": {"block_exit": stored}}}
         game_service.apply_tile_modifications(tile, session_data)
         assert tile.block_exit == ["south", "east"]
         # It must be a copy, not the stored list itself, so later mutations don't leak.
@@ -527,8 +529,8 @@ class TestApplyTileModifications:
     def test_each_tile_picks_up_only_its_own_entry(self, game_service, player, game_map):
         session_data = {
             "tile_modifications": {
-                "0,0": {"block_exit": ["north"]},
-                "1,0": {"block_exit": ["west"]},
+                "gs-test-map:0,0": {"block_exit": ["north"]},
+                "gs-test-map:1,0": {"block_exit": ["west"]},
             }
         }
         for coord in ((0, 0), (1, 0), (-1, 0)):
@@ -587,6 +589,59 @@ class TestTileStateRoundTrip:
         game_service.apply_tile_modifications(rebuilt, session_data)
 
         assert [o.name for o in rebuilt.objects_here] == ["Lever"]
+
+
+class TestTileModificationsAreNamespacedByMap:
+    """Regression test for #528.
+
+    ``tile_modifications`` used to be keyed by bare ``f"{x},{y}"`` -- no map
+    name -- so two different maps that happen to reuse the same coordinate
+    collided. In production this made Grondia's (2, 4) block_exit (it only
+    allows northwest/southeast, so the other six directions are blocked)
+    bleed onto the Mineral Pools' unrelated (2, 4) tile ("Narrow Pass", which
+    legitimately allows north/east/south), trapping the player and making the
+    King Slime arena unreachable. Mirrors the fix already applied to
+    ``explored_tiles`` (``f"{map_name}:{x},{y}"``).
+    """
+
+    def test_second_maps_tile_keeps_its_own_block_exit(self, game_service):
+        player = Player()
+        universe = Universe(player=player)
+
+        grondia = {"name": "Grondia"}
+        grondia_tile = make_tile(universe, grondia, 2, 4)
+        # Grondia's (2, 4) only allows northwest/southeast -- every other
+        # direction is blocked (mirrors src/universe.py's exits-whitelist pass).
+        grondia_tile.block_exit = [
+            "north", "south", "east", "west", "northeast", "southwest",
+        ]
+
+        mineral_pools = {"name": "MineralPools"}
+        pools_tile = make_tile(universe, mineral_pools, 2, 4)
+        # The Mineral Pools' own (2, 4) ("Narrow Pass") allows north/east/south.
+        pools_tile.block_exit = ["west", "northeast", "northwest", "southwest"]
+
+        universe.maps = [grondia, mineral_pools]
+        player.universe = universe
+
+        session_data = {}
+
+        # The player visits Grondia's (2, 4) first; its block_exit is persisted.
+        player.map = grondia
+        player.location_x, player.location_y = 2, 4
+        player.current_room = grondia_tile
+        game_service.persist_tile_state(session_data, grondia_tile)
+
+        # Later the player enters the Mineral Pools and reaches its own (2, 4).
+        player.map = mineral_pools
+        player.location_x, player.location_y = 2, 4
+        player.current_room = pools_tile
+        game_service.apply_tile_modifications(pools_tile, session_data)
+
+        # The Mineral Pools tile must keep ITS OWN exits, not Grondia's.
+        assert pools_tile.block_exit == [
+            "west", "northeast", "northwest", "southwest",
+        ]
 
 
 class TestWorldErrorPaths:

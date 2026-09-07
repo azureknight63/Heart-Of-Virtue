@@ -85,7 +85,7 @@ class TestDarkGrottoScenario:
 
         # 6. Verify session_data contains the modification (persistence mechanism)
         assert "tile_modifications" in self.session_data
-        tile_key = "3,2"
+        tile_key = "dark-grotto:3,2"
         assert tile_key in self.session_data["tile_modifications"]
         assert "block_exit" in self.session_data["tile_modifications"][tile_key]
         assert "east" not in self.session_data["tile_modifications"][tile_key]["block_exit"]

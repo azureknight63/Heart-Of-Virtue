@@ -233,7 +233,7 @@ class TestMoveSideEffects:
 
         game_service.move_player(player, "east", session_data)
 
-        assert session_data["tile_modifications"]["1,0"]["block_exit"] == ["north"]
+        assert session_data["tile_modifications"]["gs-test-map:1,0"]["block_exit"] == ["north"]
 
 
 class TestCooldownsDoNotDrainOutsideCombat:

@@ -784,7 +784,7 @@ class TestApplyTileModificationsExtra:
         # The one thing that DOES happen for an unlisted tile: the pristine
         # object roster is snapshotted, so a later removal is detectable.
         assert session_data["tile_modifications"] == {
-            "1,1": {"objects_baseline": ["Crate"]}
+            "gs-test-map:1,1": {"objects_baseline": ["Crate"]}
         }
 
     def test_objects_removed_filters_tile(self, game_service):
