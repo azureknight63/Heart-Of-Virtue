@@ -1177,6 +1177,13 @@ class ApiCombatAdapter:
                 self.player.combat_beat = 1  # Start at beat 1 for synchronization
                 self._terminal_event_emitted = False
                 self.player.combat_log = []  # Clear log for new combat
+                # Issue #534: last_move_summary is a Player-instance attribute
+                # _execute_move repopulates after every move (see below), so
+                # without this reset beat 1 of a brand new fight served the
+                # PREVIOUS fight's final move summary as last_move_outcome —
+                # the Tactical Advisor narrated an already-ended battle and
+                # credited whatever weapon Jean had equipped back then.
+                self.player.last_move_summary = ""
                 # Stable identity for this fight, minted alongside the beat/log
                 # reset so it changes exactly when a genuinely new combat starts
                 # — not on a reinit (wave transition, reinforcement spawn).

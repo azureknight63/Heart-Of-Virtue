@@ -435,11 +435,20 @@ class TestFallbackSuggestions:
         assert "low" in offensive["reasoning"].lower()
 
     def test_offensive_heat_warm_fallback_reasoning(self, strategist):
+        """Issue #534 bug 2. At WARM heat (no offensive bonus), a plain
+        Offensive move scores its full base (85) -- a real, often-high
+        confidence score -- but used to be reasoned with the exact same
+        string the genuine no-read catch-all uses ("Tactical analysis
+        unavailable"). Pairing "unavailable" with "85%" told the player no
+        analysis had happened when one plainly had; the WARM note must say
+        something true about the baseline instead.
+        """
         ctx = _base_ctx()
         ctx["player"]["heat"] = 1.0
         result = strategist._get_fallback_suggestions(ctx, 2)
         offensive = next(r for r in result if r["move_name"] == "Slash")
-        assert "Tactical analysis unavailable" in offensive["reasoning"]
+        assert "unavailable" not in offensive["reasoning"].lower()
+        assert offensive["score"] == 85
 
     def test_misc_category_fallback_reasoning(self, strategist):
         ctx = _base_ctx(available_moves=[{"name": "Ponder", "category": "Weird", "available": True}])
