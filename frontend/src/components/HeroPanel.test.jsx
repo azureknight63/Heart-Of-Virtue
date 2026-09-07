@@ -203,6 +203,16 @@ describe('HeroPanel', () => {
     expect(hpBar).toBeInTheDocument();
   });
 
+  it('wraps the radial action buttons in a nav landmark (issue #536)', () => {
+    // The app had zero <nav> landmarks anywhere. This radial button ring is
+    // the primary in-game navigation between panels/move categories.
+    const { container } = render(<HeroPanel {...makeProps()} />);
+    const nav = container.querySelector('nav');
+    expect(nav).not.toBeNull();
+    expect(nav.contains(screen.getByText('ATTRIBUTES'))).toBe(true);
+    expect(nav.contains(screen.getByText('INTERACT'))).toBe(true);
+  });
+
   it('gives the HP and Fatigue bars an accessible progressbar name (issue #536)', () => {
     // Both bars were bare unlabeled <div>s: no text, no title, no aria-label,
     // no role. A screen reader (and a sighted player who never hovers/clicks)

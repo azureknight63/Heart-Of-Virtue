@@ -302,7 +302,13 @@ function HeroPanel({
           testId="fatigue-bar"
         />
 
-        {/* Surrounding Buttons */}
+        {/* Surrounding Buttons — issue #536 item 3: the app had zero <nav>
+            landmarks anywhere. This radial ring IS the primary in-game
+            navigation between panels/move categories, so it gets one.
+            display:'contents' means the <nav> contributes no box of its own,
+            so every button's `position: absolute` still resolves against
+            this Hero Head Container exactly as before. */}
+        <nav aria-label="Game actions" style={{ display: 'contents' }}>
         {buttons.map(({ key, label, top, left, transform, onClick, color }) => {
           const isHovered = hoveredButton === key
           const baseColor = color || colors.primary
@@ -350,6 +356,7 @@ function HeroPanel({
             </button>
           )
         })}
+        </nav>
       </div>
 
       {/* Mobile-only: passives + status icons as a compact inline row */}
