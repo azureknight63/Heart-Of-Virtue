@@ -29,6 +29,14 @@ export const FEATURE_FLAGS = {
     // so it remains switchable from the settings dialog.
     default: true,
   },
+  reducedMotion: {
+    label: 'Reduced motion',
+    description:
+      'Shorten CSS animations and transitions app-wide to a near-instant '
+      + '1ms, for motion sensitivity. App.jsx applies this as the '
+      + '"reduced-motion" class on <html>; see styles/index.css.',
+    default: false,
+  },
 };
 
 const FLAG_NAMES = Object.keys(FEATURE_FLAGS);

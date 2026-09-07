@@ -912,3 +912,21 @@ body.damage-flash-active::before {
   user-select: none;
 }
 
+/*
+ * Settings dialog's "Reduced motion" toggle (#540 item 15). App.jsx mirrors
+ * the `reducedMotion` feature flag onto this class on <html> so it applies
+ * everywhere, not just while Settings is open. `!important` because this is
+ * meant to override every component's own inline transition/animation
+ * declaration — most of this app's motion is authored as inline styles
+ * (styles/theme.js), which this stylesheet cannot otherwise out-rank.
+ */
+.reduced-motion,
+.reduced-motion * {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
