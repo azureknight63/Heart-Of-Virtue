@@ -1,14 +1,22 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 
 import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
 import BeatTimeline from './BeatTimeline'
 import GlossaryHelpButton from './GlossaryHelpButton'
-import { colors, spacing } from '../styles/theme'
+import { accessibility, colors, spacing } from '../styles/theme'
 import { isLiving } from '../utils/combatEntities'
 import { useFeatureFlag } from '../utils/featureFlags'
+import { useMobile } from '../hooks/useMobile'
+import { useCoarsePointer } from '../hooks/useCoarsePointer'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const MAX_BEAT_STATES = 200;
+
+// Sentinel for "no camera decision has been made for any fight yet". A plain
+// null would collide with `combat_id` being absent (test payloads, a beat
+// state mid-serialization), and the guard would then read as already-claimed
+// and never auto-fit at all.
+const CAMERA_UNCLAIMED = Symbol('camera unclaimed');
 
 // Both view modes are always shown, each labelled with what it does. The old
 // control was a single button captioned with the mode it was *currently in*
@@ -53,6 +61,18 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   // the affordance aren't nagged.
   const [showOffScreenBanner, setShowOffScreenBanner] = useState(false)
   const offScreenLatchRef = useRef(false)
+  // Whether the banner is reporting an auto-fit this component performed, or
+  // nudging a player who has chosen to stay in Follow.
+  const [didAutoFit, setDidAutoFit] = useState(false)
+  // The fight whose camera has been settled — by the one auto-fit below, or by
+  // the player picking a mode. Compared against `cameraKey` so the auto-fit
+  // fires at most once per fight and never argues with a manual choice.
+  const cameraClaimedForRef = useRef(CAMERA_UNCLAIMED)
+  // Both hooks unconditionally — `||` would short-circuit the second and
+  // break hook order the first time the viewport is narrow.
+  const isMobile = useMobile()
+  const isCoarsePointer = useCoarsePointer()
+  const needsLargeTargets = isMobile || isCoarsePointer
 
   // Display state - synchronized with combat log progress.
   // Initialise directly to the first beat state (same shape BattlefieldGrid expects)
@@ -110,12 +130,53 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     }
   }, [currentLogIndex, combat?.beat_states])
 
+  // Raw geometry, independent of the current camera: is a living enemy beyond
+  // the Follow viewport? Both the auto-fit and the banner key off this, so
+  // widening the camera does not retroactively erase the reason it widened.
+  const enemyOutsideFollowView = useMemo(
+    () => anyEnemyOffScreen(displayState),
+    [displayState]
+  );
+
   // Hint the player to expand the view when a living enemy is beyond the
   // follow-mode viewport. The glow is suppressed while already in Fit Fight.
-  const enemyOffScreen = useMemo(
-    () => zoom !== VIEW_MODE_FIT && anyEnemyOffScreen(displayState),
-    [zoom, displayState]
-  );
+  const enemyOffScreen = zoom !== VIEW_MODE_FIT && enemyOutsideFollowView;
+
+  // One fight, one identity. `combat_id` is minted per fight by the adapter;
+  // the `?? null` is only for payload shapes that omit it (see CAMERA_UNCLAIMED).
+  const cameraKey = combat?.combat_id ?? null;
+
+  /**
+   * The player's camera choice, which settles the camera for the rest of this
+   * fight (issue #561).
+   *
+   * Recording the claim here is what keeps the auto-fit from being a bully: a
+   * player who deliberately goes back to Follow with an enemy still off-screen
+   * has said something, and the next beat must not undo it.
+   */
+  const selectViewMode = useCallback((mode) => {
+    cameraClaimedForRef.current = cameraKey;
+    setDidAutoFit(false);
+    setShowOffScreenBanner(false);
+    setZoom(mode);
+  }, [cameraKey]);
+
+  /**
+   * Frame the fight the player was actually handed (issue #561).
+   *
+   * Enemy spawn distance is a per-encounter roll, so with Follow (±6 cells) as
+   * the default a fight beginning at 7-8 ft opened on an empty map with a
+   * banner telling the player to fix the framing themselves — the application
+   * detecting the problem and delegating it. Fit Fight is the answer it was
+   * already recommending, so it takes it, once, and says so.
+   */
+  useEffect(() => {
+    if (!enemyOutsideFollowView) return;
+    if (cameraClaimedForRef.current === cameraKey) return;
+    cameraClaimedForRef.current = cameraKey;
+    setZoom(VIEW_MODE_FIT);
+    setDidAutoFit(true);
+  }, [enemyOutsideFollowView, cameraKey]);
 
   // Living enemy count and beat number: the two numbers that answer "where is
   // this fight at?" without reading back through the log.
@@ -124,19 +185,31 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     [displayState?.enemies]
   );
 
-  // Rising edge on enemyOffScreen → flash a one-shot banner explaining the hint.
+  // Rising edge on "an enemy left the Follow viewport" → flash a one-shot
+  // banner. Keyed on the raw geometry rather than on `enemyOffScreen`, or the
+  // auto-fit above would clear the condition in the same commit and the player
+  // would get a camera that moved with no explanation. Manual dismissal on a
+  // zoom change now lives in selectViewMode.
   useEffect(() => {
-    if (enemyOffScreen && !offScreenLatchRef.current) {
+    if (enemyOutsideFollowView && !offScreenLatchRef.current) {
       offScreenLatchRef.current = true;
       setShowOffScreenBanner(true);
       const t = setTimeout(() => setShowOffScreenBanner(false), 2500);
       return () => clearTimeout(t);
     }
-    if (!enemyOffScreen) {
+    if (!enemyOutsideFollowView) {
       offScreenLatchRef.current = false;
       setShowOffScreenBanner(false);
     }
-  }, [enemyOffScreen]);
+  }, [enemyOutsideFollowView]);
+
+  // 44px minimum on a phone or any coarse pointer. Measured at 375px before
+  // this: Overview 75.6x28, Enemies 97.2x28, Follow 63.2x26, Fit Fight 84.8x26
+  // — all about 60% of the required height (issue #564). Height only; the
+  // widths already clear the minimum, so the row's total width is unchanged.
+  const touchTargetStyle = needsLargeTargets
+    ? { minHeight: accessibility.touchTarget, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+    : {};
 
   if (!displayState) {
     return (
@@ -148,12 +221,18 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
-      {/* Tab Selector */}
-      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Tab Selector. `flexWrap` plus the row gap so the four controls can
+          take two lines at 375px once they are 44px tall, rather than
+          overflowing the map's width (issue #564). */}
+      <div
+        data-testid="battlefield-toolbar"
+        style={{ display: 'flex', gap: '6px', rowGap: '6px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}
+      >
         <div style={{ display: 'flex', gap: '6px' }}>
           <button
             onClick={() => setSelectedTab('overview')}
             style={{
+              ...touchTargetStyle,
               padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
               backgroundColor: selectedTab === 'overview' ? colors.secondary : 'transparent',
               color: selectedTab === 'overview' ? '#fff' : colors.secondary,
@@ -165,6 +244,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           <button
             onClick={() => setSelectedTab('enemies')}
             style={{
+              ...touchTargetStyle,
               padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
               backgroundColor: selectedTab === 'enemies' ? colors.secondary : 'transparent',
               color: selectedTab === 'enemies' ? '#fff' : colors.secondary,
@@ -189,9 +269,10 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
               return (
                 <button
                   key={mode}
-                  onClick={() => setZoom(mode)}
+                  onClick={() => selectViewMode(mode)}
                   aria-pressed={active}
                   style={{
+                    ...touchTargetStyle,
                     padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', border: 'none', transition: 'background-color 0.2s, color 0.2s',
                     backgroundColor: active ? colors.secondary : 'rgba(0,0,0,0.5)',
                     color: active ? '#fff' : colors.secondary,
@@ -280,7 +361,9 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
             role="status"
           >
             <div style={{ backgroundColor: 'rgba(0,0,0,0.9)', border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
-              ⚠ Enemy off-screen — switch to Fit Fight
+              {didAutoFit
+                ? '⤢ Enemy off-screen — view widened to Fit Fight'
+                : '⚠ Enemy off-screen — switch to Fit Fight'}
             </div>
           </div>
         )}

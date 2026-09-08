@@ -3,6 +3,7 @@ import { useAudio } from '../context/AudioContext';
 import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
 import { colors } from '../styles/theme';
+import { hostilityTokenFor } from '../utils/combatEntities';
 
 const INPUT_TYPE_CONFIG = {
     target_selection: { title: '🎯 SELECT TARGET' },
@@ -70,14 +71,23 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
             case 'target_selection':
                 return (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                        {Array.isArray(options) && options.map((target) => (
+                        {Array.isArray(options) && options.map((target) => {
+                          // Friend or foe, from the `is_ally` every target card
+                          // carries. Without it Gorran and a Rock Rumbler were
+                          // pixel-identical here and a pick landed on the ally
+                          // (issue #558). Null when the payload says nothing —
+                          // never guessed.
+                          const hostility = hostilityTokenFor(target);
+                          return (
                             <div
                                 key={target.id}
+                                data-testid="target-card"
+                                data-hostility={hostility ? hostility.label.toLowerCase() : 'unknown'}
                                 onMouseEnter={() => onTargetHover && onTargetHover(target.id)}
                                 onMouseLeave={() => onTargetHover && onTargetHover(null)}
                                 style={{
-                                    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    backgroundColor: hostility ? hostility.tint : 'rgba(255, 255, 255, 0.03)',
+                                    border: `1px solid ${hostility ? hostility.color : 'rgba(255, 255, 255, 0.1)'}`,
                                     borderRadius: '12px',
                                     padding: '16px',
                                     display: 'flex',
@@ -88,7 +98,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                 }}
                                 onClick={() => handleSelect(target.id)}
                             >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ fontWeight: 'bold', color: '#fff', fontSize: '15px' }}>{target.name}</span>
                                     {target.distance !== undefined && (
                                         <span style={{ fontSize: '11px', color: '#aaa', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
@@ -96,6 +106,26 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                         </span>
                                     )}
                                 </div>
+
+                                {hostility && (
+                                    <span
+                                        style={{
+                                            alignSelf: 'flex-start',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            border: `1px solid ${hostility.color}`,
+                                            backgroundColor: hostility.tint,
+                                            color: hostility.color,
+                                            fontFamily: 'monospace',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            letterSpacing: '0.08em',
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                    >
+                                        {hostility.glyph} {hostility.label}
+                                    </span>
+                                )}
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                     {target.health && (() => {
@@ -145,7 +175,8 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                     {getConfirmVerb()}
                                 </GameButton>
                             </div>
-                        ))}
+                          );
+                        })}
                     </div>
                 );
 

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { displayNameOf, formatCombatMoveStatus, isMovePending, beatsUntilResolve } from './combatMoveStatus';
+import {
+  displayNameOf,
+  formatCombatMoveStatus,
+  isMovePending,
+  beatsUntilResolve,
+  moveAvailability,
+  NO_REACHABLE_TARGET_REASON,
+} from './combatMoveStatus';
 
 describe('formatCombatMoveStatus', () => {
   it.each([
@@ -81,5 +88,54 @@ describe('beatsUntilResolve', () => {
 
   it('falls back to beats_left for a stage-less payload, which carries no better answer', () => {
     expect(beatsUntilResolve({ name: 'Cackle', beats_left: 2 })).toBe(2);
+  });
+});
+
+describe('moveAvailability', () => {
+  it('reports an available move as available with no reason', () => {
+    expect(moveAvailability({ name: 'Slash', available: true })).toEqual({ available: true, reason: '' });
+  });
+
+  it('passes a server refusal straight through', () => {
+    expect(moveAvailability({ available: false, reason: 'Not enough fatigue' }))
+      .toEqual({ available: false, reason: 'Not enough fatigue' });
+  });
+
+  it('reports an unavailable move with no reason as unavailable, not as available', () => {
+    expect(moveAvailability({ available: false })).toEqual({ available: false, reason: '' });
+  });
+
+  // The #554 case: advertised available, nothing actually in reach.
+  it('withholds a targeted move whose viable-target list is empty', () => {
+    expect(moveAvailability({ available: true, targeted: true, viable_targets: [] }))
+      .toEqual({ available: false, reason: NO_REACHABLE_TARGET_REASON });
+  });
+
+  it('treats a missing viable_targets on a targeted move the same way', () => {
+    expect(moveAvailability({ available: true, targeted: true }).available).toBe(false);
+  });
+
+  it('prefers the server reason over the derived one when both apply', () => {
+    expect(moveAvailability({
+      available: true,
+      targeted: true,
+      viable_targets: [],
+      reason: 'Enemy out of range (too far)',
+    })).toEqual({ available: false, reason: 'Enemy out of range (too far)' });
+  });
+
+  it('leaves a non-targeted move alone — an empty list is not its target list', () => {
+    expect(moveAvailability({ available: true, targeted: false, viable_targets: [] }).available).toBe(true);
+    expect(moveAvailability({ available: true, viable_targets: [] }).available).toBe(true);
+  });
+
+  it('keeps a targeted move with something in reach', () => {
+    expect(moveAvailability({ available: true, targeted: true, viable_targets: [{ id: 'enemy_1' }] }))
+      .toEqual({ available: true, reason: '' });
+  });
+
+  it('treats nothing as unavailable rather than crashing', () => {
+    expect(moveAvailability(null)).toEqual({ available: false, reason: '' });
+    expect(moveAvailability(undefined)).toEqual({ available: false, reason: '' });
   });
 });

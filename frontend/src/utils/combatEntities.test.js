@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isLiving } from './combatEntities';
+import { isLiving, isHostileEntity, hostilityTokenFor, HOSTILITY_TOKENS } from './combatEntities';
 
 describe('isLiving', () => {
   it('reads the canonical hp field', () => {
@@ -76,5 +76,58 @@ describe('isLiving', () => {
     expect(isLiving(null)).toBe(false);
     expect(isLiving(undefined)).toBe(false);
     expect([{ hp: 1 }, null, { hp: 0 }].filter(isLiving)).toEqual([{ hp: 1 }]);
+  });
+});
+
+describe('isHostileEntity', () => {
+  it('reads the room-NPC spelling', () => {
+    expect(isHostileEntity({ is_hostile: true })).toBe(true);
+    expect(isHostileEntity({ is_hostile: false })).toBe(false);
+  });
+
+  it('reads the combat-target-card spelling as its complement', () => {
+    expect(isHostileEntity({ is_ally: false })).toBe(true);
+    expect(isHostileEntity({ is_ally: true })).toBe(false);
+  });
+
+  it('prefers the direct statement when a payload carries both', () => {
+    expect(isHostileEntity({ is_hostile: true, is_ally: true })).toBe(true);
+  });
+
+  it('answers null — never a guess — when the payload is silent', () => {
+    // The whole point: a default of "friendly" is how a hostile ends up
+    // wearing an ally badge.
+    expect(isHostileEntity({ name: 'Stranger' })).toBeNull();
+    expect(isHostileEntity({ is_hostile: 'yes' })).toBeNull();
+    expect(isHostileEntity({ is_ally: null })).toBeNull();
+    expect(isHostileEntity(null)).toBeNull();
+    expect(isHostileEntity(undefined)).toBeNull();
+  });
+});
+
+describe('hostilityTokenFor', () => {
+  it('carries a word and a glyph as well as a colour', () => {
+    // State is never conveyed by colour alone, and this is the state that
+    // decides whether the player swings at their own ally.
+    for (const token of Object.values(HOSTILITY_TOKENS)) {
+      expect(token.label).toMatch(/^[A-Z]+$/);
+      expect(token.glyph.length).toBeGreaterThan(0);
+      expect(token.color).toMatch(/^#/);
+      expect(token.tint).toMatch(/^#/);
+    }
+    expect(HOSTILITY_TOKENS.hostile.label).not.toBe(HOSTILITY_TOKENS.ally.label);
+    expect(HOSTILITY_TOKENS.hostile.color).not.toBe(HOSTILITY_TOKENS.ally.color);
+  });
+
+  it('maps each side to its own token', () => {
+    expect(hostilityTokenFor({ is_ally: false })).toBe(HOSTILITY_TOKENS.hostile);
+    expect(hostilityTokenFor({ is_hostile: true })).toBe(HOSTILITY_TOKENS.hostile);
+    expect(hostilityTokenFor({ is_ally: true })).toBe(HOSTILITY_TOKENS.ally);
+    expect(hostilityTokenFor({ is_hostile: false })).toBe(HOSTILITY_TOKENS.ally);
+  });
+
+  it('has no token for a silent payload', () => {
+    expect(hostilityTokenFor({ name: 'Stranger' })).toBeNull();
+    expect(hostilityTokenFor(null)).toBeNull();
   });
 });

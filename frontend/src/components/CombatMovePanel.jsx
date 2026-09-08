@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useId } from 'react';
 import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
@@ -6,7 +6,7 @@ import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
-import { displayNameOf } from '../utils/combatMoveStatus';
+import { displayNameOf, moveAvailability } from '../utils/combatMoveStatus';
 import {
     STAGE_KEYS,
     getStageBeats,
@@ -107,6 +107,81 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
     );
 };
 
+// HeroPanel's radial category ring — the `<nav>` landmark it renders around the
+// hero head. Read, never written: this panel needs to know where those buttons
+// ARE (see useOccludedNavHandoff), and it must not reach into HeroPanel to
+// restyle them.
+const CATEGORY_NAV_SELECTOR = 'nav[aria-label="Game actions"] button';
+
+// A press that lands on any of these inside the panel is the panel's own
+// business, whatever it happens to be covering.
+const PANEL_CONTROL_SELECTOR = 'button, a, input, select, textarea, [role="button"], [tabindex]';
+
+/** The category nav button under a viewport point, or null. */
+function categoryNavButtonAt(clientX, clientY) {
+    if (typeof clientX !== 'number' || typeof clientY !== 'number') return null;
+    for (const button of document.querySelectorAll(CATEGORY_NAV_SELECTOR)) {
+        const rect = button.getBoundingClientRect();
+        // A zero-sized rect means the button is not laid out (or jsdom gave up
+        // on it); treating a point as "inside" it would hand every press to a
+        // button nobody can see.
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+            return button;
+        }
+    }
+    return null;
+}
+
+/**
+ * Give back the category-tab clicks this flyout steals (issue #557).
+ *
+ * The panel is `zIndex: 100` and centered over the whole left column; the
+ * category buttons it opens from are `zIndex: 5` inside HeroPanel's hero-head
+ * box, which sits in that same region. So a player who clicks a *different*
+ * category tab while a panel is open hits the panel instead, and nothing at
+ * all happens — a hit-test at the tab's centre reports the panel on top. The
+ * handler that would have done the right thing already exists
+ * (`LeftPanel.handleCombatMoveClick` swaps the open category, or closes the
+ * panel when the same tab is clicked twice); it simply never hears the click.
+ *
+ * Raising the nav bar's z-index would be the structural fix, but it lives in
+ * HeroPanel — so the panel takes responsibility for what it occludes instead:
+ * on a press that lands on the panel's own inert chrome, hit-test the category
+ * buttons and, if one is underneath, activate it.
+ *
+ * Only inert chrome is forwarded. Where the panel has its own control at that
+ * point the intent is genuinely ambiguous, and a press that both cast a move
+ * and switched category would be far worse than one dead click — so the
+ * panel's control wins, and a tab fully covered by a move card stays occluded
+ * until the nav bar is raised above the panel.
+ */
+function useOccludedNavHandoff(contentRef) {
+    useEffect(() => {
+        // GamePanel accepts no ref, so the ref sits on the content wrapper and
+        // the panel ROOT — whose padding ring is exactly the inert chrome the
+        // reported hit-test landed on — is resolved from it.
+        const content = contentRef.current;
+        const panel = content?.closest('.game-panel') ?? content;
+        if (!panel) return undefined;
+
+        const handOff = (event) => {
+            if (!panel.contains(event.target)) return;
+            if (event.target.closest?.(PANEL_CONTROL_SELECTOR)) return;
+            const navButton = categoryNavButtonAt(event.clientX, event.clientY);
+            if (!navButton) return;
+            // Swallow the press so nothing else reads it as an interaction
+            // with the panel, then activate what the player aimed at.
+            event.preventDefault();
+            event.stopPropagation();
+            navButton.click();
+        };
+
+        document.addEventListener('pointerdown', handOff, true);
+        return () => document.removeEventListener('pointerdown', handOff, true);
+    }, [contentRef]);
+}
+
 // `isProcessing` is passed by LeftPanel while a move submission is in flight.
 // Without it the panel stays live during the API round trip and a double-click
 // submits two actions for one turn.
@@ -116,6 +191,11 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
     const { playSFX } = useAudio();
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
+    const contentRef = useRef(null);
+    // Base for the per-card reason ids that aria-describedby points at. useId
+    // keeps them unique across concurrent panels and stable across re-renders.
+    const reasonIdBase = useId();
+    useOccludedNavHandoff(contentRef);
 
     const filteredMoves = useMemo(() => movesInGroup(moves, category), [moves, category]);
     // Shared scale across THIS panel's visible moves, not per-card — see
@@ -141,7 +221,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                 backgroundColor: colors.bg.panelDeep,
             }}
         >
-            <div style={{
+            <div ref={contentRef} data-testid="combat-move-panel-content" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -181,10 +261,17 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                     </GameText>
                 ) : (
                     filteredMoves.map((move, index) => {
-                        const isAvailable = move.available !== false;
-                        const reason = move.reason || '';
+                        // Not `move.available !== false`: a targeted move can
+                        // arrive advertised as available with nothing actually
+                        // in reach, and casting it only earns a server refusal
+                        // (issue #554) — see moveAvailability.
+                        const { available: isAvailable, reason } = moveAvailability(move);
                         const moveKey = move.name || move.display_name;
                         const isHovered = hoveredMoveName === moveKey;
+                        // Referenced by the button so the reason is exposed
+                        // with it, not only in a title tooltip a touch device
+                        // can never show (issue #565).
+                        const reasonId = `${reasonIdBase}-reason-${index}`;
 
                         // Single target detection for hover effect
                         const firstTarget = move.viable_targets?.[0];
@@ -210,6 +297,8 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                         return (
                           <div
                             key={moveKey}
+                            data-testid="move-card"
+                            data-available={isAvailable ? 'true' : 'false'}
                             onMouseEnter={() => {
                                 if (isAvailable) {
                                     setHoveredMoveName(moveKey);
@@ -226,14 +315,19 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                             }}
                             style={{
                                 backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-                                border: `1px solid ${isHovered ? colors.secondary : colors.border.light}`,
+                                // Dashed, desaturated and dimmed: three cues
+                                // that survive a colour-blind or greyscale
+                                // reading of the card, on top of the LOCKED
+                                // chip below (issue #565).
+                                border: `1px ${isAvailable ? 'solid' : 'dashed'} ${isHovered ? colors.secondary : colors.border.light}`,
                                 borderRadius: '4px',
                                 padding: 0,
                                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: spacing.xs,
-                                opacity: isAvailable ? 1 : 0.6,
+                                opacity: isAvailable ? 1 : 0.55,
+                                filter: isAvailable ? 'none' : 'grayscale(0.5)',
                                 boxShadow: isHovered ? shadows.glow : 'none',
                                 width: '100%',
                             }}
@@ -248,6 +342,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                 }}
                                 disabled={!isAvailable || isProcessing}
                                 title={!isAvailable ? reason : ''}
+                                aria-describedby={!isAvailable && reason ? reasonId : undefined}
                                 style={{
                                     background: 'none',
                                     border: 'none',
@@ -268,11 +363,23 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                     >
                                         {displayNameOf(move)}
                                     </GameText>
-                                    {move.fatigue_cost > 0 && (
-                                        <GameText variant="muted" size="xs">
-                                            Fatigue: {move.fatigue_cost}
-                                        </GameText>
-                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, flexShrink: 0 }}>
+                                        {/* A word and a glyph, not just the
+                                            dimming: "state is never conveyed
+                                            by colour alone". It sits inside
+                                            the button so the card's accessible
+                                            name carries it too. */}
+                                        {!isAvailable && (
+                                            <GameText variant="dim" size="xs" weight="bold" style={{ letterSpacing: '0.05em' }}>
+                                                ⛔ LOCKED
+                                            </GameText>
+                                        )}
+                                        {move.fatigue_cost > 0 && (
+                                            <GameText variant="muted" size="xs">
+                                                Fatigue: {move.fatigue_cost}
+                                            </GameText>
+                                        )}
+                                    </div>
                                 </div>
                                 <MoveCommitmentBar move={move} maxTotal={maxCommitmentBeats} />
                                 <GameText variant={isAvailable ? 'muted' : 'dim'} size="sm">
@@ -281,6 +388,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                             </button>
                             {!isAvailable && reason && (
                                 <GlossaryText
+                                    id={reasonId}
                                     text={`⚠ ${reason}`}
                                     style={{
                                         color: colors.text.danger,

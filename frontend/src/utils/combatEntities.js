@@ -5,6 +5,7 @@
  * Battlefield and BattlefieldGrid can import them without either one's tests
  * having to reach through a `vi.mock` of the other.
  */
+import { colors } from '../styles/theme';
 
 /**
  * True when the combatant is alive, or carries no HP information at all.
@@ -39,4 +40,62 @@ export const isLiving = (entity) => {
   if (!entity) return false;
   const hp = entity.hp ?? entity.health?.current;
   return hp == null || hp > 0;
+};
+
+/**
+ * Whether a serialized entity means Jean harm — `true`, `false`, or `null`
+ * when the payload does not say.
+ *
+ * Two wire spellings, because the two payloads that carry this were built
+ * independently and neither is going to be renamed:
+ *
+ * - `/api/world` room NPCs carry `is_hostile`, derived server-side from the
+ *   NPC's `aggro`/`friend` attributes (`NPCSerializer.serialize`,
+ *   src/api/serializers/npc_serializer.py). Absent for anything with no
+ *   `aggro` attribute at all.
+ * - Combat target cards carry `is_ally` instead, set on every card by
+ *   `ApiCombatAdapter._build_target_entry` (src/api/combat_adapter.py): true
+ *   for the ally branch of `_candidate_targets`, false for everything drawn
+ *   from `player.combat_list`.
+ *
+ * `null` rather than a default, and it matters: rendering "not hostile" off a
+ * field that was never sent is how a hostile ends up wearing a friendly badge.
+ * Callers show no token at all for `null`.
+ */
+export const isHostileEntity = (entity) => {
+  if (!entity) return null;
+  if (typeof entity.is_hostile === 'boolean') return entity.is_hostile;
+  if (typeof entity.is_ally === 'boolean') return !entity.is_ally;
+  return null;
+};
+
+/**
+ * The one hostility vocabulary, shared so the room panel, the target picker
+ * and the battlefield cannot describe the same combatant three ways.
+ *
+ * Each token carries a glyph AND a word as well as a colour: state is never
+ * conveyed by colour alone, and this particular state is the one that decides
+ * whether the player swings at their own ally. `red enemy / lime friendly`
+ * matches the convention BattlefieldGrid's tokens already use.
+ */
+export const HOSTILITY_TOKENS = {
+  hostile: {
+    glyph: '⚔️',
+    label: 'HOSTILE',
+    color: colors.danger,
+    tint: colors.alpha.danger[10],
+  },
+  ally: {
+    glyph: '🛡️',
+    label: 'ALLY',
+    color: colors.primary,
+    tint: colors.alpha.primary[10],
+  },
+};
+
+/** The token for an entity, or null when the payload carries no hostility. */
+export const hostilityTokenFor = (entity) => {
+  const hostile = isHostileEntity(entity);
+  if (hostile === null) return null;
+  return hostile ? HOSTILITY_TOKENS.hostile : HOSTILITY_TOKENS.ally;
 };
