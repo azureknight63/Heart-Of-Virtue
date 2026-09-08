@@ -387,7 +387,12 @@ MOVE_CONTRACT = {
     # "Available in 5 beats" would leave this contract green while silently
     # removing the explainer -- tests/test_combat_glossary_contract.py runs the
     # real reason strings against the glossary's own patterns to catch that.
-    "reason": Read("CombatMovePanel.jsx", "move.reason"),
+    # The read moved out of the component in the #554 fix: the panel now asks
+    # moveAvailability(move) instead of reading move.available/move.reason
+    # itself, so the wire field is consumed one layer down. Anchored on the
+    # literal dereference rather than on "reason", which would also match the
+    # function's own return shape and could therefore never fail.
+    "reason": Read("combatMoveStatus.js", "move.reason"),
     "fatigue_cost": Read("CombatMovePanel.jsx", "move.fatigue_cost"),
     "targeted": Read("CombatMovePanel.jsx", "move.targeted"),
     "viable_targets": Read("CombatMovePanel.jsx", "move.viable_targets"),
