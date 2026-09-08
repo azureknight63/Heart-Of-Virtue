@@ -2533,7 +2533,7 @@
                 "__class__": "HealingSpring",
                 "__module__": "objects",
                 "props": {
-                    "name": "HealingSpring",
+                    "name": "Healing Spring",
                     "description": "A burbling spring with fresh smelling water. It is clean and very inviting.",
                     "idle_message": "There is a small spring bubbling here.",
                     "keywords": [

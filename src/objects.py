@@ -713,7 +713,10 @@ class HealingSpring(Object):
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
         super().__init__(
-            name="HealingSpring",
+            # Issue #565: `name` is what the player reads in where()["objects"]
+            # and in the INTERACT dialog, so it must be prose. This used to be
+            # the bare class name, which leaked "HealingSpring" into both.
+            name="Healing Spring",
             description=description,
             idle_message="There is a small spring bubbling here.",
             discovery_message=" a healing spring!",

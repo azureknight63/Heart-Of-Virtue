@@ -129,7 +129,7 @@
         "__class__": "HealingSpring",
         "__module__": "objects",
         "props": {
-          "name": "HealingSpring",
+          "name": "Sacred Spring",
           "description": "One of the spring-fed pools that forms the heart of the Grondelith complex. The water is impossibly clear and cool - it smells of minerals and something older. Drinking from it restores Jean's health.",
           "idle_message": "One of the atrium's sacred springs burbles quietly here.",
           "hidden": false,
