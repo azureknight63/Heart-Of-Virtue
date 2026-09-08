@@ -233,7 +233,7 @@ class TestTileModificationRoundTrip:
         session_data = {}
 
         gs.store_tile_modification(session_data, tile.x, tile.y, "block_exit",
-                                   {"north": True})
+                                   {"north": True}, map_name=tile.map.get("name"))
         gs.apply_tile_modifications(tile, session_data)
 
         assert tile.block_exit == {"north": True}
@@ -247,7 +247,7 @@ class TestTileModificationRoundTrip:
 
         gs.apply_tile_modifications(tile, session_data)
 
-        assert session_data["tile_modifications"]["0,0"]["objects_baseline"] == [
+        assert session_data["tile_modifications"]["gs-test-map:0,0"]["objects_baseline"] == [
             "Crate"
         ]
 
@@ -259,7 +259,8 @@ class TestTileModificationRoundTrip:
         session_data = {}
         gs.apply_tile_modifications(tile, session_data)  # baseline
 
-        gs.store_tile_modification(session_data, 0, 0, "objects_removed", ["Crate"])
+        gs.store_tile_modification(session_data, 0, 0, "objects_removed", ["Crate"],
+                                   map_name=tile.map.get("name"))
         gs.apply_tile_modifications(tile, session_data)
         assert tile.objects_here == []
 
@@ -275,7 +276,8 @@ class TestTileModificationRoundTrip:
         session_data = {}
         gs.apply_tile_modifications(tile, session_data)
 
-        gs.store_tile_modification(session_data, 0, 0, "objects_removed", ["Crate"])
+        gs.store_tile_modification(session_data, 0, 0, "objects_removed", ["Crate"],
+                                   map_name=tile.map.get("name"))
         spawned = objects.Object("Barrel", "A barrel.", tile=tile, player=player)
         tile.objects_here.append(spawned)
 
@@ -290,7 +292,7 @@ class TestTileModificationRoundTrip:
         comparison below pins that, since a real tile *does* get a baseline
         stamped into the same session_data.
         """
-        session_data = {"tile_modifications": {"0,0": {"block_exit": ["north"]}}}
+        session_data = {"tile_modifications": {"gs-test-map:0,0": {"block_exit": ["north"]}}}
         untouched = copy.deepcopy(session_data)
 
         gs.apply_tile_modifications(None, session_data)
@@ -303,7 +305,7 @@ class TestTileModificationRoundTrip:
             objects.Object("Crate", "A crate.", tile=tile, player=player)
         )
         gs.apply_tile_modifications(tile, session_data)
-        assert session_data["tile_modifications"]["0,0"]["objects_baseline"] == ["Crate"]
+        assert session_data["tile_modifications"]["gs-test-map:0,0"]["objects_baseline"] == ["Crate"]
         assert tile.block_exit == ["north"]
 
     def test_apply_tile_modifications_ignores_another_tiles_entry(self, gs, player):

@@ -24,6 +24,7 @@ import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 import { TAB_KEYS } from '../utils/mobileTabs'
 import { redirectToLogin } from '../utils/session'
+import { autosaveErrorMessage } from '../utils/apiError'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -54,7 +55,10 @@ export default function GamePage() {
     { onActionRefused: handleCombatActionRefused }
   )
   const { triggerTick } = useAutosave({
-    onSaveError: () => showError('Failed to save your progress. Check your connection.')
+    // A 403 (test/guest session refusing to persist) is not a network
+    // failure and shouldn't be reported as one — see autosaveErrorMessage
+    // (#540 item 12).
+    onSaveError: (err) => showError(autosaveErrorMessage(err))
   })
 
   // Engine-driven combat streaming (issue #436). Off by default. When the
@@ -130,6 +134,7 @@ export default function GamePage() {
     endState,
     lastEndStateId,
     endStatePendingRef,
+    isResolvingCombatEnd,
     isCombatLogProcessing,
     currentLogIndex,
     hoveredTargetId,
@@ -769,6 +774,7 @@ export default function GamePage() {
         showDefeatDialog={showDefeatDialog}
         showLootDialog={showLootDialog}
         showPreVictoryNarrative={showPreVictoryNarrative}
+        isResolvingCombatEnd={isResolvingCombatEnd}
         endState={endState}
         playerWeight={player?.weight_current ?? 0}
         weightLimit={player?.carrying_capacity ?? 100}

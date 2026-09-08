@@ -6,6 +6,22 @@ Combat states to be used within combat module. May also spill over to the standa
 from typing import Optional
 
 
+def map_name_for_tile(tile) -> Optional[str]:
+    """Return the map name ``tile`` belongs to, or ``None`` if unknown.
+
+    Every real ``MapTile`` sets ``self.map`` to the same dict its owning map's
+    tiles all share (``src/tiles.py``, ``src/universe.py``). The single place
+    this derivation should live — used by ``tile_identity`` below,
+    ``GameService._map_name_for_tile`` (which namespaces persisted tile-state
+    keys, issue #528), and story-event arrival guards (e.g.
+    ``GorranGestureEvent``, issue #547) that need to know which map a
+    ``previous_tile`` belonged to. It used to be reimplemented independently
+    at all three call sites.
+    """
+    tile_map = getattr(tile, "map", None)
+    return tile_map.get("name") if isinstance(tile_map, dict) else None
+
+
 def tile_identity(tile):
     """Stable ``(map name, x, y)`` identity for a tile, or ``None`` if unknown.
 
@@ -25,9 +41,7 @@ def tile_identity(tile):
     y = getattr(tile, "y", None)
     if not isinstance(x, int) or not isinstance(y, int):
         return None
-    tile_map = getattr(tile, "map", None)
-    map_name = tile_map.get("name") if isinstance(tile_map, dict) else None
-    return (map_name, x, y)
+    return (map_name_for_tile(tile), x, y)
 
 
 def purge_orphaned_combat_events(player, current_tile=None):

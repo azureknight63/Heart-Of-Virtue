@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
-import { colors, spacing } from '../styles/theme'
+import { colors, spacing, accessibility } from '../styles/theme'
+import { useMobile } from '../hooks/useMobile'
 
 // A dialog's nearest enclosing BaseDialog (if any) is reached through this
 // context, so a dialog rendered inside another one's children — e.g.
@@ -292,6 +293,7 @@ export default function BaseDialog({
     const dialogId = useId()
     const titleId = `${dialogId}-title`
     const containerRef = useRef(null)
+    const isMobile = useMobile()
     const onCloseRef = useRef(onClose)
     useEffect(() => {
         onCloseRef.current = onClose
@@ -407,7 +409,20 @@ export default function BaseDialog({
                                     fontSize: '22px',
                                     marginLeft: spacing.sm,
                                     padding: '4px',
-                                    transition: 'color 0.2s'
+                                    transition: 'color 0.2s',
+                                    // issue #542: measured ~26x41px on a 375px
+                                    // viewport — every dialog in the app shares
+                                    // this button, so it's the highest-leverage
+                                    // touch-target fix in the codebase. Scoped to
+                                    // mobile since the desktop glyph-plus-padding
+                                    // size isn't reported as broken.
+                                    ...(isMobile ? {
+                                        minWidth: accessibility.touchTarget,
+                                        minHeight: accessibility.touchTarget,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                    } : {}),
                                 }}
                                 onMouseEnter={(e) => e.target.style.color = colors.text.highlight}
                                 onMouseLeave={(e) => e.target.style.color = colors.text.muted}

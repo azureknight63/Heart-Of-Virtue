@@ -453,4 +453,33 @@ describe('GamePage', () => {
             expect(screen.getByText('A Slime glares sharply at Jean!')).toBeDefined();
         });
     });
+
+    describe('autosave failure reporting (#540 item 12)', () => {
+        it('reports a 403 as a session that cannot save, not a connection problem', () => {
+            const showError = vi.fn();
+            useToast.mockReturnValue({ error: showError, success: vi.fn(), info: vi.fn() });
+
+            renderGamePage();
+
+            const { onSaveError } = useAutosave.mock.calls.at(-1)[0];
+            onSaveError({ response: { status: 403 } });
+
+            expect(showError).toHaveBeenCalledTimes(1);
+            const message = showError.mock.calls[0][0];
+            expect(message).not.toMatch(/connection/i);
+            expect(message).toMatch(/session/i);
+        });
+
+        it('keeps the network-flavored message for an actual transport failure', () => {
+            const showError = vi.fn();
+            useToast.mockReturnValue({ error: showError, success: vi.fn(), info: vi.fn() });
+
+            renderGamePage();
+
+            const { onSaveError } = useAutosave.mock.calls.at(-1)[0];
+            onSaveError(new Error('Network Error'));
+
+            expect(showError).toHaveBeenCalledWith('Failed to save your progress. Check your connection.');
+        });
+    });
 });

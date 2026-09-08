@@ -6,6 +6,7 @@ import { ItemStatGrid, ItemSection } from './ItemStatGrid'
 import { formatWeight } from '../utils/itemUtils'
 import { apiErrorMessage } from '../utils/apiError'
 import { lookupOr } from '../utils/lookup'
+import { getHpBarColor } from '../utils/entityUtils'
 
 // Display labels for the scalar stat-bonus keys the backend emits (see
 // inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
@@ -975,7 +976,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                           const projectedMin = Math.min(max, current + minHeal)
                           const projectedMax = Math.min(max, current + maxHeal)
                           const willFull = current + minHeal >= max
-                          const barColor = isHp ? (currentPct > 50 ? '#44ff88' : currentPct > 25 ? '#ffaa00' : '#ff4444') : '#00ccff'
+                          const barColor = isHp ? getHpBarColor(current, max) : '#00ccff'
                           const gainColor = '#00ff88'
                           // Neutral white rather than cyan: cyan is already the FAT bar/label
                           // color (see the "FAT" span below), so a cyan projected-total would
@@ -1014,7 +1015,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '10px', color: '#ff6666', fontFamily: 'monospace', minWidth: '28px' }}>HP</span>
                             <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
-                              <div style={{ width: `${hpPct}%`, height: '100%', backgroundColor: hpPct > 50 ? '#44ff88' : hpPct > 25 ? '#ffaa00' : '#ff4444', borderRadius: '2px' }} />
+                              <div style={{ width: `${hpPct}%`, height: '100%', backgroundColor: getHpBarColor(member.hp || 0, member.max_hp || 100), borderRadius: '2px' }} />
                             </div>
                             <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{member.hp}/{member.max_hp}</span>
                           </div>

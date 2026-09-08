@@ -48,8 +48,9 @@ describe('SuggestedMovesPanel', () => {
         // file can assert on content without advancing any timer.
         expect(screen.getByText('NO TACTICAL ADVANTAGE IDENTIFIED').textContent)
             .toBe('NO TACTICAL ADVANTAGE IDENTIFIED');
-        expect(screen.getByText('NEURAL TACTICAL ENGINE ACTIVE').textContent)
-            .toBe('NEURAL TACTICAL ENGINE ACTIVE');
+        // Issue #534 bug 3: "NEURAL TACTICAL ENGINE ACTIVE" was dev branding
+        // left in a player-facing panel, unconditional on any real state.
+        expect(screen.queryByText('NEURAL TACTICAL ENGINE ACTIVE')).toBeNull();
     });
 
     it('fades the panel in on the 500ms reveal timer, not before', () => {
@@ -184,9 +185,8 @@ describe('SuggestedMovesPanel', () => {
 
             expect(onPause).toHaveBeenCalledWith(true);
             expect(localStorage.getItem('hov_tactical_advisor_collapsed')).toBe('true');
-            // Body, footer and analysis all collapse; only the header survives.
+            // Body and analysis all collapse; only the header survives.
             expect(screen.queryByText('Slash')).toBeNull();
-            expect(screen.queryByText('NEURAL TACTICAL ENGINE ACTIVE')).toBeNull();
             expect(screen.getByText('TACTICAL ADVISOR').textContent).toBe('TACTICAL ADVISOR');
             // ...and the chevron flips to "expand".
             expect(screen.getByText('▼').textContent).toBe('▼');
@@ -246,10 +246,9 @@ describe('SuggestedMovesPanel', () => {
             localStorage.setItem('hov_tactical_advisor_collapsed', 'true');
             const { container } = render(<SuggestedMovesPanel isPlayerTurn={true} suggestions={mockSuggestions} isMobile={true} />);
             // The compact strip is a single row: header text + tip count, and
-            // none of the full panel's body/footer.
+            // none of the full panel's body.
             expect(screen.getByText('2 tips').textContent).toBe('2 tips');
             expect(screen.queryByText('Slash')).toBeNull();
-            expect(screen.queryByText('NEURAL TACTICAL ENGINE ACTIVE')).toBeNull();
             expect(container.firstChild.style.padding).toBe('7px 10px');
         });
 
@@ -298,8 +297,6 @@ describe('SuggestedMovesPanel', () => {
             try {
                 render(<SuggestedMovesPanel isPlayerTurn={true} suggestions={mockSuggestions} />);
                 expect(screen.getByText('Slash').textContent).toBe('Slash');
-                expect(screen.getByText('NEURAL TACTICAL ENGINE ACTIVE').textContent)
-                    .toBe('NEURAL TACTICAL ENGINE ACTIVE');
             } finally {
                 window.localStorage.getItem = original;
             }

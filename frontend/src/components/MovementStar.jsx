@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAudio } from '../context/AudioContext'
+import { accessibility } from '../styles/theme'
 
 const isDirectionValid = (exits, direction) => exits && exits.includes(direction)
 
@@ -8,14 +9,21 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
   const { playSFX } = useAudio()
 
   // Direction configuration with positions for proper 8-point star layout
-  // Container is 220x220px, button is 40x40px
+  // Container is 220x120px, button is 44x44px (accessibility.touchTarget,
+  // the single source of truth for the value now — issue #542/#536: was
+  // 40x40px, below the project's 44px minimum touch target on every
+  // viewport, not just mobile). The perpendicular-axis centering offsets
+  // (the "- 20px" halves of a 40px button) are now "- 22px" (half of 44px)
+  // so each button's true center still lands on its intended star point;
+  // the axial distance offsets (-65px / +25px) are a separate, unrelated
+  // layout choice shared with the diagonals and don't scale with button size.
   // Calculations center button around the star using calc()
   const directions = [
     // Cardinal directions (distance: 80px from center, accounting for 40px button size)
-    { key: 'north', label: '↑', top: 'calc(50% - 65px)', left: 'calc(50% - 20px)', transform: 'translate(0, 0)', ariaLabel: 'Move North' },
-    { key: 'east', label: '→', top: 'calc(50% - 20px)', left: 'calc(50% + 25px)', transform: 'translate(0, 0)', ariaLabel: 'Move East' },
-    { key: 'south', label: '↓', top: 'calc(50% + 25px)', left: 'calc(50% - 20px)', transform: 'translate(0, 0)', ariaLabel: 'Move South' },
-    { key: 'west', label: '←', top: 'calc(50% - 20px)', left: 'calc(50% - 65px)', transform: 'translate(0, 0)', ariaLabel: 'Move West' },
+    { key: 'north', label: '↑', top: 'calc(50% - 65px)', left: 'calc(50% - 22px)', transform: 'translate(0, 0)', ariaLabel: 'Move North' },
+    { key: 'east', label: '→', top: 'calc(50% - 22px)', left: 'calc(50% + 25px)', transform: 'translate(0, 0)', ariaLabel: 'Move East' },
+    { key: 'south', label: '↓', top: 'calc(50% + 25px)', left: 'calc(50% - 22px)', transform: 'translate(0, 0)', ariaLabel: 'Move South' },
+    { key: 'west', label: '←', top: 'calc(50% - 22px)', left: 'calc(50% - 65px)', transform: 'translate(0, 0)', ariaLabel: 'Move West' },
     // Diagonal directions (distance: ~57px at 45 degrees)
     { key: 'northeast', label: '↗', top: 'calc(50% - 65px)', left: 'calc(50% + 25px)', transform: 'translate(0, 0)', ariaLabel: 'Move Northeast' },
     { key: 'northwest', label: '↖', top: 'calc(50% - 65px)', left: 'calc(50% - 65px)', transform: 'translate(0, 0)', ariaLabel: 'Move Northwest' },
@@ -80,6 +88,11 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
           return (
             <button
               key={key}
+              // issue #536 item 3: shares GameButton's "game-btn" class purely
+              // to pick up index.css's .game-btn:focus-visible ring — this
+              // component keeps its own bespoke inline styling otherwise, so
+              // the class contributes no other rule.
+              className="game-btn"
               aria-label={ariaLabel}
               onClick={() => handleMove(key)}
               onMouseEnter={() => !loading && isValid && setHoveredDirection(key)}
@@ -90,8 +103,8 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
                 top,
                 left,
                 transform,
-                width: '40px',
-                height: '40px',
+                width: accessibility.touchTarget,
+                height: accessibility.touchTarget,
                 borderRadius: '4px',
                 border: `2px solid ${isValid ? '#00ff88' : '#666666'}`,
                 backgroundColor: isValid

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import ItemDetailDialog from './ItemDetailDialog'
 import BaseDialog from './BaseDialog'
+import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { lookupOr } from '../utils/lookup'
@@ -313,30 +314,12 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                   Tip: Left-click on an item to see details.
                 </div>
 
-                <button
-                  onClick={onClose}
-                  style={{
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${colors.border.main}`,
-                    color: colors.text.main,
-                    padding: '6px 20px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontFamily: 'monospace',
-                    fontSize: '13px',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
-                    e.target.style.borderColor = colors.primary
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-                    e.target.style.borderColor = colors.border.main
-                  }}
-                >
+                {/* Uppercase lime/orange GameButton, matching every other
+                    dialog's convention — this was rendering sentence-case
+                    grey (#540 item 4). */}
+                <GameButton onClick={onClose} variant="secondary" size="small">
                   Close
-                </button>
+                </GameButton>
               </div>
             </>
           )}
@@ -407,9 +390,17 @@ function ItemCard({ item, onClick, isShop }) {
         fontSize: '13px',
         fontWeight: 'bold',
         color: rarityColor,
-        whiteSpace: 'nowrap',
+        // Wrap onto up to 2 lines instead of truncating a single line — the
+        // card grid has room, and a name like "Sharp Shortsword" was cut off
+        // in an otherwise mostly-empty list (#540 item 4). Still clamps (with
+        // an ellipsis) past 2 lines so a pathological name can't blow out the
+        // card height.
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
-        textOverflow: 'ellipsis'
+        textOverflow: 'ellipsis',
+        wordBreak: 'break-word',
       }}>
         {item.name}
       </div>

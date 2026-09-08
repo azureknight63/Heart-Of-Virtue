@@ -32,8 +32,27 @@ function VitalBar({
   testId,
 }) {
   const isLeft = side === 'left'
+  // issue #536 item 1: this bar rendered as a bare, unlabeled capsule — no
+  // text, no title, no aria-label, no role. A screen reader had nothing to
+  // read, and a sighted player had to hover/click/touch it (see `active`
+  // below) just to learn the number. role="progressbar" plus aria-valuenow/
+  // min/max exposes the live value directly; the label/title give every
+  // player (not just assistive tech) an always-available accessible name,
+  // independent of the pinned tooltip.
+  // Coerce once: `current`/`max` come straight off the wire, and while a
+  // guard upstream handles null/undefined, it doesn't guarantee a number —
+  // a malformed payload calling .toFixed() directly would crash the whole
+  // HUD render rather than just this bar's tooltip.
+  const currentValue = Number(current) || 0
+  const accessibleLabel = `${label}: ${currentValue.toFixed(0)} / ${max}`
   return (
     <div
+      role="progressbar"
+      aria-valuenow={currentValue.toFixed(0)}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-label={accessibleLabel}
+      title={accessibleLabel}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
       onClick={onToggle}
@@ -86,7 +105,7 @@ function VitalBar({
           boxShadow: `0 0 8px ${color}99`,
           zIndex: 20,
         }}>
-          {label}<br />{current.toFixed(0)}/{max}
+          {label}<br />{currentValue.toFixed(0)}/{max}
         </div>
       )}
     </div>
@@ -97,6 +116,7 @@ function HeroPanel({
   player,
   isMobile,
   inCombat,
+  heroScale = 1,
   hasSpecialMoves,
   hasDefensiveMoves,
   hasOffensiveMoves,
@@ -161,6 +181,23 @@ function HeroPanel({
   ]
 
   const buttons = inCombat ? combatButtons.filter(btn => btn.show !== false) : explorationButtons
+
+  // Mobile touch-target compensation (issue #542).
+  //
+  // LeftPanel wraps this whole component in `transform: scale(heroScale)` so
+  // the radial layout fits whatever room a tight mobile combat screen leaves
+  // it (see useHeroAutoScale) — CombatLog/HeatMeter/SuggestedMovesPanel can
+  // squeeze that container well below its 360x310 base size. That ancestor
+  // scale shrinks these buttons' EFFECTIVE on-screen size right along with
+  // the portrait, even though their own CSS already declares the 44px
+  // minimum (`accessibility.touchTarget` below): a real QA pass measured
+  // 40x25px rendered buttons at heroScale ~0.57 (70*0.57≈40, 44*0.57≈25).
+  // Counter-scaling each button by 1/heroScale cancels the ancestor's shrink
+  // for just these interactive elements, restoring the declared 44px+ target
+  // regardless of how small the portrait itself has to get. A no-op on
+  // desktop (isMobile is false there) and a no-op whenever the panel isn't
+  // actually shrunk (heroScale >= 1), so neither is affected.
+  const touchCompensation = (isMobile && heroScale > 0 && heroScale < 1) ? 1 / heroScale : 1
 
   return (
     <div style={{
@@ -288,11 +325,20 @@ function HeroPanel({
           testId="fatigue-bar"
         />
 
-        {/* Surrounding Buttons */}
+        {/* Surrounding Buttons — issue #536 item 3: the app had zero <nav>
+            landmarks anywhere. This radial ring IS the primary in-game
+            navigation between panels/move categories, so it gets one.
+            display:'contents' means the <nav> contributes no box of its own,
+            so every button's `position: absolute` still resolves against
+            this Hero Head Container exactly as before. */}
+        <nav aria-label="Game actions" style={{ display: 'contents' }}>
         {buttons.map(({ key, label, top, left, transform, onClick, color }) => {
           const isHovered = hoveredButton === key
           const baseColor = color || colors.primary
           const hoverColor = color || '#00ffaa'
+          const buttonTransform = touchCompensation !== 1
+            ? `${transform} scale(${touchCompensation})`
+            : transform
 
           return (
             <button
@@ -304,7 +350,7 @@ function HeroPanel({
                 position: 'absolute',
                 top,
                 left,
-                transform,
+                transform: buttonTransform,
                 width: '70px',
                 height: accessibility.touchTarget,
                 minHeight: accessibility.touchTarget,
@@ -336,6 +382,7 @@ function HeroPanel({
             </button>
           )
         })}
+        </nav>
       </div>
 
       {/* Mobile-only: passives + status icons as a compact inline row */}

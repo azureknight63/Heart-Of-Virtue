@@ -2,7 +2,7 @@
 Chapter 03 events
 """
 
-from src.events import Event
+from src.events import Event, map_name_for_tile
 from src.functions import print_slow
 from src.narration import (
     narrate,
@@ -28,6 +28,10 @@ _JEAN_GORRAN_LISS = [
     ("Liss", "right", "neutral"),
 ]
 
+# The map (or map-family prefix) previous_tile must belong to for
+# GorranGestureEvent to fire — see check_conditions (#547).
+_GRONDIA_MAP_PREFIX = "grondia"
+
 
 class GorranGestureEvent(Event):
     """
@@ -35,8 +39,10 @@ class GorranGestureEvent(Event):
     Gorran pauses to place his palm against the sealed gate — a moment of farewell,
     or acknowledgment, or something Jean cannot name.
     This is Gorran's first step into the world beyond the stone city.
-    Event fires once on first entry to the tile (any time the player arrives
-    here from another tile), then sets gorran_gesture_done so it won't repeat.
+    Event fires once on first entry to the tile, but only when the player
+    arrived from a Grondia tile (#547) — a previous_tile from any other map
+    does not count, since the scene is specifically this farewell, not a
+    generic "just arrived" beat. Sets gorran_gesture_done so it won't repeat.
     """
 
     def __init__(self, player, tile, params=None, repeat=False, name="GorranGesture"):
@@ -52,6 +58,23 @@ class GorranGestureEvent(Event):
             return
         prev = getattr(self.player, "previous_tile", None)
         if prev is None:
+            return
+        # A non-None previous_tile is not enough on its own (#547): the
+        # scene is specifically Jean and Gorran's farewell to Grondia, so
+        # previous_tile must actually be a Grondia tile, not just whatever
+        # tile the player happened to leave last. previous_tile is set in
+        # exactly one place in the whole engine (GameService.move_player)
+        # and is never cleared between maps or by Player.teleport(), so
+        # once any move has happened this session it holds *some* tile
+        # forever -- and because this event is one-shot, a single
+        # incidental false-positive fire (e.g. a previous_tile left over
+        # from wandering the destination map itself) would permanently
+        # consume gorran_gesture_done and silently hide the real scene.
+        prev_map_name = map_name_for_tile(prev)
+        if not prev_map_name or not (
+            prev_map_name == _GRONDIA_MAP_PREFIX
+            or prev_map_name.startswith(_GRONDIA_MAP_PREFIX + "-")
+        ):
             return
         self.pass_conditions_to_process()
 
@@ -533,7 +556,7 @@ class DevetIntroEvent(Event):
             time.sleep(1)
 
             print_slow(
-                "Gorran stood where Jean had left him, still. Gradually, he rumbled and sat on the ground while Jean ate."
+                "Gorran stood where Jean had left him, still. Gradually, he rumbled and sat on the ground while Jean ate. "
                 "His presence had settled into the campfire's edge the way large stones settle: without effort, without apology."
             )
             time.sleep(1)
@@ -888,11 +911,6 @@ class IronAndOathIntroEvent(Event):
             say("I'm alright, love.", "Vespera", "sad")
             time.sleep(1)
             react("Kaelen", "concerned")
-            print_slow(
-                "Kaelen noticed her shift instantly. He set the fallen spear down, stepped over, and quietly "
-                "rested a warm, soot-stained hand on the small of her back."
-            )
-            time.sleep(1)
             say(
                 "Right then. As I was saying — Vespera fits the harness, I balance the blade. "
                 "Nobody leaves our counter with gear that fails 'em.",

@@ -72,6 +72,15 @@ describe('FeedbackDialog', () => {
     }
   );
 
+  describe('Touch target / iOS zoom prevention (issue #542)', () => {
+    it('renders the TITLE input at 16px so iOS does not zoom the page on focus', () => {
+      render(<FeedbackDialog onClose={mockOnClose} />);
+      const titleInput = screen.getByPlaceholderText(/Short description of the bug/i);
+      expect(titleInput).toBeInstanceOf(HTMLInputElement);
+      expect(titleInput.style.fontSize).toBe('16px');
+    });
+  });
+
   describe('Tab Navigation', () => {
     it('renders all three tabs as buttons', () => {
       render(<FeedbackDialog onClose={mockOnClose} />);
@@ -285,10 +294,39 @@ describe('FeedbackDialog', () => {
   describe('submitting feedback', () => {
     it('shows a validation error and does not submit when the title is empty', () => {
       render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+      const titleField = screen.getByPlaceholderText(/Short description of the bug/i);
       fireEvent.click(screen.getByText('Submit Feedback'));
 
       expect(mockToastError).toHaveBeenCalledWith('Please enter a title for your feedback.');
       expect(feedbackApi.submitIssue).not.toHaveBeenCalled();
+    });
+
+    it('puts the error ON the Title field (border, focus, aria-invalid), not just in a distant toast (#540 item 11)', () => {
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+      const titleField = screen.getByPlaceholderText(/Short description of the bug/i);
+      fireEvent.click(screen.getByText('Submit Feedback'));
+
+      expect(titleField.style.borderColor).toBe(hexToRgb(colors.danger));
+      expect(titleField.getAttribute('aria-invalid')).toBe('true');
+      expect(document.activeElement).toBe(titleField);
+    });
+
+    it('marks the Title field required (aria-required + a visible asterisk) before the player ever submits', () => {
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+      const titleField = screen.getByPlaceholderText(/Short description of the bug/i);
+
+      expect(titleField.getAttribute('aria-required')).toBe('true');
+      expect(screen.getByText('Title').textContent).toContain('*');
+    });
+
+    it('clears the field-level error once the player starts typing a title', () => {
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+      const titleField = screen.getByPlaceholderText(/Short description of the bug/i);
+      fireEvent.click(screen.getByText('Submit Feedback'));
+      expect(titleField.style.borderColor).toBe(hexToRgb(colors.danger));
+
+      fireEvent.change(titleField, { target: { value: 'A' } });
+      expect(titleField.style.borderColor).not.toBe(hexToRgb(colors.danger));
     });
 
     it('submits bug feedback successfully and closes the dialog', async () => {

@@ -491,6 +491,19 @@ input, select, textarea {
   box-shadow: inset 0 0 4px rgba(0, 255, 136, 0.5);
 }
 
+/* issue #536 item 3: keyboard-focus ring for game controls. Before this, the
+   whole stylesheet had three :focus rules total, none targeting an actual
+   game control — tabbing to e.g. the Account button rendered only the
+   browser's default outline. Reuses .input-field:focus's own colors
+   (#00ffaa / rgba(0, 255, 136, ...)) rather than inventing new ones.
+   .game-btn is GameButton's own class, and is also applied directly to
+   MovementStar's d-pad buttons (the other control the issue names). */
+.game-btn:focus-visible {
+  outline: 2px solid #00ffaa;
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+}
+
 /* Status indicators */
 .status-badge {
   display: inline-block;
@@ -910,5 +923,23 @@ body.damage-flash-active::before {
   text-transform: uppercase;
   animation: memory-flash-rise 0.6s ease-out both, memory-flash-glow 2.6s ease-in-out infinite 0.6s;
   user-select: none;
+}
+
+/*
+ * Settings dialog's "Reduced motion" toggle (#540 item 15). App.jsx mirrors
+ * the `reducedMotion` feature flag onto this class on <html> so it applies
+ * everywhere, not just while Settings is open. `!important` because this is
+ * meant to override every component's own inline transition/animation
+ * declaration — most of this app's motion is authored as inline styles
+ * (styles/theme.js), which this stylesheet cannot otherwise out-rank.
+ */
+.reduced-motion,
+.reduced-motion * {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
 }
 

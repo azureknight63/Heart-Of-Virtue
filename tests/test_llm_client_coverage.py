@@ -1613,6 +1613,31 @@ class TestOpenrouterChatSingle:
         assert result is None
         mock_post.assert_not_called()
 
+    def test_sdk_404_is_logged_at_warning_not_debug(self, monkeypatch, caplog):
+        """Issue #533: a configured model that 404s (or 401/402s) is a
+        misconfiguration, not routine noise -- WARNING is default-visible and
+        LOG_FILE-persisted, DEBUG is neither, so a dead model used to degrade
+        every chat turn with nothing in a normal log to explain it. 403 stays
+        at DEBUG on purpose (a per-request refusal, not proof the model is
+        dead) -- this test only exercises 404, see the 401/402 coverage
+        elsewhere in this class for the rest of _PERMANENT_MODEL_FAILURES."""
+        client = self._client(monkeypatch)
+
+        class FakeNotFoundError(Exception):
+            status_code = 404
+
+        sdk = MagicMock()
+        sdk.chat.completions.create.side_effect = FakeNotFoundError("model not found")
+        with patch.object(client, "_get_sdk_client", return_value=sdk), \
+             patch("requests.post"), \
+             caplog.at_level("WARNING", logger="ai.llm_client"):
+            client._openrouter_chat_single("stepfun/step-3.5-flash:free", "sys", "user", structured=False)
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any(
+            "stepfun/step-3.5-flash:free" in r.getMessage() and "404" in r.getMessage()
+            for r in warnings
+        ), [r.getMessage() for r in warnings]
+
     def test_sdk_400_reasoning_error_strips_reasoning_from_http_fallback(self, monkeypatch):
         """A 400 that names the reasoning block as the culprit should proceed
         to the HTTP fallback (unlike 401/402/403/404) but with the reasoning

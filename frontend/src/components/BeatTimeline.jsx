@@ -34,34 +34,46 @@ export default function BeatTimeline({ combat }) {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex', alignItems: 'flex-end', gap: spacing.sm,
-        overflowX: 'auto', padding: '2px 2px 4px',
-      }}
-      aria-label="Beat timeline"
-      role="list"
-    >
-      {columns.map(({ beat, entries }) => (
-        <div
-          key={beat}
-          role="listitem"
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', flex: '0 0 auto' }}
-        >
-          {/* Collisions stack vertically within the column, soonest-priority
-              order already applied (Jean, allies, enemies) by the util —
-              plain 'column' so that priority order reads top-to-bottom,
-              matching the sort order rather than reversing it. */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            {entries.map((entry) => (
-              <TimelineMarker key={entry.key} entry={entry} />
-            ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      {/* The strip used to render "next" and "+5"/"+7" chips with no header
+          explaining what the numbers count (#540 item 15). */}
+      <div
+        style={{
+          fontSize: '9px', fontFamily: 'monospace', color: colors.text.dim,
+          letterSpacing: '0.05em', textTransform: 'uppercase',
+        }}
+      >
+        Turn order — beats until each action resolves
+      </div>
+      <div
+        style={{
+          display: 'flex', alignItems: 'flex-end', gap: spacing.sm,
+          overflowX: 'auto', padding: '2px 2px 4px',
+        }}
+        aria-label="Beat timeline"
+        role="list"
+      >
+        {columns.map(({ beat, entries }) => (
+          <div
+            key={beat}
+            role="listitem"
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', flex: '0 0 auto' }}
+          >
+            {/* Collisions stack vertically within the column, soonest-priority
+                order already applied (Jean, allies, enemies) by the util —
+                plain 'column' so that priority order reads top-to-bottom,
+                matching the sort order rather than reversing it. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              {entries.map((entry) => (
+                <TimelineMarker key={entry.key} entry={entry} />
+              ))}
+            </div>
+            <div style={{ fontSize: '9px', color: colors.text.dim, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+              {beat === 1 ? 'next' : `+${beat}`}
+            </div>
           </div>
-          <div style={{ fontSize: '9px', color: colors.text.dim, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-            {beat === 1 ? 'next' : `+${beat}`}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import MovementStar from './MovementStar'
+import { accessibility } from '../styles/theme'
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
@@ -228,6 +229,25 @@ describe('MovementStar', () => {
     })
   })
 
+  describe('Touch target size (issue #542 / #536)', () => {
+    // Measured 40x40 on both mobile (375px) and desktop viewports — the d-pad
+    // is a fixed-size control, not one that shrinks on mobile, so this is
+    // checked unconditionally rather than behind an isMobile flag.
+    const ALL_DIRECTIONS = [
+      'Move North', 'Move South', 'Move East', 'Move West',
+      'Move Northeast', 'Move Northwest', 'Move Southeast', 'Move Southwest',
+    ]
+
+    it.each(ALL_DIRECTIONS)('%s button meets the 44px minimum touch target', (label) => {
+      const exits = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']
+      render(<MovementStar exits={exits} onMove={mockOnMove} />)
+
+      const button = screen.getByLabelText(label)
+      expect(button.style.width).toBe(accessibility.touchTarget)
+      expect(button.style.height).toBe(accessibility.touchTarget)
+    })
+  })
+
   describe('Styling', () => {
     it('applies green styling for valid directions', () => {
       const exits = ['north']
@@ -261,6 +281,20 @@ describe('MovementStar', () => {
   })
 
   describe('Accessibility', () => {
+    it('meets the 44px minimum touch target on every direction button (issue #536)', () => {
+      // Measured at 40x40px in the field (issue #536 / #542) — the most-used
+      // control in the game was the one below the project's own 44px rule
+      // (frontend.md, accessibility.touchTarget).
+      const exits = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']
+      render(<MovementStar exits={exits} onMove={mockOnMove} />)
+
+      const directions = ['North', 'South', 'East', 'West', 'Northeast', 'Northwest', 'Southeast', 'Southwest']
+      for (const dir of directions) {
+        const button = screen.getByLabelText(`Move ${dir}`)
+        expect(button).toHaveStyle({ width: '44px', height: '44px' })
+      }
+    })
+
     it('all buttons have proper aria-labels', () => {
       const exits = ['north', 'south', 'east', 'west']
       render(<MovementStar exits={exits} onMove={mockOnMove} />)

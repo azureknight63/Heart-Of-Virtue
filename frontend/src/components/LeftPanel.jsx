@@ -294,8 +294,14 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       setLocalCombatInput({
         type: 'target_selection',
         options: move.viable_targets || [],
-        moveName: move.name
+        moveName: move.name,
+        moveCategory: move.category
       })
+      // Close the move panel: it and CombatInputDialog are independently
+      // absolutely-positioned over the same screen region, so leaving both
+      // mounted reads as one control nested inside the other (issue #535).
+      setShowCombatMoves(false)
+      setCombatMovesCategory(null)
       return;
     }
 
@@ -340,9 +346,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible', position: 'relative' }}>
+    // issue #536 item 3: the app had zero <main>/<header>/<h1> landmarks
+    // anywhere. This panel is the primary narrative/actions surface (as
+    // opposed to RightPanel's <aside>), so it becomes <main>, with its title
+    // bar as <header>/<h1>.
+    <main className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible', position: 'relative' }}>
       {/* Header */}
-      <div style={{
+      <header style={{
         backgroundColor: colors.primary,
         color: colors.text.inverse,
         padding: '10px 15px',
@@ -356,7 +366,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         boxShadow: `0 0 10px ${colors.primary}80`,
         flexShrink: 0,
       }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 1 }}>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
+        <h1 style={{ margin: 0, font: 'inherit', color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 1 }}>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</h1>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={() => setShowAudio(true)}
@@ -444,7 +454,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             Account
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Main Panel Content Area */}
       <div style={{
@@ -500,6 +510,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               player={activePlayer}
               isMobile={isMobile}
               inCombat={mode === 'combat'}
+              heroScale={heroScale}
               hasSpecialMoves={hasSpecialMoves}
               hasDefensiveMoves={hasDefensiveMoves}
               hasOffensiveMoves={hasOffensiveMoves}
@@ -570,6 +581,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           <CombatInputDialog
             inputType={localCombatInput ? localCombatInput.type : combat.input_type}
             options={localCombatInput ? localCombatInput.options : (combat.available_options || [])}
+            moveName={localCombatInput ? localCombatInput.moveName : undefined}
+            moveCategory={localCombatInput ? localCombatInput.moveCategory : undefined}
             onTargetHover={onTargetHover}
             onSelect={async (selectedValue) => {
               if (localCombatInput) {
@@ -589,6 +602,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             }}
             onCancel={() => {
               if (localCombatInput) {
+                // Backing out of target selection should return the player to
+                // the move-category panel they came from, not leave them with
+                // no move panel open at all (the #535 fix that closes the
+                // category panel when target selection opens never restored
+                // it on cancel, issue found in the scrub of that fix).
+                setCombatMovesCategory(localCombatInput.moveCategory)
+                setShowCombatMoves(true)
                 setLocalCombatInput(null)
               } else {
                 setShowInputDialog(false)
@@ -770,7 +790,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           }}
         />
       )}
-    </div>
+    </main>
   )
 }
 

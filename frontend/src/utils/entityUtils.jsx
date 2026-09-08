@@ -34,6 +34,26 @@ export const getEntityColor = (type) => {
 }
 
 /**
+ * getHpBarColor - HP-bar color by REAL percentage of current/max, not a fixed
+ * hue. A party member/item-target at full health must read as healthy, not
+ * as "about to die". Single source of truth for a threshold rule that used
+ * to be hand-inlined independently in PartyPanel.jsx and ItemDetailDialog.jsx
+ * (two sites) (issue #536).
+ *
+ * CombatInputDialog.jsx's target-selection HP bar (issue #535) intentionally
+ * uses a different "healthy" shade (`colors.success`, the brighter primary
+ * lime) and keeps its own local color function — the two were never actually
+ * pixel-identical, only structurally similar (same >50%/>25% thresholds),
+ * and each is covered by its own test asserting its own palette.
+ */
+export const getHpBarColor = (current, max) => {
+    const pct = max > 0 ? current / max : 0
+    if (pct > 0.5) return '#44ff88'
+    if (pct > 0.25) return '#ffaa00'
+    return '#ff4444'
+}
+
+/**
  * renderTextWithLinks - Utility to wrap entity names and aliases in clickable spans
  * @param {string} text - The text to process
  * @param {Array} entities - List of interactable entities

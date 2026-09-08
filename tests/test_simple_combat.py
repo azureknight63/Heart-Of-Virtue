@@ -304,6 +304,30 @@ class TestCombatIdLifecycle:
             entry["message"] == "stale entry" for entry in player.combat_log
         )
 
+    def test_a_new_fight_clears_the_previous_fights_last_move_summary(
+        self, adapter, player
+    ):
+        """Issue #534 bug 1. ``last_move_summary`` is a Player-instance
+        attribute (src/player/__init__.py) that ``_execute_move`` repopulates
+        after every move, but it lives outside the log/beat reset this fixture
+        already covers above. Before the fix, ``_initialize_combat_locked``'s
+        ``if not reinit:`` block never cleared it, so beat 1 of a brand new
+        fight still served the previous fight's final move summary as
+        ``last_move_outcome`` -- the Tactical Advisor narrated a battle that
+        had already ended, crediting whatever weapon Jean had equipped then.
+        """
+        player.last_move_summary = (
+            "Jean's Umbral Shortsword strikes the Rat for 12 damage."
+        )
+        next_enemy = make_npc(Slime, name="Second Slime", hp=20, maxhp=20)
+        engage(player, [next_enemy])
+
+        result = adapter.initialize_combat([next_enemy])
+
+        assert player.last_move_summary == ""
+        assert result["last_move_outcome"] == ""
+        assert result["battle_state"]["last_move_outcome"] == ""
+
     def test_a_genuinely_new_fight_mints_a_new_combat_id(self, adapter, player):
         first = adapter.combat_id
         next_enemy = make_npc(Slime, name="Second Slime", hp=20, maxhp=20)

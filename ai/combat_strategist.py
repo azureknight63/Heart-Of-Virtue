@@ -220,18 +220,28 @@ _HEAT_LABEL_BODY: Dict[HeatBand, str] = {
     "COLD": "COLD — attacks deal −{swing}% damage; land hits to rebuild",
 }
 
-# What the scorer says when it has nothing situational to say. Spelled once
-# because both readers must agree: it is the WARM heat note AND the reasoning
-# every unhandled category falls through to, and the two were separate string
-# literals 700 lines apart.
+# What the scorer says for a category it never learned to special-case
+# (Mastery/Maneuver/Tactical/Defensive-not-dodge/Utility/Miscellaneous, or
+# anything unrecognised). Its base score is honest here: nothing situational
+# applies, so a plain category price is exactly right.
 _NO_TACTICAL_READ = "Tactical analysis unavailable; {name} is a viable fallback."
+
+# Issue #534 bug 2: this used to BE `_NO_TACTICAL_READ` -- one string reused
+# for two different meanings. In the true catch-all above, "unavailable" is
+# fair alongside a plain base score. But a WARM/Offensive move (heat's
+# offensive bonus is +0 there, so its score is just the category base, e.g.
+# 85 for a plain Attack) got the identical wording despite having a completed,
+# real scoring pass -- pairing "85%" with "analysis unavailable" told players
+# no analysis had happened when one plainly had. Own string, own truth: WARM
+# is a real, if unremarkable, heat reading.
+_WARM_OFFENSIVE_NOTE = "Heat is neutral ({heat:.1f}×); {name} lands at baseline damage."
 
 _HEAT_OFFENSIVE_NOTE: Dict[HeatBand, str] = {
     "BLAZING": (
         "Heat is BLAZING ({heat:.1f}×); {name} for amplified damage — don't miss."
     ),
     "HOT": "Heat is elevated ({heat:.1f}×); {name} while the combo holds.",
-    "WARM": _NO_TACTICAL_READ,
+    "WARM": _WARM_OFFENSIVE_NOTE,
     "COLD": "Heat is low ({heat:.1f}×); {name} to rebuild combo before committing.",
 }
 

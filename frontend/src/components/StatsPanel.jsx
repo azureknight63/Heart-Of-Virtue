@@ -26,6 +26,16 @@ export default function StatsPanel({ player, onClose }) {
     return colors.gold
   }
 
+  // Buffed/debuffed/at-base used to be distinguished by colour alone (green/
+  // red/orange) — issue #536 item 5. A '+'/'-' prefix carries the same
+  // information as text so colour-blind players and screen readers get it
+  // too; a value exactly at base gets neither, since there is no delta to sign.
+  const getAttributeSign = (current, base) => {
+    if (current > base) return '+'
+    if (current < base) return '-'
+    return ''
+  }
+
   const resistance = player.resistance || {}
   const states = player.states || []
 
@@ -142,10 +152,10 @@ export default function StatsPanel({ player, onClose }) {
             borderColor: colors.alpha.secondary[30],
           }}
         >
-          <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
+          <GameText as="h3" variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
             Core Attributes
           </GameText>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.xs }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.sm }}>
             {attributes.map((attr) => {
               const current = player[attr.key] || 10
               const base = player[attr.key + '_base'] || 10
@@ -155,19 +165,22 @@ export default function StatsPanel({ player, onClose }) {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
+                  gap: spacing.sm,
                   padding: `${spacing.xs} ${spacing.sm}`,
                   backgroundColor: 'rgba(0,0,0,0.2)',
                   borderRadius: '8px',
                   fontFamily: fonts.main,
                   cursor: 'help',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
-                    <span style={{ fontSize: '14px' }}>{attr.icon}</span>
-                    <GameText size="sm">{attr.name}</GameText>
+                  {/* minWidth: 0 lets this side truncate instead of forcing
+                      the value column below to wrap and collide with it. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, minWidth: 0, overflow: 'hidden' }}>
+                    <span style={{ fontSize: '14px', flexShrink: 0 }}>{attr.icon}</span>
+                    <GameText size="sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attr.name}</GameText>
                   </div>
-                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
-                    <GameText weight="bold" style={{ color }}>{current}</GameText>
-                    <GameText variant="dim" size="xs">BASE: {base}</GameText>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    <GameText weight="bold" style={{ color }}>{getAttributeSign(current, base)}{current}</GameText>
+                    <GameText variant="dim" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
                   </div>
                 </div>
               )
@@ -180,7 +193,7 @@ export default function StatsPanel({ player, onClose }) {
           {/* Damage Resistances */}
           {Object.entries(resistance).filter(([_, v]) => v !== 1).length > 0 && (
             <GamePanel padding="md" style={{ backgroundColor: colors.alpha.info[10], borderColor: colors.alpha.info[30] }}>
-              <GameText variant="info" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
+              <GameText as="h3" variant="info" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
                 Resistances & Weaknesses
               </GameText>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
@@ -204,7 +217,7 @@ export default function StatsPanel({ player, onClose }) {
 
           {/* Active Effects */}
           <GamePanel padding="md" style={{ backgroundColor: colors.alpha.danger[10], borderColor: colors.alpha.danger[30] }}>
-            <GameText variant="danger" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
+            <GameText as="h3" variant="danger" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
               Active Effects
             </GameText>
             <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>

@@ -45,6 +45,7 @@ vi.mock('./HeroPanel', () => ({
             <button onClick={props.onMiscellaneousClick}>Miscellaneous Btn</button>
             <button onClick={props.onSpecialClick}>Special Btn</button>
             <span data-testid="hero-player-hp">{props.player?.hp}</span>
+            <span data-testid="hero-scale">{props.heroScale}</span>
             <span data-testid="hero-flags">
                 {[
                     props.hasOffensiveMoves && 'offensive',
@@ -59,8 +60,8 @@ vi.mock('./HeroPanel', () => ({
 }));
 vi.mock('./CombatLog', () => ({ default: ({ log }) => <div data-testid="combat-log">{log.map((e, i) => <div key={i}>{e.message}</div>)}</div> }));
 vi.mock('./CombatInputDialog', () => ({
-    default: ({ onSelect, onCancel }) => (
-        <div data-testid="combat-input-dialog">
+    default: ({ onSelect, onCancel, moveName, moveCategory }) => (
+        <div data-testid="combat-input-dialog" data-move-name={moveName ?? ''} data-move-category={moveCategory ?? ''}>
             <button onClick={() => onSelect('target-1')}>Select Target</button>
             <button onClick={onCancel}>Cancel Input</button>
         </div>
@@ -186,6 +187,26 @@ describe('LeftPanel', () => {
         // combat log while fighting.
         expect(screen.getByTestId(shown)).toBeInTheDocument();
         expect(screen.queryByTestId(hidden)).toBeNull();
+    });
+
+    it('exposes a main landmark with a header/h1 for the panel title (issue #536)', () => {
+        // header/main/h1 all counted zero across the app's DOM. This panel is
+        // the primary narrative/actions surface, so it becomes <main>, with
+        // its title bar as <header>/<h1>.
+        const { container } = render(
+            <LeftPanel
+                player={mockPlayer}
+                location={mockLocation}
+                mode="exploration"
+                combat={{ log: [], beat_states: [{ enemies: [] }] }}
+            />
+        );
+
+        const main = container.querySelector('main');
+        expect(main).not.toBeNull();
+        const heading = screen.getByRole('heading', { level: 1, name: 'Heart of Virtue - Exploration' });
+        expect(main.contains(heading)).toBe(true);
+        expect(heading.closest('header')).not.toBeNull();
     });
 
     // Each hero-panel button owns one panel; clicking it twice must close it
@@ -632,6 +653,19 @@ describe('LeftPanel', () => {
         });
     });
 
+    // issue #542: HeroPanel counter-scales its own radial buttons by
+    // 1/heroScale on mobile so a squeezed combat layout doesn't shrink their
+    // effective touch target below 44px. That compensation only works if the
+    // real computed scale factor actually reaches HeroPanel as a prop, not
+    // just as the wrapper's own CSS transform.
+    it('forwards the computed heroScale number to HeroPanel, matching the wrapper transform', () => {
+        withContainerSize(720, 465, () => {
+            render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+            expect(heroScale()).toBe('scale(1.5)');
+            expect(screen.getByTestId('hero-scale')).toHaveTextContent('1.5');
+        });
+    });
+
     it('auto-selects the single viable target for a targeted move without requiring selection', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
         const onMoveSubmitted = vi.fn();
@@ -730,6 +764,57 @@ describe('LeftPanel', () => {
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
         expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
+    });
+
+    // Issue #535 sub-item 2: CombatInputDialog needs the move's own name/
+    // category to label its confirm button correctly (STRIKE only for a
+    // genuine attack) instead of a fixed "STRIKE" for every move.
+    it('forwards the selected move\'s name and category to the target-selection dialog', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [makeCombatMove({
+                id: '1', name: 'Advance', category: 'Maneuver', available: true,
+                targeted: true, requires_target_selection: true,
+                viable_targets: [{ id: 'enemy_1' }, { id: 'ally_1' }],
+            })],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        fireEvent.click(screen.getByText('Maneuver Btn'));
+        fireEvent.click(screen.getByText('Advance'));
+
+        const dialog = screen.getByTestId('combat-input-dialog');
+        expect(dialog.getAttribute('data-move-name')).toBe('Advance');
+        expect(dialog.getAttribute('data-move-category')).toBe('Maneuver');
+    });
+
+    // Issue #535 sub-item 5 (optional cleanup): CombatMovePanel and
+    // CombatInputDialog are independently absolutely-positioned over the same
+    // screen region, so leaving the move panel mounted while the target
+    // dialog is open reads as (and, per the a11y tree, nests as) one control
+    // overlapping the other. The completion branch (handleInputSelection)
+    // already closes the move panel; the opening branch did not.
+    it('hides the combat move panel once the local target-selection dialog opens', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [makeCombatMove({
+                id: '1', name: 'Lunge', category: 'Offensive', available: true,
+                targeted: true, requires_target_selection: true,
+                viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }],
+            })],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        expect(screen.getByTestId('combat-move-panel')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Lunge'));
+        expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
+        expect(screen.queryByTestId('combat-move-panel')).not.toBeInTheDocument();
     });
 
     it('sends the local target selection and clears it on success', async () => {

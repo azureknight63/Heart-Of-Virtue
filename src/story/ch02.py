@@ -456,9 +456,6 @@ class Ch02GuideToCitadel(
 
         # Stage 7 — Give loot; Votha's farewell
         if self._stage == 7:
-            loot = [items.Antidote(5), items.Restorative(2)]
-            self.player.add_items_to_inventory(loot)
-
             self.needs_input = True
             self.input_type = "choice"
             begin_conversation(_JEAN_VOTHA_KRR)
@@ -467,7 +464,13 @@ class Ch02GuideToCitadel(
                 "small bundle of supplies. The attendant handed the bundle to Jean, who took it "
                 "gratefully."
             )
-            narrate("[Received: 5 Antidotes, 2 Restoratives]")
+            # Narrate the hand-over first, THEN grant the items -- previously
+            # this ran before the narration above and was followed by a
+            # redundant "[Received: ...]" summary, so the same grant rendered
+            # three times total (add_items_to_inventory narrates once per
+            # item on its own; see issue #540 item 18).
+            loot = [items.Antidote(5), items.Restorative(2)]
+            self.player.add_items_to_inventory(loot)
             narrate("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.")
             say(
                 "May the earth guide your steps, Jean. You are a guest of our city. The "

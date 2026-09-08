@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
+import { useMobile } from '../hooks/useMobile'
 import PortraitImage from './PortraitImage'
 import { castMember } from './ConversationTranscript'
 import { DEFAULT_EMOTION } from '../utils/conversationSegment'
 import { colors, spacing, fonts, commonStyles, STAGE_PORTRAIT_WIDTH_VAR } from '../styles/theme'
+import { isTypingTarget, isModifiedKeyEvent } from '../utils/domFocus'
 
 // Referentially stable stand-in for "no initial roster". `computeStage` is
 // memoized on its arguments, and a fresh `[]` per render would miss that cache
@@ -38,7 +40,7 @@ function exitSpanFor(op) {
  * resolved `enterTransition`; a fade-in cannot be expressed as a static opacity
  * here, so `Portrait` turns that pair into the two-frame mount animation.
  *
- * @returns {{members: Array, activeSpeaker: ?string, staged: boolean}}
+ * @returns {{members: Array, activeSpeaker: ?string, staged: boolean, focusedIds: Set<string>}}
  */
 export function computeStage(segments, idx, initialCast) {
     const members = new Map()
@@ -97,7 +99,14 @@ export function computeStage(segments, idx, initialCast) {
 
     const cur = segments[idx] || {}
     const staged = Boolean(cur.in_conversation) && result.length > 0
-    return { members: result, activeSpeaker: cur.speaker || null, staged }
+    // A narrated beat has no `speaker` at all, so a listener named in ITS
+    // `reactions` (src/narration.py's react(), used for a silent reaction with
+    // no line of dialogue — see src/story/ch03.py) is the only signal the
+    // stage gets for "this beat is about them." Issue #539: Gorran never
+    // speaks, so without this his portrait never differed from any other
+    // dimmed listener on the beats that are actually about him.
+    const focusedIds = new Set(Object.keys(cur.reactions || {}))
+    return { members: result, activeSpeaker: cur.speaker || null, staged, focusedIds }
 }
 
 const PORTRAIT_TRANSITION = 'opacity 0.8s ease, transform 0.35s ease, filter 0.35s ease'
@@ -134,13 +143,24 @@ function useEnterFade(nodeRef, entering, targetOpacity) {
     }, [nodeRef, entering, targetOpacity])
 }
 
-function Portrait({ member, isSpeaker, wide = false }) {
+function Portrait({ member, isSpeaker, isFocused = false, wide = false }) {
     // Dim & scale: the speaker is full ink/size; listeners fade, shrink, and
     // desaturate slightly. An exit fade multiplies the base opacity.
     const baseOpacity = isSpeaker ? 1 : 0.85
     const opacity = member.opacity * baseOpacity
     const wrapperRef = useRef(null)
     useEnterFade(wrapperRef, member.entering && member.enterTransition === 'fade', opacity)
+
+    // Three states a portrait can read on any beat — SPEAKING (gold frame,
+    // full brightness, opaque caption — unchanged), FOCUSED (this beat's
+    // `reactions` name them even though nobody is speaking: a cooler, quieter
+    // highlight so they read as distinct from both the speaker and the rest of
+    // the cast — issue #539), or a plain LISTENER (dimmed, muted caption, but
+    // never hidden: an uncaptioned grey portrait is indistinguishable from any
+    // other uncaptioned grey portrait to a first-time player).
+    const frameColor = isSpeaker ? colors.secondary : isFocused ? colors.info : colors.border.light
+    const captionColor = isSpeaker ? colors.secondary : isFocused ? colors.info : colors.text.muted
+    const captionOpacity = isSpeaker ? 1 : isFocused ? 0.85 : 0.5
 
     return (
         <div
@@ -168,9 +188,13 @@ function Portrait({ member, isSpeaker, wide = false }) {
                     width: wide ? undefined : `var(${STAGE_PORTRAIT_WIDTH_VAR})`,
                     height: 'auto',
                     borderRadius: '6px',
-                    border: `2px solid ${isSpeaker ? colors.secondary : colors.border.light}`,
-                    boxShadow: isSpeaker ? `0 0 14px rgba(255, 170, 0, 0.35)` : 'none',
-                    filter: isSpeaker ? 'none' : 'brightness(0.65) grayscale(0.25)',
+                    border: `2px solid ${frameColor}`,
+                    boxShadow: isSpeaker
+                        ? `0 0 14px rgba(255, 170, 0, 0.35)`
+                        : isFocused
+                        ? `0 0 10px rgba(0, 204, 255, 0.3)`
+                        : 'none',
+                    filter: isSpeaker ? 'none' : isFocused ? 'brightness(0.9)' : 'brightness(0.65) grayscale(0.25)',
                     transition: PORTRAIT_TRANSITION,
                 }}
             />
@@ -180,8 +204,8 @@ function Portrait({ member, isSpeaker, wide = false }) {
                     fontSize: '12px',
                     fontWeight: 'bold',
                     letterSpacing: '0.5px',
-                    color: isSpeaker ? colors.secondary : colors.text.muted,
-                    opacity: isSpeaker ? 1 : 0,
+                    color: captionColor,
+                    opacity: captionOpacity,
                     transition: 'opacity 0.3s ease, color 0.3s ease',
                     minHeight: '16px',
                 }}
@@ -198,9 +222,13 @@ function Portrait({ member, isSpeaker, wide = false }) {
  * The flex `display`/`gap` that stack the portraits inside the column are set
  * here in both layouts, deliberately: no breakpoint retunes them. What the
  * wide layout does hand to CSS is the column's `min-width`/`width`, which the
- * phone media query does retune — see THE RULE in styles/index.css.
+ * phone media query does retune — see THE RULE in styles/index.css. The
+ * default layout has no such stylesheet rule (it styles itself inline; see
+ * ConversationStage's own `stackPortraits`), so `isNarrow` retunes the floor
+ * here instead — issue #541: a fixed 150px floor on EACH column, applied
+ * regardless of viewport, was reserved even for a column with zero members.
  */
-function PortraitColumn({ members, area, activeSpeaker, isWide, staged }) {
+function PortraitColumn({ members, area, activeSpeaker, isWide, staged, isNarrow, focusedIds }) {
     return (
         <div
             className="conversation-stage__portrait-column"
@@ -213,14 +241,23 @@ function PortraitColumn({ members, area, activeSpeaker, isWide, staged }) {
                 // In wide layout the grid track governs the column's width;
                 // `.conversation-stage--wide .conversation-stage__portrait-column`
                 // in index.css owns min-width/width there instead.
-                minWidth: isWide ? undefined : (staged ? '150px' : '0'),
+                minWidth: isWide ? undefined : isNarrow ? '0' : (staged ? '150px' : '0'),
                 gridArea: isWide ? area : undefined,
                 transition: 'min-width 0.35s ease',
             }}
         >
-            {members.map((m) => (
-                <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} wide={isWide} />
-            ))}
+            {members.map((m) => {
+                const isSpeaker = m.id === activeSpeaker
+                return (
+                    <Portrait
+                        key={m.id}
+                        member={m}
+                        isSpeaker={isSpeaker}
+                        isFocused={!isSpeaker && Boolean(focusedIds && focusedIds.has(m.id))}
+                        wide={isWide}
+                    />
+                )
+            })}
         </div>
     )
 }
@@ -385,7 +422,7 @@ function ConversationStage({
     // `useTypewriter` below re-renders once per character: unmemoized, a
     // 300-character reply replayed the whole conversation ~300 times, each
     // replay allocating two Maps and a spread per cast member.
-    const { members, activeSpeaker, staged, leftMembers, rightMembers } = useMemo(() => {
+    const { members, activeSpeaker, staged, leftMembers, rightMembers, focusedIds } = useMemo(() => {
         const stage = computeStage(segments, beatIndex, initialCast)
         return {
             ...stage,
@@ -438,25 +475,58 @@ function ConversationStage({
     }, [isComplete, current.text, advance])
 
     // Enter/Space advance the conversation while it is active.
+    //
+    // Attached to `document`, not containerRef (issue #530). This div's own
+    // `tabIndex={-1}` explicitly excludes it from BaseDialog's focus trap (see
+    // BaseDialog.jsx's FOCUSABLE_SELECTOR, which excludes `[tabindex="-1"]`),
+    // and nothing here ever calls `.focus()` on it either -- so real DOM focus
+    // never lands on this node. It falls instead to BaseDialog's own container
+    // (an ANCESTOR of this div) or, standalone, to `document.body`. Keydown
+    // only bubbles UP from the focused element to its ancestors, never DOWN
+    // into a descendant, so a listener scoped to this div could never see the
+    // "click or press Enter to continue" hint's advertised key actually
+    // pressed. Matches the document-level pattern BaseDialog's own Escape/Tab
+    // trap and the glossary panels already use.
     useEffect(() => {
         if (isLive) return undefined
-        const node = containerRef.current
-        if (!node) return undefined
         const onKey = (e) => {
+            // Guards required by a document-scoped listener (issue #530):
+            // without them, Enter/Space aimed at an unrelated focused text
+            // field (glossary search, NPC chat input, this dialog's own
+            // needs_input textarea) gets swallowed and reinterpreted as
+            // "advance the stage" instead of reaching that field. Once the
+            // stage has already completed (completedRef), a resulting
+            // advance() is a harmless no-op, but preventDefault() is not —
+            // it suppresses Space activating a since-rendered, now-focused
+            // choice button in a sibling subtree (a real keyboard-a11y
+            // regression the code-scrubber pass over #530/#541/#539/#529
+            // caught), so bail before touching the event at all.
+            if (completedRef.current) return
+            if (isTypingTarget(e.target)) return
+            if (isModifiedKeyEvent(e)) return
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
-                e.stopPropagation()
                 advance()
             }
         }
-        node.addEventListener('keydown', onKey)
-        return () => node.removeEventListener('keydown', onKey)
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
     }, [advance, isLive])
 
     const isThought = Boolean(current.thought)
     const isWide = layout === 'wide'
+    // `isWide`'s own narrow treatment already lives in styles/index.css's
+    // `.conversation-stage--wide` media query (a "left right" / "dialogue
+    // dialogue" grid reflow); the default layout styles itself fully inline
+    // (see THE RULE below) so it has no equivalent CSS to fall back on — hence
+    // reading the viewport here via the same hook LoginPage/GamePage/
+    // CombatGlossaryPanel already use, rather than inventing a second
+    // mechanism. Issue #541: two fixed 150px portrait-column floors regardless
+    // of viewport left a 375px-phone dialogue column crushed to ~36px.
+    const isNarrow = useMobile()
+    const stackPortraits = !isWide && isNarrow
 
-    const columnProps = { activeSpeaker, isWide, staged }
+    const columnProps = { activeSpeaker, isWide, staged, isNarrow, focusedIds }
 
     return (
         <div
@@ -477,17 +547,40 @@ function ConversationStage({
                 // rules own it and none of it appears here — the media query
                 // then wins by ordinary cascade rather than by out-shouting an
                 // inline style. The default layout styles itself inline: no
-                // breakpoint touches it. THE RULE in index.css is the full
-                // statement of which properties this covers.
-                ...(isWide ? {} : {
-                    display: 'flex',
-                    alignItems: 'stretch',
-                    gap: spacing.lg,
-                    minHeight: '300px',
-                }),
+                // breakpoint touches it in CSS, but on a narrow viewport it
+                // switches itself to a column stack (portraits row above a
+                // full-width dialogue row) — the same reflow the wide layout
+                // gets from CSS at this breakpoint, expressed in JS here
+                // because the default layout has no stylesheet rule to retune.
+                // THE RULE in index.css is the full statement of which
+                // properties the wide layout's CSS covers.
+                ...(isWide
+                    ? {}
+                    : stackPortraits
+                    ? {
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: spacing.md,
+                          minHeight: 0,
+                      }
+                    : {
+                          display: 'flex',
+                          alignItems: 'stretch',
+                          gap: spacing.lg,
+                          minHeight: '300px',
+                      }),
             }}
         >
-            {staged && <PortraitColumn members={leftMembers} area="left" {...columnProps} />}
+            {staged && stackPortraits && (
+                <div
+                    className="conversation-stage__portraits-row"
+                    style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', gap: spacing.lg }}
+                >
+                    <PortraitColumn members={leftMembers} area="left" {...columnProps} />
+                    <PortraitColumn members={rightMembers} area="right" {...columnProps} />
+                </div>
+            )}
+            {staged && !stackPortraits && <PortraitColumn members={leftMembers} area="left" {...columnProps} />}
 
             <StageDialogueCard
                 speaker={current.speaker}
@@ -501,7 +594,7 @@ function ConversationStage({
                 hintText={beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
             />
 
-            {staged && <PortraitColumn members={rightMembers} area="right" {...columnProps} />}
+            {staged && !stackPortraits && <PortraitColumn members={rightMembers} area="right" {...columnProps} />}
         </div>
     )
 }

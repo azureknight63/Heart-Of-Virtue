@@ -868,9 +868,16 @@ class TestComputeLoquacityScaled:
         assert 1 <= npc.loquacity_threshold <= npc.loquacity_max
 
     def test_recovery_scaled_but_never_zero(self):
+        """Recovery is derived from the pool (issue #526), not wisdom --
+        `wisdom=16` here is kept only to prove it has no effect on the
+        result (see TestLoquacityRecoveryIsDerivedFromThePool for the
+        comprehensive per-host version of that check)."""
+        from src.npc._chat_llm import _LOQUACITY_RECOVERY_POOL_DIVISOR
+
         npc = chat_npc(wisdom=16)
         npc._compute_loquacity(self._player())
-        assert npc.loquacity_recovery == scale_loquacity(16 // 8)
+        expected = max(1, round(npc.loquacity_max / _LOQUACITY_RECOVERY_POOL_DIVISOR))
+        assert npc.loquacity_recovery == expected
         assert npc.loquacity_recovery >= 1
 
     def test_init_default_recovery_is_scaled(self):
@@ -1965,14 +1972,6 @@ def _host_attributes_read_by_the_mixin():
 #: An entry here is not an excuse: the guard still requires the attribute to
 #: exist on at least one REAL host, so a typo has nowhere to hide.
 _HOST_SPECIFIC = {
-    "wisdom": (
-        "Only NomadBoy and NomadGirl set it, both to 8; the other nine hosts "
-        "take the _LOQUACITY_STAT_BASELINE default. The recovery term that "
-        "reads it cannot move off its floor below wisdom 24, and cannot move "
-        "the SCALED result below wisdom 80, so it is dead at every value the "
-        "game contains -- see TestTheWisdomTermIsInert and the note beside "
-        "_LOQUACITY_RECOVERY_WISDOM_DIVISOR."
-    ),
     "level": (
         "Allies only. Merchant hosts have no progression track, so the ally "
         "gating in _build_combat_block reads a default for them and skips."
@@ -2076,18 +2075,17 @@ class TestTheMixinOnlyReadsAttributesItsHostsHave:
             assert invented not in _HOST_SPECIFIC, invented
 
 
-class TestTheWisdomTermIsInert:
-    """``loquacity_recovery`` is the same number for every NPC in the game.
+class TestLoquacityRecoveryIsDerivedFromThePool:
+    """Recovery now varies by pool size, not wisdom (issue #526).
 
-    Pinned rather than rebalanced, the way
-    ``test_the_favourable_equipment_vocabulary_is_honest`` pins the crucifix
-    modifier: making the wisdom term live means changing the divisor or the
-    floor, and that changes how fast every conversational NPC regains patience
-    -- a designer's call, not a scrub's.
-
-    What this class buys is that the dead branch cannot go on being described
-    as a live one. The constant's note said "Recovery per beat is
-    wisdom-driven" while being wrong at every wisdom value the game contains.
+    Replaces ``TestTheWisdomTermIsInert``, which pinned the OLD, dead
+    wisdom-keyed formula (every NPC recovered the same 1 point/beat
+    regardless of wisdom). That formula and its constants
+    (``_LOQUACITY_RECOVERY_FLOOR``, ``_LOQUACITY_RECOVERY_WISDOM_DIVISOR``)
+    are gone; ``wisdom`` is no longer read by this mixin at all. This class
+    pins the new contract instead: recovery is derived from the
+    already-authored, already-varying pool (``loquacity_max``), so the
+    roster gets real spread with no content-authoring work.
     """
 
     def _recoveries(self):
@@ -2098,65 +2096,58 @@ class TestTheWisdomTermIsInert:
             npc = cls()
             npc.loquacity_max = 0
             npc._compute_loquacity(chat_player())
-            out[cls.__name__] = npc.loquacity_recovery
+            out[cls.__name__] = (npc.loquacity_recovery, npc.loquacity_max)
         return out
 
-    def test_every_npc_in_the_game_recovers_at_the_same_rate(self):
-        from src.npc._chat_llm import _DEFAULT_LOQUACITY_RECOVERY
-
+    def test_recovery_varies_across_the_roster(self):
+        """Non-vacuity: the whole point of the fix is that this is no longer
+        a single constant across every NPC in the game."""
         recoveries = self._recoveries()
-        assert set(recoveries.values()) == {_DEFAULT_LOQUACITY_RECOVERY}, (
-            "loquacity_recovery is no longer constant across the roster: %s. "
-            "If the wisdom term has been made live -- or a wise NPC has been "
-            "authored -- the note beside _LOQUACITY_RECOVERY_WISDOM_DIVISOR "
-            "says the opposite and must be rewritten." % recoveries
+        distinct = {recovery for recovery, _pool in recoveries.values()}
+        assert len(distinct) > 1, (
+            "loquacity_recovery is still constant across the roster: %s"
+            % recoveries
         )
 
-    def test_the_authored_wisdom_values_cannot_reach_the_term(self):
-        """Derived, not asserted from memory.
+    def test_recovery_matches_the_pool_divisor_formula(self):
+        from src.npc._chat_llm import _LOQUACITY_RECOVERY_POOL_DIVISOR
 
-        The threshold at which wisdom could change the stored number is solved
-        from the module's own arithmetic; the wisdom values are read out of the
-        real host classes. Neither half is a number typed into this test.
-        """
-        from src.npc._chat_llm import (
-            _LOQUACITY_RECOVERY_FLOOR,
-            _LOQUACITY_RECOVERY_WISDOM_DIVISOR,
-            _LOQUACITY_STAT_BASELINE,
-            scale_loquacity,
-        )
+        for name, (recovery, pool) in self._recoveries().items():
+            expected = max(1, round(pool / _LOQUACITY_RECOVERY_POOL_DIVISOR))
+            assert recovery == expected, (
+                "%s: loquacity_recovery=%s does not match "
+                "max(1, round(loquacity_max/_LOQUACITY_RECOVERY_POOL_DIVISOR))=%s "
+                "for pool=%s" % (name, recovery, expected, pool)
+            )
 
-        floor_result = scale_loquacity(_LOQUACITY_RECOVERY_FLOOR)
-        wisdom_that_would_matter = next(
-            (
-                w
-                for w in range(1, 10000)
-                if scale_loquacity(
-                    max(
-                        _LOQUACITY_RECOVERY_FLOOR,
-                        w // _LOQUACITY_RECOVERY_WISDOM_DIVISOR,
-                    )
-                )
-                != floor_result
-            ),
-            None,
-        )
-        assert wisdom_that_would_matter is not None, "the term can never fire"
+    def test_recovery_is_never_zero(self):
+        """The floor: even the smallest pool in the game must still recover
+        at least 1 point/beat, or a conversation could never refill."""
+        for name, (recovery, _pool) in self._recoveries().items():
+            assert recovery >= 1, "%s: loquacity_recovery=%s" % (name, recovery)
 
-        authored = {
-            cls.__name__: getattr(cls(), "wisdom", _LOQUACITY_STAT_BASELINE)
-            for cls in _conversational_hosts()
-        }
-        live = {
-            name: w for name, w in authored.items() if w >= wisdom_that_would_matter
-        }
-        assert live == {}, (
-            "these hosts are wise enough to move loquacity_recovery (the "
-            "threshold is wisdom %d): %s. The wisdom term is no longer dead; "
-            "update the note beside _LOQUACITY_RECOVERY_WISDOM_DIVISOR and "
-            "the mixin's module docstring."
-            % (wisdom_that_would_matter, live)
-        )
+    def test_wisdom_no_longer_affects_recovery(self):
+        """The old term is gone, not just inert -- varying wisdom (when a
+        host happens to declare it) must not change the stored recovery."""
+        hosts = [
+            cls for cls in _conversational_hosts() if hasattr(cls(), "wisdom")
+        ]
+        assert hosts, "no host declares wisdom -- nothing to check here"
+        for cls in hosts:
+            baseline = cls()
+            baseline.loquacity_max = 0
+            baseline._compute_loquacity(chat_player())
+
+            wise = cls()
+            wise.wisdom = 999
+            wise.loquacity_max = 0
+            wise._compute_loquacity(chat_player())
+
+            assert wise.loquacity_recovery == baseline.loquacity_recovery, (
+                "%s: setting wisdom=999 changed loquacity_recovery from %s "
+                "to %s -- wisdom should have no effect at all now"
+                % (cls.__name__, baseline.loquacity_recovery, wise.loquacity_recovery)
+            )
 
     def test_the_module_no_longer_claims_the_term_is_live(self):
         """The false comment is the defect. A pin on behaviour that leaves the

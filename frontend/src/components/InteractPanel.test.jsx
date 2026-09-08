@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel, { actionKeywords } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
+import { colors } from '../styles/theme';
 import React from 'react';
 
 // Mock apiEndpoints
@@ -196,6 +197,19 @@ describe('InteractPanel', () => {
     // Nothing is selected yet, so no action buttons are offered.
     expect(screen.queryByText(/^Talk$/)).toBeNull();
     expect(screen.queryByText(/^Open$/)).toBeNull();
+  });
+
+  it('gives every target row an accessible name from its own visible text (issue #536)', () => {
+    // The QA report claimed the three INTERACT rows read as bare `button`s
+    // with no accessible name. Each row is a real <button> (GameButton) whose
+    // entire visible content — icon, name, description, type badge — IS its
+    // text content, and a button's accessible name is computed from exactly
+    // that unless something overrides it. Verifying rather than assuming.
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+
+    expect(screen.getByRole('button', { name: /Guard/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Chest/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Gold Coin/ })).toBeInTheDocument();
   });
 
   it('selects a target and offers exactly its own keywords as actions', () => {
@@ -1373,6 +1387,140 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getByText(/Hide History/i));
       expect(screen.queryByText(/First message\./)).toBeNull();
       expect((await settledOutput()).textContent).toContain('Second message.');
+    });
+  });
+
+  describe('hostile vs friendly NPC distinction in the target list (issue #537)', () => {
+    // NPCSerializer (src/api/serializers/npc_serializer.py) already derives
+    // `is_hostile` server-side from the NPC's `aggro`/`friend` attributes on
+    // the Combatant hierarchy — this only has to surface the flag the server
+    // already sends, not invent new hostility logic on the frontend.
+    const mixedLocation = {
+      ...mockLocation,
+      npcs: [
+        { id: 'npc1', name: 'Guard', description: 'A stern guard.', keywords: ['Talk', 'Attack'], is_hostile: false },
+        { id: 'monster1', name: 'Rock Rumbler', description: 'A grinding golem.', keywords: ['Attack'], is_hostile: true },
+      ],
+    };
+
+    const hexToRgb = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    };
+
+    it('gives the hostile NPC row a different chip label and color than the friendly NPC row', () => {
+      render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+
+      const guardRow = screen.getByText('A stern guard.').closest('button');
+      const rumblerRow = screen.getByText('A grinding golem.').closest('button');
+
+      // Friendly NPC keeps the shared "npc" chip in the shared NPC green.
+      const guardBadge = [...guardRow.querySelectorAll('div')].find((el) => el.textContent === 'npc');
+      expect(guardBadge).toBeTruthy();
+      expect(guardBadge.style.color).toBe(hexToRgb(colors.entities.npc));
+
+      // Hostile NPC gets its own label, in the danger color — not identical
+      // to the friendly row's chip. Exact match (not a substring test),
+      // since an ancestor row wrapper's concatenated textContent also
+      // contains "hostile" once the leaf badge does.
+      const rumblerBadge = [...rumblerRow.querySelectorAll('div')].find((el) => el.textContent === 'hostile');
+      expect(rumblerBadge).toBeTruthy();
+      expect(rumblerBadge.style.color).toBe(hexToRgb(colors.danger));
+      expect(rumblerBadge.style.color).not.toBe(guardBadge.style.color);
+    });
+
+    it('gives the hostile NPC a different glyph than a friendly NPC', () => {
+      render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+
+      const guardRow = screen.getByText('A stern guard.').closest('button');
+      const rumblerRow = screen.getByText('A grinding golem.').closest('button');
+
+      expect(guardRow.textContent).toContain('👤');
+      expect(rumblerRow.textContent).not.toContain('👤');
+    });
+
+    it('gives the selected target detail panel a danger-colored accent only when the NPC is hostile', () => {
+      // GamePanel's own `border` shorthand and the caller's `borderLeft`
+      // override land on different longhands (top/right/bottom vs. left),
+      // so jsdom can't re-serialize them back into a single "border-left"
+      // shorthand string — getComputedStyle is what actually resolves the
+      // left edge's color regardless of how the declarations combined.
+      const { container: friendlyContainer } = render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+      const friendlyPanel = friendlyContainer.querySelector('.game-panel');
+      expect(friendlyPanel).toBeTruthy();
+      expect(getComputedStyle(friendlyPanel).borderLeftColor).toBe(hexToRgb(colors.entities.npc));
+
+      const { container: hostileContainer } = render(<InteractPanel location={mixedLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Rock Rumbler/i)[0]);
+      const hostilePanel = hostileContainer.querySelector('.game-panel');
+      expect(hostilePanel).toBeTruthy();
+      expect(getComputedStyle(hostilePanel).borderLeftColor).toBe(hexToRgb(colors.danger));
+    });
+  });
+
+  describe('#540 item 7 — direction keyword visual weight', () => {
+    it('renders a bare compass direction as secondary while the contextual verb stays primary', () => {
+      const location = {
+        ...mockLocation,
+        objects: [
+          { id: 'gate1', name: 'Eastern Gate', description: 'A wide archway leads east.', keywords: ['enter', 'east'] },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Eastern Gate/i)[0]);
+
+      const enterBtn = screen.getByText('enter').closest('button');
+      const eastBtn = screen.getByText('east').closest('button');
+      // GameButton's primary variant is a solid lime fill; secondary is transparent.
+      expect(enterBtn.style.backgroundColor).not.toBe('transparent');
+      expect(eastBtn.style.backgroundColor).toBe('transparent');
+    });
+
+    it('keeps two non-direction keywords both primary', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+
+      const openBtn = screen.getByText('Open').closest('button');
+      const examineBtn = screen.getByText('Examine').closest('button');
+      expect(openBtn.style.backgroundColor).not.toBe('transparent');
+      expect(examineBtn.style.backgroundColor).not.toBe('transparent');
+    });
+  });
+
+  describe('#540 item 8 — target list description styling', () => {
+    it('does not force-uppercase a proper noun in the description, and wraps instead of hard-truncating at ~30 characters', () => {
+      const longDescription =
+        "A statue of Saint O'Malley, weathered by decades of rain — the inscription "
+        + 'runs on well past thirty characters to prove the text is not cut off early.';
+      const location = {
+        ...mockLocation,
+        objects: [
+          { id: 'obj9', name: 'Statue', description: longDescription, keywords: ['Examine'] },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+
+      const desc = screen.getByText(longDescription);
+      // Case is preserved in the rendered style, not forced uppercase by the
+      // surrounding GameButton's own label styling (text-transform inherits).
+      expect(desc.style.textTransform).toBe('none');
+      // No hard single-line cutoff — the full string is present verbatim in
+      // the DOM rather than replaced with a truncated substring.
+      expect(desc.textContent).toBe(longDescription);
+      expect(desc.style.whiteSpace).toBe('normal');
+    });
+  });
+
+  describe('#540 item 14 — nested GameText element', () => {
+    it('renders the "Available: N" line as a span, not a <p> nested in another <p>', async () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+      fireEvent.click(screen.getByText(/Take/i));
+
+      const available = screen.getByText(/Available:/i);
+      expect(available.tagName).toBe('SPAN');
+      expect(available.closest('p')).not.toBeNull();
     });
   });
 });

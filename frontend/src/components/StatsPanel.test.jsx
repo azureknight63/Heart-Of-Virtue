@@ -68,9 +68,11 @@ describe('StatsPanel', () => {
     // and "5T" alike, so they passed no matter what number the level tile
     // rendered, or whether it rendered one at all.
     expect(screen.getByText('Level').closest('div')).toHaveTextContent('5');
-    expect(within(attributeTile(STRENGTH_TIP)).getByText('12')).toBeInTheDocument();
+    // Buffed/debuffed attributes carry a +/- prefix now (issue #536 item 5) so
+    // the direction isn't color-only; a value at base carries no prefix.
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('+12')).toBeInTheDocument();
     expect(within(attributeTile(STRENGTH_TIP)).getByText('BASE: 10')).toBeInTheDocument();
-    expect(within(attributeTile(FINESSE_TIP)).getByText('8')).toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).getByText('-8')).toBeInTheDocument();
 
     // Core stats
     expect(screen.getByText('80/100')).toBeInTheDocument();
@@ -94,18 +96,31 @@ describe('StatsPanel', () => {
 
     // Strength is 12 (base 10) -> buffed color #00ff88
     const strengthContainer = attributeTile(STRENGTH_TIP);
-    const strengthVal = within(strengthContainer).getByText('12');
+    const strengthVal = within(strengthContainer).getByText('+12');
     expect(strengthVal.style.color).toBe('rgb(0, 255, 136)'); // #00ff88
 
     // Finesse is 8 (base 10) -> debuffed color #ff6666
     const finesseContainer = attributeTile(FINESSE_TIP);
-    const finesseVal = within(finesseContainer).getByText('8');
+    const finesseVal = within(finesseContainer).getByText('-8');
     expect(finesseVal.style.color).toBe('rgb(255, 68, 68)'); // #ff4444 (colors.danger)
 
     // Speed is 10 (base 10) -> normal color #ffcc00 (colors.gold)
     const speedContainer = attributeTile(SPEED_TIP);
     const speedVal = within(speedContainer).getByText('10');
     expect(speedVal.style.color).toBe('rgb(255, 204, 0)'); // #ffcc00
+  });
+
+  it('marks buffed/debuffed attributes with a +/- prefix so the delta is not color-only (issue #536)', () => {
+    // A stat above base gets '+', below base gets '-', and exactly at base
+    // (Speed, asserted above) carries neither. Colour alone used to be the
+    // only signal distinguishing all three states.
+    render(<StatsPanel player={mockPlayer} />);
+
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('+12')).toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).getByText('-8')).toBeInTheDocument();
+    // Guard against a double-sign regression (e.g. '+ +12' or '--8').
+    expect(within(attributeTile(STRENGTH_TIP)).queryByText('++12')).not.toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).queryByText('--8')).not.toBeInTheDocument();
   });
 
 
@@ -139,6 +154,15 @@ describe('StatsPanel', () => {
     }
   );
 
+  it('uses h3 headings for its section titles (issue #536)', () => {
+    // h1/h2/h3 all counted zero across the app's DOM. These three section
+    // titles are natural sub-headings within the dialog.
+    render(<StatsPanel player={mockPlayer} />);
+    expect(screen.getByRole('heading', { level: 3, name: 'Core Attributes' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Resistances & Weaknesses' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Active Effects' })).toBeInTheDocument();
+  });
+
   it('drops the resistance chips and shows the empty-effects copy when those fields are null', () => {
     // Asserting only that the header still rendered proved nothing about the
     // null branches this test exists for.
@@ -158,7 +182,7 @@ describe('StatsPanel', () => {
     expect(screen.getByText('No active status effects')).toBeInTheDocument();
     expect(screen.queryByText('Blessed')).toBeNull();
     // The attributes still render, so this is a partial payload, not a blank sheet.
-    expect(within(attributeTile(STRENGTH_TIP)).getByText('12')).toBeInTheDocument();
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('+12')).toBeInTheDocument();
   });
 
   const sparsePlayer = {

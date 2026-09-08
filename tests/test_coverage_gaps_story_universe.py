@@ -982,6 +982,47 @@ class TestCh02GuideToCitadel:
         player.add_items_to_inventory.assert_called()
         assert ev._stage == 8
 
+    def test_stage7_narrates_handover_before_granting_loot_no_duplicate_summary(self):
+        """Stage 7 must narrate the attendant's hand-over BEFORE granting the
+        items, and must not narrate the grant a second time as a redundant
+        "[Received: ...]" summary line (issue #540 item 18: the mechanical
+        grant used to print before the narration, then again as a summary --
+        the same information rendered three times total).
+        """
+        from src.narration import narrate
+
+        ev, player, tile = self._make(skip_dialog=False)
+        # Six plain calls run stage 6's default choice ("a", same default as
+        # test_stage6_invalid_choice_defaults_to_a) and land the machine on
+        # stage 7, ready but not yet processed.
+        for _ in range(6):
+            ev.process()
+        assert ev._stage == 7
+
+        # The fixture's add_items_to_inventory is a bare Mock, which hides the
+        # real method's own narration entirely -- exactly the kind of double
+        # that let this bug ship "covered". Stand in for the real behaviour
+        # (one narrate() call per granted item) so the ORDER is observable.
+        granted = []
+
+        def fake_add_items(items_received):
+            for item in items_received:
+                narrate(f"GRANT:{item.name}")
+            granted.extend(items_received)
+
+        player.add_items_to_inventory = fake_add_items
+        text = _process_and_capture(ev)  # stage 7 -> 8
+
+        handover_idx = text.index("Grondite attendant")
+        grant_idx = text.index("GRANT:")
+        assert handover_idx < grant_idx, (
+            "the loot was granted before the hand-over was narrated"
+        )
+        assert "[Received:" not in text, (
+            "the grant should not be narrated a second time as a redundant summary"
+        )
+        assert len(granted) == 2
+
     def test_stage8_teleports_and_completes(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(6):
@@ -1490,6 +1531,13 @@ class TestGorranGestureEvent:
         if coming_from_grondia:
             prev_tile = Mock()
             prev_tile.title = "Grondia Passage"
+            # #547: check_conditions() checks previous_tile.map (the real
+            # engine signal for "which map is this tile on" -- see
+            # src/universe.py's map loader, which sets map["name"] from the
+            # JSON file's stem, e.g. "grondia" for grondia.json), not a
+            # fabricated .title. A Mock's .title never corresponded to
+            # anything the real guard reads.
+            prev_tile.map = {"name": "grondia"}
         player.previous_tile = prev_tile
         tile = _make_tile()
         return self.cls(player=player, tile=tile), player, tile
@@ -1513,6 +1561,18 @@ class TestGorranGestureEvent:
             ev.check_conditions()
             mock_pass.assert_not_called()
         assert ev not in tile.events_here
+
+    def test_conditions_skip_when_previous_tile_is_not_from_grondia(self):
+        """#547: a previous_tile that IS set, but is not from Grondia, must
+        not fire the scene — the old guard only checked for non-None.
+        """
+        ev, player, tile = self._make(coming_from_grondia=False)
+        prev_tile = Mock()
+        prev_tile.map = {"name": "eastern-descent"}
+        player.previous_tile = prev_tile
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
 
     def test_conditions_skip_when_no_previous_tile(self):
         """No previous_tile at all (e.g. spawned directly on the tile) —

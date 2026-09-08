@@ -10,6 +10,14 @@ const CAST = [
     { id: 'Amelia', name: 'Amelia', side: 'right', emotion: 'happy' },
 ]
 
+// Same mocking shape as CombatGlossaryPanel.test.jsx: useMobile is the
+// established viewport-detection hook (LoginPage, GamePage,
+// CombatGlossaryPanel, GlossaryHelpButton all read it), so the narrow-viewport
+// tests below drive it directly instead of fighting jsdom's matchMedia stub
+// (test/setup.js always reports desktop).
+const mediaMocks = vi.hoisted(() => ({ isMobile: false }))
+vi.mock('../hooks/useMobile', () => ({ useMobile: () => mediaMocks.isMobile }))
+
 describe('computeStage (cast replay)', () => {
     it('seeds the initial roster with cast emotions', () => {
         const segments = [{ text: 'intro', in_conversation: true }]
@@ -234,6 +242,27 @@ describe('computeStage (cast replay)', () => {
         expect(before).not.toContain('Mara')
         expect(after).toContain('Mara')
     })
+
+    // --- issue #539: a narrated (speaker-less) beat naming its subject ---
+
+    it('surfaces the current beat\'s reaction targets as focusedIds, for a narrated beat naming its subject with no speaker', () => {
+        // Mirrors src/story/ch03.py's react()-then-print_slow pattern (e.g.
+        // react("Jean", "concerned") followed by narrated prose about Jean): the
+        // beat carries no `speaker` at all, only `reactions`, and that is the
+        // only signal the stage has for "this narrated beat is about them."
+        const gorranCast = [
+            { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
+            { id: 'Gorran', name: 'Gorran', side: 'right', emotion: 'neutral' },
+        ]
+        const segments = [
+            { text: 'a', speaker: 'Jean', in_conversation: true },
+            { text: 'Gorran made a low sound.', in_conversation: true, reactions: { Gorran: 'neutral' } },
+        ]
+        const { focusedIds, activeSpeaker } = computeStage(segments, 1, gorranCast)
+        expect(activeSpeaker).toBeNull()
+        expect(focusedIds.has('Gorran')).toBe(true)
+        expect(focusedIds.has('Jean')).toBe(false)
+    })
 })
 
 describe('ConversationStage rendering', () => {
@@ -421,6 +450,37 @@ describe('ConversationStage rendering', () => {
         const stage = screen.getByTestId('conversation-stage')
         act(() => vi.advanceTimersByTime(3000))
         fireEvent.keyDown(stage, { key: ' ' })
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('You worry too much, dear.')).toBeInTheDocument()
+    })
+
+    // Issue #530: the "click or press Enter to continue" hint (rendered by
+    // BaseDialog's hint text prop when this stage is hosted inside
+    // EventDialog) advertises Enter, but the two tests above fire the keydown
+    // directly on the stage's own node -- which only proves a listener is
+    // ATTACHED there, not that it ever receives a REAL key press. Nothing in
+    // this component ever calls `.focus()` on `containerRef`, and its
+    // `tabIndex={-1}` explicitly excludes it from BaseDialog's focus trap (see
+    // BaseDialog.jsx's FOCUSABLE_SELECTOR, which excludes `[tabindex="-1"]`),
+    // so real focus never lands inside this node. A real key press bubbles
+    // from wherever focus actually is -- jsdom defaults that to
+    // `document.body` when nothing has claimed it, which is also what
+    // BaseDialog's trap falls back to focusing when the stage has no other
+    // focusable descendant yet. `document.body` is an ANCESTOR of the stage's
+    // own div, not a descendant, so a listener scoped to the stage's node
+    // cannot see an event that originates there.
+    it('advances on Enter when the keydown originates from the actually-focused element, not the stage node itself', () => {
+        render(
+            <ConversationStage
+                segments={stagedSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(document.activeElement).toBe(document.body)
+
+        fireEvent.keyDown(document.body, { key: 'Enter' })
         act(() => vi.advanceTimersByTime(3000))
         expect(screen.getByText('You worry too much, dear.')).toBeInTheDocument()
     })
@@ -957,4 +1017,155 @@ describe('ConversationStage renders every portrait/expression that exists on dis
             expect(img.dataset.speakerSlug).toBe(character)
         }
     )
+})
+
+describe('ConversationStage narrow-viewport portrait layout (issue #541)', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => {
+        vi.useRealTimers()
+        mediaMocks.isMobile = false
+    })
+
+    it('keeps the desktop default layout as a single row with the historical 150px column floor (regression guard)', () => {
+        // Pins the UNCHANGED behaviour so the narrow-viewport test below is
+        // read as a genuine reflow, not a global change to the default layout.
+        render(
+            <ConversationStage
+                segments={[{ text: 'A line.', speaker: 'Jean', emotion: 'neutral', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage.style.flexDirection).not.toBe('column')
+        const columns = stage.querySelectorAll('.conversation-stage__portrait-column')
+        expect(columns.length).toBe(2)
+        columns.forEach((col) => expect(col.style.minWidth).toBe('150px'))
+    })
+
+    it('stacks the portrait columns above the dialogue card on narrow viewports instead of squeezing it to a sliver', () => {
+        // Reproduces issue #541: measured on a 375x812 mobile emulation, two
+        // fixed 150px portrait-column floors (ConversationStage.jsx:216) left a
+        // ~291.5px-wide stage only ~36px for the dialogue text — one word per
+        // line — because the default layout (EventDialog's authored-event path;
+        // NpcChatPanel's `layout="wide"` already reflows via
+        // styles/index.css's `.conversation-stage--wide` media query) had no
+        // viewport-aware branch at all.
+        mediaMocks.isMobile = true
+        render(
+            <ConversationStage
+                segments={[{ text: 'A narrow line.', speaker: 'Jean', emotion: 'neutral', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        // Stacks into a column: a portraits row above a full-width dialogue
+        // row, the same reflow `.conversation-stage--wide`'s own phone
+        // breakpoint already gets from CSS (grid-template-areas "left right" /
+        // "dialogue dialogue") — expressed in JS here because the default
+        // layout styles itself inline (see 'keeps the default layout styling
+        // itself inline').
+        expect(stage.style.flexDirection).toBe('column')
+
+        // Both cast portraits still render...
+        expect(screen.getByAltText(/Jean/i)).toBeInTheDocument()
+        expect(screen.getByAltText(/Amelia/i)).toBeInTheDocument()
+
+        // ...and the fixed floor that used to reserve 150px per column
+        // regardless of viewport is gone, so the dialogue row underneath is
+        // never starved by portraits it isn't even sharing a row with.
+        const columns = stage.querySelectorAll('.conversation-stage__portrait-column')
+        expect(columns.length).toBe(2)
+        columns.forEach((col) => expect(col.style.minWidth).not.toBe('150px'))
+    })
+
+    it('leaves the wide layout alone on narrow viewports — it already reflows via CSS', () => {
+        // `layout="wide"` must not also pick up the default layout's JS reflow;
+        // its narrow treatment is `.conversation-stage--wide`'s own media query
+        // in styles/index.css; ConversationStage.jsx sets nothing inline for
+        // it (THE RULE — see the 'supports a wide layout...' test).
+        mediaMocks.isMobile = true
+        render(
+            <ConversationStage
+                segments={[{ text: 'A wide line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                layout="wide"
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage.style.display).toBe('')
+        expect(stage.style.flexDirection).toBe('')
+    })
+})
+
+describe('ConversationStage narrated-beat focus state (issue #539)', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('captions and highlights a narrated beat\'s non-speaking subject instead of fading it to unlabelled grey with everyone else', () => {
+        // Reproduces issue #539: Gorran never speaks (his lines are narrated),
+        // so the existing "gold frame + caption only while speaking" rule never
+        // once fires for him — a first-time player sees an unlabelled grey
+        // armoured figure for the whole scene. src/story/ch03.py already has a
+        // mechanism for this (react() sets a listener's emotion on a beat with
+        // no speaker, exactly the shape used for Jean/Mara elsewhere in that
+        // file) — the beat's `reactions` map is the only signal available for
+        // "this narrated beat is about them," and the stage must not just
+        // discard it the way it discards every other listener's caption.
+        const cast = [
+            { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
+            { id: 'Gorran', name: 'Gorran', side: 'right', emotion: 'neutral' },
+        ]
+        const segments = [
+            { text: 'Jean took stock of the camp.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            {
+                text: 'Gorran made the low sound he sometimes made.',
+                in_conversation: true,
+                reactions: { Gorran: 'neutral' },
+            },
+        ]
+        render(
+            <ConversationStage segments={segments} conversation={{ cast }} onComplete={vi.fn()} />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage)) // beat 0 (Jean speaking) -> beat 1 (the narrated Gorran beat)
+        act(() => vi.advanceTimersByTime(3000))
+
+        // Nobody is speaking on this beat (no gold frame for anyone), but
+        // Gorran — named in this beat's reactions — must still be captioned...
+        const gorranCaption = screen.getByText('Gorran')
+        expect(gorranCaption.style.opacity).not.toBe('0')
+        // ...and visibly distinguished from Jean, who is just an ordinary
+        // (now non-speaking) listener on this same beat: both used to fade to
+        // the identical hidden-caption grey the moment nobody spoke.
+        const jeanCaption = screen.getByText('Jean')
+        expect(Number(gorranCaption.style.opacity)).toBeGreaterThan(Number(jeanCaption.style.opacity))
+    })
+
+    it('never lets a spoken-beat speaker also read as merely "focused" — speaking still outranks it', () => {
+        // The focus highlight must be visually distinct from (never confused
+        // with, never double-applied under) the speaking highlight.
+        const cast = [
+            { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
+            { id: 'Amelia', name: 'Amelia', side: 'right', emotion: 'happy' },
+        ]
+        const segments = [
+            {
+                text: 'You stubborn man.',
+                speaker: 'Amelia',
+                emotion: 'happy',
+                reactions: { Amelia: 'happy' },
+                in_conversation: true,
+            },
+        ]
+        render(
+            <ConversationStage segments={segments} conversation={{ cast }} onComplete={vi.fn()} />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        // Scoped to the portrait's own caption span, not the dialogue card's
+        // speaker-name label above the line (also literal text "Amelia").
+        const ameliaCaption = screen.getByAltText(/Amelia/i).parentElement.querySelector('span')
+        // Full speaker opacity/color, not the intermediate "focused" treatment.
+        expect(ameliaCaption.style.opacity).toBe('1')
+    })
 })

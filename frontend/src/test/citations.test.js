@@ -122,6 +122,14 @@ const CITATIONS = [
         anchor: 'mapEmotion(table, key)',
         claim: 'that audit names this call as one it structurally cannot see',
     }),
+    cite({
+        where: 'hooks/useNpcChat.js',
+        about: 'ai/npc/human/mara.json',
+        anchor: 'closing_lines_when_exhausted',
+        claim:
+            'the AUTO_CLOSE_DELAY_MS comment cites this authored pool as the'
+            + ' reason a fixed post-typing delay has to be generous',
+    }),
 
     // utils/apiError.js, registered because its central claim IS a claim about
     // other files: "no response carries a `message` that is worse copy than

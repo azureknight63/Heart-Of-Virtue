@@ -59,6 +59,16 @@ export function useCombatCoordinator({
     // in the same render cycle where the kill is detected. useState would queue
     // the update for the next render, causing a one-frame flash to exploration mode.
     const endStatePendingRef = useRef(false)
+    // REACTIVE counterpart of endStatePendingRef, set/reset at the exact same
+    // points. The ref exists so GamePage's mode-lock effect sees the flag
+    // synchronously within one render cycle; a consumer that wants to actually
+    // RENDER something (a "resolving…" indicator) needs a value React knows to
+    // re-render on, which a ref alone never provides. Without this, the screen
+    // sat with no visible cue for the whole gated wait (pending logs/animations
+    // plus VICTORY_DIALOG_DELAY_MS) between the last combat-log line and the
+    // victory/defeat dialog mounting — 8-16s that testers mistook for a
+    // soft-lock (issue #535 sub-item 1).
+    const [isResolvingCombatEnd, setIsResolvingCombatEnd] = useState(false)
 
     // Combat log processing state
     const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
@@ -96,6 +106,8 @@ export function useCombatCoordinator({
             // mode on every re-render after the timer fired.
             if (maybeEnd.id !== lastEndStateId) {
                 endStatePendingRef.current = true
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive twin of the ref above; same guard, same reasoning.
+                setIsResolvingCombatEnd(true)
             }
             if (!isCombatLogProcessing && !hasPendingLogs && !isBattlefieldAnimating && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
                 // Mark handled immediately so re-renders don't schedule a second timer
@@ -110,6 +122,7 @@ export function useCombatCoordinator({
                 endStateTimerRef.current = setTimeout(() => {
                     endStateTimerRef.current = null
                     endStatePendingRef.current = false
+                    setIsResolvingCombatEnd(false)
                     if (isVictory) {
                         if (hasPreVictoryNarrative) {
                             // VictoryDialog (and its fanfare) is deferred until the
@@ -231,6 +244,7 @@ export function useCombatCoordinator({
         endState,
         lastEndStateId,
         endStatePendingRef,
+        isResolvingCombatEnd,
         isCombatLogProcessing,
         currentLogIndex,
         hoveredTargetId,

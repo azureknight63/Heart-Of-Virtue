@@ -61,8 +61,8 @@ class Testexp(NPC):
 class RockRumbler(NPC):
     def __init__(self):
         description = (
-            "A burly creature covered in a rock-like carapace somewhat resembling a stout crocodile."
-            "Highly resistant to most weapons. You'd probably be better off avoiding combat with this"
+            "A burly creature covered in a rock-like carapace somewhat resembling a stout crocodile. "
+            "Highly resistant to most weapons. You'd probably be better off avoiding combat with this "
             "one."
         )
         super().__init__(

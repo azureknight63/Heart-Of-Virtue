@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import apiClient from '../api/client'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { apiErrorMessage } from '../utils/apiError'
+import { filterDisplayableEvents } from '../utils/eventDisplay'
 import logger from '../utils/logger'
 
 // Constants
@@ -98,13 +99,7 @@ export function useEventManager({
                 names: events.map(e => e.name)
             })
             // Filter events that have output text or need input to display
-            const displayableEvents = events.filter(
-                event => {
-                    const hasOutput = (event.output_text && event.output_text.trim().length > 0)
-                    const needsInput = event.needs_input
-                    return hasOutput || needsInput
-                }
-            )
+            const displayableEvents = filterDisplayableEvents(events)
 
             if (displayableEvents.length > 0) {
                 // Drop anything that's already the displayed event before it

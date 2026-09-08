@@ -2064,7 +2064,28 @@ class GenericLLMClient:
                 # Auth, billing, forbidden and not-found failures are
                 # deterministic: the identical request will fail the same way
                 # over HTTP, so retrying it there just burns a second round trip.
-                logger.debug(
+                #
+                # 401/402/404 (_PERMANENT_MODEL_FAILURES) mean the CONFIGURED
+                # MODEL is broken -- a bad slug, a revoked key, a spent
+                # account -- and every future call repeats this identically.
+                # That used to log at DEBUG only, which is invisible at the
+                # default level and never reaches LOG_FILE, so a misconfigured
+                # model id (issue #533: `stepfun/step-3.5-flash:free` 404ing on
+                # every turn) degraded the player's conversation silently.
+                # Promoted to WARNING so it is loud by default.
+                #
+                # 403 stays at DEBUG: it is deliberately excluded from
+                # _PERMANENT_MODEL_FAILURES because it can be a per-request
+                # refusal (moderation, region block) rather than proof the
+                # model itself is dead -- see that set's own comment.
+                # Escalating every one of those would bury the signal this
+                # promotion exists to surface.
+                log_fn = (
+                    logger.warning
+                    if status in _PERMANENT_MODEL_FAILURES
+                    else logger.debug
+                )
+                log_fn(
                     "SDK request for %s failed with status %s (deterministic); "
                     "skipping HTTP fallback.",
                     model_id, status,

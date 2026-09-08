@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import BaseDialog, { resolveDialogWidth } from './BaseDialog'
-import { colors } from '../styles/theme'
+import { colors, accessibility } from '../styles/theme'
 
 /** jsdom normalises inline colours to rgb(); theme.js mixes hex and rgba(). */
 const cssColor = (value) => {
@@ -11,11 +11,15 @@ const cssColor = (value) => {
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
 }
 
+const mobileMock = vi.hoisted(() => ({ isMobile: false }))
+vi.mock('../hooks/useMobile', () => ({ useMobile: () => mobileMock.isMobile }))
+
 describe('BaseDialog', () => {
   const mockOnClose = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mobileMock.isMobile = false
   })
 
   describe('Rendering', () => {
@@ -55,6 +59,29 @@ describe('BaseDialog', () => {
       const closeButton = screen.getByRole('button')
       expect(closeButton).toBeInTheDocument()
       expect(closeButton).toHaveTextContent('✕')
+    })
+
+    it('grows the close button to the 44px touch-target minimum on mobile (issue #542)', () => {
+      mobileMock.isMobile = true
+      render(
+        <BaseDialog onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      const closeButton = screen.getByRole('button')
+      expect(closeButton.style.minWidth).toBe(accessibility.touchTarget)
+      expect(closeButton.style.minHeight).toBe(accessibility.touchTarget)
+    })
+
+    it('leaves the close button at its native size on desktop', () => {
+      render(
+        <BaseDialog onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      const closeButton = screen.getByRole('button')
+      expect(closeButton.style.minWidth).toBe('')
+      expect(closeButton.style.minHeight).toBe('')
     })
 
     it('hides close button when showCloseButton is false', () => {

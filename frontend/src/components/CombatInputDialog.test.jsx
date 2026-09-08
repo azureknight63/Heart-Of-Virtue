@@ -343,6 +343,165 @@ describe('CombatInputDialog', () => {
     fireEvent.click(button);
     expect(mockOnSelect).toHaveBeenCalledWith('Option');
   });
+  // --- Issue #535: confirm-verb, HP color, and hit-testability -------------
+  describe('target selection — confirm verb (issue #535 sub-item 2)', () => {
+    it('labels the confirm control STRIKE for a genuine attack (Offensive) move', () => {
+      const options = [makeTargetOption({ id: 'target1', name: 'Goblin' })];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+          moveName="Slash"
+          moveCategory="Offensive"
+        />
+      );
+      expect(screen.getByRole('button', { name: /strike/i })).toBeDefined();
+    });
+
+    it('labels the confirm control with the move\'s own verb for a non-attack move (e.g. Advance)', () => {
+      // Regression: MANEUVER -> Advance used to show "STRIKE" on both the
+      // enemy AND an allied target, which reads as "attack your own ally".
+      const options = [
+        makeTargetOption({ id: 'enemy_1', name: 'Rock Rumbler' }),
+        makeTargetOption({ id: 'ally_1', name: 'Gorran' }),
+      ];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+          moveName="Advance"
+          moveCategory="Maneuver"
+        />
+      );
+      // Two targets means two confirm buttons; a stray "STRIKE" on either
+      // one is the bug, so scan all matches rather than assume uniqueness.
+      expect(screen.queryAllByText(/strike/i).length).toBe(0);
+      // GameButton uppercases via CSS textTransform, so the button's own text
+      // content is the move's actual name, not a fixed "STRIKE".
+      expect(screen.getAllByRole('button', { name: /advance/i }).length).toBeGreaterThan(0);
+    });
+
+    it('falls back to a neutral "Select" when no move name/category is known', () => {
+      const options = [makeTargetOption({ id: 'target1', name: 'Goblin' })];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+        />
+      );
+      expect(screen.queryAllByText(/strike/i).length).toBe(0);
+      expect(screen.getByRole('button', { name: /select/i })).toBeDefined();
+    });
+  });
+
+  describe('target selection — HP bar color reflects real percentage (issue #535 sub-item 3)', () => {
+    // colors.success/warning/danger, as rgb() — jsdom normalizes any hex
+    // color set via inline style to this form.
+    const HEALTHY = 'rgb(0, 255, 136)';
+    const WARNING = 'rgb(255, 170, 0)';
+    const DANGER = 'rgb(255, 68, 68)';
+
+    it('renders a full-health target in a healthy color, not danger red', () => {
+      const options = [makeTargetOption({ id: 'ally_1', name: 'Gorran', health: { current: 48, max: 48 } })];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+        />
+      );
+      const hpLine = screen.getByText('48/48');
+      expect(hpLine.style.color).toBe(HEALTHY);
+    });
+
+    it('renders a critically low-health target in danger red', () => {
+      const options = [makeTargetOption({ id: 'enemy_1', name: 'Rumbler', health: { current: 10, max: 100 } })];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+        />
+      );
+      const hpLine = screen.getByText('10/100');
+      expect(hpLine.style.color).toBe(DANGER);
+    });
+
+    it('renders a mid-health target in a distinct warning color', () => {
+      const options = [makeTargetOption({ id: 'enemy_1', name: 'Rumbler', health: { current: 35, max: 100 } })];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+        />
+      );
+      const hpLine = screen.getByText('35/100');
+      expect(hpLine.style.color).toBe(WARNING);
+    });
+
+    it('also colors the fill bar itself by percentage, not a fixed hue', () => {
+      const options = [makeTargetOption({ id: 'ally_1', name: 'Gorran', health: { current: 48, max: 48 } })];
+      const { container } = render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+        />
+      );
+      const fill = container.querySelector('div[style*="width: 100%"][style*="border-radius: 2px"]');
+      expect(fill).not.toBeNull();
+      expect(fill.style.backgroundColor).toBe(HEALTHY);
+    });
+  });
+
+  describe('target selection — STRIKE/confirm button is genuinely hit-testable (issue #535 sub-item 5)', () => {
+    it('the confirm button itself does not carry pointerEvents: none', () => {
+      // Confirmed root cause: a deliberate `pointerEvents: 'none'` on the
+      // button made it invisible to real DOM hit-testing (elementFromPoint /
+      // Playwright's actionability check), even though the card's onClick
+      // still made the CARD clickable. The button itself must be real.
+      const options = [makeTargetOption({ id: 'target1', name: 'Goblin' })];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+        />
+      );
+      const button = screen.getByRole('button', { name: /select|strike/i });
+      expect(button.style.pointerEvents).not.toBe('none');
+    });
+
+    it('clicking the confirm button directly selects the target exactly once', () => {
+      const options = [makeTargetOption({ id: 'target1', name: 'Goblin' })];
+      render(
+        <CombatInputDialog
+          inputType="target_selection"
+          options={options}
+          onSelect={mockOnSelect}
+          onCancel={mockOnCancel}
+        />
+      );
+      const button = screen.getByRole('button', { name: /select|strike/i });
+      fireEvent.click(button);
+      // Not called twice: the card itself keeps its own onClick for the same
+      // target, and a naive fix that lets both fire would submit the move twice.
+      expect(mockOnSelect).toHaveBeenCalledExactlyOnceWith('target1');
+    });
+  });
+
   it('sizes itself against the battlefield panel it sits in, not the viewport', () => {
     // This dialog is `containerCentered` — it is positioned inside the
     // battlefield panel, not the viewport. It also passes maxWidth="600px", so

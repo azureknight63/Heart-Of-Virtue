@@ -18,13 +18,6 @@ Optional host attributes, read with a default. Each is absent on at least one
 of the eleven real hosts, so the default is the live path there -- see
 ``_HOST_SPECIFIC`` in tests/test_npc_chat_merchant_and_loquacity.py, which
 derives this list from the source and makes every entry carry a reason:
-    self.wisdom              int, and only NomadBoy and NomadGirl set it (both
-                             to 8). This line used to sit above with the
-                             required attributes, claiming wisdom drove
-                             loquacity recovery; nine of the eleven hosts do
-                             not have it and the term is inert at every value
-                             the game contains -- see
-                             _LOQUACITY_RECOVERY_WISDOM_DIVISOR.
     self.level               int (allies only; merchants have no progression)
     self.growth_profile      dict (allies only)
     self.always_stock        list (merchants only)
@@ -1334,37 +1327,23 @@ _LOQUACITY_PARTY_MOD = 10
 #: the second is why the note names the file now.
 _LOQUACITY_FAVOURABLE_EQUIPMENT = ("crucifix", "religious token", "nomad gear")
 
-#: Recovery per beat. THE WISDOM TERM IS INERT AT EVERY VALUE THE GAME
-#: CONTAINS, and this note used to say the opposite ("Recovery per beat is
-#: wisdom-driven"), which is the same kind of false comment that let the
-#: crucifix modifier above look alive for four rounds.
+#: Recovery per beat, derived from the pool (``loquacity_max``) rather than
+#: wisdom (issue #526). The wisdom-keyed formula this replaced was inert at
+#: every value the game contains -- nine of eleven conversational NPCs have
+#: no ``wisdom`` at all, and neither the baseline nor the two authored 8s
+#: could clear either of its two floors -- so every NPC recovered exactly the
+#: same 1 point/beat regardless of the stat the design said should vary it.
 #:
-#: Two floors, either of which alone would flatten it:
-#:
-#: * ``wisdom // 8`` only exceeds :data:`_LOQUACITY_RECOVERY_FLOOR` at wisdom
-#:   24 and above;
-#: * :func:`scale_loquacity` only moves off 1 at an unscaled 10 and above, so
-#:   the wisdom term would have to reach 10 -- wisdom 80 -- to change the
-#:   number that is actually stored.
-#:
-#: Authored wisdom in this game is 8, on NomadBoy and NomadGirl; the other nine
-#: hosts do not set the attribute at all, so they take
-#: :data:`_LOQUACITY_STAT_BASELINE` (10). Every conversational NPC therefore
-#: recovers exactly ``scale_loquacity(2) == 1`` per beat, which is
-#: :data:`_DEFAULT_LOQUACITY_RECOVERY` -- the "pre-computation placeholder"
-#: that computation never moves.
-#:
-#: LEFT AS IS DELIBERATELY. Making the term live means changing the divisor or
-#: the floor, and either doubles or halves how fast every NPC in the game
-#: regains patience: at divisor 1 a wisdom-8 NPC recovers 1 and a wisdom-10 NPC
-#: recovers 2, so the nine hosts that do not declare wisdom would silently
-#: overtake the two that do. That is a balance decision for the designer, not
-#: a scrub. Documented instead, the way
-#: :data:`_LOQUACITY_FAVOURABLE_EQUIPMENT` above is, and pinned by
-#: ``TestTheWisdomTermIsInert`` so that authoring a wise NPC -- or changing
-#: either constant -- turns a test red and makes somebody revisit this note.
-_LOQUACITY_RECOVERY_FLOOR = 2
-_LOQUACITY_RECOVERY_WISDOM_DIVISOR = 8
+#: ``loquacity_max`` (the pool, already scaled -- see :func:`scale_loquacity`)
+#: is the lever that is actually authored (28-150 pre-scale) and already
+#: varies per NPC, unlike wisdom. Dividing by 6 keeps refill time roughly
+#: uniform across the roster (~4-11 beats depending on pool size) while still
+#: reading as a coherent rule: an NPC who will talk for a long time also
+#: becomes willing to talk again sooner. Measured against the real roster
+#: (Devet 15->round(15/6)=2, Liss 22->4, Mara 9->2, NomadGirl 6->1, ...), this
+#: gives real day-one spread with no content-authoring work required. Python's
+#: ``round()`` is round-half-to-even, which is why a pool of 15 lands on 2.
+_LOQUACITY_RECOVERY_POOL_DIVISOR = 6
 
 #: Pre-scale floors, kept as the numbers the design was written in so the scaling
 #: rule is visible at the one place it is applied.
@@ -1895,18 +1874,11 @@ class ConversationalNPCMixin:
             scale_loquacity(_LOQUACITY_THRESHOLD_FLOOR),
             loquacity_max // _LOQUACITY_THRESHOLD_DIVISOR,
         )
-        # The wisdom half of this is currently dead in both directions --
-        # nine of the eleven hosts have no `wisdom` at all, and neither the
-        # baseline nor the two authored 8s can clear either floor. The long
-        # note beside `_LOQUACITY_RECOVERY_WISDOM_DIVISOR` says why it is
-        # written out rather than folded away, and `TestTheWisdomTermIsInert`
-        # fails if that stops being true.
-        self.loquacity_recovery = scale_loquacity(
-            max(
-                _LOQUACITY_RECOVERY_FLOOR,
-                getattr(self, "wisdom", _LOQUACITY_STAT_BASELINE)
-                // _LOQUACITY_RECOVERY_WISDOM_DIVISOR,
-            )
+        # Derived from the pool, not wisdom (issue #526) -- see the note
+        # beside _LOQUACITY_RECOVERY_POOL_DIVISOR. loquacity_max is already
+        # scaled, so no further scale_loquacity() call is needed here.
+        self.loquacity_recovery = max(
+            1, round(loquacity_max / _LOQUACITY_RECOVERY_POOL_DIVISOR)
         )
 
         if self.loquacity_current == 0:
@@ -4020,9 +3992,25 @@ class ConversationalNPCMixin:
             ended=self.loquacity_current < self.loquacity_threshold,
         )
 
+    @staticmethod
+    def _flavor_only_turn(line: str) -> Tuple[str, str]:
+        """Wrap a line of engine-authored fallback text as ``(npc_text, npc_flavor)``.
+
+        ``npc_text`` is always ``""``: authored fallback pools
+        (``conversation_starters_by_chapter``, ``closing_lines_when_exhausted``,
+        the brush-off line) are written as third-person narration, not
+        first-person speech, so rendering them under the NPC's speaker label
+        would be indistinguishable from something the NPC actually said
+        (issue #532). The three call sites that need this — the loquacity
+        brush-off, a failed opening, and a failed mid-conversation reply —
+        used to each build the ``("", line)`` pair independently; this is
+        the one place the rule now lives.
+        """
+        return "", line
+
     def _resolve_fallback_response(
         self, player, conversation_ended: bool
-    ) -> Tuple[str, bool]:
+    ) -> Tuple[str, str, bool]:
         """Deterministic reply for a turn the LLM could not produce.
 
         Called only after loquacity is resolved, so the line can tell whether
@@ -4044,28 +4032,33 @@ class ConversationalNPCMixin:
         the single most recent line, which is visible whenever an authored pool
         has only one entry (rotation itself only guarantees that no two
         *consecutive* draws collide, and only for pools of two or more).
+
+        Returns ``(npc_text, npc_flavor, conversation_ended)`` — see
+        ``_flavor_only_turn`` for why ``npc_text`` is always ``""``.
         """
-        response = self._get_fallback_npc_line(
+        line = self._get_fallback_npc_line(
             is_opening=False, player=player, exhausted=conversation_ended
         )
         logger.warning(
-            "chat_respond using deterministic fallback response. npc=%s response_chars=%s",
+            "chat_respond using deterministic fallback response, routed to "
+            "npc_flavor (npc_text left empty; see issue #532). npc=%s flavor_chars=%s",
             self.name,
-            len(response or ""),
+            len(line or ""),
         )
         already_said = {
             entry.get("npc") for entry in self._chat_history if entry.get("npc")
         }
-        if not conversation_ended and response in already_said:
+        if not conversation_ended and line in already_said:
             conversation_ended = True
-            response = self._get_fallback_npc_line(
+            line = self._get_fallback_npc_line(
                 is_opening=False, player=player, exhausted=True
             )
             logger.info(
                 "chat_respond fallback pool exhausted; forcing conversation_ended. npc=%s",
                 self.name,
             )
-        return response, conversation_ended
+        npc_text, npc_flavor = self._flavor_only_turn(line)
+        return npc_text, npc_flavor, conversation_ended
 
     def _retract_guarded_loquacity_gain(
         self, outcome: "LoquacityOutcome"
@@ -4165,9 +4158,16 @@ class ConversationalNPCMixin:
             guarded = self._guard_turn(adapter, system, assembled, deadline)
         if guarded.tripped and on_tripped is not None:
             on_tripped()
+        # Persist the flavor/narration text when there was no spoken line —
+        # a total fallback turn (issue #532) now ships "" as npc_text so the
+        # player is not shown narration under a speaker label, but the history
+        # replayed into future prompts, and the dedup check in
+        # _resolve_fallback_response, both need SOMETHING recorded for the
+        # turn or every fallback beat reads as a blank "NPC:" line and no two
+        # fallback beats can ever be told apart.
         self._save_exchange_to_persistence(
             player,
-            guarded.turn.npc_text,
+            guarded.turn.npc_text or guarded.turn.npc_flavor,
             "",
             self._game_tick(player),
             self._get_chapter(player),
@@ -4220,7 +4220,8 @@ class ConversationalNPCMixin:
         """Assemble the /open response body.
 
         The exchange count is always 0: this IS the first exchange. The
-        brush-off path passes a bare :class:`Turn` (no flavor, no options) and
+        brush-off path passes a flavor-only :class:`Turn` (see
+        ``_flavor_only_turn`` — empty ``npc_text``, no ``jean_options``) and
         ``conversation_ended=True``.
         """
         payload = self._base_payload(
@@ -4306,10 +4307,12 @@ class ConversationalNPCMixin:
                     self.loquacity_current,
                     self.loquacity_threshold,
                 )
+                # See _flavor_only_turn for why this routes to npc_flavor
+                # rather than under the speaker label (issue #532).
                 return self._open_payload(
                     npc_key,
                     player,
-                    Turn(self._get_brush_off_line()),
+                    Turn(*self._flavor_only_turn(self._get_brush_off_line())),
                     llm_available=False,
                     conversation_ended=True,
                 )
@@ -4337,6 +4340,7 @@ class ConversationalNPCMixin:
                 jean_text=None,
                 deadline=deadline,
             )
+            fallback_flavor = ""
             if model_turn is not None:
                 npc_opening = model_turn.npc_text
                 logger.info(
@@ -4345,12 +4349,16 @@ class ConversationalNPCMixin:
                     len(npc_opening),
                 )
             else:
-                npc_opening = self._get_fallback_npc_line(
-                    is_opening=True, player=player
+                # See _flavor_only_turn for why this routes to npc_flavor
+                # rather than under the speaker label (issue #532).
+                npc_opening, fallback_flavor = self._flavor_only_turn(
+                    self._get_fallback_npc_line(is_opening=True, player=player)
                 )
                 llm_available = False
                 logger.warning(
-                    "chat_open using deterministic fallback opening. npc=%s", self.name
+                    "chat_open using deterministic fallback opening, routed to "
+                    "npc_flavor (npc_opening left empty; see issue #532). npc=%s",
+                    self.name,
                 )
 
             jean_options = self._resolve_jean_options(
@@ -4368,7 +4376,7 @@ class ConversationalNPCMixin:
             # authored fallback opening is exempt.
             assembled = Turn(
                 npc_opening,
-                model_turn.npc_flavor if model_turn else "",
+                model_turn.npc_flavor if model_turn else fallback_flavor,
                 jean_options,
             )
             guarded = self._guard_and_persist(
@@ -4489,8 +4497,11 @@ class ConversationalNPCMixin:
             )
 
             if npc_response is None:
-                npc_response, conversation_ended = self._resolve_fallback_response(
-                    player, conversation_ended
+                # npc_flavor is guaranteed "" here already (model_turn is None,
+                # so outcome is TurnOutcome()'s default) — safe to overwrite
+                # with the fallback's narration rather than merge.
+                npc_response, npc_flavor, conversation_ended = (
+                    self._resolve_fallback_response(player, conversation_ended)
                 )
                 llm_available = False
 

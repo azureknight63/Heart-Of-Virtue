@@ -219,6 +219,46 @@ describe('CombatManager', () => {
     })
   })
 
+  // Issue #535 sub-item 1: the screen used to sit with no visible cue for the
+  // whole gated wait between the last combat-log line and the victory/defeat
+  // dialog mounting. `isResolvingCombatEnd` (from useCombatCoordinator) now
+  // drives a small indicator for exactly that window.
+  describe('resolving indicator (issue #535 sub-item 1)', () => {
+    const resolvingTestId = 'combat-end-resolving'
+
+    it('shows the resolving indicator while an end state is pending and no dialog has mounted yet', () => {
+      renderManager({ isResolvingCombatEnd: true, endState: victory })
+      expect(screen.getByTestId(resolvingTestId)).toBeInTheDocument()
+    })
+
+    it('does not show the indicator when nothing has ended', () => {
+      renderManager({ isResolvingCombatEnd: false, endState: null })
+      expect(screen.queryByTestId(resolvingTestId)).not.toBeInTheDocument()
+    })
+
+    it('does not show the indicator once the victory dialog has actually mounted', () => {
+      renderManager({ isResolvingCombatEnd: true, showVictoryDialog: true, endState: victory })
+      expect(screen.queryByTestId(resolvingTestId)).not.toBeInTheDocument()
+      expect(mounted()).toEqual(['victory-dialog'])
+    })
+
+    it('does not show the indicator once the defeat dialog has actually mounted', () => {
+      renderManager({ isResolvingCombatEnd: true, showDefeatDialog: true, endState: defeat })
+      expect(screen.queryByTestId(resolvingTestId)).not.toBeInTheDocument()
+    })
+
+    it('does not show the indicator once the pre-victory narrative has mounted', () => {
+      const narrated = makeVictoryEndState({ pre_victory_narrative: 'The camp erupts in cheers.' })
+      renderManager({ isResolvingCombatEnd: true, showPreVictoryNarrative: true, endState: narrated })
+      expect(screen.queryByTestId(resolvingTestId)).not.toBeInTheDocument()
+    })
+
+    it('does not show the indicator without an endState, even if the flag is stuck on', () => {
+      renderManager({ isResolvingCombatEnd: true, endState: null })
+      expect(screen.queryByTestId(resolvingTestId)).not.toBeInTheDocument()
+    })
+  })
+
   describe('prop forwarding', () => {
     it('hands VictoryDialog the whole endState untouched', () => {
       renderManager({ showVictoryDialog: true, endState: victory })

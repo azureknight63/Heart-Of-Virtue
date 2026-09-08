@@ -8,6 +8,7 @@ import ConversationStage from './ConversationStage'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
+import { isTypingTarget, isModifiedKeyEvent } from '../utils/domFocus'
 import { cleanTerminalLineBreaks } from '../utils/entityUtils'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { apiErrorMessage } from '../utils/apiError'
@@ -259,6 +260,18 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         const handleKeyDown = (e) => {
             if (!showInput) return
             if (isSubmitting) return
+            // Guards required by a document-scoped listener (issue #530):
+            // without them, a keydown aimed at an unrelated focused control
+            // (a glossary search box, an NPC chat input open over this
+            // dialog) gets reinterpreted as this dialog's own shortcut —
+            // e.g. typing "2" into a search field silently submits a
+            // narrative choice — and a modifier combo like Ctrl+2 (a
+            // browser tab-switch shortcut) gets hijacked into one too.
+            // This dialog's OWN text/number input (inputRef) is exempt: its
+            // Enter-to-submit behaviour below is the intended shortcut, and
+            // that field genuinely is the real DOM focus target.
+            if (isTypingTarget(e.target) && e.target !== inputRef.current) return
+            if (isModifiedKeyEvent(e)) return
 
             // Handle number keys for choices
             if (inputType === 'choice' && inputOptions.length > 0) {
@@ -277,14 +290,22 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             }
         }
 
-        if (dialogRef.current) {
-            dialogRef.current.addEventListener('keydown', handleKeyDown)
-        }
+        // Attached to `document`, not dialogRef.current (issue #530).
+        // BaseDialog's own focus trap (useFocusTrap in BaseDialog.jsx) moves
+        // real DOM focus onto ITS container (`.modal-content`) -- or onto
+        // whichever focusable descendant it finds first -- never onto this
+        // div: dialogRef starts with nothing focusable inside it (showInput is
+        // false until the typewriter finishes) and, once choice buttons do
+        // appear, nothing here ever calls `.focus()` on one. `.modal-content`
+        // is an ANCESTOR of dialogRef, and keydown only bubbles UP from the
+        // focused element to its ancestors, never DOWN into a descendant, so a
+        // listener scoped to dialogRef could never see a real key press. This
+        // matches the document-level pattern BaseDialog's own Escape/Tab trap
+        // and the glossary panels already use.
+        document.addEventListener('keydown', handleKeyDown)
 
         return () => {
-            if (dialogRef.current) {
-                dialogRef.current.removeEventListener('keydown', handleKeyDown)
-            }
+            document.removeEventListener('keydown', handleKeyDown)
         }
     }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice, isSubmitting])
 
@@ -293,12 +314,49 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const charLimit = event?.input_max_length ?? 500
     const charCountColor = charCount > charLimit ? colors.danger : charCount > charLimit * 0.9 ? colors.warning : colors.text.muted
 
+    /**
+     * A plain click on the dialog body (including the text itself) doubles as
+     * the typewriter's "click to skip" gesture on the first click and
+     * "continue past a finished event" afterward, so this stays gated on
+     * `isComplete`: making it unconditional would turn the very click that
+     * reveals the text into the click that dismisses the whole dialog.
+     */
     const handleGlobalInteraction = () => {
         if (isSubmitting) return
         if (isComplete && !needsInput) {
             setIsSubmitting(true)
             onClose()
         }
+    }
+
+    /**
+     * ✕, the overlay backdrop click, and Escape — funneled through
+     * BaseDialog's single `onClose` prop — are unambiguous "I want to leave"
+     * gestures: none of them can be triggered by reading or skipping the
+     * text, unlike `handleGlobalInteraction` above. So they do not need to
+     * wait for a staged conversation to reach its last beat.
+     *
+     * A `needs_input:false` event (e.g. the "Event Result" frame built from a
+     * completed submission's output_text, or long arrival narration staged
+     * across several beats) is never persisted server-side as a pending event
+     * — GameService._store_pending_event only stores one when needs_input is
+     * true — so the backend already considers it done the moment it was
+     * produced. Dismissing it early is therefore purely a client-side/display
+     * concern. Requiring full conversation completion here meant that if a
+     * beat-advance click was ever lost, for any reason, the player lost every
+     * dismissal affordance simultaneously, with no independent escape hatch
+     * (issue #529 — soft-locked until page reload).
+     *
+     * A `needs_input` event is unaffected: it still requires an actual
+     * answer, and this function is reachable for it only via the overlay
+     * click (showCloseButton={!needsInput} hides ✕, and Escape shares this
+     * same guard) — which still no-ops, same as before.
+     */
+    const handleDismiss = () => {
+        if (isSubmitting) return
+        if (needsInput) return
+        setIsSubmitting(true)
+        onClose()
     }
 
     // Use wider dialog for memory events due to pre-formatted text
@@ -319,7 +377,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     return (
         <BaseDialog
             title={dialogTitle}
-            onClose={handleGlobalInteraction}
+            onClose={handleDismiss}
             showCloseButton={!needsInput}
             zIndex={3000}
             maxWidth={dialogMaxWidth}
@@ -621,7 +679,9 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         {/* Keyboard shortcuts hint */}
                         {inputType === 'choice' && inputOptions.length > 0 && (
                             <GameText variant="muted" size="xs" align="center" style={{ fontStyle: 'italic', marginTop: spacing.xs }}>
-                                Press 1-{Math.min(inputOptions.length, 9)} to select
+                                {inputOptions.length === 1
+                                    ? 'Press 1 to select'
+                                    : `Press 1-${Math.min(inputOptions.length, 9)} to select`}
                             </GameText>
                         )}
                     </div>

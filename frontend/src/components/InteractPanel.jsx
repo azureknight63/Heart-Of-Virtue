@@ -23,6 +23,18 @@ const SHOP_KEYWORDS = new Set(['buy', 'sell', 'trade'])
 // data fix landed, but content drifts and the frontend should not depend on it.
 const CHAT_KEYWORDS = new Set(['talk', 'chat'])
 
+// A raw compass direction is a movement shortcut duplicating whatever the
+// object's own contextual verb already does (e.g. the Eastern Gate's "enter"
+// and "east" both trigger the identical teleport — see
+// src/resources/maps/grondia.json). Rendering both the same bright "primary"
+// made two unequal actions look equally important (#540 item 7); the
+// contextual verb stays primary, the bare direction becomes secondary.
+const DIRECTION_KEYWORDS = new Set([
+    'north', 'south', 'east', 'west',
+    'northeast', 'northwest', 'southeast', 'southwest',
+    'up', 'down',
+])
+
 /**
  * The action buttons a target actually earns, de-duplicated.
  *
@@ -84,6 +96,26 @@ export function actionKeywords(target) {
         seen.add(action)
         return true
     })
+}
+
+/**
+ * Whether a target's INTERACT row should read as "will attack you" instead
+ * of being visually identical to a friendly NPC (issue #537).
+ *
+ * The distinction is not invented here: `is_hostile` is already computed
+ * server-side by `NPCSerializer.serialize`
+ * (src/api/serializers/npc_serializer.py), itself derived from the NPC's
+ * `aggro`/`friend` attributes on the Combatant/NPC/Friend hierarchy
+ * (src/combatant.py, src/npc/_base.py) — this only surfaces the flag that is
+ * already on the wire.
+ */
+function isHostileNpc(target) {
+    return target?.type === 'npc' && Boolean(target?.is_hostile)
+}
+
+/** Accent color for a target's chip/icon/border — danger for a hostile NPC, the shared per-type color otherwise. */
+function getTargetAccentColor(target) {
+    return isHostileNpc(target) ? colors.danger : getEntityColor(target?.type)
 }
 
 function InteractPanel({
@@ -320,8 +352,11 @@ function InteractPanel({
         setShowHistory(false)
     }
 
-    const getTargetIcon = (type) => {
-        switch (type) {
+    const getTargetIcon = (target) => {
+        // A hostile NPC gets its own glyph rather than the friendly 👤 — the
+        // two must not read as the same kind of thing (issue #537).
+        if (isHostileNpc(target)) return '⚔️'
+        switch (target?.type) {
             case 'npc': return '👤'
             case 'item': return '📦'
             case 'object': return '🪵'
@@ -446,21 +481,43 @@ function InteractPanel({
                                     }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, width: '100%', textAlign: 'left' }}>
-                                        <div style={{ fontSize: '20px' }}>{getTargetIcon(target.type)}</div>
-                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                            <GameText variant="primary" size="sm" weight="bold">
+                                        <div style={{ fontSize: '20px' }}>{getTargetIcon(target)}</div>
+                                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                                            {/* GameButton's own label styling is uppercase (see baseStyle in
+                                                GameButton.jsx) and text-transform inherits into any descendant
+                                                that doesn't override it — proper nouns and prose were being
+                                                force-uppercased just by living inside this button (#540 item 8).
+                                                Uppercase stays for the type badge below, which IS a label/chip. */}
+                                            <GameText variant="primary" size="sm" weight="bold" style={{ textTransform: 'none' }}>
                                                 {target.name} {target.count > 1 ? `(x${target.count})` : ''}
                                             </GameText>
                                             {target.description && (
-                                                <GameText variant="muted" size="xs" style={{ fontStyle: 'italic', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <GameText
+                                                    variant="muted"
+                                                    size="xs"
+                                                    style={{
+                                                        textTransform: 'none',
+                                                        fontStyle: 'italic',
+                                                        // Was a single hard-truncated line at 250px (~30 characters) —
+                                                        // wrap up to 2 lines instead, so more of the description
+                                                        // actually reaches the player.
+                                                        display: '-webkit-box',
+                                                        WebkitLineClamp: 2,
+                                                        WebkitBoxOrient: 'vertical',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'normal',
+                                                        wordBreak: 'break-word',
+                                                    }}
+                                                >
                                                     {target.description}
                                                 </GameText>
                                             )}
                                         </div>
                                         <div style={{
                                             fontSize: '10px',
-                                            color: getEntityColor(target.type),
-                                            border: `1px solid ${getEntityColor(target.type)}`,
+                                            color: getTargetAccentColor(target),
+                                            border: `1px solid ${getTargetAccentColor(target)}`,
                                             padding: '2px 6px',
                                             borderRadius: '4px',
                                             textTransform: 'uppercase',
@@ -468,7 +525,7 @@ function InteractPanel({
                                             letterSpacing: '1px',
                                             fontFamily: fonts.main,
                                         }}>
-                                            {target.type}
+                                            {isHostileNpc(target) ? 'hostile' : target.type}
                                         </div>
                                     </div>
                                 </GameButton>
@@ -486,7 +543,7 @@ function InteractPanel({
 
                         {/* Target Description */}
                         {selectedTarget.description && (
-                            <GamePanel variant="retro" style={{ borderLeft: `4px solid ${getEntityColor(selectedTarget.type)}` }}>
+                            <GamePanel variant="retro" style={{ borderLeft: `4px solid ${getTargetAccentColor(selectedTarget)}` }}>
                                 <GameText variant="primary" size="md" style={{ lineHeight: '1.5' }}>
                                     {renderTextWithLinks(selectedTarget.description, targets, handleTargetClick, selectedTarget)}
                                 </GameText>
@@ -506,7 +563,10 @@ function InteractPanel({
                             >
                                 <GameText variant="warning" size="sm" weight="bold">
                                     How many would you like to {pendingAction}?
-                                    <GameText variant="muted" size="xs" weight="normal" style={{ display: 'block' }}>
+                                    {/* GameText defaults to a <p> (see its `as` prop, added for #536); a <p>
+                                        nested inside this outer GameText's own <p> is invalid HTML and fired
+                                        React's validateDOMNesting warning on every quantity prompt (#540 item 14). */}
+                                    <GameText as="span" variant="muted" size="xs" weight="normal" style={{ display: 'block' }}>
                                         Available: {selectedTarget.count}
                                     </GameText>
                                 </GameText>
@@ -622,7 +682,7 @@ function InteractPanel({
                                             key={keyword}
                                             onClick={() => handleActionClick(keyword)}
                                             disabled={loading || isLocked}
-                                            variant="primary"
+                                            variant={DIRECTION_KEYWORDS.has(String(keyword).toLowerCase()) ? 'secondary' : 'primary'}
                                             style={{
                                                 flex: '1 0 120px',
                                                 padding: spacing.md,

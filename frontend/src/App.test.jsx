@@ -1,5 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { setFlag, resetFlags } from './utils/featureFlags'
 
 const mockUseAuth = vi.fn()
 const mockUseCapabilities = vi.fn()
@@ -42,6 +43,14 @@ describe('App', () => {
     mockUseAuth.mockReset()
     mockUseCapabilities.mockReset()
     mockUseCapabilities.mockReturnValue({ capabilitiesLoading: false, combatSocketStreaming: false })
+  })
+
+  afterEach(() => {
+    // featureFlags persists across tests via a module-level `state` and
+    // localStorage — reset both so a flag flipped by one test doesn't leak
+    // into the next, and clear the DOM side effect App.jsx applies.
+    resetFlags()
+    document.documentElement.classList.remove('reduced-motion')
   })
 
   it('renders the loading screen while auth is loading', () => {
@@ -158,5 +167,35 @@ describe('App', () => {
     setLocation('/games/HeartOfVirtue/does-not-exist')
     render(<App />)
     expect(screen.getByText('LandingPageStub')).toBeInTheDocument()
+  })
+
+  describe('reduced motion (#540 item 15)', () => {
+    it('does not mark <html> reduced-motion when the flag is off (the default)', () => {
+      mockUseAuth.mockReturnValue({ isAuthenticated: false, loading: false })
+      setLocation('/games/HeartOfVirtue/')
+      render(<App />)
+      expect(document.documentElement.classList.contains('reduced-motion')).toBe(false)
+    })
+
+    it('marks <html> reduced-motion when the flag is already on at mount', () => {
+      setFlag('reducedMotion', true)
+      mockUseAuth.mockReturnValue({ isAuthenticated: false, loading: false })
+      setLocation('/games/HeartOfVirtue/')
+      render(<App />)
+      expect(document.documentElement.classList.contains('reduced-motion')).toBe(true)
+    })
+
+    it('toggles the class live when the flag flips after mount', () => {
+      mockUseAuth.mockReturnValue({ isAuthenticated: false, loading: false })
+      setLocation('/games/HeartOfVirtue/')
+      render(<App />)
+      expect(document.documentElement.classList.contains('reduced-motion')).toBe(false)
+
+      act(() => setFlag('reducedMotion', true))
+      expect(document.documentElement.classList.contains('reduced-motion')).toBe(true)
+
+      act(() => setFlag('reducedMotion', false))
+      expect(document.documentElement.classList.contains('reduced-motion')).toBe(false)
+    })
   })
 })

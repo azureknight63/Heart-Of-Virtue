@@ -101,6 +101,25 @@ describe('CombatLog', () => {
     expect(container.querySelector('[style*="position: absolute"]')).not.toBeNull();
   });
 
+  // Issue #537 — CombatLog shares ScrollFadeIndicator/useScrollIndicators
+  // with CollapsibleRoomDescription, so it shares the same overlap bug: the
+  // persistent "▼ scroll ▼" hint painted directly over the last visible log
+  // line instead of sitting below it. The content container must reserve
+  // blank space below the lines once it overflows.
+  it('reserves space below the log lines for the bottom scroll hint instead of overlapping them', () => {
+    const { container } = render(<CombatLog log={mockLog} />);
+    const contentEl = container.querySelector('div[style*="overflow-y: auto"]');
+    const basePadding = parseInt(contentEl.style.paddingBottom || '0', 10);
+
+    Object.defineProperty(contentEl, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(contentEl, 'clientHeight', { value: 100, configurable: true });
+    Object.defineProperty(contentEl, 'scrollTop', { value: 0, configurable: true });
+    fireEvent.scroll(contentEl);
+
+    const paddingBottom = parseInt(contentEl.style.paddingBottom || '0', 10);
+    expect(paddingBottom).toBeGreaterThan(basePadding);
+  });
+
   it('respects allowResize prop', () => {
     const { container } = render(<CombatLog log={mockLog} allowResize={false} />);
     const resizeHandle = container.querySelector('[style*="cursor: ns-resize"], [style*="ns-resize"]');

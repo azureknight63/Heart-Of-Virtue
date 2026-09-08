@@ -10,7 +10,7 @@ from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, wire_handle
-from src.events import purge_orphaned_combat_events
+from src.events import purge_orphaned_combat_events, map_name_for_tile
 from src.functions import (
     check_for_combat,
     end_combat_cleanup,
@@ -927,9 +927,8 @@ class GameService:
         if not hasattr(player, "explored_tiles"):
             player.explored_tiles = {}
 
-        current_map = getattr(player, "map", None)
-        map_name = current_map.get("name") if isinstance(current_map, dict) else None
-        tile_key = f"{map_name}:{tile.x},{tile.y}"
+        map_name = self._map_name_for_tile(tile)
+        tile_key = self._tile_mod_key(map_name, tile.x, tile.y)
 
         # Room data is serialized by hand here rather than via a shared serializer class.
 
@@ -978,6 +977,7 @@ class GameService:
         y: int,
         modification_type: str,
         data: Any,
+        map_name: Optional[str] = None,
     ) -> None:
         """Store a tile modification in session data for persistence.
 
@@ -987,15 +987,48 @@ class GameService:
             y: Tile y coordinate
             modification_type: Type of modification (e.g., 'block_exit', 'objects_removed')
             data: The modification data
+            map_name: The name of the map ``(x, y)`` belongs to (#528). Every
+                real caller in this file resolves this via
+                ``_map_name_for_tile`` before calling in, so production keys
+                are always namespaced. Left as ``None`` here (rather than
+                required) only so a bare coordinate with no known map falls
+                back to the legacy unnamespaced key instead of a meaningless
+                literal ``"None:"`` prefix.
         """
         if "tile_modifications" not in session_data:
             session_data["tile_modifications"] = {}
 
-        tile_key = f"{x},{y}"
+        tile_key = self._tile_mod_key(map_name, x, y)
         if tile_key not in session_data["tile_modifications"]:
             session_data["tile_modifications"][tile_key] = {}
 
         session_data["tile_modifications"][tile_key][modification_type] = data
+
+    @staticmethod
+    def _tile_mod_key(map_name: Optional[str], x: int, y: int) -> str:
+        """Build a ``tile_modifications`` key, namespaced by map when known (#528).
+
+        Mirrors ``explored_tiles``' ``f"{map_name}:{x},{y}"`` scheme (see
+        ``_record_exploration``) so two maps that reuse the same (x, y) —
+        e.g. Grondia and the Mineral Pools both have a (2, 4) — never collide.
+        Falls back to the legacy bare ``f"{x},{y}"`` key when the map can't be
+        resolved (a bare-coordinate caller, or a tile/test-double without a
+        real ``.map`` dict) rather than writing a literal ``"None:"`` prefix.
+        """
+        return f"{map_name}:{x},{y}" if map_name is not None else f"{x},{y}"
+
+    @staticmethod
+    def _map_name_for_tile(tile) -> Optional[str]:
+        """Return the map name ``tile`` belongs to, or ``None`` if unknown.
+
+        Thin wrapper over ``src.events.map_name_for_tile`` — the engine-level
+        canonical derivation, also used by ``tile_identity`` and story-event
+        arrival guards (e.g. ``GorranGestureEvent``, issue #547). Kept as a
+        method here (rather than calling the module function directly at
+        every ``GameService`` call site) so existing internal callers don't
+        need updating.
+        """
+        return map_name_for_tile(tile)
 
     @staticmethod
     def _object_roster(tile) -> List[str]:
@@ -1021,7 +1054,11 @@ class GameService:
     @staticmethod
     def _tile_modifications(session_data: Dict[str, Any], tile) -> Dict[str, Any]:
         """Return the stored modification dict for ``tile`` (empty if there is none)."""
-        tile_key = f"{getattr(tile, 'x', None)},{getattr(tile, 'y', None)}"
+        tile_key = GameService._tile_mod_key(
+            GameService._map_name_for_tile(tile),
+            getattr(tile, "x", None),
+            getattr(tile, "y", None),
+        )
         stored = (session_data.get("tile_modifications") or {}).get(tile_key)
         return stored if isinstance(stored, dict) else {}
 
@@ -1050,7 +1087,12 @@ class GameService:
             return
 
         self.store_tile_modification(
-            session_data, tile.x, tile.y, "objects_baseline", roster
+            session_data,
+            tile.x,
+            tile.y,
+            "objects_baseline",
+            roster,
+            map_name=self._map_name_for_tile(tile),
         )
 
     def persist_tile_state(self, session_data: Optional[Dict[str, Any]], tile) -> None:
@@ -1069,9 +1111,11 @@ class GameService:
         if not isinstance(session_data, dict) or tile is None:
             return
 
+        map_name = self._map_name_for_tile(tile)
+
         block_exit = tile.block_exit.copy() if hasattr(tile, "block_exit") else []
         self.store_tile_modification(
-            session_data, tile.x, tile.y, "block_exit", block_exit
+            session_data, tile.x, tile.y, "block_exit", block_exit, map_name=map_name
         )
 
         # Objects removed since the baseline snapshot (#328). Computed as a
@@ -1085,7 +1129,12 @@ class GameService:
 
         removed = list((Counter(baseline) - Counter(self._object_roster(tile))).elements())
         self.store_tile_modification(
-            session_data, tile.x, tile.y, "objects_removed", removed
+            session_data,
+            tile.x,
+            tile.y,
+            "objects_removed",
+            removed,
+            map_name=map_name,
         )
 
     def apply_tile_modifications(self, tile, session_data: Dict[str, Any]) -> None:
@@ -1104,7 +1153,7 @@ class GameService:
         if not session_data or "tile_modifications" not in session_data:
             return
 
-        tile_key = f"{tile.x},{tile.y}"
+        tile_key = self._tile_mod_key(self._map_name_for_tile(tile), tile.x, tile.y)
         if tile_key not in session_data["tile_modifications"]:
             return
 
@@ -1181,6 +1230,16 @@ class GameService:
         direction_lower = direction.lower()
         if direction_lower not in valid_directions:
             return {"error": f"Invalid direction: {direction}"}
+
+        # Reject world movement while combat is active (#543). The frontend
+        # SPA already hides movement during combat; the backend had no
+        # matching guard, so a direct API call could walk the player off the
+        # battlefield tile while GET /combat/status still reported the fight
+        # as active and the enemy alive. trigger_tile_events() below already
+        # checks player.in_combat (so the walk-off didn't crash), which is
+        # exactly why this was silent instead of loud.
+        if getattr(player, "in_combat", False):
+            return {"error": "Cannot move while in combat"}
 
         tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
@@ -1319,6 +1378,34 @@ class GameService:
             "combat_state": combat_state,
         }
 
+    @staticmethod
+    def _event_had_observable_effect(
+        event: Any,
+        completed_before: bool,
+        error_occurred: bool,
+        clean_output: str,
+    ) -> bool:
+        """Return whether a checked tile event actually did something (#544).
+
+        ``check_conditions()`` runs on EVERY event on a tile on EVERY
+        interact/tile-entry call. A gated event whose condition wasn't met
+        yet (e.g. ``AfterKingSlimeReturn`` before the player has the mineral
+        fragment -- ``src/story/ch02.py`` -- which deliberately never
+        self-destructs while dormant, issue #371) is a pure no-op:
+        ``needs_input``/``completed`` stay at their ``Event.__init__``
+        defaults and no narration is produced. Reporting that no-op in
+        ``events_triggered`` anyway let a dormant event masquerade as "just
+        fired" on every single interact at its tile, and on the frontend
+        that falsely non-empty list was enough (via ``useWorldInteract.js``'s
+        bare ``.length > 0`` check) to blank out real interaction output.
+        """
+        return (
+            error_occurred
+            or bool(getattr(event, "needs_input", False))
+            or (getattr(event, "completed", False) and not completed_before)
+            or bool(clean_output)
+        )
+
     def trigger_tile_events(
         self,
         player: "player_module.Player",
@@ -1403,6 +1490,12 @@ class GameService:
             # For non-input events, process normally
             # Try to trigger the event and capture output
             if hasattr(event, "check_conditions"):
+                # Captured before check_conditions() runs so we can tell a
+                # genuine completed TRANSITION (issue #544) apart from an
+                # event that was already completed (or stays not-completed)
+                # and merely got rechecked.
+                completed_before = getattr(event, "completed", False)
+                error_occurred = False
                 try:
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
@@ -1448,6 +1541,7 @@ class GameService:
                 except Exception as e:
                     # Log error but continue
                     event_data["error"] = str(e)
+                    error_occurred = True
                     _log.exception(
                         "Event processing failed for %s",
                         getattr(event, "name", type(event).__name__),
@@ -1470,7 +1564,15 @@ class GameService:
                         enqueued_ids.add(id(new_event))
                         queue.append(new_event)
 
-            events_triggered.append(event_data)
+                # Only surface events that actually produced an observable
+                # effect -- see _event_had_observable_effect (issue #544).
+                observed_effect = self._event_had_observable_effect(
+                    event, completed_before, error_occurred, clean_output
+                )
+                if observed_effect:
+                    events_triggered.append(event_data)
+            else:
+                events_triggered.append(event_data)
 
         return events_triggered
 
@@ -1508,6 +1610,23 @@ class GameService:
 
         pending = session_data["pending_events"][event_id]
         event = pending["event"]
+
+        # Reject a queued passageway teleport confirmation while combat is
+        # active (#543). interact_with_target refuses to QUEUE a new
+        # PassagewayTransitionEvent while already in combat, but combat can
+        # start (e.g. an aggro NPC on the same tile) *after* a confirmation
+        # was queued and before the player submits this input -- so the
+        # guard belongs here too, at the point where the teleport actually
+        # commits, not only at the point where it was first queued.
+        from src.events import PassagewayTransitionEvent
+
+        if isinstance(event, PassagewayTransitionEvent) and getattr(
+            player, "in_combat", False
+        ):
+            return {
+                "success": False,
+                "error": "Cannot use a passageway while in combat.",
+            }
 
         # Process the event with user input
         result = {"success": True, "event_id": event_id}
@@ -2037,6 +2156,22 @@ class GameService:
                 "message": f"Cannot {action} this target.",
             }
 
+        # Reject a Passageway teleport interaction while combat is active
+        # (#543, same root cause as the move_player guard above).
+        # interact_with_target never moves the player itself for a
+        # Passageway target -- it queues a PassagewayTransitionEvent
+        # confirmation, and the actual player.teleport() call only runs
+        # later, when the client confirms via POST /world/events/input.
+        # Refusing to queue the confirmation in the first place keeps that
+        # confirm step from ever being reachable while the fight is still on.
+        from src.objects import Passageway
+
+        if isinstance(target, Passageway) and getattr(player, "in_combat", False):
+            return {
+                "success": False,
+                "message": "Cannot use a passageway while in combat.",
+            }
+
         # Record pre-action location to detect passageway teleportation
         _pre_map_name = player.map.get("name") if player.map else None
         _pre_x = player.location_x
@@ -2054,7 +2189,7 @@ class GameService:
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                from src.objects import Container, Passageway
+                from src.objects import Container
                 from src.items import Item
                 from src.inventory_utils import transfer_item
                 from src.events import LootEvent

@@ -419,23 +419,27 @@ class TestComputeLoquacity:
         npc._compute_loquacity(player)
         assert npc.loquacity_max == scale_loquacity(60)
 
-    def test_compute_loquacity_recovery_from_wisdom(self):
-        """Recovery at wisdom 16 -- which is the same as at every other wisdom.
+    def test_compute_loquacity_recovery_ignores_wisdom(self):
+        """Recovery at wisdom 16 does not depend on wisdom at all (issue #526).
 
-        THIS TEST DOES NOT COVER THE WISDOM TERM, and its name says it does.
-        `scale_loquacity(max(2, w // 8))` is 1 for every `w` below 80, so this
-        assertion holds with `wisdom=16` replaced by 0, 8 or 79. It is kept as
-        a plain regression on the recovery value; the term itself is pinned as
-        the dead branch it is by `TestTheWisdomTermIsInert` in
-        tests/test_npc_chat_merchant_and_loquacity.py, which drives the eleven
-        real host classes instead of a double that invents a wisdom no NPC in
-        the game has.
+        The wisdom-keyed recovery formula this test used to pin was removed
+        for being dead at every value the game contains; recovery is now
+        derived from the pool (`loquacity_max`) instead. Asserted from the
+        module's own formula rather than a hardcoded number, so this can't
+        silently drift from the real implementation the way the old
+        `scale_loquacity(2)` constant did. `wisdom=16` is kept in the fixture
+        only to prove it has zero effect -- the comprehensive per-host check
+        lives in `TestLoquacityRecoveryIsDerivedFromThePool` in
+        tests/test_npc_chat_merchant_and_loquacity.py.
         """
+        from src.npc._chat_llm import _LOQUACITY_RECOVERY_POOL_DIVISOR
+
         npc = chat_npc(wisdom=16)
         player = chat_player(charisma=10, combat_list_allies=[])
 
         npc._compute_loquacity(player)
-        assert npc.loquacity_recovery == scale_loquacity(2)
+        expected = max(1, round(npc.loquacity_max / _LOQUACITY_RECOVERY_POOL_DIVISOR))
+        assert npc.loquacity_recovery == expected
 
     def test_compute_loquacity_min_threshold(self):
         """Test loquacity threshold has minimum."""
@@ -1588,7 +1592,10 @@ class TestChatOpen:
 
         assert result["success"] is True
         assert result["llm_available"] is False
-        assert result["npc_opening"] == "Nothing to say right now."
+        # Issue #532: the fallback line is narration, not speech, so it lands
+        # in npc_flavor and npc_opening stays empty.
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"] == "Nothing to say right now."
         assert len(result["jean_options"]) == 3
 
     def test_qc_rejected_llm_text_falls_back_rather_than_shipping_it(self, player):
@@ -1598,11 +1605,13 @@ class TestChatOpen:
         result = npc.chat_open(player)
 
         assert "Jean said" not in result["npc_opening"]
-        assert result["npc_opening"] == "Nothing to say right now."
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"] == "Nothing to say right now."
         assert result["llm_available"] is False
 
     def test_exhausted_loquacity_brushes_jean_off_without_options(self, player):
-        """A story NPC's authored closing line is used verbatim."""
+        """A story NPC's authored closing line is used verbatim (as narration,
+        not speech — issue #532)."""
         npc = ready_npc(
             loquacity_current=5,
             loquacity_threshold=20,
@@ -1615,7 +1624,8 @@ class TestChatOpen:
         assert result["success"] is True
         assert result["conversation_ended"] is True
         assert result["jean_options"] == []
-        assert result["npc_opening"] == "I have said enough."
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"] == "I have said enough."
 
     def test_a_generic_npc_brushes_off_with_a_line_from_the_pool(self, player):
         """No authored config, so one of three generic lines.
@@ -1630,7 +1640,8 @@ class TestChatOpen:
 
         result = npc.chat_open(player)
 
-        assert result["npc_opening"] in (
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"] in (
             "They're not in the mood to talk.",
             "A brief shake of the head.",
             "Not now.",
@@ -1667,7 +1678,8 @@ class TestChatOpen:
 
         assert result["success"] is True
         assert result["llm_available"] is False
-        assert result["npc_opening"] == "Nothing to say right now."
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"] == "Nothing to say right now."
 
     @pytest.mark.parametrize(
         "malformed, leaked_detail",
@@ -1712,8 +1724,9 @@ class TestChatOpen:
 
         assert result["success"] is True
         assert result["llm_available"] is False
-        assert result["npc_opening"]
-        assert "llm timed out" not in result["npc_opening"]
+        assert result["npc_opening"] == ""
+        assert result["npc_flavor"]
+        assert "llm timed out" not in result["npc_flavor"]
         assert len(result["jean_options"]) == 3
 
     def test_chat_open_error_message_is_generic_not_raw_exception(self):
@@ -2805,12 +2818,15 @@ class TestChatRespondHistoryIntegrity:
         )
         player = self._make_player()
 
+        # Issue #532: the authored line is narration, so it now lands in
+        # npc_flavor (npc_opening/npc_response stay empty on a total
+        # fallback) — the no-repeat guarantee is about that narration text.
         opened = npc.chat_open(player)
-        lines_said = [opened["npc_opening"]]
+        lines_said = [opened["npc_flavor"]]
 
         for i in range(6):
             resp = npc.chat_respond(player, f"Question {i}", "direct")
-            lines_said.append(resp["npc_response"])
+            lines_said.append(resp["npc_flavor"])
             if resp["conversation_ended"]:
                 break
 
@@ -2831,10 +2847,11 @@ class TestChatRespondHistoryIntegrity:
         player = self._make_player()
 
         opened = npc.chat_open(player)
-        assert opened["npc_opening"] == "Only line."
+        assert opened["npc_opening"] == ""
+        assert opened["npc_flavor"] == "Only line."
 
         resp = npc.chat_respond(player, "Question", "direct")
-        assert resp["npc_response"] != "Only line."
+        assert resp["npc_flavor"] != "Only line."
         assert resp["conversation_ended"] is True
 
     def test_conversation_history_is_chronologically_ordered(self):
