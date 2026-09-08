@@ -2212,6 +2212,9 @@ class GameService:
 
         # Execute action and capture output
         events_triggered = []
+        # Set when this interaction is the end of the demo, so the client can
+        # raise its end-of-beta dialog (issue #552).
+        beta_end = False
         try:
             # Narrative output is captured via the narration sink; we still
             # neutralize terminal pauses/timing. Interaction targets no longer
@@ -2290,6 +2293,18 @@ class GameService:
                     else:
                         # Proceed with equipment logic
                         target.equip(player)
+                elif isinstance(target, Passageway) and getattr(
+                    target, "demo_end", False
+                ):
+                    # The demo stops at this passageway (#552). The engine owns
+                    # what that means -- no crossing, story gate set, one beat
+                    # of prose; the API's only job is to flag it so the client
+                    # raises BetaEndDialog (the same `beta_end` flag the combat
+                    # adapter sets on the Lurker path). Queuing a "Step
+                    # through?" confirmation instead would promise a crossing
+                    # that never happens.
+                    target.end_demo(player)
+                    beta_end = True
                 elif isinstance(target, Passageway) and session_data is not None:
                     # Passageway in API mode: create a confirmation event so the
                     # frontend can display "Jean steps through..." and wait for
@@ -2484,6 +2499,7 @@ class GameService:
                 "state": getattr(target, "state", ""),
             },
             "teleported": teleported,
+            "beta_end": beta_end,
         }
 
     # ========================

@@ -53,12 +53,22 @@ vi.mock('../components/RightPanel', () => ({
 }));
 
 vi.mock('../components/LeftPanel', () => ({
-    default: ({ location, player, onMove }) => (
+    default: ({ location, player, onMove, onInteractionComplete }) => (
         <div data-testid="left-panel">
             <h1>{location?.name}</h1>
             <p>{location?.description}</p>
             <div>Player: {player?.name}</div>
             <button onClick={() => onMove('north')}>Move North</button>
+            {/* Stands in for InteractPanel finishing an interaction. The
+                argument is the /world/interact response body, which
+                useWorldInteract forwards; `beta_end` is set by the Ferry
+                Landing (issue #552). */}
+            <button onClick={() => onInteractionComplete({ success: true, beta_end: true })}>
+                Finish Ferry Interaction
+            </button>
+            <button onClick={() => onInteractionComplete({ success: true })}>
+                Finish Plain Interaction
+            </button>
         </div>
     )
 }));
@@ -315,6 +325,29 @@ describe('GamePage', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    describe('end of demo from a world interaction (issue #552)', () => {
+        it('shows BetaEndDialog when an interaction reports beta_end', async () => {
+            renderGamePage();
+
+            fireEvent.click(screen.getByText('Finish Ferry Interaction'));
+
+            await waitFor(() => {
+                expect(screen.getByText('END OF BETA')).toBeDefined();
+            });
+        });
+
+        it('leaves an ordinary interaction alone', async () => {
+            renderGamePage();
+
+            fireEvent.click(screen.getByText('Finish Plain Interaction'));
+
+            await waitFor(() => {
+                expect(screen.getByTestId('left-panel')).toBeDefined();
+            });
+            expect(screen.queryByText('END OF BETA')).toBeNull();
+        });
     });
 
     describe('stuck-combat recovery (issues #505 / #508)', () => {

@@ -296,6 +296,25 @@ describe('useWorldInteract', () => {
       expect(onInteractionComplete).toHaveBeenCalledTimes(1)
     })
 
+    it('hands the response body to onInteractionComplete', async () => {
+      // Issue #552: the Ferry Landing interaction returns `beta_end: true` and
+      // GamePage raises BetaEndDialog off it. The flag can only get there if
+      // this callback carries the body — it used to be invoked with no
+      // arguments, so the page had no way to see it.
+      const data = { success: true, message: 'Jean looks across.', beta_end: true }
+      apiEndpoints.world.interact.mockResolvedValue({ data })
+      apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } })
+      const onInteractionComplete = vi.fn()
+      const { result } = renderHook(() => useWorldInteract({ onInteractionComplete }))
+
+      await act(async () => {
+        await result.current.interact({ id: 'ferry', count: 1 }, 'enter', null)
+      })
+
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
+      expect(onInteractionComplete).toHaveBeenCalledWith(data)
+    })
+
     it('defaults to "Action completed." when the response omits a message', async () => {
       apiEndpoints.world.interact.mockResolvedValue({ data: { success: true } })
       apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } })

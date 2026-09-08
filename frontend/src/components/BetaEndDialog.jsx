@@ -3,7 +3,11 @@ import GameButton from './GameButton'
 import { colors, spacing, fonts } from '../styles/theme'
 
 /**
- * BetaEndDialog - Shown after defeating the Lurker to mark the end of the beta.
+ * BetaEndDialog - Marks the end of the beta. Raised by the Ferry Landing
+ * interaction (issue #552) and, if that path is ever re-enabled, by defeating
+ * the Lurker; the copy therefore names neither, since it cannot know which
+ * one the player reached it through.
+ *
  * Thanks the tester and offers to open the feedback dialog or continue exploring.
  *
  * @param {Function} props.onSendFeedback - Opens the feedback dialog (preset to general)
@@ -33,7 +37,7 @@ export default function BetaEndDialog({ onSendFeedback = () => {}, onContinue = 
           lineHeight: 1.7,
           margin: 0,
         }}>
-          You&apos;ve reached the end of the beta. The Lurker is defeated — Verdette Caverns is yours to
+          You&apos;ve reached the end of the beta. Everything Jean has walked so far is still yours to
           explore, but the road onward opens with the full release.
         </p>
 

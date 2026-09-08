@@ -705,7 +705,14 @@ export default function GamePage() {
           onMove={handleMove}
           onRefetch={handleRefetch}
           onEventsTriggered={handleEventsTriggered}
-          onInteractionComplete={handleInteractionComplete}
+          onInteractionComplete={(data) => {
+            // A world interaction can be the end of the demo (the Ferry
+            // Landing — issue #552). Same `beta_end` flag the combat path
+            // reads off endState; wrapped here rather than inside
+            // useCombatCoordinator's handler, which is about combat.
+            if (data?.beta_end) setShowBetaEndDialog(true)
+            handleInteractionComplete()
+          }}
           onInteractionTypingChange={(isTyping) => {
             setIsInteractionTyping(isTyping)
             if (isTyping) {

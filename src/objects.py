@@ -858,8 +858,12 @@ class Passageway(Object):
     MAP_AUTHORED_PARAMS = {
         "events_before", "events_after", "teleport_map", "teleport_tile",
         "persist", "hidden", "hide_factor", "passthrough", "name",
-        "description", "idle_message", "discovery_message",
+        "description", "idle_message", "discovery_message", "demo_end",
     }
+
+    #: Class-level default so a passageway restored from an older save still
+    #: resolves the attribute (and crosses normally).
+    demo_end = False
 
     def __init__(
         self,
@@ -878,6 +882,7 @@ class Passageway(Object):
         description: str = "A passageway leading elsewhere is here.",
         idle_message: str = "There is a passageway here.",
         discovery_message: str = " a passageway!",
+        demo_end: bool = False,
     ):
         aliases = [name.lower(), "passage"]
         super().__init__(
@@ -909,8 +914,37 @@ class Passageway(Object):
         # If True, the frontend skips the Interactions panel and directly executes
         # the first action (enter) when the player clicks this object.
         self.passthrough = passthrough
+        # If True, this passageway is where the demo stops: using it narrates
+        # the moment and sets the 'demo_ended' story gate instead of crossing.
+        # See end_demo() and issue #552.
+        self.demo_end = demo_end
+
+    def end_demo(self, player):
+        """Close out the demo at this passageway instead of crossing it.
+
+        Jean stays where he is; the story gate ``demo_ended`` is set so any
+        later content can read it. The player-facing end-of-beta message (with
+        its Send Feedback button) is the client's ``BetaEndDialog``, which the
+        API triggers off this — so the prose here is only the in-fiction beat
+        that belongs in the interaction panel, not the meta-text.
+
+        The line names the passageway and claims nothing about its
+        surroundings, so it stays true wherever the demo's edge is moved to.
+        """
+        story = getattr(getattr(player, "universe", None), "story", None)
+        if story is not None:
+            story["demo_ended"] = "1"
+        narrate(
+            f"Jean stops at {self.build_article_phrase(self.name)} and looks "
+            "at what lies beyond. The way is plain enough — but not today."
+        )
 
     def enter(self, player):
+        if self.demo_end:
+            # Before the merchandise drop and events_before: neither belongs to
+            # a crossing that does not happen.
+            self.end_demo(player)
+            return
         # Drop any merchandise items immediately upon attempting to enter/teleport
         if hasattr(player, "drop_merchandise_items"):
             player.drop_merchandise_items()
