@@ -113,7 +113,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
 // restyle them.
 const CATEGORY_NAV_SELECTOR = 'nav[aria-label="Game actions"] button';
 
-// A press that lands on any of these inside the panel is the panel's own
+// A click that lands on any of these inside the panel is the panel's own
 // business, whatever it happens to be covering.
 const PANEL_CONTROL_SELECTOR = 'button, a, input, select, textarea, [role="button"], [tabindex]';
 
@@ -123,7 +123,7 @@ function categoryNavButtonAt(clientX, clientY) {
     for (const button of document.querySelectorAll(CATEGORY_NAV_SELECTOR)) {
         const rect = button.getBoundingClientRect();
         // A zero-sized rect means the button is not laid out (or jsdom gave up
-        // on it); treating a point as "inside" it would hand every press to a
+        // on it); treating a point as "inside" it would hand every click to a
         // button nobody can see.
         if (rect.width <= 0 || rect.height <= 0) continue;
         if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
@@ -147,19 +147,27 @@ function categoryNavButtonAt(clientX, clientY) {
  *
  * Raising the nav bar's z-index would be the structural fix, but it lives in
  * HeroPanel — so the panel takes responsibility for what it occludes instead:
- * on a press that lands on the panel's own inert chrome, hit-test the category
+ * on a click that lands on the panel's own inert chrome, hit-test the category
  * buttons and, if one is underneath, activate it.
  *
  * Only inert chrome is forwarded. Where the panel has its own control at that
- * point the intent is genuinely ambiguous, and a press that both cast a move
+ * point the intent is genuinely ambiguous, and a click that both cast a move
  * and switched category would be far worse than one dead click — so the
  * panel's control wins, and a tab fully covered by a move card stays occluded
  * until the nav bar is raised above the panel.
+ *
+ * `click`, deliberately, and not `pointerdown`: pointerdown is the FIRST event
+ * of the gesture, and stopping it does not stop the mousedown/mouseup/click
+ * that follow. Forwarding there swapped the open category and then let the
+ * trailing click land on whatever the *replacement* panel had put under the
+ * pointer — a move card, at which point one tap both switched category and
+ * cast a move. Click is the last event of the gesture, so there is nothing
+ * left behind it to misfire.
  */
 function useOccludedNavHandoff(contentRef) {
     useEffect(() => {
-        // GamePanel accepts no ref, so the ref sits on the content wrapper and
-        // the panel ROOT — whose padding ring is exactly the inert chrome the
+        // GamePanel accepts no ref, so the ref sits on the header row and the
+        // panel ROOT — whose padding ring is exactly the inert chrome the
         // reported hit-test landed on — is resolved from it.
         const content = contentRef.current;
         const panel = content?.closest('.game-panel') ?? content;
@@ -170,15 +178,18 @@ function useOccludedNavHandoff(contentRef) {
             if (event.target.closest?.(PANEL_CONTROL_SELECTOR)) return;
             const navButton = categoryNavButtonAt(event.clientX, event.clientY);
             if (!navButton) return;
-            // Swallow the press so nothing else reads it as an interaction
-            // with the panel, then activate what the player aimed at.
-            event.preventDefault();
+            // Capture phase on `document` runs before React's delegated
+            // handler at the app root, so stopping here means the panel never
+            // sees the click at all — then activate what the player aimed at.
+            // The synthetic click this dispatches re-enters this handler with
+            // the nav button as its target, which the containment check above
+            // rejects immediately.
             event.stopPropagation();
             navButton.click();
         };
 
-        document.addEventListener('pointerdown', handOff, true);
-        return () => document.removeEventListener('pointerdown', handOff, true);
+        document.addEventListener('click', handOff, true);
+        return () => document.removeEventListener('click', handOff, true);
     }, [contentRef]);
 }
 
@@ -221,7 +232,9 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                 backgroundColor: colors.bg.panelDeep,
             }}
         >
-            <div ref={contentRef} data-testid="combat-move-panel-content" style={{
+            {/* ref: useOccludedNavHandoff resolves the panel root from here,
+                because GamePanel takes no ref of its own. */}
+            <div ref={contentRef} style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',

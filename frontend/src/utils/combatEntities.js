@@ -1,9 +1,15 @@
 /**
- * Predicates over serialized combatants, shared by every combat surface.
+ * Predicates over serialized combatants, plus the one hostility vocabulary,
+ * shared by every surface that shows a combatant.
  *
  * These live in a util rather than being exported from a component so both
  * Battlefield and BattlefieldGrid can import them without either one's tests
- * having to reach through a `vi.mock` of the other.
+ * having to reach through a `vi.mock` of the other — and so the room panel and
+ * the combat target picker cannot describe the same combatant two ways, which
+ * is what issue #558 was.
+ *
+ * The theme import is for that vocabulary: a hostility marker is a colour AND
+ * a glyph AND a word, and splitting the three across files is how they drift.
  */
 import { colors } from '../styles/theme';
 

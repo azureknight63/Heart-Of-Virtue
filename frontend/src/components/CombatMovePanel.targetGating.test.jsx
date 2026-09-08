@@ -213,7 +213,7 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
   let navClick;
 
   // The nav bar HeroPanel renders under this flyout. Its buttons are
-  // zIndex 5 against the panel's 100, so a press at these coordinates lands
+  // zIndex 5 against the panel's 100, so a click at these coordinates lands
   // on the panel; the rect is what lets the panel notice.
   const NAV_RECT = { left: 100, top: 40, right: 170, bottom: 84, width: 70, height: 44 };
 
@@ -252,38 +252,81 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
 
   const inNavRect = { clientX: 135, clientY: 62 };
 
-  it('hands a press on the panel chrome to the category button underneath', () => {
+  it('hands a click on the panel chrome to the category button underneath', () => {
+    const { container } = renderWithNav([
+      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
+    ]);
+
+    const panel = container.querySelector('.game-panel');
+    fireEvent.click(panel, inNavRect);
+
+    expect(navClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a click on one of its own move cards alone', () => {
+    renderWithNav([
+      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
+    ]);
+
+    // Same coordinates — over the nav button — but on the panel's own
+    // control, where forwarding would be a guess. The move wins.
+    const moveButton = screen.getByText('Meditate').closest('button');
+    fireEvent.click(moveButton, inNavRect);
+
+    expect(navClick).not.toHaveBeenCalled();
+    expect(onMoveClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a click on the panel chrome that is over nothing', () => {
+    const { container } = renderWithNav([
+      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
+    ]);
+
+    const panel = container.querySelector('.game-panel');
+    fireEvent.click(panel, { clientX: 999, clientY: 999 });
+
+    expect(navClick).not.toHaveBeenCalled();
+  });
+
+  it('ignores a nav button that is not laid out', () => {
+    // A zero-sized rect (a button that is display:none, or one jsdom never
+    // measured) must not swallow every click on the panel: a point is inside
+    // an empty rect at the origin for any (0, 0)-ish coordinate.
+    const { container } = render(
+      <>
+        <OccludedNav />
+        <CombatMovePanel
+          moves={[{ name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true }]}
+          category="Miscellaneous"
+          onMoveClick={onMoveClick}
+          onClose={onClose}
+        />
+      </>
+    );
+    vi.spyOn(screen.getByRole('button', { name: 'OFFENSIVE' }), 'getBoundingClientRect')
+      .mockReturnValue({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 });
+
+    fireEvent.click(container.querySelector('.game-panel'), { clientX: 0, clientY: 0 });
+    expect(navClick).not.toHaveBeenCalled();
+  });
+
+  // The hazard that ruled out forwarding on `pointerdown`: stopping the FIRST
+  // event of a gesture leaves mousedown/mouseup/click to land on whatever the
+  // replacement panel puts under the pointer, so one tap could switch category
+  // AND cast a move. Forwarding on `click` — the last event — means the whole
+  // gesture produces exactly one action.
+  it('produces one action for one gesture, not two', () => {
     const { container } = renderWithNav([
       { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
     ]);
 
     const panel = container.querySelector('.game-panel');
     fireEvent.pointerDown(panel, inNavRect);
+    fireEvent.mouseDown(panel, inNavRect);
+    fireEvent.mouseUp(panel, inNavRect);
+    fireEvent.click(panel, inNavRect);
 
     expect(navClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaves a press on one of its own move cards alone', () => {
-    renderWithNav([
-      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
-    ]);
-
-    const moveButton = screen.getByText('Meditate').closest('button');
-    fireEvent.pointerDown(moveButton, inNavRect);
-    fireEvent.click(moveButton);
-
-    expect(navClick).not.toHaveBeenCalled();
-    expect(onMoveClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('ignores a press on the panel chrome that is over nothing', () => {
-    const { container } = renderWithNav([
-      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
-    ]);
-
-    const panel = container.querySelector('.game-panel');
-    fireEvent.pointerDown(panel, { clientX: 999, clientY: 999 });
-
-    expect(navClick).not.toHaveBeenCalled();
+    expect(onMoveClick).not.toHaveBeenCalled();
   });
 });
