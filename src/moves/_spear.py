@@ -45,6 +45,7 @@ class KeepAway(Move):
     display_name = 'Keep Away'
 
     web_animation = "pierce"
+    weapon_requirement = ("Polearm", "Spear")
 
     def __init__(self, user):
         description = (
@@ -212,6 +213,7 @@ class Lunge(Move):
     display_name = 'Lunge'
 
     web_animation = "pierce"
+    weapon_requirement = ("Spear",)
 
     def __init__(self, user):
         description = (
@@ -366,6 +368,7 @@ class Impale(Move):
     display_name = 'Impale'
 
     web_animation = "pierce"
+    weapon_requirement = ("Spear",)
 
     def __init__(self, user):
         description = (
@@ -521,6 +524,7 @@ class ArmorPierce(Move):
     display_name = 'Armor Pierce'
 
     web_animation = "pierce"
+    weapon_requirement = ("Pick",)
 
     def __init__(self, user):
         description = (

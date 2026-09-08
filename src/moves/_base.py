@@ -1259,6 +1259,21 @@ class Move:  # master class for all moves
     # Concrete engine moves must declare a player-facing name. Internal `name`
     # values remain stable for command routing and AI logic.
     display_name = None
+    # Weapon subtypes this move's own `viable()` gates on; empty means it takes
+    # whatever is in hand (or needs no weapon at all).
+    #
+    # `viable()` stays the rule — this is the REASON, declared so the API can
+    # explain an unavailable move instead of shrugging. It returns a bare bool,
+    # so the adapter could only guess from range, and range is precisely what
+    # is fine in the reported case: Shoot Crossbow greyed out as "Cannot use
+    # this move" with an enemy well inside its 6-40 ft band and a sword in
+    # Jean's hand (issue #565).
+    #
+    # The two are held in step by `tests/test_disabled_move_reasons.py`, which
+    # derives the gate out of each `viable()` body by AST and demands the
+    # declaration match — a retuned gate that forgets this attribute would
+    # otherwise ship a confidently wrong "Requires a ...".
+    weapon_requirement: tuple = ()
     # Power multiple this move applies to its user's base damage.
     #
     # Declared HERE, on the base class, so it is part of the Move interface

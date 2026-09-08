@@ -230,6 +230,73 @@ MAX_ANIMATION_SEQ = 1_000_000
 MAX_INSTANT_STAGES = 20
 
 
+#: Weapon subtypes whose engine name is not the noun a player would use. Every
+#: other subtype reads fine lowercased ("crossbow", "scythe", "polearm"), so
+#: only the exceptions are listed — and the phrases here are COMPLETE, article
+#: and all, because neither of them takes one.
+_WEAPON_NOUN_PHRASES = {
+    "Unarmed": "bare hands",
+    "Stars": "throwing stars",
+}
+
+
+def _weapon_noun_phrase(subtype, with_article=True):
+    """``"a crossbow"`` / ``"bare hands"`` for one weapon subtype."""
+    phrase = _WEAPON_NOUN_PHRASES.get(subtype)
+    if phrase is not None:
+        return phrase
+    noun = subtype.lower()
+    if not with_article:
+        return noun
+    return ("an " if noun[:1] in "aeiou" else "a ") + noun
+
+
+def weapon_requirement_reason(move, weapon):
+    """Why ``move`` cannot be used with ``weapon`` in hand, or None.
+
+    The engine declares the requirement (``Move.weapon_requirement``); this
+    turns it into the line the player reads. ``viable()`` remains the rule —
+    a move whose requirement IS satisfied gets None here and falls through to
+    whatever else is blocking it (range, target, state), which is why the
+    range reasons keep working for a correctly-armed move.
+
+    The catch-all this replaces ("Cannot use this move", issue #565) could not
+    do better on its own: ``viable()`` hands back a bare bool, so the adapter
+    guessed from range — and range was fine. ``ShootCrossbow.viable`` refuses
+    for three separate reasons and only one of them is a distance.
+
+    "No weapon equipped" is kept verbatim for the empty-handed case; it is the
+    string the availability path already emitted there and
+    ``tests/test_combat_glossary_contract.py`` asserts it matches no glossary
+    term.
+    """
+    requirement = tuple(getattr(move, "weapon_requirement", ()) or ())
+    if not requirement:
+        return None
+    # The engine models bare-handed two ways -- an absent/None ``eq_weapon``
+    # (most NPCs) or an ``items.Fists()`` whose subtype is "Unarmed", which is
+    # what ``Player.__init__`` equips and ``unequip_item`` restores. Both count
+    # as satisfying an Unarmed requirement; ``Jab._is_unarmed`` documents the
+    # pair, and reading only the subtype here would tell a genuinely
+    # bare-handed Jean that Jab "requires bare hands".
+    subtype = "Unarmed" if weapon is None else getattr(weapon, "subtype", None)
+    if subtype in requirement:
+        return None
+    # A fists-only move is not asking for equipment, so the empty-handed
+    # wording below would be exactly backwards for it.
+    if set(requirement) == {"Unarmed"}:
+        return "Requires " + _WEAPON_NOUN_PHRASES["Unarmed"]
+    if weapon is None:
+        return "No weapon equipped"
+    nouns = sorted(requirement)
+    phrases = [_weapon_noun_phrase(nouns[0])] + [
+        _weapon_noun_phrase(n, with_article=False) for n in nouns[1:]
+    ]
+    if len(phrases) == 1:
+        return "Requires " + phrases[0]
+    return "Requires " + ", ".join(phrases[:-1]) + " or " + phrases[-1]
+
+
 def combat_alert_line(name, alert_message):
     """``"<name> <alert_message>"`` with exactly one space between the two.
 
@@ -3683,8 +3750,20 @@ class ApiCombatAdapter:
                 # Move is not viable - try to determine why
                 move_data["available"] = False
 
-                # Check for common reasons
-                if is_targeted:
+                # What is in Jean's hand is asked FIRST, and before the
+                # targeted/untargeted split: a weapon requirement is true
+                # regardless of range or target, it is the objection the
+                # player cannot fix by walking, and the range guess below
+                # happily passes while the real blocker is the sword he is
+                # holding (issue #565). Returns None when the requirement is
+                # satisfied, so a correctly-armed move still falls through to
+                # the range reasons.
+                weapon_reason = weapon_requirement_reason(
+                    move, getattr(self.player, "eq_weapon", None)
+                )
+                if weapon_reason is not None:
+                    move_data["reason"] = weapon_reason
+                elif is_targeted:
                     # Check if it's a range issue
                     mvrange = getattr(move, "mvrange", None)
                     if mvrange:
