@@ -93,6 +93,16 @@ _LLM_NOISE_PREFIXES = (
 )
 
 
+#: Refusal handed back when FLEE is attempted with an enemy inside the 20 ft
+#: break-away threshold. It names the remedy on purpose: a live QA tester in an
+#: unwinnable fight read the previous bare "enemies are too close" as a
+#: permanent soft-lock, because nothing anywhere told them WITHDRAW is FLEE's
+#: prerequisite. The 20 ft gate itself is unchanged — this is copy only.
+FLEE_TOO_CLOSE_MESSAGE = (
+    "Cannot flee — the enemies are too close to break away. Use WITHDRAW to back "
+    "off first; Jean can run once every foe is at least 20 feet away."
+)
+
 #: Stand-in attribute value for a player object that predates (or omits) the
 #: attribute entirely — a sheet request must not 500 over a partially built
 #: player. The engine itself has no such fallback; this is an API-layer policy.
@@ -4110,7 +4120,7 @@ class GameService:
                 return {
                     "success": False,
                     "fled": False,
-                    "error": "Cannot flee — enemies are too close",
+                    "error": FLEE_TOO_CLOSE_MESSAGE,
                 }
 
         # Clear enemy combat state so they don't immediately re-engage on next interaction
