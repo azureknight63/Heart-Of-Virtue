@@ -36,6 +36,11 @@
   --space-lg: 16px; /* theme: spacing.lg */
   --color-secondary: #ffaa00; /* theme: colors.secondary */
   --color-border-light: rgba(255, 170, 0, 0.1); /* theme: colors.border.light */
+  /* Scrollbar chrome, not prose — see colors.text.dim's note in theme.js for
+     why this grey is deliberately below the AA text threshold and must stay
+     off body copy. It lived in the rule below as a hand-typed `#666`, where
+     neither spelling nor drift was visible to the pin checks. */
+  --color-text-dim: #666666; /* theme: colors.text.dim */
 }
 
 * {
@@ -97,7 +102,7 @@ input, select, textarea {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #666;
+  background: var(--color-text-dim);
 }
 
 /*

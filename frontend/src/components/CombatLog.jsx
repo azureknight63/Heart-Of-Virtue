@@ -38,6 +38,86 @@ export const LOG_ENTRY_COLORS = {
   info: colors.text.muted
 }
 
+/**
+ * One log entry's message as plain speech: no markup, no entities.
+ *
+ * Entries reach the list through `dangerouslySetInnerHTML`, so the engine
+ * really does emit markup and a reader handed the raw string would spell out
+ * the tags. Sanitised first and then read back as `textContent`, which both
+ * drops the tags and decodes the entities — `DOMPurify.sanitize` with an empty
+ * tag allow-list returns ESCAPED text, so `&amp;` would be announced
+ * literally. The element is detached and never inserted, so nothing in it runs.
+ */
+function spokenText(message) {
+  const scratch = document.createElement('div')
+  scratch.innerHTML = DOMPurify.sanitize(String(message ?? ''))
+  return scratch.textContent || ''
+}
+
+/**
+ * LogAnnouncer — the screen-reader channel for the fight's own narration.
+ *
+ * Issue #563 item 1. The log is the game's primary feedback surface and it was
+ * not announced at all: a screen-reader user committed a move and was told
+ * nothing, then had to go hunting through the panel to learn whether they hit.
+ *
+ * WHY A SEPARATE REGION, AND NOT `aria-live` ON THE LIST. The list is not an
+ * append-only stream. `useCombatLogPlayback` reveals entries a batch at a time,
+ * and a beat scrub replaces the rendered slice wholesale — so a live region
+ * around the list re-narrates lines the reader already heard, and on a scrub
+ * re-narrates all of them. Battlefield.jsx's note on the beat counter names
+ * the cost of getting this wrong ("a live region would make a screen reader
+ * narrate the counter continuously over the combat log it should be reading");
+ * a chatty log does the same thing to itself. This follows the pattern already
+ * established for the same problem in NpcChatPanel's `ReplyAnnouncer`: one
+ * hidden region, fed the newest completed line and nothing else.
+ *
+ * The timestamp is dropped deliberately. It renders beside every line, and
+ * spoken aloud it prefixes each announcement with eight digits before any of
+ * the content.
+ *
+ * `key`/`data-seq` carry the revealed-line COUNT, and they are load-bearing
+ * rather than debug decoration. Combat repeats itself constantly — "Jean
+ * misses" twice running is ordinary — and re-feeding a region the string it
+ * already holds writes an identical text node, mutates no DOM, and announces
+ * nothing. Keying on the count forces React to replace the child instead,
+ * which is a childList addition and so is relevant to a polite region even
+ * when the words are byte-identical.
+ *
+ * Visually hidden rather than `display: none`, which would take it out of the
+ * accessibility tree along with everything else.
+ *
+ * @param {Object} props
+ * @param {Array} props.entries - the revealed, renderable entries; only the
+ *   newest is ever announced, and `animation` carriers are already gone.
+ */
+function LogAnnouncer({ entries }) {
+  const latest = entries[entries.length - 1]
+  const spoken = useMemo(() => (latest ? spokenText(latest.message) : ''), [latest])
+
+  return (
+    <div
+      data-testid="combat-log-announcer"
+      aria-live="polite"
+      aria-atomic="true"
+      style={{
+        position: 'absolute',
+        width: '1px',
+        height: '1px',
+        margin: '-1px',
+        padding: 0,
+        border: 0,
+        overflow: 'hidden',
+        clip: 'rect(0 0 0 0)',
+        clipPath: 'inset(50%)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {spoken ? <span key={entries.length} data-seq={entries.length}>{spoken}</span> : null}
+    </div>
+  )
+}
+
 export default function CombatLog({ log, className = '', allowResize = true, isMyTurn = false }) {
   // Animation entries are bookkeeping for the battlefield, never lines of text,
   // so they are excluded from the rendered log. Deriving the visible list once
@@ -115,6 +195,10 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
       }}
       className={className}
     >
+      {/* Outside the collapse gate: hiding the lines is a request for room on
+          screen, not a request to stop being told what is happening. */}
+      <LogAnnouncer entries={visibleEntries} />
+
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
         style={{
@@ -140,6 +224,11 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
             <div
               ref={setContentRef}
+              // The announcer above necessarily holds a second copy of the
+              // newest line's text, so "is this line rendered?" has to ask
+              // about the LIST rather than the document — see the scoped
+              // queries in CombatLog.test.jsx.
+              data-testid="combat-log-entries"
               style={{
                 height: '100%',
                 overflowY: 'auto',

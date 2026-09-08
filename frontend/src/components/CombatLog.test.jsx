@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatLog, { LOG_ENTRY_COLORS } from './CombatLog';
 import { colors } from '../styles/theme';
@@ -24,12 +24,16 @@ describe('CombatLog', () => {
   it('renders combat log entries correctly', () => {
     render(<CombatLog log={mockLog} />);
 
+    // Scoped to the list: the newest line also exists in the hidden
+    // announcer (issue #563 item 1), so an unscoped getByText for the LAST
+    // entry matches twice and cannot tell the list rendered it.
+    const entries = within(screen.getByTestId('combat-log-entries'));
     expect(screen.getByText('Combat Log')).toBeDefined();
-    expect(screen.getByText('Combat started')).toBeDefined();
-    expect(screen.getByText('Hero deals 10 damage')).toBeDefined();
-    expect(screen.getByText('Hero heals 5 HP')).toBeDefined();
-    expect(screen.getByText('Hero uses Fireball')).toBeDefined();
-    expect(screen.getByText('Something happened')).toBeDefined();
+    expect(entries.getByText('Combat started')).toBeDefined();
+    expect(entries.getByText('Hero deals 10 damage')).toBeDefined();
+    expect(entries.getByText('Hero heals 5 HP')).toBeDefined();
+    expect(entries.getByText('Hero uses Fireball')).toBeDefined();
+    expect(entries.getByText('Something happened')).toBeDefined();
   });
 
   it('renders empty log message', () => {
@@ -134,7 +138,7 @@ describe('CombatLog', () => {
     // but we can verify the effect runs.
     const newLog = [...mockLog, { type: 'info', message: 'New entry' }];
     rerender(<CombatLog log={newLog} />);
-    expect(screen.getByText('New entry')).toBeDefined();
+    expect(within(screen.getByTestId('combat-log-entries')).getByText('New entry')).toBeDefined();
   });
 
   it('auto-scrolls to bottom when it becomes player turn', () => {
@@ -191,7 +195,8 @@ describe('CombatLog', () => {
       render(<CombatLog log={mixed} />);
 
       expect(screen.queryByText('Combat started...')).toBeNull();
-      expect(screen.getByText('Jean strikes the slime')).toBeDefined();
+      const entries = within(screen.getByTestId('combat-log-entries'));
+      expect(entries.getByText('Jean strikes the slime')).toBeDefined();
       expect(screen.queryByText('Slash animation')).toBeNull();
     });
   });
@@ -317,10 +322,14 @@ describe('CombatLog', () => {
       const log = engine.map((type, i) => ({
         type, message: `line ${type}`, timestamp: `12:00:0${i}`,
       }));
-      const { container } = render(<CombatLog log={log} />);
+      render(<CombatLog log={log} />);
+      // The list, not the container: the announcer holds an uncoloured copy
+      // of the newest line and matched first, so the scan read '' as its
+      // colour and the assertion below was testing the wrong span.
+      const list = screen.getByTestId('combat-log-entries');
 
       for (const type of engine) {
-        const span = [...container.querySelectorAll('span')]
+        const span = [...list.querySelectorAll('span')]
           .find((el) => el.textContent === `line ${type}`);
         expect(span, `no rendered line for engine entry type "${type}"`).toBeTruthy();
         expect(span.style.color).not.toBe('');
@@ -330,7 +339,8 @@ describe('CombatLog', () => {
       const { container: odd } = render(
         <CombatLog log={[{ type: 'constructor', message: 'hostile', timestamp: '12:00:00' }]} />
       );
-      const fallbackSpan = [...odd.querySelectorAll('span')]
+      const oddList = within(odd).getAllByTestId('combat-log-entries').at(-1);
+      const fallbackSpan = [...oddList.querySelectorAll('span')]
         .find((el) => el.textContent === 'hostile');
       // jsdom re-serialises a hex colour as `rgb(...)`, so the expectation is
       // put through the same normalisation rather than compared as written.
@@ -339,6 +349,135 @@ describe('CombatLog', () => {
         return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
       };
       expect(fallbackSpan.style.color).toBe(asRendered(colors.text.main));
+    });
+  });
+
+  /**
+   * Issue #563 item 1 — the log is the fight's primary feedback channel and it
+   * was never announced. A screen-reader user committed a move and was told
+   * nothing.
+   *
+   * The pattern is NpcChatPanel's `ReplyAnnouncer`, not an invention: a
+   * visually-hidden polite region fed the newest COMPLETED line only. What is
+   * being avoided is spelled out in Battlefield.jsx's own note on the beat
+   * counter — "a live region would make a screen reader narrate the counter
+   * continuously over the combat log it should be reading" — and putting
+   * `aria-live` on the list itself is the same mistake one level down: the
+   * whole log is re-read on every append, and on a beat scrub the list is
+   * replaced wholesale.
+   */
+  describe('screen-reader announcements', () => {
+    const announcer = () => screen.getByTestId('combat-log-announcer');
+
+    it('announces the newest line through a polite atomic region', () => {
+      render(<CombatLog log={mockLog} />);
+
+      const region = announcer();
+      expect(region.getAttribute('aria-live')).toBe('polite');
+      // Atomic because the region is re-fed rather than appended to: without
+      // it a reader announces only the changed text node, which is the same
+      // string it just replaced.
+      expect(region.getAttribute('aria-atomic')).toBe('true');
+      expect(region.textContent).toContain('Something happened');
+    });
+
+    it('announces only the newest line, not the whole log', () => {
+      // The failure mode this whole design exists to avoid: a 50-line log
+      // re-read on every beat is worse than silence.
+      render(<CombatLog log={mockLog} />);
+
+      const spoken = announcer().textContent;
+      expect(spoken).toContain('Something happened');
+      expect(spoken).not.toContain('Combat started');
+      expect(spoken).not.toContain('Hero deals 10 damage');
+    });
+
+    it('leaves the rendered list out of the live region', () => {
+      // The list must stay silent, or both channels narrate every append.
+      const { container } = render(<CombatLog log={mockLog} />);
+
+      const live = [...container.querySelectorAll('[aria-live]')];
+      expect(live).toHaveLength(1);
+      expect(live[0].getAttribute('data-testid')).toBe('combat-log-announcer');
+      expect(container.querySelector('[role="log"]')).toBeNull();
+    });
+
+    it('speaks the message without its timestamp', () => {
+      // The timestamp is rendered beside every line; read aloud it prefixes
+      // each announcement with eight digits before any of the content.
+      render(<CombatLog log={[{ type: 'combat', message: 'Jean strikes', timestamp: '12:00:01' }]} />);
+
+      expect(announcer().textContent.trim()).toBe('Jean strikes');
+    });
+
+    it('speaks the message as text, never as markup', () => {
+      // Entries reach the list through dangerouslySetInnerHTML, so the engine
+      // does emit markup; a reader should get the words, not the tags.
+      render(<CombatLog log={[{ type: 'combat', message: 'Jean hits <b>hard</b>', timestamp: '12:00:01' }]} />);
+
+      const region = announcer();
+      expect(region.textContent).toBe('Jean hits hard');
+      expect(region.innerHTML).not.toContain('<b>');
+    });
+
+    it('never announces animation bookkeeping', () => {
+      // `animation` entries are carriers for the battlefield, not lines of
+      // text — they are filtered out of the render and must not be spoken
+      // either, or the newest "line" is regularly a non-line.
+      render(<CombatLog log={[
+        { type: 'combat', message: 'Jean strikes', timestamp: '12:00:01' },
+        { type: 'animation', message: 'Sweep animation', timestamp: '12:00:02' },
+      ]} />);
+
+      expect(announcer().textContent).toBe('Jean strikes');
+    });
+
+    it('re-announces a line that repeats the previous one verbatim', () => {
+      // Combat repeats itself constantly ("Jean misses." twice running). If
+      // the region is fed the same string, React writes the identical text
+      // node, the DOM does not mutate, and the reader says nothing at all —
+      // silently dropping every repeated beat.
+      const first = [{ type: 'combat', message: 'Jean misses', timestamp: '12:00:01' }];
+      const { rerender, container } = render(<CombatLog log={first} />);
+      const before = container.querySelector('[data-testid="combat-log-announcer"]').innerHTML;
+
+      rerender(<CombatLog log={[...first, { type: 'combat', message: 'Jean misses', timestamp: '12:00:02' }]} />);
+      const after = container.querySelector('[data-testid="combat-log-announcer"]').innerHTML;
+
+      expect(announcer().textContent).toBe('Jean misses');
+      // Something inside the region has to have changed for the announcement
+      // to fire; identical markup means it did not.
+      expect(after).not.toBe(before);
+    });
+
+    it('keeps announcing while the panel is collapsed', () => {
+      // Collapsing hides the lines but is not a request to stop being told
+      // what is happening in the fight.
+      render(<CombatLog log={mockLog} />);
+      fireEvent.click(screen.getByText('Combat Log'));
+
+      expect(announcer().textContent).toContain('Something happened');
+    });
+
+    it('says nothing when there is nothing to say', () => {
+      // An empty region is correct; the "Combat started..." placeholder is
+      // visual furniture and announcing it would be a false first beat.
+      render(<CombatLog log={[]} />);
+
+      expect(announcer().textContent).toBe('');
+    });
+
+    it('stays out of the visual layout', () => {
+      // Visually hidden, not `display: none` — the latter takes it out of the
+      // accessibility tree too, which is the whole thing it is here for.
+      render(<CombatLog log={mockLog} />);
+
+      const { style } = announcer();
+      expect(style.display).not.toBe('none');
+      expect(style.visibility).not.toBe('hidden');
+      expect(style.width).toBe('1px');
+      expect(style.height).toBe('1px');
+      expect(style.overflow).toBe('hidden');
     });
   });
 });
