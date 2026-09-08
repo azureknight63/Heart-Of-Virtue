@@ -74,6 +74,13 @@ def _player():
     return _PLAYER
 
 
+#: Classes that could only be built through the ``cls.__new__`` fallback.
+#: Asserted empty below: a fallback instance is uninitialized, so its keywords
+#: and its instance-bound aliases are missing and the contract would quietly
+#: weaken for that class instead of failing.
+_FALLBACK_CLASSES = set()
+
+
 def _instantiate(cls):
     """Build an instance of ``cls`` the way the map loader does.
 
@@ -82,6 +89,11 @@ def _instantiate(cls):
     back to ``cls.__new__`` + a bare ``__init__`` if construction raises. This
     mirrors that, because instance-level aliases matter: ``Passageway.__init__``
     binds each word of its own name to ``self.enter`` via ``setattr``.
+
+    The fallback exists to mirror the loader, not to be used: every class in
+    the shipped maps constructs normally today, and
+    :func:`test_no_placement_needed_the_uninitialized_fallback` keeps it that
+    way.
     """
     kwargs = {}
     try:
@@ -95,6 +107,7 @@ def _instantiate(cls):
     try:
         return cls(**kwargs)
     except Exception:
+        _FALLBACK_CLASSES.add(cls.__name__)
         instance = cls.__new__(cls)
         try:
             instance.__init__()
@@ -197,6 +210,22 @@ def test_the_scan_covers_the_classes_the_bug_was_reported_against():
     assert any(issubclass(c, Passageway) for c in classes)
 
 
+def test_no_placement_needed_the_uninitialized_fallback():
+    """Every shipped class must construct for real.
+
+    ``_instantiate``'s ``cls.__new__`` fallback mirrors the map loader, but an
+    instance built that way has no keywords and none of its instance-bound
+    aliases, so the contract below would silently stop testing anything for
+    that class rather than failing. All 122 shipped placements construct
+    normally today; if that changes, fix the construction, don't accept the
+    fallback.
+    """
+    assert not _FALLBACK_CLASSES, (
+        "these classes could only be built uninitialized, so the keyword "
+        f"contract does not really cover them: {sorted(_FALLBACK_CLASSES)}"
+    )
+
+
 def test_the_reported_placement_is_in_the_scan():
     """grondia (8,4) 'Carved Lintel' with the `touch` keyword — the repro."""
     hits = [
@@ -216,23 +245,43 @@ def test_the_reported_placement_is_in_the_scan():
 
 
 @pytest.mark.parametrize(
-    "map_name,coord,cls,name,keyword",
+    "map_name,coord,cls,name,keyword,instance",
     [
-        pytest.param(m, c, cls, n, k, id=f"{m}:{c}:{n}:{k}")
-        for m, c, cls, n, k, _i in _PAIRS
+        pytest.param(m, c, cls, n, k, i, id=f"{m}:{c}:{n}:{k}")
+        for m, c, cls, n, k, i in _PAIRS
     ],
 )
-def test_every_authored_keyword_is_dispatchable(map_name, coord, cls, name, keyword):
-    instance = next(
-        row[5] for row in _PAIRS
-        if row[:5] == (map_name, coord, cls, name, keyword)
-    )
+def test_every_authored_keyword_is_dispatchable(
+    map_name, coord, cls, name, keyword, instance
+):
+    # The instance travels with the row rather than being looked back up by
+    # its other four fields: two placements sharing class+name+keyword on one
+    # tile would otherwise both test whichever one came first.
     assert _is_dispatchable(cls, instance, keyword), (
         f"{map_name} {coord} {name!r} ({cls.__name__}) authors the keyword "
         f"{keyword!r}, which resolves to nothing callable. The frontend renders "
         f"a button for it and clicking it used to hand the player an "
         f"AttributeError (issue #553). Either implement it, add it to the "
         f"class's ACTION_ALIASES, or remove the keyword from the map."
+    )
+
+
+def test_every_default_container_button_is_a_look_inside_verb():
+    """``Container.action_aliases`` and ``LOOK_INSIDE_VERBS`` must agree.
+
+    ``action_aliases`` answers "which buttons does a container show by
+    default" and goes straight into ``keywords``; ``LOOK_INSIDE_VERBS``
+    answers "which verbs open it". They overlap completely today, but by
+    coincidence rather than by construction — so an alias added to one and not
+    the other would ship a default button with no dispatch behind it, which is
+    #553 all over again on a container nobody had to author.
+    """
+    container = Container()
+    defaults = set(container.action_aliases)
+    assert defaults, "Container stopped declaring default action aliases"
+    assert defaults <= Container.LOOK_INSIDE_VERBS, (
+        "default container buttons that no longer open the container: "
+        f"{sorted(defaults - Container.LOOK_INSIDE_VERBS)}"
     )
 
 

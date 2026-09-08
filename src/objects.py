@@ -29,10 +29,16 @@ def resolve_interaction(target, action):
     as ``Error executing action: '<Class>' object has no attribute '<verb>'``
     (issue #553). Callers refuse in fiction instead.
 
-    Alias tables are merged across the MRO, so a subclass declares only what it
-    adds. Instance attributes still win over the class table, which is how
-    ``Passageway``'s per-name aliases (``setattr(self, word, self.enter)``)
-    keep working.
+    Two lookups happen here, and they read different places on purpose:
+
+    * The alias table is read off the **classes** in the MRO, merged so a
+      subclass declares only what it adds. Deliberately not off the instance:
+      the map loader ``setattr``s every authored prop onto the instance, so an
+      instance-readable table would let map JSON redirect one verb onto any
+      other method.
+    * The handler is then looked up on the **instance**, so instance-bound
+      aliases still work — which is how ``Passageway``'s per-name aliases
+      (``setattr(self, word, self.enter)``) keep resolving.
     """
     aliases = {}
     for klass in reversed(type(target).__mro__):
@@ -265,14 +271,20 @@ class WallInscription(Object):
     An inscription (typically visible) that can be looked at.
     """
 
-    #: Shipped maps author inspect/view/check/look/touch on inscriptions
-    #: (18 placements across 5 maps) while the class implemented only
-    #: read/examine, so every one of those buttons raised (issue #553).
+    #: Shipped maps author inspect/view/check/look/touch on inscriptions —
+    #: 18 keywords across 10 placements in 4 maps — while the class
+    #: implemented only read/examine, so every one of those buttons raised
+    #: (issue #553).
+    #:
     #: They are all genuine synonyms: an inscription's entire purpose is to
     #: deliver ``self.text``, and there is no second behaviour any of these
     #: verbs could plausibly mean — ``touch``, on the Carved Lintel the bug
     #: was reported against, is tracing a worn carving with a finger, which
     #: is reading it.
+    #:
+    #: ``peruse`` is not authored anywhere today; it is here because it is on
+    #: ``GameService._ALLOWED_INTERACTION_VERBS``, so a client can send it
+    #: against any target and it would otherwise be refused for no reason.
     ACTION_ALIASES = {
         "inspect": "read",
         "view": "read",
@@ -336,9 +348,14 @@ class Container(Object):
     #: hands the API layer a loot dialog. Declared here because it is a
     #: property of the object, not of the transport: ``GameService`` branches
     #: on this set, and the map-keyword contract test reads it too, so the two
-    #: cannot drift (issue #553 — ``search``/``look``/``lift`` were authored on
-    #: 13 placements while only the first six were recognised, and the other
-    #: three fell through to a bare ``getattr`` and raised).
+    #: cannot drift (issue #553 — ``search``/``look``/``lift`` account for 13
+    #: authored keywords across 6 placements in 2 maps, while only the first
+    #: six verbs here were recognised; the other three fell through to a bare
+    #: ``getattr`` and raised).
+    #:
+    #: Every entry of ``action_aliases`` (the buttons a container shows by
+    #: default) must appear here, or that button would have no dispatch behind
+    #: it. Asserted by tests/test_object_action_dispatch_contract.py.
     LOOK_INSIDE_VERBS = frozenset({
         "loot", "check", "view", "examine", "inspect", "peruse",
         "search", "look", "lift",

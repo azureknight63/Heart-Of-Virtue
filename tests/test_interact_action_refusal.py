@@ -159,6 +159,23 @@ def test_an_unimplemented_verb_is_refused_in_fiction(game_service, world):
     assert "Cold Hearth" in result["message"], result
 
 
+def test_the_refusal_does_not_reflect_an_unbounded_verb(game_service, world):
+    """`action` is client input, and /world/interact sets no max_length on it.
+
+    The refusal quotes the verb back, so without a cap a caller could have any
+    amount of its own text reflected into the response body.
+    """
+    player, _tile, handle = _place(
+        world,
+        Container(name="Cold Hearth", nickname="cold hearth"),
+    )
+
+    result = game_service.interact_with_target(player, handle, "z" * 5000)
+
+    assert result["success"] is False
+    assert len(result["message"]) < 200, len(result["message"])
+
+
 def test_an_internal_failure_is_not_reported_as_its_exception_text(
     game_service, world, monkeypatch
 ):

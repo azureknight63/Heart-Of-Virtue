@@ -100,6 +100,13 @@ _LLM_NOISE_PREFIXES = (
 _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 
 
+#: Cap on the client-supplied verb echoed back by
+#: :func:`_unsupported_action_message`. The /world/interact route validates
+#: `action` as a non-empty string but sets no max_length, so without this a
+#: caller could have a megabyte of its own text reflected into the response.
+_ECHOED_ACTION_MAX_LENGTH = 40
+
+
 def _unsupported_action_message(target, action):
     """In-fiction refusal for a keyword the target does not implement.
 
@@ -109,7 +116,8 @@ def _unsupported_action_message(target, action):
     gets prose, never an attribute name.
     """
     name = getattr(target, "name", None) or "that"
-    return f"There's no way for Jean to {action} the {name}."
+    verb = str(action)[:_ECHOED_ACTION_MAX_LENGTH]
+    return f"There's no way for Jean to {verb} the {name}."
 
 
 #: Refusal handed back when FLEE is attempted with an enemy inside the 20 ft
@@ -2237,8 +2245,8 @@ class GameService:
 
                 # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
                 # not a copy kept here — the copy is how `search`, `look` and
-                # `lift` came to be authored on 13 placements that the API
-                # then failed to recognise (#553).
+                # `lift` came to be authored across 6 shipped placements that
+                # the API then failed to recognise (#553).
                 if is_container and action in Container.LOOK_INSIDE_VERBS:
                     target.open()
                     # Only surface the loot menu if the container actually
