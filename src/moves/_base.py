@@ -1275,7 +1275,7 @@ class Move:  # master class for all moves
     # derives the gate out of each `viable()` body by AST and demands the
     # declaration match — a retuned gate that forgets this attribute would
     # otherwise ship a confidently wrong "Requires a ...".
-    weapon_requirement: tuple = ()
+    weapon_requirement = ()
     # Power multiple this move applies to its user's base damage.
     #
     # Declared HERE, on the base class, so it is part of the Move interface
