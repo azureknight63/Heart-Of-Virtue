@@ -15,6 +15,12 @@ budgets on that once; the guard below refuses unless --allow-any-port.
 
 Env for Vite is passed through Python on purpose: Git Bash rewrites
 VITE_API_URL=/games/HeartOfVirtue/api into a C:/Program Files/Git/... path.
+
+Pass --no-llm for a scripted-only run: it forces all three LLM gates off in the
+backend's environment so the run cannot spend provider tokens whatever `.env`
+says (it ships two of them enabled). It is opt-in rather than the default so an
+LLM-dialogue run needs no extra flag; qa_api.py's banner prints the resolved
+values either way, so check there rather than trusting the command line.
 """
 import argparse
 import os
@@ -84,6 +90,9 @@ def main():
     ap.add_argument("--config", required=True, help="game config .ini, relative to the repo root")
     ap.add_argument("--allow-any-port", action="store_true",
                     help="skip the accepted-origin guard (you will lose Socket.IO)")
+    ap.add_argument("--no-llm", action="store_true",
+                    help="force every LLM gate off so a scripted-only run cannot spend "
+                         "provider tokens, whatever .env says")
     args = ap.parse_args()
 
     origins = accepted_origins()
@@ -116,6 +125,26 @@ def main():
         "HOV_API_PROXY_TARGET": f"http://localhost:{args.api_port}",
         "VITE_API_URL": "/games/HeartOfVirtue/api",
     })
+    if args.no_llm:
+        # Assignments, not pops: load_project_env uses override=False, so a
+        # popped key gets refilled from .env (which ships NPC_CHAT_LLM_ENABLED=1
+        # and MYNX_LLM_ENABLED=1) and the run would quietly bill OpenRouter.
+        #
+        # All three are needed because they gate three different consumers, not
+        # because one falls through to another:
+        #   NPC_CHAT_LLM_ENABLED -> NPC chat (src/api/serializers/npc_serializer.py)
+        #   MYNX_LLM_ENABLED     -> the Mynx adapter (src/npc/_llm.py:161)
+        #   COMBAT_LLM_ENABLED   -> the Tactical Advisor (ai/combat_strategist.py)
+        # The advisor's gate is ("COMBAT_LLM_ENABLED", "MYNX_LLM_ENABLED") and
+        # resolves to the first non-empty value, so COMBAT_LLM_ENABLED="0" alone
+        # would silence the advisor -- but MYNX_LLM_ENABLED="0" is still required
+        # to stop the Mynx adapter, which reads only its own variable. Do not
+        # "simplify" this to one key.
+        env.update({
+            "NPC_CHAT_LLM_ENABLED": "0",
+            "MYNX_LLM_ENABLED": "0",
+            "COMBAT_LLM_ENABLED": "0",
+        })
 
     flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     api_log = open(logdir / "api.log", "ab")
