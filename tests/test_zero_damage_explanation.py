@@ -112,9 +112,14 @@ def test_the_explanation_uses_the_words_the_glossary_already_explains(
 
     ``frontend/src/data/combatGlossary.js`` already carries a
     ``Protection & resistance`` entry whose patterns are ``protections?`` and
-    ``resistances?``. Wording the explanation with those words is the whole of
-    wiring the glossary to this outcome — ``GlossaryText`` does the rest, and
-    no frontend file has to change.
+    ``resistances?``, and ``GlossaryText`` attaches its explainer by matching
+    those patterns against rendered text.
+
+    This pins the BACKEND half. ``GlossaryText`` presently wraps
+    ``CombatMovePanel`` only — not ``CombatLog`` — so the tooltip does not yet
+    appear on this line; wrapping the log is the frontend half, and this test
+    is what guarantees the words will be there when it lands. No new wire
+    field is involved either way.
     """
     from test_combat_glossary_contract import _matching_entry_ids
 

@@ -644,9 +644,11 @@ def mitigation_note(target, damage_type=None, protection=None, resistance=None):
     Worded with the words "resistance" and "protection" on purpose. The combat
     glossary (``frontend/src/data/combatGlossary.js``, the ``?`` panel) already
     carries a *Protection & resistance* entry whose match patterns are exactly
-    those two words, and ``GlossaryText`` attaches the explainer by word match
-    — so phrasing it this way wires the glossary to this outcome with no
-    frontend change at all.
+    those two words, and ``GlossaryText`` attaches its explainer by word match.
+    That is the backend half only: ``GlossaryText`` currently wraps
+    ``CombatMovePanel`` and NOT the combat log, so the explainer does not
+    attach to this line until the log is wrapped too. The wording is what
+    makes that a one-component change rather than a new wire field.
     """
     if protection is None:
         protection = target_protection(target)
