@@ -219,7 +219,12 @@ class TestSearchAndInteract:
 
         assert result["success"] is False
         assert result["message"] != "Target not found.", "the id must have resolved"
-        assert "no attribute 'look'" in result["message"]
+        # The refusal names the object it resolved to, which is what proves the
+        # id landed. It used to assert "no attribute 'look'" -- i.e. it pinned
+        # the AttributeError text leaking into the player-facing message, which
+        # is the defect issue #553 was filed for.
+        assert "Chest" in result["message"], result
+        assert "no attribute" not in result["message"], result
 
 
 # ---------------------------------------------------------------------------

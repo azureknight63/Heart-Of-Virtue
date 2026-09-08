@@ -15,6 +15,32 @@ from src.items import Item  # noqa; This is used in type hints
 #####
 
 
+def resolve_interaction(target, action):
+    """Return the bound callable implementing ``action`` on ``target``, or None.
+
+    The single authority on how an interaction keyword becomes a call. Keywords
+    are authored per placement in the map JSON and rendered as buttons by the
+    frontend; ``ACTION_ALIASES`` is how a class says "this authored verb means
+    that method of mine" (e.g. a ``WallInscription`` authored with ``inspect``
+    still just reads the inscription).
+
+    Returning ``None`` — rather than letting ``getattr`` raise — is the point:
+    an authored verb the class never implemented used to surface to the player
+    as ``Error executing action: '<Class>' object has no attribute '<verb>'``
+    (issue #553). Callers refuse in fiction instead.
+
+    Alias tables are merged across the MRO, so a subclass declares only what it
+    adds. Instance attributes still win over the class table, which is how
+    ``Passageway``'s per-name aliases (``setattr(self, word, self.enter)``)
+    keep working.
+    """
+    aliases = {}
+    for klass in reversed(type(target).__mro__):
+        aliases.update(klass.__dict__.get("ACTION_ALIASES") or {})
+    handler = getattr(target, aliases.get(action, action), None)
+    return handler if callable(handler) else None
+
+
 class Object:
     # Issue #463: authored-placeholder metadata. `tile`/`player` are always
     # runtime backrefs injected by the loader, never authored -- deliberately
@@ -24,6 +50,11 @@ class Object:
         "discovery_message", "aliases",
     }
     MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description"}
+
+    #: ``{authored keyword: method name that implements it}``. Merged across
+    #: the MRO by :func:`resolve_interaction`; empty means every keyword must
+    #: name a method directly. See issue #553.
+    ACTION_ALIASES: dict[str, str] = {}
 
     def __init__(
         self,
@@ -234,6 +265,23 @@ class WallInscription(Object):
     An inscription (typically visible) that can be looked at.
     """
 
+    #: Shipped maps author inspect/view/check/look/touch on inscriptions
+    #: (18 placements across 5 maps) while the class implemented only
+    #: read/examine, so every one of those buttons raised (issue #553).
+    #: They are all genuine synonyms: an inscription's entire purpose is to
+    #: deliver ``self.text``, and there is no second behaviour any of these
+    #: verbs could plausibly mean — ``touch``, on the Carved Lintel the bug
+    #: was reported against, is tracing a worn carving with a finger, which
+    #: is reading it.
+    ACTION_ALIASES = {
+        "inspect": "read",
+        "view": "read",
+        "check": "read",
+        "look": "read",
+        "touch": "read",
+        "peruse": "read",
+    }
+
     def __init__(
         self,
         player: Player,
@@ -282,6 +330,19 @@ class Container(Object):
 
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
+
+    #: Keywords that mean "open it and show me what's inside" — the container
+    #: family's one composite interaction, which opens the container and then
+    #: hands the API layer a loot dialog. Declared here because it is a
+    #: property of the object, not of the transport: ``GameService`` branches
+    #: on this set, and the map-keyword contract test reads it too, so the two
+    #: cannot drift (issue #553 — ``search``/``look``/``lift`` were authored on
+    #: 13 placements while only the first six were recognised, and the other
+    #: three fell through to a bare ``getattr`` and raised).
+    LOOK_INSIDE_VERBS = frozenset({
+        "loot", "check", "view", "examine", "inspect", "peruse",
+        "search", "look", "lift",
+    })
 
     # Class-level default so a container restored from an older save (or built
     # via the loader's ``cls.__new__`` fallback) still resolves the attribute

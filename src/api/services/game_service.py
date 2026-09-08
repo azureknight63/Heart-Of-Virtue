@@ -93,6 +93,25 @@ _LLM_NOISE_PREFIXES = (
 )
 
 
+#: Shown when an interaction raised something unexpected. Deliberately says
+#: nothing about the exception: the interaction dialog is in-fiction prose, and
+#: engine internals rendered there read as broken content (issue #553). The
+#: traceback goes to the log instead.
+_ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
+
+
+def _unsupported_action_message(target, action):
+    """In-fiction refusal for a keyword the target does not implement.
+
+    Authored map keywords are not validated against the class that has to
+    implement them, so this is reachable from content as well as from a client
+    sending a verb off ``_ALLOWED_INTERACTION_VERBS``. Either way the player
+    gets prose, never an attribute name.
+    """
+    name = getattr(target, "name", None) or "that"
+    return f"There's no way for Jean to {action} the {name}."
+
+
 #: Refusal handed back when FLEE is attempted with an enemy inside the 20 ft
 #: break-away threshold. It names the remedy on purpose: a live QA tester in an
 #: unwinnable fight read the previous bare "enemies are too close" as a
@@ -2161,9 +2180,13 @@ class GameService:
             is_valid = True
 
         if not is_valid:
+            # Same refusal wording as an unimplemented-but-allowed verb below:
+            # from the player's side both are "that verb does nothing here",
+            # and the difference (advertised vs implemented) is ours, not
+            # theirs.
             return {
                 "success": False,
-                "message": f"Cannot {action} this target.",
+                "message": _unsupported_action_message(target, action),
             }
 
         # Reject a Passageway teleport interaction while combat is active
@@ -2199,7 +2222,7 @@ class GameService:
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                from src.objects import Container
+                from src.objects import Container, resolve_interaction
                 from src.items import Item
                 from src.inventory_utils import transfer_item
                 from src.events import LootEvent
@@ -2209,14 +2232,11 @@ class GameService:
                     target, "_parent_container"
                 )
 
-                if is_container and action in [
-                    "loot",
-                    "check",
-                    "view",
-                    "examine",
-                    "inspect",
-                    "peruse",
-                ]:
+                # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
+                # not a copy kept here — the copy is how `search`, `look` and
+                # `lift` came to be authored on 13 placements that the API
+                # then failed to recognise (#553).
+                if is_container and action in Container.LOOK_INSIDE_VERBS:
                     target.open()
                     # Only surface the loot menu if the container actually
                     # opened. A locked container's open() is a no-op (state
@@ -2298,7 +2318,19 @@ class GameService:
                     )
                     events_triggered.append(event_data)
                 else:
-                    method = getattr(target, action)
+                    # Resolve through the engine's alias table rather than
+                    # naming an attribute directly. A keyword the class does
+                    # not implement yields None here and is refused in
+                    # fiction; it used to raise AttributeError into the broad
+                    # except below, which then handed the player
+                    # "Error executing action: '<Class>' object has no
+                    # attribute '<verb>'" (#553).
+                    method = resolve_interaction(target, action)
+                    if method is None:
+                        return {
+                            "success": False,
+                            "message": _unsupported_action_message(target, action),
+                        }
                     # Check signature to see if we need to pass player
                     sig = inspect.signature(method)
                     # Get parameter names excluding 'self'
@@ -2314,11 +2346,17 @@ class GameService:
                     else:
                         method()
 
-        except Exception as e:
+        except Exception:
+            # str(e) never reaches the player. The prose panel is the game's
+            # UI, and an exception rendered there reads as broken content, not
+            # as a bug report — the #553 repro was literally
+            # "Error executing action: 'WallInscription' object has no
+            # attribute 'touch'" in the interaction dialog. The detail lives
+            # in the log, which is where a maintainer will look.
             _log.exception("interact_with_target action failed")
             return {
                 "success": False,
-                "message": f"Error executing action: {str(e)}",
+                "message": _ACTION_FAILED_MESSAGE,
             }
 
         output = "\n".join(m.get("text", "") for m in _msgs)

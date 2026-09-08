@@ -1231,7 +1231,11 @@ class TestInteractWithTargetExtra:
 
         result = game_service.interact_with_target(mock_player, wire_handle(obj), "dance")
         assert result["success"] is False
-        assert "cannot" in result["message"].lower()
+        # In-fiction refusal naming the verb and the object (#553 changed the
+        # wording from "Cannot dance this target."); the point is that a verb
+        # the object never advertised is turned away.
+        assert "dance" in result["message"]
+        assert "Statue" in result["message"]
 
     def test_arbitrary_public_method_not_invokable(self, game_service, mock_player):
         # Regression for #334: a public method that exists on the target but is
@@ -1247,7 +1251,8 @@ class TestInteractWithTargetExtra:
         result = game_service.interact_with_target(mock_player, wire_handle(npc), "die")
 
         assert result["success"] is False
-        assert "cannot" in result["message"].lower()
+        assert "die" in result["message"]
+        assert "Quest Giver" in result["message"]
         npc.die.assert_not_called()
 
     def test_item_found_in_open_container(self, game_service, mock_player):
@@ -1358,7 +1363,16 @@ class TestInteractWithTargetExtra:
             "north"
         ]
 
-    def test_action_execution_exception_returns_error(self, game_service, mock_player):
+    def test_action_execution_exception_is_logged_not_shown(
+        self, game_service, mock_player, caplog
+    ):
+        """The exception goes to the log; the player gets prose.
+
+        This test used to assert ``"kaboom" in result["message"]`` -- it pinned
+        the leak. Issue #553's reported symptom was exactly that: the
+        interaction dialog showing "Error executing action: 'WallInscription'
+        object has no attribute 'touch'".
+        """
         obj = MagicMock(spec=["keywords", "name", "examine"])
         obj.keywords = ["examine"]
         obj.name = "Trap"
@@ -1366,9 +1380,15 @@ class TestInteractWithTargetExtra:
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
 
-        result = game_service.interact_with_target(mock_player, wire_handle(obj), "examine")
+        with caplog.at_level("ERROR"):
+            result = game_service.interact_with_target(
+                mock_player, wire_handle(obj), "examine"
+            )
+
         assert result["success"] is False
-        assert "kaboom" in result["message"]
+        assert "kaboom" not in result["message"], result
+        assert result["message"].strip()
+        assert "kaboom" in caplog.text, "the detail must still reach the log"
 
     def test_teleport_detected_strips_destination_description(self, game_service, mock_player):
         obj = MagicMock(spec=["keywords", "name", "use"])
