@@ -119,6 +119,32 @@ describe('FeedbackDialog -- a failed submit (issue #556)', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('survives a success:false body whose error is not a string', async () => {
+    // `error`/`message` are server-controlled and need not be strings. This
+    // branch fed res.data.error straight into state, and the panel renders it
+    // as a React child -- where a non-string throws "Objects are not valid as
+    // a React child". There is no ErrorBoundary in this app, so that unmounts
+    // the whole SPA mid-session instead of showing the error. apiErrorMessage
+    // was already hardened against exactly this; this branch bypassed it.
+    feedbackApi.submitIssue.mockResolvedValue({
+      data: { success: false, error: { field: 'title' } },
+    });
+    const onClose = vi.fn();
+    renderDialog(onClose);
+
+    fireEvent.change(screen.getByPlaceholderText(/Short description of the bug/i), {
+      target: { value: 'The ferry does nothing' },
+    });
+    fireEvent.click(screen.getByText(/Submit Feedback/i));
+
+    await waitForAlertSaying(/./);
+    // The dialog is still mounted -- the SPA did not come down.
+    expect(screen.getByPlaceholderText(/Short description of the bug/i)).toHaveValue(
+      'The ferry does nothing'
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('clears a previous failure notice when the report is resubmitted', async () => {
     feedbackApi.submitIssue.mockRejectedValueOnce({
       response: { status: 503, data: { error: 'Feedback service is not configured on this server.' } },

@@ -2301,8 +2301,19 @@ class GameService:
                     else:
                         # Proceed with equipment logic
                         target.equip(player)
-                elif isinstance(target, Passageway) and getattr(
-                    target, "demo_end", False
+                elif (
+                    isinstance(target, Passageway)
+                    and getattr(target, "demo_end", False)
+                    # Only the verb that would actually CROSS. Gated on the
+                    # resolved handler rather than on the literal "enter",
+                    # because a Passageway also binds its authored name words
+                    # (`ferry`, `landing`) to `enter` on the instance, and all
+                    # of those are legitimate ways to say "use it". Without
+                    # this the branch fired for every verb the allow-list
+                    # permits, so merely examining the ferry to read its
+                    # description ended the demo and set the story gate.
+                    and resolve_interaction(target, action)
+                    == getattr(target, "enter", None)
                 ):
                     # The demo stops at this passageway (#552). The engine owns
                     # what that means -- no crossing, story gate set, one beat

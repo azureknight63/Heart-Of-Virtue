@@ -226,6 +226,10 @@ _HEAT_LABEL_BODY: Dict[HeatBand, str] = {
 # applies, so a plain category price is exactly right.
 _NO_TACTICAL_READ = "No situational modifiers apply; {name} is a solid baseline choice."
 
+# NOTE: `_NO_TACTICAL_READ` above no longer contains the word "unavailable"
+# (#565 -- it read as "the adviser broke" beside a confident score). The
+# history below is kept because it is why the two strings are separate at all;
+# read "analysis unavailable" in it as the wording that string USED to carry.
 # Issue #534 bug 2: this used to BE `_NO_TACTICAL_READ` -- one string reused
 # for two different meanings. In the true catch-all above, "unavailable" is
 # fair alongside a plain base score. But a WARM/Offensive move (heat's

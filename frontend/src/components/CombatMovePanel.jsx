@@ -173,6 +173,15 @@ function useOccludedNavHandoff(contentRef) {
         const panel = content?.closest('.game-panel') ?? content;
         if (!panel) return undefined;
 
+        // Deliberately NOT gated on `event.isTrusted`, though a scrub pass
+        // suggested it: this synthesises an activation from raw coordinates,
+        // so in principle an untrusted event is a coordinate-addressed
+        // activation primitive on the action nav. It buys nothing real --
+        // anyone with script execution can call `button.click()` directly --
+        // and `isTrusted` is non-configurable in jsdom, so the gate makes
+        // every test of this behaviour impossible to write. Five regression
+        // tests for a reproduced dead-click bug beat a guard with no
+        // privilege boundary.
         const handOff = (event) => {
             if (!panel.contains(event.target)) return;
             if (event.target.closest?.(PANEL_CONTROL_SELECTOR)) return;

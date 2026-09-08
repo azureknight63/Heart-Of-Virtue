@@ -354,7 +354,14 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           combatSpeed={combatSpeed}
         />
 
-        {selectedTab === 'overview' && showOffScreenBanner && (
+        {/* `didAutoFit || enemyOffScreen`, not showOffScreenBanner alone:
+            enemyOffScreen carries the `zoom !== VIEW_MODE_FIT` term that the
+            geometry-keyed latch deliberately drops, and without it a player
+            who chose Fit Fight manually gets told to "switch to Fit Fight"
+            the moment an enemy strays -- #561's exact complaint, one path
+            over. The auto-fit message stays, because there the camera really
+            did move and the player is owed the explanation. */}
+        {selectedTab === 'overview' && showOffScreenBanner && (didAutoFit || enemyOffScreen) && (
           <div
             className="animate-in fade-in slide-in-from-top-2 duration-200"
             style={{ position: 'absolute', top: '8px', left: '50%', transform: 'translateX(-50%)', zIndex: 160, pointerEvents: 'none' }}

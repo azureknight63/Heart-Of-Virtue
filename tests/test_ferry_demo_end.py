@@ -179,6 +179,26 @@ def test_using_the_ferry_reports_beta_end(game_service, ferry_world):
     assert result["beta_end"] is True, result
 
 
+def test_merely_examining_the_ferry_does_not_end_the_demo(game_service, ferry_world):
+    """Looking at the ferry must not fire the end-of-beta dialog.
+
+    The demo-end branch was gated on the target being a demo_end Passageway
+    and nothing else, so every verb `_ALLOWED_INTERACTION_VERBS` permits --
+    examine, look, check, inspect, view, peruse -- ended the demo. A player
+    who examined the ferry to read its description got the closing beat and a
+    set `demo_ended` story gate without ever choosing to cross.
+    """
+    player, _game_map, ferry = ferry_world
+
+    for verb in ("examine", "look", "check", "inspect", "view", "peruse"):
+        result = game_service.interact_with_target(
+            player, wire_handle(ferry), verb, session_data={}
+        )
+        assert result.get("beta_end") is not True, (verb, result)
+        story = getattr(player, "story", {}) or {}
+        assert not story.get("demo_ended"), (verb, story)
+
+
 def test_using_the_ferry_does_not_teleport_through_the_api(game_service, ferry_world):
     """The reported bug: INTERACT -> enter dropped Jean at eastern-descent (2,6).
 

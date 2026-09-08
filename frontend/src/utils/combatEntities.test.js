@@ -123,11 +123,42 @@ describe('hostilityTokenFor', () => {
     expect(hostilityTokenFor({ is_ally: false })).toBe(HOSTILITY_TOKENS.hostile);
     expect(hostilityTokenFor({ is_hostile: true })).toBe(HOSTILITY_TOKENS.hostile);
     expect(hostilityTokenFor({ is_ally: true })).toBe(HOSTILITY_TOKENS.ally);
-    expect(hostilityTokenFor({ is_hostile: false })).toBe(HOSTILITY_TOKENS.ally);
+    // NOT ally: `is_hostile: false` is "not aggressive", not "on Jean's side".
+    // This line asserted the ally badge and was written alongside the code
+    // that produced it, so it pinned the defect rather than catching it.
+    expect(hostilityTokenFor({ is_hostile: false })).toBeNull();
   });
 
   it('has no token for a silent payload', () => {
     expect(hostilityTokenFor({ name: 'Stranger' })).toBeNull();
+    expect(hostilityTokenFor(null)).toBeNull();
+  });
+});
+
+describe('hostilityTokenFor — ALLY needs a positive ally signal', () => {
+  // RoomContents documents the reasoning and then hostilityTokenFor broke it:
+  // `is_hostile: false` means "not aggressive" — a villager, a merchant — not
+  // "on Jean's side". Badging those ALLY states something the payload never
+  // said, which is the same class of mistake as badging a hostile friendly.
+  // Latent rather than live (the two spellings never co-occur today: only
+  // NPCSerializer emits is_hostile and only _build_target_entry emits
+  // is_ally), so this guards the invariant before a serializer change makes
+  // it reachable.
+  it('gives a non-aggressive room NPC no token rather than an ALLY badge', () => {
+    expect(hostilityTokenFor({ is_hostile: false })).toBeNull();
+  });
+
+  it('still badges a genuine party member from the target picker', () => {
+    expect(hostilityTokenFor({ is_ally: true })?.label).toBe('ALLY');
+  });
+
+  it('still badges a hostile from either spelling', () => {
+    expect(hostilityTokenFor({ is_hostile: true })?.label).toBe('HOSTILE');
+    expect(hostilityTokenFor({ is_ally: false })?.label).toBe('HOSTILE');
+  });
+
+  it('shows nothing when the payload is silent', () => {
+    expect(hostilityTokenFor({})).toBeNull();
     expect(hostilityTokenFor(null)).toBeNull();
   });
 });

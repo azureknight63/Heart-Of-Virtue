@@ -1213,8 +1213,7 @@ class ApiCombatAdapter:
             move.current_stage = 0
             move.beats_left = 0
 
-    @staticmethod
-    def _reset_move_state_for_new_fight(combatant) -> None:
+    def _reset_move_state_for_new_fight(self, combatant) -> None:
         """Rewind every move to stage 0 AND drop the one still in flight.
 
         The fresh-fight counterpart of :meth:`_reset_idle_move_stages`, and the
@@ -1241,8 +1240,19 @@ class ApiCombatAdapter:
         ``NPCCombatMixin.refresh_moves`` stamps it onto every targeted move
         before selection, so ``refresh_announcements`` builds its line from a
         live combatant.
+
+        Detach-and-DISCARD, not a bare assignment: `_detach_current_move`'s
+        docstring says the two "are one operation on purpose", and skipping
+        the discard reintroduced the #560 symptom through the animation
+        channel rather than the narration one. `flee_combat` is the one combat
+        exit that never calls `_discard_pending_animations`, so an ally
+        mid-wind-up when Jean fled kept an armed, never-reported channel;
+        clearing `current_move` here un-gates `_flush_pending_animations`
+        (which skips a combatant whose move is still set), and beat 1 of the
+        next fight then emitted a fallback animation built from the previous
+        fight's `animation_data` -- `outcome_target` and all.
         """
-        combatant.current_move = None
+        self._detach_current_move(combatant)
         for move in getattr(combatant, "known_moves", []):
             move.current_stage = 0
             move.beats_left = 0

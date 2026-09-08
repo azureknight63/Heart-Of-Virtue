@@ -66,6 +66,25 @@ describe('Battlefield — framing the fight the player was handed (#561)', () =>
         expect(lastZoom()).toBe('follow');
     });
 
+    it('never tells the player to switch to Fit Fight while Fit Fight is on', async () => {
+        // The nag's whole reason for existing (#561) is that the app knew the
+        // framing was wrong and asked the player to fix it. Rendering it while
+        // the player is ALREADY in Fit Fight is that same complaint: the
+        // banner was keyed on raw geometry, which dropped the
+        // `zoom !== 'fit'` term the old condition carried.
+        const { rerender } = render(<Battlefield combat={fight({ enemyX: 6 })} currentLogIndex={0} />);
+        // Enemy framed, so nothing auto-fitted; the player picks Fit Fight.
+        fireEvent.click(screen.getByRole('button', { name: 'Fit Fight' }));
+        expect(lastZoom()).toBe('fit');
+
+        // The enemy now strays past the Follow viewport. Fit Fight is already
+        // on, so there is nothing for the player to do.
+        rerender(<Battlefield combat={fight({ enemyX: 13 })} currentLogIndex={0} />);
+
+        await waitFor(() => expect(lastZoom()).toBe('fit'));
+        expect(screen.queryByText(/switch to Fit Fight/i)).toBeNull();
+    });
+
     it('re-fits for a new fight after the player claimed the last one', async () => {
         const { rerender } = render(<Battlefield combat={fight({ id: 'fight-A' })} currentLogIndex={0} />);
         await waitFor(() => expect(lastZoom()).toBe('fit'));

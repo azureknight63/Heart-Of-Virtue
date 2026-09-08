@@ -252,6 +252,7 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
 
   const inNavRect = { clientX: 135, clientY: 62 };
 
+
   it('hands a click on the panel chrome to the category button underneath', () => {
     const { container } = renderWithNav([
       { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },

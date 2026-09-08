@@ -50,7 +50,16 @@ export const LOG_ENTRY_COLORS = {
  */
 function spokenText(message) {
   const scratch = document.createElement('div')
-  scratch.innerHTML = DOMPurify.sanitize(String(message ?? ''))
+  // The empty allow-list is passed EXPLICITLY. Without it DOMPurify's default
+  // config keeps <img src>, <source> and <video poster>, and parsing those into
+  // this div fetches their subresources even though only textContent is read --
+  // so a log line could beacon out, and LogAnnouncer runs even while the log is
+  // collapsed and rendering nothing. The docstring above claimed this config
+  // was in force while the call passed none.
+  scratch.innerHTML = DOMPurify.sanitize(String(message ?? ''), {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: [],
+  })
   return scratch.textContent || ''
 }
 

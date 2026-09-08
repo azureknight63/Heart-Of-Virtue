@@ -329,6 +329,9 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
     setActiveType(type)
     setTitle('')
     setTitleError(false)
+    // The panel says "your report is still here"; after a tab switch it is
+    // not -- title and body are wiped and the form is a different one.
+    setSubmitError(null)
   }
 
   const handleTitleChange = (e) => {
@@ -389,7 +392,15 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       // used to fire unconditionally, so the day one does, the report is lost
       // silently all over again (#556).
       if (res?.data?.success === false) {
-        failSubmit(res.data.error || res.data.message)
+        // Through apiErrorMessage, not res.data.error directly: `error` and
+        // `message` are server-controlled and need not be strings, and this
+        // value is rendered as a React child, where a non-string throws
+        // "Objects are not valid as a React child" -- and with no
+        // ErrorBoundary in the app that unmounts the SPA instead of showing
+        // the error. The helper was already hardened against exactly this;
+        // this branch was the one path bypassing it. It also restores the
+        // documented message-before-error precedence.
+        failSubmit(apiErrorMessage(res.data, 'Could not submit feedback — please try again later.'))
         return
       }
       toastSuccess('Feedback submitted! Thank you.')

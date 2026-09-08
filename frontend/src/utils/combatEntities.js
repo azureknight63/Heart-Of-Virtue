@@ -99,9 +99,23 @@ export const HOSTILITY_TOKENS = {
   },
 };
 
-/** The token for an entity, or null when the payload carries no hostility. */
+/**
+ * The token for an entity, or null when the payload carries no hostility.
+ *
+ * ALLY requires a POSITIVE ally signal, not merely the absence of hostility.
+ * `is_hostile: false` means "not aggressive" -- a villager, a merchant -- and
+ * badging that ALLY states something the payload never said, which is the same
+ * class of mistake as badging a hostile friendly. RoomContents already
+ * documents this reasoning for its own surface; this used to contradict it by
+ * treating every non-hostile as an ally.
+ *
+ * Latent rather than live: only NPCSerializer emits `is_hostile` and only
+ * ApiCombatAdapter._build_target_entry emits `is_ally`, so the two spellings
+ * do not co-occur today. Gated anyway, because the invariant is cheap to hold
+ * and a serializer change is what would make it reachable.
+ */
 export const hostilityTokenFor = (entity) => {
-  const hostile = isHostileEntity(entity);
-  if (hostile === null) return null;
-  return hostile ? HOSTILITY_TOKENS.hostile : HOSTILITY_TOKENS.ally;
+  if (isHostileEntity(entity) === true) return HOSTILITY_TOKENS.hostile;
+  if (entity?.is_ally === true) return HOSTILITY_TOKENS.ally;
+  return null;
 };

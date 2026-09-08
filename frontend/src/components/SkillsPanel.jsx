@@ -133,7 +133,7 @@ export default function SkillsPanel({ player, onClose }) {
             <GameText variant="muted" align="center" style={{ fontStyle: 'italic' }}>
               No skill experience yet.
             </GameText>
-            <GameText variant="dim" size="sm" align="center">
+            <GameText variant="muted" size="sm" align="center">
               A discipline appears here once you have earned experience in it.
               Fight with a weapon and its discipline — Axe, Sword, and so on —
               opens up with XP to spend on the abilities below it.

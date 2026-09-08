@@ -312,6 +312,11 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
               background: 'none',
               border: 'none',
               padding: `${spacing.sm} ${spacing.md}`,
+              // 44px like the severity buttons this diff also raised. It is
+              // the destructive control here -- it forfeits the whole drop --
+              // and it is centred on its own full-width row, so a height
+              // floor wraps nothing.
+              minHeight: '44px',
               fontFamily: fonts.main,
               fontSize: '11px',
               color: '#444',

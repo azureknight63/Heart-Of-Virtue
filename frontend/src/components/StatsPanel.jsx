@@ -143,7 +143,7 @@ export default function StatsPanel({ player, onClose }) {
                 transition: 'width 0.3s ease',
               }} />
             </div>
-            <GameText variant="dim" size="xs" style={{ marginTop: '4px' }}>
+            <GameText variant="muted" size="xs" style={{ marginTop: '4px' }}>
               {Math.max(0, player.max_exp - (player.exp || 0))} EXP to next level
             </GameText>
           </GamePanel>
@@ -193,9 +193,9 @@ export default function StatsPanel({ player, onClose }) {
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', flexShrink: 0, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: '4px' }}>
                       <GameText weight="bold" style={{ color }}>{current}</GameText>
-                      {delta && <GameText variant="dim" size="xs">{delta}</GameText>}
+                      {delta && <GameText variant="muted" size="xs">{delta}</GameText>}
                     </div>
-                    <GameText variant="dim" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
+                    <GameText variant="muted" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
                   </div>
                 </div>
               )
@@ -246,7 +246,7 @@ export default function StatsPanel({ player, onClose }) {
                   alignItems: 'center',
                 }}>
                   <GameText size="sm" style={{ color: '#ff9999' }}>{state.name}</GameText>
-                  {state.steps_left && <GameText variant="dim" size="xs">{state.steps_left}T</GameText>}
+                  {state.steps_left && <GameText variant="muted" size="xs">{state.steps_left}T</GameText>}
                 </div>
               )) : <GameText variant="muted" size="sm" style={{ fontStyle: 'italic' }}>No active status effects</GameText>}
             </div>
