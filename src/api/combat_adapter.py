@@ -230,6 +230,97 @@ MAX_ANIMATION_SEQ = 1_000_000
 MAX_INSTANT_STAGES = 20
 
 
+#: Weapon subtypes whose engine name is not the noun a player would use. Every
+#: other subtype reads fine lowercased ("crossbow", "scythe", "polearm"), so
+#: only the exceptions are listed — and the phrases here are COMPLETE, article
+#: and all, because neither of them takes one.
+_WEAPON_NOUN_PHRASES = {
+    "Unarmed": "bare hands",
+    "Stars": "throwing stars",
+}
+
+
+def _weapon_noun_phrase(subtype, with_article=True):
+    """``"a crossbow"`` / ``"bare hands"`` for one weapon subtype."""
+    phrase = _WEAPON_NOUN_PHRASES.get(subtype)
+    if phrase is not None:
+        return phrase
+    noun = subtype.lower()
+    if not with_article:
+        return noun
+    return ("an " if noun[:1] in "aeiou" else "a ") + noun
+
+
+def weapon_requirement_reason(move, weapon):
+    """Why ``move`` cannot be used with ``weapon`` in hand, or None.
+
+    The engine declares the requirement (``Move.weapon_requirement``); this
+    turns it into the line the player reads. ``viable()`` remains the rule —
+    a move whose requirement IS satisfied gets None here and falls through to
+    whatever else is blocking it (range, target, state), which is why the
+    range reasons keep working for a correctly-armed move.
+
+    The catch-all this replaces ("Cannot use this move", issue #565) could not
+    do better on its own: ``viable()`` hands back a bare bool, so the adapter
+    guessed from range — and range was fine. ``ShootCrossbow.viable`` refuses
+    for three separate reasons and only one of them is a distance.
+
+    "No weapon equipped" is kept verbatim for the empty-handed case; it is the
+    string the availability path already emitted there and
+    ``tests/test_combat_glossary_contract.py`` asserts it matches no glossary
+    term.
+    """
+    requirement = tuple(getattr(move, "weapon_requirement", ()) or ())
+    if not requirement:
+        return None
+    # The engine models bare-handed two ways -- an absent/None ``eq_weapon``
+    # (most NPCs) or an ``items.Fists()`` whose subtype is "Unarmed", which is
+    # what ``Player.__init__`` equips and ``unequip_item`` restores. Both count
+    # as satisfying an Unarmed requirement; ``Jab._is_unarmed`` documents the
+    # pair, and reading only the subtype here would tell a genuinely
+    # bare-handed Jean that Jab "requires bare hands".
+    subtype = "Unarmed" if weapon is None else getattr(weapon, "subtype", None)
+    if subtype in requirement:
+        return None
+    # A fists-only move is not asking for equipment, so the empty-handed
+    # wording below would be exactly backwards for it.
+    if set(requirement) == {"Unarmed"}:
+        return "Requires " + _WEAPON_NOUN_PHRASES["Unarmed"]
+    if weapon is None:
+        return "No weapon equipped"
+    nouns = sorted(requirement)
+    phrases = [_weapon_noun_phrase(nouns[0])] + [
+        _weapon_noun_phrase(n, with_article=False) for n in nouns[1:]
+    ]
+    if len(phrases) == 1:
+        return "Requires " + phrases[0]
+    return "Requires " + ", ".join(phrases[:-1]) + " or " + phrases[-1]
+
+
+def combat_alert_line(name, alert_message):
+    """``"<name> <alert_message>"`` with exactly one space between the two.
+
+    ``alert_message`` is authored under two conventions that both live in
+    ``src/npc/`` right now: most of them open with a leading space (Gorran's
+    ``" lets out a deep and angry rumble!"``, the Stone Creature's ``"
+    lurches toward Jean..."``) and a handful do not (the Slime's ``"burbles
+    angrily at Jean!"``, and the ``NPC`` class default ``"appears!"``). Both
+    read correctly in isolation, which is why neither convention ever looked
+    wrong enough to standardise.
+
+    The arrival line is the one place they meet, and it supplies a separator of
+    its own — so the leading-space majority rendered as ``Stone Creature
+    Nurenly  lurches toward Jean...`` (issue #565). Normalising here rather
+    than editing ~22 authored strings keeps it fixed for whichever convention
+    the next enemy is written under; ``alert_message`` itself stays untouched,
+    which matters because ``npc_serializer`` ships the raw value to the client
+    as well.
+    """
+    return " ".join(
+        part for part in (str(name).strip(), str(alert_message).strip()) if part
+    )
+
+
 def _dedup_key(message, round_num, source_id):
     """The identity ``_add_log_entry`` collapses duplicate log entries on.
 
@@ -1122,6 +1213,40 @@ class ApiCombatAdapter:
             move.current_stage = 0
             move.beats_left = 0
 
+    @staticmethod
+    def _reset_move_state_for_new_fight(combatant) -> None:
+        """Rewind every move to stage 0 AND drop the one still in flight.
+
+        The fresh-fight counterpart of :meth:`_reset_idle_move_stages`, and the
+        opposite call on ``current_move``: a reinit joins a fight already in
+        progress, so the in-flight move is legitimate and must be spared,
+        whereas a *new* fight rewinding that same move to stage 0 has already
+        decided it is garbage — it will re-run its whole prep→execute cycle
+        from the top.
+
+        Dropping the reference is what was missing (issue #560). Only the
+        player's ``current_move`` was ever cleared at end of combat (all four
+        exits do it; none touch an NPC), and ``_process_npc`` re-selects
+        ``npc.target`` only while ``current_move`` is None. So an ally who was
+        mid-swing when a fight ended entered the next one still holding that
+        swing, never re-targeted, and replayed it against the corpse from the
+        previous encounter: the log named a combatant who had died on another
+        tile, and the damage landed on it instead of on the enemy actually
+        present. Gorran makes it routine rather than rare — ``NpcAttack`` prep
+        is ``int(50 / speed)`` and his speed is 5, so his swing is winding up
+        for ten of every ~22 beats.
+
+        Clearing the move is enough to fix the target too: with it gone,
+        ``_process_npc`` picks a target from this fight's roster and
+        ``NPCCombatMixin.refresh_moves`` stamps it onto every targeted move
+        before selection, so ``refresh_announcements`` builds its line from a
+        live combatant.
+        """
+        combatant.current_move = None
+        for move in getattr(combatant, "known_moves", []):
+            move.current_stage = 0
+            move.beats_left = 0
+
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
     ) -> Dict[str, Any]:
@@ -1289,9 +1414,18 @@ class ApiCombatAdapter:
                 # Reset moves only for new combat
                 for ally in self.player.combat_list_allies:
                     ally.in_combat = True
-                    for move in ally.known_moves:
-                        move.current_stage = 0
-                        move.beats_left = 0
+                    if ally is self.player:
+                        # Jean's in-flight move belongs to the four
+                        # combat-exit paths and to _detach_current_move, which
+                        # discards its animation channel as it clears it — a
+                        # fresh fight only rewinds his idle move stages. (All
+                        # four exits already leave it None, so this is the same
+                        # reset as before for every reachable state; sparing an
+                        # in-flight move additionally keeps it out of
+                        # Move.advance's stage-loop trap.)
+                        self._reset_idle_move_stages(ally)
+                        continue
+                    self._reset_move_state_for_new_fight(ally)
 
                 for enemy in self.player.combat_list:
                     # Provide a back-reference for API-mode drop/loot tracking
@@ -1302,9 +1436,7 @@ class ApiCombatAdapter:
                             "Could not set player_ref on enemy %s",
                             getattr(enemy, "name", enemy),
                         )
-                    for move in enemy.known_moves:
-                        move.current_stage = 0
-                        move.beats_left = 0
+                    self._reset_move_state_for_new_fight(enemy)
             else:
                 # For re-init, ensure ALL combatants are properly flagged and
                 # reset move stages so prior cooldowns don't block new combat.
@@ -1370,7 +1502,9 @@ class ApiCombatAdapter:
                 self._announced_enemies.add(enemy)
                 name = getattr(enemy, "name", "Enemy")
                 alert = getattr(enemy, "alert_message", "appears!")
-                self._add_log_entry(1, f"{name} {alert}", "system")
+                self._add_log_entry(
+                    1, combat_alert_line(name, alert), "system"
+                )
 
             # A reinit raised from *inside* an in-flight move — an enemy move
             # or a combat event that spawns reinforcements during a beat —
@@ -3616,8 +3750,20 @@ class ApiCombatAdapter:
                 # Move is not viable - try to determine why
                 move_data["available"] = False
 
-                # Check for common reasons
-                if is_targeted:
+                # What is in Jean's hand is asked FIRST, and before the
+                # targeted/untargeted split: a weapon requirement is true
+                # regardless of range or target, it is the objection the
+                # player cannot fix by walking, and the range guess below
+                # happily passes while the real blocker is the sword he is
+                # holding (issue #565). Returns None when the requirement is
+                # satisfied, so a correctly-armed move still falls through to
+                # the range reasons.
+                weapon_reason = weapon_requirement_reason(
+                    move, getattr(self.player, "eq_weapon", None)
+                )
+                if weapon_reason is not None:
+                    move_data["reason"] = weapon_reason
+                elif is_targeted:
                     # Check if it's a range issue
                     mvrange = getattr(move, "mvrange", None)
                     if mvrange:

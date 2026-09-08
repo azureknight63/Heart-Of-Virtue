@@ -31,6 +31,7 @@ class PommelStrike(Move):
     display_name = 'Pommel Strike'
 
     web_animation = "attack"
+    weapon_requirement = ("Axe", "Bludgeon", "Pick", "Scythe", "Spear", "Sword")
 
     def __init__(self, player):
         description = "Quick strike using the pommel of the weapon."
@@ -437,6 +438,7 @@ class Thrust(Move):
     display_name = 'Thrust'
 
     web_animation = "pierce"
+    weapon_requirement = ("Spear", "Sword")
 
     def __init__(self, user):
         description = (
@@ -522,6 +524,7 @@ class DisarmingSlash(Move):
     display_name = 'Disarming Slash'
 
     web_animation = "attack"
+    weapon_requirement = ("Sword",)
 
     def __init__(self, user):
         description = (
@@ -662,6 +665,7 @@ class Riposte(Move):
     display_name = 'Riposte'
 
     web_animation = "quick_attack"
+    weapon_requirement = ("Sword",)
 
     def __init__(self, user):
         description = (

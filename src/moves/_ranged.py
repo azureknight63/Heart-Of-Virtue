@@ -54,6 +54,7 @@ class ShootBow(
     display_name = 'Shoot Bow'
     # this is checked when available skills are evaluated in combat.py
     web_animation = "projectile"
+    weapon_requirement = ("Bow",)
 
     def __init__(self, player):
         description = (
@@ -466,6 +467,7 @@ class Hawkeye(Move):
     display_name = 'Hawkeye'
 
     web_animation = "buff"
+    weapon_requirement = ("Bow",)
 
     def __init__(self, player):
         description = (
@@ -542,6 +544,7 @@ class ShootCrossbow(Move):
     display_name = 'Shoot Crossbow'
 
     web_animation = "projectile"
+    weapon_requirement = ("Crossbow",)
 
     def __init__(self, user):
         description = (
@@ -678,6 +681,7 @@ class BroadheadBolt(Move):
     display_name = 'Broadhead Bolt'
 
     web_animation = "projectile"
+    weapon_requirement = ("Crossbow",)
 
     def __init__(self, user):
         description = (
@@ -820,6 +824,7 @@ class AimedShot(Move):
     display_name = 'Aimed Shot'
 
     web_animation = "projectile"
+    weapon_requirement = ("Crossbow",)
 
     def __init__(self, user):
         description = (
@@ -956,6 +961,7 @@ class PinningBolt(Move):
     display_name = 'Pinning Bolt'
 
     web_animation = "projectile"
+    weapon_requirement = ("Crossbow",)
 
     def __init__(self, user):
         description = (

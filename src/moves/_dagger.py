@@ -60,6 +60,7 @@ class Slash(
 ):  # Slashing-type attack using the equipped weapon; available to Daggers, Swords, Stars, Axes, and Halberds.
     display_name = 'Slash'
     web_animation = "attack"
+    weapon_requirement = ("Axe", "Dagger", "Halberd", "Stars", "Sword")
 
     def __init__(self, player):
         description = (
@@ -498,6 +499,7 @@ class Backstab(Move):
     display_name = 'Backstab'
 
     web_animation = "pierce"
+    weapon_requirement = ("Dagger",)
 
     def __init__(self, user):
         description = (
