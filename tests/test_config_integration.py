@@ -11,10 +11,13 @@ actually reach the SessionManager / Player.
 """
 
 import configparser
+import functools
+import inspect
 from pathlib import Path
 
 import pytest
 
+import src.items as items_module
 from src.api.services import session_manager as session_manager_module
 from src.api.services.session_manager import SessionManager
 from src.config_manager import ConfigManager, GameConfig
@@ -112,28 +115,35 @@ def test_session_manager_ignores_a_config_file_that_does_not_exist(monkeypatch):
 _BETA_CONFIG_NAME = "config_grondia_beta.ini"
 
 
+@functools.lru_cache(maxsize=1)
 def _weapon_subtypes():
-    """Return ``{class_name: subtype}`` for every weapon class in src.items."""
-    import inspect
+    """Return ``{class_name: subtype}`` for every weapon class in src.items.
 
-    import src.items as items_module
-
+    Constructed rather than read off the source: ``subtype`` is passed up to
+    ``Weapon.__init__`` as a kwarg, so there is nothing to grep for reliably.
+    Deliberately **not** wrapped in try/except — all 20 weapon classes take
+    only optional kwargs today, and a future one that needs a required
+    argument should fail here with a traceback naming it, rather than be
+    silently dropped and reported downstream as "the config has no blunt
+    weapon". Cached because three tests below want the same map.
+    """
     subtypes = {}
     for name, cls in inspect.getmembers(items_module, inspect.isclass):
         if not issubclass(cls, items_module.Weapon) or cls is items_module.Weapon:
             continue
-        try:
-            subtypes[name] = cls().subtype
-        except Exception:
-            continue
+        subtypes[name] = cls().subtype
     return subtypes
 
 
 def test_the_bludgeon_population_is_derivable():
     """Positive control — the derived sets must be non-empty, or every
-    assertion below passes vacuously."""
-    import src.items as items_module
+    assertion below passes vacuously.
 
+    Floors, not pins: src/items.py currently yields 20 weapon classes, of
+    which 4 are Bludgeon. The thresholds sit well below both so retiring an
+    individual weapon does not trip them, while the derivation collapsing to
+    nothing does.
+    """
     subtypes = _weapon_subtypes()
     bludgeons = {n for n, s in subtypes.items() if s == "Bludgeon"}
 
@@ -168,8 +178,6 @@ def test_beta_starting_loadout_includes_a_blunt_weapon(monkeypatch):
     )
 
     # Every spec must actually resolve, or the loadout lies about itself.
-    import src.items as items_module
-
     unknown = [name for name in specs if not hasattr(items_module, name)]
     assert unknown == [], f"src.items defines no {unknown}"
 

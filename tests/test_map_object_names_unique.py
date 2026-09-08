@@ -21,7 +21,9 @@ would miss two *different* classes whose constructors happen to default to the
 same name. Tighten it here if that ever becomes a real shape.
 """
 
+import ast
 import collections
+import functools
 import inspect
 import json
 import re
@@ -118,8 +120,14 @@ def test_the_duplicate_detector_can_actually_find_one():
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=1)
 def _authored_object_names():
-    """Yield ``(map_file, coords, name)`` for every placement carrying a name."""
+    """Return ``((map_file, coords, name), ...)`` for every named placement.
+
+    Cached: four tests below want the same scan, and re-parsing all 17 map
+    files each time is the bulk of this module's runtime.
+    """
+    found = []
     for map_file in MAP_FILES:
         map_data = json.loads(map_file.read_text(encoding="utf-8"))
         for coords, tile in _tiles(map_data):
@@ -128,7 +136,8 @@ def _authored_object_names():
                     continue
                 name = (entry.get("props") or {}).get("name")
                 if isinstance(name, str) and name:
-                    yield map_file.name, coords, name
+                    found.append((map_file.name, coords, name))
+    return tuple(found)
 
 
 def test_there_are_object_names_and_classes_to_scan():
@@ -136,8 +145,12 @@ def test_there_are_object_names_and_classes_to_scan():
 
     Either one silently collapsing to zero (a renamed props key, a moved
     module) would make every assertion below vacuously true.
+
+    Floors, not pins: the tree currently holds 121 named placements across 25
+    object classes, so these sit well below both. Content can be removed
+    without tripping them; the scan finding nothing cannot pass.
     """
-    names = list(_authored_object_names())
+    names = _authored_object_names()
     assert len(names) >= 50, f"only {len(names)} authored object names found"
     assert len(OBJECT_CLASS_NAMES) >= 10, (
         f"only {len(OBJECT_CLASS_NAMES)} classes found in src/objects.py"
@@ -179,24 +192,35 @@ def test_no_object_class_defaults_its_name_to_its_own_class_name():
 
     ``HealingSpring.__init__`` passed ``name="HealingSpring"``, so a placement
     that authored no ``name`` leaked the class name even with every map JSON
-    clean. Read off the source rather than by construction: most of these
-    constructors want a live player and tile.
+    clean.
+
+    Read off the AST rather than by construction — most of these constructors
+    want a live player and tile — and scoped to each class's *own* body, so a
+    class that legitimately mentions another class's name cannot be blamed for
+    it. A plain file-wide regex would report the wrong class.
 
     Same shape rule as the placement scan, for the same reason: ``Crate``,
     ``Campfire``, ``Fountain``, ``Shelf`` and ``Shrine`` all name themselves
     after their class and all read correctly doing it. Only a run-together
     identifier is a leak.
     """
-    source = Path("src/objects.py").read_text(encoding="utf-8")
-    offenders = sorted(
-        cls_name
-        for cls_name in OBJECT_CLASS_NAMES
-        if RUN_TOGETHER_IDENTIFIER.match(cls_name)
-        and re.search(rf'\bname\s*=\s*["\']{re.escape(cls_name)}["\']', source)
-    )
-    assert offenders == [], (
+    tree = ast.parse(Path("src/objects.py").read_text(encoding="utf-8"))
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not RUN_TOGETHER_IDENTIFIER.match(node.name):
+            continue
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.keyword) or inner.arg != "name":
+                continue
+            value = inner.value
+            if isinstance(value, ast.Constant) and value.value == node.name:
+                offenders.append(node.name)
+                break
+    assert sorted(offenders) == [], (
         "these classes default their player-facing `name` to their own class "
-        f"name: {offenders}. Give the constructor prose instead."
+        f"name: {sorted(offenders)}. Give the constructor prose instead."
     )
 
 
