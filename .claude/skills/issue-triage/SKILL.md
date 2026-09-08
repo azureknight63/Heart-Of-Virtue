@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-version: 1.2.0
+version: 1.3.0
 description: |
   Use when the user wants their open GitHub issues worked as a batch rather
   than one named issue fixed. Trigger on any ask to triage, sort, clear out,
@@ -50,10 +50,16 @@ Pull every open issue with bodies and comments. Read them all before starting
 work, because the sorting depends on seeing the set:
 
 ```bash
-# via the GitHub MCP tools — this environment has no `gh` CLI
-mcp__github__list_issues   (state: OPEN, include body + comments)
-mcp__github__issue_read    (method: get, and get_comments where comments > 0)
+gh issue list --state open --limit 100 --json number,title,body,comments
+gh issue view <N> --json number,title,body,comments,labels,state
 ```
+
+Use whichever GitHub surface is actually connected, and check rather than
+assume: the `mcp__github__*` server frequently fails to connect in this
+environment (`Incompatible auth server: does not support dynamic client
+registration`), while the `gh` CLI is installed and pre-approved read-only for
+this repo. An earlier version of this skill asserted the opposite — that there
+was no `gh` CLI — which was wrong and would have blocked the whole pass.
 
 Comments matter more than they look. An issue whose body poses a question may
 already have been answered by a one-line maintainer comment months ago —
@@ -143,6 +149,10 @@ cannot collide. Give each one:
   theirs.
 - Instructions **not to push**. You merge and push centrally so the branch
   stays coherent.
+- The commit-message convention: cite the issue for traceability
+  (`fix(scope): … (#NNN)`), but tell the agent plainly that this form closes
+  nothing. Closing references are yours to write in the PR body and to verify
+  after the merge — see Step 7.
 
 Agents given room to disagree produce better fixes than agents given orders.
 One implementing a fatigue heuristic realised the specified condition would
@@ -299,6 +309,87 @@ check runs — use `get_check_runs` and the PR's `mergeable_state`. And an
 unchanged `updated_at` plus comment count is enough to prove nothing happened,
 without re-querying everything.
 
+### A Conventional Commits subject is not a closing reference
+
+GitHub closes an issue on merge only when a closing keyword — `close`,
+`closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`
+— is followed by nothing but optional whitespace or a colon before the `#NNN`.
+**Every form this project's commit convention naturally produces fails that
+test**, because the scope parenthesis or the trailing citation puts a character
+where the parser demands none:
+
+| Form | Why it does not close |
+|---|---|
+| `fix(#544): stop reporting dormant tile events` | the `(` sits between keyword and number |
+| `fix(combat-ui): hit-testable STRIKE button (#535)` | `fix` binds to the scope; `#535` is unattached |
+| `Fix room-description clipping (issue #537)` | `Fix` binds to "room-description"; `issue` is not a keyword |
+| `- #528 — exits bleed across maps` (PR body bullet) | no keyword at all |
+
+PR #549 merged fixes for 19 issues and closed exactly **one**: #546, whose
+commit happened to read `Fix #546: always_stock items now bypass container
+placement`. The other 18 stayed open until a follow-up session closed them by hand.
+
+`closingIssuesReferences` is not the safety net it looks like, in either
+direction: a commit-message close never populates it, so on #549 it came back
+empty even though #546 did close. Empty does not mean "nothing will close", and
+non-empty does not cover commit-only references.
+
+So do both of these, and trust only the second:
+
+1. **Put real closing keywords in the PR body, one per line, in their own
+   section.** Not woven into the summary bullets — a `Closes #528 — exits bleed
+   across maps` reads fine to a human and parses fine too, but the moment
+   someone reformats the bullet the reference dies silently. Keep them
+   mechanical and separate:
+
+   ```
+   ## Closes
+
+   Closes #528
+   Closes #529
+   Closes #530
+   ```
+
+2. **Verify against the API, before and after the merge.** Before merging,
+   confirm the parser actually bound every issue you intend to close:
+
+   ```bash
+   gh pr view <N> --json closingIssuesReferences \
+     -q '.closingIssuesReferences[].number'   # must match your intended list
+   ```
+
+   After merging, check every issue the PR claimed — including any referenced
+   only from a commit message, which the field above will never show:
+
+   ```bash
+   for n in <every issue the PR touched>; do
+     gh issue view $n --json number,state,stateReason \
+       -q '"#\(.number)\t\(.state)\t\(.stateReason // "-")"'
+   done
+   ```
+
+   Close whatever is still open yourself, with a comment naming the commits
+   that fixed it — the audit trail is the point, since the commits no longer
+   carry the link:
+
+   ```bash
+   gh issue comment $n --body-file <comment>.md
+   gh issue close $n --reason completed
+   ```
+
+   Use `--reason "not planned"` for an issue the pass investigated and found to
+   be a non-bug, and say in the comment what was traced and why the reported
+   symptom occurred. Leave genuinely deferred issues open.
+
+**Re-read the PR body immediately before merging.** #549's "Deferred" section
+told the maintainer that #526 and #547's config half still needed a decision,
+when both had already landed on the branch by merge time — #526 in `c08a1c74`,
+the config as a tracked `config_grondia_beta.ini`. A body written mid-pass goes
+stale as the pass continues, and a stale deferral is worse than no deferral: it
+asks the maintainer to decide something already decided, and it argues against
+closing an issue that is fixed. Diff the body's claims against `git log` on the
+branch tip before you merge.
+
 ## Working under interruption
 
 Long triage passes get killed mid-flight — spend limits, session limits. Plan
@@ -350,6 +441,11 @@ against the base branch rather than asserting it.
 did not run it, say you did not run it; if a suite was still running when you
 wrote the summary, say that instead of predicting how it ends. A fabricated green
 is worse than a missing one, because it is acted on.
+
+**A merged PR is not a closed issue.** The pass is not done until you have
+re-queried the state of every issue it touched and reported the actual
+`state`/`stateReason` per issue, not "the PR merged, so the issues are closed."
+Report the closed set, the deliberately-open set, and the reason for each.
 
 Surface the things the user could not have known to ask about: a diagnosis that
 contradicted the issue's own title, a defect found in your own earlier fix, a
