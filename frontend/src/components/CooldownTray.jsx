@@ -3,6 +3,22 @@ import { colors } from '../styles/theme'
 import { categoryColor, categoryIcon } from '../utils/categories'
 import { displayNameOf } from '../utils/combatMoveStatus'
 
+/**
+ * What one cooling move is, in words. Issue #565 polish batch.
+ *
+ * The collapsed HUD read `COOLDOWN | 1 | ⚔ | 5` and nothing else — which move
+ * was cooling could only be worked out by opening a move panel and hovering
+ * the disabled card. Shared by the card's `aria-label` and its `title` so the
+ * screen-reader name and the sighted hover cannot drift apart.
+ *
+ * Singular at one beat: "Keep Away: 1 beats" is the sort of thing that reads
+ * as a bug in a tooltip.
+ */
+function cooldownLabel(move) {
+  const beats = move.cooldown_remaining
+  return `${displayNameOf(move)}: ${beats} ${beats === 1 ? 'beat' : 'beats'}`
+}
+
 function CooldownTray({ moves }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -12,6 +28,11 @@ function CooldownTray({ moves }) {
     <div
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
+      // "COOLDOWN" beside a bare number is not self-describing — and the
+      // number is the move COUNT, which reads as a beat count next to that
+      // word. Naming the region says which of the two it is.
+      role="group"
+      aria-label="Moves on cooldown"
       style={{
         flexShrink: 0,
         borderTop: `1px solid rgba(0,255,136,0.15)`,
@@ -65,23 +86,36 @@ function CooldownTray({ moves }) {
 function CollapsedCard({ move }) {
   const color = categoryColor(move.category)
   const icon = categoryIcon(move.category)
+  const label = cooldownLabel(move)
 
   return (
-    <div style={{
-      width: '44px',
-      height: '42px',
-      borderRadius: '5px',
-      background: 'rgba(0,0,0,0.6)',
-      border: `1px solid ${color}99`,
-      boxShadow: `0 0 6px ${color}44`,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '2px',
-      cursor: 'default',
-      flexShrink: 0,
-    }}>
+    <div
+      // `role="img"` rather than a bare div with an aria-label: the generic
+      // role prohibits naming, so the label would simply be dropped. It also
+      // collapses the glyph-and-digit pair into the single thing the card
+      // means, instead of announcing "⚔" and "5" as two unrelated scraps.
+      //
+      // `title` alongside it because the tray only expands to show names on
+      // `mouseEnter` — a touch screen has no hover and never reaches them.
+      role="img"
+      aria-label={label}
+      title={label}
+      style={{
+        width: '44px',
+        height: '42px',
+        borderRadius: '5px',
+        background: 'rgba(0,0,0,0.6)',
+        border: `1px solid ${color}99`,
+        boxShadow: `0 0 6px ${color}44`,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '2px',
+        cursor: 'default',
+        flexShrink: 0,
+      }}
+    >
       <span style={{ fontSize: '0.95rem', lineHeight: 1, color }}>{icon}</span>
       <span style={{
         fontSize: '0.72rem',
@@ -134,9 +168,13 @@ function ExpandedCard({ move }) {
           }}>
             {move.cooldown_remaining}
           </div>
+          {/* issue #563 item 6: `muted`, not `dim`. This is prose — a unit
+              caption — and `dim` is 3.45:1 on the app ground, under WCAG AA.
+              `dim` is reserved for inactive controls and decorative marks,
+              which SC 1.4.3 exempts; see its note in theme.js. */}
           <div style={{
             fontSize: '0.52rem',
-            color: colors.text.dim,
+            color: colors.text.muted,
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
             marginTop: '1px',

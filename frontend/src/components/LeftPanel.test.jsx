@@ -267,6 +267,74 @@ describe('LeftPanel', () => {
         });
     });
 
+    /**
+     * Issue #565 polish batch — a QA pass reported the Tactical Advisor
+     * "absent at 375x812", with the mobile layout going COOLDOWN -> COMBAT LOG
+     * in a fight where the panel renders at 1440x900.
+     *
+     * IT IS NOT A BREAKPOINT. There is no viewport gate anywhere on the path:
+     * LeftPanel renders the advisor on `mode === 'combat' && isMyTurn`, and
+     * SuggestedMovesPanel's only early return is `if (!isPlayerTurn) return
+     * null` — its mobile branch still renders the words TACTICAL ADVISOR in a
+     * collapsed strip. What differs between the advisor and its two
+     * neighbours is the TURN: CooldownTray and CombatLog are gated on
+     * `mode === 'combat'` alone, so on the enemy's turn exactly the reported
+     * DOM appears — at any width.
+     *
+     * These cases pin that, so the finding cannot be re-filed as a layout bug.
+     */
+    describe('tactical advisor turn gating (issue #565)', () => {
+        const playerTurn = {
+            log: [{ message: 'Jean attacks Slime', round: 1, type: 'combat' }],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            beat_states: [{ enemies: [] }],
+            available_options: [{ name: 'Slash', available: true, cooldown_remaining: 2, cooldown_max: 3, category: 'Offensive' }],
+        };
+        // The enemy's turn is simply "not awaiting input".
+        const enemyTurn = { ...playerTurn, awaiting_input: false };
+
+        const renderCombat = (combat, isMobile) => render(
+            <LeftPanel
+                player={mockPlayer}
+                location={mockLocation}
+                mode="combat"
+                combat={combat}
+                isMobile={isMobile}
+            />
+        );
+
+        it('renders the advisor at a phone width on the player\'s turn', async () => {
+            renderCombat(playerTurn, true);
+            expect(await screen.findByTestId('suggested-moves-panel')).toBeInTheDocument();
+        });
+
+        it('renders it at desktop width on the same turn', async () => {
+            renderCombat(playerTurn, false);
+            expect(await screen.findByTestId('suggested-moves-panel')).toBeInTheDocument();
+        });
+
+        it('withholds it on the enemy turn at BOTH widths, which is the real gate', async () => {
+            const mobile = renderCombat(enemyTurn, true);
+            await waitFor(() => expect(screen.getByTestId('cooldown-tray')).toBeInTheDocument());
+            expect(screen.queryByTestId('suggested-moves-panel')).toBeNull();
+            mobile.unmount();
+
+            renderCombat(enemyTurn, false);
+            await waitFor(() => expect(screen.getByTestId('cooldown-tray')).toBeInTheDocument());
+            expect(screen.queryByTestId('suggested-moves-panel')).toBeNull();
+        });
+
+        it('reproduces the reported DOM — cooldown then log, no advisor — from the turn alone', async () => {
+            // The exact symptom the QA pass attributed to the viewport.
+            renderCombat(enemyTurn, true);
+
+            await waitFor(() => expect(screen.getByTestId('cooldown-tray')).toBeInTheDocument());
+            expect(screen.getByTestId('combat-log')).toBeInTheDocument();
+            expect(screen.queryByTestId('suggested-moves-panel')).toBeNull();
+        });
+    });
+
     // Each hero-panel button owns one panel; clicking it twice must close it
     // again. The old version clicked all six in a row and only checked each
     // panel appeared — it would have passed with every button wired to the

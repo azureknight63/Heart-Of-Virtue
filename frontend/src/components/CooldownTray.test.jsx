@@ -136,6 +136,88 @@ describe('CooldownTray', () => {
       expect(card.textContent).toBe('◈2')
       expect(borderHex(card)).toBe(colors.text.muted)
     })
+
+    /**
+     * Issue #565 polish batch — the collapsed HUD read `COOLDOWN | 1 | ⚔ | 5`
+     * and nothing more. Which move is on cooldown was decodable only by
+     * opening a move panel and hovering the disabled card: the tray does
+     * expand to show names, but only on `mouseEnter`, so a touch screen never
+     * gets there at all.
+     *
+     * A name and a `title` are the whole fix — a 44x42px card has no room for
+     * the move name as visible text, and the tests above pin `textContent`
+     * exactly, which is the right constraint to hold to.
+     */
+    describe('accessible names', () => {
+      const collapsedCards = (container) => [...trayRoot(container).lastChild.children]
+
+      it('names each card with its move and remaining beats', () => {
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        const names = collapsedCards(container).map((c) => c.getAttribute('aria-label'))
+        expect(names).toEqual(['Slash: 2 beats', 'Keep Away: 1 beat', "Reaper's Mark: 5 beats"])
+      })
+
+      it('gives the same text to a sighted hover', () => {
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        const titles = collapsedCards(container).map((c) => c.getAttribute('title'))
+        expect(titles).toEqual(['Slash: 2 beats', 'Keep Away: 1 beat', "Reaper's Mark: 5 beats"])
+      })
+
+      it('carries a role that can actually take a name', () => {
+        // `aria-label` on a bare <div> is ignored: the generic role prohibits
+        // naming. `img` also collapses the glyph-plus-digit into the one thing
+        // the card means, instead of announcing "⚔" and "5" separately.
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        for (const card of collapsedCards(container)) {
+          expect(card.getAttribute('role')).toBe('img')
+        }
+      })
+
+      it('adds no visible text to the compact card', () => {
+        // The cards above assert textContent exactly, and there is no room for
+        // more in 44x42px — the name has to ride on attributes.
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        expect(collapsedCards(container)[0].textContent).toBe(`${categoryIcon('Offensive')}2`)
+      })
+
+      it('prefers the display name, as the expanded card does', () => {
+        const { container } = render(
+          <CooldownTray moves={[makeCooldownMove({
+            id: '1', name: 'keep_away', display_name: 'Keep Away', category: 'Maneuver', beats_left: 3,
+          })]} />
+        )
+
+        expect(collapsedCards(container)[0].getAttribute('aria-label')).toBe('Keep Away: 4 beats')
+      })
+
+      it('labels the tray itself', () => {
+        // "COOLDOWN" plus a bare number is not self-describing; the number is
+        // a move count, which reads as a beat count next to the word.
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        expect(trayRoot(container).getAttribute('aria-label')).toBe('Moves on cooldown')
+      })
+    })
+
+    /**
+     * Issue #563 item 6 — the "beats" unit caption under each expanded card's
+     * countdown is prose, and it was painted with `colors.text.dim`: 3.45:1 on
+     * the app ground, under WCAG AA. `text.dim` is reserved for inactive
+     * controls and decorative marks, which SC 1.4.3 exempts; tertiary prose
+     * belongs on `text.muted` (5.58:1). See the note on the token in theme.js.
+     */
+    it('paints the "beats" unit caption with a readable colour', () => {
+      render(<CooldownTray moves={MOVES} />)
+      fireEvent.mouseEnter(screen.getByText('Cooldown').closest('div[style*="border-top"]'))
+
+      const caption = screen.getAllByText('beats')[0]
+      expect(caption.style.color).not.toBe(colors.text.dim)
+      expect(caption).toHaveStyle({ color: colors.text.muted })
+    })
   })
 
   describe('expanded cards', () => {

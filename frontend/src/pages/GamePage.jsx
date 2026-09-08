@@ -15,6 +15,7 @@ import { useAudio } from '../context/AudioContext'
 import { useToast } from '../context/ToastContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
+import { MODAL_BACKGROUND_ATTR } from '../components/BaseDialog'
 import EventManager from '../components/EventManager'
 import CombatManager from '../components/CombatManager'
 import GameOverScreen from '../components/GameOverScreen'
@@ -724,8 +725,15 @@ export default function GamePage() {
         />
       </div>
 
-      {/* Right Panel - Battlefield/Map */}
-      <div style={panelWrap(TAB_KEYS.right)}>
+      {/* Right Panel - Battlefield/Map.
+          Marked as modal background (issue #563 item 5): the battlefield and
+          map are background behind any prompt, and unlike LeftPanel this
+          wrapper contains no dialogs of its own, so the whole thing can be
+          hidden. The dialogs GamePage renders below — EventManager's prompts,
+          CombatManager's victory/defeat/loot — are siblings of this wrapper,
+          which is why the marking is a distributed opt-in: there is no single
+          ancestor that holds all the background and none of the modals. */}
+      <div {...{ [MODAL_BACKGROUND_ATTR]: 'true' }} style={panelWrap(TAB_KEYS.right)}>
         <RightPanel
           mode={mode}
           combat={combat}
