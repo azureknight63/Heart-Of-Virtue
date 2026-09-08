@@ -270,7 +270,7 @@ class TestUniverseLoadSingleJsonMapEdgeCases:
         })
         spring = tile.objects_here[0]
         assert isinstance(spring, HealingSpring)
-        assert spring.name == "HealingSpring"
+        assert spring.name == "Healing Spring"
         assert spring.tile is tile
         assert spring.player is player
 
