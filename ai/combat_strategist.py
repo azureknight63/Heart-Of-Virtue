@@ -224,7 +224,7 @@ _HEAT_LABEL_BODY: Dict[HeatBand, str] = {
 # (Mastery/Maneuver/Tactical/Defensive-not-dodge/Utility/Miscellaneous, or
 # anything unrecognised). Its base score is honest here: nothing situational
 # applies, so a plain category price is exactly right.
-_NO_TACTICAL_READ = "Tactical analysis unavailable; {name} is a viable fallback."
+_NO_TACTICAL_READ = "No situational modifiers apply; {name} is a solid baseline choice."
 
 # Issue #534 bug 2: this used to BE `_NO_TACTICAL_READ` -- one string reused
 # for two different meanings. In the true catch-all above, "unavailable" is

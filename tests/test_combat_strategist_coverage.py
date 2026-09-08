@@ -451,9 +451,22 @@ class TestFallbackSuggestions:
         assert offensive["score"] == 85
 
     def test_misc_category_fallback_reasoning(self, strategist):
+        """The true catch-all must not tell the player the adviser broke.
+
+        #565: this branch pairs a confident score (e.g. "Turn 75%") with the
+        words "Tactical analysis unavailable", which reads as "the adviser
+        failed" rather than "nothing situational applies here" -- the same
+        confusion #534 was filed about, and the reason the WARM/Offensive
+        string above was split out. The branch is working as designed and the
+        base score is honest; only the wording is wrong. So this asserts the
+        property that matters -- no "unavailable" -- rather than pinning a
+        particular sentence, and names the move so the line stays specific.
+        """
         ctx = _base_ctx(available_moves=[{"name": "Ponder", "category": "Weird", "available": True}])
         result = strategist._get_fallback_suggestions(ctx, 1)
-        assert "viable fallback" in result[0]["reasoning"]
+        reasoning = result[0]["reasoning"]
+        assert "unavailable" not in reasoning.lower(), reasoning
+        assert "Ponder" in reasoning, reasoning
 
     def test_results_capped_between_1_and_3(self, strategist):
         moves = [{"name": f"Move{i}", "category": "Offensive", "available": True} for i in range(5)]
