@@ -285,6 +285,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
   const [activeType, setActiveType] = useState(validInitialType)
   const [title, setTitle] = useState('')
   const [titleError, setTitleError] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
   const [anonymous, setAnonymous] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -323,6 +324,19 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
     return enriched
   }
 
+  /**
+   * #556: a toast was the ONLY notice of a failed submit, and it auto-dismisses
+   * after 5s while the filled-in report stays on screen behind an overlay whose
+   * own onClick discards it -- so the notice expired while the thing it was
+   * about was still destructible. Keep the toast for immediacy and add a
+   * durable in-dialog panel that outlives it.
+   */
+  const failSubmit = (message) => {
+    const text = message || 'Could not submit feedback — please try again later.'
+    setSubmitError(text)
+    toastError(text)
+  }
+
   const handleSubmit = async () => {
     if (submittingRef.current) return
     if (!title.trim()) {
@@ -335,15 +349,24 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       return
     }
     setTitleError(false)
+    setSubmitError(null)
     submittingRef.current = true
     setSubmitting(true)
     try {
       const fields = getActiveFields()
-      await feedbackApi.submitIssue(activeType, title.trim(), fields, anonymous)
+      const res = await feedbackApi.submitIssue(activeType, title.trim(), fields, anonymous)
+      // A 2xx body can still carry success:false. No current route returns
+      // that -- every failure here is a 400, 429 or 503 -- but the thank-you
+      // used to fire unconditionally, so the day one does, the report is lost
+      // silently all over again (#556).
+      if (res?.data?.success === false) {
+        failSubmit(res.data.error || res.data.message)
+        return
+      }
       toastSuccess('Feedback submitted! Thank you.')
       onClose()
     } catch (err) {
-      toastError(apiErrorMessage(err, 'Could not submit feedback — please try again later.'))
+      failSubmit(apiErrorMessage(err, 'Could not submit feedback — please try again later.'))
     } finally {
       submittingRef.current = false
       setSubmitting(false)
@@ -474,6 +497,23 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
           Submit anonymously (your username will not appear on the issue)
         </span>
       </div>
+
+      {submitError && (
+        <div
+          role="alert"
+          style={{
+            color: colors.danger,
+            fontSize: '0.75rem',
+            padding: '8px 12px',
+            marginTop: spacing.md,
+            background: 'rgba(255,68,68,0.1)',
+            border: '1px solid rgba(255,68,68,0.3)',
+            borderRadius: '6px',
+          }}
+        >
+          ⚠ {submitError} Your report is still here — you can try again.
+        </div>
+      )}
 
       {/* Actions */}
       <div
