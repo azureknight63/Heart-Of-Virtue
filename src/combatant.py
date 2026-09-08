@@ -390,6 +390,30 @@ class Combatant:
         self.status_resistance = dict(_DEFAULT_STATUS_RESISTANCE)
         self.status_resistance_base = dict(_DEFAULT_STATUS_RESISTANCE)
 
+    def _set_damage_resistance(self, key, value):
+        """Override a damage-resistance value on both the base and live dicts.
+
+        The damage-side twin of :meth:`_set_status_resistance`, and it exists
+        for the same reason: `resistance` is only re-synced from
+        `resistance_base` by the next `reset_stats()`/`refresh_stat_bonuses()`
+        call (combat start, item equip), so a subclass `__init__` that writes
+        only the `_base` dict leaves the live value stale.
+
+        The status half had this fix; the damage half did not, and the split
+        was measurable — 9 of the 33 constructible NPC classes reported live
+        resistances that disagreed with what they authored, ``WailWraith``
+        worst of all (authored immune to piercing/slashing/crushing at 0.0,
+        reporting 1.0 on all three). ``functions.combat_resistance``'s
+        fallback to the base dict does not cover it: the key is *present* in
+        the live dict, only stale. Combat resyncs on enrollment so play was
+        unaffected, but every read outside a fight — a serializer shipping
+        ``combatant.resistance`` to the client, a preview, a story check —
+        saw 1.0. Enforced by
+        ``tests/test_authored_resistances_are_live.py`` (issue #555).
+        """
+        self.resistance_base[key] = value
+        self.resistance[key] = value
+
     def _set_status_resistance(self, key, value):
         """Override a status-resistance value on both the base and live dicts.
 
