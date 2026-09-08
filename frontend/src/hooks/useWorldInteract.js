@@ -298,7 +298,12 @@ export function useWorldInteract({
                 onEventsTriggered(triggeredEvents)
             }
             await pollBackgroundEvents()
-            if (onInteractionComplete) onInteractionComplete()
+            // The response body is handed to the completion callback so the
+            // page can act on flags that belong to it rather than to this
+            // panel — currently `beta_end`, set when the interaction was the
+            // end of the demo (issue #552). The other call sites pass nothing;
+            // consumers must therefore optional-chain the argument.
+            if (onInteractionComplete) onInteractionComplete(data)
             return data
         } catch (err) {
             console.error('Interaction error:', err)

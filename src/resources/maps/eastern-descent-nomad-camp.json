@@ -770,7 +770,8 @@
                         6
                     ],
                     "persist": true,
-                    "passthrough": false
+                    "passthrough": false,
+                    "demo_end": true
                 }
             }
         ]
