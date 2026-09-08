@@ -4,6 +4,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import { colors, spacing, fonts } from '../styles/theme'
 import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
+import { stackDisplayName } from '../utils/stackName'
 
 const ENCH_COLORS = ['#888888', '#44FF88', '#FFD700']
 
@@ -49,7 +50,7 @@ function ItemTooltip({ item, anchorRef }) {
       fontSize: '12px',
     }}>
       <div style={{ color: '#FFD700', fontSize: '14px', fontWeight: 'bold', borderBottom: `1px solid #664400`, paddingBottom: 6, marginBottom: 8 }}>
-        {item.name}
+        {stackDisplayName(item)}
       </div>
       {ench && (
         <div style={{ color: ench.color, fontSize: '11px', marginBottom: 6 }}>
@@ -116,9 +117,11 @@ function LootRow({ item, selected, onToggle }) {
       }}>
         {selected ? '✓' : ''}
       </div>
-      {/* Name + type tag */}
+      {/* Name + type tag. stackDisplayName because the engine bakes the count
+          into a stackable item's own name, which the Qty column already
+          renders — "Mineral Powder x3" beside "×3" (#565). */}
       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: colors.primary }}>
-        {item.name}
+        {stackDisplayName(item)}
         <span style={{ color: '#333', fontSize: 10, marginLeft: 4 }}>[{item.type || 'Item'}]</span>
       </div>
       {/* Qty */}
@@ -295,16 +298,31 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
           {isSubmitting ? 'COLLECTING...' : selected.size === 0 ? 'NOTHING SELECTED' : `COLLECT SELECTED ITEMS (${selected.size} of ${drops.length})  →`}
         </button>
 
-        {/* Skip */}
+        {/* Skip. A real <button>, not the styled <span onClick> it used to be:
+            that carried no role and no tabindex, so the one control that
+            forfeits the whole drop was invisible to assistive tech and
+            unreachable by keyboard while looking exactly like a link (#565).
+            Kept visually de-emphasised — it is the destructive path. */}
         <div style={{ textAlign: 'center', fontSize: '11px' }}>
-          <span
+          <button
+            type="button"
             onClick={() => !isSubmitting && onSkip()}
-            style={{ color: '#444', cursor: 'pointer', textDecoration: 'underline' }}
+            disabled={isSubmitting}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: `${spacing.sm} ${spacing.md}`,
+              fontFamily: fonts.main,
+              fontSize: '11px',
+              color: '#444',
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              textDecoration: 'underline',
+            }}
             onMouseEnter={e => e.currentTarget.style.color = '#777'}
             onMouseLeave={e => e.currentTarget.style.color = '#444'}
           >
             skip — drop all items on tile →
-          </span>
+          </button>
         </div>
 
       </div>

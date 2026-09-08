@@ -4,6 +4,7 @@ import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 import { ItemStatGrid, ItemSection } from './ItemStatGrid'
 import { formatWeight } from '../utils/itemUtils'
+import { stackDisplayName } from '../utils/stackName'
 import { apiErrorMessage } from '../utils/apiError'
 import { lookupOr } from '../utils/lookup'
 import { getHpBarColor } from '../utils/entityUtils'
@@ -299,7 +300,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           fontSize: '20px',
           fontFamily: 'monospace',
         }}>
-          {item.name}
+          {/* stackDisplayName, not item.name: the engine bakes the stack count
+              into a stackable item's own name, and the Qty cell below already
+              renders it — the header read "Mineral Powder x3" (#565). The
+              action prose further down keeps the engine's name on purpose;
+              it is naming the item to the engine, not labelling this panel. */}
+          {stackDisplayName(item)}
         </div>
         <button
           onClick={onBack}

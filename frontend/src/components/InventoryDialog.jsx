@@ -5,6 +5,7 @@ import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { lookupOr } from '../utils/lookup'
+import { stackDisplayName } from '../utils/stackName'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -87,7 +88,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
   return (
     <>
       <BaseDialog
-        title={selectedItem ? `🔍 ${selectedItem.name.toUpperCase()}` : "🎒 INVENTORY"}
+        title={selectedItem ? `🔍 ${stackDisplayName(selectedItem).toUpperCase()}` : "🎒 INVENTORY"}
         onClose={onClose}
         maxWidth="800px"
         padding="16px"
@@ -311,7 +312,9 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                   fontSize: '12px',
                   fontStyle: 'italic',
                 }}>
-                  Tip: Left-click on an item to see details.
+                  {/* Device-neutral: "Left-click" named a mouse button in a
+                      build that ships 44px touch targets for phones (#565). */}
+                  Tip: Select an item to see its details.
                 </div>
 
                 {/* Uppercase lime/orange GameButton, matching every other
@@ -402,7 +405,10 @@ function ItemCard({ item, onClick, isShop }) {
         textOverflow: 'ellipsis',
         wordBreak: 'break-word',
       }}>
-        {item.name}
+        {/* stackDisplayName, not item.name: the engine bakes the stack count
+            into a stackable item's own name, so the card carried it once in
+            the name and again in the x{quantity} badge above (#565). */}
+        {stackDisplayName(item)}
       </div>
 
       <div style={{ fontSize: '10px', color: colors.text.muted, display: 'flex', justifyContent: 'space-between' }}>

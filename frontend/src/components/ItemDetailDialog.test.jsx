@@ -1541,4 +1541,29 @@ describe('ItemDetailDialog', () => {
       expect(screen.getByText(/Luck \+4/)).toBeInTheDocument();
     });
   });
+
+  describe('items whose engine name already carries the count (#565)', () => {
+    // src/items.py's stack_grammar() bakes the count into the item NAME, and
+    // this dialog renders that name in its header AND a separate Qty cell, so
+    // the count appeared twice.
+    const bakedStack = makeInventoryItem({
+      name: 'Mineral Powder x3',
+      maintype: 'Commodity',
+      subtype: 'Material',
+      quantity: 3,
+      value: 8,
+      weight: 0.1,
+      damage: undefined,
+      protection: undefined,
+    });
+
+    it('shows the name without the baked count, keeping the Qty cell', () => {
+      render(<ItemDetailDialog item={bakedStack} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText('Mineral Powder')).toBeInTheDocument();
+      expect(screen.queryByText('Mineral Powder x3')).not.toBeInTheDocument();
+      expect(screen.getByText('Qty')).toBeInTheDocument();
+      expect(screen.getByText('×3')).toBeInTheDocument();
+    });
+  });
 });

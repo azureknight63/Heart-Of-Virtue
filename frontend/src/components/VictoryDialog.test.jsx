@@ -577,4 +577,25 @@ describe('VictoryDialog', () => {
     // Dialog should be back to expanded state
     expect(screen.getByText('CLOSE')).toBeDefined();
   });
+
+  describe('DOM nesting (#565)', () => {
+    // The warning itself is asserted in VictoryDialog.domNesting.test.jsx —
+    // React dedupes each nesting warning process-wide, so by the time a test
+    // partway down this file runs, an earlier render has already consumed it
+    // and a console spy here sees nothing. It needs its own module graph.
+    it('still shows the old and new level in the banner', () => {
+      // The nesting fix must not cost the content: 1 -> 2 with 5 points.
+      render(
+        <VictoryDialog
+          endState={mockEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+        />
+      );
+
+      const banner = screen.getByText(/LEVEL 1/).closest('div');
+      expect(banner.textContent).toMatch(/LEVEL 1\s*→\s*2/);
+      expect(banner.textContent).toContain('+5 Points awarded');
+    });
+  });
 });

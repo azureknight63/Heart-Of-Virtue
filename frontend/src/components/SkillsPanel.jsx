@@ -121,6 +121,26 @@ export default function SkillsPanel({ player, onClose }) {
       zIndex={2000}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md, minHeight: '300px' }}>
+        {/* Nothing to select yet. Every other block below is gated on
+            `selectedCategory`, which stays null while no discipline has XP —
+            including the "No skills currently available" copy — so a fresh
+            character was shown a 300px blank box with no explanation (#565).
+            The copy teaches the mechanism, which this panel is the only place
+            to learn: skill XP is banked per weapon subtype during combat
+            (Player.gain_exp in src/player/_leveling.py). */}
+        {categories.length === 0 && (
+          <GamePanel padding="md" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: spacing.sm }}>
+            <GameText variant="muted" align="center" style={{ fontStyle: 'italic' }}>
+              No skill experience yet.
+            </GameText>
+            <GameText variant="dim" size="sm" align="center">
+              A discipline appears here once you have earned experience in it.
+              Fight with a weapon and its discipline — Axe, Sword, and so on —
+              opens up with XP to spend on the abilities below it.
+            </GameText>
+          </GamePanel>
+        )}
+
         {/* Discipline Tabs — chevrons appear only when the strip actually has
             more to scroll to (#540 item 5: it could be cut off mid-word with
             no way to see there was more). */}

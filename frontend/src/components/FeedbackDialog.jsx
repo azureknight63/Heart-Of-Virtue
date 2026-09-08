@@ -51,6 +51,16 @@ const labelStyle = {
   textTransform: 'uppercase',
 }
 
+/**
+ * The visible caption above a field.
+ *
+ * Deliberately a <span> and NOT a <label htmlFor>: two of its uses caption a
+ * button group ("Severity") and a set of star buttons ("Ratings (optional)"),
+ * neither of which is a labelable form control, so `htmlFor` would be invalid
+ * there. The controls carry their own `aria-label` instead — the established
+ * idiom in this codebase — which is why every field must pass `ariaLabel`
+ * matching its caption (#563 item 2).
+ */
 function FieldLabel({ children, required }) {
   return (
     <span style={labelStyle}>
@@ -62,7 +72,7 @@ function FieldLabel({ children, required }) {
   )
 }
 
-function TextInput({ value, onChange, placeholder, style, error, required, inputRef }) {
+function TextInput({ value, onChange, placeholder, style, error, required, inputRef, ariaLabel }) {
   return (
     <input
       ref={inputRef}
@@ -70,6 +80,10 @@ function TextInput({ value, onChange, placeholder, style, error, required, input
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      // The placeholder is not a name: it vanishes as soon as the player types,
+      // so without this the field had an empty accessible name (#563 item 2).
+      aria-label={ariaLabel}
+      required={required || undefined}
       aria-required={required || undefined}
       aria-invalid={error || undefined}
       style={{
@@ -89,13 +103,14 @@ function TextInput({ value, onChange, placeholder, style, error, required, input
   )
 }
 
-function TextArea({ value, onChange, placeholder, rows = 3 }) {
+function TextArea({ value, onChange, placeholder, rows = 3, ariaLabel }) {
   return (
     <textarea
       rows={rows}
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       style={inputStyle}
       onFocus={(e) => (e.target.style.borderColor = colors.primary)}
       onBlur={(e) => (e.target.style.borderColor = `${colors.primary}66`)}
@@ -152,6 +167,7 @@ function BugForm({ fields, onChange }) {
         <FieldLabel>Steps to Reproduce</FieldLabel>
         <TextArea
           rows={3}
+          ariaLabel="Steps to Reproduce"
           value={fields.steps}
           onChange={(e) => onChange('steps', e.target.value)}
           placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
@@ -161,6 +177,7 @@ function BugForm({ fields, onChange }) {
         <FieldLabel>Expected Behavior</FieldLabel>
         <TextArea
           rows={2}
+          ariaLabel="Expected Behavior"
           value={fields.expected}
           onChange={(e) => onChange('expected', e.target.value)}
           placeholder="What should have happened?"
@@ -170,6 +187,7 @@ function BugForm({ fields, onChange }) {
         <FieldLabel>Actual Behavior</FieldLabel>
         <TextArea
           rows={2}
+          ariaLabel="Actual Behavior"
           value={fields.actual}
           onChange={(e) => onChange('actual', e.target.value)}
           placeholder="What actually happened?"
@@ -177,7 +195,9 @@ function BugForm({ fields, onChange }) {
       </div>
       <div>
         <FieldLabel>Severity</FieldLabel>
-        <div style={{ display: 'flex', gap: spacing.sm }}>
+        {/* The caption is a <span>, so without this the three buttons read as
+            three loose controls with no idea what they select (#563 item 2). */}
+        <div role="group" aria-label="Severity" style={{ display: 'flex', gap: spacing.sm }}>
           {SEVERITY_OPTIONS.map((sev) => {
             const active = fields.severity === sev
             const severityColor = { low: colors.gold, medium: colors.secondary, high: colors.danger }[sev]
@@ -185,8 +205,14 @@ function BugForm({ fields, onChange }) {
               <button
                 key={sev}
                 onClick={() => onChange('severity', sev)}
+                aria-pressed={active}
                 style={{
                   flex: 1,
+                  // #564: these measured 96.8 x 28 at 375px — 64% of the 44px
+                  // touch minimum. Height, not width: three flex:1 buttons have
+                  // to keep sharing one row inside a ~330px dialog body, so a
+                  // minWidth big enough to matter would wrap them instead.
+                  minHeight: '44px',
                   padding: `${spacing.xs} ${spacing.sm}`,
                   backgroundColor: active ? `${severityColor}22` : 'transparent',
                   border: `1px solid ${active ? severityColor : colors.text.dim}`,
@@ -216,6 +242,7 @@ function FeatureForm({ fields, onChange }) {
         <FieldLabel>Description</FieldLabel>
         <TextArea
           rows={3}
+          ariaLabel="Description"
           value={fields.description}
           onChange={(e) => onChange('description', e.target.value)}
           placeholder="Describe the feature you'd like to see..."
@@ -225,6 +252,7 @@ function FeatureForm({ fields, onChange }) {
         <FieldLabel>Use Case / Why</FieldLabel>
         <TextArea
           rows={3}
+          ariaLabel="Use Case / Why"
           value={fields.use_case}
           onChange={(e) => onChange('use_case', e.target.value)}
           placeholder="Why would this improve the game?"
@@ -241,6 +269,7 @@ function GeneralForm({ fields, onChange, ratings, onRatingChange }) {
         <FieldLabel>Message</FieldLabel>
         <TextArea
           rows={4}
+          ariaLabel="Message"
           value={fields.message}
           onChange={(e) => onChange('message', e.target.value)}
           placeholder="Share your thoughts about the game..."
@@ -427,6 +456,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
         <FieldLabel required>Title</FieldLabel>
         <TextInput
           inputRef={titleInputRef}
+          ariaLabel="Title"
           value={title}
           onChange={handleTitleChange}
           error={titleError}

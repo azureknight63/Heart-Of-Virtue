@@ -356,4 +356,48 @@ describe('InventoryDialog', () => {
     expect(screen.getByText('x3').textContent).toBe('x3');
     expect(screen.getByText('x5').textContent).toBe('x5');
   });
+
+  describe('footer hint copy (#565)', () => {
+    it('does not name a mouse button in a build that supports touch', () => {
+      // "Tip: Left-click on an item to see details." is a lie on the phone
+      // layout this build otherwise honours (44px targets, 16px inputs).
+      render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+
+      const tip = screen.getByText(/^Tip:/i);
+      expect(tip.textContent).not.toMatch(/left-click|right-click|\bmouse\b|\bhover\b/i);
+      // Still a usable hint, not just the mouse word deleted.
+      expect(tip.textContent).toMatch(/select|tap|choose|pick/i);
+    });
+  });
+
+  describe('items whose engine name already carries the count (#565)', () => {
+    // src/items.py's stack_grammar() rewrites the NAME of a stackable item to
+    // include its count ("Mineral Powder x3"), and the card renders its own
+    // x{quantity} badge, so the card showed the quantity twice.
+    const withBakedStack = {
+      ...mockPlayer,
+      inventory: [
+        { id: 20, name: 'Mineral Powder x3', maintype: 'Commodity', subtype: 'Material', value: 8, weight: 0.1, quantity: 3 },
+      ],
+    };
+
+    it('shows the quantity once on the card, not once in the name and once in the badge', () => {
+      render(<InventoryDialog player={withBakedStack} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getByTitle('Misc.'));
+
+      expect(screen.getByText('Mineral Powder')).toBeInTheDocument();
+      expect(screen.queryByText('Mineral Powder x3')).not.toBeInTheDocument();
+      expect(screen.getByText('x3')).toBeInTheDocument();
+    });
+
+    it('opens the detail view under the de-duplicated name', () => {
+      render(<InventoryDialog player={withBakedStack} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getByTitle('Misc.'));
+      fireEvent.click(screen.getByText('Mineral Powder'));
+
+      expect(screen.getByTestId('item-detail')).toBeInTheDocument();
+      // The dialog title is built from the selected item's name.
+      expect(screen.getByText('🔍 MINERAL POWDER')).toBeInTheDocument();
+    });
+  });
 });
