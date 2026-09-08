@@ -77,3 +77,48 @@ export function displayNameOf(value) {
   if (!value) return null;
   return typeof value === 'string' ? value : (value.display_name || value.name);
 }
+
+/**
+ * Wording for a targeted move the client can see has nothing to act on.
+ *
+ * Deliberately one of the engine's own two range refusals
+ * (`ApiCombatAdapter._get_available_moves`, src/api/combat_adapter.py) rather
+ * than a new phrase: the player has already met this sentence on moves the
+ * server itself greyed out, and `data/combatGlossary.js` documents it. The
+ * sibling phrasing — "Enemy out of range (too far)" — is the melee-only
+ * variant, and the client cannot tell which side of that split a move falls
+ * on without re-deriving `mvrange`, so the general form is the honest one.
+ */
+export const NO_REACHABLE_TARGET_REASON = 'No valid target in range';
+
+/**
+ * Whether a move can actually be cast right now, and why not.
+ *
+ * `move.available` alone is not enough (issue #554). The engine's own
+ * availability check for an attack asks whether *some* enemy sits inside the
+ * move's band, while the adapter's target allow-list
+ * (`_get_available_targets`) is filtered per combatant with the move's
+ * *effective* range — so a move can arrive advertised `available: true` with
+ * an empty `viable_targets`, and `_resolve_target_from_options` then validates
+ * the click against exactly that empty list and answers "No valid targets
+ * available for this move". Reading the list here closes the gap in the same
+ * place the range reason already lands, instead of letting the click become a
+ * POST whose only outcome is a refusal.
+ *
+ * Only `targeted` moves are gated on the list: an area move never publishes
+ * viable targets at all (its affected set lives in `affected_preview`), so an
+ * empty list there means "not applicable", not "nothing to hit".
+ *
+ * @param {Object} move a move entry from `available_options` / `moves`
+ * @returns {{available: boolean, reason: string}} `reason` is '' when available
+ */
+export function moveAvailability(move) {
+  if (!move) return { available: false, reason: '' };
+  if (move.available === false) return { available: false, reason: move.reason || '' };
+  if (move.targeted === true && !(move.viable_targets?.length > 0)) {
+    // A server reason on an otherwise-available move is still the better
+    // sentence — it knows which half of the range split applies.
+    return { available: false, reason: move.reason || NO_REACHABLE_TARGET_REASON };
+  }
+  return { available: true, reason: '' };
+}

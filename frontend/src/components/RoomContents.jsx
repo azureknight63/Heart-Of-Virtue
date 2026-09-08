@@ -1,11 +1,27 @@
 import { colors, spacing } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
+import { HOSTILITY_TOKENS, isHostileEntity } from '../utils/combatEntities'
 
 /**
  * RoomContents - Display integrated room description with contents
  * Displays room contents descriptions inline with the main room description,
  * matching the terminal game's narrative format
  */
+
+/**
+ * Hostility marker for one content line, or null.
+ *
+ * Only HOSTILES are marked here, unlike the combat target picker. A room NPC
+ * with `is_hostile: false` is merely not aggressive — a villager, a merchant,
+ * a passer-by — and is not the player's ally, so badging it "ALLY" would state
+ * something the payload never said. The absence of the chip is the "nothing to
+ * worry about" signal, and it is the chip (a word plus a glyph), not the
+ * colour, that carries the warning (issue #558).
+ */
+function hostileMarkerFor(content) {
+  if (content.type !== 'npc') return null
+  return isHostileEntity(content.entity) === true ? HOSTILITY_TOKENS.hostile : null
+}
 
 export default function RoomContents({ location, onInteract }) {
   if (!location) return null
@@ -84,25 +100,49 @@ export default function RoomContents({ location, onInteract }) {
             flexDirection: 'column',
             gap: spacing.xs,
           }}>
-            {contentDescriptions.map((content, idx) => (
-              <div
-                key={idx}
-                style={{
-                  color: getEntityColor(content.type),
-                  fontFamily: 'serif',
-                  fontStyle: 'italic',
-                  fontSize: '16px',
-                  lineHeight: '1.5',
-                }}
-              >
-                {renderTextWithLinks(
-                  content.text.startsWith(' ') ? `${content.name}${content.text}` : content.text,
-                  allEntities,
-                  onInteract,
-                  content.entity
-                )}
-              </div>
-            ))}
+            {contentDescriptions.map((content, idx) => {
+              const hostile = hostileMarkerFor(content)
+              return (
+                <div
+                  key={idx}
+                  data-testid="room-content-line"
+                  style={{
+                    color: hostile ? hostile.color : getEntityColor(content.type),
+                    fontFamily: 'serif',
+                    fontStyle: 'italic',
+                    fontSize: '16px',
+                    lineHeight: '1.5',
+                  }}
+                >
+                  {renderTextWithLinks(
+                    content.text.startsWith(' ') ? `${content.name}${content.text}` : content.text,
+                    allEntities,
+                    onInteract,
+                    content.entity
+                  )}
+                  {hostile && (
+                    <span
+                      style={{
+                        marginLeft: spacing.xs,
+                        padding: '0 4px',
+                        borderRadius: '3px',
+                        border: `1px solid ${hostile.color}`,
+                        backgroundColor: hostile.tint,
+                        color: hostile.color,
+                        fontFamily: 'monospace',
+                        fontStyle: 'normal',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {hostile.glyph} {hostile.label}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
 

@@ -240,11 +240,18 @@ describe('Battlefield', () => {
 
         render(<Battlefield combat={offScreenCombat} currentLogIndex={0} />);
 
-        // Banner should appear because enemy is off-screen in normal zoom
+        // Banner should appear because the enemy is outside the Follow viewport
         const banner = await screen.findByRole('status');
         expect(banner).toHaveTextContent(/enemy off-screen/i);
-        // ...and the zoom control retitles itself to advertise the fix.
-        expect(screen.getByTitle(/off-screen/i)).toBeInTheDocument();
+        // The zoom control USED to retitle itself to advertise Fit Fight as
+        // the fix. It no longer needs to: issue #561 made the component take
+        // that fix itself on entry, so by the time the banner is up the camera
+        // is already in Fit Fight and there is nothing left to advertise. What
+        // must still hold is that the detection reached the camera.
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Fit Fight' }).getAttribute('aria-pressed')).toBe('true');
+        });
+        expect(screen.queryByTitle(/off-screen/i)).toBeNull();
     });
 
     // ── combat_id / map_size plumbing ─────────────────────────────────────
