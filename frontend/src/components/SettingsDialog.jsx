@@ -17,6 +17,12 @@ function FeatureFlagRow({ name, label, description }) {
                 <div style={{ color: colors.text.main, fontSize: '12px' }}>{label}</div>
                 <button
                     onClick={() => setFlag(name, !enabled)}
+                    // issue #563 item 2: three identically-named ON/OFF
+                    // buttons, with the only distinguishing text in the
+                    // sibling div above. Named from the same `label` rather
+                    // than by giving that div an id, so the row's DOM shape
+                    // (which SettingsDialog.test.jsx walks) is untouched.
+                    aria-label={label}
                     aria-pressed={enabled}
                     style={{
                         padding: '4px 8px',
@@ -83,6 +89,11 @@ export default function SettingsDialog({ onClose }) {
                         </div>
                         <button
                             onClick={() => setIsMusicMuted(!isMusicMuted)}
+                            // "ON" was the whole accessible name, and the SFX
+                            // toggle below announced identically — two buttons
+                            // with one name on a single screen.
+                            aria-label="Mute music"
+                            aria-pressed={isMusicMuted}
                             style={{
                                 padding: '4px 8px',
                                 backgroundColor: isMusicMuted ? colors.dangerDark : colors.primaryDark,
@@ -108,6 +119,12 @@ export default function SettingsDialog({ onClose }) {
                             step="0.05"
                             value={musicVolume}
                             onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                            // Announced as a bare "slider, 0.5" before this.
+                            // Not `htmlFor` on the MUSIC heading above: that
+                            // heading heads the mute button too, so tying it
+                            // to the slider alone would announce the slider as
+                            // "MUSIC" and leave the button beside it "ON".
+                            aria-label="Music volume"
                             style={{
                                 flex: 1,
                                 accentColor: colors.primary,
@@ -135,6 +152,8 @@ export default function SettingsDialog({ onClose }) {
                         </div>
                         <button
                             onClick={() => setIsSfxMuted(!isSfxMuted)}
+                            aria-label="Mute sound effects"
+                            aria-pressed={isSfxMuted}
                             style={{
                                 padding: '4px 8px',
                                 backgroundColor: isSfxMuted ? colors.dangerDark : colors.primaryDark,
@@ -160,6 +179,7 @@ export default function SettingsDialog({ onClose }) {
                             step="0.05"
                             value={sfxVolume}
                             onChange={(e) => setSfxVolume(parseFloat(e.target.value))}
+                            aria-label="Sound effects volume"
                             style={{
                                 flex: 1,
                                 accentColor: colors.primary,
@@ -179,7 +199,10 @@ export default function SettingsDialog({ onClose }) {
                     <div style={{ color: colors.accent, fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>
                         COMBAT SPEED
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    {/* The segments name their own value ("1x") but not what
+                        it sets; the COMBAT SPEED heading above them carried no
+                        association to them at all. */}
+                    <div role="group" aria-label="Combat speed" style={{ display: 'flex', gap: '6px' }}>
                         {COMBAT_SPEED_STEPS.map((step) => (
                             <button
                                 key={step}

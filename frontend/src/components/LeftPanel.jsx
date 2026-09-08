@@ -20,6 +20,7 @@ import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
+import { MODAL_BACKGROUND_ATTR } from './BaseDialog'
 import HeatMeter from './HeatMeter'
 import ShopDialog from './ShopDialog'
 import useCombatLogPlayback from '../hooks/useCombatLogPlayback'
@@ -350,9 +351,15 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // anywhere. This panel is the primary narrative/actions surface (as
     // opposed to RightPanel's <aside>), so it becomes <main>, with its title
     // bar as <header>/<h1>.
+    // NOT `data-modal-background` on <main> itself, however tempting: the
+    // "Modal Overlays" block near the bottom of this component renders every
+    // one of this panel's dialogs as a sibling INSIDE this landmark, so hiding
+    // it from assistive tech would hide the open modal along with the
+    // background. The two genuinely-background regions carry the marker
+    // instead — see MODAL_BACKGROUND_ATTR in BaseDialog.jsx (issue #563 item 5).
     <main className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible', position: 'relative' }}>
       {/* Header */}
-      <header style={{
+      <header {...{ [MODAL_BACKGROUND_ATTR]: 'true' }} style={{
         backgroundColor: colors.primary,
         color: colors.text.inverse,
         padding: '10px 15px',
@@ -457,14 +464,17 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       </header>
 
       {/* Main Panel Content Area */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden', // Disable parent scroll to allow internal specific scrolling
-        padding: '14px',
-        gap: '14px',
-      }}>
+      <div
+        {...{ [MODAL_BACKGROUND_ATTR]: 'true' }}
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden', // Disable parent scroll to allow internal specific scrolling
+          padding: '14px',
+          gap: '14px',
+        }}
+      >
         {/* Room Contents - Collapsible description */}
         {mode === 'exploration' && location && (
           <div style={{

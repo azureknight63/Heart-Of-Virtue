@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import LeftPanel from './LeftPanel';
+import BaseDialog from './BaseDialog';
 import React from 'react';
 import { CATEGORY_GROUPS } from '../utils/categories';
 import { colors } from '../styles/theme';
@@ -207,6 +208,63 @@ describe('LeftPanel', () => {
         const heading = screen.getByRole('heading', { level: 1, name: 'Heart of Virtue - Exploration' });
         expect(main.contains(heading)).toBe(true);
         expect(heading.closest('header')).not.toBeNull();
+    });
+
+    /**
+     * Issue #563 item 5 — with a modal open the whole exploration screen
+     * behind it was still readable by a screen reader.
+     *
+     * The marking is what this panel owns; BaseDialog owns the hiding, and
+     * BaseDialog.test.jsx covers that half. Split that way because `<main>` is
+     * NOT the region to hide: LeftPanel renders its own dialogs as siblings
+     * inside it, so hiding the landmark would hide the modal too. The two
+     * background regions are the title bar and the content well.
+     */
+    describe('modal background marking (issue #563)', () => {
+        const renderPanel = () => render(
+            <LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />
+        );
+
+        it('marks the header and the content well as modal background', () => {
+            const { container } = renderPanel();
+
+            const marked = [...container.querySelectorAll('[data-modal-background]')];
+            expect(marked.length).toBe(2);
+            expect(marked.some((el) => el.tagName === 'HEADER')).toBe(true);
+            // The content well holds the room description and the hero ring.
+            expect(marked.some((el) => el.contains(screen.getByTestId('hero-panel')))).toBe(true);
+        });
+
+        it('does not mark the landmark that contains the dialogs', () => {
+            // The whole reason the marker is not simply on <main>.
+            const { container } = renderPanel();
+
+            const main = container.querySelector('main');
+            expect(main.hasAttribute('data-modal-background')).toBe(false);
+        });
+
+        it('hides both regions once a real dialog opens over them', () => {
+            // End to end through the real BaseDialog. Every dialog this panel
+            // renders is mocked at the top of this file with a plain <div>, so
+            // none of them registers on the modal stack — an actual dialog has
+            // to be rendered alongside for the wiring to be observable at all.
+            const { container } = renderPanel();
+            const marked = [...container.querySelectorAll('[data-modal-background]')];
+            // Asserted before the sweeps below: `[].every()` is true, so an
+            // empty list would pass every one of them without marking a thing.
+            expect(marked.length).toBe(2);
+            expect(marked.every((el) => !el.hasAttribute('aria-hidden'))).toBe(true);
+
+            const dialog = render(
+                <BaseDialog title="Enemy Encounter" onClose={() => { }}>
+                    <button>Fight</button>
+                </BaseDialog>
+            );
+            expect(marked.every((el) => el.getAttribute('aria-hidden') === 'true')).toBe(true);
+
+            dialog.unmount();
+            expect(marked.every((el) => !el.hasAttribute('aria-hidden'))).toBe(true);
+        });
     });
 
     // Each hero-panel button owns one panel; clicking it twice must close it
