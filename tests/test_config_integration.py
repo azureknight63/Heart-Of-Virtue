@@ -91,6 +91,114 @@ def test_session_manager_ignores_a_config_file_that_does_not_exist(monkeypatch):
     assert manager.game_config is None
 
 
+# ---------------------------------------------------------------------------
+# Issue #562/#551: the beta loadout must include a blunt weapon.
+#
+# The Grondia beta route's first three enemy types (RockRumbler,
+# CorruptedStoneCreature, KingSlime) all resist slashing and are *vulnerable*
+# to crushing, and the canonical damage line in src/moves/_base.py subtracts
+# protection AFTER the resistance multiplier — so halved slashing minus a high
+# protection floors at zero. A slashing-only loadout leaves Jean literally
+# unable to damage a Rock Rumbler (0 per hit) and doing 2-3 to a Stone
+# Creature, which stalls the Mineral Pools tiles the beta exists to test.
+#
+# This pins the config, not the engine. Both sides are derived: the loadout is
+# read the way the app reads it (CONFIG_FILE -> SessionManager) and "is a
+# Bludgeon" comes from src/items.py rather than a hardcoded class name, so
+# retiring RustedIronMace in favour of another blunt weapon keeps this green
+# while dropping blunt entirely does not.
+# ---------------------------------------------------------------------------
+
+_BETA_CONFIG_NAME = "config_grondia_beta.ini"
+
+
+def _weapon_subtypes():
+    """Return ``{class_name: subtype}`` for every weapon class in src.items."""
+    import inspect
+
+    import src.items as items_module
+
+    subtypes = {}
+    for name, cls in inspect.getmembers(items_module, inspect.isclass):
+        if not issubclass(cls, items_module.Weapon) or cls is items_module.Weapon:
+            continue
+        try:
+            subtypes[name] = cls().subtype
+        except Exception:
+            continue
+    return subtypes
+
+
+def test_the_bludgeon_population_is_derivable():
+    """Positive control — the derived sets must be non-empty, or every
+    assertion below passes vacuously."""
+    import src.items as items_module
+
+    subtypes = _weapon_subtypes()
+    bludgeons = {n for n, s in subtypes.items() if s == "Bludgeon"}
+
+    assert len(subtypes) >= 15, f"only {len(subtypes)} weapon classes found"
+    assert bludgeons, "src/items.py defines no Bludgeon weapon at all"
+    # And Bludgeon must still be the subtype that maps to crushing — the whole
+    # point of the loadout fix is the damage type, not the label.
+    crushing = items_module.item_types["weapons"]["base_damage_types"]["crushing"]
+    assert "Bludgeon" in crushing
+
+
+def test_beta_starting_loadout_includes_a_blunt_weapon(monkeypatch):
+    """The committed beta config must arm Jean with a crushing weapon."""
+    monkeypatch.setenv("CONFIG_FILE", _BETA_CONFIG_NAME)
+
+    manager = SessionManager()
+
+    assert manager.starting_equipment, (
+        f"{_BETA_CONFIG_NAME} parsed to an empty starting_equipment"
+    )
+
+    subtypes = _weapon_subtypes()
+    # `Item[:enchantment]` — the class name is everything before the colon.
+    specs = [spec.split(":", 1)[0].strip() for spec in manager.starting_equipment]
+    blunt = [name for name in specs if subtypes.get(name) == "Bludgeon"]
+
+    assert blunt, (
+        f"{_BETA_CONFIG_NAME} starting_equipment is {specs}, which contains no "
+        "Bludgeon-subtype weapon. The route's first three enemy types resist "
+        "slashing to (near) zero damage — see issue #562/#551. Every spec must "
+        "also name a real src.items class; a typo silently no-ops."
+    )
+
+    # Every spec must actually resolve, or the loadout lies about itself.
+    import src.items as items_module
+
+    unknown = [name for name in specs if not hasattr(items_module, name)]
+    assert unknown == [], f"src.items defines no {unknown}"
+
+
+def test_beta_loadout_leaves_jean_holding_the_blunt_weapon(monkeypatch):
+    """The *last* weapon listed wins the slot, so ordering is load-bearing.
+
+    `SessionManager._apply_starting_equipment` unequips any already-equipped
+    item of the same maintype before equipping the next, and sets
+    `player.eq_weapon` to whichever weapon it processes last. A future edit
+    that appended a sword after the mace would leave a green
+    "includes a blunt weapon" assertion above and Jean still holding slashing.
+    """
+    monkeypatch.setenv("CONFIG_FILE", _BETA_CONFIG_NAME)
+
+    manager = SessionManager()
+
+    subtypes = _weapon_subtypes()
+    specs = [spec.split(":", 1)[0].strip() for spec in manager.starting_equipment]
+    weapons = [name for name in specs if name in subtypes]
+
+    assert weapons, f"{_BETA_CONFIG_NAME} starting_equipment arms Jean with nothing"
+    assert subtypes[weapons[-1]] == "Bludgeon", (
+        f"the last weapon in {_BETA_CONFIG_NAME}'s starting_equipment is "
+        f"{weapons[-1]} ({subtypes[weapons[-1]]}), so that is what Jean has "
+        "drawn. List the blunt weapon last."
+    )
+
+
 def test_session_manager_resolves_a_relative_config_path_against_project_root(
     monkeypatch, tmp_path
 ):
