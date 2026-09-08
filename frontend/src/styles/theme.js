@@ -80,6 +80,32 @@ export const colors = {
         warning: '#ffcc88',
         danger: '#ffaaaa',
         success: '#ccffcc',
+        /**
+         * INACTIVE AND DECORATIVE ONLY — never body copy. Issue #563 item 6.
+         *
+         * 3.45:1 against `bg.main`, which is below WCAG AA's 4.5:1 for text.
+         * That is deliberate and it is allowed: SC 1.4.3 exempts text in
+         * INACTIVE user-interface components, which is what this value is for
+         * — CombatMovePanel's unavailable move names and descriptions (via
+         * `GameText variant="dim"`), FeedbackDialog's unfilled star and
+         * inactive severity border, HeatMeter's neutral tick, the scrollbar
+         * thumb's hover in index.css.
+         *
+         * It is NOT allowed on prose, and the obvious fix — lifting this one
+         * number — is the wrong one. `muted` below is #888888 (5.58:1), so any
+         * value that clears 4.5:1 lands within ~16 of it and the two stop
+         * being distinguishable: the available/unavailable rendering that
+         * CombatMovePanel expresses as `muted` vs `dim` would collapse
+         * outright. There is no room for three legible greys on a #0a0a0a
+         * ground, so the two jobs get two tokens rather than one compromise.
+         *
+         * TERTIARY PROSE USES `muted`. Body text reached for `dim` in a dozen
+         * files before the split was written down; those are listed in the
+         * #563 follow-up and want migrating to `muted`, not a retune here.
+         * theme.test.js holds every other `text.*` token to 4.5:1 and names
+         * this one as the single exemption, so a NEW sub-AA text token cannot
+         * be added quietly alongside it.
+         */
         dim: '#666666',
     },
 

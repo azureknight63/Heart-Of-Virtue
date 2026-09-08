@@ -169,3 +169,44 @@ describe('index.css :root mirrors styles/theme.js', () => {
         expect(declarations.map((d) => d.property)).toContain(theme.STAGE_PORTRAIT_WIDTH_VAR)
     })
 })
+
+/** `#666` and `#666666` compare equal; everything else is left alone. */
+function expandShortHex(value) {
+    return normalise(value).replace(
+        /#([0-9a-f])([0-9a-f])([0-9a-f])\b/g,
+        (_, r, g, b) => `#${r}${r}${g}${g}${b}${b}`
+    )
+}
+
+/**
+ * The scrollbar thumb's hover colour, pinned like every other shared value.
+ *
+ * Issue #563 item 6. `::-webkit-scrollbar-thumb:hover` hand-typed `#666`,
+ * which is `colors.text.dim` written in the short form — a duplicate of a
+ * theme token in the one place the suite above cannot see it. The `:root`
+ * checks parse only the `:root` block, so a literal in a RULE is outside their
+ * reach however exactly it restates a token, and `#666` would not have matched
+ * `#666666` even inside it.
+ *
+ * The fix is not a second bespoke comparison: it is moving the value into
+ * `:root` as an annotated custom property, which hands it to the existing
+ * pin checks. This test only holds the rule to reading it from there, so the
+ * literal cannot come back.
+ */
+describe('index.css does not hand-type the theme greys it shares', () => {
+    it('resolves the scrollbar thumb hover colour through a pinned property', () => {
+        const rule = INDEX_CSS.match(/::-webkit-scrollbar-thumb:hover\s*\{([^}]*)\}/)
+        expect(rule, 'index.css no longer declares a ::-webkit-scrollbar-thumb:hover rule').not.toBeNull()
+
+        const body = rule[1]
+        expect(
+            body,
+            'the scrollbar thumb hover colour is hand-typed. Declare it in :root with a ' +
+            '`theme:` annotation and read it back with var(), so the :root pin checks see it.'
+        ).toMatch(/var\(--/)
+        expect(
+            expandShortHex(body),
+            `the rule still spells out ${theme.colors.text.dim}, which styles/theme.js also defines`
+        ).not.toContain(expandShortHex(theme.colors.text.dim))
+    })
+})

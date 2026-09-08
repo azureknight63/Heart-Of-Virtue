@@ -482,4 +482,35 @@ describe('GamePage', () => {
             expect(showError).toHaveBeenCalledWith('Failed to save your progress. Check your connection.');
         });
     });
+
+    /**
+     * Issue #563 item 5 — the other half of the background behind a modal.
+     *
+     * LeftPanel marks its own two regions (LeftPanel.test.jsx covers those),
+     * but the battlefield/map aside is background too, and it is rendered
+     * here. The dialogs GamePage itself owns — EventManager's prompts,
+     * CombatManager's victory/defeat/loot — sit outside LeftPanel's <main>
+     * entirely, which is why the marking is a distributed opt-in rather than
+     * one `aria-hidden` on a common ancestor: there isn't one.
+     */
+    describe('modal background marking (issue #563)', () => {
+        it('marks the panel that holds the battlefield and map', () => {
+            const { container } = renderGamePage();
+
+            const rightPanel = screen.getByTestId('right-panel');
+            const marked = rightPanel.closest('[data-modal-background]');
+            expect(marked, 'the RightPanel wrapper carries no modal-background marker').not.toBeNull();
+            expect(container.contains(marked)).toBe(true);
+        });
+
+        it('does not mark the wrapper that holds LeftPanel', () => {
+            // LeftPanel renders its own dialogs inside itself, so its wrapper
+            // must not be hidden wholesale — LeftPanel marks the two regions
+            // within it that really are background.
+            renderGamePage();
+
+            const leftWrapper = screen.getByTestId('left-panel').parentElement;
+            expect(leftWrapper.hasAttribute('data-modal-background')).toBe(false);
+        });
+    });
 });

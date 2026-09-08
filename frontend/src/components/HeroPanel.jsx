@@ -87,6 +87,44 @@ function VitalBar({
         boxShadow: `0 0 8px ${color}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,
       }} />
 
+      {/* issue #563 item 7: a persistently visible number.
+          #536 served assistive tech (role/aria-valuenow/aria-label above) but
+          left a SIGHTED player with colour and nothing else — the value
+          rendered only while `active`, i.e. on hover, click or touch, and a
+          touch screen has no hover at all. Colour alone is exactly what the
+          accessibility rules here forbid.
+
+          Rendered AFTER the fill deliberately: four assertions in
+          HeroPanel.test.jsx read the fill as the bar's `firstElementChild`.
+
+          `aria-hidden` because the bar's own aria-label already reads
+          "HP: 80 / 100"; without it every vital is announced twice. The
+          pinned tooltip below still adds the label, which this cannot fit.
+
+          Sits at -16px, clear of that tooltip at -35px. The bar's own colour
+          carries it: #ff4444 is 5.8:1 on the app ground and #ffaa00 is
+          10.4:1, so both clear AA on their own. */}
+      <div
+        data-testid={`${testId}-value`}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          left: '50%',
+          bottom: '-16px',
+          transform: 'translateX(-50%)',
+          color,
+          fontSize: '10px',
+          fontWeight: 'bold',
+          fontFamily: fonts.main,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          textShadow: `0 0 4px ${colors.bg.main}, 0 0 2px ${colors.bg.main}`,
+          pointerEvents: 'none',
+        }}
+      >
+        {currentValue.toFixed(0)}/{max}
+      </div>
+
       {active && (
         <div style={{
           position: 'absolute',
@@ -351,7 +389,19 @@ function HeroPanel({
                 top,
                 left,
                 transform: buttonTransform,
-                width: '70px',
+                // issue #563 item 8: 80px, up from 70px. The labels rendered
+                // at 9px uppercase on the game's most-used controls, and
+                // "ATTRIBUTES" (10 characters at 0.6em advance) already
+                // filled the old 58px content box at that size — so raising
+                // the type at all required the box to grow.
+                //
+                // It costs nothing in layout: the ring's horizontal extent is
+                // set by the HP and Fatigue bars at left/right -75px, not by
+                // these buttons. The widest button (SKILLS, at 50% + 70px)
+                // still ends at 250px inside a 275px reach, so the footprint
+                // useHeroAutoScale measures against is unchanged, and the
+                // 44px touch height below is untouched.
+                width: '80px',
                 height: accessibility.touchTarget,
                 minHeight: accessibility.touchTarget,
                 borderRadius: '6px',
@@ -360,7 +410,7 @@ function HeroPanel({
                   ? `${baseColor}4D`
                   : `${baseColor}1A`,
                 color: isHovered ? hoverColor : baseColor,
-                fontSize: '9px',
+                fontSize: '11px',
                 fontWeight: 'bold',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
@@ -373,7 +423,10 @@ function HeroPanel({
                 fontFamily: fonts.main,
                 zIndex: 5,
                 textAlign: 'center',
-                padding: '4px',
+                // Horizontal padding trimmed to 2px to buy the wider type its
+                // room; the vertical 4px is what keeps the label off the
+                // border inside a 44px box.
+                padding: '4px 2px',
                 lineHeight: '1.2',
                 textTransform: 'uppercase'
               }}
