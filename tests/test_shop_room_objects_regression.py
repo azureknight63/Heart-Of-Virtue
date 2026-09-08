@@ -28,6 +28,7 @@ from src.items import (
     DragonHeartGem,
     Draught,
     Restorative,
+    unique_item_factories,
     unique_items_spawned,
 )
 from src.npc import Merchant
@@ -322,7 +323,28 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
     # containers and is exercised by other tests, not this one.
     merchant._fill_remaining_stock = lambda containers: None
 
-    merchant.update_goods()
+    # ...and isolate the unique-injection pass too, which is the other
+    # non-always_stock writer update_goods() drives. It picks its item with a
+    # bare `random.choice(available_factories)`
+    # (UniqueItemInjectionCondition.inject_unique_items, src/shop_conditions.py)
+    # and places it into a *merchant-owned* container -- which the Crate below
+    # is -- so leaving it live made this test assert on an unseeded roll, the
+    # one thing CLAUDE.md says never to do. It surfaced as a CrystalTear in the
+    # crate once six new test files shifted xdist's --dist loadfile grouping and
+    # with it the per-worker random state; the shop path itself never changed.
+    # Marking every factory as already spawned empties `available_factories`,
+    # so the pass returns [] deterministically. Derived from
+    # `unique_item_factories`, not a hand-written list of the three names, so a
+    # fourth unique cannot quietly reopen this hole.
+    assert unique_item_factories, "no unique factories to isolate -- check the import"
+    spawned_before = set(unique_items_spawned)
+    unique_items_spawned.update(f.__name__ for f in unique_item_factories)
+
+    try:
+        merchant.update_goods()
+    finally:
+        unique_items_spawned.clear()
+        unique_items_spawned.update(spawned_before)
 
     inventory_names = {type(it).__name__ for it in merchant.inventory}
     crate_names = [type(it).__name__ for it in crate.inventory]
@@ -331,7 +353,7 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
     assert always_stock_names <= inventory_names, (
         "always_stock potions must be reachable via merchant.inventory (the "
         f"Buy tab); merchant.inventory had {inventory_names}, but the Crate "
-        f"(allowed_item_types=[Consumable]) swallowed {crate_names}"
+        f"(allowed_subtypes=[Consumable]) swallowed {crate_names}"
     )
     assert not crate_names, (
         "always_stock items must never be routed into a container; found "
