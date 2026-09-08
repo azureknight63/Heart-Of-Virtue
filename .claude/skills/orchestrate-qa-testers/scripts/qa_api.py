@@ -10,6 +10,14 @@ skill lives in. The script assigns (never pops) GITHUB_TOKEN="" so the
 Feedback button cannot file a real issue, and FLASK_ENV=testing so
 /api/test/session exists. dotenv's override=False refills popped keys, which
 is why these are assignments.
+
+The LLM gates (NPC_CHAT_LLM_ENABLED, MYNX_LLM_ENABLED, COMBAT_LLM_ENABLED) are
+part of that inherited contract but are deliberately NOT forced here:
+`start_stack.py --no-llm` puts them in this process's environment, and
+override=False then keeps them. Running this script directly inherits whatever
+`.env` says -- which ships NPC_CHAT_LLM_ENABLED=1 and MYNX_LLM_ENABLED=1, i.e.
+billable. The banner below prints all three, so a run that expected them off
+says so on its first line.
 """
 import os
 import sys
@@ -37,6 +45,8 @@ port = int(os.environ["PORT"])
 print(
     f"[qa_api] tag={tag} env={env} port={port} CONFIG_FILE={os.environ.get('CONFIG_FILE')} "
     f"NPC_CHAT_LLM_ENABLED={os.environ.get('NPC_CHAT_LLM_ENABLED')} "
+    f"MYNX_LLM_ENABLED={os.environ.get('MYNX_LLM_ENABLED')} "
+    f"COMBAT_LLM_ENABLED={os.environ.get('COMBAT_LLM_ENABLED')} "
     f"GITHUB_TOKEN={'blank' if not os.environ.get('GITHUB_TOKEN') else 'SET!'}",
     flush=True,
 )
