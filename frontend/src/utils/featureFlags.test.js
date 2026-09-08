@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { FEATURE_FLAGS } from './featureFlags';
 
 // The module reads localStorage and the URL at import time, so each test that
 // needs a different starting state re-imports it through vi.resetModules().
@@ -143,5 +144,30 @@ describe('featureFlags', () => {
       unmount();
       expect(() => setFlag('squareBattlefieldCells', true)).not.toThrow();
     });
+  });
+
+  describe('player-facing copy', () => {
+    // #565: the reducedMotion description ended with "App.jsx applies this as
+    // the 'reduced-motion' class on <html>; see styles/index.css." —
+    // a code comment shipped into the Settings dialog, which renders this
+    // registry verbatim. Every label/description here is player-facing copy.
+    const DEV_ONLY_PATTERNS = [
+      /[\w-]+\.(?:jsx?|tsx?|css|py|ini|json)/i,   // a source filename
+      /(?:src|styles|components|utils|hooks|api)\//i, // a source path
+      /<\/?[a-z][\w-]*>/i,                              // an HTML tag literal
+      /see\s+\S+\.(?:jsx?|css)/i,                 // "see foo.css"
+    ];
+
+    it.each(Object.keys(FEATURE_FLAGS))(
+      '%s describes the effect without citing source files or markup',
+      (name) => {
+        const { label, description } = FEATURE_FLAGS[name];
+        [label, description].forEach((copy) => {
+          DEV_ONLY_PATTERNS.forEach((pattern) => {
+            expect(copy).not.toMatch(pattern);
+          });
+        });
+      },
+    );
   });
 });

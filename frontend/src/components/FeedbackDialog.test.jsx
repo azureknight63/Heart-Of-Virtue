@@ -469,4 +469,80 @@ describe('FeedbackDialog', () => {
       expect(screen.getByPlaceholderText(/What feature would you like/i).value).toBe('');
     });
   });
+
+  describe('accessible names for every form field (#563 item 2)', () => {
+    // Every visible label in this dialog is a <span> (the shared FieldLabel),
+    // with no htmlFor/id pairing anywhere, so each text field was named by its
+    // placeholder alone — an empty accessible name. A placeholder disappears the
+    // moment the player types, which is exactly when a screen-reader user needs
+    // to know which field they are in.
+    //
+    // Asserted generically rather than field-by-field: the guard is "no field in
+    // this dialog ships unnamed", which also covers fields added later.
+    const FIELDS_BY_TAB = {
+      bug: ['Title', 'Steps to Reproduce', 'Expected Behavior', 'Actual Behavior'],
+      feature: ['Title', 'Description', 'Use Case / Why'],
+      general: ['Title', 'Message'],
+    };
+
+    it.each(Object.keys(FIELDS_BY_TAB))('names every field on the %s tab', (type) => {
+      render(<FeedbackDialog onClose={mockOnClose} initialType={type} />);
+
+      const boxes = screen.getAllByRole('textbox');
+      expect(boxes).toHaveLength(FIELDS_BY_TAB[type].length);
+      boxes.forEach((box) => expect(box).toHaveAccessibleName());
+
+      FIELDS_BY_TAB[type].forEach((name) => {
+        expect(screen.getByRole('textbox', { name })).toBeInTheDocument();
+      });
+    });
+
+    it('keeps the Title field aria-required without duplicating the attribute', () => {
+      // #563 claimed aria-required was missing. It is not — the `required` prop
+      // has always set it. The native attribute is the half that was absent.
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+
+      const title = screen.getByRole('textbox', { name: 'Title' });
+      expect(title).toHaveAttribute('aria-required', 'true');
+      expect(title).toBeRequired();
+    });
+
+    it('groups the severity buttons under a name instead of leaving them loose', () => {
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+
+      expect(screen.getByRole('group', { name: 'Severity' })).toBeInTheDocument();
+    });
+  });
+
+  describe('touch target sizes (#564)', () => {
+    // Measured at 375x812 the LOW/MEDIUM/HIGH severity buttons were
+    // 96.8 x 28 — about 60% of the 44px minimum the project requires. jsdom
+    // does no layout, so the check is on the declared minimum rather than a
+    // measured box; that is the property the fix actually adds.
+    const MIN_TOUCH_PX = 44;
+
+    it('gives each severity button at least a 44px minimum height', () => {
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+
+      ['low', 'medium', 'high'].forEach((sev) => {
+        const button = screen.getByRole('button', { name: sev });
+        expect(parseFloat(button.style.minHeight), `${sev} is under the touch minimum`)
+          .toBeGreaterThanOrEqual(MIN_TOUCH_PX);
+      });
+    });
+
+    it('keeps the severity row on one line at 375px', () => {
+      // Three flex:1 buttons in a row that must not wrap or overflow at the
+      // narrowest supported width — so the fix has to come from height, not a
+      // minWidth that forces 3 x >125px into a ~330px dialog body.
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+
+      ['low', 'medium', 'high'].forEach((sev) => {
+        const button = screen.getByRole('button', { name: sev });
+        expect(button.style.minWidth === '' || parseFloat(button.style.minWidth) <= 100).toBe(true);
+        // jsdom expands the `flex: 1` shorthand.
+        expect(button.style.flex).toBe('1 1 0%');
+      });
+    });
+  });
 });

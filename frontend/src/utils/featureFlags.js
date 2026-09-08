@@ -31,10 +31,13 @@ export const FEATURE_FLAGS = {
   },
   reducedMotion: {
     label: 'Reduced motion',
+    // Player-facing copy only. This registry is rendered verbatim by
+    // SettingsDialog, so the implementation note that used to close this
+    // sentence ("App.jsx applies this as the 'reduced-motion' class on
+    // <html>; see styles/index.css.") shipped to players as UI text (#565).
     description:
       'Shorten CSS animations and transitions app-wide to a near-instant '
-      + '1ms, for motion sensitivity. App.jsx applies this as the '
-      + '"reduced-motion" class on <html>; see styles/index.css.',
+      + '1ms, for motion sensitivity.',
     default: false,
   },
 };

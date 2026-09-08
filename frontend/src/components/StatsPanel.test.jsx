@@ -68,11 +68,14 @@ describe('StatsPanel', () => {
     // and "5T" alike, so they passed no matter what number the level tile
     // rendered, or whether it rendered one at all.
     expect(screen.getByText('Level').closest('div')).toHaveTextContent('5');
-    // Buffed/debuffed attributes carry a +/- prefix now (issue #536 item 5) so
-    // the direction isn't color-only; a value at base carries no prefix.
-    expect(within(attributeTile(STRENGTH_TIP)).getByText('+12')).toBeInTheDocument();
+    // Attributes show the bare total, with the buff/debuff carried by a signed
+    // delta beside it (#536 item 5 for the non-colour marker, #559 for it being
+    // the delta rather than a sign glued to the total).
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('12')).toBeInTheDocument();
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('(+2)')).toBeInTheDocument();
     expect(within(attributeTile(STRENGTH_TIP)).getByText('BASE: 10')).toBeInTheDocument();
-    expect(within(attributeTile(FINESSE_TIP)).getByText('-8')).toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).getByText('8')).toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).getByText('(-2)')).toBeInTheDocument();
 
     // Core stats
     expect(screen.getByText('80/100')).toBeInTheDocument();
@@ -96,12 +99,12 @@ describe('StatsPanel', () => {
 
     // Strength is 12 (base 10) -> buffed color #00ff88
     const strengthContainer = attributeTile(STRENGTH_TIP);
-    const strengthVal = within(strengthContainer).getByText('+12');
+    const strengthVal = within(strengthContainer).getByText('12');
     expect(strengthVal.style.color).toBe('rgb(0, 255, 136)'); // #00ff88
 
     // Finesse is 8 (base 10) -> debuffed color #ff6666
     const finesseContainer = attributeTile(FINESSE_TIP);
-    const finesseVal = within(finesseContainer).getByText('-8');
+    const finesseVal = within(finesseContainer).getByText('8');
     expect(finesseVal.style.color).toBe('rgb(255, 68, 68)'); // #ff4444 (colors.danger)
 
     // Speed is 10 (base 10) -> normal color #ffcc00 (colors.gold)
@@ -110,17 +113,18 @@ describe('StatsPanel', () => {
     expect(speedVal.style.color).toBe('rgb(255, 204, 0)'); // #ffcc00
   });
 
-  it('marks buffed/debuffed attributes with a +/- prefix so the delta is not color-only (issue #536)', () => {
-    // A stat above base gets '+', below base gets '-', and exactly at base
+  it('marks buffed/debuffed attributes with a signed delta so the state is not color-only (issue #536)', () => {
+    // A stat above base gets '(+n)', below base '(-n)', and exactly at base
     // (Speed, asserted above) carries neither. Colour alone used to be the
     // only signal distinguishing all three states.
     render(<StatsPanel player={mockPlayer} />);
 
-    expect(within(attributeTile(STRENGTH_TIP)).getByText('+12')).toBeInTheDocument();
-    expect(within(attributeTile(FINESSE_TIP)).getByText('-8')).toBeInTheDocument();
-    // Guard against a double-sign regression (e.g. '+ +12' or '--8').
-    expect(within(attributeTile(STRENGTH_TIP)).queryByText('++12')).not.toBeInTheDocument();
-    expect(within(attributeTile(FINESSE_TIP)).queryByText('--8')).not.toBeInTheDocument();
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('(+2)')).toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).getByText('(-2)')).toBeInTheDocument();
+    // Guard against the #559 regression: the marker must never be glued to the
+    // total, which is what made "+14 / BASE: 10" read as 10 + 14.
+    expect(within(attributeTile(STRENGTH_TIP)).queryByText('+12')).not.toBeInTheDocument();
+    expect(within(attributeTile(FINESSE_TIP)).queryByText('-8')).not.toBeInTheDocument();
   });
 
 
@@ -182,7 +186,7 @@ describe('StatsPanel', () => {
     expect(screen.getByText('No active status effects')).toBeInTheDocument();
     expect(screen.queryByText('Blessed')).toBeNull();
     // The attributes still render, so this is a partial payload, not a blank sheet.
-    expect(within(attributeTile(STRENGTH_TIP)).getByText('+12')).toBeInTheDocument();
+    expect(within(attributeTile(STRENGTH_TIP)).getByText('12')).toBeInTheDocument();
   });
 
   const sparsePlayer = {
@@ -284,6 +288,100 @@ describe('StatsPanel', () => {
 
       const evasionTile = screen.getByText('Evasion').closest('[title]');
       expect(evasionTile.getAttribute('title')).toMatch(/Subtracted from an attacker/i);
+    });
+  });
+
+  describe('buffed/debuffed attribute totals (issue #559)', () => {
+    // The old render signed the ABSOLUTE current value and printed it directly
+    // above "BASE: n", so a Finesse total of 14 over a base of 10 read as
+    // "+14 / BASE: 10" — i.e. base 10 plus 14 — and a debuffed Endurance of 8
+    // read as "-8", negative eight. The sign was a state marker doing duty as
+    // arithmetic.
+    const ENDURANCE_TIP = /Reduces fatigue cost of all moves/i;
+
+    const buffedPlayer = makePlayerStats({
+      finesse: 14, finesse_base: 10,
+      endurance: 8, endurance_base: 10,
+      speed: 10, speed_base: 10,
+    });
+
+    it('renders a buffed attribute as the bare total, never signed', () => {
+      render(<StatsPanel player={buffedPlayer} />);
+      const tile = attributeTile(FINESSE_TIP);
+
+      expect(within(tile).getByText('14')).toBeInTheDocument();
+      // "+14" above "BASE: 10" is the misread the issue is about.
+      expect(within(tile).queryByText('+14')).not.toBeInTheDocument();
+    });
+
+    it('renders a debuffed attribute as the bare total, never as a negative number', () => {
+      render(<StatsPanel player={buffedPlayer} />);
+      const tile = attributeTile(ENDURANCE_TIP);
+
+      expect(within(tile).getByText('8')).toBeInTheDocument();
+      expect(within(tile).queryByText('-8')).not.toBeInTheDocument();
+    });
+
+    it('carries the buff/debuff direction as a signed delta, not colour alone', () => {
+      // Project rule: state is never colour-only. The delta is the non-colour
+      // marker, and unlike the old prefix it is arithmetically true — BASE 10
+      // with (+4) really does make a total of 14.
+      render(<StatsPanel player={buffedPlayer} />);
+
+      expect(within(attributeTile(FINESSE_TIP)).getByText('(+4)')).toBeInTheDocument();
+      expect(within(attributeTile(ENDURANCE_TIP)).getByText('(-2)')).toBeInTheDocument();
+    });
+
+    it('shows no delta for an attribute sitting exactly at its base', () => {
+      render(<StatsPanel player={buffedPlayer} />);
+      const tile = attributeTile(SPEED_TIP);
+
+      expect(within(tile).getByText('10')).toBeInTheDocument();
+      expect(within(tile).queryByText(/^\([+-]/)).not.toBeInTheDocument();
+    });
+
+    it('keeps the total, the delta and BASE arithmetically consistent for every attribute', () => {
+      // The generic guard: whatever the presentation, base + delta must equal
+      // the total on screen. The old render failed this for every modified stat.
+      render(<StatsPanel player={buffedPlayer} />);
+
+      [
+        [FINESSE_TIP, 14, 10],
+        [ENDURANCE_TIP, 8, 10],
+        [SPEED_TIP, 10, 10],
+      ].forEach(([tip, total, base]) => {
+        const tile = attributeTile(tip);
+        expect(within(tile).getByText(String(total))).toBeInTheDocument();
+        expect(within(tile).getByText(`BASE: ${base}`)).toBeInTheDocument();
+        const delta = total - base;
+        if (delta !== 0) {
+          const sign = delta > 0 ? '+' : '-';
+          expect(within(tile).getByText(`(${sign}${Math.abs(delta)})`)).toBeInTheDocument();
+        }
+      });
+    });
+
+    it('never clips an attribute name behind an ellipsis (#565)', () => {
+      // "Endurance" and "Intelligence" truncated at desktop width — the name
+      // cell opted into `text-overflow: ellipsis`, so the panel silently hid
+      // characters instead of giving the row the width it needs.
+      render(<StatsPanel player={buffedPlayer} />);
+
+      ['Strength', 'Finesse', 'Speed', 'Endurance', 'Charisma', 'Intelligence', 'Faith'].forEach((name) => {
+        const label = screen.getByText(name);
+        expect(label.style.textOverflow, `${name} is clipped`).not.toBe('ellipsis');
+        expect(label.style.whiteSpace, `${name} cannot wrap`).not.toBe('nowrap');
+      });
+    });
+
+    it('gives the attribute grid a track wide enough for the longest name', () => {
+      // Guard on the number the fix picked: dropping back to the old 150px min
+      // track is what re-introduces the truncation above.
+      render(<StatsPanel player={buffedPlayer} />);
+
+      const grid = screen.getByText('Intelligence').closest('[style*="grid-template-columns"]');
+      expect(grid, 'the attributes grid should be an ancestor of every name').not.toBeNull();
+      expect(grid.style.gridTemplateColumns).toContain('200px');
     });
   });
 });
