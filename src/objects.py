@@ -283,6 +283,11 @@ class Container(Object):
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
 
+    # Class-level default so a container restored from an older save (or built
+    # via the loader's ``cls.__new__`` fallback) still resolves the attribute
+    # and falls through to the generic open line.
+    open_message = None
+
     # Issue #463: `inventory` is the nested-placeholder case the issue calls
     # out explicitly -- each element is itself an authored Item placeholder,
     # resolved recursively. `state`/`revealed`/`possible_states` are
@@ -300,9 +305,9 @@ class Container(Object):
     MAP_AUTHORED_PARAMS = {
         "name", "description", "hidden", "hide_factor", "start_open",
         "idle_message", "discovery_message", "nickname", "locked",
-        "inventory", "events", "merchant", "stock_count",
+        "inventory", "events", "merchant", "stock_count", "open_message",
     }
-    MAP_AUTHORED_OVERRIDES = {"allowed_item_types", "inventory"}
+    MAP_AUTHORED_OVERRIDES = {"allowed_item_types", "inventory", "open_message"}
 
     @property
     def start_open(self) -> bool:
@@ -349,9 +354,16 @@ class Container(Object):
         items: list["Item"] = None,
         allowed_subtypes: list[type[Item]] = None,
         stock_count: int = 10,
+        open_message: str = None,
     ):
         """Accept both 'items' (legacy/tests) and 'inventory'. Normalize merchant to a name when possible.
         Also accept 'allowed_subtypes' and expose as allowed_item_types (list of types).
+
+        ``open_message`` is the optional per-placement line narrated instead of
+        the generic one when the container is first opened. It exists so a
+        placement that really does have a lid, a flap or a tied cord can say so
+        without the generic path claiming those features for the 26 shipped
+        placements that have none (issue #565).
         """
         # Normalize inventory parameter: accept items alias for tests/tools
         inv = (
@@ -359,6 +371,7 @@ class Container(Object):
         )
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
+        self.open_message = open_message
         # Set default revealed flag
         self.revealed = False
         # Assign initial locked state (may be overridden by start_open semantics)
@@ -468,17 +481,28 @@ class Container(Object):
             cprint("Jean couldn't find a matching key.", "red")
 
     def open(self):
-        """Optimized open method with f-string formatting"""
+        """Open the container and narrate it.
+
+        The narration says only what is true of *every* container: that Jean
+        works it open and can see inside. It used to claim a lid lifting on a
+        hinge, which was narrated verbatim over a Cold Hearth, a Stream Trough
+        and two wall niches (issue #565) — 26 of the 47 shipped placements have
+        no lid at all. A placement that really does have one authors its own
+        line via ``open_message`` rather than being described by a template.
+        """
         if self.locked:
             narrate(
-                f"Jean pulls on the lid of the {self.nickname} to no avail. It's locked."
+                f"Jean tries the {self.nickname}. It won't give — it's locked."
             )
             return
 
         if self.state == "closed":
-            narrate(f"The {self.nickname} creaks eerily.")
-            time.sleep(0.5)
-            narrate("The lid lifts back on the hinge, revealing the contents inside.")
+            if self.open_message:
+                narrate(self.open_message)
+            else:
+                narrate(f"Jean works the {self.nickname} open.")
+                time.sleep(0.5)
+                narrate("The contents come into view.")
             self.revealed = True
             self.state = "opened"
             if "open" in self.keywords:
