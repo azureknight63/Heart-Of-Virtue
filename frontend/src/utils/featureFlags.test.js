@@ -152,10 +152,17 @@ describe('featureFlags', () => {
     // a code comment shipped into the Settings dialog, which renders this
     // registry verbatim. Every label/description here is player-facing copy.
     const DEV_ONLY_PATTERNS = [
-      /[\w-]+\.(?:jsx?|tsx?|css|py|ini|json)/i,   // a source filename
-      /(?:src|styles|components|utils|hooks|api)\//i, // a source path
+      // A source filename — a .jsx or .css file the player
+      // has no business hearing about.
+      /\b[\w-]+\.(?:jsx?|tsx?|css|py|ini|json)\b/i,
+      // A source path segment.
+      /\b(?:src|styles|components|utils|hooks|api)\//i,
       /<\/?[a-z][\w-]*>/i,                              // an HTML tag literal
-      /see\s+\S+\.(?:jsx?|css)/i,                 // "see foo.css"
+      // A trailing "see <source file>" pointer is already covered by the
+      // filename pattern above, so there is no fourth entry here. There was
+      // one, carrying an illustrative filename in its comment — which
+      // src/test/citations.test.js correctly read as a claim that the file
+      // exists. Cite only real files, even in a comment about regexes.
     ];
 
     it.each(Object.keys(FEATURE_FLAGS))(
