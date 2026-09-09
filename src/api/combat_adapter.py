@@ -1529,12 +1529,17 @@ class ApiCombatAdapter:
                 for enemy in self.player.combat_list:
                     # `in_combat` is NOT set here, unlike the reinit branch
                     # below and unlike the ally loop above: on a fresh fight
-                    # the flag is already True, set by whoever enrolled the
-                    # enemy (functions.check_for_combat, or
-                    # GameService.start_combat). Reinit has no such caller --
-                    # it re-enters mid-fight for reinforcements -- which is
-                    # why only that branch sets it. Every other asymmetry in
-                    # this block is spelled out, so this one is too.
+                    # the enroller has already set it (functions.py's
+                    # check_for_combat / add_enemies_to_combat, or
+                    # GameService.start_combat).
+                    #
+                    # Reinit sets it for the WHOLE roster because its enroller
+                    # only flags what it newly enrols, while a combatant
+                    # already in `combat_list` may have had the flag cleared
+                    # in between -- the post-victory tile sweep in this module
+                    # clears `in_combat` on every non-friend NPC on the tile.
+                    # Every other asymmetry in this block is spelled out, so
+                    # this one is too.
                     # Provide a back-reference for API-mode drop/loot tracking
                     self._attach_player_ref(enemy)
                     self._reset_move_state_for_new_fight(enemy)

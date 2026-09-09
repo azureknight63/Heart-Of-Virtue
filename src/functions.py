@@ -13,7 +13,7 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from src.items import Item
     from src.player import Player
 
-from src.narration import colored, cprint, narrate
+from src.narration import ANSI_ESCAPE_RE, colored, cprint, narrate
 
 """
 This module contains general functions to use throughout the game
@@ -969,8 +969,6 @@ def escape_ansi(line):
     the engine emits (``neotermcolor`` writes ``ESC[`` sequences), so the
     shared pattern covers every real input.
     """
-    from src.narration import ANSI_ESCAPE_RE
-
     return ANSI_ESCAPE_RE.sub("", line)
 
 

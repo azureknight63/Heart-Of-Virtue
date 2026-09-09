@@ -145,6 +145,10 @@ export const colors = {
         // alpha border would let the panel behind bleed through.
         dark: '#664400',
         success: '#00ff88',
+        // Shares its value with `bg.terminal` but not its job: that one is the
+        // ToS tab GROUND, this is the cooldown tray's divider. One token for
+        // both meant retuning the tab background silently moved the divider.
+        terminal: 'rgba(0, 255, 136, 0.15)',
         danger: '#ff4444',
     },
 

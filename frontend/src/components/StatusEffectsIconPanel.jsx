@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { beatUnit } from '../utils/moveCommitment'
 import { colors, spacing, shadows, fonts } from '../styles/theme'
 import { displayNameOf } from '../utils/combatMoveStatus'
 
@@ -27,7 +28,12 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
         return '✨' // Default
     }
 
-    const getEffectColor = (type) => {
+    // The wire carries the remaining count under two names -- `beats_left` from
+// StateEffectSerializer, `duration_remaining` from the older shape -- and the
+// gate and the readout both need it, so it is read once here.
+const beatsLeft = (effect) => effect.beats_left ?? effect.duration_remaining
+
+const getEffectColor = (type) => {
         switch (type?.toLowerCase()) {
             case 'buff': return colors.success
             case 'debuff': return colors.danger
@@ -115,7 +121,7 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                                 counts down under `if self.beats_max > 0`), so the
                                 previous `!== undefined` rendered a permanent buff as
                                 "0 beats remaining". Do not relax this back. */}
-                            {(effect.beats_left ?? effect.duration_remaining) > 0 && (
+                            {beatsLeft(effect) > 0 && (
                                 <div style={{
                                     fontSize: '9px',
                                     marginTop: '4px',
@@ -123,7 +129,7 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                                     fontStyle: 'italic',
                                     fontWeight: 'bold'
                                 }}>
-                                    {effect.beats_left ?? effect.duration_remaining} beats remaining
+                                    {beatsLeft(effect)} {beatUnit(beatsLeft(effect))} remaining
                                 </div>
                             )}
                             {/* Tooltip arrow */}

@@ -52,8 +52,21 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
       const existing = stacks[item.name]
       if (existing) {
         existing.stacked = existing.stacked + stackSize(item)
-      } else {
-        stacks[item.name] = { ...item, stacked: stackSize(item) }
+        return stacks
+      }
+      // The aggregate drops the per-entry `count`/`quantity` and carries its
+      // own `stacked` total, so `stackSize(row)` cannot answer the
+      // pre-aggregation number. It used to keep both and rely on a comment,
+      // which meant normalising the badge to this file's sibling idiom
+      // (`stackCountLabel(stackSize(item))`) silently rendered the wrong
+      // figure. The name is stripped here for the same reason -- once
+      // `count` is gone, `stackDisplayName` can no longer match the baked
+      // " xN" suffix, so it has to be done while the count is still around.
+      const { count: _count, quantity: _quantity, ...rest } = item
+      stacks[item.name] = {
+        ...rest,
+        name: stackDisplayName(item),
+        stacked: stackSize(item),
       }
       return stacks
     }, Object.create(null))

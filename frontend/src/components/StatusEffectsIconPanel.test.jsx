@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { beatUnit } from '../utils/moveCommitment'
 import { describe, it, expect } from 'vitest';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { makeStatusEffect } from '../test/payloads';
@@ -105,12 +106,29 @@ describe('StatusEffectsIconPanel', () => {
         // — i.e. that testing-library's own query function exists. They would
         // have passed against a component that rendered the duration line for
         // every effect, or for none of them. They now read the line.
+        // The unit is `beatUnit`'s, shared with the cooldown tray, the abort
+        // control, the battlefield countdown and the beat timeline -- so the
+        // expectation is built the same way rather than hardcoding "beats",
+        // which is how "1 beats remaining" passed here.
         it.each([[1], [99]])('renders the remaining-beats line for beats_left=%i', (beats) => {
             render(<StatusEffectsIconPanel effects={[
                 { name: 'Shield', type: 'buff', description: 'Guard', beats_left: beats }
             ]} />);
             fireEvent.mouseEnter(screen.getByText('🛡️'));
-            expect(screen.getByText(`${beats} beats remaining`)).toBeInTheDocument();
+            expect(
+                screen.getByText(`${beats} ${beatUnit(beats)} remaining`)
+            ).toBeInTheDocument();
+        });
+
+        it("says 'beat', not 'beats', on an effect's last beat", () => {
+            // Reachable on every state's final beat: the line is gated on
+            // `> 0`, so 1 is admitted and read "1 beats remaining".
+            render(<StatusEffectsIconPanel effects={[
+                { name: 'Shield', type: 'buff', description: 'Guard', beats_left: 1 }
+            ]} />);
+            fireEvent.mouseEnter(screen.getByText('🛡️'));
+            expect(screen.getByText('1 beat remaining')).toBeInTheDocument();
+            expect(screen.queryByText('1 beats remaining')).not.toBeInTheDocument();
         });
 
         it.each([[0], [-1]])(

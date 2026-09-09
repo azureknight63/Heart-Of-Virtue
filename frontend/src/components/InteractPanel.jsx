@@ -10,8 +10,11 @@ import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
 import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
-import { stackDisplayName, stackCountLabel, stackSize, isStacked, stackLabel } from '../utils/stackName'
+import { stackDisplayName, stackSize, isStacked, stackLabel } from '../utils/stackName'
 
+// All three route `handleActionClick` to the shop dialog rather than to
+// /world/interact: a merchant advertises whichever of them its placement
+// authored, and the panel must not POST any of them as an interaction verb.
 const SHOP_KEYWORDS = new Set(['buy', 'sell', 'trade'])
 
 // Keywords that all open the SAME conversation. `handleActionClick` routes

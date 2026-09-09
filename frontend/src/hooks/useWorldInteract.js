@@ -3,7 +3,7 @@ import apiEndpoints from '../api/endpoints'
 import { apiErrorMessage } from '../utils/apiError'
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 import { isDisplayableEvent, filterDisplayableEvents } from '../utils/eventDisplay'
-import { stackDisplayName, stackSize } from '../utils/stackName'
+import { stackDisplayName, stackSize, isStackedCount } from '../utils/stackName'
 
 /**
  * useWorldInteract — owns InteractPanel's world-interaction API calls and the
@@ -113,7 +113,7 @@ export function useWorldInteract({
                     // `item.name` narrated "3× Mineral Powder x3" (#565).
                     const size = stackSize(item)
                     const shown = stackDisplayName(item)
-                    const label = size > 1 ? `${size}× ${shown}` : shown
+                    const label = isStackedCount(size) ? `${size}× ${shown}` : shown
                     takenLabels.push(label)
                 } else {
                     // Stop on error

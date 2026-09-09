@@ -14,6 +14,7 @@ import {
     totalStageBeats,
     formatBeats,
     maxTotalStageBeats,
+    beatUnit,
 } from '../utils/moveCommitment';
 
 // Stage -> color. Deliberately distinct from MOVE_CATEGORY_COLOR (categories.js) —
@@ -70,7 +71,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
         <div
             data-testid="move-commitment-bar"
             data-total-beats={total}
-            title={`${breakdown} (${formatBeats(total)} beats total lockout)`}
+            title={`${breakdown} (${formatBeats(total)} ${beatUnit(total)} total lockout)`}
             style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}
         >
             <div
@@ -102,7 +103,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
                 </div>
             </div>
             <GameText variant="muted" size="xs" style={{ fontFamily: fonts.main, whiteSpace: 'nowrap' }}>
-                {formatBeats(total)} beats
+                {formatBeats(total)} {beatUnit(total)}
             </GameText>
         </div>
     );

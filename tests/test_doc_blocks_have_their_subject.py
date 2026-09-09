@@ -27,6 +27,21 @@ MORE instances nobody had reported (``InteractPanel.jsx`` and
 ``useCombatCoordinator.js``), which is the whole argument for not relying on
 vigilance here.
 
+**Which recorded instances these rules actually catch.** Not all of them, and
+saying otherwise would be the very defect this file exists to stop:
+
+* Rule 1 (``@param`` block on a non-callable) covers ``LiveAnnouncer.jsx``
+  and ``CombatLog.jsx``.
+* Rule 2 (a block naming a declaration, attached to another) covers
+  ``CombatLog.jsx``, ``RoomContents.jsx`` and ``InteractPanel.jsx``.
+* **NEITHER rule covers ``AbortMoveControl.jsx`` or ``CooldownTray.jsx``.**
+  Both blocks carry no ``@param`` and open on a description rather than a
+  name ("Break-off control for a move that is still winding up.", "What one
+  cooling move is, in words."), so re-inserting a constant above either
+  function passes green. That gap is deliberate: the only rule that would
+  catch them is "a prose block must sit on a function", which fires on every
+  legitimate file header in the tree. Watch those two by hand.
+
 **Scope: JS/JSX only.** The ``combat_adapter.py`` instance above is listed
 because it is the same defect, not because this file catches it. Python's two
 shapes resist a cheap rule — a ``def``'s docstring is bound by the language
@@ -122,9 +137,11 @@ def _named_subject(line):
 def test_a_param_block_sits_on_something_callable(path):
     """`@param`/`@returns` describes a call signature, so its subject is one.
 
-    This is the `CombatLog.jsx` and `AbortMoveControl.jsx` shape: a block with
-    a full parameter list attached to a string or a number, while the function
-    it describes sits below with no doc at all.
+    This is the `CombatLog.jsx` shape: a block with a full parameter list
+    attached to a string or a number, while the function it describes sits
+    below with no doc at all. `LiveAnnouncer.jsx` is the same. NOT
+    `AbortMoveControl.jsx` -- see the module docstring for what neither rule
+    reaches.
     """
     lines = io.open(path, encoding="utf-8").read().split("\n")
     offenders = [
@@ -148,9 +165,11 @@ def test_a_param_block_sits_on_something_callable(path):
 def test_a_block_naming_a_declaration_sits_on_that_declaration(path):
     """A block opening with `Foo - …` must be attached to `Foo`.
 
-    This is the `LiveAnnouncer.jsx` / `RoomContents.jsx` / `InteractPanel.jsx`
+    This is the `RoomContents.jsx` / `InteractPanel.jsx` / `CombatLog.jsx`
     shape: the component's own doc block, which names itself in its first
     line, left sitting on a constant or a helper that got inserted above it.
+    (`LiveAnnouncer.jsx` opens on a description, so rule 1 is what covers
+    it.)
     Only fires when the named identifier is genuinely declared in the same
     file, so a block that merely opens with a capitalised English word is not
     flagged.

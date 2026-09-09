@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-//: How many beat states the breadcrumb trail keeps. Beyond this the oldest
-//: are dropped, which is what `baseOffsetRef` exists to account for.
+// How many beat states the breadcrumb trail keeps. Beyond this the oldest
+// are dropped, which is what `baseOffsetRef` exists to account for.
 const MAX_BEAT_STATES = 200
 
 /**
@@ -19,14 +19,24 @@ const MAX_BEAT_STATES = 200
  * the same `setAccBeatStates` updater that produces the window, so the offset
  * and the window are one value. Promoting it to state would render one frame
  * pairing a new window with the old offset, jumping the grid to the wrong
- * beat. That is why the consumer needs an eslint-disable for
- * `react-hooks/refs` — and why the disable now lives beside the writer rather
- * than at the far end of the component.
+ * beat. That is why the read below carries an eslint-disable for
+ * `react-hooks/refs` — now in the same short file as the writer, rather than
+ * ~180 lines from it in Battlefield's body.
  *
  * Accumulates ACROSS actions so trails survive a player's turn, and resets
- * only when combat ends. Keyed on `beat_states` identity: `transformCombatData`
- * allocates a fresh array on every poll, so reference equality is what tells a
- * genuinely new batch from a re-render.
+ * only when combat ends.
+ *
+ * KNOWN LIMIT, stated because the obvious reading of the guard is wrong:
+ * `incoming === prevBeatStatesRef.current` distinguishes a re-render from a
+ * new RESPONSE, not from new play. `get_combat_state` publishes
+ * `beat_states: [battle_state]` on every status poll and `transformCombatData`
+ * passes that array through untouched, so each idle poll arrives with a fresh
+ * identity and appends a duplicate frame — advancing the offset on a timer and
+ * evicting real movement from the 200-entry buffer during a long fight.
+ * Pre-existing, and not patched here: deciding what counts as "new play"
+ * either dedupes by content at this boundary or stops the poll re-publishing
+ * beat states, and it changes what the player sees, so it needs a browser
+ * (rung 3 on CLAUDE.md's ladder) rather than a guess.
  *
  * @param {object} combat the combat payload
  * @param {?number} currentLogIndex the beat index the log has revealed

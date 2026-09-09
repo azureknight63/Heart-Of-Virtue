@@ -173,6 +173,21 @@ def _call_interaction_handler(method, player, quantity):
     return method(player)
 
 
+def _strip_llm_noise_lines(text):
+    """Drop the internal LLM diagnostic lines that must never reach the UI.
+
+    The prefix tuple was shared; the MATCHING RULE (`lstrip` then
+    `startswith`, per line) was spelled once in the event pipeline and again
+    in the interaction pipeline. A prefix that needed a different match --
+    a trailing marker, say -- would have had to be taught twice.
+    """
+    return [
+        line
+        for line in text.splitlines()
+        if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
+    ]
+
+
 def _fallback_interaction_message(action, target, events_triggered):
     """What to say when an interaction captured no narration at all.
 
@@ -495,12 +510,13 @@ class GameService:
         if not output:
             return ""
 
-        lines = output.splitlines()
+        # The error filter layers OVER the shared LLM-noise one, and uses
+        # `.strip()` rather than `.lstrip()` -- deliberately, so a prefix
+        # cannot be smuggled past it by trailing whitespace.
         filtered_lines = [
             line
-            for line in lines
+            for line in _strip_llm_noise_lines(output)
             if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
-            and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
         return ANSI_ESCAPE_RE.sub("", "\n".join(filtered_lines)).strip()
 
@@ -2554,12 +2570,7 @@ class GameService:
 
         # Strip internal LLM diagnostic lines that must never reach the UI.
         pre_filter_output = clean_output
-        filtered_lines = [
-            line
-            for line in clean_output.splitlines()
-            if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
-        ]
-        clean_output = "\n".join(filtered_lines).strip()
+        clean_output = "\n".join(_strip_llm_noise_lines(clean_output)).strip()
 
         # If filtering removed everything and the raw output contained LLM noise
         # (indicating a Mynx LLM call occurred), use a safe ambient fallback.

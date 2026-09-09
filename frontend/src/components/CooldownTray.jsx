@@ -37,7 +37,7 @@ function CooldownTray({ moves }) {
       aria-label="Moves on cooldown"
       style={{
         flexShrink: 0,
-        borderTop: `1px solid ${colors.bg.terminal}`,
+        borderTop: `1px solid ${colors.border.terminal}`,
         paddingTop: '8px',
       }}
     >
