@@ -2280,6 +2280,141 @@ class GameService:
 
         return events_triggered, beta_end, None
 
+    def _resolve_interaction_target(self, player, target_id, session_data):
+        """The tile the player is on, and the entity `target_id` names on it.
+
+        Pure lookup: no narration, no dispatch. Split out of
+        :meth:`interact_with_target`, which was carrying a dozen
+        responsibilities and whose only four-level nesting lived here.
+
+        Ids are the opaque wire handles the room serializers minted (issue
+        #518), resolved through the one lookup helper so this side cannot
+        drift back to comparing heap addresses while the serializers ship
+        handles. Searched in the order the player sees them: NPCs, objects,
+        floor items, then the contents of any OPEN container -- an item found
+        there carries `_parent_container` so the caller can transfer it.
+
+        Returns ``(tile, target)`` with `target` None when nothing matches.
+        `tile` is always returned, because the caller needs it either way.
+        """
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        # Interactions that modify the room (taking an item) read this.
+        player.current_room = tile
+        # Re-apply stored modifications (and baseline the object roster) before
+        # the action runs, so persist_tile_state at the end diffs against the
+        # right starting state and objects removed earlier stay removed (#328).
+        self.apply_tile_modifications(tile, session_data)
+
+        target = None
+        if hasattr(tile, "npcs_here"):
+            target = find_by_handle(tile.npcs_here, target_id)
+        if not target and hasattr(tile, "objects_here"):
+            target = find_by_handle(tile.objects_here, target_id)
+        if not target and hasattr(tile, "items_here"):
+            target = find_by_handle(tile.items_here, target_id)
+
+        if not target:
+            from src.objects import Container
+
+            for obj in tile.objects_here:
+                if (
+                    isinstance(obj, Container)
+                    and getattr(obj, "state", "") == "opened"
+                    and hasattr(obj, "inventory")
+                ):
+                    target = find_by_handle(obj.inventory, target_id)
+                    if target is not None:
+                        target._parent_container = obj
+                if target:
+                    break
+
+        return tile, target
+
+    def _clean_interaction_output(
+        self, msgs, player, pre_map_name, pre_x, pre_y, events_triggered, action, target
+    ):
+        """Turn the captured narration into the line the player reads.
+
+        One self-contained text pipeline, split out of
+        :meth:`interact_with_target`: strip ANSI, drop a destination tile's
+        description when the interaction teleported, filter the LLM noise
+        prefixes, then choose a fallback when nothing was captured at all.
+
+        Returns ``(clean_output, teleported)``. The teleport flag is computed
+        here because the description strip already needs it and the caller
+        needs the same answer for its response; spelled in both places, an
+        edit to one would report a teleport the strip did not act on.
+        """
+        import re
+
+        output = "\n".join(m.get("text", "") for m in msgs)
+
+        # Clean up output (remove ANSI codes)
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        clean_output = ansi_escape.sub("", output)
+
+        # Remove excessive newlines and clean up whitespace
+        clean_output = re.sub(
+            r"\n\s*\n", "\n", clean_output
+        )  # Replace multiple newlines with single
+        clean_output = clean_output.strip()
+
+        # If a teleport occurred, strip the destination tile's description from the
+        # interaction output — the frontend fetches the new room via /world/current-room.
+        _post_map_name = player.map.get("name") if player.map else None
+        # Computed once and reused by the response below: spelled twice, a
+        # later edit to one copy would report a teleport the description strip
+        # did not act on, or the reverse.
+        teleported = (
+            _post_map_name != pre_map_name
+            or player.location_x != pre_x
+            or player.location_y != pre_y
+        )
+        if teleported:
+            dest_tile = player.universe.get_tile(player.location_x, player.location_y)
+            if dest_tile and hasattr(dest_tile, "description"):
+                dest_desc = ansi_escape.sub("", dest_tile.description).strip()
+                if dest_desc:
+                    clean_output = clean_output.replace(dest_desc, "").strip()
+
+        # Strip internal LLM diagnostic lines that must never reach the UI.
+        pre_filter_output = clean_output
+        filtered_lines = [
+            line
+            for line in clean_output.splitlines()
+            if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
+        ]
+        clean_output = "\n".join(filtered_lines).strip()
+
+        # If filtering removed everything and the raw output contained LLM noise
+        # (indicating a Mynx LLM call occurred), use a safe ambient fallback.
+        if not clean_output and any(
+            p in pre_filter_output for p in _LLM_NOISE_PREFIXES
+        ):
+            clean_output = (
+                "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
+            )
+
+        # Provide fallback message if no output was captured
+        if not clean_output:
+            # When events were triggered (e.g. PassagewayTransitionEvent),
+            # skip the robotic fallback text — the event UI handles it.
+            if events_triggered:
+                clean_output = ""
+            elif action == "take_all":
+                clean_output = "Jean collects all of the available items."
+            elif action == "talk":
+                target_name = getattr(target, "name", None)
+                clean_output = (
+                    f"{target_name} does not respond."
+                    if target_name
+                    else "No response."
+                )
+            else:
+                clean_output = f"Jean successfully completes the '{action}' action."
+
+        return clean_output, teleported
+
     def interact_with_target(
         self,
         player: "player_module.Player",
@@ -2305,48 +2440,9 @@ class GameService:
             Dictionary with interaction result and output text
         """
         from unittest.mock import patch
-        import re
 
-        # Find target
-        tile = player.universe.get_tile(player.location_x, player.location_y)
-        # Ensure player knows where they are for interactions that modify the room (like taking items)
-        player.current_room = tile
-        # Re-apply stored modifications (and baseline the object roster) before the
-        # action runs, so persist_tile_state at the end diffs against the right
-        # starting state and objects removed earlier stay removed (#328).
-        self.apply_tile_modifications(tile, session_data)
-        target = None
-
-        # Check NPCs, then objects, then floor items. Ids are the opaque
-        # wire handles the room serializers minted (issue #518) — resolved
-        # through the one lookup helper so this side cannot drift back to
-        # comparing heap addresses while the serializers ship handles.
-        if hasattr(tile, "npcs_here"):
-            target = find_by_handle(tile.npcs_here, target_id)
-
-        if not target and hasattr(tile, "objects_here"):
-            target = find_by_handle(tile.objects_here, target_id)
-
-        if not target and hasattr(tile, "items_here"):
-            target = find_by_handle(tile.items_here, target_id)
-
-        # Try to find target in items inside open containers
-        if not target:
-            from src.objects import Container
-
-            for obj in tile.objects_here:
-                if (
-                    isinstance(obj, Container)
-                    and getattr(obj, "state", "") == "opened"
-                    and hasattr(obj, "inventory")
-                ):
-                    target = find_by_handle(obj.inventory, target_id)
-                    if target is not None:
-                        target._parent_container = obj
-                if target:
-                    break
-
-        if not target:
+        tile, target = self._resolve_interaction_target(player, target_id, session_data)
+        if target is None:
             return {"success": False, "message": "Target not found."}
 
         # Special case: attack action on NPCs should start combat
@@ -2440,71 +2536,9 @@ class GameService:
                 "message": _ACTION_FAILED_MESSAGE,
             }
 
-        output = "\n".join(m.get("text", "") for m in _msgs)
-
-        # Clean up output (remove ANSI codes)
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        clean_output = ansi_escape.sub("", output)
-
-        # Remove excessive newlines and clean up whitespace
-        clean_output = re.sub(
-            r"\n\s*\n", "\n", clean_output
-        )  # Replace multiple newlines with single
-        clean_output = clean_output.strip()
-
-        # If a teleport occurred, strip the destination tile's description from the
-        # interaction output — the frontend fetches the new room via /world/current-room.
-        _post_map_name = player.map.get("name") if player.map else None
-        # Computed once and reused by the response below: spelled twice, a
-        # later edit to one copy would report a teleport the description strip
-        # did not act on, or the reverse.
-        teleported = (
-            _post_map_name != _pre_map_name
-            or player.location_x != _pre_x
-            or player.location_y != _pre_y
+        clean_output, teleported = self._clean_interaction_output(
+            _msgs, player, _pre_map_name, _pre_x, _pre_y, events_triggered, action, target
         )
-        if teleported:
-            dest_tile = player.universe.get_tile(player.location_x, player.location_y)
-            if dest_tile and hasattr(dest_tile, "description"):
-                dest_desc = ansi_escape.sub("", dest_tile.description).strip()
-                if dest_desc:
-                    clean_output = clean_output.replace(dest_desc, "").strip()
-
-        # Strip internal LLM diagnostic lines that must never reach the UI.
-        pre_filter_output = clean_output
-        filtered_lines = [
-            line
-            for line in clean_output.splitlines()
-            if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
-        ]
-        clean_output = "\n".join(filtered_lines).strip()
-
-        # If filtering removed everything and the raw output contained LLM noise
-        # (indicating a Mynx LLM call occurred), use a safe ambient fallback.
-        if not clean_output and any(
-            p in pre_filter_output for p in _LLM_NOISE_PREFIXES
-        ):
-            clean_output = (
-                "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
-            )
-
-        # Provide fallback message if no output was captured
-        if not clean_output:
-            # When events were triggered (e.g. PassagewayTransitionEvent),
-            # skip the robotic fallback text — the event UI handles it.
-            if events_triggered:
-                clean_output = ""
-            elif action == "take_all":
-                clean_output = "Jean collects all of the available items."
-            elif action == "talk":
-                target_name = getattr(target, "name", None)
-                clean_output = (
-                    f"{target_name} does not respond."
-                    if target_name
-                    else "No response."
-                )
-            else:
-                clean_output = f"Jean successfully completes the '{action}' action."
 
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
         more_events = self.trigger_tile_events(player, tile, session_data)
