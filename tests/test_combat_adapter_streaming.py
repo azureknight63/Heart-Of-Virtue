@@ -245,3 +245,137 @@ def test_stream_combat_result_ended_payload_carries_full_state():
     assert payload["log"] == result["log"]
     assert payload["combat_active"] is False
     assert payload["end_state"] == result["end_state"]
+
+def test_stream_combat_result_resolved_payload_carries_beat_states():
+    """`combat:resolved` must carry `beat_states`, or the trail is never fed.
+
+    With `COMBAT_SOCKET_STREAMING` on, `performAction` deliberately does NOT
+    apply a streamed non-terminal HTTP response (`useApi.js`'s
+    `response_streamed` branch) -- the socket is the carrier, because applying
+    the terminal state early would jump the UI past the animations. So the
+    socket's authoritative state is the ONLY thing that reaches
+    `transformCombatData`, and `emit_resolved` used to `pop("beat_states")`
+    before emitting it: neither carrier delivered the array, and
+    `useAccumulatedBeatStates` accumulated nothing for the whole fight.
+    `BattlefieldGrid` drew no breadcrumb trail and
+    `useBattlefieldAnimations`' killing-blow detection (which compares
+    `allBeatStates[beatIdx]` against `[beatIdx - 1]`) had nothing to compare.
+
+    Observed in a browser, not inferred: a 9-frame batch delivered on the HTTP
+    body while `allBeatStates.length` stayed 0 across the whole batch.
+
+    The array cannot be rebuilt from the `combat:beat` events instead, for two
+    independent reasons: `stream_beats` SKIPS snapshots that change nothing
+    observable, so its sequence is shorter than `beat_states` and an index
+    built from it disagrees with `currentLogIndex`; and `build_beat` carries no
+    positions at all, which is the only thing the trail reads out of a frame.
+    """
+    adapter = _bare_adapter()
+    sock = FakeSocketIO()
+    adapter._beat_streamer = CombatBeatStreamer(
+        sock,
+        "combat_s1",
+        initial_combatants=[{"id": "enemy_1", "hp": 30, "status_effects": []}],
+    )
+    beat_states = [
+        {
+            "combatants": [{"id": "enemy_1", "hp": 24, "status_effects": []}],
+            "player": {"position": [1, 0]},
+            "enemies": [{"id": "enemy_1", "position": [4, 0]}],
+            "log": [{"message": "step", "animation": {}}],
+        },
+        {
+            "combatants": [{"id": "enemy_1", "hp": 18, "status_effects": []}],
+            "player": {"position": [2, 0]},
+            "enemies": [{"id": "enemy_1", "position": [4, 0]}],
+            "log": [
+                {
+                    "message": "hit",
+                    "animation": {
+                        "source_id": "player",
+                        "target_id": "enemy_1",
+                        "type": "attack",
+                    },
+                }
+            ],
+        },
+    ]
+    result = {
+        "combat_active": True,
+        "awaiting_input": True,
+        "battle_state": {
+            "combatants": [{"id": "enemy_1", "hp": 18, "status_effects": []}]
+        },
+        "beat_states": beat_states,
+    }
+
+    adapter._stream_combat_result(result, beat_states)
+
+    resolved = [p for e, p, _ in sock.emits if e == RESOLVED_EVENT]
+    assert len(resolved) == 1, sock.emits
+    assert resolved[0].get("beat_states") == beat_states, (
+        "combat:resolved dropped beat_states, so with streaming on nothing "
+        "reaches useAccumulatedBeatStates and the breadcrumb trail stays empty "
+        "for the entire fight"
+    )
+    # The positions the trail actually reads have to survive the trip, not just
+    # the key: a payload carrying two empty frames would satisfy the assertion
+    # above while drawing nothing.
+    assert [frame["player"]["position"] for frame in resolved[0]["beat_states"]] == [
+        [1, 0],
+        [2, 0],
+    ]
+
+
+def test_resolved_and_ended_agree_about_what_they_carry():
+    """The two terminal emissions must not disagree about the payload.
+
+    They are fed the SAME `result` dict by the same funnel
+    (`_stream_combat_result`), and differ only in which event name goes out --
+    so a key one strips and the other keeps is a bug in whichever one is wrong,
+    and the two were wrong in the worst possible direction: `emit_ended` kept
+    `beat_states` on the path where the client resets the trail anyway, while
+    `emit_resolved` stripped it on the only path where the trail needs it.
+
+    Derived by comparing the two emissions from one input rather than by
+    listing keys: a hardcoded list is a third place to keep in step, and would
+    not have caught this one (nothing listed `beat_states` anywhere).
+    """
+    result = {
+        "combat_active": True,
+        "battle_state": {"combatants": [], "status": "active"},
+        "log": [{"message": "a beat", "animation": {}}],
+        "beat_states": [{"combatants": [], "player": {"position": [0, 0]}}],
+        "events_triggered": [],
+        "last_move_name": "Attack",
+    }
+
+    resolved_sock = FakeSocketIO()
+    resolved_adapter = _bare_adapter()
+    resolved_adapter._beat_streamer = CombatBeatStreamer(resolved_sock, "combat_s1")
+    resolved_adapter._stream_combat_result(dict(result), [])
+
+    ended_sock = FakeSocketIO()
+    ended_adapter = _bare_adapter()
+    ended_adapter._beat_streamer = CombatBeatStreamer(ended_sock, "combat_s1")
+    ended_adapter._stream_combat_result(dict(result), [], ended=True)
+
+    resolved = next(p for e, p, _ in resolved_sock.emits if e == RESOLVED_EVENT)
+    ended = next(p for e, p, _ in ended_sock.emits if e == ENDED_EVENT)
+
+    # `seq` is the streamer's own, added by both; everything else came from the
+    # one `result` and should have survived both trips identically.
+    dropped_by_resolved = sorted(set(ended) - set(resolved))
+    dropped_by_ended = sorted(set(resolved) - set(ended))
+    assert not dropped_by_resolved, (
+        f"combat:resolved strips {dropped_by_resolved} that combat:ended keeps, "
+        "from the same result dict"
+    )
+    assert not dropped_by_ended, (
+        f"combat:ended strips {dropped_by_ended} that combat:resolved keeps, "
+        "from the same result dict"
+    )
+    # Non-vacuity: if the funnel ever stopped emitting either event, both sets
+    # above would be empty and this test would approve of anything.
+    assert "beat_states" in resolved and "beat_states" in ended
+
