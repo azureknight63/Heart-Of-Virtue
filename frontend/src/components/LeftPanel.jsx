@@ -4,6 +4,7 @@ import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
 import SettingsDialog from './SettingsDialog'
+import JournalDialog from './JournalDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
 import CollapsibleRoomDescription from './CollapsibleRoomDescription'
@@ -35,6 +36,61 @@ const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
  */
 const KEEP_TAB_MOVES = new Set(['Check'])
 
+/**
+ * One button in the panel header — Journal, Settings, Feedback, Account.
+ *
+ * These were four verbatim copies of the same 30-line block, hover handlers
+ * included, so a change to the header's look meant four edits and three
+ * chances to miss one. The only genuine differences between them are the
+ * horizontal padding, whether the hit area is square (an icon) or text-width,
+ * and the beta build's cyan border and shadow on Feedback.
+ */
+function HeaderButton({
+  onClick,
+  title,
+  ariaLabel,
+  className,
+  children,
+  square = false,
+  padding = '4px 8px',
+  borderColor = colors.text.inverse,
+  restingShadow = 'none',
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel}
+      className={className}
+      style={{
+        padding,
+        minHeight: accessibility.touchTarget,
+        minWidth: square ? accessibility.touchTarget : undefined,
+        backgroundColor: colors.primaryDark,
+        color: colors.text.inverse,
+        border: `1px solid ${borderColor}`,
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: 'bold',
+        fontFamily: 'monospace',
+        transition: 'all 0.2s',
+        touchAction: 'manipulation',
+      }}
+      onMouseEnter={(e) => {
+        e.target.style.backgroundColor = colors.primary
+        e.target.style.boxShadow = `0 0 8px ${colors.primary}CC`
+      }}
+      onMouseLeave={(e) => {
+        e.target.style.backgroundColor = colors.primaryDark
+        e.target.style.boxShadow = restingShadow
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted, onAdvisorPause, onAdvisorRequestSuggestions }) {
   const notifyMoveSubmitted = () => { if (onMoveSubmitted) onMoveSubmitted() }
 
@@ -45,6 +101,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const [showAttributes, setShowAttributes] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
+  const [showJournal, setShowJournal] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const [showInteract, setShowInteract] = useState(false)
   const [interactTarget, setInteractTarget] = useState(null)
@@ -368,91 +425,30 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       }}>
         <h1 style={{ margin: 0, font: 'inherit', color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 1 }}>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</h1>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            onClick={() => setShowAudio(true)}
-            style={{
-              padding: '4px 8px',
-              minHeight: accessibility.touchTarget,
-              minWidth: accessibility.touchTarget,
-              backgroundColor: colors.primaryDark,
-              color: colors.text.inverse,
-              border: `1px solid ${colors.text.inverse}`,
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              fontFamily: 'monospace',
-              transition: 'all 0.2s',
-              touchAction: 'manipulation',
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = colors.primary
-              e.target.style.boxShadow = `0 0 8px ${colors.primary}CC`
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = colors.primaryDark
-              e.target.style.boxShadow = 'none'
-            }}
-            title="Settings"
+          <HeaderButton
+            onClick={() => setShowJournal(true)}
+            title="Journal — objectives and story log"
+            ariaLabel="Open journal"
+            square
           >
+            📖
+          </HeaderButton>
+          <HeaderButton onClick={() => setShowAudio(true)} title="Settings" square>
             ⚙️
-          </button>
-          <button
+          </HeaderButton>
+          <HeaderButton
             onClick={() => setShowFeedback(true)}
-            className={BETA_MODE ? 'beta-feedback-glow' : undefined}
-            style={{
-              padding: '4px 10px',
-              minHeight: accessibility.touchTarget,
-              backgroundColor: colors.primaryDark,
-              color: colors.text.inverse,
-              border: BETA_MODE ? '1px solid #00FFFF' : `1px solid ${colors.text.inverse}`,
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              fontFamily: 'monospace',
-              transition: 'all 0.2s',
-              touchAction: 'manipulation',
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = colors.primary
-              e.target.style.boxShadow = `0 0 8px ${colors.primary}CC`
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = colors.primaryDark
-              e.target.style.boxShadow = BETA_MODE ? '' : 'none'
-            }}
             title="Send Feedback"
+            className={BETA_MODE ? 'beta-feedback-glow' : undefined}
+            borderColor={BETA_MODE ? '#00FFFF' : undefined}
+            restingShadow={BETA_MODE ? '' : 'none'}
+            padding="4px 10px"
           >
             Feedback
-          </button>
-          <button
-            onClick={() => setShowAccount(true)}
-            style={{
-              padding: '4px 12px',
-              minHeight: accessibility.touchTarget,
-              backgroundColor: colors.primaryDark,
-              color: colors.text.inverse,
-              border: `1px solid ${colors.text.inverse}`,
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              fontFamily: 'monospace',
-              transition: 'all 0.2s',
-              touchAction: 'manipulation',
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = colors.primary
-              e.target.style.boxShadow = `0 0 8px ${colors.primary}CC`
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = colors.primaryDark
-              e.target.style.boxShadow = 'none'
-            }}
-          >
+          </HeaderButton>
+          <HeaderButton onClick={() => setShowAccount(true)} padding="4px 12px">
             Account
-          </button>
+          </HeaderButton>
         </div>
       </header>
 
@@ -720,6 +716,10 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
       {showSkills && player && (
         <SkillsPanel player={player} onClose={() => setShowSkills(false)} />
+      )}
+
+      {showJournal && (
+        <JournalDialog onClose={() => setShowJournal(false)} />
       )}
 
       {showActions && location && mode === 'exploration' && (

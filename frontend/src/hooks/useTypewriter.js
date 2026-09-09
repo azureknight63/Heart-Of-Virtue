@@ -36,6 +36,16 @@ export default function useTypewriter(text, speed = 30) {
             return
         }
 
+        // The "Instant" text-speed step (issue #538). Not expressible as
+        // `setInterval(fn, 0)`: browsers clamp nested timeouts to ~4 ms, so a
+        // 400-character beat would still crawl for well over a second while
+        // claiming to be instant.
+        if (speed <= 0) {
+            setDisplayedText(text)
+            setIsComplete(true)
+            return
+        }
+
         const chars = Array.from(text)
         let charsAdded = 0
 

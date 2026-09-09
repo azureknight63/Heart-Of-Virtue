@@ -240,7 +240,7 @@ export default function StatsPanel({ player, onClose }) {
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: spacing.sm }}>
           <GameButton onClick={onClose} variant="secondary" size="small">
-            CLOSE SHEET
+            CLOSE
           </GameButton>
         </div>
       </div>

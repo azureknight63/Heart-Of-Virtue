@@ -1,18 +1,28 @@
 import React, { useRef, useEffect } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import { colors, spacing, fonts } from '../styles/theme'
+import { usePreferences } from '../context/PreferencesContext'
+import { msPerChar } from '../utils/textPacing'
 
 const DAMAGE_PATTERN = /Jean suffers \d+ damage!/gi
 
 /**
  * TypewriterOutput - Reusable component for displaying text with a typewriter effect
  *
+ * Speed comes from the player's TEXT SPEED setting unless a caller passes one
+ * (issue #538 item 1). Every narrative typewriter in the app renders through
+ * this component, so honouring the setting here is what makes one control
+ * govern all of them -- an explicit `speed` is for a caller that must pin the
+ * rate for a reason of its own, such as skipping a scene with `0`.
+ *
  * @param {Function} [onDamageHit] - Called each time a "Jean suffers N damage!" line
  *                                   becomes fully visible in the typewriter output.
  *                                   Multiple hits in one stage stagger 300 ms apart.
  */
-export default function TypewriterOutput({ text, speed = 30, style = {}, onComplete, formatter, onDamageHit }) {
-    const { displayedText, isComplete, finishImmediately } = useTypewriter(text, speed)
+export default function TypewriterOutput({ text, speed, style = {}, onComplete, formatter, onDamageHit }) {
+    const { textSpeed } = usePreferences()
+    // `??` not `||`: a caller-supplied 0 means "instant", not "unset".
+    const { displayedText, isComplete, finishImmediately } = useTypewriter(text, speed ?? msPerChar(textSpeed))
     const bottomRef = React.useRef(null)
     const triggeredDamageCount = useRef(0)
 

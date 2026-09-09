@@ -22,10 +22,14 @@ vi.mock('../hooks/useApi', () => ({
     }),
 }));
 
-// Mock useAudio - create stable mocks outside to prevent recreation
+// Stable mocks created outside the factories to prevent recreation.
+// Playback and preferences are separate contexts; this page uses both.
 const mockAudioContext = {
     playBGM: vi.fn(),
     playSFX: vi.fn(),
+};
+
+const mockPreferences = {
     musicVolume: 0.5,
     setMusicVolume: vi.fn(),
     sfxVolume: 0.5,
@@ -40,6 +44,13 @@ vi.mock('../context/AudioContext', () => {
     return {
         useAudio: () => mockAudioContext,
         AudioProvider: ({ children }) => <div>{children}</div>,
+    };
+});
+
+vi.mock('../context/PreferencesContext', () => {
+    return {
+        usePreferences: () => mockPreferences,
+        PreferencesProvider: ({ children }) => <div>{children}</div>,
     };
 });
 
@@ -247,25 +258,25 @@ describe('MainMenuPage', () => {
         expect(sliders.length).toBeGreaterThan(0);
 
         fireEvent.change(sliders[0], { target: { value: '0.8' } });
-        expect(mockAudioContext.setMusicVolume).toHaveBeenCalledWith(0.8);
+        expect(mockPreferences.setMusicVolume).toHaveBeenCalledWith(0.8);
 
         fireEvent.change(sliders[1], { target: { value: '0.2' } });
-        expect(mockAudioContext.setSfxVolume).toHaveBeenCalledWith(0.2);
+        expect(mockPreferences.setSfxVolume).toHaveBeenCalledWith(0.2);
     });
 
     it('defaults music/sfx volume to 0% when undefined', () => {
         saves.list.mockResolvedValue({ data: { saves: [] } });
-        const originalMusic = mockAudioContext.musicVolume;
-        const originalSfx = mockAudioContext.sfxVolume;
-        mockAudioContext.musicVolume = undefined;
-        mockAudioContext.sfxVolume = undefined;
+        const originalMusic = mockPreferences.musicVolume;
+        const originalSfx = mockPreferences.sfxVolume;
+        mockPreferences.musicVolume = undefined;
+        mockPreferences.sfxVolume = undefined;
 
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
         fireEvent.click(screen.getByText(/Settings/i));
 
         expect(screen.getAllByText('0%').length).toBe(2);
-        mockAudioContext.musicVolume = originalMusic;
-        mockAudioContext.sfxVolume = originalSfx;
+        mockPreferences.musicVolume = originalMusic;
+        mockPreferences.sfxVolume = originalSfx;
     });
 
     it('defaults the load-modal save list to empty when the response has no data.saves', async () => {

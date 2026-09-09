@@ -110,7 +110,7 @@ describe('CombatCheckDialog', () => {
     fireEvent.click(screen.getByText('✕'));
     expect(mockOnClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByText('Close'));
+    fireEvent.click(screen.getByText('CLOSE'));
     expect(mockOnClose).toHaveBeenCalledTimes(2);
   });
 
@@ -120,7 +120,7 @@ describe('CombatCheckDialog', () => {
     // jsdom applies no :hover CSS, so the only checkable claim is that hover is
     // not itself an activation.
     render(<CombatCheckDialog checkData={mockCheckData} onClose={mockOnClose} />);
-    const closeBtn = screen.getByText('Close');
+    const closeBtn = screen.getByText('CLOSE');
 
     fireEvent.mouseEnter(closeBtn);
     fireEvent.mouseLeave(closeBtn);

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import GameButton from './GameButton'
 import BaseDialog from './BaseDialog'
 import { colors } from '../styles/theme'
 import apiClient from '../api/client'
@@ -236,31 +237,12 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 24px',
-              backgroundColor: 'transparent',
-              color: colors.secondary,
-              border: `2px solid ${colors.secondary}`,
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = colors.secondary
-              e.target.style.color = '#000'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = 'transparent'
-              e.target.style.color = colors.secondary
-            }}
-          >
-            DISMISS
-          </button>
+          {/* `GameButton`, like every other dialog's dismiss control. The
+              label was unified to CLOSE; a shared label rendered by a private
+              button with its own hover handlers is only half a convention. */}
+          <GameButton onClick={onClose} variant="secondary" size="small">
+            CLOSE
+          </GameButton>
         </div>
       </div>
 

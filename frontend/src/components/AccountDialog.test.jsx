@@ -84,7 +84,7 @@ describe('AccountDialog', () => {
 
   it('calls onClose when Close button is clicked', () => {
     render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
-    const closeBtn = screen.getByText('Close');
+    const closeBtn = screen.getByText('CLOSE');
     fireEvent.click(closeBtn);
     expect(mockOnClose).toHaveBeenCalledTimes(1);
     // Dismissing the dialog must not sign the player out.

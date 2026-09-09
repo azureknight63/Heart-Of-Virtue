@@ -57,6 +57,47 @@ def get_status():
         )
 
 
+@player_bp.route("/journal", methods=["GET"])
+def get_journal():
+    """Get the player's journal: standing objectives and the scene transcript.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "journal": {
+                "objectives": [{"key", "text", "status", "chapter", "tick"}],
+                "completed": [...],
+                "log": [{"title", "lines": [{"speaker", "text"}], "tick"}]
+            }
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player()
+        if error:
+            return error
+
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        return jsonify({"success": True, "journal": game_service.get_journal(player)}), 200
+
+    except Exception:
+        _log.exception("Unhandled error in get_journal")
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "An internal error occurred",
+                }
+            ),
+            500,
+        )
+
+
 @player_bp.route("/full-state", methods=["GET"])
 def get_full_state():
     """Get full player combined state (status, inventory, stats, skills).

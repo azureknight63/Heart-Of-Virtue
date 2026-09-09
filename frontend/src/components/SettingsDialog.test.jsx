@@ -1,13 +1,12 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import SettingsDialog from './SettingsDialog';
-import { useAudio } from '../context/AudioContext';
+import { usePreferences } from '../context/PreferencesContext';
 import { FEATURE_FLAGS, getFlag, resetFlags } from '../utils/featureFlags';
 import { accessibility } from '../styles/theme';
 
-// Mock useAudio
-vi.mock('../context/AudioContext', () => ({
-  useAudio: vi.fn()
+vi.mock('../context/PreferencesContext', () => ({
+  usePreferences: vi.fn()
 }));
 
 const mobileMock = vi.hoisted(() => ({ isMobile: false }));
@@ -19,9 +18,11 @@ describe('SettingsDialog', () => {
   const mockSetIsMusicMuted = vi.fn();
   const mockSetIsSfxMuted = vi.fn();
   const mockSetCombatSpeed = vi.fn();
+  const mockSetTextSpeed = vi.fn();
+  const mockSetAutoAdvance = vi.fn();
   const mockOnClose = vi.fn();
 
-  const mockAudioContext = {
+  const mockPreferences = {
     musicVolume: 0.5,
     setMusicVolume: mockSetMusicVolume,
     sfxVolume: 0.7,
@@ -31,13 +32,77 @@ describe('SettingsDialog', () => {
     isSfxMuted: false,
     setIsSfxMuted: mockSetIsSfxMuted,
     combatSpeed: 1,
-    setCombatSpeed: mockSetCombatSpeed
+    setCombatSpeed: mockSetCombatSpeed,
+    textSpeed: 1,
+    setTextSpeed: mockSetTextSpeed,
+    autoAdvance: false,
+    setAutoAdvance: mockSetAutoAdvance
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useAudio.mockReturnValue(mockAudioContext);
+    usePreferences.mockReturnValue(mockPreferences);
     mobileMock.isMobile = false;
+  });
+
+  // Issue #538 item 1: Settings had music, SFX, combat speed and two
+  // experimental toggles -- and nothing at all for text, in a game whose
+  // primary delivery vehicle is text.
+  describe('text pacing controls (issue #538)', () => {
+    it('renders a TEXT SPEED row with the current step pressed', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      expect(screen.getByText('TEXT SPEED')).toBeDefined();
+      expect(screen.getByRole('button', { name: 'NORMAL' }).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByRole('button', { name: 'FAST' }).getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('offers an INSTANT end-stop', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+      fireEvent.click(screen.getByRole('button', { name: 'INSTANT' }));
+      expect(mockSetTextSpeed).toHaveBeenCalledWith(0);
+    });
+
+    it('sets the text speed when a step is clicked', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+      fireEvent.click(screen.getByRole('button', { name: 'FAST' }));
+      expect(mockSetTextSpeed).toHaveBeenCalledWith(2);
+    });
+
+    it('does not reuse the combat-speed labels beside it', () => {
+      // Two adjacent rows of "0.5x / 1x / 2x" buttons are ambiguous to a
+      // reader and unresolvable to a screen reader.
+      render(<SettingsDialog onClose={mockOnClose} />);
+      expect(screen.getAllByRole('button', { name: '1x' })).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: '2x' })).toHaveLength(1);
+    });
+
+    it('renders auto-advance off by default and toggles it on', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+      const toggle = screen.getByRole('button', { name: 'Auto-advance story' });
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
+      expect(toggle.textContent).toBe('OFF');
+
+      fireEvent.click(toggle);
+      expect(mockSetAutoAdvance).toHaveBeenCalledWith(true);
+    });
+
+    it('reflects auto-advance already being on', () => {
+      usePreferences.mockReturnValue({ ...mockPreferences, autoAdvance: true });
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      const toggle = screen.getByRole('button', { name: 'Auto-advance story', pressed: true });
+      expect(toggle.textContent).toBe('ON');
+      fireEvent.click(toggle);
+      expect(mockSetAutoAdvance).toHaveBeenCalledWith(false);
+    });
+
+    it('grows the text-speed segments to the touch-target minimum on mobile', () => {
+      mobileMock.isMobile = true;
+      render(<SettingsDialog onClose={mockOnClose} />);
+      expect(screen.getByRole('button', { name: 'INSTANT' }).style.minHeight)
+        .toBe(accessibility.touchTarget);
+    });
   });
 
   it('renders audio settings correctly', () => {
@@ -87,8 +152,8 @@ describe('SettingsDialog', () => {
   });
 
   it('renders muted state correctly', () => {
-    useAudio.mockReturnValue({
-      ...mockAudioContext,
+    usePreferences.mockReturnValue({
+      ...mockPreferences,
       isMusicMuted: true,
       isSfxMuted: true
     });
@@ -105,7 +170,7 @@ describe('SettingsDialog', () => {
 
   it('calls onClose when Close button is clicked', () => {
     render(<SettingsDialog onClose={mockOnClose} />);
-    const closeBtn = screen.getByText('Close');
+    const closeBtn = screen.getByText('CLOSE');
     fireEvent.click(closeBtn);
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
