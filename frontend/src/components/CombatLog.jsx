@@ -85,16 +85,9 @@ function spokenText(message) {
  * spoken aloud it prefixes each announcement with eight digits before any of
  * the content.
  *
- * `key`/`data-seq` carry the revealed-line COUNT, and they are load-bearing
- * rather than debug decoration. Combat repeats itself constantly — "Jean
- * misses" twice running is ordinary — and re-feeding a region the string it
- * already holds writes an identical text node, mutates no DOM, and announces
- * nothing. Keying on the count forces React to replace the child instead,
- * which is a childList addition and so is relevant to a polite region even
- * when the words are byte-identical.
- *
- * Visually hidden rather than `display: none`, which would take it out of the
- * accessibility tree along with everything else.
+ * `seq` is the revealed-line COUNT; why a polite region needs it, and why the
+ * region is visually hidden rather than `display: none`, are documented on
+ * LiveAnnouncer.
  *
  * @param {Object} props
  * @param {Array} props.entries - the revealed, renderable entries; only the

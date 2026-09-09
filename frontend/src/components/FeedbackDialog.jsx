@@ -74,6 +74,30 @@ function FieldLabel({ children, required }) {
   )
 }
 
+/**
+ * A captioned field: the caption text is written ONCE and reaches both the
+ * visible label and the control's accessible name.
+ *
+ * Because the caption is a <span> rather than a <label htmlFor> (see
+ * FieldLabel), every field here needs the string twice, and it used to be
+ * typed out twice at each of nine sites — the shape that drifts silently: a
+ * reworded caption leaves a screen reader announcing the old name and nothing
+ * fails.
+ *
+ * `children` is a function of the caption so that a control naming itself
+ * through a prop (`ariaLabel` on TextArea/TextInput) and one naming itself
+ * through a DOM attribute (`aria-label` on a `role="group"` wrapper) can both
+ * be spelled without a second copy.
+ */
+function LabeledField({ label, required, style, children }) {
+  return (
+    <div style={style}>
+      <FieldLabel required={required}>{label}</FieldLabel>
+      {children(label)}
+    </div>
+  )
+}
+
 function TextInput({ value, onChange, placeholder, style, error, required, inputRef, ariaLabel }) {
   return (
     <input
@@ -165,74 +189,78 @@ function StarRating({ dimension, value, onChange }) {
 function BugForm({ fields, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <div>
-        <FieldLabel>Steps to Reproduce</FieldLabel>
-        <TextArea
-          rows={3}
-          ariaLabel="Steps to Reproduce"
-          value={fields.steps}
-          onChange={(e) => onChange('steps', e.target.value)}
-          placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
-        />
-      </div>
-      <div>
-        <FieldLabel>Expected Behavior</FieldLabel>
-        <TextArea
-          rows={2}
-          ariaLabel="Expected Behavior"
-          value={fields.expected}
-          onChange={(e) => onChange('expected', e.target.value)}
-          placeholder="What should have happened?"
-        />
-      </div>
-      <div>
-        <FieldLabel>Actual Behavior</FieldLabel>
-        <TextArea
-          rows={2}
-          ariaLabel="Actual Behavior"
-          value={fields.actual}
-          onChange={(e) => onChange('actual', e.target.value)}
-          placeholder="What actually happened?"
-        />
-      </div>
-      <div>
-        <FieldLabel>Severity</FieldLabel>
-        {/* The caption is a <span>, so without this the three buttons read as
-            three loose controls with no idea what they select (#563 item 2). */}
-        <div role="group" aria-label="Severity" style={{ display: 'flex', gap: spacing.sm }}>
-          {SEVERITY_OPTIONS.map((sev) => {
-            const active = fields.severity === sev
-            const severityColor = { low: colors.gold, medium: colors.secondary, high: colors.danger }[sev]
-            return (
-              <button
-                key={sev}
-                onClick={() => onChange('severity', sev)}
-                aria-pressed={active}
-                style={{
-                  flex: 1,
-                  // #564: these measured 96.8 x 28 at 375px — 64% of the 44px
-                  // touch minimum. Height, not width: three flex:1 buttons have
-                  // to keep sharing one row inside a ~330px dialog body, so a
-                  // minWidth big enough to matter would wrap them instead.
-                  minHeight: accessibility.touchTarget,
-                  padding: `${spacing.xs} ${spacing.sm}`,
-                  backgroundColor: active ? `${severityColor}22` : 'transparent',
-                  border: `1px solid ${active ? severityColor : colors.text.dim}`,
-                  borderRadius: '4px',
-                  color: active ? severityColor : colors.text.muted,
-                  cursor: 'pointer',
-                  fontFamily: fonts.main,
-                  fontSize: '12px',
-                  textTransform: 'uppercase',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {sev}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <LabeledField label="Steps to Reproduce">
+        {(name) => (
+          <TextArea
+            rows={3}
+            ariaLabel={name}
+            value={fields.steps}
+            onChange={(e) => onChange('steps', e.target.value)}
+            placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
+          />
+        )}
+      </LabeledField>
+      <LabeledField label="Expected Behavior">
+        {(name) => (
+          <TextArea
+            rows={2}
+            ariaLabel={name}
+            value={fields.expected}
+            onChange={(e) => onChange('expected', e.target.value)}
+            placeholder="What should have happened?"
+          />
+        )}
+      </LabeledField>
+      <LabeledField label="Actual Behavior">
+        {(name) => (
+          <TextArea
+            rows={2}
+            ariaLabel={name}
+            value={fields.actual}
+            onChange={(e) => onChange('actual', e.target.value)}
+            placeholder="What actually happened?"
+          />
+        )}
+      </LabeledField>
+      {/* The caption is a <span>, so without the group the three buttons read
+          as three loose controls with no idea what they select (#563 item 2). */}
+      <LabeledField label="Severity">
+        {(name) => (
+          <div role="group" aria-label={name} style={{ display: 'flex', gap: spacing.sm }}>
+            {SEVERITY_OPTIONS.map((sev) => {
+              const active = fields.severity === sev
+              const severityColor = { low: colors.gold, medium: colors.secondary, high: colors.danger }[sev]
+              return (
+                <button
+                  key={sev}
+                  onClick={() => onChange('severity', sev)}
+                  aria-pressed={active}
+                  style={{
+                    flex: 1,
+                    // #564: these measured 96.8 x 28 at 375px — 64% of the 44px
+                    // touch minimum. Height, not width: three flex:1 buttons have
+                    // to keep sharing one row inside a ~330px dialog body, so a
+                    // minWidth big enough to matter would wrap them instead.
+                    minHeight: accessibility.touchTarget,
+                    padding: `${spacing.xs} ${spacing.sm}`,
+                    backgroundColor: active ? `${severityColor}22` : 'transparent',
+                    border: `1px solid ${active ? severityColor : colors.text.dim}`,
+                    borderRadius: '4px',
+                    color: active ? severityColor : colors.text.muted,
+                    cursor: 'pointer',
+                    fontFamily: fonts.main,
+                    fontSize: '12px',
+                    textTransform: 'uppercase',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {sev}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </LabeledField>
     </div>
   )
 }
@@ -240,26 +268,28 @@ function BugForm({ fields, onChange }) {
 function FeatureForm({ fields, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <div>
-        <FieldLabel>Description</FieldLabel>
-        <TextArea
-          rows={3}
-          ariaLabel="Description"
-          value={fields.description}
-          onChange={(e) => onChange('description', e.target.value)}
-          placeholder="Describe the feature you'd like to see..."
-        />
-      </div>
-      <div>
-        <FieldLabel>Use Case / Why</FieldLabel>
-        <TextArea
-          rows={3}
-          ariaLabel="Use Case / Why"
-          value={fields.use_case}
-          onChange={(e) => onChange('use_case', e.target.value)}
-          placeholder="Why would this improve the game?"
-        />
-      </div>
+      <LabeledField label="Description">
+        {(name) => (
+          <TextArea
+            rows={3}
+            ariaLabel={name}
+            value={fields.description}
+            onChange={(e) => onChange('description', e.target.value)}
+            placeholder="Describe the feature you'd like to see..."
+          />
+        )}
+      </LabeledField>
+      <LabeledField label="Use Case / Why">
+        {(name) => (
+          <TextArea
+            rows={3}
+            ariaLabel={name}
+            value={fields.use_case}
+            onChange={(e) => onChange('use_case', e.target.value)}
+            placeholder="Why would this improve the game?"
+          />
+        )}
+      </LabeledField>
     </div>
   )
 }
@@ -267,41 +297,46 @@ function FeatureForm({ fields, onChange }) {
 function GeneralForm({ fields, onChange, ratings, onRatingChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <div>
-        <FieldLabel>Message</FieldLabel>
-        <TextArea
-          rows={4}
-          ariaLabel="Message"
-          value={fields.message}
-          onChange={(e) => onChange('message', e.target.value)}
-          placeholder="Share your thoughts about the game..."
-        />
-      </div>
-      <div>
-        <FieldLabel>Ratings (optional)</FieldLabel>
-        <div
-          role="group"
-          aria-label="Ratings"
-          style={{
-            backgroundColor: colors.bg.panel,
-            border: `1px solid ${colors.primary}22`,
-            borderRadius: '6px',
-            padding: spacing.md,
-          }}
-        >
-          {RATING_DIMENSIONS.map((dim) => (
-            <StarRating
-              key={dim.key}
-              dimension={dim}
-              value={ratings[dim.key] || 0}
-              onChange={(val) => onRatingChange(dim.key, val)}
-            />
-          ))}
-          <div style={{ color: colors.text.muted, fontSize: '11px', marginTop: spacing.xs }}>
-            Click a star again to clear it. Leave any dimension unrated to skip it.
+      <LabeledField label="Message">
+        {(name) => (
+          <TextArea
+            rows={4}
+            ariaLabel={name}
+            value={fields.message}
+            onChange={(e) => onChange('message', e.target.value)}
+            placeholder="Share your thoughts about the game..."
+          />
+        )}
+      </LabeledField>
+      {/* The accessible name is the caption verbatim, "(optional)" included:
+          the parenthetical is how a sighted player learns the stars can be
+          skipped, and a screen-reader user has no other source for it. */}
+      <LabeledField label="Ratings (optional)">
+        {(name) => (
+          <div
+            role="group"
+            aria-label={name}
+            style={{
+              backgroundColor: colors.bg.panel,
+              border: `1px solid ${colors.primary}22`,
+              borderRadius: '6px',
+              padding: spacing.md,
+            }}
+          >
+            {RATING_DIMENSIONS.map((dim) => (
+              <StarRating
+                key={dim.key}
+                dimension={dim}
+                value={ratings[dim.key] || 0}
+                onChange={(val) => onRatingChange(dim.key, val)}
+              />
+            ))}
+            <div style={{ color: colors.text.muted, fontSize: '11px', marginTop: spacing.xs }}>
+              Click a star again to clear it. Leave any dimension unrated to skip it.
+            </div>
           </div>
-        </div>
-      </div>
+        )}
+      </LabeledField>
     </div>
   )
 }
@@ -467,24 +502,25 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       </div>
 
       {/* Title */}
-      <div style={{ marginBottom: spacing.md }}>
-        <FieldLabel required>Title</FieldLabel>
-        <TextInput
-          inputRef={titleInputRef}
-          ariaLabel="Title"
-          value={title}
-          onChange={handleTitleChange}
-          error={titleError}
-          required
-          placeholder={
-            activeType === 'bug'
-              ? 'Short description of the bug...'
-              : activeType === 'feature'
-              ? 'What feature would you like?'
-              : 'Summary of your feedback...'
-          }
-        />
-      </div>
+      <LabeledField label="Title" required style={{ marginBottom: spacing.md }}>
+        {(name) => (
+          <TextInput
+            inputRef={titleInputRef}
+            ariaLabel={name}
+            value={title}
+            onChange={handleTitleChange}
+            error={titleError}
+            required
+            placeholder={
+              activeType === 'bug'
+                ? 'Short description of the bug...'
+                : activeType === 'feature'
+                ? 'What feature would you like?'
+                : 'Summary of your feedback...'
+            }
+          />
+        )}
+      </LabeledField>
 
       {/* Type-specific fields */}
       {activeType === 'bug' && (

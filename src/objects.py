@@ -349,6 +349,11 @@ class Container(Object):
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
 
+    #: The five verbs every container offers as buttons by default. Declared
+    #: separately so this list and ``LOOK_INSIDE_VERBS`` below are one literal
+    #: rather than two that must agree.
+    _DEFAULT_LOOK_INSIDE_ALIASES = ("check", "view", "examine", "inspect", "peruse")
+
     #: Keywords that mean "open it and show me what's inside" — the container
     #: family's one composite interaction, which opens the container and then
     #: hands the API layer a loot dialog. Declared here because it is a
@@ -362,14 +367,8 @@ class Container(Object):
     #: Every entry of ``action_aliases`` (the buttons a container shows by
     #: default) must appear here, or that button would have no dispatch behind
     #: it. Asserted by tests/test_object_action_dispatch_contract.py.
-    #: The five verbs every container offers as buttons by default. Declared
-    #: here so the `action_aliases` extension below and LOOK_INSIDE_VERBS are
-    #: one literal rather than two that must agree.
-    _DEFAULT_LOOK_INSIDE_ALIASES = ("check", "view", "examine", "inspect", "peruse")
-
     LOOK_INSIDE_VERBS = frozenset({
-        "loot", "check", "view", "examine", "inspect", "peruse",
-        "search", "look", "lift",
+        "loot", "search", "look", "lift", *_DEFAULT_LOOK_INSIDE_ALIASES,
     })
 
     # Class-level default so a container restored from an older save (or built

@@ -1213,6 +1213,20 @@ class ApiCombatAdapter:
             move.current_stage = 0
             move.beats_left = 0
 
+    def _attach_player_ref(self, enemy):
+        """Back-reference for API-mode drop/loot tracking.
+
+        Swallowed on purpose: an enemy that cannot hold the attribute is a
+        degraded object, and refusing to enroll it would cost the fight.
+        """
+        try:
+            enemy.player_ref = self.player
+        except Exception:
+            logger.warning(
+                "Could not set player_ref on enemy %s",
+                getattr(enemy, "name", enemy),
+            )
+
     def _reset_move_state_for_new_fight(self, combatant) -> None:
         """Rewind every move to stage 0 AND drop the one still in flight.
 
@@ -1440,13 +1454,7 @@ class ApiCombatAdapter:
 
                 for enemy in self.player.combat_list:
                     # Provide a back-reference for API-mode drop/loot tracking
-                    try:
-                        enemy.player_ref = self.player
-                    except Exception:
-                        logger.warning(
-                            "Could not set player_ref on enemy %s",
-                            getattr(enemy, "name", enemy),
-                        )
+                    self._attach_player_ref(enemy)
                     self._reset_move_state_for_new_fight(enemy)
             else:
                 # For re-init, ensure ALL combatants are properly flagged and
@@ -1470,13 +1478,7 @@ class ApiCombatAdapter:
                     self._reset_idle_move_stages(ally)
                 for enemy in self.player.combat_list:
                     enemy.in_combat = True
-                    try:
-                        enemy.player_ref = self.player
-                    except Exception:
-                        logger.warning(
-                            "Could not set player_ref on enemy %s",
-                            getattr(enemy, "name", enemy),
-                        )
+                    self._attach_player_ref(enemy)
                     self._reset_idle_move_stages(enemy)
 
             # Initialize combat lists for all participants (Enemies and Allies)

@@ -127,7 +127,6 @@ export const CATEGORY_NAV_SELECTOR = `nav[aria-label="${CATEGORY_NAV_LABEL}"] bu
  * they need no button. Every other category the engine emits must appear here —
  * tests/test_move_categories_ui_contract.py fails if one does not.
  */
-
 export const CATEGORY_GROUPS = {
   Offensive: ['Offensive'],
   Maneuver: ['Maneuver'],

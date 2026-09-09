@@ -512,6 +512,15 @@ describe('FeedbackDialog', () => {
 
       expect(screen.getByRole('group', { name: 'Severity' })).toBeInTheDocument();
     });
+
+    it('carries the "(optional)" of the ratings caption into its accessible name', () => {
+      // The group announced "Ratings" while the caption read "Ratings
+      // (optional)" — so the one cue that the stars can be skipped reached
+      // sighted players only. Both now come from the single caption string.
+      render(<FeedbackDialog onClose={mockOnClose} initialType="general" />);
+
+      expect(screen.getByRole('group', { name: 'Ratings (optional)' })).toBeInTheDocument();
+    });
   });
 
   describe('touch target sizes (#564)', () => {

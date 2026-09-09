@@ -1059,7 +1059,10 @@ describe('LeftPanel', () => {
         expect(screen.queryByTestId('combat-input-dialog')).not.toBeInTheDocument();
     });
 
-    it('opens an empty local target-selection dialog when viable_targets is absent', () => {
+    // Named for the list being EMPTY, not absent: `makeCombatMove` supplies
+    // `viable_targets: []` and the adapter emits the key on every targeted
+    // move, so an absent list is not a payload the client can receive.
+    it('opens an empty local target-selection dialog when viable_targets is empty', () => {
         const combat = {
             log: [],
             awaiting_input: true,

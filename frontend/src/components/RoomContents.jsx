@@ -1,6 +1,6 @@
 import { colors, spacing } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
-import { HOSTILITY_TOKENS, isHostileEntity, hostileTokenFor } from '../utils/combatEntities'
+import { hostileTokenFor } from '../utils/combatEntities'
 import HostilityChip from './HostilityChip'
 
 /**
@@ -12,17 +12,12 @@ import HostilityChip from './HostilityChip'
 /**
  * Hostility marker for one content line, or null.
  *
- * Only HOSTILES are marked here, unlike the combat target picker. A room NPC
- * with `is_hostile: false` is merely not aggressive — a villager, a merchant,
- * a passer-by — and is not the player's ally, so badging it "ALLY" would state
- * something the payload never said. The absence of the chip is the "nothing to
- * worry about" signal, and it is the chip (a word plus a glyph), not the
- * colour, that carries the warning (issue #558).
+ * Only the type guard is this panel's business. Why the room marks hostiles
+ * only — and not allies, as the combat target picker does — is documented once,
+ * on `hostileTokenFor` (utils/combatEntities.js), so there is one place to read
+ * the policy and one entry point to ask it (issue #558).
  */
 function hostileMarkerFor(content) {
-  // Only the type guard is this panel's business; the hostility policy lives
-  // with the tokens (utils/combatEntities.js) so there is one documented way
-  // to ask, not a component-local second entry point.
   if (content.type !== 'npc') return null
   return hostileTokenFor(content.entity)
 }

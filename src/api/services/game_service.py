@@ -3,7 +3,7 @@ import uuid
 import contextlib
 import re
 from collections import Counter
-from typing import TYPE_CHECKING, Dict, Any, Optional, List
+from typing import TYPE_CHECKING, Dict, Any, NamedTuple, Optional, List
 from unittest.mock import patch
 
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
@@ -137,6 +137,36 @@ def _unsupported_action_message(target, action):
     name = getattr(target, "name", None) or "object"
     verb = str(action)[:_ECHOED_ACTION_MAX_LENGTH]
     return f"There's no way for Jean to {verb} the {name}."
+
+
+class _PreInteractionLocation(NamedTuple):
+    """Where the player stood before an interaction ran.
+
+    One value rather than three loose ``pre_*`` parameters: the only question
+    ever asked of them is :meth:`player_moved`, and a caller that captured two
+    of the three would still typecheck while answering that question wrongly.
+    """
+
+    map_name: Optional[str]
+    x: int
+    y: int
+
+    @classmethod
+    def capture(cls, player) -> "_PreInteractionLocation":
+        return cls(
+            player.map.get("name") if player.map else None,
+            player.location_x,
+            player.location_y,
+        )
+
+    def player_moved(self, player) -> bool:
+        """Has ``player`` left this spot? (i.e. did the interaction teleport.)"""
+        post_map_name = player.map.get("name") if player.map else None
+        return (
+            post_map_name != self.map_name
+            or player.location_x != self.x
+            or player.location_y != self.y
+        )
 
 
 #: The break-away threshold, in feet. Named because the refusal message below
@@ -1409,27 +1439,13 @@ class GameService:
                 player._combat_deferred_enemies = combat_enemies
                 combat_started = False
             else:
-                # Initialize combat
-                self._initialize_combat(
+                combat_state = self._start_combat(
                     player,
                     combat_enemies,
                     session_id=session_id,
                     session_data=session_data,
                 )
                 combat_started = True
-
-                # Get initial combat state from the adapter
-                if hasattr(player, "_combat_adapter"):
-                    adapter_state = player._combat_adapter.get_combat_state()
-                    combat_state = adapter_state.get("battle_state")
-                else:
-                    # Fallback to direct serialization if adapter not available
-                    combat_state = CombatStateSerializer.serialize_combat_state(
-                        player,
-                        combat_enemies,
-                        current_turn_index=getattr(player, "combat_turn_index", 0),
-                        round_number=getattr(player, "combat_round", 1),
-                    )
 
         return {
             "success": True,
@@ -1888,32 +1904,13 @@ class GameService:
                 # Stash enemies so get_combat_status can auto-resume when points hit 0
                 player._combat_deferred_enemies = combat_enemies
             else:
-                # Initialize combat
-                self._initialize_combat(
+                result["combat_state"] = self._start_combat(
                     player,
                     combat_enemies,
                     session_id=session_id,
                     session_data=session_data,
                 )
                 result["combat_started"] = True
-
-                # Get initial combat state
-                if hasattr(player, "_combat_adapter"):
-                    adapter_state = player._combat_adapter.get_combat_state()
-                    # If we resumed a move, the adapter state already contains the full battle_state
-                    result["combat_state"] = (
-                        adapter_state.get("battle_state") or adapter_state
-                    )
-                else:
-                    # Fallback to direct serialization (CombatStateSerializer already imported at module level)
-                    result["combat_state"] = (
-                        CombatStateSerializer.serialize_combat_state(
-                            player,
-                            combat_enemies,
-                            current_turn_index=getattr(player, "combat_turn_index", 0),
-                            round_number=getattr(player, "combat_round", 1),
-                        )
-                    )
         elif combat_enemies:
             # Combat is present but we are paused for narrative
             result["combat_started"] = True
@@ -2330,8 +2327,38 @@ class GameService:
 
         return tile, target
 
+    def _start_combat(
+        self, player, combat_enemies, session_id=None, session_data=None
+    ):
+        """Initialize a fight and return the battle state the client renders.
+
+        The three callers that begin combat — movement, event resolution and
+        object interaction — each spelled this out, and the copies had already
+        drifted: two read ``adapter_state["battle_state"]`` while the third
+        carried an ``or adapter_state`` fallback for a key
+        :meth:`ApiCombatAdapter.get_combat_state` always sets. Whether a caller
+        SHOULD start a fight (the level-up deferral, the narrative pause) stays
+        with the caller, because that answer genuinely differs between them.
+        """
+        self._initialize_combat(
+            player,
+            combat_enemies,
+            session_id=session_id,
+            session_data=session_data,
+        )
+        adapter = getattr(player, "_combat_adapter", None)
+        if adapter is not None:
+            return adapter.get_combat_state().get("battle_state")
+        # No adapter (older sessions, and tests that build a player directly).
+        return CombatStateSerializer.serialize_combat_state(
+            player,
+            combat_enemies,
+            current_turn_index=getattr(player, "combat_turn_index", 0),
+            round_number=getattr(player, "combat_round", 1),
+        )
+
     def _clean_interaction_output(
-        self, msgs, player, pre_map_name, pre_x, pre_y, events_triggered, action, target
+        self, msgs, player, pre_location, events_triggered, action, target
     ):
         """Turn the captured narration into the line the player reads.
 
@@ -2361,15 +2388,10 @@ class GameService:
 
         # If a teleport occurred, strip the destination tile's description from the
         # interaction output — the frontend fetches the new room via /world/current-room.
-        _post_map_name = player.map.get("name") if player.map else None
-        # Computed once and reused by the response below: spelled twice, a
-        # later edit to one copy would report a teleport the description strip
-        # did not act on, or the reverse.
-        teleported = (
-            _post_map_name != pre_map_name
-            or player.location_x != pre_x
-            or player.location_y != pre_y
-        )
+        # Computed once and reused by the response below: asked twice, a later
+        # edit to one call would report a teleport the description strip did
+        # not act on, or the reverse.
+        teleported = pre_location.player_moved(player)
         if teleported:
             dest_tile = player.universe.get_tile(player.location_x, player.location_y)
             if dest_tile and hasattr(dest_tile, "description"):
@@ -2503,9 +2525,7 @@ class GameService:
             }
 
         # Record pre-action location to detect passageway teleportation
-        _pre_map_name = player.map.get("name") if player.map else None
-        _pre_x = player.location_x
-        _pre_y = player.location_y
+        _pre_location = _PreInteractionLocation.capture(player)
 
         # Execute action and capture output
         try:
@@ -2537,7 +2557,7 @@ class GameService:
             }
 
         clean_output, teleported = self._clean_interaction_output(
-            _msgs, player, _pre_map_name, _pre_x, _pre_y, events_triggered, action, target
+            _msgs, player, _pre_location, events_triggered, action, target
         )
 
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
@@ -2560,27 +2580,13 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            # Initialize combat
-            self._initialize_combat(
+            combat_state = self._start_combat(
                 player,
                 combat_enemies,
                 session_id=session_id,
                 session_data=session_data,
             )
             combat_started = True
-
-            # Get initial combat state from the adapter
-            if hasattr(player, "_combat_adapter"):
-                adapter_state = player._combat_adapter.get_combat_state()
-                combat_state = adapter_state.get("battle_state")
-            else:
-                # Fallback to direct serialization if adapter not available
-                combat_state = CombatStateSerializer.serialize_combat_state(
-                    player,
-                    combat_enemies,
-                    current_turn_index=getattr(player, "combat_turn_index", 0),
-                    round_number=getattr(player, "combat_round", 1),
-                )
 
         return {
             "success": True,

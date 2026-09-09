@@ -2,16 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from '../components/BattlefieldGrid'
 
 /**
- * Sentinel for "no camera claimed yet" (issue #561).
- *
- * A Symbol rather than `null`, because `null` is a REAL cameraKey: a combat
- * payload that omits `combat_id` yields one. Initialised to `null` the guard
- * would read as already-claimed for exactly those payloads and the auto-fit
- * would never fire at all.
- */
-const CAMERA_UNCLAIMED = Symbol('camera-unclaimed')
-
-/**
  * Everything that decides how the battlefield is framed, in one place.
  *
  * This was three useState, two useRef, two effects, a callback and three
@@ -31,7 +21,6 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
   const [showOffScreenBanner, setShowOffScreenBanner] = useState(false)
   const [didAutoFit, setDidAutoFit] = useState(false)
   const offScreenLatchRef = useRef(false)
-  const cameraClaimedForRef = useRef(CAMERA_UNCLAIMED)
 
   // One fight, one identity. `combat_id` is minted per fight by the adapter.
   const cameraKey = combat?.combat_id ?? null
@@ -47,17 +36,19 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
   const enemyOffScreen = zoom !== VIEW_MODE_FIT && enemyOutsideFollowView
 
   /**
-   * The player's camera choice, which settles the camera for the rest of this
-   * fight. Recording the claim is what keeps the auto-fit from being a bully:
-   * a player who deliberately returns to Follow with an enemy still off-screen
-   * has said something, and the next beat must not undo it.
+   * The player's camera choice, which stands for the rest of this fight.
+   *
+   * Nothing needs to record it: the settle effect below runs only when
+   * `cameraKey` changes, so a manual choice cannot be undone until a new fight
+   * arrives. (This used to write a claim ref that nothing read — the ref, its
+   * sentinel and two docstrings describing a claim-check outlived the guard
+   * they described.)
    */
   const selectViewMode = useCallback((mode) => {
-    cameraClaimedForRef.current = cameraKey
     setDidAutoFit(false)
     setShowOffScreenBanner(false)
     setZoom(mode)
-  }, [cameraKey])
+  }, [])
 
   /**
    * Settle the camera for this fight, once, on the commit the fight arrives.
@@ -67,10 +58,9 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
    * beginning at 7-8 ft opened on an empty map with a banner telling the
    * player to fix the framing themselves.
    *
-   * The claim is taken UNCONDITIONALLY, not only when the camera moves. That
-   * is what makes this entry-only, and the earlier version got it wrong: it
-   * claimed only on a fit, so a fight that opened fully in view stayed
-   * unclaimed and the auto-fit could still fire later. `beat_states` is
+   * Keyed on `cameraKey` ALONE, and that is what makes it entry-only. An
+   * earlier version ran whenever the geometry demanded it, so a fight that
+   * opened fully in view could still be widened later. `beat_states` is
    * per-ACTION, not per-fight -- the adapter rebuilds it for every move, and
    * only the combat-start payload makes `[0]` the opening state -- so an
    * unclaimed camera would have re-read `[0]` mid-fight and widened on some
@@ -84,7 +74,6 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
    */
   useEffect(() => {
     const outsideAtEntry = anyEnemyOffScreen(combat?.beat_states?.[0] ?? combat)
-    cameraClaimedForRef.current = cameraKey
     // Set from an effect, not derived during render: this reads geometry that
     // is only correct on this one commit. A render-derived equivalent would
     // re-evaluate against later, per-action beat states -- the bug this replaced.

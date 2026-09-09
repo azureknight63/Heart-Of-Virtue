@@ -150,9 +150,6 @@ function announcementFor(segment) {
  * silence. Jean's own beats are skipped — the player just chose those words,
  * and echoing them back interrupts the reply they are waiting on.
  *
- * Visually hidden rather than `display: none`, which would take it out of the
- * accessibility tree along with everything else.
- *
  * @param {Object} props
  * @param {ConversationSegment[]} props.segments - The conversation so far;
  *   only the newest beat is ever announced.
@@ -162,8 +159,6 @@ function ReplyAnnouncer({ segments }) {
   const announced =
     latest && latest.speaker && latest.speaker !== JEAN_ID ? announcementFor(latest) : ''
 
-  // `seq` so an identical repeated reply replaces the node rather than
-  // rewriting it — a polite region announces a DOM change, not a value.
   return <LiveAnnouncer text={announced} seq={segments.length} testId="npc-chat-announcer" />
 }
 

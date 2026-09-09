@@ -3,14 +3,11 @@ import { spacing } from '../styles/theme'
 /**
  * The friend-or-foe badge, in one place.
  *
- * `combatEntities.js` centralised the hostility VOCABULARY (colour, glyph,
- * word) but the presentation was copy-pasted into the room panel and the
- * combat target picker, differing only in padding, font size and letter
- * spacing — which is the half that drifts. This is the state that decides
- * whether the player swings at their own ally, so the two surfaces must not
- * be able to describe it differently.
- *
- * Colour is never the only channel: every token carries a glyph and a word.
+ * `combatEntities.js` centralised the hostility VOCABULARY (see
+ * `HOSTILITY_TOKENS` there for why this state gets a glyph and a word, not
+ * just a colour) but the presentation was copy-pasted into the room panel and
+ * the combat target picker, differing only in padding, font size and letter
+ * spacing — which is the half that drifts.
  *
  * @param {object} token one of HOSTILITY_TOKENS
  * @param {'inline'|'block'} variant `inline` sits after a name in a sentence;

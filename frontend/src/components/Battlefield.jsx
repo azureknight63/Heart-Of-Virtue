@@ -18,6 +18,14 @@ const MAX_BEAT_STATES = 200;
 // ("View: Normal"), which reads as a state on a control that acts — so there
 // was no way to tell whether the caption named where you were or where the
 // click would take you.
+// The two tabs, driven from a table exactly as VIEW_MODE_OPTIONS below is:
+// their style blocks were identical but for the key and the label, which is
+// how `touchTargetStyle` had to be added to both in lockstep.
+const TAB_OPTIONS = [
+  { key: 'overview', label: () => 'Overview' },
+  { key: 'enemies', label: (combat) => `Enemies (${combat?.enemies?.length || 0})` },
+];
+
 const VIEW_MODE_OPTIONS = [
   {
     mode: VIEW_MODE_FOLLOW,
@@ -139,30 +147,21 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
         style={{ display: 'flex', gap: '6px', rowGap: '6px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}
       >
         <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            onClick={() => setSelectedTab('overview')}
-            style={{
-              ...touchTargetStyle,
-              padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
-              backgroundColor: selectedTab === 'overview' ? colors.secondary : 'transparent',
-              color: selectedTab === 'overview' ? '#fff' : colors.secondary,
-              cursor: 'pointer'
-            }}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setSelectedTab('enemies')}
-            style={{
-              ...touchTargetStyle,
-              padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
-              backgroundColor: selectedTab === 'enemies' ? colors.secondary : 'transparent',
-              color: selectedTab === 'enemies' ? '#fff' : colors.secondary,
-              cursor: 'pointer'
-            }}
-          >
-            Enemies ({combat?.enemies?.length || 0})
-          </button>
+          {TAB_OPTIONS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setSelectedTab(key)}
+              style={{
+                ...touchTargetStyle,
+                padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
+                backgroundColor: selectedTab === key ? colors.secondary : 'transparent',
+                color: selectedTab === key ? colors.text.bright : colors.secondary,
+                cursor: 'pointer'
+              }}
+            >
+              {label(combat)}
+            </button>
+          ))}
         </div>
 
         {/* View mode — a segmented control, so the available modes and the
@@ -185,7 +184,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
                     ...touchTargetStyle,
                     padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', border: 'none', transition: 'background-color 0.2s, color 0.2s',
                     backgroundColor: active ? colors.secondary : 'rgba(0,0,0,0.5)',
-                    color: active ? '#fff' : colors.secondary,
+                    color: active ? colors.text.bright : colors.secondary,
                     cursor: 'pointer'
                   }}
                   title={enemyOffScreen && mode === VIEW_MODE_FIT

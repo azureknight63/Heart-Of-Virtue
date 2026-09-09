@@ -203,12 +203,6 @@ function useOccludedNavHandoff(contentRef) {
     }, [contentRef]);
 }
 
-// `isProcessing` is passed by LeftPanel while a move submission is in flight.
-// Without it the panel stays live during the API round trip and a double-click
-// submits two actions for one turn.
-// `category` is a radial *button group* key, not an engine move category — the
-// group → category mapping lives in utils/categories.js (CATEGORY_GROUPS), which
-// LeftPanel's button gating reads too, so the two can never drift apart.
 /**
  * One move in the category flyout.
  *
@@ -230,7 +224,7 @@ function MoveCard({
   onMoveClick,
   onTargetHover,
 }) {
-    const { playSFX } = useAudio();
+  const { playSFX } = useAudio();
   // Not `move.available !== false`: a targeted move can
   // arrive advertised as available with nothing actually
   // in reach, and casting it only earns a server refusal
@@ -366,8 +360,14 @@ function MoveCard({
       )}
     </div>
   );
-};
+}
 
+// `isProcessing` is passed by LeftPanel while a move submission is in flight.
+// Without it the panel stays live during the API round trip and a double-click
+// submits two actions for one turn.
+// `category` is a radial *button group* key, not an engine move category — the
+// group → category mapping lives in utils/categories.js (CATEGORY_GROUPS), which
+// LeftPanel's button gating reads too, so the two can never drift apart.
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
     const contentRef = useRef(null);
