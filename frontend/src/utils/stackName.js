@@ -67,13 +67,20 @@ export const stackDisplayName = (item) => {
 };
 
 /**
- * Is this item a stack worth badging?
+ * Is a stack size worth badging?
  *
- * The `> 1` threshold was written at each gate AND inside
- * `stackCountLabel`; changing one left the other rendering an empty badge
- * box. One reading, one place.
+ * The `> 1` threshold was written at each render gate AND inside
+ * `stackCountLabel`; change one and the other renders an empty badge box, or
+ * a badge with nothing to say. Both now ask this, so there is one reading
+ * and one place to change it.
+ *
+ * Takes the SIZE rather than the item, so `stackCountLabel` -- which is
+ * handed a number, see below -- can use it too.
  */
-export const isStacked = (item) => stackSize(item) > 1;
+export const isStackedCount = (count) => Number(count) > 1;
+
+/** `isStackedCount` for a caller holding the item itself. */
+export const isStacked = (item) => isStackedCount(stackSize(item));
 
 /**
  * The stack-count badge, in the one spelling the app uses.
@@ -95,4 +102,4 @@ export const isStacked = (item) => stackSize(item) > 1;
  *
  * Returns '' for an unstacked item so callers can render it unconditionally.
  */
-export const stackCountLabel = (count) => (Number(count) > 1 ? `×${count}` : '')
+export const stackCountLabel = (count) => (isStackedCount(count) ? `×${count}` : '')

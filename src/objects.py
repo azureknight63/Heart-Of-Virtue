@@ -895,6 +895,23 @@ class Passageway(Object):
     #: resolves the attribute (and crosses normally).
     demo_end = False
 
+    #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
+    #: once because ``__init__`` registers them as aliases and
+    #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
+    #: delegator and forgetting the tuple re-opens #552 exactly, with a
+    #: demo-end passageway crossable by a verb ``is_crossing_handler`` answers
+    #: False for. ``tests/test_object_action_dispatch_contract.py`` derives
+    #: the check from this attribute rather than a hand-kept list.
+    _DELEGATED_CROSSING_VERBS = ("go", "leave", "exit")
+
+    #: The methods that CROSS this passageway. The delegators above are
+    #: distinct bound methods, so an identity test against ``enter`` alone
+    #: answers False for all three -- which is how a demo-end passageway
+    #: stayed crossable by the only three verbs the shipped map authors
+    #: (#552). The authored name words (``ferry``, ``landing``) ARE bound to
+    #: ``enter`` itself and so answer through that entry.
+    CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
+
     def __init__(
         self,
         player: Player,
@@ -949,23 +966,6 @@ class Passageway(Object):
         # See end_demo() and issue #552.
         self.demo_end = demo_end
 
-    #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
-    #: once because ``__init__`` registers them as aliases and
-    #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
-    #: delegator and forgetting the tuple re-opens #552 exactly, with a
-    #: demo-end passageway crossable by a verb ``is_crossing_handler`` answers
-    #: False for. ``tests/test_object_action_dispatch_contract.py`` derives
-    #: the check from this attribute rather than a hand-kept list.
-    _DELEGATED_CROSSING_VERBS = ("go", "leave", "exit")
-
-    #: The methods that CROSS this passageway. The delegators above are
-    #: distinct bound methods, so an identity test against ``enter`` alone
-    #: answers False for all three -- which is how a demo-end passageway
-    #: stayed crossable by the only three verbs the shipped map authors
-    #: (#552). The authored name words (``ferry``, ``landing``) ARE bound to
-    #: ``enter`` itself and so answer through that entry.
-    CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
-
     def is_crossing_handler(self, handler):
         """True when ``handler`` is one of this passageway's crossing methods.
 
@@ -975,6 +975,12 @@ class Passageway(Object):
         """
         if handler is None:
             return False
+        # `==`, not `is`: `getattr` mints a FRESH bound-method object on every
+        # access, so identity never matches and every crossing verb would
+        # answer False -- silently reopening #552. Do not "make the
+        # comparisons consistent" with the `ally is self.player` checks in
+        # combat_adapter.py; those compare entities, this compares bound
+        # methods.
         return any(
             handler == getattr(self, name, None)
             for name in self.CROSSING_METHOD_NAMES

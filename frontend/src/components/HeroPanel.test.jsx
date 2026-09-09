@@ -427,7 +427,7 @@ describe('HeroPanel', () => {
     });
 
     it('leaves the fill as the bar\'s first child', () => {
-      // Ordering trap: four assertions in this file read the fill as
+      // Ordering trap: the assertions in this file read the fill as
       // `firstElementChild`, so a readout inserted ahead of it would silently
       // repoint them at a text node.
       render(<HeroPanel {...makeProps()} />);

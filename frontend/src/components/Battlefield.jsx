@@ -247,10 +247,13 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
         <div
           style={{
             display: 'flex', gap: spacing.md, alignItems: 'center',
-            fontSize: '10px', // Generic stack, not fonts.main: these sit on the map canvas,
-              // where Courier-first would clash with the grid's own
-              // glyphs. Substituting is a visual change, not a rename.
-              fontFamily: 'monospace', color: colors.text.muted,
+            fontSize: '10px',
+            // `'monospace'`, not fonts.main, HERE AND at the recent-paths
+            // legend below: both sit on the map canvas, where a Courier-first
+            // stack clashes with the grid's own glyphs. Substituting is a
+            // visual change, not a rename -- do not let a fonts.main sweep
+            // take either one.
+            fontFamily: 'monospace', color: colors.text.muted,
             letterSpacing: '0.05em', textTransform: 'uppercase',
           }}
           // Deliberately not role="status": the beat number changes on every
@@ -313,6 +316,9 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
         {isOverview && (
           <div
+            // `'monospace'` and the bare white 0.4 are both deliberate: see
+            // the fight-status strip above for the font, and note that
+            // `bg.muted` is 0.05, not a substitute for this legend's 0.4.
             style={{ position: 'absolute', bottom: '6px', left: '8px', zIndex: 140, pointerEvents: 'none', fontSize: '9px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
             aria-label="Trailing dots show recent movement paths"
           >

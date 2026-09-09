@@ -331,7 +331,7 @@ function InteractPanel({
         if (action.toLowerCase() === 'read' && selectedTarget) {
             const data = await runInteract(selectedTarget, action, qty)
             if (data?.success) {
-                setBookReaderData({ title: selectedTarget.name, text: stripBookWrapper(data.message) })
+                setBookReaderData({ title: stackDisplayName(selectedTarget), text: stripBookWrapper(data.message) })
                 resetInteraction()
             }
             return
@@ -363,9 +363,10 @@ function InteractPanel({
     const getTargetIcon = (target) => {
         // A hostile NPC gets its own glyph rather than the friendly 👤 — the
         // two must not read as the same kind of thing (issue #537). The glyph
-        // is HOSTILITY_TOKENS', not a second copy: that table declares itself
-        // the one owner of the colour AND the glyph AND the word, and this
-        // panel was re-typing all three.
+        // is HOSTILITY_TOKENS', not a second copy: that table owns the
+        // colour, the glyph and the word, and this panel was re-typing all
+        // three. The colour and glyph now come from it; the WORD deliberately
+        // does not -- see the type badge below for why.
         if (isHostileNpc(target)) return HOSTILITY_TOKENS.hostile.glyph
         switch (target?.type) {
             case 'npc': return '👤'
@@ -546,13 +547,13 @@ function InteractPanel({
                                             fontFamily: fonts.main,
                                         }}>
                                             {/* Lowercase, unlike HostilityChip's
-                                                HOSTILITY_TOKENS.hostile.label ('HOSTILE'):
-                                                this chip is uppercased by CSS
-                                                (textTransform above) and sits beside a
-                                                sibling rendering `target.type` the same
-                                                way, so lowercase-in-DOM is this
-                                                surface's convention. The colour and
-                                                glyph above DO come from the token --
+                                                HOSTILITY_TOKENS.hostile.label ('HOSTILE').
+                                                Not a style preference: `textTransform`
+                                                above renders either spelling identically,
+                                                while the DOM text is what assistive tech
+                                                reads, and an all-caps word there is liable
+                                                to be spelled out letter by letter. The
+                                                colour and glyph DO come from the token --
                                                 only the casing is local. */}
                                             {isHostileNpc(target) ? 'hostile' : target.type}
                                         </div>

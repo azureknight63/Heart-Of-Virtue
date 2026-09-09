@@ -279,7 +279,6 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   }
 
   const handleMoveSelection = async (move) => {
-    // Execute move via API
     // Deliberately the bare flag, NOT moveAvailability -- and NOT a third
     // encoding of the same rule: this is a narrower last-ditch guard on a path
     // whose only caller, CombatMovePanel, has already disabled the move with
@@ -592,7 +591,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           <CooldownTray moves={cooldownMoves} />
         )}
 
-        {/* Combat Move Panel */}
+        {/* Abort control while a move is in flight, then the move panel. */}
         {mode === 'combat' && abortableMove && (
           <div style={{ marginBottom: spacing.sm }}>
             <AbortMoveControl

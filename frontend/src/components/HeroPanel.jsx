@@ -104,7 +104,7 @@ function VitalBar({
           touch screen has no hover at all. Colour alone is exactly what the
           accessibility rules here forbid.
 
-          Rendered AFTER the fill deliberately: four assertions in
+          Rendered AFTER the fill deliberately: the assertions in
           HeroPanel.test.jsx read the fill as the bar's `firstElementChild`.
 
           `aria-hidden` because the bar's own aria-label already reads

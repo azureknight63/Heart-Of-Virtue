@@ -319,10 +319,12 @@ def test_every_default_container_button_is_a_look_inside_verb():
 
     ``action_aliases`` answers "which buttons does a container show by
     default" and goes straight into ``keywords``; ``LOOK_INSIDE_VERBS``
-    answers "which verbs open it". They overlap completely today, but by
-    coincidence rather than by construction — so an alias added to one and not
-    the other would ship a default button with no dispatch behind it, which is
-    #553 all over again on a container nobody had to author.
+    answers "which verbs open it". They agree by CONSTRUCTION now --
+    ``LOOK_INSIDE_VERBS`` splats ``_DEFAULT_LOOK_INSIDE_ALIASES``, which is
+    also what seeds ``action_aliases`` (src/objects.py) -- so this reads a
+    real ``Container()`` to catch the case that construction cannot: a verb
+    added to ``action_aliases`` alone would ship a default button with no
+    dispatch behind it, which is #553 again on a container nobody authored.
     """
     container = Container()
     defaults = set(container.action_aliases)

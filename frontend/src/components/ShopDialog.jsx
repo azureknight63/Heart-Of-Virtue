@@ -350,7 +350,8 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
 
   // ── Max qty for picker ──────────────────────────────────────────────────────
 
-  // `?? 0`, not `|| 1`. Both branches below already say what a zero unit cost
+  // `unitPrice`/`unitOffer` below take `?? 0`, not `|| 1`. Both branches
+  // already say what a zero unit cost
   // means — "you are limited only by stock, not by your purse" — and `|| 1`
   // was what stopped that arm ever running: it coerced a 0 up to 1, so
   // `unitPrice > 0` was unconditionally true and `: available` was dead code.
@@ -370,6 +371,9 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
   // from silently reading as "costs one gold".
   const maxQty = useMemo(() => {
     if (!selectedItem) return 1
+    // RAW `count`, like effectiveQty above -- this is the literal
+    // tests/test_wire_field_contract.py anchors the shop `count` citation on,
+    // so routing it through stackSize would delete the read that guard cites.
     const available = selectedItem.count || 1
     if (activeTab === 'buy' && !selectedItem.is_buyback) {
       const unitPrice = selectedItem.price ?? 0

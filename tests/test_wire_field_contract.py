@@ -1436,6 +1436,28 @@ class TestSavesWireContract:
 # objects into fresh array references, so every other key rides through
 # untouched — which is exactly why a rename here is silent.
 
+# ----------------------------------------------------------------------------
+# The /world/interact response (GameService.interact_with_target). This is a
+# TOP-LEVEL response body, not a serializer output, and it is read straight off
+# the axios `data` by useWorldInteract — no whitelist in between, which is why
+# a rename here reaches the client silently rather than being dropped.
+INTERACT_RESPONSE_CONTRACT = {
+    # `if (data?.beta_end) setShowBetaEndDialog(true)` — the end-of-beta
+    # dialog for the Ferry Landing (#552). Optional-chained on both sides, so
+    # a rename or a drop shows as "the demo never ends", with nothing thrown.
+    "beta_end": Read("GamePage.jsx", "data?.beta_end"),
+    # The interaction moved the player, so the panel closes and the room is
+    # re-fetched rather than patched.
+    "teleported": Read("useWorldInteract.js", "data.teleported"),
+    # Patched onto the selected target so "open" appears after "unlock"
+    # without a re-select round trip.
+    "object_state": Read("useWorldInteract.js", "data.object_state"),
+    "events_triggered": Read("useWorldInteract.js", "data.events_triggered"),
+    "message": Read("useWorldInteract.js", "data.message"),
+    "success": Read("useWorldInteract.js", "data.success"),
+}
+
+
 ROOM_CONTRACT = {
     # MapGrid positions the grid on them; GamePage builds its tile cache key
     # `${location.map_name}:${location.x},${location.y}` from them.
@@ -1533,6 +1555,29 @@ class TestRoomWireContract:
         room = GameService().get_current_room(player)
 
         _assert_contract(room, ROOM_CONTRACT, "get_current_room()")
+
+    def test_interact_response_fields(self):
+        """The /world/interact body, built from a real interaction.
+
+        `beta_end` shipped as a new top-level field of this response with no
+        entry here, which is the omission `.claude/rules/api-layer.md` names
+        this file the registry against: the client reads it as
+        `data?.beta_end`, so a rename would read as "the demo never ends" and
+        nothing would throw.
+        """
+        player, tile = self._populated_room()
+        from src.combatant import wire_handle
+
+        # The container, with a verb it implements: an unimplemented verb
+        # returns the in-fiction refusal shape instead of the full body, so it
+        # would exercise none of these fields.
+        result = GameService().interact_with_target(
+            player, wire_handle(tile.objects_here[0]), "look", session_data={}
+        )
+
+        _assert_contract(
+            result, INTERACT_RESPONSE_CONTRACT, "interact_with_target()"
+        )
 
     def test_exits_is_a_direction_keyed_mapping_the_client_can_take_keys_of(self):
         """transformLocationData calls `Object.keys(room.exits)`. If the server

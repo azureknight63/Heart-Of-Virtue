@@ -76,8 +76,11 @@ export const isHostileEntity = (entity) => {
 };
 
 /**
- * The one hostility vocabulary, shared so the room panel, the target picker
- * and the battlefield cannot describe the same combatant three ways.
+ * The one hostility vocabulary, shared so the room panel, the combat target
+ * picker and the interact panel cannot describe the same combatant three
+ * ways. `BattlefieldGrid` is NOT a consumer -- it derives its own alignment
+ * border from `colors.primary`/`colors.danger` and merely agrees with this
+ * table by convention, so retuning a token here does not follow it there.
  *
  * Each token carries a glyph AND a word as well as a colour: state is never
  * conveyed by colour alone, and this particular state is the one that decides

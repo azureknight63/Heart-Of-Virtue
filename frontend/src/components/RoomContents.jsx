@@ -4,9 +4,8 @@ import { hostileOnlyTokenFor } from '../utils/combatEntities'
 import HostilityChip from './HostilityChip'
 
 /**
- * RoomContents - Display integrated room description with contents
- * Displays room contents descriptions inline with the main room description,
- * matching the terminal game's narrative format
+ * @file Room contents rendered inline with the room description, in the
+ * narrative format the terminal game used.
  */
 
 /**

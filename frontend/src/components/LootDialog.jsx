@@ -136,8 +136,6 @@ function LootRow({ item, selected, onToggle }) {
       </div>
       {/* Weight */}
       <div style={{ color: '#555', textAlign: 'right', fontSize: 11 }}>
-        {/* `|| 1`, not stackSize's `?? 1`: a drop that reports 0 still weighs
-            one unit, not zero. Same reading as the selected-weight total. */}
         {item.weight != null ? formatWeight(item.weight * unitsOf(item), 1) : '—'}
       </div>
 

@@ -33,9 +33,9 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
   // and this accumulator is indexed by it. With a plain `{}`:
   //
   //   * an item named `constructor` makes `existing` the global Object
-  //     constructor, and the line below then writes `quantity` ONTO IT —
-  //     server-controlled mutation of a process-wide global — while the item
-  //     itself vanishes from the picker;
+  //     constructor, and the accumulator write below then puts `stacked` ONTO
+  //     IT — server-controlled mutation of a process-wide global — while the
+  //     item itself vanishes from the picker;
   //   * an item named `__proto__` makes the else-branch invoke the `__proto__`
   //     setter and reparent the accumulator instead of adding a key.
   //

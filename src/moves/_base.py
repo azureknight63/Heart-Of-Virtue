@@ -645,8 +645,9 @@ def mitigation_note(target, damage_type=None):
     resolves against a reduced figure -- any move passing a ``protection``
     override, which ``grep -rn "protection=" src/moves/`` enumerates and this
     docstring deliberately does not, for the reason ``resolve_damage`` gives
-    above -- would, on a zero, name armour it did not actually subtract. No shipped power/resistance pair is confirmed to
-    land those at exactly 0 today. The fix is to thread the effective value
+    above -- would, on a zero, name armour it did not actually subtract. No
+    shipped power/resistance pair is known to zero a hit through one of those
+    overrides today. The fix is to thread the effective value
     from the ``resolve_damage`` call site; overridable parameters were tried
     here first and removed, because no caller passed them and they bought two
     unreachable branches instead of a real fix.
@@ -668,10 +669,14 @@ def mitigation_note(target, damage_type=None):
     )
     name = getattr(target, "name", "the target")
 
+    # No `is not None` or `isfinite` guard on `resistance`: it is None only
+    # when `damage_type` is, which the first term already excludes, and
+    # `functions.combat_resistance` coerces every missing key and non-finite
+    # value to its `default` before returning (src/functions.py) -- so guarding
+    # here would tell a reader that the shared chokepoint may hand back None or
+    # a NaN, which is the opposite of its contract.
     resists = (
         damage_type is not None
-        and resistance is not None
-        and math.isfinite(resistance)
         and resistance < 1.0 - RESISTANCE_NEUTRAL_TOLERANCE
     )
     armoured = protection > 0

@@ -100,8 +100,11 @@ _LLM_NOISE_PREFIXES = (
 #: traceback goes to the log instead.
 _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 
-#: The #543 refusal, named because both guard sites ship it -- the move path
-#: under ``"error"`` and the interaction path under ``"message"``.
+#: The #543 refusal, named because two guard sites ship it: the event-confirm
+#: path in ``process_event_input`` (under ``"error"``) and
+#: ``interact_with_target`` (under ``"message"``). NOT ``move_player``, which
+#: refuses a different thing with a different sentence ("Cannot move while in
+#: combat").
 _PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
 
 
@@ -189,6 +192,21 @@ def _unsupported_action_message(target, action):
     name = getattr(target, "name", None) or "object"
     verb = str(action)[:_ECHOED_ACTION_MAX_LENGTH]
     return f"There's no way for Jean to {verb} the {name}."
+
+
+class _InteractionOutcome(NamedTuple):
+    """What one dispatched interaction produced.
+
+    The counterpart to :class:`_InteractionRequest`, for the same reason: this
+    was a bare ``(list, bool, Optional[str])`` unpacked positionally, in a
+    change whose whole argument is that loose heterogeneous tuples are the
+    defect. ``refusal`` is the in-fiction SENTENCE, not a response body -- the
+    route builds that.
+    """
+
+    events: list
+    beta_end: bool
+    refusal: Optional[str]
 
 
 class _InteractionRequest(NamedTuple):
@@ -2224,7 +2242,12 @@ class GameService:
 
         API mode only: the teleport itself waits for the client to acknowledge
         the event, so `events_before` runs now and the crossing does not.
-        Returns the event payload to append.
+
+        Returns the event payloads to extend with -- a one-element list, the
+        same shape :meth:`_open_container_for_loot` returns, so a third arm
+        has one contract to copy. The mismatch fails silently either way:
+        ``append`` of a list ships ``events_triggered: [[{...}]]`` to the
+        client, ``extend`` of a dict splats its keys.
         """
         from src.events import PassagewayTransitionEvent
 
@@ -2247,9 +2270,11 @@ class GameService:
         # Dedupe-by-name is right here too: the name is
         # "Passage_<passageway>", so a collision is the same passageway's
         # confirmation re-armed.
-        return self._store_pending_event(
-            trans_event, event_data, session_data, tile=tile
-        )
+        return [
+            self._store_pending_event(
+                trans_event, event_data, session_data, tile=tile
+            )
+        ]
 
     def _dispatch_interaction(self, request):
         """Run one interaction verb against one already-resolved target.
@@ -2259,7 +2284,7 @@ class GameService:
         dispatch chain, narration capture, ANSI stripping, teleport detection
         and response assembly.
 
-        Returns ``(events_triggered, beta_end, refusal)``. ``refusal`` is None
+Returns an :class:`_InteractionOutcome`. Its ``refusal`` is None
         on the normal path and the in-fiction refusal SENTENCE when the verb
         resolves to nothing callable — a string, not a response body: an
         engine-dispatch helper has no business knowing the route's wire shape.
@@ -2350,26 +2375,25 @@ class GameService:
             and not getattr(target, "demo_end", False)
             and session_data is not None
         ):
-            events_triggered.append(
+            events_triggered.extend(
                 self._queue_passageway_confirmation(request)
             )
         else:
-            # Resolve through the engine's alias table rather than
-            # naming an attribute directly. A keyword the class does
-            # not implement yields None here and is refused in
-            # fiction; it used to raise AttributeError into the broad
+            # A keyword the class does not implement resolved to None
+            # above and is refused in fiction; it used to raise
+            # AttributeError into the broad
             # except below, which then handed the player
             # "Error executing action: '<Class>' object has no
             # attribute '<verb>'" (#553).
             if handler is None:
-                return (
+                return _InteractionOutcome(
                     events_triggered,
                     beta_end,
                     _unsupported_action_message(target, action),
                 )
             _call_interaction_handler(handler, player, quantity)
 
-        return events_triggered, beta_end, None
+        return _InteractionOutcome(events_triggered, beta_end, None)
 
     def _resolve_interaction_target(self, player, target_id, session_data):
         """The tile the player is on, and the entity `target_id` names on it.
@@ -2665,11 +2689,13 @@ class GameService:
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                events_triggered, beta_end, refusal = self._dispatch_interaction(
-                    request
-                )
-                if refusal is not None:
-                    return {"success": False, "message": refusal}
+                outcome = self._dispatch_interaction(request)
+                events_triggered = outcome.events
+                beta_end = outcome.beta_end
+                # `refusal` above is a response DICT from `_verb_refusal`;
+                # this one is a bare sentence, so it gets its own name.
+                if outcome.refusal is not None:
+                    return {"success": False, "message": outcome.refusal}
         except Exception:
             # str(e) never reaches the player. The prose panel is the game's
             # UI, and an exception rendered there reads as broken content, not

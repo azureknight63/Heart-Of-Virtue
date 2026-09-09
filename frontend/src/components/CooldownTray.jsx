@@ -106,8 +106,9 @@ function CollapsedCard({ move }) {
         width: '44px',
         height: '42px',
         borderRadius: '5px',
-        // 0.6: no token carries it (theme.js's bg has 0.2/0.3/0.7/0.75/0.9),
-        // and substituting a near neighbour would be a silent visual change.
+        // 0.6: no BLACK token carries it (bg's black alphas are
+        // 0.2/0.3/0.7/0.75/0.9; `panelAmber` is 0.6 but warm), and
+        // substituting a near neighbour would be a silent visual change.
         background: 'rgba(0,0,0,0.6)',
         border: `1px solid ${color}99`,
         boxShadow: `0 0 6px ${color}44`,

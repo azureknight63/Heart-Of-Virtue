@@ -4,6 +4,11 @@ import { beatUnit } from '../utils/moveCommitment'
 import { colors, spacing } from '../styles/theme';
 import GameText from './GameText';
 
+//: How long the abort must be held, in ms. Long enough that an
+//: accidental press cannot forfeit a move in flight, short enough to
+//: stay usable while beats are streaming.
+export const HOLD_MS = 600;
+
 /**
  * Break-off control for a move that is still winding up.
  *
@@ -23,8 +28,6 @@ import GameText from './GameText';
  * player is reacting to; the hold also makes an accidental abort essentially
  * impossible without a second UI layer.
  */
-export const HOLD_MS = 600;
-
 export default function AbortMoveControl({ abortable, onAbort, disabled = false }) {
     const [progress, setProgress] = useState(0);
     const frameRef = useRef(null);
@@ -121,7 +124,7 @@ export default function AbortMoveControl({ abortable, onAbort, disabled = false 
                         position: 'absolute',
                         inset: 0,
                         width: `${progress * 100}%`,
-                        backgroundColor: colors.alpha?.secondary?.[30] || 'rgba(255,170,0,0.3)',
+                        backgroundColor: colors.alpha.secondary[30],
                         pointerEvents: 'none',
                     }}
                 />
