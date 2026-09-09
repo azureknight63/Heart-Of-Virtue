@@ -192,6 +192,10 @@ def mock_player(**overrides):
     player.states = []
     player.in_combat = False
     player.explored_tiles = {}
+    # 0, as on a real fresh Player. Left unset it is a MagicMock, and
+    # `int(MagicMock())` is 1 -- so every guard reading it saw a player with an
+    # unspent level-up point and deferred combat that should have started.
+    player.pending_attribute_points = 0
     del player.reputation
 
     tile = MagicMock()

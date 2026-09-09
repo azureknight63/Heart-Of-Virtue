@@ -282,7 +282,11 @@ class TestContainer:
 
         assert c.state == "opened"
         mock_transfer.assert_called_once_with(c, p, gold, gold.count)
-        assert any("revealing the contents" in t for t in texts)
+        # The open() narration ran, which is what proves take_all opened it
+        # rather than silently flipping state. Copy changed in #565 (the old
+        # line claimed a lid on a hinge); the guard on the new wording lives in
+        # tests/test_container_open_narration.py.
+        assert any("come into view" in t for t in texts), texts
 
     def test_take_all_with_items(self):
         """Lines 453-464: every item is handed to transfer_item with its count."""

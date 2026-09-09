@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { useMobile } from '../hooks/useMobile'
+import logger from '../utils/logger'
 
 // A dialog's nearest enclosing BaseDialog (if any) is reached through this
 // context, so a dialog rendered inside another one's children — e.g.
@@ -26,7 +27,74 @@ const topLevelStack = []
 // re-renders the dialog underneath — hence the subscriber set.
 const topLevelSubscribers = new Set()
 
+/**
+ * The attribute a background region marks itself with. Issue #563 item 5.
+ *
+ * With a modal open, the exploration screen behind it was still fully
+ * readable: `main` carried neither `inert` nor `aria-hidden`, so a
+ * screen-reader user in virtual-cursor mode could browse and activate the
+ * whole screen behind a blocking prompt. Pointer and Tab were already handled
+ * by the overlay and the focus trap; this closes the remaining channel.
+ *
+ * `aria-hidden` rather than `inert`: no `inert` polyfill ships here, and
+ * `inert` also blocks pointer input, which for a `containerCentered` dialog
+ * would be a behaviour CHANGE rather than a redundancy — that overlay is
+ * positioned inside a panel and never covered the rest of the viewport.
+ *
+ * Accepted asymmetry: for those same `containerCentered` dialogs the marked
+ * regions go `aria-hidden` while staying pointer-interactive, so a user on
+ * assistive tech loses a region a sighted user keeps. The alternative — skipping
+ * the sync for them — leaves the original #563 hole open on the surface most
+ * likely to hit it, so the trade is deliberate.
+ *
+ * OPT-IN, and marked BY the background rather than derived from the dialog's
+ * position, because there is no single ancestor to hide. GamePage's
+ * EventManager renders outside LeftPanel's `<main>`, while LeftPanel's own
+ * dialogs are siblings INSIDE that same `<main>` — so hiding `<main>` would
+ * hide half the app's modals along with the background. Each region that is
+ * genuinely background says so, and the modal machinery does the rest.
+ */
+export const MODAL_BACKGROUND_ATTR = 'data-modal-background'
+
+/**
+ * Spread this onto a region that should be hidden from assistive tech while a
+ * modal is open. One import instead of retyping the computed-key spread, which
+ * was hand-repeated at three call sites and is the non-obvious half of an
+ * opt-in contract.
+ *
+ * The `aria-hidden` this marker triggers has exactly one owner,
+ * `syncBackgroundModality` (the marker attribute itself has three owners --
+ * the JSX call sites that spread this constant). A JSX
+ * `aria-hidden` on the same element fights it non-deterministically —
+ * whichever wrote last wins, and React only rewrites the attribute when its
+ * own prop VALUE changes, so a constant prop leaves the out-of-band value
+ * standing. Do not set both.
+ */
+export const MODAL_BACKGROUND_PROPS = Object.freeze({ [MODAL_BACKGROUND_ATTR]: 'true' })
+
+/**
+ * Hide or reveal every marked background region.
+ *
+ * Keyed on the stack being non-empty rather than on "a dialog just
+ * unmounted": closing one of two open dialogs must leave the background
+ * hidden underneath the one still on screen.
+ *
+ * The attribute is REMOVED rather than set to "false" — `aria-hidden="false"`
+ * is honoured inconsistently across readers and leaves a puzzling attribute on
+ * a live screen. A region that mounts while a dialog is already open is not
+ * retro-marked; every background region in this app outlives the dialogs
+ * opened over it, so the sync points (push and remove) are enough.
+ */
+function syncBackgroundModality() {
+    const hidden = topLevelStack.length > 0
+    for (const el of document.querySelectorAll(`[${MODAL_BACKGROUND_ATTR}]`)) {
+        if (hidden) el.setAttribute('aria-hidden', 'true')
+        else el.removeAttribute('aria-hidden')
+    }
+}
+
 function notifyTopLevelChanged() {
+    syncBackgroundModality()
     topLevelSubscribers.forEach((notify) => notify())
 }
 
@@ -59,6 +127,35 @@ function isTopOfStack(id) {
 
 const FOCUSABLE_SELECTOR =
     'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Marks the ✕ so INITIAL focus can step over it. Issue #563 item 3.
+ *
+ * The title bar precedes `children` in DOM order, so the first focusable
+ * element in every dialog in the app was the dismiss button — a keyboard
+ * user's reflexive first Enter closed whatever they had just opened. An
+ * attribute rather than a positional assumption ("skip index 0"), which would
+ * also skip a real control in the dialogs that pass `showCloseButton={false}`.
+ *
+ * Only the STARTING position changes. The button stays in `FOCUSABLE_SELECTOR`
+ * and so stays in the Tab cycle, where it has to be.
+ */
+const DISMISS_ATTR = 'data-dialog-dismiss'
+
+/**
+ * Where focus should land when a dialog opens.
+ *
+ * The first focusable that is not the dismiss button, or `null` to say "the
+ * container itself" — which is what the staged Event Result dialog already did
+ * correctly by accident: it hides the ✕ for a `needs_input` frame, leaves
+ * nothing else focusable, and fell through to `container.focus()`. A dialog
+ * whose only control is "close" gets the same treatment deliberately, rather
+ * than arming Enter to dismiss it on arrival.
+ */
+function initialFocusTarget(container) {
+    const focusables = getFocusableElements(container)
+    return focusables.find((el) => !el.hasAttribute(DISMISS_ATTR)) || null
+}
 
 /**
  * Whether `el` is visible enough to belong in the focus trap.
@@ -157,6 +254,23 @@ function useFocusTrap({ containerRef, dialogId, parentDialog, activeChildCountRe
         const container = containerRef.current
         if (!container) return
 
+        // Tripwire for the MODAL_BACKGROUND_ATTR invariant: no dialog may
+        // render INSIDE a marked region. Violating it makes syncBackgroundModality
+        // set aria-hidden on the dialog's own ancestor, pruning the open modal
+        // from the accessibility tree while this focus trap still holds focus
+        // inside it — a blocking prompt that announces nothing and offers no
+        // reachable exit. It looks perfect on screen, which is how it shipped
+        // once already.
+        //
+        // Runtime, not a test, because the invariant depends on where an
+        // unrelated component happens to place its JSX: a targeted test can
+        // only cover the scenarios someone thought to render, and the one that
+        // caught this covered exactly one component in one combat state. Every
+        // dialog that opens in dev now reports its own violation.
+        if (import.meta.env?.DEV && container.closest(`[${MODAL_BACKGROUND_ATTR}]`)) {
+            logger.event('dialog_inside_modal_background', { dialogId })
+        }
+
         const previouslyFocused = document.activeElement
 
         // A dialog only responds to Escape/Tab when it's the innermost
@@ -176,9 +290,11 @@ function useFocusTrap({ containerRef, dialogId, parentDialog, activeChildCountRe
         // background. By the time this runs the child has already registered,
         // so the check sees it.
         if (isInnermostActive()) {
-            const focusables = getFocusableElements(container)
-            if (focusables.length > 0) {
-                focusables[0].focus()
+            // Deliberately not `focusables[0]` — that is the ✕. See
+            // initialFocusTarget and issue #563 item 3.
+            const target = initialFocusTarget(container)
+            if (target) {
+                target.focus()
             } else {
                 container.focus()
             }
@@ -383,9 +499,24 @@ export default function BaseDialog({
                         }}
                     >
                         {title && (
-                            <div
+                            // issue #563 item 4: an <h2>, not a <div>. The
+                            // aria-labelledby below always resolved, so the
+                            // accessible NAME was right — but the target was
+                            // not a heading, so no dialog title appeared in a
+                            // heading list and nothing nested under one. The
+                            // stats dialog showed the cost: two <h3> section
+                            // headings with an unheaded title above them.
+                            //
+                            // Level 2 sits under LeftPanel's <h1> and beside
+                            // RightPanel's map headings, which puts those
+                            // orphaned <h3>s back underneath something.
+                            // `margin: 0` and the explicit fontSize replace
+                            // the user-agent heading styles; the title bar is
+                            // a flex row sized around the old <div>.
+                            <h2
                                 id={titleId}
                                 style={{
+                                    margin: 0,
                                     fontSize: '20px',
                                     fontWeight: 'bold',
                                     color: themeStyles.titleColor,
@@ -396,11 +527,12 @@ export default function BaseDialog({
                                 }}
                             >
                                 {title}
-                            </div>
+                            </h2>
                         )}
                         {showCloseButton && (
                             <button
                                 onClick={onClose}
+                                {...{ [DISMISS_ATTR]: 'true' }}
                                 style={{
                                     background: 'none',
                                     border: 'none',

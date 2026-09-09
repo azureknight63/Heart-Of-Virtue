@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { beatUnit } from '../utils/moveCommitment'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { colors, spacing } from '../styles/theme';
 import GameText from './GameText';
@@ -74,9 +75,11 @@ const FIT_STEP = 4;
 const normalizeViewMode = (zoom) =>
   (zoom === VIEW_MODE_FIT || zoom === 'full') ? VIEW_MODE_FIT : VIEW_MODE_FOLLOW;
 
-/** "in 2 beats" / "in 1 beat" — one place, so the badge, its accessible name
- *  and the enemies list can never disagree about pluralization. */
-const formatBeatCountdown = (beats) => `in ${beats} beat${beats === 1 ? '' : 's'}`;
+/** "in 2 beats" / "in 1 beat" — one place FOR THIS PHRASE, so the badge, its
+ *  accessible name and the enemies list cannot disagree; the unit word itself
+ *  is `beatUnit`'s, shared with the cooldown tray, the abort control and the
+ *  beat timeline. */
+const formatBeatCountdown = (beats) => `in ${beats} ${beatUnit(beats)}`;
 
 
 /**

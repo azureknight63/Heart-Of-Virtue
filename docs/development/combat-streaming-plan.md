@@ -154,13 +154,45 @@ phase-keyed cues).
 **What is not, and would ship as a silent degradation if the flag were flipped
 today:**
 
-1. `Battlefield.jsx`'s `displayState`/`accBeatStates` stepping and
+1. ~~`Battlefield.jsx`'s `displayState`/`accBeatStates` stepping and
    `BattlefieldGrid`'s breadcrumb trails still read `combat.beat_states`, which
-   the socket path strips (`combat_beat_stream.py` pops it before emit). Under
-   streaming they degrade to samples from the 8s poll. **Decision (maintainer,
-   2026-09-05): derive both from the beat queue** — preserve the visuals, do
-   not delete the feature and do not keep `beat_states` on the move response to
-   feed it.
+   the socket path strips.~~ **CLOSED 2026-09-09 as an interim: `emit_resolved`
+   no longer pops `beat_states`.**
+
+   The original decision here (maintainer, 2026-09-05) was *derive both from
+   the beat queue — do not keep `beat_states` on the move response to feed it*.
+   Two facts found while verifying the degradation in a browser mean that is
+   not implementable as written, and they are worth recording so the next
+   attempt does not rediscover them:
+
+   * **A `combat:beat` carries no positions.** `BEAT_FIELDS` is seq, actor_id,
+     target_id, web_animation, outcome, hp_changes, killed, departed,
+     status_changes, log_line, sfx. The trail reads `beatState.player`'s
+     position and each `beatState.enemies[].position`, so deriving it from the
+     queue means extending the wire protocol (`build_beat`, `BEAT_FIELDS`,
+     `validate_beat`) with position data the beat events do not currently
+     carry.
+   * **The beat sequence is shorter than `beat_states`.** `stream_beats`
+     `continue`s past snapshots that change nothing observable, so a cursor
+     built from beat events cannot agree with `currentLogIndex`, which is what
+     `currentBeatIndex` is derived from. The trail would need its own
+     `seq`-driven index — a second convention alongside the log's.
+
+   The degradation was worse than "samples from the 8s poll" by the time it was
+   measured: since #567 stopped the status poll publishing a synthetic frame,
+   the trail under streaming accumulated **nothing at all** (observed live —
+   a 9-frame batch delivered on the HTTP body with `allBeatStates.length`
+   stuck at 0 for the whole batch), and `useBattlefieldAnimations`' killing-blow
+   detection had no frames to compare either.
+
+   **Decision (maintainer, 2026-09-09): keep `beat_states` on the socket's
+   authoritative state for now.** It is one server line, needs no client change
+   and no protocol extension, and it makes `emit_resolved` consistent with
+   `emit_ended`, which never stripped the key — the two siblings of one funnel
+   had disagreed in the worse direction, dropping the array on the only path
+   where the client needed it. Deriving from the beat queue remains the better
+   end state and is still what Phase 4 should do; it is now a scoped piece of
+   work rather than a one-liner.
 2. `initialize_combat` never calls `_stream_combat_result`, so first-strike NPC
    turns and reinforcement-wave rosters are never pushed as beats. Their
    animations live only in `combat.log`, whose spooler path is disabled under
@@ -197,6 +229,11 @@ a fight that feels frozen for up to 8s per action, not a soft-lock.
 - Server: delete old `combat:log/started/update/turn/suggestions_ready` emits;
   drop `beat_states` from the move response (survives only in `status`); the two
   config keys are now live; drop "dead infrastructure" comments.
+  - **Prerequisite added 2026-09-09:** dropping `beat_states` now also means
+    taking it off `combat:resolved`, which is currently what feeds the
+    breadcrumb trail under streaming (see the amended item 1 above). Do the
+    beat-queue derivation — positions in the beat payload plus a `seq`-driven
+    trail cursor — *before* this deletion, or the trail dies again silently.
 - Client: delete client-side `beat_states` replay + timer log spooler that
   assumed a baked array; delete the `fetchCombatStatus()` resync **hacks** in
   `handleSuggestedMoveClick`/move-failure (centralized in `useCombatSocket`);

@@ -402,8 +402,19 @@ class TestThePendingEntryHasOneBuilder:
         (``Looting <container>``, ``Passage_<passageway>``), so a name collision
         IS the same dialog re-opened and deduping is the right rule for both.
         """
-        assert "interact_with_target" in _callers_of("_store_pending_event")
-        assert "interact_with_target" not in _callers_of("_pending_payload")
+        # Named by their own hosts rather than by whatever method currently
+        # contains them: both started inside `interact_with_target`, moved to
+        # `_dispatch_interaction` when that passed 400 lines, and then to a
+        # function each. Same two sites, same routing rule -- the property
+        # this test names has survived all three moves, and asserting on the
+        # sites themselves is what stops the next move failing it again.
+        storers = _callers_of("_store_pending_event")
+        assert "_open_container_for_loot" in storers
+        assert "_queue_passageway_confirmation" in storers
+
+        minters = _callers_of("_pending_payload")
+        assert "_open_container_for_loot" not in minters
+        assert "_queue_passageway_confirmation" not in minters
 
     def test_the_stage_rekey_shares_the_shape_but_not_the_dedupe(self):
         """A fresh UUID is the entire point of that branch.
@@ -507,12 +518,18 @@ class TestThePendingEntryHasOneBuilder:
         in the rerouted writer is the property, not merely the presence of a
         ``_store_pending_event`` call.
         """
-        node = _game_service_functions()["interact_with_target"]
-        assert "uuid4" not in called_names(node), (
-            "interact_with_target mints its own event id again; "
-            "_store_pending_event cannot dedupe an id it was handed"
-        )
-        assert "uuid4" in called_names(_game_service_functions()["_store_pending_event"])
+        # Named by the functions that HOLD the writers, not by whatever method
+        # currently contains them. `called_names` walks a single function node,
+        # so when the loot site moved out of `interact_with_target` this
+        # assertion went vacuously true -- it would have stayed green with the
+        # site minting its own UUID again, which is the whole property.
+        funcs = _game_service_functions()
+        for host in ("_open_container_for_loot", "_queue_passageway_confirmation"):
+            assert "uuid4" not in called_names(funcs[host]), (
+                f"{host} mints its own event id again; "
+                "_store_pending_event cannot dedupe an id it was handed"
+            )
+        assert "uuid4" in called_names(funcs["_store_pending_event"])
 
 
 # ── Finding 3: the dead assignment ─────────────────────────────────────────

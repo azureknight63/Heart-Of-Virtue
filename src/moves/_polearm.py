@@ -56,6 +56,7 @@ class OverheadSmash(Move):
     display_name = 'Overhead Smash'
 
     web_animation = "heavy_attack"
+    weapon_requirement = ("Polearm",)
 
     def __init__(self, user):
         description = (
@@ -155,6 +156,7 @@ class Sweep(Move):
     display_name = 'Sweep'
 
     web_animation = "sweep"
+    weapon_requirement = ("Polearm",)
 
     #: Fraction of a full weapon swing each enemy in the cone takes. Above
     #: Reap's and Whirl Attack's: the polearm is the crowd weapon, and a Sweep
@@ -283,6 +285,7 @@ class BracePosition(Move):
     display_name = 'Brace Position'
 
     web_animation = "defend"
+    weapon_requirement = ("Polearm",)
 
     def __init__(self, user):
         description = (
@@ -360,6 +363,7 @@ class HalberdSpin(Move):
     display_name = 'Halberd Spin'
 
     web_animation = "sweep"
+    weapon_requirement = ("Polearm",)
 
     #: Fraction of a full weapon swing each enemy in the spin takes — the
     #: highest area factor in the roster, paid for in beats and fatigue.

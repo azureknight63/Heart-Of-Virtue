@@ -241,9 +241,34 @@ class CombatBeatStreamer:
         self._last = list(final_combatants or [])
 
     def emit_resolved(self, state):
-        """Emit the terminal authoritative state (beats already streamed)."""
+        """Emit the authoritative state after this move's beats.
+
+        `beat_states` is NOT stripped, though the beats have already gone out
+        one at a time. It used to be, and that made this event the reason the
+        breadcrumb trail was dead whenever streaming was on: with the flag set,
+        `useApi.js`'s `performAction` deliberately does not apply a streamed
+        non-terminal HTTP response (applying the post-move state early would
+        jump the UI past the animations the beats are driving), so this payload
+        is the only thing that reaches `transformCombatData` -- and
+        `useAccumulatedBeatStates` had nothing to accumulate for the whole
+        fight. `BattlefieldGrid` drew no trail; the killing-blow detection in
+        `useBattlefieldAnimations` had no frames to compare.
+
+        The beat events are not a substitute. `stream_beats` skips snapshots
+        that change nothing observable, so its sequence is shorter than
+        `beat_states` and an index built from it disagrees with the client's
+        `currentLogIndex`; and `build_beat` carries deltas and animation
+        instructions, never positions -- which is the only thing the trail
+        reads out of a frame. The redundancy on the wire is the point: the beat
+        events are how the fight is ANIMATED, this array is the record of what
+        happened, and they are different jobs.
+
+        `emit_ended` never stripped it, so the two siblings of one funnel
+        disagreed -- and in the worse direction: the array survived on the path
+        where the client resets the trail anyway (combat over) and was dropped
+        on the only path where the trail needed it.
+        """
         payload = dict(state or {})
-        payload.pop("beat_states", None)
         # Assign seq last so the streamer's authoritative sequence number always
         # wins over any stray "seq" key that might appear in the state payload.
         payload["seq"] = self._next_seq()

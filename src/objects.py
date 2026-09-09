@@ -15,6 +15,38 @@ from src.items import Item  # noqa; This is used in type hints
 #####
 
 
+def resolve_interaction(target, action):
+    """Return the bound callable implementing ``action`` on ``target``, or None.
+
+    The single authority on how an interaction keyword becomes a call. Keywords
+    are authored per placement in the map JSON and rendered as buttons by the
+    frontend; ``KEYWORD_METHOD_ALIASES`` is how a class says "this authored verb means
+    that method of mine" (e.g. a ``WallInscription`` authored with ``inspect``
+    still just reads the inscription).
+
+    Returning ``None`` — rather than letting ``getattr`` raise — is the point:
+    an authored verb the class never implemented used to surface to the player
+    as ``Error executing action: '<Class>' object has no attribute '<verb>'``
+    (issue #553). Callers refuse in fiction instead.
+
+    Two lookups happen here, and they read different places on purpose:
+
+    * The alias table is read off the **classes** in the MRO, merged so a
+      subclass declares only what it adds. Deliberately not off the instance:
+      the map loader ``setattr``s every authored prop onto the instance, so an
+      instance-readable table would let map JSON redirect one verb onto any
+      other method.
+    * The handler is then looked up on the **instance**, so instance-bound
+      aliases still work — which is how ``Passageway``'s per-name aliases
+      (``setattr(self, word, self.enter)``) keep resolving.
+    """
+    aliases = {}
+    for klass in reversed(type(target).__mro__):
+        aliases.update(klass.__dict__.get("KEYWORD_METHOD_ALIASES") or {})
+    handler = getattr(target, aliases.get(action, action), None)
+    return handler if callable(handler) else None
+
+
 class Object:
     # Issue #463: authored-placeholder metadata. `tile`/`player` are always
     # runtime backrefs injected by the loader, never authored -- deliberately
@@ -24,6 +56,17 @@ class Object:
         "discovery_message", "aliases",
     }
     MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description"}
+
+    #: ``{authored keyword: method name that implements it}``. Merged across
+    #: the MRO by :func:`resolve_interaction`; empty means every keyword must
+    #: name a method directly. See issue #553.
+    #:
+    #: NOT ``action_aliases`` -- that is the instance-level LIST of keyword
+    #: strings the map author writes and the client renders as buttons. This
+    #: is the class-level MAP from such a keyword to the method that serves
+    #: it. Adding a verb to ``action_aliases`` alone gives the player a button
+    #: with no dispatch behind it, which is exactly what #553 was.
+    KEYWORD_METHOD_ALIASES: dict[str, str] = {}
 
     def __init__(
         self,
@@ -234,6 +277,29 @@ class WallInscription(Object):
     An inscription (typically visible) that can be looked at.
     """
 
+    #: Shipped maps author inspect/view/check/look/touch on inscriptions —
+    #: 18 keywords across 10 placements in 4 maps — while the class
+    #: implemented only read/examine, so every one of those buttons raised
+    #: (issue #553).
+    #:
+    #: They are all genuine synonyms: an inscription's entire purpose is to
+    #: deliver ``self.text``, and there is no second behaviour any of these
+    #: verbs could plausibly mean — ``touch``, on the Carved Lintel the bug
+    #: was reported against, is tracing a worn carving with a finger, which
+    #: is reading it.
+    #:
+    #: ``peruse`` is not authored anywhere today; it is here because it is on
+    #: ``GameService._ALLOWED_INTERACTION_VERBS``, so a client can send it
+    #: against any target and it would otherwise be refused for no reason.
+    KEYWORD_METHOD_ALIASES = {
+        "inspect": "read",
+        "view": "read",
+        "check": "read",
+        "look": "read",
+        "touch": "read",
+        "peruse": "read",
+    }
+
     def __init__(
         self,
         player: Player,
@@ -283,6 +349,33 @@ class Container(Object):
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
 
+    #: The five verbs every container offers as buttons by default. Declared
+    #: separately so this list and ``LOOK_INSIDE_VERBS`` below are one literal
+    #: rather than two that must agree.
+    _DEFAULT_LOOK_INSIDE_ALIASES = ("check", "view", "examine", "inspect", "peruse")
+
+    #: Keywords that mean "open it and show me what's inside" — the container
+    #: family's one composite interaction, which opens the container and then
+    #: hands the API layer a loot dialog. Declared here because it is a
+    #: property of the object, not of the transport: ``GameService`` branches
+    #: on this set, and the map-keyword contract test reads it too, so the two
+    #: cannot drift (issue #553 — ``search``/``look``/``lift`` account for 13
+    #: authored keywords across 6 placements in 2 maps, while only
+    #: loot/check/view/examine/inspect/peruse were recognised; the other
+    #: three fell through to a bare ``getattr`` and raised).
+    #:
+    #: Every entry of ``action_aliases`` (the buttons a container shows by
+    #: default) must appear here, or that button would have no dispatch behind
+    #: it. Asserted by tests/test_object_action_dispatch_contract.py.
+    LOOK_INSIDE_VERBS = frozenset({
+        "loot", "search", "look", "lift", *_DEFAULT_LOOK_INSIDE_ALIASES,
+    })
+
+    # Class-level default so a container restored from an older save (or built
+    # via the loader's ``cls.__new__`` fallback) still resolves the attribute
+    # and falls through to the generic open line.
+    open_message = None
+
     # Issue #463: `inventory` is the nested-placeholder case the issue calls
     # out explicitly -- each element is itself an authored Item placeholder,
     # resolved recursively. `state`/`revealed`/`possible_states` are
@@ -300,9 +393,9 @@ class Container(Object):
     MAP_AUTHORED_PARAMS = {
         "name", "description", "hidden", "hide_factor", "start_open",
         "idle_message", "discovery_message", "nickname", "locked",
-        "inventory", "events", "merchant", "stock_count",
+        "inventory", "events", "merchant", "stock_count", "open_message",
     }
-    MAP_AUTHORED_OVERRIDES = {"allowed_item_types", "inventory"}
+    MAP_AUTHORED_OVERRIDES = {"allowed_item_types", "inventory", "open_message"}
 
     @property
     def start_open(self) -> bool:
@@ -349,9 +442,16 @@ class Container(Object):
         items: list["Item"] = None,
         allowed_subtypes: list[type[Item]] = None,
         stock_count: int = 10,
+        open_message: str = None,
     ):
         """Accept both 'items' (legacy/tests) and 'inventory'. Normalize merchant to a name when possible.
         Also accept 'allowed_subtypes' and expose as allowed_item_types (list of types).
+
+        ``open_message`` is the optional per-placement line narrated instead of
+        the generic one when the container is first opened. It exists so a
+        placement that really does have a lid, a flap or a tied cord can say so
+        without the generic path claiming those features for the 26 shipped
+        placements that have none (issue #565).
         """
         # Normalize inventory parameter: accept items alias for tests/tools
         inv = (
@@ -359,6 +459,7 @@ class Container(Object):
         )
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
+        self.open_message = open_message
         # Set default revealed flag
         self.revealed = False
         # Assign initial locked state (may be overridden by start_open semantics)
@@ -404,7 +505,7 @@ class Container(Object):
             if "open" not in self.keywords:
                 self.keywords.append("open")
 
-        self.action_aliases.extend(["check", "view", "examine", "inspect", "peruse"])
+        self.action_aliases.extend(Container._DEFAULT_LOOK_INSIDE_ALIASES)
         self.keywords.extend(self.action_aliases)
 
         self.process_events()  # process initial events (triggers labeled "auto")
@@ -468,17 +569,28 @@ class Container(Object):
             cprint("Jean couldn't find a matching key.", "red")
 
     def open(self):
-        """Optimized open method with f-string formatting"""
+        """Open the container and narrate it.
+
+        The narration says only what is true of *every* container: that Jean
+        works it open and can see inside. It used to claim a lid lifting on a
+        hinge, which was narrated verbatim over a Cold Hearth, a Stream Trough
+        and two wall niches (issue #565) — 26 of the 47 shipped placements have
+        no lid at all. A placement that really does have one authors its own
+        line via ``open_message`` rather than being described by a template.
+        """
         if self.locked:
             narrate(
-                f"Jean pulls on the lid of the {self.nickname} to no avail. It's locked."
+                f"Jean tries the {self.nickname}. It won't give — it's locked."
             )
             return
 
         if self.state == "closed":
-            narrate(f"The {self.nickname} creaks eerily.")
-            time.sleep(0.5)
-            narrate("The lid lifts back on the hinge, revealing the contents inside.")
+            if self.open_message:
+                narrate(self.open_message)
+            else:
+                narrate(f"Jean works the {self.nickname} open.")
+                time.sleep(0.5)
+                narrate("The contents come into view.")
             self.revealed = True
             self.state = "opened"
             if "open" in self.keywords:
@@ -713,7 +825,10 @@ class HealingSpring(Object):
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
         super().__init__(
-            name="HealingSpring",
+            # Issue #565: `name` is what the player reads in where()["objects"]
+            # and in the INTERACT dialog, so it must be prose. This used to be
+            # the bare class name, which leaked "HealingSpring" into both.
+            name="Healing Spring",
             description=description,
             idle_message="There is a small spring bubbling here.",
             discovery_message=" a healing spring!",
@@ -773,8 +888,29 @@ class Passageway(Object):
     MAP_AUTHORED_PARAMS = {
         "events_before", "events_after", "teleport_map", "teleport_tile",
         "persist", "hidden", "hide_factor", "passthrough", "name",
-        "description", "idle_message", "discovery_message",
+        "description", "idle_message", "discovery_message", "demo_end",
     }
+
+    #: Class-level default so a passageway restored from an older save still
+    #: resolves the attribute (and crosses normally).
+    demo_end = False
+
+    #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
+    #: once because ``__init__`` registers them as aliases and
+    #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
+    #: delegator and forgetting the tuple re-opens #552 exactly, with a
+    #: demo-end passageway crossable by a verb ``is_crossing_handler`` answers
+    #: False for. ``tests/test_object_action_dispatch_contract.py`` derives
+    #: the check from this attribute rather than a hand-kept list.
+    _DELEGATED_CROSSING_VERBS = ("go", "leave", "exit")
+
+    #: The methods that CROSS this passageway. The delegators above are
+    #: distinct bound methods, so an identity test against ``enter`` alone
+    #: answers False for all three -- which is how a demo-end passageway
+    #: stayed crossable by the only three verbs the shipped map authors
+    #: (#552). The authored name words (``ferry``, ``landing``) ARE bound to
+    #: ``enter`` itself and so answer through that entry.
+    CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
 
     def __init__(
         self,
@@ -793,6 +929,7 @@ class Passageway(Object):
         description: str = "A passageway leading elsewhere is here.",
         idle_message: str = "There is a passageway here.",
         discovery_message: str = " a passageway!",
+        demo_end: bool = False,
     ):
         aliases = [name.lower(), "passage"]
         super().__init__(
@@ -807,7 +944,7 @@ class Passageway(Object):
             aliases=aliases,
         )
         self.keywords.append("enter")
-        self.action_aliases.extend(["go", "leave", "exit"])
+        self.action_aliases.extend(Passageway._DELEGATED_CROSSING_VERBS)
         self.keywords.extend(self.action_aliases)
         _name_words = name.lower().replace("'s", "").replace("'", "").split()
         for _word in _name_words:
@@ -824,8 +961,57 @@ class Passageway(Object):
         # If True, the frontend skips the Interactions panel and directly executes
         # the first action (enter) when the player clicks this object.
         self.passthrough = passthrough
+        # If True, this passageway is where the demo stops: using it narrates
+        # the moment and sets the 'demo_ended' story gate instead of crossing.
+        # See end_demo() and issue #552.
+        self.demo_end = demo_end
+
+    def is_crossing_handler(self, handler):
+        """True when ``handler`` is one of this passageway's crossing methods.
+
+        The engine owns which verbs mean "use it", so callers that need to
+        treat a crossing specially -- the API's demo-end gate -- ask here
+        rather than naming ``enter`` and silently missing its delegators.
+        """
+        if handler is None:
+            return False
+        # `==`, not `is`: `getattr` mints a FRESH bound-method object on every
+        # access, so identity never matches and every crossing verb would
+        # answer False -- silently reopening #552. Do not "make the
+        # comparisons consistent" with the `ally is self.player` checks in
+        # combat_adapter.py; those compare entities, this compares bound
+        # methods.
+        return any(
+            handler == getattr(self, name, None)
+            for name in self.CROSSING_METHOD_NAMES
+        )
+
+    def end_demo(self, player):
+        """Close out the demo at this passageway instead of crossing it.
+
+        Jean stays where he is; the story gate ``demo_ended`` is set so any
+        later content can read it. The player-facing end-of-beta message (with
+        its Send Feedback button) is the client's ``BetaEndDialog``, which the
+        API triggers off this — so the prose here is only the in-fiction beat
+        that belongs in the interaction panel, not the meta-text.
+
+        The line names the passageway and claims nothing about its
+        surroundings, so it stays true wherever the demo's edge is moved to.
+        """
+        story = getattr(getattr(player, "universe", None), "story", None)
+        if story is not None:
+            story["demo_ended"] = "1"
+        narrate(
+            f"Jean stops at {self.build_article_phrase(self.name)} and looks "
+            "at what lies beyond. The way is plain enough — but not today."
+        )
 
     def enter(self, player):
+        if self.demo_end:
+            # Before the merchandise drop and events_before: neither belongs to
+            # a crossing that does not happen.
+            self.end_demo(player)
+            return
         # Drop any merchandise items immediately upon attempting to enter/teleport
         if hasattr(player, "drop_merchandise_items"):
             player.drop_merchandise_items()
@@ -845,7 +1031,17 @@ class Passageway(Object):
 
     def _commit_teleport(self, player):
         """Perform the actual teleport.  Called directly by CLI enter()
-        or via PassagewayTransitionEvent.process() in API mode."""
+        or via PassagewayTransitionEvent.process() in API mode.
+
+        The demo-end refusal is repeated here, not just in ``enter``, because
+        this is the crossing PRIMITIVE and ``PassagewayTransitionEvent.process``
+        reaches it without passing through ``enter`` at all (src/events.py).
+        Guarding only the polite entry point left the demo's edge crossable by
+        whichever route skipped it (#552).
+        """
+        if self.demo_end:
+            self.end_demo(player)
+            return
         player.teleport(self.teleport_map, self.teleport_tile)
         if self.events_after:
             for event in self.events_after:

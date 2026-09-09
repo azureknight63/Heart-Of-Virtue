@@ -45,6 +45,7 @@ class ChipAway(Move):
     display_name = 'Chip Away'
 
     web_animation = "quick_attack"
+    weapon_requirement = ("Pick",)
 
     #: Number of independent strikes the flurry resolves, and each strike's
     #: share of ``self.power``. Together they set the move's real output:
@@ -216,6 +217,7 @@ class ExploitWeakness(Move):
     display_name = 'Exploit Weakness'
 
     web_animation = "pierce"
+    weapon_requirement = ("Pick",)
 
     def __init__(self, user):
         description = (
@@ -362,6 +364,7 @@ class Stupefy(Move):
     display_name = 'Stupefy'
 
     web_animation = "heavy_attack"
+    weapon_requirement = ("Pick",)
 
     def __init__(self, user):
         description = (

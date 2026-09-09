@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useId } from 'react';
 import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
@@ -6,13 +6,15 @@ import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
-import { displayNameOf } from '../utils/combatMoveStatus';
+import { displayNameOf, moveAvailability, autoResolvedTargetId } from '../utils/combatMoveStatus';
+import { useOccludedNavHandoff } from '../hooks/useOccludedNavHandoff';
 import {
     STAGE_KEYS,
     getStageBeats,
     totalStageBeats,
     formatBeats,
     maxTotalStageBeats,
+    beatUnit,
 } from '../utils/moveCommitment';
 
 // Stage -> color. Deliberately distinct from MOVE_CATEGORY_COLOR (categories.js) —
@@ -69,7 +71,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
         <div
             data-testid="move-commitment-bar"
             data-total-beats={total}
-            title={`${breakdown} (${formatBeats(total)} beats total lockout)`}
+            title={`${breakdown} (${formatBeats(total)} ${beatUnit(total)} total lockout)`}
             style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}
         >
             <div
@@ -101,11 +103,173 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
                 </div>
             </div>
             <GameText variant="muted" size="xs" style={{ fontFamily: fonts.main, whiteSpace: 'nowrap' }}>
-                {formatBeats(total)} beats
+                {formatBeats(total)} {beatUnit(total)}
             </GameText>
         </div>
     );
 };
+
+/**
+ * One move in the category flyout.
+ *
+ * Extracted from a 144-line render callback that closed over eight values from
+ * the panel. Everything here is about ONE card — availability, the single
+ * target it would auto-pick, the hover chrome, the LOCKED chip, the commitment
+ * bar and the reason line — so it now reads and changes as one thing.
+ *
+ * `isHovered` and `reasonId` are passed in because they concern this card's
+ * place among its siblings, not the card itself.
+ */
+function MoveCard({
+  move,
+  isHovered,
+  reasonId,
+  isProcessing,
+  maxCommitmentBeats,
+  onHoverChange,
+  onMoveClick,
+  onTargetHover,
+}) {
+  const { playSFX } = useAudio();
+  // Not `move.available !== false`: a targeted move can
+  // arrive advertised as available with nothing actually
+  // in reach, and casting it only earns a server refusal
+  // (issue #554) — see moveAvailability.
+  const { available: isAvailable, reason } = moveAvailability(move);
+
+  // Which combatant this card would hit if clicked, for the battlefield
+  // hover. The predicate is `autoResolvedTargetId`'s -- the same one
+  // LeftPanel submits on, so the highlight cannot name a different enemy
+  // than the click. Narrowed to `enemy_` HERE, not there: an ally target is
+  // still auto-resolved and submitted, it just has no enemy-roster token to
+  // light up.
+  const autoTargetId = autoResolvedTargetId(move);
+  const singleTargetId = autoTargetId?.startsWith('enemy_') ? autoTargetId : null;
+
+  // The card is a wrapper, not the button itself: the
+  // unavailability reason carries interactive glossary terms
+  // (#507), and a disabled <button> does not dispatch pointer
+  // or keyboard events to anything nested inside it — so a
+  // term rendered in there would be inert exactly when it is
+  // needed, besides being a nested interactive control.
+  //
+  // Two seams that restructure opened, both fixed here: the
+  // wrapper carries no padding (the button pads itself, so the
+  // whole card face casts the move and shows the right cursor
+  // instead of a 12px dead ring), and the hover handlers sit on
+  // the wrapper — the element the hover chrome is drawn on — so
+  // crossing from the button onto the ring or the reason line
+  // cannot blink the card highlight and the battlefield's enemy
+  // highlight off under a pointer that never left the card.
+  return (
+    <div
+      data-testid="move-card"
+      data-available={isAvailable ? 'true' : 'false'}
+      onMouseEnter={() => {
+          if (isAvailable) {
+              onHoverChange(true);
+              if (singleTargetId && onTargetHover) {
+                  onTargetHover(singleTargetId);
+              }
+          }
+      }}
+      onMouseLeave={() => {
+          onHoverChange(false);
+          if (onTargetHover) {
+              onTargetHover(null);
+          }
+      }}
+      style={{
+          backgroundColor: isHovered ? colors.alpha.secondary[10] : 'rgba(255, 255, 255, 0.03)',
+          // Dashed, desaturated and dimmed: three cues
+          // that survive a colour-blind or greyscale
+          // reading of the card, on top of the LOCKED
+          // chip below (issue #565).
+          border: `1px ${isAvailable ? 'solid' : 'dashed'} ${isHovered ? colors.secondary : colors.border.light}`,
+          borderRadius: '4px',
+          padding: 0,
+          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: spacing.xs,
+          opacity: isAvailable ? 1 : 0.55,
+          filter: isAvailable ? 'none' : 'grayscale(0.5)',
+          boxShadow: isHovered ? shadows.glow : 'none',
+          width: '100%',
+      }}
+    >
+      <button
+          onClick={() => {
+              if (isAvailable && !isProcessing) {
+                  playSFX('attack');
+                  if (onTargetHover) onTargetHover(null);
+                  onMoveClick(move);
+              }
+          }}
+          disabled={!isAvailable || isProcessing}
+          title={!isAvailable ? reason : ''}
+          aria-describedby={!isAvailable && reason ? reasonId : undefined}
+          style={{
+              background: 'none',
+              border: 'none',
+              padding: spacing.md,
+              color: 'inherit',
+              textAlign: 'left',
+              cursor: isProcessing ? 'wait' : (isAvailable ? 'pointer' : 'not-allowed'),
+              display: 'flex',
+              flexDirection: 'column',
+              gap: spacing.xs,
+              width: '100%',
+          }}
+      >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <GameText
+                  variant={isHovered ? 'highlight' : (isAvailable ? 'bright' : 'dim')}
+                  weight="bold"
+              >
+                  {displayNameOf(move)}
+              </GameText>
+              <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, flexShrink: 0 }}>
+                  {/* A word and a glyph, not just the
+                      dimming: "state is never conveyed
+                      by colour alone". It sits inside
+                      the button so the card's accessible
+                      name carries it too. */}
+                  {!isAvailable && (
+                      <GameText variant="dim" size="xs" weight="bold" style={{ letterSpacing: '0.05em' }}>
+                          ⛔ LOCKED
+                      </GameText>
+                  )}
+                  {move.fatigue_cost > 0 && (
+                      <GameText variant="muted" size="xs">
+                          Fatigue: {move.fatigue_cost}
+                      </GameText>
+                  )}
+              </div>
+          </div>
+          <MoveCommitmentBar move={move} maxTotal={maxCommitmentBeats} />
+          <GameText variant={isAvailable ? 'muted' : 'dim'} size="sm">
+              {move.description}
+          </GameText>
+      </button>
+      {!isAvailable && reason && (
+          <GlossaryText
+              id={reasonId}
+              text={`⚠ ${reason}`}
+              style={{
+                  color: colors.text.danger,
+                  fontSize: '0.75rem',
+                  fontStyle: 'italic',
+                  fontFamily: fonts.main,
+                  // The wrapper pads nothing now, so the
+                  // reason line pays for its own inset.
+                  padding: `0 ${spacing.md} ${spacing.md}`,
+              }}
+          />
+      )}
+    </div>
+  );
+}
 
 // `isProcessing` is passed by LeftPanel while a move submission is in flight.
 // Without it the panel stays live during the API round trip and a double-click
@@ -114,8 +278,16 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
 // group → category mapping lives in utils/categories.js (CATEGORY_GROUPS), which
 // LeftPanel's button gating reads too, so the two can never drift apart.
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
-    const { playSFX } = useAudio();
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
+    const contentRef = useRef(null);
+    // Base for the per-card reason ids that aria-describedby points at. useId
+    // keeps them unique across concurrent panels and stable across re-renders.
+    const reasonIdBase = useId();
+    // Every clickable in the JSX below must be a real control (a <button>,
+    // or role="button"/tabindex). A plain <div onClick> has its clicks
+    // swallowed and re-aimed at HeroPanel's category nav -- see
+    // PANEL_CONTROL_SELECTOR's editing rule in the hook.
+    useOccludedNavHandoff(contentRef);
 
     const filteredMoves = useMemo(() => movesInGroup(moves, category), [moves, category]);
     // Shared scale across THIS panel's visible moves, not per-card — see
@@ -141,7 +313,9 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                 backgroundColor: colors.bg.panelDeep,
             }}
         >
-            <div style={{
+            {/* ref: useOccludedNavHandoff resolves the panel root from here,
+                because GamePanel takes no ref of its own. */}
+            <div ref={contentRef} style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -181,119 +355,22 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                     </GameText>
                 ) : (
                     filteredMoves.map((move, index) => {
-                        const isAvailable = move.available !== false;
-                        const reason = move.reason || '';
                         const moveKey = move.name || move.display_name;
-                        const isHovered = hoveredMoveName === moveKey;
-
-                        // Single target detection for hover effect
-                        const firstTarget = move.viable_targets?.[0];
-                        const singleTargetId = (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1 && firstTarget?.id?.startsWith('enemy_'))
-                            ? firstTarget.id
-                            : null;
-
-                        // The card is a wrapper, not the button itself: the
-                        // unavailability reason carries interactive glossary terms
-                        // (#507), and a disabled <button> does not dispatch pointer
-                        // or keyboard events to anything nested inside it — so a
-                        // term rendered in there would be inert exactly when it is
-                        // needed, besides being a nested interactive control.
-                        //
-                        // Two seams that restructure opened, both fixed here: the
-                        // wrapper carries no padding (the button pads itself, so the
-                        // whole card face casts the move and shows the right cursor
-                        // instead of a 12px dead ring), and the hover handlers sit on
-                        // the wrapper — the element the hover chrome is drawn on — so
-                        // crossing from the button onto the ring or the reason line
-                        // cannot blink the card highlight and the battlefield's enemy
-                        // highlight off under a pointer that never left the card.
                         return (
-                          <div
+                          <MoveCard
                             key={moveKey}
-                            onMouseEnter={() => {
-                                if (isAvailable) {
-                                    setHoveredMoveName(moveKey);
-                                    if (singleTargetId && onTargetHover) {
-                                        onTargetHover(singleTargetId);
-                                    }
-                                }
-                            }}
-                            onMouseLeave={() => {
-                                setHoveredMoveName(null);
-                                if (onTargetHover) {
-                                    onTargetHover(null);
-                                }
-                            }}
-                            style={{
-                                backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-                                border: `1px solid ${isHovered ? colors.secondary : colors.border.light}`,
-                                borderRadius: '4px',
-                                padding: 0,
-                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: spacing.xs,
-                                opacity: isAvailable ? 1 : 0.6,
-                                boxShadow: isHovered ? shadows.glow : 'none',
-                                width: '100%',
-                            }}
-                          >
-                            <button
-                                onClick={() => {
-                                    if (isAvailable && !isProcessing) {
-                                        playSFX('attack');
-                                        if (onTargetHover) onTargetHover(null);
-                                        onMoveClick(move);
-                                    }
-                                }}
-                                disabled={!isAvailable || isProcessing}
-                                title={!isAvailable ? reason : ''}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    padding: spacing.md,
-                                    color: 'inherit',
-                                    textAlign: 'left',
-                                    cursor: isProcessing ? 'wait' : (isAvailable ? 'pointer' : 'not-allowed'),
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: spacing.xs,
-                                    width: '100%',
-                                }}
-                            >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                    <GameText
-                                        variant={isHovered ? 'highlight' : (isAvailable ? 'bright' : 'dim')}
-                                        weight="bold"
-                                    >
-                                        {displayNameOf(move)}
-                                    </GameText>
-                                    {move.fatigue_cost > 0 && (
-                                        <GameText variant="muted" size="xs">
-                                            Fatigue: {move.fatigue_cost}
-                                        </GameText>
-                                    )}
-                                </div>
-                                <MoveCommitmentBar move={move} maxTotal={maxCommitmentBeats} />
-                                <GameText variant={isAvailable ? 'muted' : 'dim'} size="sm">
-                                    {move.description}
-                                </GameText>
-                            </button>
-                            {!isAvailable && reason && (
-                                <GlossaryText
-                                    text={`⚠ ${reason}`}
-                                    style={{
-                                        color: colors.text.danger,
-                                        fontSize: '0.75rem',
-                                        fontStyle: 'italic',
-                                        fontFamily: '"Courier New", monospace',
-                                        // The wrapper pads nothing now, so the
-                                        // reason line pays for its own inset.
-                                        padding: `0 ${spacing.md} ${spacing.md}`,
-                                    }}
-                                />
-                            )}
-                          </div>
+                            move={move}
+                            isHovered={hoveredMoveName === moveKey}
+                            // Referenced by the button so the reason is exposed
+                            // with it, not only in a title tooltip a touch
+                            // device can never show (issue #565).
+                            reasonId={`${reasonIdBase}-reason-${index}`}
+                            isProcessing={isProcessing}
+                            maxCommitmentBeats={maxCommitmentBeats}
+                            onHoverChange={(hovered) => setHoveredMoveName(hovered ? moveKey : null)}
+                            onMoveClick={onMoveClick}
+                            onTargetHover={onTargetHover}
+                          />
                         );
                     })
                 )}

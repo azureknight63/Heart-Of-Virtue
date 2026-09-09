@@ -180,8 +180,11 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
                 border: `1px solid ${colors.border.light}`,
                 textAlign: 'center'
               }}>
+                {/* The inner GameText must be a span: GameText defaults to
+                    `as="p"`, and a <p> inside a <p> is invalid HTML that React
+                    warned about on every level-up render (#565). */}
                 <GameText variant="success" size="md" weight="bold">
-                  LEVEL {lu.old_level} → <GameText variant="primary">{lu.new_level}</GameText>
+                  LEVEL {lu.old_level} → <GameText as="span" variant="primary">{lu.new_level}</GameText>
                 </GameText>
                 <GameText variant="muted" size="xs">+{lu.points_awarded} Points awarded</GameText>
               </div>

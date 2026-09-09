@@ -1,9 +1,10 @@
 import logging
 import uuid
 import contextlib
+import inspect
 import re
 from collections import Counter
-from typing import TYPE_CHECKING, Dict, Any, Optional, List
+from typing import TYPE_CHECKING, Dict, Any, NamedTuple, Optional, List
 from unittest.mock import patch
 
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
@@ -20,7 +21,7 @@ from src.functions import (
 from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
-from src.narration import capture_narration, narrate
+from src.narration import ANSI_ESCAPE_RE, capture_narration, narrate
 from src.story import gorran_flavor
 
 if TYPE_CHECKING:
@@ -93,6 +94,250 @@ _LLM_NOISE_PREFIXES = (
     "[WARNING]",
 )
 
+
+#: Shown when an interaction raised something unexpected. Deliberately says
+#: nothing about the exception: the interaction dialog is in-fiction prose, and
+#: engine internals rendered there read as broken content (issue #553). The
+#: traceback goes to the log instead.
+_ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
+
+#: The #543 refusal, named because two guard sites ship it: the event-confirm
+#: path in ``process_event_input`` (under ``"error"``) and
+#: ``interact_with_target`` (under ``"message"``). NOT ``move_player``, which
+#: refuses a different thing with a different sentence ("Cannot move while in
+#: combat").
+_PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
+
+
+#: Cap on the client-supplied verb echoed back by
+#: :func:`_unsupported_action_message`. The /world/interact route validates
+#: `action` as a non-empty string but sets no max_length, so without this a
+#: caller could have a megabyte of its own text reflected into the response.
+_ECHOED_ACTION_MAX_LENGTH = 40
+
+
+def _is_demo_end_passageway(target):
+    """Is this the passageway the demo stops at?
+
+    Its own function because the dispatch chain asks it twice with OPPOSITE
+    polarity -- the demo-end arm needs it True, and the generic
+    "step through?" arm needs it False, so that a non-crossing verb on the
+    demo edge cannot arm a confirmation whose confirm ends the demo with no
+    ``beta_end`` (#552).
+    """
+    from src.objects import Passageway
+
+    return isinstance(target, Passageway) and getattr(target, "demo_end", False)
+
+
+def _is_demo_end_crossing(target, handler):
+    """True when `handler` is a verb that would CROSS a demo-end passageway.
+
+    Gated on the resolved handler rather than on the verb, because a
+    Passageway binds its authored name words (`ferry`, `landing`) to `enter`
+    on the instance, and all of those are legitimate ways to say "use it".
+    Without this the demo-end branch fired for every verb the allow-list
+    permits, so merely examining the ferry to read its description ended the
+    demo and set the story gate.
+
+    Which handlers count is `Passageway.is_crossing_handler`'s answer, not
+    this function's: comparing against `enter` here missed `go`/`leave`/`exit`,
+    which delegate to it rather than alias it -- and those three are exactly
+    the shipped ferry's `action_aliases`, so the miss covered every way a
+    player actually crosses. (Its `keywords` list is wider than that:
+    `enter, go, leave, exit, ferry, landing`. The two name words bind to
+    `enter` directly, which is why the handler, not the verb, is the thing to
+    ask about.)
+
+    Takes the already-resolved handler rather than the verb, so one
+    interaction resolves the verb once: `_dispatch_interaction` needs the same
+    answer for its own dispatch, and two `resolve_interaction` calls are two
+    sites that have to keep agreeing about what a verb means.
+    """
+    if not _is_demo_end_passageway(target):
+        return False
+    return target.is_crossing_handler(handler)
+
+
+def _call_interaction_handler(method, player, quantity):
+    """Call an interaction handler with whatever arguments it declares.
+
+    Authored content and thirteen years of engine classes disagree about the
+    signature: some handlers take the player, some take a quantity too, and a
+    few take nothing at all. Introspecting is not defensiveness -- it is the
+    only way one dispatch site can serve all three without the map author
+    having to know which shape their object's method happens to be.
+    """
+    param_names = [
+        name for name in inspect.signature(method).parameters if name != "self"
+    ]
+    if not param_names:
+        return method()
+    if "quantity" in param_names:
+        return method(player, quantity=quantity)
+    return method(player)
+
+
+def _merge_new_events(existing, new_events):
+    """Append the tile events not already present, matching on `name`.
+
+    The dedupe rule was spelled at both sites that fold a second
+    `trigger_tile_events` pass into a response, with two different comments
+    ("Avoid duplicates" / "Avoid duplicates if they somehow got in") and no
+    statement of what makes two events the same. It is `name`, and only
+    `name`, which is worth having in one place: a payload that gains an id
+    would otherwise want the rule changed at both.
+
+    Mutates `existing` in place, because both callers already own their list.
+    """
+    for new_event in new_events or []:
+        if not any(e.get("name") == new_event.get("name") for e in existing):
+            existing.append(new_event)
+
+
+def _strip_llm_noise_lines(text):
+    """Drop the internal LLM diagnostic lines that must never reach the UI.
+
+    The prefix tuple was shared; the MATCHING RULE (`lstrip` then
+    `startswith`, per line) was spelled once in the event pipeline and again
+    in the interaction pipeline. A prefix that needed a different match --
+    a trailing marker, say -- would have had to be taught twice.
+    """
+    return [
+        line
+        for line in text.splitlines()
+        if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
+    ]
+
+
+def _fallback_interaction_message(action, target, events_triggered):
+    """What to say when an interaction captured no narration at all.
+
+    Prose, deliberately not part of the sanitising pipeline: an empty capture
+    is a content gap, and the wording is the answer to it.
+    """
+    # When events were triggered (e.g. PassagewayTransitionEvent), skip the
+    # robotic fallback text — the event UI handles it.
+    if events_triggered:
+        return ""
+    if action == "take_all":
+        return "Jean collects all of the available items."
+    if action == "talk":
+        target_name = getattr(target, "name", None)
+        return f"{target_name} does not respond." if target_name else "No response."
+    return f"Jean successfully completes the '{action}' action."
+
+
+def _unsupported_action_message(target, action):
+    """In-fiction refusal for a keyword the target does not implement.
+
+    Authored map keywords are not validated against the class that has to
+    implement them, so this is reachable from content as well as from a client
+    sending a verb off ``_ALLOWED_INTERACTION_VERBS``. Either way the player
+    gets prose, never an attribute name.
+    """
+    # "object", not "that" -- the fallback is substituted into "... the {name}."
+    # below, so "that" renders as "There's no way for Jean to touch the that."
+    name = getattr(target, "name", None) or "object"
+    verb = str(action)[:_ECHOED_ACTION_MAX_LENGTH]
+    return f"There's no way for Jean to {verb} the {name}."
+
+
+class _InteractionOutcome(NamedTuple):
+    """What one dispatched interaction produced.
+
+    The counterpart to :class:`_InteractionRequest`, for the same reason: this
+    was a bare ``(list, bool, Optional[str])`` unpacked positionally, in a
+    change whose whole argument is that loose heterogeneous tuples are the
+    defect. ``refusal`` is the in-fiction SENTENCE, not a response body -- the
+    route builds that.
+    """
+
+    events: list
+    beta_end: bool
+    refusal: Optional[str]
+
+
+class _InteractionRequest(NamedTuple):
+    """Everything one interaction is about, resolved once and passed around.
+
+    The five helpers below it were each taking a different subset of these
+    seven as loose, untyped positionals -- several of compatible shape, so a
+    caller that transposed ``action`` and ``tile`` still ran. Same argument
+    :class:`_PreInteractionLocation` makes for the pre-location triple,
+    applied to the request it sits beside.
+
+    ``target_id`` rides along beside ``target`` because the attack redirect
+    hands the id back to :meth:`GameService.start_combat`, which resolves it
+    itself rather than taking an entity.
+    """
+
+    player: Any
+    target: Any
+    target_id: str
+    tile: Any
+    action: str
+    quantity: Optional[int]
+    session_data: Optional[Dict]
+
+
+class _PreInteractionLocation(NamedTuple):
+    """Where the player stood before an interaction ran.
+
+    One value rather than three loose ``pre_*`` parameters: the only question
+    ever asked of them is :meth:`player_moved`, and a caller that captured two
+    of the three would still typecheck while answering that question wrongly.
+    """
+
+    map_name: Optional[str]
+    x: int
+    y: int
+
+    @classmethod
+    def capture(cls, player) -> "_PreInteractionLocation":
+        return cls(
+            player.map.get("name") if player.map else None,
+            player.location_x,
+            player.location_y,
+        )
+
+    def player_moved(self, player) -> bool:
+        """Has ``player`` left this spot? (i.e. did the interaction teleport.)"""
+        post_map_name = player.map.get("name") if player.map else None
+        return (
+            post_map_name != self.map_name
+            or player.location_x != self.x
+            or player.location_y != self.y
+        )
+
+
+#: Runs of blank lines in captured narration, collapsed to one. Compiled at
+#: module level rather than left as the one inline regex in a function that
+#: already uses a named, imported one (``ANSI_ESCAPE_RE``, from
+#: ``src/narration.py``).
+_BLANK_LINE_RUN_RE = re.compile(r"\n\s*\n")
+
+#: API-side: the two ``_ALLOWED_INTERACTION_VERBS`` entries that move an item
+#: OUT of a container. Unlike ``Container.LOOK_INSIDE_VERBS``, which the engine
+#: declares and this layer must not copy, the engine declares nothing here --
+#: so this is the one authority, not a duplicate of one.
+_CONTAINER_ITEM_VERBS = frozenset({"take", "equip"})
+
+#: The break-away threshold, in feet. Named because the refusal message below
+#: quotes it: as a bare literal in the guard, a retune would silently make the
+#: message lie to the player about the rule it exists to explain.
+FLEE_BREAK_AWAY_DISTANCE = 20
+
+#: Refusal handed back when FLEE is attempted with an enemy inside the
+#: break-away threshold. It names the remedy on purpose: a live QA tester in an
+#: unwinnable fight read the previous bare "enemies are too close" as a
+#: permanent soft-lock, because nothing anywhere told them WITHDRAW is FLEE's
+#: prerequisite. The gate itself is unchanged — this is copy only.
+FLEE_TOO_CLOSE_MESSAGE = (
+    "Cannot flee — the enemies are too close to break away. Use WITHDRAW to back "
+    "off first; Jean can run once every foe is at least "
+    f"{FLEE_BREAK_AWAY_DISTANCE} feet away."
+)
 
 #: Stand-in attribute value for a player object that predates (or omits) the
 #: attribute entirely — a sheet request must not 500 over a partially built
@@ -298,15 +543,15 @@ class GameService:
         if not output:
             return ""
 
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        lines = output.splitlines()
+        # The error filter layers OVER the shared LLM-noise one, and uses
+        # `.strip()` rather than `.lstrip()` -- deliberately, so a prefix
+        # cannot be smuggled past it by trailing whitespace.
         filtered_lines = [
             line
-            for line in lines
+            for line in _strip_llm_noise_lines(output)
             if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
-            and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
-        return ansi_escape.sub("", "\n".join(filtered_lines)).strip()
+        return ANSI_ESCAPE_RE.sub("", "\n".join(filtered_lines)).strip()
 
     def _resolve_conversation_side(self, char_id, player) -> str:
         """Resolve a portrait's stage side, defaulting by the party rule.
@@ -1501,35 +1746,14 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            # Do not initialize the new combat while the player has unspent level-up
-            # attribute points — same race-condition guard as in process_event_input.
-            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
-            if pending_points > 0:
-                # Stash enemies so get_combat_status can auto-resume when points hit 0
-                player._combat_deferred_enemies = combat_enemies
-                combat_started = False
-            else:
-                # Initialize combat
-                self._initialize_combat(
+            if not self._defer_combat_for_level_up(player, combat_enemies):
+                combat_state = self._start_combat(
                     player,
                     combat_enemies,
                     session_id=session_id,
                     session_data=session_data,
                 )
                 combat_started = True
-
-                # Get initial combat state from the adapter
-                if hasattr(player, "_combat_adapter"):
-                    adapter_state = player._combat_adapter.get_combat_state()
-                    combat_state = adapter_state.get("battle_state")
-                else:
-                    # Fallback to direct serialization if adapter not available
-                    combat_state = CombatStateSerializer.serialize_combat_state(
-                        player,
-                        combat_enemies,
-                        current_turn_index=getattr(player, "combat_turn_index", 0),
-                        round_number=getattr(player, "combat_round", 1),
-                    )
 
         return {
             "success": True,
@@ -1787,7 +2011,7 @@ class GameService:
         ):
             return {
                 "success": False,
-                "error": "Cannot use a passageway while in combat.",
+                "error": _PASSAGEWAY_IN_COMBAT_MESSAGE,
             }
 
         # Process the event with user input
@@ -1924,13 +2148,7 @@ class GameService:
                 if more_events:
                     if "events_triggered" not in result:
                         result["events_triggered"] = []
-                    for new_event in more_events:
-                        # Avoid duplicates
-                        if not any(
-                            e.get("name") == new_event.get("name")
-                            for e in result["events_triggered"]
-                        ):
-                            result["events_triggered"].append(new_event)
+                    _merge_new_events(result["events_triggered"], more_events)
 
         # If we are already in combat, do not reinitialize combat from check_for_combat.
         # This preserves reinforcement additions made during combat event processing.
@@ -1952,7 +2170,7 @@ class GameService:
                         # awaiting a move against an empty battlefield.
                         terminal_state = adapter.settle_victory()
                         result["combat_state"] = (
-                            terminal_state.get("battle_state") or terminal_state
+                            terminal_state["battle_state"]
                         )
                         return result
                     adapter.awaiting_input = True
@@ -1961,7 +2179,7 @@ class GameService:
                     adapter.pending_move_index = None
                 adapter_state = adapter.get_combat_state()
                 result["combat_state"] = (
-                    adapter_state.get("battle_state") or adapter_state
+                    adapter_state["battle_state"]
                 )
             return result
 
@@ -1970,50 +2188,21 @@ class GameService:
         combat_enemies = check_for_combat(player)
 
         if combat_enemies and not result.get("needs_input", False):
-            # Do NOT initialize the new combat while the player still has unspent
-            # level-up attribute points.  _initialize_combat emits "combat:started"
-            # which races with the level-up dialog and leaves the frontend in a
-            # corrupt state — subsequent allocate calls get 400s ("Not enough points")
-            # because the points counter is correct but the frontend has already
-            # moved to the combat screen.
-            #
-            # Since the aggro NPCs remain in the room, check_for_combat will find
-            # them again on the very next player action (move / event input) and
-            # combat will initialize cleanly after level-up is resolved.
-            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
-            if pending_points > 0:
+            if self._defer_combat_for_level_up(player, combat_enemies):
+                # This caller is the only one that reports the deferral to the
+                # client, because it is the one the level-up dialog itself is
+                # polling.
                 result["combat_started"] = False
                 result["combat_deferred"] = True
                 result["combat_deferred_reason"] = "level_up_pending"
-                # Stash enemies so get_combat_status can auto-resume when points hit 0
-                player._combat_deferred_enemies = combat_enemies
             else:
-                # Initialize combat
-                self._initialize_combat(
+                result["combat_state"] = self._start_combat(
                     player,
                     combat_enemies,
                     session_id=session_id,
                     session_data=session_data,
                 )
                 result["combat_started"] = True
-
-                # Get initial combat state
-                if hasattr(player, "_combat_adapter"):
-                    adapter_state = player._combat_adapter.get_combat_state()
-                    # If we resumed a move, the adapter state already contains the full battle_state
-                    result["combat_state"] = (
-                        adapter_state.get("battle_state") or adapter_state
-                    )
-                else:
-                    # Fallback to direct serialization (CombatStateSerializer already imported at module level)
-                    result["combat_state"] = (
-                        CombatStateSerializer.serialize_combat_state(
-                            player,
-                            combat_enemies,
-                            current_turn_index=getattr(player, "combat_turn_index", 0),
-                            round_number=getattr(player, "combat_round", 1),
-                        )
-                    )
         elif combat_enemies:
             # Combat is present but we are paused for narrative
             result["combat_started"] = True
@@ -2210,6 +2399,427 @@ class GameService:
     # Interaction Methods
     # ========================
 
+    def _open_container_for_loot(self, request: "_InteractionRequest"):
+        """Open a container and, if it really opened, arm its loot dialog.
+
+        Returns the event payloads to extend with -- a one-element list, or
+        empty when the container stayed shut. Same contract as
+        :meth:`_queue_passageway_confirmation`, whose docstring carries why
+        `append` and `extend` are not interchangeable here.
+        """
+        from src.events import LootEvent
+
+        player, target = request.player, request.target
+        tile, session_data = request.tile, request.session_data
+
+        target.open()
+        # Only surface the loot menu if the container actually opened. A
+        # locked container's open() is a no-op (state stays "closed");
+        # creating a LootEvent anyway would expose its contents and bypass the
+        # lock. open() narrates why it failed, which flows out via the
+        # caller's narration capture.
+        if getattr(target, "state", None) != "opened":
+            return []
+
+        loot_event = LootEvent(f"Looting {target.name}", player, tile, target)
+        event_data = EventSerializer.serialize_with_input(loot_event)
+
+        # Dedupe-by-name is right here: the name is "Looting <container>", so
+        # a collision is the same container's dialog re-opened. Left to itself
+        # this site minted a second UUID for it, and the first entry stayed
+        # pending forever, blocking input.
+        #
+        # The key is the container's NAME, not its identity, so two same-named
+        # containers on one tile would share a dialog id — opening the second
+        # would hand back the first's contents. That is a property of the
+        # CONTENT, not of this code, so it is enforced rather than asserted:
+        # tests/test_map_object_names_unique.py scans every shipped map for a
+        # tile that breaks it.
+        #
+        # Unconditional, like the passageway arm: `_store_pending_event` gates
+        # its own two session-touching blocks on `session_data is not None` and
+        # assigns `event_id` either way, so an `if` here bought nothing except
+        # a payload missing its id on the no-session path — the one divergence
+        # from the shape both arms are documented to return.
+        return [
+            self._store_pending_event(
+                loot_event, event_data, session_data, tile=tile
+            )
+        ]
+
+    def _queue_passageway_confirmation(self, request: "_InteractionRequest"):
+        """Arm the "Jean steps through..." confirmation for a passageway.
+
+        API mode only: the teleport itself waits for the client to acknowledge
+        the event, so `events_before` runs now and the crossing does not.
+
+        Returns the event payloads to extend with -- a one-element list, the
+        same shape :meth:`_open_container_for_loot` returns, so a third arm
+        has one contract to copy. The mismatch fails silently either way:
+        ``append`` of a list ships ``events_triggered: [[{...}]]`` to the
+        client, ``extend`` of a dict splats its keys.
+        """
+        from src.events import PassagewayTransitionEvent
+
+        player, target = request.player, request.target
+        tile, session_data = request.tile, request.session_data
+
+        if hasattr(player, "drop_merchandise_items"):
+            player.drop_merchandise_items()
+        if target.events_before:
+            for ev in target.events_before:
+                ev.process()
+
+        trans_event = PassagewayTransitionEvent(
+            name=f"Passage_{target.name}",
+            player=player,
+            tile=tile,
+            passageway=target,
+        )
+        event_data = EventSerializer.serialize_with_input(trans_event)
+        # Dedupe-by-name is right here too: the name is
+        # "Passage_<passageway>", so a collision is the same passageway's
+        # confirmation re-armed.
+        return [
+            self._store_pending_event(
+                trans_event, event_data, session_data, tile=tile
+            )
+        ]
+
+    def _dispatch_interaction(
+        self, request: "_InteractionRequest"
+    ) -> "_InteractionOutcome":
+        """Run one interaction verb against one already-resolved target.
+
+        Split out of :meth:`interact_with_target`, which had grown past 380
+        lines across target resolution, verb validation, this five-branch
+        dispatch chain, narration capture, ANSI stripping, teleport detection
+        and response assembly.
+
+        Returns an :class:`_InteractionOutcome`. Its ``refusal`` is None
+        on the normal path and the in-fiction refusal SENTENCE when the verb
+        resolves to nothing callable — a string, not a response body: an
+        engine-dispatch helper has no business knowing the route's wire shape.
+        It is returned rather than raised so the caller's broad ``except``
+        cannot mistake a refusal for a crash.
+
+        ``session_data`` is also the API-mode switch: when it is None the
+        Passageway confirmation branch is skipped entirely and ``enter()``
+        runs inline, so the player teleports immediately with no confirmation
+        event.
+
+        The caller keeps ``capture_narration``: the narration buffer is read
+        after this returns, and moving it in here would split one context
+        manager across two frames for no gain.
+        """
+        player, target, action = request.player, request.target, request.action
+        quantity, session_data = request.quantity, request.session_data
+
+        events_triggered = []
+        # Set when this interaction is the end of the demo, so the client can
+        # raise its end-of-beta dialog (issue #552).
+        beta_end = False
+
+        from src.objects import Container, Passageway, resolve_interaction
+        from src.inventory_utils import transfer_item
+
+        # Resolved ONCE for the whole dispatch: the demo-end gate below and
+        # the fall-through arm both need to know what this verb means, and two
+        # calls are two sites that have to keep agreeing. None means the class
+        # implements nothing by that name -- the arms that do not consult it
+        # (container, container-item, passageway) key off the target's TYPE,
+        # not off a handler.
+        handler = resolve_interaction(target, action)
+
+        is_container = isinstance(target, Container)
+
+        # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
+        # not a copy kept here — the copy is how `search`, `look` and
+        # `lift` came to be authored across 6 shipped placements that
+        # the API then failed to recognise (#553).
+        if is_container and action in Container.LOOK_INSIDE_VERBS:
+            events_triggered.extend(
+                self._open_container_for_loot(request)
+            )
+        elif (
+            action in _CONTAINER_ITEM_VERBS
+            and hasattr(target, "_parent_container")
+        ):
+            # Use transfer_item for items in containers
+            qty_to_take = (
+                quantity
+                if quantity is not None
+                else getattr(target, "count", 1)
+            )
+            transfer_item(target._parent_container, player, target, qty_to_take)
+            if hasattr(target._parent_container, "refresh_description"):
+                target._parent_container.refresh_description()
+
+            if action == "take":
+                narrate(f"{player.name} takes {target.name}.")
+            else:
+                # Proceed with equipment logic
+                target.equip(player)
+        elif _is_demo_end_crossing(target, handler):
+            # The demo stops at this passageway (#552). The engine owns
+            # what that means -- no crossing, story gate set, one beat
+            # of prose; the API's only job is to flag it so the client
+            # raises BetaEndDialog (the same `beta_end` flag the combat
+            # adapter sets on the Lurker path). Queuing a "Step
+            # through?" confirmation instead would promise a crossing
+            # that never happens.
+            # `enter`, not `end_demo`: Passageway.enter already guards
+            # `if self.demo_end` and delegates, so calling end_demo here
+            # decided the same rule in two places. The engine stays the
+            # sole authority on what using a passageway means; the API's
+            # only business is the wire flag.
+            target.enter(player)
+            beta_end = True
+        # `not demo_end`: this arm asks "step through?", and the arm above has
+        # already handled every verb that WOULD step through a demo-end
+        # passageway. What reached here is a verb that resolves to nothing
+        # callable (examine/look/check/...), and arming the confirmation for
+        # those meant confirming it ran `_commit_teleport` -- which now ends
+        # the demo instead of crossing, but with `beta_end` never set, so the
+        # player got the closing beat and the story gate and no BetaEndDialog.
+        elif (
+            isinstance(target, Passageway)
+            and not _is_demo_end_passageway(target)
+            and session_data is not None
+        ):
+            events_triggered.extend(
+                self._queue_passageway_confirmation(request)
+            )
+        else:
+            # A keyword the class does not implement resolved to None
+            # above and is refused in fiction; it used to raise
+            # AttributeError into the broad
+            # except below, which then handed the player
+            # "Error executing action: '<Class>' object has no
+            # attribute '<verb>'" (#553).
+            if handler is None:
+                return _InteractionOutcome(
+                    events_triggered,
+                    beta_end,
+                    _unsupported_action_message(target, action),
+                )
+            _call_interaction_handler(handler, player, quantity)
+
+        return _InteractionOutcome(events_triggered, beta_end, None)
+
+    def _resolve_interaction_target(self, player, target_id, session_data):
+        """The tile the player is on, and the entity `target_id` names on it.
+
+        Resolves the target AND re-baselines the tile: it sets
+        `player.current_room` and re-applies stored tile modifications (#328)
+        before any dispatch runs. Not a pure lookup, so it cannot be hoisted,
+        memoised or reordered — `persist_tile_state` at the end of the
+        interaction diffs against the state established here. No narration and
+        no dispatch, though. Split out of :meth:`interact_with_target`, which
+        was carrying a dozen responsibilities and whose only four-level
+        nesting lived here.
+
+        Ids are the opaque wire handles the room serializers minted (issue
+        #518), resolved through the one lookup helper so this side cannot
+        drift back to comparing heap addresses while the serializers ship
+        handles. Searched in the order the player sees them: NPCs, objects,
+        floor items, then the contents of any OPEN container -- an item found
+        there carries `_parent_container` so the caller can transfer it.
+
+        Returns ``(tile, target)`` with `target` None when nothing matches.
+        `tile` is always returned, because the caller needs it either way.
+        """
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        # Interactions that modify the room (taking an item) read this.
+        player.current_room = tile
+        # Re-apply stored modifications (and baseline the object roster) before
+        # the action runs, so persist_tile_state at the end diffs against the
+        # right starting state and objects removed earlier stay removed (#328).
+        self.apply_tile_modifications(tile, session_data)
+
+        target = None
+        if hasattr(tile, "npcs_here"):
+            target = find_by_handle(tile.npcs_here, target_id)
+        if not target and hasattr(tile, "objects_here"):
+            target = find_by_handle(tile.objects_here, target_id)
+        if not target and hasattr(tile, "items_here"):
+            target = find_by_handle(tile.items_here, target_id)
+
+        if not target:
+            from src.objects import Container
+
+            for obj in tile.objects_here:
+                if (
+                    isinstance(obj, Container)
+                    and getattr(obj, "state", "") == "opened"
+                    and hasattr(obj, "inventory")
+                ):
+                    target = find_by_handle(obj.inventory, target_id)
+                    if target is not None:
+                        target._parent_container = obj
+                if target:
+                    break
+
+        return tile, target
+
+    @staticmethod
+    def _defer_combat_for_level_up(player, combat_enemies) -> bool:
+        """Stash the fight rather than starting it while points are unspent.
+
+        ``_initialize_combat`` emits ``combat:started``, which races the
+        level-up dialog: the frontend leaves for the combat screen while the
+        allocate calls still 400 ("Not enough points") -- the counter is
+        right, the client has just moved on. The aggro NPCs stay in the room,
+        and ``get_combat_status`` resumes from this stash on the poll the
+        frontend already makes after every allocation.
+
+        Returns True when the caller must NOT start combat. Only the RESPONSE
+        differs between the three callers (bare flags, ``result`` keys, the
+        interaction payload) -- the guard itself is uniform, and the
+        interaction path went without it until #567's regrade.
+        """
+        if int(getattr(player, "pending_attribute_points", 0) or 0) <= 0:
+            return False
+        player._combat_deferred_enemies = combat_enemies
+        return True
+
+    def _start_combat(
+        self, player, combat_enemies, session_id=None, session_data=None
+    ):
+        """Initialize a fight and return the battle state the client renders.
+
+        The three callers that begin combat — movement, event resolution and
+        object interaction — each spelled this out, and the copies had already
+        drifted: two read ``adapter_state.get("battle_state")`` while the third
+        carried an ``or adapter_state`` fallback for a key
+        :meth:`ApiCombatAdapter.get_combat_state` always sets. Whether a caller
+        SHOULD start a fight stays with the caller only where the answer
+        genuinely differs -- the narrative pause in ``process_event_input``.
+        The level-up deferral does NOT differ and is
+        :meth:`_defer_combat_for_level_up`, which all three callers ask.
+
+        ``["battle_state"]`` rather than ``.get``, matching the two sibling
+        unwraps: ``get_combat_state`` sets the key unconditionally, so a miss
+        is a broken adapter and should say so rather than putting a silent
+        ``None`` on the wire.
+        """
+        self._initialize_combat(
+            player,
+            combat_enemies,
+            session_id=session_id,
+            session_data=session_data,
+        )
+        adapter = getattr(player, "_combat_adapter", None)
+        if adapter is not None:
+            return adapter.get_combat_state()["battle_state"]
+        # No adapter (older sessions, and tests that build a player directly).
+        return CombatStateSerializer.serialize_combat_state(
+            player,
+            combat_enemies,
+            current_turn_index=getattr(player, "combat_turn_index", 0),
+            round_number=getattr(player, "combat_round", 1),
+        )
+
+    @staticmethod
+    def _clean_interaction_output(msgs, player, pre_location):
+        """Sanitise the captured narration into the line the player reads.
+
+        One self-contained text pipeline, split out of
+        :meth:`interact_with_target`: strip ANSI, drop a destination tile's
+        description when the interaction teleported, then filter the LLM noise
+        prefixes. Choosing what to say when NOTHING was captured is prose, not
+        text processing, and lives in :func:`_fallback_interaction_message`.
+
+        Returns ``(clean_output, teleported)``. The teleport flag is computed
+        here because the description strip already needs it and the caller
+        needs the same answer for its response; spelled in both places, an
+        edit to one would report a teleport the strip did not act on.
+        """
+        output = "\n".join(m.get("text", "") for m in msgs)
+
+        # Clean up output (remove ANSI codes)
+        clean_output = ANSI_ESCAPE_RE.sub("", output)
+
+        # Runs of blank lines collapse to one.
+        clean_output = _BLANK_LINE_RUN_RE.sub("\n", clean_output).strip()
+
+        # If a teleport occurred, strip the destination tile's description from the
+        # interaction output — the frontend fetches the new room via /world/current-room.
+        teleported = pre_location.player_moved(player)
+        if teleported:
+            dest_tile = player.universe.get_tile(player.location_x, player.location_y)
+            if dest_tile and hasattr(dest_tile, "description"):
+                dest_desc = ANSI_ESCAPE_RE.sub("", dest_tile.description).strip()
+                if dest_desc:
+                    clean_output = clean_output.replace(dest_desc, "").strip()
+
+        # Strip internal LLM diagnostic lines that must never reach the UI.
+        pre_filter_output = clean_output
+        clean_output = "\n".join(_strip_llm_noise_lines(clean_output)).strip()
+
+        # If filtering removed everything and the raw output contained LLM noise
+        # (indicating a Mynx LLM call occurred), use a safe ambient fallback.
+        if not clean_output and any(
+            p in pre_filter_output for p in _LLM_NOISE_PREFIXES
+        ):
+            clean_output = (
+                "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
+            )
+
+        return clean_output, teleported
+
+    def _redirect_attack_to_combat(self, request: "_InteractionRequest"):
+        """The combat-start response for ATTACK on a room NPC, or None.
+
+        ``attack`` is not an interaction verb: ``Player.attack`` does not exist
+        (it went out with the terminal teardown) and neither does an NPC method
+        by that name, so dispatching it would refuse a verb the client is right
+        to send. It means "start a fight", and only for an NPC standing on this
+        tile -- attacking a chest is still an unsupported verb.
+
+        ``session_data`` is threaded through so the adapter's event callback can
+        persist interactive combat events (#335).
+        """
+        player, target, tile = request.player, request.target, request.tile
+        action, session_data = request.action, request.session_data
+        target_id = request.target_id
+
+        if action.lower() != "attack":
+            return None
+        if not (hasattr(tile, "npcs_here") and target in tile.npcs_here):
+            return None
+
+        combat_result = self.start_combat(player, target_id, session_data=session_data)
+        if "error" in combat_result:
+            return {"success": False, "message": combat_result["error"]}
+        return {
+            "success": True,
+            "message": f"Combat started with {target.name}!",
+            "combat_data": combat_result,
+        }
+
+    def _verb_refusal(self, request: "_InteractionRequest"):
+        """The refusal for a verb this target does not accept, or None.
+
+        A verb is accepted if the target ADVERTISES it (its own ``keywords``,
+        authored per placement) or it is on ``_ALLOWED_INTERACTION_VERBS``. The
+        allow-list is the whole point: dispatching on an arbitrary attribute
+        name would expose every public method on the target -- ``NPC.die``
+        among them (#334).
+
+        Same wording as ``_dispatch_interaction``'s unimplemented-verb branch:
+        from the player's side both are "that verb does nothing here", and the
+        difference (advertised vs implemented) is ours, not theirs.
+        """
+        target, action = request.target, request.action
+        advertised = hasattr(target, "keywords") and action in target.keywords
+        if advertised or action in self._ALLOWED_INTERACTION_VERBS:
+            return None
+        return {
+            "success": False,
+            "message": _unsupported_action_message(target, action),
+        }
+
     def interact_with_target(
         self,
         player: "player_module.Player",
@@ -2234,89 +2844,28 @@ class GameService:
         Returns:
             Dictionary with interaction result and output text
         """
-        from unittest.mock import patch
-        import inspect
-        import re
-        from src.api.serializers.event_serializer import EventSerializer
 
-        # Find target
-        tile = player.universe.get_tile(player.location_x, player.location_y)
-        # Ensure player knows where they are for interactions that modify the room (like taking items)
-        player.current_room = tile
-        # Re-apply stored modifications (and baseline the object roster) before the
-        # action runs, so persist_tile_state at the end diffs against the right
-        # starting state and objects removed earlier stay removed (#328).
-        self.apply_tile_modifications(tile, session_data)
-        target = None
-
-        # Check NPCs, then objects, then floor items. Ids are the opaque
-        # wire handles the room serializers minted (issue #518) — resolved
-        # through the one lookup helper so this side cannot drift back to
-        # comparing heap addresses while the serializers ship handles.
-        if hasattr(tile, "npcs_here"):
-            target = find_by_handle(tile.npcs_here, target_id)
-
-        if not target and hasattr(tile, "objects_here"):
-            target = find_by_handle(tile.objects_here, target_id)
-
-        if not target and hasattr(tile, "items_here"):
-            target = find_by_handle(tile.items_here, target_id)
-
-        # Try to find target in items inside open containers
-        if not target:
-            from src.objects import Container
-
-            for obj in tile.objects_here:
-                if (
-                    isinstance(obj, Container)
-                    and getattr(obj, "state", "") == "opened"
-                    and hasattr(obj, "inventory")
-                ):
-                    target = find_by_handle(obj.inventory, target_id)
-                    if target is not None:
-                        target._parent_container = obj
-                if target:
-                    break
-
-        if not target:
+        tile, target = self._resolve_interaction_target(player, target_id, session_data)
+        if target is None:
             return {"success": False, "message": "Target not found."}
 
-        # Special case: attack action on NPCs should start combat
-        if action.lower() == "attack":
-            # Check if target is an NPC by looking in current tile's NPCs
-            is_npc = hasattr(tile, "npcs_here") and target in tile.npcs_here
-            if is_npc:
-                # Redirect to start_combat instead of trying to call attack() method.
-                # Pass session_data so the combat adapter's event callback can persist
-                # interactive combat events to the session (#335).
-                combat_result = self.start_combat(
-                    player, target_id, session_data=session_data
-                )
-                # Wrap start_combat response to match interact_with_target format
-                if "error" in combat_result:
-                    return {"success": False, "message": combat_result["error"]}
-                else:
-                    # Combat started successfully
-                    return {
-                        "success": True,
-                        "message": f"Combat started with {target.name}!",
-                        "combat_data": combat_result,
-                    }
+        request = _InteractionRequest(
+            player=player,
+            target=target,
+            target_id=target_id,
+            tile=tile,
+            action=action,
+            quantity=quantity,
+            session_data=session_data,
+        )
 
-        is_valid = False
-        if hasattr(target, "keywords") and action in target.keywords:
-            is_valid = True
-        elif action in self._ALLOWED_INTERACTION_VERBS:
-            # Fallback restricted to an explicit allow-list of interaction
-            # verbs. Never dispatch on arbitrary attribute names — that would
-            # expose every public method on the target (e.g. NPC.die). See #334.
-            is_valid = True
+        redirect = self._redirect_attack_to_combat(request)
+        if redirect is not None:
+            return redirect
 
-        if not is_valid:
-            return {
-                "success": False,
-                "message": f"Cannot {action} this target.",
-            }
+        refusal = self._verb_refusal(request)
+        if refusal is not None:
+            return refusal
 
         # Reject a Passageway teleport interaction while combat is active
         # (#543, same root cause as the move_player guard above).
@@ -2331,16 +2880,13 @@ class GameService:
         if isinstance(target, Passageway) and getattr(player, "in_combat", False):
             return {
                 "success": False,
-                "message": "Cannot use a passageway while in combat.",
+                "message": _PASSAGEWAY_IN_COMBAT_MESSAGE,
             }
 
         # Record pre-action location to detect passageway teleportation
-        _pre_map_name = player.map.get("name") if player.map else None
-        _pre_x = player.location_x
-        _pre_y = player.location_y
+        _pre_location = _PreInteractionLocation.capture(player)
 
         # Execute action and capture output
-        events_triggered = []
         try:
             # Narrative output is captured via the narration sink; we still
             # neutralize terminal pauses/timing. Interaction targets no longer
@@ -2351,199 +2897,39 @@ class GameService:
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                from src.objects import Container
-                from src.items import Item
-                from src.inventory_utils import transfer_item
-                from src.events import LootEvent
-
-                is_container = isinstance(target, Container)
-                is_item = isinstance(target, Item) or hasattr(
-                    target, "_parent_container"
-                )
-
-                if is_container and action in [
-                    "loot",
-                    "check",
-                    "view",
-                    "examine",
-                    "inspect",
-                    "peruse",
-                ]:
-                    target.open()
-                    # Only surface the loot menu if the container actually
-                    # opened. A locked container's open() is a no-op (state
-                    # stays "closed"); creating a LootEvent anyway would expose
-                    # its contents and bypass the lock. open() narrates why it
-                    # failed, which flows out via the narration sink below.
-                    if getattr(target, "state", None) == "opened":
-                        # Create a LootEvent and store it
-                        loot_event = LootEvent(
-                            f"Looting {target.name}", player, tile, target
-                        )
-                        event_data = EventSerializer.serialize_with_input(loot_event)
-
-                        if session_data is not None:
-                            # Dedupe-by-name is right here: the name is
-                            # "Looting <container>", so a collision is the same
-                            # container's dialog re-opened. Left to itself this
-                            # site minted a second UUID for it, and the first
-                            # entry stayed pending forever, blocking input.
-                            #
-                            # The key is the container's NAME, not its identity,
-                            # so two same-named containers on one tile would
-                            # share a dialog id — opening the second would hand
-                            # back the first's contents. That is a property of
-                            # the CONTENT, not of this code, so it is enforced
-                            # rather than asserted: tests/
-                            # test_map_object_names_unique.py scans every
-                            # shipped map for a tile that breaks it.
-                            event_data = self._store_pending_event(
-                                loot_event, event_data, session_data, tile=tile
-                            )
-
-                        events_triggered.append(event_data)
-                elif (
-                    is_item
-                    and action in ["take", "equip"]
-                    and hasattr(target, "_parent_container")
-                ):
-                    # Use transfer_item for items in containers
-                    qty_to_take = (
-                        quantity
-                        if quantity is not None
-                        else getattr(target, "count", 1)
-                    )
-                    transfer_item(target._parent_container, player, target, qty_to_take)
-                    if hasattr(target._parent_container, "refresh_description"):
-                        target._parent_container.refresh_description()
-
-                    if action == "take":
-                        narrate(f"{player.name} takes {target.name}.")
-                    else:
-                        # Proceed with equipment logic
-                        target.equip(player)
-                elif isinstance(target, Passageway) and session_data is not None:
-                    # Passageway in API mode: create a confirmation event so the
-                    # frontend can display "Jean steps through..." and wait for
-                    # user acknowledgment before teleporting.
-                    from src.events import PassagewayTransitionEvent
-
-                    # Run events_before (not teleport — that happens on confirm)
-                    if hasattr(player, "drop_merchandise_items"):
-                        player.drop_merchandise_items()
-                    if target.events_before:
-                        for ev in target.events_before:
-                            ev.process()
-
-                    trans_event = PassagewayTransitionEvent(
-                        name=f"Passage_{target.name}",
-                        player=player,
-                        tile=tile,
-                        passageway=target,
-                    )
-                    event_data = EventSerializer.serialize_with_input(trans_event)
-                    # Dedupe-by-name is right here too: the name is
-                    # "Passage_<passageway>", so a collision is the same
-                    # passageway's confirmation re-armed.
-                    event_data = self._store_pending_event(
-                        trans_event, event_data, session_data, tile=tile
-                    )
-                    events_triggered.append(event_data)
-                else:
-                    method = getattr(target, action)
-                    # Check signature to see if we need to pass player
-                    sig = inspect.signature(method)
-                    # Get parameter names excluding 'self'
-                    param_names = [p for p in sig.parameters.keys() if p != "self"]
-
-                    # If there are parameters beyond 'self', pass player
-                    if len(param_names) > 0:
-                        # If the method accepts quantity, pass it
-                        if "quantity" in param_names:
-                            method(player, quantity=quantity)
-                        else:
-                            method(player)
-                    else:
-                        method()
-
-        except Exception as e:
+                outcome = self._dispatch_interaction(request)
+                events_triggered = outcome.events
+                beta_end = outcome.beta_end
+                # `refusal` above is a response DICT from `_verb_refusal`;
+                # this one is a bare sentence, so it gets its own name.
+                if outcome.refusal is not None:
+                    return {"success": False, "message": outcome.refusal}
+        except Exception:
+            # str(e) never reaches the player. The prose panel is the game's
+            # UI, and an exception rendered there reads as broken content, not
+            # as a bug report — the #553 repro was literally
+            # "Error executing action: 'WallInscription' object has no
+            # attribute 'touch'" in the interaction dialog. The detail lives
+            # in the log, which is where a maintainer will look.
             _log.exception("interact_with_target action failed")
             return {
                 "success": False,
-                "message": f"Error executing action: {str(e)}",
+                "message": _ACTION_FAILED_MESSAGE,
             }
 
-        output = "\n".join(m.get("text", "") for m in _msgs)
-
-        # Clean up output (remove ANSI codes)
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        clean_output = ansi_escape.sub("", output)
-
-        # Remove excessive newlines and clean up whitespace
-        clean_output = re.sub(
-            r"\n\s*\n", "\n", clean_output
-        )  # Replace multiple newlines with single
-        clean_output = clean_output.strip()
-
-        # If a teleport occurred, strip the destination tile's description from the
-        # interaction output — the frontend fetches the new room via /world/current-room.
-        _post_map_name = player.map.get("name") if player.map else None
-        if (
-            _post_map_name != _pre_map_name
-            or player.location_x != _pre_x
-            or player.location_y != _pre_y
-        ):
-            dest_tile = player.universe.get_tile(player.location_x, player.location_y)
-            if dest_tile and hasattr(dest_tile, "description"):
-                dest_desc = ansi_escape.sub("", dest_tile.description).strip()
-                if dest_desc:
-                    clean_output = clean_output.replace(dest_desc, "").strip()
-
-        # Strip internal LLM diagnostic lines that must never reach the UI.
-        pre_filter_output = clean_output
-        filtered_lines = [
-            line
-            for line in clean_output.splitlines()
-            if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
-        ]
-        clean_output = "\n".join(filtered_lines).strip()
-
-        # If filtering removed everything and the raw output contained LLM noise
-        # (indicating a Mynx LLM call occurred), use a safe ambient fallback.
-        if not clean_output and any(
-            p in pre_filter_output for p in _LLM_NOISE_PREFIXES
-        ):
-            clean_output = (
-                "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
+        clean_output, teleported = self._clean_interaction_output(
+            _msgs, player, _pre_location
+        )
+        if not clean_output:
+            clean_output = _fallback_interaction_message(
+                action, target, events_triggered
             )
 
-        # Provide fallback message if no output was captured
-        if not clean_output:
-            # When events were triggered (e.g. PassagewayTransitionEvent),
-            # skip the robotic fallback text — the event UI handles it.
-            if events_triggered:
-                clean_output = ""
-            elif action == "take_all":
-                clean_output = "Jean collects all of the available items."
-            elif action == "talk":
-                target_name = getattr(target, "name", None)
-                clean_output = (
-                    f"{target_name} does not respond."
-                    if target_name
-                    else "No response."
-                )
-            else:
-                clean_output = f"Jean successfully completes the '{action}' action."
-
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
-        more_events = self.trigger_tile_events(player, tile, session_data)
-        if more_events:
-            for new_event in more_events:
-                # Avoid duplicates if they somehow got in
-                if not any(
-                    e.get("name") == new_event.get("name") for e in events_triggered
-                ):
-                    events_triggered.append(new_event)
+        _merge_new_events(
+            events_triggered,
+            self.trigger_tile_events(player, tile, session_data),
+        )
 
         # Store tile modifications AFTER all events have processed to capture state changes
         self.persist_tile_state(session_data, tile)
@@ -2555,34 +2941,19 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            # Initialize combat
-            self._initialize_combat(
-                player,
-                combat_enemies,
-                session_id=session_id,
-                session_data=session_data,
-            )
-            combat_started = True
-
-            # Get initial combat state from the adapter
-            if hasattr(player, "_combat_adapter"):
-                adapter_state = player._combat_adapter.get_combat_state()
-                combat_state = adapter_state.get("battle_state")
-            else:
-                # Fallback to direct serialization if adapter not available
-                combat_state = CombatStateSerializer.serialize_combat_state(
+            # Its own statement, not a clause in the `if` above: this call
+            # STASHES the enemies on the player when it answers True, and a
+            # side effect inside a compound condition is invisible at the call
+            # site. The other two callers (`move_player`, `process_event_input`)
+            # already read this way.
+            if not self._defer_combat_for_level_up(player, combat_enemies):
+                combat_state = self._start_combat(
                     player,
                     combat_enemies,
-                    current_turn_index=getattr(player, "combat_turn_index", 0),
-                    round_number=getattr(player, "combat_round", 1),
+                    session_id=session_id,
+                    session_data=session_data,
                 )
-
-        # Detect if player teleported
-        teleported = (
-            _post_map_name != _pre_map_name
-            or player.location_x != _pre_x
-            or player.location_y != _pre_y
-        )
+                combat_started = True
 
         return {
             "success": True,
@@ -2598,6 +2969,7 @@ class GameService:
                 "state": getattr(target, "state", ""),
             },
             "teleported": teleported,
+            "beta_end": beta_end,
         }
 
     # ========================
@@ -4268,11 +4640,11 @@ class GameService:
         for enemy in enemies:
             prox = getattr(enemy, "combat_proximity", 0)
             dist = prox.get(player, 0) if isinstance(prox, dict) else prox
-            if dist < 20:
+            if dist < FLEE_BREAK_AWAY_DISTANCE:
                 return {
                     "success": False,
                     "fled": False,
-                    "error": "Cannot flee — enemies are too close",
+                    "error": FLEE_TOO_CLOSE_MESSAGE,
                 }
 
         # Clear enemy combat state so they don't immediately re-engage on next interaction

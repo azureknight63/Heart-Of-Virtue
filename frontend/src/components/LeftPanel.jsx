@@ -21,6 +21,8 @@ import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
+import { MODAL_BACKGROUND_PROPS } from './BaseDialog'
+import { moveAvailability, FLEE_BREAK_AWAY_DISTANCE_FT, autoResolvedTargetId } from '../utils/combatMoveStatus'
 import HeatMeter from './HeatMeter'
 import ShopDialog from './ShopDialog'
 import useCombatLogPlayback from '../hooks/useCombatLogPlayback'
@@ -169,11 +171,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const abortableMove = combat?.abortable_move || null
   const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive && !abortableMove
 
-  // Flee is viable only when it's the player's turn and all enemies are >= 20 ft away
+  // Flee is viable only when it's the player's turn and every enemy is at
+  // least the engine's break-away distance away. The threshold is the
+  // engine's, imported rather than retyped -- see the constant.
   const canFlee = isMyTurn &&
     Array.isArray(combat?.enemies) &&
     combat.enemies.length > 0 &&
-    combat.enemies.every(e => (e.distance ?? 0) >= 20)
+    combat.enemies.every(e => (e.distance ?? 0) >= FLEE_BREAK_AWAY_DISTANCE_FT)
 
   // Check for move categories - handle both direct API response and transformed state
   // transformCombatData spreads battle_state flat onto the combat object, so
@@ -299,8 +303,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       // and is already gated by `lastMoveViable`, which runs this same check.
       if (!moveName || moveName === 'repeat_last') return null
       const option = byName.get(moveName)
-      if (option && option.available) return null
-      return option?.reason || 'Not available right now'
+      // moveAvailability, not `option.available`: the engine ships a targeted
+      // move as available:true with an empty viable_targets (availability asks
+      // whether SOME enemy is in the range band; the target list is filtered
+      // per combatant by effective range). Gating on the bare flag left #554
+      // closed on the move panel only -- a suggestion card for such a move
+      // stayed live and POSTed an action the server was certain to refuse.
+      // No `option &&` guard and no `option?.reason` fallback: moveAvailability
+      // returns {available:false} for a missing option, and both of its
+      // unavailable branches already fall back to `move.reason`. Both terms
+      // were dead.
+      const { available, reason } = moveAvailability(option)
+      if (available) return null
+      return reason || 'Not available right now'
     }
   }, [combat?.available_options])
 
@@ -321,22 +336,36 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   }
 
   const handleMoveSelection = async (move) => {
-    // Execute move via API
+    // Deliberately the bare flag, NOT moveAvailability -- and NOT a third
+    // encoding of the same rule: this is a narrower last-ditch guard on a path
+    // whose only caller, CombatMovePanel, has already disabled the move with
+    // moveAvailability. Tightening it would change observable behaviour for
+    // the empty-target case the suite names (LeftPanel.test.jsx) while
+    // changing nothing a player can reach.
+    //
+    // An earlier note here proposed making moveAvailability distinguish an
+    // absent `viable_targets` from an empty one so this line could tighten
+    // for free. That cannot work: `_get_available_moves` emits the key on
+    // every targeted move (src/api/combat_adapter.py), so absent never
+    // reaches the client, and the case in question is an EMPTY list either
+    // way.
     if (!move.available) return;
 
     // Instant/non-turn-consuming moves stay on the Combat tab so result
     // dialogs (e.g. CombatCheckDialog for Check) remain visible.
     const isInstantMove = KEEP_TAB_MOVES.has(move.name)
 
-    // Auto-select single target if it doesn't require selection
-    if (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1) {
-      const target = move.viable_targets[0];
+    // Auto-select single target if it doesn't require selection. Shared with
+    // the battlefield hover in MoveCard, so the highlight and the submitted
+    // id cannot disagree.
+    const autoTargetId = autoResolvedTargetId(move)
+    if (autoTargetId) {
       try {
         setPendingMoveSelection(true)
         if (!isInstantMove) notifyMoveSubmitted()
         await onCombatAction('select_move_and_target', {
           move_name: move.name,
-          target_id: target.id
+          target_id: autoTargetId
         })
       } catch (err) {
         console.error('Failed to auto-select target:', err)
@@ -407,9 +436,15 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // anywhere. This panel is the primary narrative/actions surface (as
     // opposed to RightPanel's <aside>), so it becomes <main>, with its title
     // bar as <header>/<h1>.
+    // NOT `data-modal-background` on <main> itself, however tempting: the
+    // "Modal Overlays" block near the bottom of this component renders every
+    // one of this panel's dialogs as a sibling INSIDE this landmark, so hiding
+    // it from assistive tech would hide the open modal along with the
+    // background. The two genuinely-background regions carry the marker
+    // instead — see MODAL_BACKGROUND_ATTR in BaseDialog.jsx (issue #563 item 5).
     <main className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible', position: 'relative' }}>
       {/* Header */}
-      <header style={{
+      <header {...MODAL_BACKGROUND_PROPS} style={{
         backgroundColor: colors.primary,
         color: colors.text.inverse,
         padding: '10px 15px',
@@ -453,14 +488,17 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       </header>
 
       {/* Main Panel Content Area */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden', // Disable parent scroll to allow internal specific scrolling
-        padding: '14px',
-        gap: '14px',
-      }}>
+      <div
+        {...MODAL_BACKGROUND_PROPS}
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden', // Disable parent scroll to allow internal specific scrolling
+          padding: '14px',
+          gap: '14px',
+        }}
+      >
         {/* Room Contents - Collapsible description */}
         {mode === 'exploration' && location && (
           <div style={{
@@ -551,7 +589,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           <CooldownTray moves={cooldownMoves} />
         )}
 
-        {/* Combat Move Panel */}
+        {/* Abort control while a move is in flight, then the move panel. */}
         {mode === 'combat' && abortableMove && (
           <div style={{ marginBottom: spacing.sm }}>
             <AbortMoveControl
@@ -572,49 +610,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           />
         )}
 
-        {/* Combat Input Dialog - for target selection, direction selection, etc. */}
-        {(showInputDialog || localCombatInput) && mode === 'combat' && !isEventDialogActive && (
-          <CombatInputDialog
-            inputType={localCombatInput ? localCombatInput.type : combat.input_type}
-            options={localCombatInput ? localCombatInput.options : (combat.available_options || [])}
-            moveName={localCombatInput ? localCombatInput.moveName : undefined}
-            moveCategory={localCombatInput ? localCombatInput.moveCategory : undefined}
-            onTargetHover={onTargetHover}
-            onSelect={async (selectedValue) => {
-              if (localCombatInput) {
-                try {
-                  notifyMoveSubmitted()
-                  await onCombatAction('select_move_and_target', {
-                    move_name: localCombatInput.moveName,
-                    target_id: selectedValue
-                  })
-                  setLocalCombatInput(null)
-                } catch (err) {
-                  console.error('Failed to send local input:', err)
-                }
-              } else {
-                handleInputSelection(selectedValue)
-              }
-            }}
-            onCancel={() => {
-              if (localCombatInput) {
-                // Backing out of target selection should return the player to
-                // the move-category panel they came from, not leave them with
-                // no move panel open at all (the #535 fix that closes the
-                // category panel when target selection opens never restored
-                // it on cancel, issue found in the scrub of that fix).
-                setCombatMovesCategory(localCombatInput.moveCategory)
-                setShowCombatMoves(true)
-                setLocalCombatInput(null)
-              } else {
-                setShowInputDialog(false)
-                onCombatAction('cancel', {})
-              }
-            }}
-          />
-        )}
-
-        {/* Flee button — only when all enemies are >= 20 ft away */}
+        {/* Flee button — only when every enemy is at least
+            FLEE_BREAK_AWAY_DISTANCE_FT away; see `canFlee` above. */}
         {canFlee && (
           <FleeButton
             onFlee={() => onCombatAction('flee', {})}
@@ -631,7 +628,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             isMobile={isMobile}
             lastMoveViable={
               Array.isArray(combat?.available_options) &&
-              combat.available_options.some(opt => opt.name === combat?.last_move_name && opt.available) &&
+              combat.available_options.some(opt => opt.name === combat?.last_move_name && moveAvailability(opt).available) &&
               // Also verify the target is still alive in combat
               // `e.id` is already the canonical wire id from
               // CombatantSerializer.stream_id (`enemy_<id>`), which is the same
@@ -696,6 +693,55 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       </div>
 
       {/* Modal Overlays */}
+      {/* Combat Input Dialog (target selection, direction selection, ...)
+          lives HERE, with the other modals, and not in the content well
+          above: that well carries MODAL_BACKGROUND_ATTR, so a BaseDialog
+          rendered inside it sets aria-hidden on its own ancestor and prunes
+          itself from the accessibility tree while the focus trap still holds
+          focus inside it -- a blocking prompt that announces nothing and
+          offers no reachable exit. Guarded by
+          LeftPanel.modalBackground.test.jsx. */}
+      {(showInputDialog || localCombatInput) && mode === 'combat' && !isEventDialogActive && (
+        <CombatInputDialog
+          inputType={localCombatInput ? localCombatInput.type : combat.input_type}
+          options={localCombatInput ? localCombatInput.options : (combat.available_options || [])}
+          moveName={localCombatInput ? localCombatInput.moveName : undefined}
+          moveCategory={localCombatInput ? localCombatInput.moveCategory : undefined}
+          onTargetHover={onTargetHover}
+          onSelect={async (selectedValue) => {
+            if (localCombatInput) {
+              try {
+                notifyMoveSubmitted()
+                await onCombatAction('select_move_and_target', {
+                  move_name: localCombatInput.moveName,
+                  target_id: selectedValue
+                })
+                setLocalCombatInput(null)
+              } catch (err) {
+                console.error('Failed to send local input:', err)
+              }
+            } else {
+              handleInputSelection(selectedValue)
+            }
+          }}
+          onCancel={() => {
+            if (localCombatInput) {
+              // Backing out of target selection should return the player to
+              // the move-category panel they came from, not leave them with
+              // no move panel open at all (the #535 fix that closes the
+              // category panel when target selection opens never restored
+              // it on cancel, issue found in the scrub of that fix).
+              setCombatMovesCategory(localCombatInput.moveCategory)
+              setShowCombatMoves(true)
+              setLocalCombatInput(null)
+            } else {
+              setShowInputDialog(false)
+              onCombatAction('cancel', {})
+            }
+          }}
+        />
+      )}
+
       {showStatus && player && (
         <PartyPanel player={player} onClose={() => setShowStatus(false)} />
       )}

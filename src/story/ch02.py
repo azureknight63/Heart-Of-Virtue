@@ -428,7 +428,6 @@ class Ch02GuideToCitadel(
                     "Votha Krr was quiet a moment. When he spoke again, his voice was the same — "
                     "unhurried, without urgency, as if what he described had already been decided."
                 )
-                narrate("He watched Jean's face. Jean wasn't showing much.")
                 say(
                     "The slimes would not kill you the way they kill us. That is why I ask.",
                     "Votha Krr",

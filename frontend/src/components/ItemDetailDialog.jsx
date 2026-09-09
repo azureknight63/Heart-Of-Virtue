@@ -4,6 +4,7 @@ import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 import { ItemStatGrid, ItemSection } from './ItemStatGrid'
 import { formatWeight } from '../utils/itemUtils'
+import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '../utils/stackName'
 import { apiErrorMessage } from '../utils/apiError'
 import { lookupOr } from '../utils/lookup'
 import { getHpBarColor } from '../utils/entityUtils'
@@ -34,11 +35,22 @@ const REC_LABELS = { upgrade: '↑ UPGRADE', downgrade: '↓ DOWNGRADE', sidegra
  * we have is the transport's complaint ("Network Error"), so a player can tell
  * "the game said no" from "the request never landed".
  *
- * Shared by use-on-ally, equip, the generic use handler and drop, which had
- * four verbatim copies of it — a distinction this fine is exactly the kind that
- * drifts in one of four places and is never noticed in the other three.
+ * Shared by use-on-ally, equip, the generic use handler, drop and read, which
+ * had five copies of it — a distinction this fine is exactly the kind that
+ * drifts in one of five places and is never noticed in the other four. And it
+ * had: `handleRead` was the odd one out, ✗-prefixing the server's own prose
+ * that the other four sent up bare.
+ *
+ * `err?.message || 'Unknown error'`, not a bare `err.message`: a rejected
+ * plain object (`{ code: 'WEIRD' }`) has neither a `response` body for
+ * `apiErrorMessage` to read nor a `message`, and this line rendered the player
+ * a literal "✗ Error: undefined". `handleRead`'s own copy was the only one
+ * that handled that case, so folding it in without this would have spread its
+ * bug to the other four rather than removing a duplicate. Guarded by
+ * ItemDetailDialog.test.jsx's "shows 'Unknown error' instead of 'undefined'".
  */
-const actionFailureMessage = (err) => apiErrorMessage(err, '') || `✗ Error: ${err.message}`
+const actionFailureMessage = (err) =>
+  apiErrorMessage(err, '') || `✗ Error: ${err?.message || 'Unknown error'}`
 
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 const formatSigned = (value) => `${value >= 0 ? '+' : ''}${value}`
@@ -82,6 +94,28 @@ function describeEffect(effect) {
   }
 }
 
+/**
+ * KNOWN SIZE, deliberately not split here.
+ *
+ * This is one ~1050-line component holding seven data sections, a five-button
+ * action row and four inline `position: fixed` overlays (action result, drop
+ * confirm, ally picker, book reader), each with its own z-index ladder; the
+ * ally picker nests two maps around ~20 derived locals. The shape a reviewer
+ * proposes every round is the right one -- lift the three inline overlays to
+ * sibling components in this file (`ActionResultOverlay`,
+ * `DropConfirmOverlay`, `AllyPickerOverlay`), which read only props and state
+ * already in scope and change no DOM.
+ *
+ * It was NOT done on the 2026-09-08 QA-triage branch, and the reason is scope
+ * rather than disagreement: that branch touched this file only to route stack
+ * names through `utils/stackName` and to fix the action-failure message, and a
+ * 1000-line restructure lands on a green PR with no behavioural test of its
+ * own. Frontend coverage gates at 95%, so the split needs its own change with
+ * its own verification. Five duplicated action buttons (Equip / Use / Use on…
+ * / Read / Drop, ~30 lines each, differing in a colour set, a label and an
+ * onClick) belong to the same follow-up; `ShopDialog.jsx`'s `ActionButton` is
+ * the shape to copy.
+ */
 export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
@@ -91,6 +125,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   const [freshPartyMembers, setFreshPartyMembers] = useState(null)
   const [bookReaderData, setBookReaderData] = useState(null)
 
+  // One display name for every player-facing mention in this panel. The engine
+  // bakes the stack count into a stackable item's own name, so the raw value
+  // reads "Mineral Powder x3" beside a Qty cell that says 3 again (#565).
+  // Every API call in this file posts `item.id`, never the name, so nothing
+  // here is naming the item TO the engine.
+  const itemDisplayName = stackDisplayName(item)
+  const stackQty = stackSize(item)
   const partyMembers = freshPartyMembers || player?.party_members || []
   const hasPartyMembers = partyMembers.length > 0
 
@@ -122,11 +163,11 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       })
       const data = response.data || response
       if (data.success) {
-        setActionMessage(`✓ ${item.name} used on ${ally.name}!`)
+        setActionMessage(`✓ ${itemDisplayName} used on ${ally.name}!`)
         setActionResult({
           message: (
             <div style={{ whiteSpace: 'pre-wrap', textAlign: 'center', fontSize: '14px', fontFamily: 'monospace' }}>
-              <strong>{player?.name || 'Player'}</strong> used <span style={{ color: '#ffff00' }}>{item.name}</span> on <strong>{ally.name}</strong>.{data.message ? `\n\n${data.message}` : ''}
+              <strong>{player?.name || 'Player'}</strong> used <span style={{ color: '#ffff00' }}>{itemDisplayName}</span> on <strong>{ally.name}</strong>.{data.message ? `\n\n${data.message}` : ''}
             </div>
           )
         })
@@ -161,8 +202,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionResult({
           message: renderNarration(data.messages) || (
             isNowEquipped
-              ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
-              : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+              ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{itemDisplayName}</span>.</>
+              : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{itemDisplayName}</span>.</>
           )
         })
 
@@ -188,7 +229,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
     }
   }
 
-  const makeItemActionHandler = (actionName, successMsg, errorMsg, shouldRemoveItem = false) => {
+  const makeItemActionHandler = (successMsg, errorMsg, shouldRemoveItem = false) => {
     return async () => {
       setIsLoading(true)
       try {
@@ -215,7 +256,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
     }
   }
 
-  const handleUse = makeItemActionHandler('use', 'Item used!', 'Cannot use this item', true)
+  const handleUse = makeItemActionHandler('Item used!', 'Cannot use this item', true)
 
   const handleCloseBook = useCallback(() => setBookReaderData(null), [])
 
@@ -226,12 +267,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const response = await apiClient.post('/inventory/use', { item_id: item.id })
       const data = response.data || response
       if (data.success) {
-        setBookReaderData({ title: item.name, text: stripBookWrapper(data.message) })
+        setBookReaderData({ title: itemDisplayName, text: stripBookWrapper(data.message) })
       } else {
         setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot read this item'))
       }
     } catch (err) {
-      setActionMessage('✗ ' + apiErrorMessage(err, err.message || 'Unknown error'))
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
     }
@@ -251,7 +292,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         // when the backend returned no narration.
         setActionResult({
           message: renderNarration(data.messages) || (
-            <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+            <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{itemDisplayName}</span>.</>
           )
         })
 
@@ -299,7 +340,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           fontSize: '20px',
           fontFamily: 'monospace',
         }}>
-          {item.name}
+          {itemDisplayName}
         </div>
         <button
           onClick={onBack}
@@ -363,7 +404,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           { label: 'Weight', value: formatWeight(item.weight) },
           { label: 'Value', value: `${item.value || 0}g` },
           { label: 'Rarity', value: item.rarity, show: Boolean(item.rarity) },
-          { label: 'Qty', value: `×${item.quantity}`, show: item.quantity > 1 },
+          { label: 'Qty', value: stackCountLabel(stackQty), show: isStackedCount(stackQty) },
         ]} />
 
         {/* Comparison vs. currently equipped item in the same slot */}
@@ -820,7 +861,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               color: '#ffcc88',
               lineHeight: '1.5',
             }}>
-              Are you sure you want to drop <strong>{item.name}</strong>? It will be left on the ground at your current location.
+              Are you sure you want to drop <strong>{itemDisplayName}</strong>? It will be left on the ground at your current location.
             </div>
 
             {/* Buttons */}
@@ -914,7 +955,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             boxShadow: '0 0 20px rgba(0, 153, 204, 0.3)',
           }}>
             <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#00ccff', fontFamily: 'monospace', borderBottom: '1px solid #0099cc', paddingBottom: '10px' }}>
-              👥 USE ON — {item.name}
+              👥 USE ON — {itemDisplayName}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {partyMembers.map((member) => {
@@ -929,7 +970,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                     key={member.id}
                     onClick={() => !outOfRange && handleUseOnAlly(member)}
                     disabled={outOfRange}
-                    title={outOfRange ? 'Out of range — use Advance to close distance first' : `Use ${item.name} on ${member.name}`}
+                    title={outOfRange ? 'Out of range — use Advance to close distance first' : `Use ${itemDisplayName} on ${member.name}`}
                     style={{
                       padding: '12px',
                       backgroundColor: outOfRange ? 'rgba(40,40,40,0.6)' : 'rgba(0,30,50,0.8)',

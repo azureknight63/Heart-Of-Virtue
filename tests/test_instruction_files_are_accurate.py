@@ -188,14 +188,26 @@ def instruction_surfaces():
     return [path for path in surfaces if path.is_file()]
 
 
-def _repo_path_index():
+def _repo_path_index(root=None):
     """Every file path in the tree, plus every suffix of every path.
 
     Suffix entries are what let a doc write ``hooks/useApi.js`` for
     ``frontend/src/hooks/useApi.js`` without tripping the guard.
+
+    ``worktrees`` is ignored for a load-bearing reason: agent sessions leave
+    nested git worktrees under ``.claude/worktrees/``, each a full copy of the
+    tree. Because this index stores every *suffix* of every path, one stale
+    worktree makes deleted files resolve as present -- a single leftover
+    checkout here re-indexed 753 files and made ``src/game.py``,
+    ``src/combat.py`` and ``src/tilesets/verdette_caverns.py`` all look alive.
+    That is the fail-open direction: the guard quietly stops catching the
+    broken doc references it exists to catch, and its own self-tests are the
+    only thing that notices. No tracked path has a ``worktrees`` component.
     """
+    root = REPO_ROOT if root is None else root
     ignored = {
         ".git",
+        "worktrees",
         "node_modules",
         ".venv",
         "venv",
@@ -208,12 +220,12 @@ def _repo_path_index():
         ".ruff_cache",
     }
     suffixes = set()
-    for path in REPO_ROOT.rglob("*"):
+    for path in root.rglob("*"):
         if any(part in ignored for part in path.parts):
             continue
         if not path.is_file():
             continue
-        parts = path.relative_to(REPO_ROOT).as_posix().split("/")
+        parts = path.relative_to(root).as_posix().split("/")
         for start in range(len(parts)):
             suffixes.add("/".join(parts[start:]))
     return frozenset(suffixes)
@@ -504,6 +516,41 @@ class TestNorecursedirsProseMatchesPytestIni:
             assert {d for d in named if d.startswith("tests/")} == {
                 d for d in real if d.startswith("tests/")
             }
+
+
+class TestPathIndexIgnoresNestedWorktrees:
+    """A stale nested worktree must not make deleted files look alive.
+
+    Behavioural, not a restatement of the ignore list: builds a synthetic tree
+    and checks what the walk actually indexes. Asserting ``"worktrees" in
+    ignored`` would just be the code's own opinion written twice.
+    """
+
+    @staticmethod
+    def _tree(root):
+        (root / "src").mkdir(parents=True)
+        (root / "src" / "real.py").write_text("# tracked", encoding="utf-8")
+        nested = root / ".claude" / "worktrees" / "agent-stale" / "src"
+        nested.mkdir(parents=True)
+        (nested / "deleted_long_ago.py").write_text("# stale copy", encoding="utf-8")
+        return _repo_path_index(root=root)
+
+    def test_a_file_only_inside_a_nested_worktree_is_not_indexed(self, tmp_path):
+        index = self._tree(tmp_path)
+        assert "src/deleted_long_ago.py" not in index
+        assert "deleted_long_ago.py" not in index
+
+    def test_the_real_tree_is_still_indexed(self, tmp_path):
+        """Proves the population is non-empty -- a walk that matched nothing
+        would satisfy the assertion above while guarding nothing at all."""
+        index = self._tree(tmp_path)
+        assert "src/real.py" in index
+        assert "real.py" in index
+
+    def test_the_live_index_is_populated_and_worktree_free(self):
+        """The same two properties against the real repo index."""
+        assert len(PATH_INDEX) > 1000, len(PATH_INDEX)
+        assert not [s for s in PATH_INDEX if s.startswith(".claude/worktrees/")]
 
 
 if __name__ == "__main__":

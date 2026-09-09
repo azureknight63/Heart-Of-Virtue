@@ -45,6 +45,7 @@ class KeepAway(Move):
     display_name = 'Keep Away'
 
     web_animation = "pierce"
+    weapon_requirement = ("Polearm", "Spear")
 
     def __init__(self, user):
         description = (
@@ -212,6 +213,7 @@ class Lunge(Move):
     display_name = 'Lunge'
 
     web_animation = "pierce"
+    weapon_requirement = ("Spear",)
 
     def __init__(self, user):
         description = (
@@ -253,6 +255,18 @@ class Lunge(Move):
             return False
         if getattr(self.user.eq_weapon, "subtype", None) != "Spear":
             return False
+        # The DECLARED band (3-15), deliberately NOT `self.mvrange`. Those are
+        # different quantities: `Move.__init__` stores the declared tuple
+        # verbatim, but `standard_evaluate_attack` (_base.py, near the
+        # `self.mvrange = mvrange` assignment) REPLACES it with the
+        # weapon-derived reach -- (3, 8) for a spear -- and `evaluate()` runs
+        # from `__init__`, so by the time anything reads it the band has
+        # narrowed. Lunge exists to close a gap OUTSIDE that reach ("bridges
+        # the gap when the target retreats just outside spear reach", above),
+        # so reading `self.mvrange` here makes the move unusable for the case
+        # it was written for. (Unarmed, `evaluate()` returns early and the
+        # declared band survives -- which is why this is not simply a wider
+        # constant.)
         return any(3 <= dist <= 15 for dist in self.user.combat_proximity.values())
 
     def evaluate(self):
@@ -366,6 +380,7 @@ class Impale(Move):
     display_name = 'Impale'
 
     web_animation = "pierce"
+    weapon_requirement = ("Spear",)
 
     def __init__(self, user):
         description = (
@@ -521,6 +536,7 @@ class ArmorPierce(Move):
     display_name = 'Armor Pierce'
 
     web_animation = "pierce"
+    weapon_requirement = ("Pick",)
 
     def __init__(self, user):
         description = (

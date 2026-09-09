@@ -1,11 +1,25 @@
 import { colors, spacing } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
+import { hostileOnlyTokenFor } from '../utils/combatEntities'
+import HostilityChip from './HostilityChip'
 
 /**
- * RoomContents - Display integrated room description with contents
- * Displays room contents descriptions inline with the main room description,
- * matching the terminal game's narrative format
+ * @file Room contents rendered inline with the room description, in the
+ * narrative format the terminal game used.
  */
+
+/**
+ * Hostility marker for one content line, or null.
+ *
+ * Only the type guard is this panel's business. The badge policy itself is
+ * documented once, on `HOSTILITY_TOKENS` (utils/combatEntities.js), and the
+ * room's hostiles-only variant of it on `hostileOnlyTokenFor` beside it — one
+ * place to read the rule, one entry point to ask it (issue #558).
+ */
+function hostileMarkerFor(content) {
+  if (content.type !== 'npc') return null
+  return hostileOnlyTokenFor(content.entity)
+}
 
 export default function RoomContents({ location, onInteract }) {
   if (!location) return null
@@ -19,17 +33,22 @@ export default function RoomContents({ location, onInteract }) {
   // Build content descriptions array
   const contentDescriptions = []
 
-  // Add NPCs with idle messages
-  npcs.forEach(npc => {
-    if (npc.idle_message) {
+  // NPCs and objects describe themselves the same way -- an `idle_message`,
+  // or nothing at all. Items do not (they carry `announce` and a fallback),
+  // which is why only these two share a helper. Call order is load-bearing:
+  // the render depends on npc -> item -> object.
+  const pushIdleLines = (entities, type) => entities.forEach(entity => {
+    if (entity.idle_message) {
       contentDescriptions.push({
-        type: 'npc',
-        text: npc.idle_message,
-        name: npc.name,
-        entity: npc,
+        type,
+        text: entity.idle_message,
+        name: entity.name,
+        entity,
       })
     }
   })
+
+  pushIdleLines(npcs, 'npc')
 
   // Add items with announce messages
   items.forEach(item => {
@@ -45,17 +64,7 @@ export default function RoomContents({ location, onInteract }) {
     })
   })
 
-  // Add objects with idle messages
-  objects.forEach(obj => {
-    if (obj.idle_message) {
-      contentDescriptions.push({
-        type: 'object',
-        text: obj.idle_message,
-        name: obj.name,
-        entity: obj,
-      })
-    }
-  })
+  pushIdleLines(objects, 'object')
 
   // Build combined description
   const roomDescriptionText = location.description
@@ -84,25 +93,32 @@ export default function RoomContents({ location, onInteract }) {
             flexDirection: 'column',
             gap: spacing.xs,
           }}>
-            {contentDescriptions.map((content, idx) => (
-              <div
-                key={idx}
-                style={{
-                  color: getEntityColor(content.type),
-                  fontFamily: 'serif',
-                  fontStyle: 'italic',
-                  fontSize: '16px',
-                  lineHeight: '1.5',
-                }}
-              >
-                {renderTextWithLinks(
-                  content.text.startsWith(' ') ? `${content.name}${content.text}` : content.text,
-                  allEntities,
-                  onInteract,
-                  content.entity
-                )}
-              </div>
-            ))}
+            {contentDescriptions.map((content, idx) => {
+              const hostile = hostileMarkerFor(content)
+              return (
+                <div
+                  key={idx}
+                  data-testid="room-content-line"
+                  style={{
+                    color: hostile ? hostile.color : getEntityColor(content.type),
+                    fontFamily: 'serif',
+                    fontStyle: 'italic',
+                    fontSize: '16px',
+                    lineHeight: '1.5',
+                  }}
+                >
+                  {renderTextWithLinks(
+                    content.text.startsWith(' ') ? `${content.name}${content.text}` : content.text,
+                    allEntities,
+                    onInteract,
+                    content.entity
+                  )}
+                  {hostile && (
+                    <HostilityChip token={hostile} variant="inline" />
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
 

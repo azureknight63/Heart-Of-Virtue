@@ -3,6 +3,8 @@ import { useAudio } from '../context/AudioContext';
 import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
 import { colors } from '../styles/theme';
+import { hostilityTokenFor } from '../utils/combatEntities';
+import HostilityChip from './HostilityChip';
 
 const INPUT_TYPE_CONFIG = {
     target_selection: { title: '🎯 SELECT TARGET' },
@@ -26,6 +28,110 @@ function healthBarColor(current, max) {
     if (pct > 0.25) return colors.warning;
     return colors.danger;
 }
+
+/**
+ * One target card in the target picker.
+ *
+ * Extracted because the `target_selection` case had grown to ~90 lines with
+ * `switch -> map -> IIFE -> JSX` nesting, and it is the branch #558's ally
+ * mis-target lived in -- the one place in this dialog worth being able to
+ * read in a single screen.
+ *
+ * @param {object} target one entry of `options`
+ * @param {string} confirmVerb the label for the confirm button
+ * @param {Function} onHover called with the target id, or null on leave
+ * @param {Function} onSelect called with the target id
+ */
+const TargetCard = ({ target, confirmVerb, onHover, onSelect }) => {
+  // Friend or foe, from the `is_ally` every target card
+  // carries. Without it Gorran and a Rock Rumbler were
+  // pixel-identical here and a pick landed on the ally
+  // (issue #558). Null when the payload says nothing —
+  // never guessed.
+  const hostility = hostilityTokenFor(target);
+
+  const hp = target.health;
+  // Guard the divisor: a combatant serialized with max 0 would otherwise put
+  // "Infinity%" into the style.
+  const hpPct = hp && hp.max > 0 ? hp.current / hp.max : 0;
+  const hpColor = hp ? healthBarColor(hp.current, hp.max) : null;
+
+  return (
+      <div
+          data-testid="target-card"
+          onMouseEnter={() => onHover(target.id)}
+          onMouseLeave={() => onHover(null)}
+          style={{
+              backgroundColor: hostility ? hostility.tint : 'rgba(255, 255, 255, 0.03)',
+              border: `1px solid ${hostility ? hostility.color : 'rgba(255, 255, 255, 0.1)'}`,
+              borderRadius: '12px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              transition: 'all 0.2s ease',
+              cursor: 'pointer'
+          }}
+          onClick={() => onSelect(target.id)}
+      >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontWeight: 'bold', color: '#fff', fontSize: '15px' }}>{target.name}</span>
+              {target.distance !== undefined && (
+                  <span style={{ fontSize: '11px', color: '#aaa', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                      {target.distance} ft
+                  </span>
+              )}
+          </div>
+
+          {hostility && (
+              <HostilityChip token={hostility} variant="block" />
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {hp && (
+                  <div style={{ fontSize: '12px', color: hpColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ minWidth: '30px', opacity: 0.6 }}>HP:</span>
+                      <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
+                          <div style={{ width: `${hpPct * 100}%`, height: '100%', backgroundColor: hpColor, borderRadius: '2px' }} />
+                      </div>
+                      <span style={{ fontSize: '10px', color: hpColor }}>{hp.current}/{hp.max}</span>
+                  </div>
+              )}
+              {target.hit_chance !== undefined && (
+                  <div style={{ fontSize: '12px', color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Accuracy:</span>
+                      {/* hit_chance is already an integer percentage, produced by
+                          the ranged moves' calculate_hit_chance (src/moves/_ranged.py)
+                          and passed through the adapter verbatim — do not rescale it.
+                          Its [2, 100] clamp is applied before the shared facing /
+                          HauntingPresence modifiers, so the final value can sit
+                          slightly outside that band. */}
+                      <span style={{ fontWeight: 'bold' }}>{Math.round(target.hit_chance)}%</span>
+                  </div>
+              )}
+          </div>
+
+          {/* The card itself is also clickable (see onClick above); this
+              button used to be `pointerEvents: 'none'` and cosmetic-only,
+              which made it invisible to real DOM hit-testing (Playwright's
+              actionability check, elementFromPoint) and keyboard/
+              screen-reader-inert. It now carries its own onClick — with
+              stopPropagation so a real click is not ALSO handled by the
+              ancestor card, which would submit the target twice. */}
+          <GameButton
+              variant="primary"
+              style={{ width: '100%', padding: '8px' }}
+              onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect(target.id);
+              }}
+          >
+              {confirmVerb}
+          </GameButton>
+      </div>
+  );
+};
+
 
 /**
  * CombatInputDialog - Versatile dialog for combat-specific inputs (targeting, directions, etc.)
@@ -71,80 +177,13 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                 return (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                         {Array.isArray(options) && options.map((target) => (
-                            <div
+                            <TargetCard
                                 key={target.id}
-                                onMouseEnter={() => onTargetHover && onTargetHover(target.id)}
-                                onMouseLeave={() => onTargetHover && onTargetHover(null)}
-                                style={{
-                                    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    borderRadius: '12px',
-                                    padding: '16px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '12px',
-                                    transition: 'all 0.2s ease',
-                                    cursor: 'pointer'
-                                }}
-                                onClick={() => handleSelect(target.id)}
-                            >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontWeight: 'bold', color: '#fff', fontSize: '15px' }}>{target.name}</span>
-                                    {target.distance !== undefined && (
-                                        <span style={{ fontSize: '11px', color: '#aaa', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-                                            {target.distance} ft
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                    {target.health && (() => {
-                                        // Guard the divisor: a combatant serialized with max 0
-                                        // would otherwise put "Infinity%" into the style.
-                                        const hpPct = target.health.max > 0 ? target.health.current / target.health.max : 0;
-                                        const hpColor = healthBarColor(target.health.current, target.health.max);
-                                        return (
-                                            <div style={{ fontSize: '12px', color: hpColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <span style={{ minWidth: '30px', opacity: 0.6 }}>HP:</span>
-                                                <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
-                                                    <div style={{ width: `${hpPct * 100}%`, height: '100%', backgroundColor: hpColor, borderRadius: '2px' }} />
-                                                </div>
-                                                <span style={{ fontSize: '10px', color: hpColor }}>{target.health.current}/{target.health.max}</span>
-                                            </div>
-                                        );
-                                    })()}
-                                    {target.hit_chance !== undefined && (
-                                        <div style={{ fontSize: '12px', color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}>
-                                            <span>Accuracy:</span>
-                                            {/* hit_chance is already an integer percentage, produced by
-                                                the ranged moves' calculate_hit_chance (src/moves/_ranged.py)
-                                                and passed through the adapter verbatim — do not rescale it.
-                                                Its [2, 100] clamp is applied before the shared facing /
-                                                HauntingPresence modifiers, so the final value can sit
-                                                slightly outside that band. */}
-                                            <span style={{ fontWeight: 'bold' }}>{Math.round(target.hit_chance)}%</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* The card itself is also clickable (see onClick above); this
-                                    button used to be `pointerEvents: 'none'` and cosmetic-only,
-                                    which made it invisible to real DOM hit-testing (Playwright's
-                                    actionability check, elementFromPoint) and keyboard/
-                                    screen-reader-inert. It now carries its own onClick — with
-                                    stopPropagation so a real click is not ALSO handled by the
-                                    ancestor card, which would submit the target twice. */}
-                                <GameButton
-                                    variant="primary"
-                                    style={{ width: '100%', padding: '8px' }}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleSelect(target.id);
-                                    }}
-                                >
-                                    {getConfirmVerb()}
-                                </GameButton>
-                            </div>
+                                target={target}
+                                confirmVerb={getConfirmVerb()}
+                                onHover={(id) => onTargetHover && onTargetHover(id)}
+                                onSelect={handleSelect}
+                            />
                         ))}
                     </div>
                 );

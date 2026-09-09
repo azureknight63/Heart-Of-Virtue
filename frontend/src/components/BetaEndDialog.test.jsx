@@ -46,6 +46,17 @@ describe('BetaEndDialog', () => {
     expect(buttons.map((b) => b.textContent)).toEqual(['Continue Exploring', 'Send Feedback']);
   });
 
+  it('does not claim which encounter ended the beta', () => {
+    // The copy said "The Lurker is defeated — Verdette Caverns is yours to
+    // explore". The Lurker path is a disabled no-op for this beta and the
+    // dialog is now raised by the Ferry Landing instead (issue #552), so a
+    // player reaching it that way was told about a fight they never had.
+    renderDialog();
+    expect(document.body.textContent).toMatch(/You've reached the end of the beta/i);
+    expect(document.body.textContent).not.toMatch(/Lurker/i);
+    expect(document.body.textContent).not.toMatch(/Verdette/i);
+  });
+
   it('offers no close control, so the dialog can only be dismissed by a button', () => {
     // showCloseButton={false} is deliberate: this card is the beta's last beat
     // and must be acknowledged, not dismissed by the ✕.

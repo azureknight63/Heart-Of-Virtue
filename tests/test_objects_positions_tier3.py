@@ -659,7 +659,7 @@ class TestHealingSpring:
         player = Mock()
         tile = Mock()
         spring = HealingSpring(player, tile)
-        assert spring.name == "HealingSpring"
+        assert spring.name == "Healing Spring"
         assert "drink" in spring.keywords
         assert "clean" in spring.keywords
         assert "wash" in spring.keywords

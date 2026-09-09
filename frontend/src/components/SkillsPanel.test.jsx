@@ -523,4 +523,49 @@ describe('SkillsPanel', () => {
     fireEvent.click(rightBtn);
     expect(strip.scrollBy).toHaveBeenCalledWith({ left: 120, behavior: 'smooth' });
   });
+
+  describe('no discipline has any XP yet (#565)', () => {
+    // The tab strip, the XP header, the skill grid AND the
+    // "No skills currently available in this discipline." empty state were all
+    // gated on `selectedCategory`, which stays null when no discipline has XP
+    // above zero. So a fresh character got a 300px-tall empty box with nothing
+    // in it but a CLOSE BOOK button — no explanation of why.
+    const noExpData = {
+      skill_tree: { Axe: [{ name: 'Cleave', display_name: 'Cleave', description: 'x', required_exp: 50, is_known: false, can_learn: false }] },
+      skill_exp: { Axe: 0 },
+    };
+
+    const renderPanel = (skills) => {
+      apiEndpoints.player.getSkills.mockResolvedValue({ data: { success: true, skills } });
+      return render(
+        <ToastProvider>
+          <SkillsPanel player={mockPlayer} onClose={() => { }} />
+        </ToastProvider>
+      );
+    };
+
+    it('explains the empty panel instead of rendering a blank box', async () => {
+      renderPanel(noExpData);
+
+      // Names the mechanism (skill XP comes from fighting) rather than just
+      // saying "nothing here" — the panel is the only place this is taught.
+      expect(await screen.findByText(/no skill experience yet/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Accessing ancient scrolls/i)).toBeNull();
+    });
+
+    it('shows the same explanation when the skill tree itself is empty', async () => {
+      renderPanel({ skill_tree: {}, skill_exp: {} });
+
+      expect(await screen.findByText(/no skill experience yet/i)).toBeInTheDocument();
+    });
+
+    it('does not show the empty-state copy once a discipline has XP', async () => {
+      // Negative control for the guard above: with XP present the panel takes
+      // its normal path, so the new copy must not leak into it.
+      renderPanel(mockSkillsData);
+
+      expect(await screen.findByText(/Available Combat XP/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no skill experience yet/i)).toBeNull();
+    });
+  });
 });

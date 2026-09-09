@@ -14,6 +14,7 @@ import threading
 import json
 
 import pytest
+from src.api.combat_adapter import NOT_ENOUGH_FATIGUE_REASON
 from src.combatant import wire_handle
 
 
@@ -85,7 +86,7 @@ def test_unaffordable_move_is_refused_with_200_and_a_reason(
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data.get("success") is False
-        assert data.get("error") == "Not enough fatigue"
+        assert data.get("error") == NOT_ENOUGH_FATIGUE_REASON
         # No state payload rides along, which is exactly why the client has to
         # be told about the refusal explicitly — there is nothing to re-render.
         assert "battle_state" not in data
@@ -97,7 +98,7 @@ def test_unaffordable_move_is_refused_with_200_and_a_reason(
         options = status["battle_state"]["available_options"]
         listed = next(o for o in options if o["name"] == move.name)
         assert listed["available"] is False
-        assert listed["reason"] == "Not enough fatigue"
+        assert listed["reason"] == NOT_ENOUGH_FATIGUE_REASON
 
 
 @pytest.mark.integration

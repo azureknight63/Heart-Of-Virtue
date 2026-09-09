@@ -389,12 +389,29 @@ MOVE_CONTRACT = {
     # "Available in 5 beats" would leave this contract green while silently
     # removing the explainer -- tests/test_combat_glossary_contract.py runs the
     # real reason strings against the glossary's own patterns to catch that.
-    "reason": Read("CombatMovePanel.jsx", "move.reason"),
+    # The read moved out of the component in the #554 fix: the panel now asks
+    # moveAvailability(move) instead of reading move.available/move.reason
+    # itself, so the wire field is consumed one layer down. Anchored on the
+    # literal dereference rather than on "reason", which would also match the
+    # function's own return shape and could therefore never fail.
+    "reason": Read("combatMoveStatus.js", "move.reason"),
     "fatigue_cost": Read("CombatMovePanel.jsx", "move.fatigue_cost"),
-    "targeted": Read("CombatMovePanel.jsx", "move.targeted"),
-    "viable_targets": Read("CombatMovePanel.jsx", "move.viable_targets"),
+    # These three moved together into `autoResolvedTargetId`: the panel and
+    # LeftPanel each had their own copy of the three-term predicate, and a
+    # drift meant the battlefield highlighted one enemy while the click
+    # submitted another. Helper-plus-consumer, as with `count`/`quantity`
+    # below: the helper read alone would keep passing if both surfaces
+    # stopped auto-resolving targets entirely.
+    "targeted": (
+        Read("combatMoveStatus.js", "move.targeted"),
+        Read("LeftPanel.jsx", "autoResolvedTargetId(move)"),
+    ),
+    "viable_targets": (
+        Read("combatMoveStatus.js", "move.viable_targets"),
+        Read("CombatMovePanel.jsx", "autoResolvedTargetId(move)"),
+    ),
     "requires_target_selection": Read(
-        "CombatMovePanel.jsx", "move.requires_target_selection"
+        "combatMoveStatus.js", "move.requires_target_selection"
     ),
     # `category` routes the move to a radial button via CATEGORY_GROUPS
     # (utils/categories.js). A category no group claims leaves the move with no
@@ -651,7 +668,7 @@ TARGET_CONTRACT = {
     "name": Read("CombatInputDialog.jsx", "target.name"),
     "distance": Read("CombatInputDialog.jsx", "target.distance"),
     # target.health.current / target.health.max
-    "health": Read("CombatInputDialog.jsx", "target.health.current"),
+    "health": Read("CombatInputDialog.jsx", "const hp = target.health"),
     # Bug #4: hit_chance is an already-integer percentage (see
     # ShootBow.calculate_hit_chance) — CombatInputDialog explicitly does NOT
     # rescale it. If the engine ever starts sending a 0-1 fraction instead,
@@ -1356,7 +1373,10 @@ SHOP_STATE_CONTRACT = {
 SHOP_BUY_ITEM_CONTRACT = {
     # list.find(i => i.id === selectedId)
     "id": Read("ShopDialog.jsx", "i.id === selectedId"),
-    "name": Read("ShopDialog.jsx", "selectedItem.name"),
+    # The read moved behind stackDisplayName, which strips the stack count the
+    # engine bakes into `name` (#565). Still a read of the `name` wire field --
+    # anchored on the call, which is the literal the file now contains.
+    "name": Read("ShopDialog.jsx", "stackDisplayName(selectedItem)"),
     "price": Read("ShopDialog.jsx", "selectedItem.price"),
     "weight": Read("ShopDialog.jsx", "selectedItem.weight"),
     # buyback effectiveQty
@@ -1367,7 +1387,10 @@ SHOP_BUY_ITEM_CONTRACT = {
 # Fields read off a sell-tab item (ShopSerializer.serialize_player_sellable).
 SHOP_SELL_ITEM_CONTRACT = {
     "id": Read("ShopDialog.jsx", "i.id === selectedId"),
-    "name": Read("ShopDialog.jsx", "selectedItem.name"),
+    # The read moved behind stackDisplayName, which strips the stack count the
+    # engine bakes into `name` (#565). Still a read of the `name` wire field --
+    # anchored on the call, which is the literal the file now contains.
+    "name": Read("ShopDialog.jsx", "stackDisplayName(selectedItem)"),
     "offer": Read("ShopDialog.jsx", "selectedItem.offer"),
     "weight": Read("ShopDialog.jsx", "selectedItem.weight"),
     # the sell quantity picker's ceiling
@@ -1502,6 +1525,28 @@ class TestSavesWireContract:
 # objects into fresh array references, so every other key rides through
 # untouched — which is exactly why a rename here is silent.
 
+# ----------------------------------------------------------------------------
+# The /world/interact response (GameService.interact_with_target). This is a
+# TOP-LEVEL response body, not a serializer output, and it is read straight off
+# the axios `data` by useWorldInteract — no whitelist in between, which is why
+# a rename here reaches the client silently rather than being dropped.
+INTERACT_RESPONSE_CONTRACT = {
+    # `if (data?.beta_end) setShowBetaEndDialog(true)` — the end-of-beta
+    # dialog for the Ferry Landing (#552). Optional-chained on both sides, so
+    # a rename or a drop shows as "the demo never ends", with nothing thrown.
+    "beta_end": Read("GamePage.jsx", "data?.beta_end"),
+    # The interaction moved the player, so the panel closes and the room is
+    # re-fetched rather than patched.
+    "teleported": Read("useWorldInteract.js", "data.teleported"),
+    # Patched onto the selected target so "open" appears after "unlock"
+    # without a re-select round trip.
+    "object_state": Read("useWorldInteract.js", "data.object_state"),
+    "events_triggered": Read("useWorldInteract.js", "data.events_triggered"),
+    "message": Read("useWorldInteract.js", "data.message"),
+    "success": Read("useWorldInteract.js", "data.success"),
+}
+
+
 ROOM_CONTRACT = {
     # MapGrid positions the grid on them; GamePage builds its tile cache key
     # `${location.map_name}:${location.x},${location.y}` from them.
@@ -1531,8 +1576,17 @@ ROOM_ITEM_CONTRACT = {
     "name": Read("RoomContents.jsx", "item.name"),
     # item.announce || `There is a ${item.name} here.`
     "announce": Read("RoomContents.jsx", "item.announce"),
-    # item.count > 1 ? `x${item.count}` : ''
-    "count": Read("InteractPanel.jsx", "item.count"),
+    # The read moved behind `stackSize`, which resolves `count ?? quantity`
+    # once so no call site re-picks the spelling:
+    #   stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1)
+    # Anchored on the HELPER *and* on a consumer's call, deliberately. The
+    # helper alone would attest only that the serializer emits the key -- it
+    # would keep passing if every list stopped rendering counts entirely,
+    # which is exactly the regression this entry exists to catch.
+    "count": (
+        Read("utils/stackName.js", "item?.count"),
+        Read("InteractPanel.jsx", "stackSize(selectedTarget)"),
+    ),
     # allTargets.filter(t => !t.hidden)
     "hidden": Read("InteractPanel.jsx", "t.hidden"),
     # selectedTarget.keywords.length > 0
@@ -1543,10 +1597,13 @@ ROOM_ITEM_CONTRACT = {
 ROOM_NPC_CONTRACT = {
     # key={`${target.id}-${idx}`}
     "id": Read("InteractPanel.jsx", "target.id"),
-    "name": Read("RoomContents.jsx", "npc.name"),
+    "name": Read("RoomContents.jsx", "entity.name"),
     # npc_class: n.type -> NpcChatPanel npcId
     "type": Read("InteractPanel.jsx", "n.type"),
-    "idle_message": Read("RoomContents.jsx", "npc.idle_message"),
+    # NPCs and objects describe themselves identically (an `idle_message`
+    # or nothing), so `pushIdleLines` reads BOTH shapes -- which is why
+    # this anchor and the object contract's are the same literal.
+    "idle_message": Read("RoomContents.jsx", "entity.idle_message"),
     "llm_chat_enabled": Read("InteractPanel.jsx", "selectedTarget?.llm_chat_enabled"),
     "loquacity_available": Read(
         "InteractPanel.jsx", "selectedTarget?.loquacity_available"
@@ -1556,8 +1613,8 @@ ROOM_NPC_CONTRACT = {
 # Room objects flow through ObjectSerializer.serialize_list.
 ROOM_OBJECT_CONTRACT = {
     "id": Read("InteractPanel.jsx", "target.id"),
-    "name": Read("RoomContents.jsx", "obj.name"),
-    "idle_message": Read("RoomContents.jsx", "obj.idle_message"),
+    "name": Read("RoomContents.jsx", "entity.name"),
+    "idle_message": Read("RoomContents.jsx", "entity.idle_message"),
     # objectState.keywords ?? prev.keywords
     "keywords": Read("InteractPanel.jsx", "objectState.keywords"),
 }
@@ -1590,6 +1647,29 @@ class TestRoomWireContract:
         room = GameService().get_current_room(player)
 
         _assert_contract(room, ROOM_CONTRACT, "get_current_room()")
+
+    def test_interact_response_fields(self):
+        """The /world/interact body, built from a real interaction.
+
+        `beta_end` shipped as a new top-level field of this response with no
+        entry here, which is the omission `.claude/rules/api-layer.md` names
+        this file the registry against: the client reads it as
+        `data?.beta_end`, so a rename would read as "the demo never ends" and
+        nothing would throw.
+        """
+        player, tile = self._populated_room()
+        from src.combatant import wire_handle
+
+        # The container, with a verb it implements: an unimplemented verb
+        # returns the in-fiction refusal shape instead of the full body, so it
+        # would exercise none of these fields.
+        result = GameService().interact_with_target(
+            player, wire_handle(tile.objects_here[0]), "look", session_data={}
+        )
+
+        _assert_contract(
+            result, INTERACT_RESPONSE_CONTRACT, "interact_with_target()"
+        )
 
     def test_exits_is_a_direction_keyed_mapping_the_client_can_take_keys_of(self):
         """transformLocationData calls `Object.keys(room.exits)`. If the server
@@ -1653,8 +1733,13 @@ INVENTORY_ITEM_CONTRACT = {
         Read("InventoryDialog.jsx", "item.subtype"),
         Read("ItemDetailDialog.jsx", "item.subtype"),
     ),
-    # stack count badge
-    "quantity": Read("InventoryDialog.jsx", "item.quantity"),
+    # The stack count badge, moved behind `stackSize` for the same reason
+    # `count`'s read was. Helper plus one consumer, as there -- see the note
+    # on `count` for why the helper alone is not enough.
+    "quantity": (
+        Read("utils/stackName.js", "item?.quantity"),
+        Read("InventoryDialog.jsx", "stackSize(item)"),
+    ),
     # row colour
     "rarity": Read("InventoryDialog.jsx", "item.rarity"),
     "weight": Read("InventoryDialog.jsx", "item.weight"),

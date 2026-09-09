@@ -360,6 +360,177 @@ describe('BaseDialog', () => {
       expect(document.getElementById(outerLabel)).toHaveTextContent('Outer')
       expect(document.getElementById(innerLabel)).toHaveTextContent('Inner')
     })
+
+    /**
+     * Issue #563 item 4. `aria-labelledby` resolved, so the accessible NAME
+     * was right, but it pointed at a `<div>`: the title was not a heading, so
+     * it never appeared in a heading list and nothing nested under it. The
+     * stats dialog got the worst of it — two `<h3>`s for its inner sections
+     * with its own title unheaded above them.
+     *
+     * Level 2 sits under LeftPanel's `<h1>`, alongside RightPanel's "World
+     * Map"/"Battlefield Map", and above the `<h3>`s that were orphaned. It is
+     * also the level NpcChatPanel.test.jsx's BaseDialog stub already renders,
+     * so the expectation predates the implementation.
+     */
+    it('renders the title as a level-2 heading', () => {
+      render(
+        <BaseDialog title="Test Title" onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(screen.getByRole('heading', { level: 2, name: 'Test Title' })).toBeInTheDocument()
+    })
+
+    it('labels the dialog by that heading', () => {
+      // The two facts have to stay wired to each other: a heading the
+      // aria-labelledby no longer points at would leave the dialog unnamed.
+      const { container } = render(
+        <BaseDialog title="Test Title" onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      const labelId = container.querySelector('.modal-content').getAttribute('aria-labelledby')
+      const heading = document.getElementById(labelId)
+      expect(heading.tagName).toBe('H2')
+      expect(heading).toHaveTextContent('Test Title')
+    })
+
+    /**
+     * Issue #563 item 5 — the background stayed readable behind a modal.
+     * With `Enemy Encounter` open, `main.hasAttribute('inert')` was false and
+     * `main.getAttribute('aria-hidden')` was null. Pointer and Tab were
+     * already handled (the overlay plus the focus trap above), so the gap was
+     * specifically the assistive-tech virtual cursor: a screen-reader user
+     * could still browse and activate the whole exploration screen behind a
+     * blocking prompt.
+     *
+     * `aria-hidden` rather than `inert`. No `inert` polyfill ships here, and
+     * `inert` would also block pointer input — which for a
+     * `containerCentered` dialog would be a behaviour CHANGE, not a
+     * belt-and-braces one: that overlay is positioned inside a panel and never
+     * covered the rest of the viewport in the first place.
+     *
+     * Marked declaratively rather than by a hook the background subscribes to,
+     * so it works for a dialog rendered anywhere in the tree — GamePage's
+     * EventManager sits outside LeftPanel's <main>, while LeftPanel's own
+     * dialogs are siblings INSIDE it, and neither can be reached by hiding one
+     * fixed ancestor.
+     */
+    describe('background modality', () => {
+      // Every node these tests put on document.body, so the teardown below can
+      // take them all back. Tracking the nodes rather than querying for
+      // `[data-modal-background]` is deliberate: the last test in here appends
+      // a deliberately UNMARKED region, and a selector-based sweep would walk
+      // straight past it and leak a stray <button> into the focus-trap tests
+      // further down the file.
+      const appended = []
+
+      const appendToBody = (html, marked) => {
+        const el = document.createElement('div')
+        if (marked) el.setAttribute('data-modal-background', 'true')
+        el.innerHTML = html
+        document.body.appendChild(el)
+        appended.push(el)
+        return el
+      }
+
+      const background = () => appendToBody('<button>Background control</button>', true)
+
+      // document.body is not RTL's to clean, and each test used to remove its
+      // own node AFTER its assertions -- so one failing assertion leaked a
+      // marked region that `syncBackgroundModality` went on mutating for the
+      // rest of the file. This runs however a test ends.
+      afterEach(() => {
+        appended.splice(0).forEach((el) => el.remove())
+      })
+
+      it('hides marked background regions while a dialog is open', () => {
+        const el = background()
+        const { unmount } = render(
+          <BaseDialog title="Enemy Encounter" onClose={mockOnClose}>
+            <button>Fight</button>
+          </BaseDialog>
+        )
+
+        expect(el.getAttribute('aria-hidden')).toBe('true')
+        unmount()
+      })
+
+      it('reveals them again when the dialog closes', () => {
+        const el = background()
+        const { unmount } = render(
+          <BaseDialog title="Enemy Encounter" onClose={mockOnClose}>
+            <button>Fight</button>
+          </BaseDialog>
+        )
+        unmount()
+
+        // Removed, not set to "false": aria-hidden="false" is honoured
+        // inconsistently and leaves a puzzling attribute on the live screen.
+        expect(el.hasAttribute('aria-hidden')).toBe(false)
+      })
+
+      it('leaves the background hidden while any dialog is still open', () => {
+        // Two siblings, closed one at a time. Keying on "a dialog unmounted"
+        // rather than on the stack being empty would reveal the background
+        // underneath the dialog still on screen.
+        const el = background()
+        const first = render(
+          <BaseDialog title="One" onClose={mockOnClose}><button>A</button></BaseDialog>
+        )
+        const second = render(
+          <BaseDialog title="Two" onClose={mockOnClose}><button>B</button></BaseDialog>
+        )
+
+        second.unmount()
+        expect(el.getAttribute('aria-hidden')).toBe('true')
+
+        first.unmount()
+        expect(el.hasAttribute('aria-hidden')).toBe(false)
+      })
+
+      it('does not hide the dialog itself', () => {
+        // The obvious wrong fix is aria-hidden on <main>, which in this app
+        // contains the dialogs: LeftPanel renders them as siblings inside its
+        // own <main>, so hiding that ancestor hides the modal too.
+        const el = background()
+        const { container, unmount } = render(
+          <BaseDialog title="Enemy Encounter" onClose={mockOnClose}>
+            <button>Fight</button>
+          </BaseDialog>
+        )
+
+        const dialog = container.querySelector('[role="dialog"]')
+        expect(dialog.closest('[aria-hidden="true"]')).toBeNull()
+        expect(screen.getByRole('button', { name: 'Fight' })).toBeInTheDocument()
+        unmount()
+      })
+
+      it('leaves an unmarked region alone', () => {
+        // Opt-in: the marker says "I am background". Hiding everything that
+        // is not the dialog would catch toasts and the live announcer.
+        const el = appendToBody('<button>Toast</button>', false)
+
+        const { unmount } = render(
+          <BaseDialog title="Enemy Encounter" onClose={mockOnClose}><button>Fight</button></BaseDialog>
+        )
+        expect(el.hasAttribute('aria-hidden')).toBe(false)
+
+        unmount()
+      })
+    })
+
+    it('carries no user-agent heading margin', () => {
+      // An <h2> brings its own block margin and font-size; the title bar is a
+      // flex row sized around the old <div>, so both are reset explicitly.
+      render(
+        <BaseDialog title="Test Title" onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(screen.getByRole('heading', { level: 2 }).style.margin).toBe('0px')
+    })
   })
 
   describe('Keyboard & Focus', () => {
@@ -473,14 +644,73 @@ describe('BaseDialog', () => {
       expect(innerClose).not.toHaveBeenCalled()
     })
 
-    it('moves focus to the first focusable element inside the dialog on mount', () => {
+    /**
+     * Issue #563 item 3. This test used to assert the ✕ WAS focused — "the
+     * header (with the ✕ close button) precedes children in DOM order" — which
+     * described the DOM accurately and the desired behaviour not at all. Every
+     * dialog in the app is built on this shell, so a keyboard user's reflexive
+     * first Enter closed whatever they had just opened: measured as `BUTTON:X`
+     * on INTERACT, the keyword sub-dialog, Victory, loot, inventory, settings
+     * and feedback.
+     *
+     * The staged Event Result dialog was the one exception, and it is the
+     * model: it hides the ✕ for a `needs_input` frame
+     * (`showCloseButton={!needsInput}`), leaves nothing else focusable, and so
+     * falls through to `container.focus()`. Landing on the container is the
+     * right answer whenever the only alternative is the dismiss button.
+     */
+    it('moves focus to the first meaningful control, skipping the ✕', () => {
+      // Identity, not `toHaveTextContent`: that matcher is a SUBTREE substring
+      // match, so against the focused element it answered the wrong question
+      // in both directions -- it passed when focus landed on the dialog
+      // container (whose textContent contains every label in the dialog) and
+      // failed when the container was the correct answer. A `not
+      // .toHaveTextContent('✕')` sibling assertion was removed for the same
+      // reason; the container case is covered by its own test below.
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button>Inner Button</button>
+          <button>Second Button</button>
+        </BaseDialog>
+      )
+      expect(document.activeElement).toBe(screen.getByText('Inner Button'))
+      expect(document.activeElement).not.toBe(
+        screen.getAllByRole('button').find((b) => b.textContent === '✕')
+      )
+    })
+
+    it('focuses the container when the ✕ is the only focusable thing', () => {
+      // Not the ✕ by default: a dialog whose only control is "close" must not
+      // arm Enter to close it the instant it opens.
+      const { container } = render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <p>Static content only</p>
+        </BaseDialog>
+      )
+      expect(document.activeElement).toBe(container.querySelector('[role="dialog"]'))
+    })
+
+    it('keeps the ✕ in the Tab cycle it no longer starts on', () => {
+      // The fix changes where focus STARTS, not what Tab can reach; skipping
+      // the dismiss button in the cycle would strand keyboard users.
+      //
+      // Asserted through the wrap rather than a plain Tab press: the trap only
+      // intervenes at the boundaries, and jsdom does not move focus on Tab by
+      // itself, so a mid-cycle Tab is unobservable here. Wrapping from the last
+      // element ONTO the ✕ is the same fact — it is still the first entry in
+      // the trap's focusable list.
       render(
         <BaseDialog title="Test" onClose={mockOnClose}>
           <button>Inner Button</button>
         </BaseDialog>
       )
-      // The header (with the ✕ close button) precedes children in DOM order.
-      expect(document.activeElement).toHaveTextContent('✕')
+      const closeButton = screen.getAllByRole('button').find((b) => b.textContent === '✕')
+      expect(closeButton).toBeInTheDocument()
+      expect(document.activeElement).not.toBe(closeButton)
+
+      screen.getByText('Inner Button').focus()
+      fireEvent.keyDown(document, { key: 'Tab' })
+      expect(document.activeElement).toBe(closeButton)
     })
 
     it('does not let an outer dialog steal focus from one nested inside it', () => {

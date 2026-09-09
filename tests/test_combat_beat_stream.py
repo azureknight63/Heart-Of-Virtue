@@ -151,7 +151,18 @@ def test_engine_outcome_tag_preferred_over_inference():
     assert sock.emits[0][1]["outcome"] == "parry"
 
 
-def test_emit_resolved_strips_beat_states_and_adds_seq():
+def test_emit_resolved_keeps_beat_states_and_adds_seq():
+    """`beat_states` rides this event; the strip was the trail's whole problem.
+
+    This test asserted the opposite until 2026-09-09, and it was right about
+    the code and wrong about the intent: with `COMBAT_SOCKET_STREAMING` on,
+    `performAction` does not apply a streamed non-terminal HTTP response, so
+    this payload is the only one that reaches the client's
+    `transformCombatData` -- and stripping the array here left
+    `useAccumulatedBeatStates` with nothing to accumulate for an entire fight.
+    See `emit_resolved`'s docstring for why the beat events cannot supply it
+    instead (no positions, and a shorter sequence than `beat_states`).
+    """
     sock = FakeSocketIO()
     streamer = CombatBeatStreamer(sock, "r")
     streamer.emit_resolved(
@@ -160,7 +171,7 @@ def test_emit_resolved_strips_beat_states_and_adds_seq():
     event, payload, _ = sock.emits[0]
     assert event == RESOLVED_EVENT
     assert payload["seq"] == 1
-    assert "beat_states" not in payload
+    assert payload["beat_states"] == [1, 2, 3]
     assert payload["awaiting_input"] is True
 
 

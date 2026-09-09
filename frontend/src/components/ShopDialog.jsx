@@ -3,6 +3,7 @@ import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
+import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '../utils/stackName'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -95,7 +96,11 @@ function WeightBar({ current, max, pendingDelta, isMobile }) {
 }
 
 function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
-  const count = item.count || 1
+  // Through stackSize, like the name beside it: this row calls
+  // stackDisplayName(item), which resolves `count ?? quantity` internally, so
+  // a hand-picked read here means the strip and the badge answer "how many"
+  // two different ways in one row.
+  const count = stackSize(item)
   const isBuyback = item.is_buyback
 
   const borderColor = isSelected
@@ -143,9 +148,9 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
           {getItemIcon(item)}
         </span>
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {item.name}
+          {stackDisplayName(item)}
         </span>
-        {count > 1 && (
+        {isStackedCount(count) && (
           <span style={{
             fontSize: '0.58rem',
             background: 'rgba(255,204,0,0.15)',
@@ -153,7 +158,7 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
             border: `1px solid rgba(255,204,0,0.3)`,
             padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold', flexShrink: 0,
           }}>
-            ×{count}
+            {stackCountLabel(count)}
           </span>
         )}
         {isBuyback && (
@@ -268,6 +273,17 @@ function QtyPicker({ value, max, onChange, isMobile }) {
  *   onClose    {function}
  *   onRefetch  {function} Called after each successful transaction to sync parent
  *   isMobile   {boolean}
+ *
+ * KNOWN SIZE, deliberately not split here -- same decision as
+ * `ItemDetailDialog`, whose block carries the reasoning.
+ *
+ * ~550 lines with a ~380-line return mixing the NPC strip, the tab bar, three
+ * status banners, both tab lists and the selection action row. `WeightBar`,
+ * `ItemRow`, `QtyPicker` and `ActionButton` are already extracted, so the
+ * remaining step is small and mechanical -- `BuyTabList`, `SellTabList`,
+ * `SelectionActionRow` -- but it is still a restructure with no behavioural
+ * test of its own, and the 2026-09-08 QA-triage branch touched this file only
+ * for the stack-name reads. Its own change.
  */
 export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player, onClose, onRefetch, isMobile }) {
   const { shopState, sellInventory, isLoading, error, txnMessage, welcomeMessage, buy, sell, buyback } = useShop(npcId)
@@ -294,6 +310,12 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
   // `buyback_price * count` (GameService.shop_buyback). The qty picker is
   // suppressed for buyback, so `quantity` stays 1 — use `count` as the real
   // multiplier or the UI quotes a fraction of what the player is actually charged.
+  // The RAW `count`, deliberately, in a file that resolves the same
+  // question through stackSize for DISPLAY: this is the shop payload's
+  // own field (`shop_serializer.py` normalises count/quantity itself)
+  // and it is the literal `tests/test_wire_field_contract.py` anchors
+  // the shop `count` citation on. Routing it through the helper would
+  // delete the read that guard cites.
   const effectiveQty = selectedItem?.is_buyback ? (selectedItem.count || 1) : quantity
 
   // ── Weight delta for the weight bar ───────────────────────────────────────
@@ -339,7 +361,8 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
 
   // ── Max qty for picker ──────────────────────────────────────────────────────
 
-  // `?? 0`, not `|| 1`. Both branches below already say what a zero unit cost
+  // `unitPrice`/`unitOffer` below take `?? 0`, not `|| 1`. Both branches
+  // already say what a zero unit cost
   // means — "you are limited only by stock, not by your purse" — and `|| 1`
   // was what stopped that arm ever running: it coerced a 0 up to 1, so
   // `unitPrice > 0` was unconditionally true and `: available` was dead code.
@@ -359,6 +382,9 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
   // from silently reading as "costs one gold".
   const maxQty = useMemo(() => {
     if (!selectedItem) return 1
+    // RAW `count`, like effectiveQty above -- this is the literal
+    // tests/test_wire_field_contract.py anchors the shop `count` citation on,
+    // so routing it through stackSize would delete the read that guard cites.
     const available = selectedItem.count || 1
     if (activeTab === 'buy' && !selectedItem.is_buyback) {
       const unitPrice = selectedItem.price ?? 0
@@ -710,7 +736,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                   <div style={{ fontSize: '0.72rem', color: colors.text.muted }}>
                     {selectedItem.is_buyback ? 'Buying back:' : activeTab === 'buy' ? 'Selected:' : 'Selling:'}
                     <span style={{ color: colors.text.main, fontWeight: 'bold', marginLeft: '4px' }}>
-                      {getItemIcon(selectedItem)} {selectedItem.name}
+                      {getItemIcon(selectedItem)} {stackDisplayName(selectedItem)}
                     </span>
                   </div>
 

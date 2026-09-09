@@ -88,6 +88,15 @@ describe('EventManager', () => {
 describe('CombatLog', () => {
   const entry = (over = {}) => ({ message: 'Jean strikes.', type: 'combat', timestamp: '10:00:00', ...over })
 
+  /**
+   * The rendered list, which is where "is this line on screen?" has to be
+   * asked. CombatLog also holds the newest line in a visually-hidden
+   * screen-reader announcer (issue #563 item 1), so an unscoped query for the
+   * LAST entry matches twice over — and after a collapse the announcer keeps
+   * it deliberately, since collapsing asks for screen space, not for silence.
+   */
+  const entries = () => within(screen.getByTestId('combat-log-entries'))
+
   it('shows the placeholder when the log is empty', () => {
     render(<CombatLog log={[]} />)
     expect(screen.getByText('Combat started...')).toBeInTheDocument()
@@ -95,14 +104,17 @@ describe('CombatLog', () => {
 
   it('renders each entry message with its timestamp', () => {
     render(<CombatLog log={[entry({ message: 'Jean strikes.' }), entry({ message: 'Slime recoils.' })]} />)
-    expect(screen.getByText('Jean strikes.')).toBeInTheDocument()
-    expect(screen.getByText('Slime recoils.')).toBeInTheDocument()
+    expect(entries().getByText('Jean strikes.')).toBeInTheDocument()
+    expect(entries().getByText('Slime recoils.')).toBeInTheDocument()
+    // Still two: the announcer speaks the message without its timestamp.
     expect(screen.getAllByText('[10:00:00]')).toHaveLength(2)
   })
 
   it('omits animation entries, which carry no player-facing text', () => {
     render(<CombatLog log={[entry({ message: 'visible' }), entry({ message: 'hidden', type: 'animation' })]} />)
-    expect(screen.getByText('visible')).toBeInTheDocument()
+    expect(entries().getByText('visible')).toBeInTheDocument()
+    // Unscoped on purpose: an animation carrier must reach neither the list
+    // nor the announcer.
     expect(screen.queryByText('hidden')).toBeNull()
   })
 
@@ -111,7 +123,7 @@ describe('CombatLog', () => {
     const img = document.querySelector('img')
     // DOMPurify keeps the element but strips the event-handler attribute.
     expect(img?.getAttribute('onerror')).toBeNull()
-    expect(screen.getByText(/bit by a bat/)).toBeInTheDocument()
+    expect(entries().getByText(/bit by a bat/)).toBeInTheDocument()
   })
 
   it('keeps safe inline markup in a log message', () => {
@@ -123,15 +135,17 @@ describe('CombatLog', () => {
     render(<CombatLog log={[entry({ message: 'Jean strikes.' })]} />)
     const header = screen.getByText('Combat Log').parentElement
 
-    expect(screen.getByText('Jean strikes.')).toBeInTheDocument()
+    expect(entries().getByText('Jean strikes.')).toBeInTheDocument()
     expect(within(header).getByText('▼')).toBeInTheDocument()
 
     fireEvent.click(header)
-    expect(screen.queryByText('Jean strikes.')).toBeNull()
+    // The LIST goes, not the text outright: the announcer holds the newest
+    // line whether the panel is open or shut.
+    expect(screen.queryByTestId('combat-log-entries')).toBeNull()
     expect(within(header).getByText('▶')).toBeInTheDocument()
 
     fireEvent.click(header)
-    expect(screen.getByText('Jean strikes.')).toBeInTheDocument()
+    expect(entries().getByText('Jean strikes.')).toBeInTheDocument()
   })
 
   it('falls back to a generated timestamp when an entry has none', () => {
@@ -144,7 +158,7 @@ describe('CombatLog', () => {
     // The backend deliberately allows duplicate text from different sources;
     // both must survive to the DOM rather than collapsing to one node.
     render(<CombatLog log={[entry({ message: 'The bat bites.', id: 'a' }), entry({ message: 'The bat bites.', id: 'b' })]} />)
-    expect(screen.getAllByText('The bat bites.')).toHaveLength(2)
+    expect(entries().getAllByText('The bat bites.')).toHaveLength(2)
   })
 
   it('applies the applied className to the container', () => {

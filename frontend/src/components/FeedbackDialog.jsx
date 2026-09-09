@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
-import { colors, spacing, fonts } from '../styles/theme'
+import { colors, spacing, fonts, accessibility, commonStyles } from '../styles/theme'
 import { feedback as feedbackApi } from '../api/endpoints'
 import { useToast } from '../context/ToastContext'
 import { apiErrorMessage } from '../utils/apiError'
+
+const SUBMIT_FAILED_MESSAGE = 'Could not submit feedback — please try again later.'
 
 const TYPES = [
   { id: 'bug', label: 'Bug Report' },
@@ -51,6 +53,18 @@ const labelStyle = {
   textTransform: 'uppercase',
 }
 
+/**
+ * The visible caption above a field.
+ *
+ * Deliberately a <span> and NOT a <label htmlFor>: two of its uses caption a
+ * button group ("Severity") and a set of star buttons ("Ratings (optional)"),
+ * neither of which is a labelable form control, so `htmlFor` would be invalid
+ * there. The controls carry their own `aria-label` (or, for the star buttons,
+ * a `title`) instead — the established idiom in this codebase — which is why
+ * every field must carry its caption as its own accessible name: the
+ * `ariaLabel` prop on TextInput/TextArea, or `aria-label` on a `role="group"`
+ * wrapper (#563 item 2). `LabeledField` below is what keeps the two in step.
+ */
 function FieldLabel({ children, required }) {
   return (
     <span style={labelStyle}>
@@ -62,7 +76,32 @@ function FieldLabel({ children, required }) {
   )
 }
 
-function TextInput({ value, onChange, placeholder, style, error, required, inputRef }) {
+/**
+ * A captioned field: the caption text is written ONCE and reaches both the
+ * visible label and the control's accessible name.
+ *
+ * Because the caption is a <span> rather than a <label htmlFor> (see
+ * FieldLabel), every field here needs the string twice — and without this
+ * wrapper it would be typed out twice at each of nine sites, which is the
+ * shape that drifts silently: a reworded caption leaves a screen reader
+ * announcing the old name and nothing fails. It had already happened once,
+ * to the ratings group.
+ *
+ * `children` is a function of the caption so that a control naming itself
+ * through a prop (`ariaLabel` on TextArea/TextInput) and one naming itself
+ * through a DOM attribute (`aria-label` on a `role="group"` wrapper) can both
+ * be spelled without a second copy.
+ */
+function LabeledField({ label, required, style, children }) {
+  return (
+    <div style={style}>
+      <FieldLabel required={required}>{label}</FieldLabel>
+      {children(label)}
+    </div>
+  )
+}
+
+function TextInput({ value, onChange, placeholder, style, error, required, inputRef, ariaLabel }) {
   return (
     <input
       ref={inputRef}
@@ -70,6 +109,10 @@ function TextInput({ value, onChange, placeholder, style, error, required, input
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      // The placeholder is not a name: it vanishes as soon as the player types,
+      // so without this the field had an empty accessible name (#563 item 2).
+      aria-label={ariaLabel}
+      required={required || undefined}
       aria-required={required || undefined}
       aria-invalid={error || undefined}
       style={{
@@ -89,17 +132,45 @@ function TextInput({ value, onChange, placeholder, style, error, required, input
   )
 }
 
-function TextArea({ value, onChange, placeholder, rows = 3 }) {
+function TextArea({ value, onChange, placeholder, rows = 3, ariaLabel }) {
   return (
     <textarea
       rows={rows}
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       style={inputStyle}
       onFocus={(e) => (e.target.style.borderColor = colors.primary)}
       onBlur={(e) => (e.target.style.borderColor = `${colors.primary}66`)}
     />
+  )
+}
+
+/**
+ * One free-text field: caption, textarea, and the accessible name that has to
+ * match it.
+ *
+ * The six of them differ only in caption, row count, state key and
+ * placeholder, and each wrapped those four values in the same `LabeledField`
+ * render-prop ceremony. The ceremony now exists once. `LabeledField` itself
+ * stays for the other three fields: the two `role="group"` captions, which
+ * name themselves through a DOM attribute rather than a prop, and the Title
+ * input, which carries `required`/`error`/`inputRef` besides.
+ */
+function LabeledTextArea({ label, rows, fieldKey, placeholder, fields, onChange }) {
+  return (
+    <LabeledField label={label}>
+      {(name) => (
+        <TextArea
+          rows={rows}
+          ariaLabel={name}
+          value={fields[fieldKey]}
+          onChange={(e) => onChange(fieldKey, e.target.value)}
+          placeholder={placeholder}
+        />
+      )}
+    </LabeledField>
   )
 }
 
@@ -148,63 +219,69 @@ function StarRating({ dimension, value, onChange }) {
 function BugForm({ fields, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <div>
-        <FieldLabel>Steps to Reproduce</FieldLabel>
-        <TextArea
-          rows={3}
-          value={fields.steps}
-          onChange={(e) => onChange('steps', e.target.value)}
-          placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
-        />
-      </div>
-      <div>
-        <FieldLabel>Expected Behavior</FieldLabel>
-        <TextArea
-          rows={2}
-          value={fields.expected}
-          onChange={(e) => onChange('expected', e.target.value)}
-          placeholder="What should have happened?"
-        />
-      </div>
-      <div>
-        <FieldLabel>Actual Behavior</FieldLabel>
-        <TextArea
-          rows={2}
-          value={fields.actual}
-          onChange={(e) => onChange('actual', e.target.value)}
-          placeholder="What actually happened?"
-        />
-      </div>
-      <div>
-        <FieldLabel>Severity</FieldLabel>
-        <div style={{ display: 'flex', gap: spacing.sm }}>
-          {SEVERITY_OPTIONS.map((sev) => {
-            const active = fields.severity === sev
-            const severityColor = { low: colors.gold, medium: colors.secondary, high: colors.danger }[sev]
-            return (
-              <button
-                key={sev}
-                onClick={() => onChange('severity', sev)}
-                style={{
-                  flex: 1,
-                  padding: `${spacing.xs} ${spacing.sm}`,
-                  backgroundColor: active ? `${severityColor}22` : 'transparent',
-                  border: `1px solid ${active ? severityColor : colors.text.dim}`,
-                  borderRadius: '4px',
-                  color: active ? severityColor : colors.text.muted,
-                  cursor: 'pointer',
-                  fontFamily: fonts.main,
-                  fontSize: '12px',
-                  textTransform: 'uppercase',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {sev}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <LabeledTextArea
+        label="Steps to Reproduce"
+        rows={3}
+        fieldKey="steps"
+        placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
+        fields={fields}
+        onChange={onChange}
+      />
+      <LabeledTextArea
+        label="Expected Behavior"
+        rows={2}
+        fieldKey="expected"
+        placeholder="What should have happened?"
+        fields={fields}
+        onChange={onChange}
+      />
+      <LabeledTextArea
+        label="Actual Behavior"
+        rows={2}
+        fieldKey="actual"
+        placeholder="What actually happened?"
+        fields={fields}
+        onChange={onChange}
+      />
+      {/* The caption is a <span>, so without the group the three buttons read
+          as three loose controls with no idea what they select (#563 item 2). */}
+      <LabeledField label="Severity">
+        {(name) => (
+          <div role="group" aria-label={name} style={{ display: 'flex', gap: spacing.sm }}>
+            {SEVERITY_OPTIONS.map((sev) => {
+              const active = fields.severity === sev
+              const severityColor = { low: colors.gold, medium: colors.secondary, high: colors.danger }[sev]
+              return (
+                <button
+                  key={sev}
+                  onClick={() => onChange('severity', sev)}
+                  aria-pressed={active}
+                  style={{
+                    flex: 1,
+                    // #564: these measured 96.8 x 28 at 375px — 64% of the 44px
+                    // touch minimum. Height, not width: three flex:1 buttons have
+                    // to keep sharing one row inside a ~330px dialog body, so a
+                    // minWidth big enough to matter would wrap them instead.
+                    minHeight: accessibility.touchTarget,
+                    padding: `${spacing.xs} ${spacing.sm}`,
+                    backgroundColor: active ? `${severityColor}22` : 'transparent',
+                    border: `1px solid ${active ? severityColor : colors.text.dim}`,
+                    borderRadius: '4px',
+                    color: active ? severityColor : colors.text.muted,
+                    cursor: 'pointer',
+                    fontFamily: fonts.main,
+                    fontSize: '12px',
+                    textTransform: 'uppercase',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {sev}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </LabeledField>
     </div>
   )
 }
@@ -212,24 +289,22 @@ function BugForm({ fields, onChange }) {
 function FeatureForm({ fields, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <div>
-        <FieldLabel>Description</FieldLabel>
-        <TextArea
-          rows={3}
-          value={fields.description}
-          onChange={(e) => onChange('description', e.target.value)}
-          placeholder="Describe the feature you'd like to see..."
-        />
-      </div>
-      <div>
-        <FieldLabel>Use Case / Why</FieldLabel>
-        <TextArea
-          rows={3}
-          value={fields.use_case}
-          onChange={(e) => onChange('use_case', e.target.value)}
-          placeholder="Why would this improve the game?"
-        />
-      </div>
+      <LabeledTextArea
+        label="Description"
+        rows={3}
+        fieldKey="description"
+        placeholder="Describe the feature you'd like to see..."
+        fields={fields}
+        onChange={onChange}
+      />
+      <LabeledTextArea
+        label="Use Case / Why"
+        rows={3}
+        fieldKey="use_case"
+        placeholder="Why would this improve the game?"
+        fields={fields}
+        onChange={onChange}
+      />
     </div>
   )
 }
@@ -237,38 +312,43 @@ function FeatureForm({ fields, onChange }) {
 function GeneralForm({ fields, onChange, ratings, onRatingChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <div>
-        <FieldLabel>Message</FieldLabel>
-        <TextArea
-          rows={4}
-          value={fields.message}
-          onChange={(e) => onChange('message', e.target.value)}
-          placeholder="Share your thoughts about the game..."
-        />
-      </div>
-      <div>
-        <FieldLabel>Ratings (optional)</FieldLabel>
-        <div
-          style={{
-            backgroundColor: colors.bg.panel,
-            border: `1px solid ${colors.primary}22`,
-            borderRadius: '6px',
-            padding: spacing.md,
-          }}
-        >
-          {RATING_DIMENSIONS.map((dim) => (
-            <StarRating
-              key={dim.key}
-              dimension={dim}
-              value={ratings[dim.key] || 0}
-              onChange={(val) => onRatingChange(dim.key, val)}
-            />
-          ))}
-          <div style={{ color: colors.text.dim, fontSize: '11px', marginTop: spacing.xs }}>
-            Click a star again to clear it. Leave any dimension unrated to skip it.
+      <LabeledTextArea
+        label="Message"
+        rows={4}
+        fieldKey="message"
+        placeholder="Share your thoughts about the game..."
+        fields={fields}
+        onChange={onChange}
+      />
+      {/* The accessible name is the caption verbatim, "(optional)" included:
+          the parenthetical is how a sighted player learns the stars can be
+          skipped, and a screen-reader user has no other source for it. */}
+      <LabeledField label="Ratings (optional)">
+        {(name) => (
+          <div
+            role="group"
+            aria-label={name}
+            style={{
+              backgroundColor: colors.bg.panel,
+              border: `1px solid ${colors.primary}22`,
+              borderRadius: '6px',
+              padding: spacing.md,
+            }}
+          >
+            {RATING_DIMENSIONS.map((dim) => (
+              <StarRating
+                key={dim.key}
+                dimension={dim}
+                value={ratings[dim.key] || 0}
+                onChange={(val) => onRatingChange(dim.key, val)}
+              />
+            ))}
+            <div style={{ color: colors.text.muted, fontSize: '11px', marginTop: spacing.xs }}>
+              Click a star again to clear it. Leave any dimension unrated to skip it.
+            </div>
           </div>
-        </div>
-      </div>
+        )}
+      </LabeledField>
     </div>
   )
 }
@@ -285,6 +365,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
   const [activeType, setActiveType] = useState(validInitialType)
   const [title, setTitle] = useState('')
   const [titleError, setTitleError] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
   const [anonymous, setAnonymous] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -299,6 +380,12 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
     setActiveType(type)
     setTitle('')
     setTitleError(false)
+    // The panel says "your report is still here"; after a tab switch it is
+    // not -- the title is wiped and a different form takes its place. (The
+    // three bodies are separate states and DO survive a round trip, which is
+    // deliberate, but the error the panel refers to belonged to the form the
+    // player just left.)
+    setSubmitError(null)
   }
 
   const handleTitleChange = (e) => {
@@ -323,6 +410,22 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
     return enriched
   }
 
+  /**
+   * #556: a toast was the ONLY notice of a failed submit, and it auto-dismisses
+   * after 5s while the filled-in report stays on screen behind an overlay whose
+   * own onClick discards it -- so the notice expired while the thing it was
+   * about was still destructible. Keep the toast for immediacy and add a
+   * durable in-dialog panel that outlives it.
+   */
+  // No `|| SUBMIT_FAILED_MESSAGE` fallback: both call sites already pass
+  // `apiErrorMessage(x, SUBMIT_FAILED_MESSAGE)`, and that helper is total --
+  // it never returns a falsy string when given a non-empty fallback. The arm
+  // was therefore unexercisable, against a 95% branch gate.
+  const failSubmit = (text) => {
+    setSubmitError(text)
+    toastError(text)
+  }
+
   const handleSubmit = async () => {
     if (submittingRef.current) return
     if (!title.trim()) {
@@ -335,15 +438,32 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       return
     }
     setTitleError(false)
+    setSubmitError(null)
     submittingRef.current = true
     setSubmitting(true)
     try {
       const fields = getActiveFields()
-      await feedbackApi.submitIssue(activeType, title.trim(), fields, anonymous)
+      const res = await feedbackApi.submitIssue(activeType, title.trim(), fields, anonymous)
+      // A 2xx body can still carry success:false. No current route returns
+      // that -- every failure here is a 400, 429 or 503 -- but the thank-you
+      // used to fire unconditionally, so the day one does, the report is lost
+      // silently all over again (#556).
+      if (res?.data?.success === false) {
+        // Through apiErrorMessage, not res.data.error directly: `error` and
+        // `message` are server-controlled and need not be strings, and this
+        // value is rendered as a React child, where a non-string throws
+        // "Objects are not valid as a React child" -- and with no
+        // ErrorBoundary in the app that unmounts the SPA instead of showing
+        // the error. The helper was already hardened against exactly this;
+        // this branch was the one path bypassing it. It also restores the
+        // documented message-before-error precedence.
+        failSubmit(apiErrorMessage(res.data, SUBMIT_FAILED_MESSAGE))
+        return
+      }
       toastSuccess('Feedback submitted! Thank you.')
       onClose()
     } catch (err) {
-      toastError(apiErrorMessage(err, 'Could not submit feedback — please try again later.'))
+      failSubmit(apiErrorMessage(err, SUBMIT_FAILED_MESSAGE))
     } finally {
       submittingRef.current = false
       setSubmitting(false)
@@ -400,23 +520,25 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       </div>
 
       {/* Title */}
-      <div style={{ marginBottom: spacing.md }}>
-        <FieldLabel required>Title</FieldLabel>
-        <TextInput
-          inputRef={titleInputRef}
-          value={title}
-          onChange={handleTitleChange}
-          error={titleError}
-          required
-          placeholder={
-            activeType === 'bug'
-              ? 'Short description of the bug...'
-              : activeType === 'feature'
-              ? 'What feature would you like?'
-              : 'Summary of your feedback...'
-          }
-        />
-      </div>
+      <LabeledField label="Title" required style={{ marginBottom: spacing.md }}>
+        {(name) => (
+          <TextInput
+            inputRef={titleInputRef}
+            ariaLabel={name}
+            value={title}
+            onChange={handleTitleChange}
+            error={titleError}
+            required
+            placeholder={
+              activeType === 'bug'
+                ? 'Short description of the bug...'
+                : activeType === 'feature'
+                ? 'What feature would you like?'
+                : 'Summary of your feedback...'
+            }
+          />
+        )}
+      </LabeledField>
 
       {/* Type-specific fields */}
       {activeType === 'bug' && (
@@ -474,6 +596,15 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
           Submit anonymously (your username will not appear on the issue)
         </span>
       </div>
+
+      {submitError && (
+        <div
+          role="alert"
+          style={{ ...commonStyles.errorBox, marginTop: spacing.md }}
+        >
+          ⚠ {submitError} Your report is still here — you can try again.
+        </div>
+      )}
 
       {/* Actions */}
       <div

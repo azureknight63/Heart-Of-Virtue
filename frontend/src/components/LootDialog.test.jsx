@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import LootDialog from './LootDialog'
+import { colors } from '../styles/theme'
+import { hexToRgb } from '../test/hexToRgb'
 
 vi.mock('./BaseDialog', () => ({
   default: ({ children, title }) => (
@@ -292,10 +294,74 @@ describe('LootDialog', () => {
     render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     const skipLink = screen.getByText(/skip — drop all items on tile/)
 
+    // Read from the tokens, not from literals: this used to pin #777/#444,
+    // which is how a hand-typed grey stayed invisible to theme.test.js in the
+    // first place. Derived here so a retune moves the test with the theme.
     fireEvent.mouseEnter(skipLink)
-    expect(skipLink.style.color).toBe('rgb(119, 119, 119)')
+    expect(skipLink.style.color).toBe(hexToRgb(colors.text.main))
 
     fireEvent.mouseLeave(skipLink)
-    expect(skipLink.style.color).toBe('rgb(68, 68, 68)')
+    expect(skipLink.style.color).toBe(hexToRgb(colors.text.muted))
+  })
+
+  describe('the skip control is a real control (#565)', () => {
+    // It was a bare <span> carrying an onClick: no role, no tabindex, so it
+    // was invisible to assistive tech and unreachable by keyboard, while
+    // looking (underlined, pointer cursor) exactly like a control. It IS
+    // clickable, so the fix is to make it what it already behaves like.
+    const renderDialog = () =>
+      render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+
+    it('exposes the skip affordance as a button', () => {
+      renderDialog()
+      const skip = screen.getByRole('button', { name: /skip — drop all items on tile/i })
+      expect(skip.tagName).toBe('BUTTON')
+    })
+
+    it('can be reached and fired from the keyboard', () => {
+      renderDialog()
+      const skip = screen.getByRole('button', { name: /skip — drop all items on tile/i })
+
+      skip.focus()
+      expect(skip).toHaveFocus()
+      // A native button fires click on Enter/Space; the guard is that the
+      // element is one, rather than a div that swallows both keys.
+      fireEvent.click(skip)
+      expect(onSkip).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('items whose engine name already carries the count (#565)', () => {
+    const bakedEndState = {
+      items_dropped: [
+        {
+          name: 'Mineral Powder x3',
+          type: 'Commodity',
+          subtype: 'Material',
+          weight: 0.1,
+          value: 8,
+          quantity: 3,
+          enchantment_count: 0,
+          description: 'Fine grey-green dust.',
+        },
+      ],
+    }
+
+    it('renders the loot row quantity once, not once in the name too', () => {
+      render(<LootDialog endState={bakedEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+
+      expect(screen.getByText('Mineral Powder')).toBeInTheDocument()
+      expect(screen.queryByText('Mineral Powder x3')).not.toBeInTheDocument()
+      expect(screen.getByText('×3')).toBeInTheDocument()
+    })
+
+    it('still collects the item under the name the engine knows it by', () => {
+      // Display-only de-duplication: the collect call must keep the engine's
+      // own name or the pickup silently fails to match anything.
+      render(<LootDialog endState={bakedEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+      fireEvent.click(screen.getByText(/COLLECT SELECTED ITEMS/))
+
+      expect(onCollect).toHaveBeenCalledWith(['Mineral Powder x3'])
+    })
   })
 })

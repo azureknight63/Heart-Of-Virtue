@@ -76,11 +76,11 @@ class RockRumbler(NPC):
             aggro=True,
             exp_award=120,
         )
-        self.resistance_base["earth"] = 0.5
-        self.resistance_base["fire"] = 0.5
-        self.resistance_base["crushing"] = 1.5
-        self.resistance_base["piercing"] = 0.5
-        self.resistance_base["slashing"] = 0.5
+        self._set_damage_resistance("earth", 0.5)
+        self._set_damage_resistance("fire", 0.5)
+        self._set_damage_resistance("crushing", 1.5)
+        self._set_damage_resistance("piercing", 0.5)
+        self._set_damage_resistance("slashing", 0.5)
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Withdraw(self))
@@ -109,11 +109,11 @@ class Lurker(NPC):
         )
         self.can_yield = False
         self.loot = loot.lev1
-        self.resistance_base["dark"] = 0.5
+        self._set_damage_resistance("dark", 0.5)
         # Vulnerable to fire (heat/light weaken it) — >1 means increased damage taken;
         # a negative value here would mean fire damage *heals* it, the opposite of intent.
-        self.resistance_base["fire"] = 1.5
-        self.resistance_base["light"] = 2.0
+        self._set_damage_resistance("fire", 1.5)
+        self._set_damage_resistance("light", 2.0)
         self._set_status_resistance("death", 1)
         self._set_status_resistance("doom", 1)
         self.add_move(moves.NpcAttack(self), 5)
@@ -147,7 +147,7 @@ class GiantSpider(NPC):
         )
         # Vulnerable to fire (heat/flames damage the creature) — >1 means increased
         # damage taken; a negative value here would mean fire damage *heals* it.
-        self.resistance_base["fire"] = 1.5
+        self._set_damage_resistance("fire", 1.5)
         self._set_status_resistance("poison", 1)
         self.add_move(moves.NpcAttack(self), 3)
         self.add_move(moves.SpiderBite(self), 6)
@@ -178,8 +178,8 @@ class CaveBat(NPC):
             alert_message="screeches and dives!",
         )
         # Flavor resistances: bats are more vulnerable to light, indifferent to earth
-        self.resistance_base["light"] = 0.8
-        self.resistance_base["earth"] = 1.1
+        self._set_damage_resistance("light", 0.8)
+        self._set_damage_resistance("earth", 1.1)
         # Some variants may have a small life-drain implemented elsewhere; leave hooks in status_resistance
         self._set_status_resistance("poison", 1.0)
         # Movement and combat style
@@ -217,11 +217,11 @@ class ElderSlime(NPC):
             idle_message=" shifts slowly in the muck.",
             alert_message=" fixes Jean with a cold, deliberate focus!",
         )
-        self.resistance_base["slashing"] = 0.65
-        self.resistance_base["piercing"] = 0.65
-        self.resistance_base["crushing"] = 1.25
-        self.resistance_base["fire"] = 1.4
-        self.resistance_base["earth"] = 0.85
+        self._set_damage_resistance("slashing", 0.65)
+        self._set_damage_resistance("piercing", 0.65)
+        self._set_damage_resistance("crushing", 1.25)
+        self._set_damage_resistance("fire", 1.4)
+        self._set_damage_resistance("earth", 0.85)
         self._set_status_resistance("poison", 1.0)
         self._set_status_resistance("slimed", 1.0)
         self.loot = {**loot.lev0, "SlimeFlask": {"chance": 20, "qty": 1}}
@@ -259,11 +259,11 @@ class KingSlime(NPC):
             is_boss=True,
         )
         self.can_yield = False
-        self.resistance_base["slashing"] = 0.65
-        self.resistance_base["piercing"] = 0.65
-        self.resistance_base["crushing"] = 1.2
-        self.resistance_base["fire"] = 1.5
-        self.resistance_base["earth"] = 0.9
+        self._set_damage_resistance("slashing", 0.65)
+        self._set_damage_resistance("piercing", 0.65)
+        self._set_damage_resistance("crushing", 1.2)
+        self._set_damage_resistance("fire", 1.5)
+        self._set_damage_resistance("earth", 0.9)
         self._set_status_resistance("poison", 1.0)
         self._set_status_resistance("slimed", 1.0)
         self.loot = {**loot.lev1, "SlimeFlask": {"chance": 25, "qty": "r1-2"}}
@@ -471,9 +471,9 @@ class ScarpAdder(NPC):
         )
         # Slight resistance to physical damage due to fragile scales;
         # Affinity with stone (slight resistance to earth magic)
-        self.resistance_base["earth"] = 0.8
-        self.resistance_base["crushing"] = 1.2
-        self.resistance_base["slashing"] = 1.1
+        self._set_damage_resistance("earth", 0.8)
+        self._set_damage_resistance("crushing", 1.2)
+        self._set_damage_resistance("slashing", 1.1)
 
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.VenomClaw(self), 3)  # Re-use venom mechanic
@@ -513,7 +513,7 @@ class StatusDummy(NPC):
             self._set_status_resistance(key, 0.0)
         # Strip all damage resistances to neutral
         for key in self.resistance_base:
-            self.resistance_base[key] = 1.0
+            self._set_damage_resistance(key, 1.0)
         self.add_move(moves.NpcIdle(self), 5)
         self.add_move(moves.NpcAttack(self), 1)
 
@@ -545,11 +545,11 @@ class CorruptedStoneCreature(NPC):
             idle_message=" scrapes slowly across the stone floor.",
             alert_message=" lurches toward Jean, mineral slurry trailing behind it!",
         )
-        self.resistance_base["slashing"] = 0.4
-        self.resistance_base["piercing"] = 0.4
-        self.resistance_base["crushing"] = 1.6
-        self.resistance_base["fire"] = 1.4
-        self.resistance_base["earth"] = 0.5
+        self._set_damage_resistance("slashing", 0.4)
+        self._set_damage_resistance("piercing", 0.4)
+        self._set_damage_resistance("crushing", 1.6)
+        self._set_damage_resistance("fire", 1.4)
+        self._set_damage_resistance("earth", 0.5)
         self._set_status_resistance("stone", 1.0)  # immune to its own petrification
         self._set_status_resistance("slow", -0.5)  # extra vulnerable to slow-type states
         self.loot = {**loot.lev0, "MineralSolvent": {"chance": 25, "qty": 1}}
@@ -594,13 +594,13 @@ class WailWraith(NPC):
         self.can_yield = False
         self.loot = loot.lev1
         # Immune to conventional (physical) damage.
-        self.resistance_base["slashing"] = 0.0
-        self.resistance_base["piercing"] = 0.0
-        self.resistance_base["crushing"] = 0.0
+        self._set_damage_resistance("slashing", 0.0)
+        self._set_damage_resistance("piercing", 0.0)
+        self._set_damage_resistance("crushing", 0.0)
         # 2x weakness to Pure and Light; dark lands at half effect.
-        self.resistance_base["pure"] = 2.0
-        self.resistance_base["light"] = 2.0
-        self.resistance_base["dark"] = 0.5
+        self._set_damage_resistance("pure", 2.0)
+        self._set_damage_resistance("light", 2.0)
+        self._set_damage_resistance("dark", 0.5)
         # Fully resistant to death/doom being inflicted on the Wraith itself —
         # unrelated to Death Knell, which the Wraith inflicts on its target.
         self._set_status_resistance("death", 1.0)

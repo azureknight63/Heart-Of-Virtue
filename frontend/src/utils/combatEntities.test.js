@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isLiving } from './combatEntities';
+import { isLiving, isHostileEntity, hostilityTokenFor, HOSTILITY_TOKENS, hostileOnlyTokenFor } from './combatEntities';
 
 describe('isLiving', () => {
   it('reads the canonical hp field', () => {
@@ -76,5 +76,111 @@ describe('isLiving', () => {
     expect(isLiving(null)).toBe(false);
     expect(isLiving(undefined)).toBe(false);
     expect([{ hp: 1 }, null, { hp: 0 }].filter(isLiving)).toEqual([{ hp: 1 }]);
+  });
+});
+
+describe('isHostileEntity', () => {
+  it('reads the room-NPC spelling', () => {
+    expect(isHostileEntity({ is_hostile: true })).toBe(true);
+    expect(isHostileEntity({ is_hostile: false })).toBe(false);
+  });
+
+  it('reads the combat-target-card spelling as its complement', () => {
+    expect(isHostileEntity({ is_ally: false })).toBe(true);
+    expect(isHostileEntity({ is_ally: true })).toBe(false);
+  });
+
+  it('prefers the direct statement when a payload carries both', () => {
+    expect(isHostileEntity({ is_hostile: true, is_ally: true })).toBe(true);
+  });
+
+  it('answers null — never a guess — when the payload is silent', () => {
+    // The whole point: a default of "friendly" is how a hostile ends up
+    // wearing an ally badge.
+    expect(isHostileEntity({ name: 'Stranger' })).toBeNull();
+    expect(isHostileEntity({ is_hostile: 'yes' })).toBeNull();
+    expect(isHostileEntity({ is_ally: null })).toBeNull();
+    expect(isHostileEntity(null)).toBeNull();
+    expect(isHostileEntity(undefined)).toBeNull();
+  });
+});
+
+describe('hostilityTokenFor', () => {
+  it('carries a word and a glyph as well as a colour', () => {
+    // State is never conveyed by colour alone, and this is the state that
+    // decides whether the player swings at their own ally.
+    for (const token of Object.values(HOSTILITY_TOKENS)) {
+      expect(token.label).toMatch(/^[A-Z]+$/);
+      expect(token.glyph.length).toBeGreaterThan(0);
+      expect(token.color).toMatch(/^#/);
+      expect(token.tint).toMatch(/^#/);
+    }
+    expect(HOSTILITY_TOKENS.hostile.label).not.toBe(HOSTILITY_TOKENS.ally.label);
+    expect(HOSTILITY_TOKENS.hostile.color).not.toBe(HOSTILITY_TOKENS.ally.color);
+  });
+
+  it('maps each side to its own token', () => {
+    expect(hostilityTokenFor({ is_ally: false })).toBe(HOSTILITY_TOKENS.hostile);
+    expect(hostilityTokenFor({ is_hostile: true })).toBe(HOSTILITY_TOKENS.hostile);
+    expect(hostilityTokenFor({ is_ally: true })).toBe(HOSTILITY_TOKENS.ally);
+    // NOT ally: `is_hostile: false` is "not aggressive", not "on Jean's side".
+    // This line asserted the ally badge and was written alongside the code
+    // that produced it, so it pinned the defect rather than catching it.
+    expect(hostilityTokenFor({ is_hostile: false })).toBeNull();
+  });
+
+  it('has no token for a silent payload', () => {
+    expect(hostilityTokenFor({ name: 'Stranger' })).toBeNull();
+    expect(hostilityTokenFor(null)).toBeNull();
+  });
+});
+
+describe('hostilityTokenFor — ALLY needs a positive ally signal', () => {
+  // RoomContents documents the reasoning and then hostilityTokenFor broke it:
+  // `is_hostile: false` means "not aggressive" — a villager, a merchant — not
+  // "on Jean's side". Badging those ALLY states something the payload never
+  // said, which is the same class of mistake as badging a hostile friendly.
+  // Latent rather than live (the two spellings never co-occur today: only
+  // NPCSerializer emits is_hostile and only _build_target_entry emits
+  // is_ally), so this guards the invariant before a serializer change makes
+  // it reachable.
+  it('gives a non-aggressive room NPC no token rather than an ALLY badge', () => {
+    expect(hostilityTokenFor({ is_hostile: false })).toBeNull();
+  });
+
+  it('still badges a genuine party member from the target picker', () => {
+    expect(hostilityTokenFor({ is_ally: true })?.label).toBe('ALLY');
+  });
+
+  it('still badges a hostile from either spelling', () => {
+    expect(hostilityTokenFor({ is_hostile: true })?.label).toBe('HOSTILE');
+    expect(hostilityTokenFor({ is_ally: false })?.label).toBe('HOSTILE');
+  });
+
+  it('shows nothing when the payload is silent', () => {
+    expect(hostilityTokenFor({})).toBeNull();
+    expect(hostilityTokenFor(null)).toBeNull();
+  });
+});
+
+describe('hostileOnlyTokenFor -- the room panel variant', () => {
+  // Direct coverage for the fork. Without it the only exercise
+  // `hostileOnlyTokenFor` got was through RoomContents, which cannot reach
+  // the branch that distinguishes it from `hostilityTokenFor`: the room
+  // payload has no `is_ally` to supply.
+  it('refuses to badge a party member ALLY even when the payload says so', () => {
+    expect(hostilityTokenFor({ is_ally: true })?.label).toBe('ALLY');
+    expect(hostileOnlyTokenFor({ is_ally: true })).toBeNull();
+  });
+
+  it('badges a hostile from either spelling, like its sibling', () => {
+    expect(hostileOnlyTokenFor({ is_hostile: true })?.label).toBe('HOSTILE');
+    expect(hostileOnlyTokenFor({ is_ally: false })?.label).toBe('HOSTILE');
+  });
+
+  it('shows nothing for a non-aggressive NPC or a silent payload', () => {
+    expect(hostileOnlyTokenFor({ is_hostile: false })).toBeNull();
+    expect(hostileOnlyTokenFor({})).toBeNull();
+    expect(hostileOnlyTokenFor(null)).toBeNull();
   });
 });

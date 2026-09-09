@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { HOSTILITY_TOKENS } from '../utils/combatEntities'
 import { useWorldInteract } from '../hooks/useWorldInteract'
 import BaseDialog from './BaseDialog'
 import NpcChatPanel from './NpcChatPanel'
@@ -9,11 +10,11 @@ import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
 import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
+import { stackDisplayName, stackSize, isStacked, stackLabel } from '../utils/stackName'
 
-/**
- * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
- * Provides target selection, detailed item/object info, and action execution
- */
+// All three route `handleActionClick` to the shop dialog rather than to
+// /world/interact: a merchant advertises whichever of them its placement
+// authored, and the panel must not POST any of them as an interaction verb.
 const SHOP_KEYWORDS = new Set(['buy', 'sell', 'trade'])
 
 // Keywords that all open the SAME conversation. `handleActionClick` routes
@@ -115,9 +116,15 @@ function isHostileNpc(target) {
 
 /** Accent color for a target's chip/icon/border — danger for a hostile NPC, the shared per-type color otherwise. */
 function getTargetAccentColor(target) {
-    return isHostileNpc(target) ? colors.danger : getEntityColor(target?.type)
+    return isHostileNpc(target)
+        ? HOSTILITY_TOKENS.hostile.color
+        : getEntityColor(target?.type)
 }
 
+/**
+ * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
+ * Provides target selection, detailed item/object info, and action execution
+ */
 function InteractPanel({
     location,
     onInteractionComplete,
@@ -327,7 +334,7 @@ function InteractPanel({
         if (action.toLowerCase() === 'read' && selectedTarget) {
             const data = await runInteract(selectedTarget, action, qty)
             if (data?.success) {
-                setBookReaderData({ title: selectedTarget.name, text: stripBookWrapper(data.message) })
+                setBookReaderData({ title: stackDisplayName(selectedTarget), text: stripBookWrapper(data.message) })
                 resetInteraction()
             }
             return
@@ -335,9 +342,13 @@ function InteractPanel({
 
         // Check if we need to ask for quantity
         const isStackableAction = ['take', 'pickup', 'drop'].some(a => action.toLowerCase().includes(a))
-        if (isStackableAction && selectedTarget.count > 1 && qty === null) {
+        // Through stackSize, like the badges in this file: `count` is what
+        // ItemSerializer emits for this payload today, but a hand-picked read
+        // beside a helper-resolved one is two canonical-looking ways to ask
+        // the same question.
+        if (isStackableAction && isStacked(selectedTarget) && qty === null) {
             setPendingAction(action)
-            setQuantity(selectedTarget.count) // Default to all
+            setQuantity(stackSize(selectedTarget)) // Default to all
             setShowQuantityInput(true)
             return
         }
@@ -354,8 +365,12 @@ function InteractPanel({
 
     const getTargetIcon = (target) => {
         // A hostile NPC gets its own glyph rather than the friendly 👤 — the
-        // two must not read as the same kind of thing (issue #537).
-        if (isHostileNpc(target)) return '⚔️'
+        // two must not read as the same kind of thing (issue #537). The glyph
+        // is HOSTILITY_TOKENS', not a second copy: that table owns the
+        // colour, the glyph and the word, and this panel was re-typing all
+        // three. The colour and glyph now come from it; the WORD deliberately
+        // does not -- see the type badge below for why.
+        if (isHostileNpc(target)) return HOSTILITY_TOKENS.hostile.glyph
         switch (target?.type) {
             case 'npc': return '👤'
             case 'item': return '📦'
@@ -372,9 +387,15 @@ function InteractPanel({
     // disagreeing would remount on every render.
     const chatNpcId = selectedTarget?.npc_class || selectedTarget?.name
 
+    // The one reading the quantity prompt is about: how many the stack holds.
+    // Named rather than asked three times inside the JSX below. Safe when
+    // nothing is selected -- stackSize(null) is 1, and the prompt is gated on
+    // showQuantityInput anyway.
+    const availableToTake = stackSize(selectedTarget)
+
     return (<>
         <BaseDialog
-            title={selectedTarget ? `✨ ${selectedTarget.name}` : "👋 INTERACT"}
+            title={selectedTarget ? `✨ ${stackDisplayName(selectedTarget)}` : "👋 INTERACT"}
             onClose={onClose}
             maxWidth="500px"
             zIndex={2000}
@@ -489,7 +510,10 @@ function InteractPanel({
                                                 force-uppercased just by living inside this button (#540 item 8).
                                                 Uppercase stays for the type badge below, which IS a label/chip. */}
                                             <GameText variant="primary" size="sm" weight="bold" style={{ textTransform: 'none' }}>
-                                                {target.name} {target.count > 1 ? `(x${target.count})` : ''}
+                                                {/* stackDisplayName, not target.name: the engine bakes the
+                                                    count into a stackable item's own name, so this rendered
+                                                    "Mineral Powder x3 (x3)" (#565). */}
+                                                {stackLabel(target)}
                                             </GameText>
                                             {target.description && (
                                                 <GameText
@@ -525,6 +549,15 @@ function InteractPanel({
                                             letterSpacing: '1px',
                                             fontFamily: fonts.main,
                                         }}>
+                                            {/* Lowercase, unlike HostilityChip's
+                                                HOSTILITY_TOKENS.hostile.label ('HOSTILE').
+                                                Not a style preference: `textTransform`
+                                                above renders either spelling identically,
+                                                while the DOM text is what assistive tech
+                                                reads, and an all-caps word there is liable
+                                                to be spelled out letter by letter. The
+                                                colour and glyph DO come from the token --
+                                                only the casing is local. */}
                                             {isHostileNpc(target) ? 'hostile' : target.type}
                                         </div>
                                     </div>
@@ -567,16 +600,16 @@ function InteractPanel({
                                         nested inside this outer GameText's own <p> is invalid HTML and fired
                                         React's validateDOMNesting warning on every quantity prompt (#540 item 14). */}
                                     <GameText as="span" variant="muted" size="xs" weight="normal" style={{ display: 'block' }}>
-                                        Available: {selectedTarget.count}
+                                        Available: {availableToTake}
                                     </GameText>
                                 </GameText>
                                 <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
                                     <input
                                         type="number"
                                         min="1"
-                                        max={selectedTarget.count}
+                                        max={availableToTake}
                                         value={quantity}
-                                        onChange={(e) => setQuantity(Math.min(selectedTarget.count, Math.max(1, parseInt(e.target.value) || 1)))}
+                                        onChange={(e) => setQuantity(Math.min(availableToTake, Math.max(1, parseInt(e.target.value) || 1)))}
                                         style={{
                                             backgroundColor: colors.bg.main,
                                             border: `1px solid ${colors.secondary}`,
@@ -644,12 +677,15 @@ function InteractPanel({
                                                 borderRadius: '6px',
                                             }}>
                                                 <GameText variant="primary" size="sm">
-                                                    {item.name} {item.count > 1 ? `x${item.count}` : ''}
+                                                    {/* See the target list above: the engine's name already
+                                                        carries the count for a stackable item, so this read
+                                                        "Mineral Powder x3 x3" in the forge's crate (#565). */}
+                                                    {stackLabel(item)}
                                                 </GameText>
                                                 <GameButton
                                                     onClick={async (e) => {
                                                         e.stopPropagation()
-                                                        await takeOne(item.id, item.name)
+                                                        await takeOne(item.id, stackDisplayName(item))
                                                     }}
                                                     disabled={loading}
                                                     variant="secondary"

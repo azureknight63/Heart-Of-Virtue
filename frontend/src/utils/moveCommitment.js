@@ -34,6 +34,25 @@ export function totalStageBeats(stageBeats) {
   return STAGE_KEYS.reduce((sum, key) => sum + (stageBeats[key] || 0), 0)
 }
 
+/**
+ * The unit word for a beat count, singular at exactly one.
+ *
+ * No count of encodings or adopters is kept here, and neither is a list --
+ * the first enumeration written was already an undercount when a reviewer
+ * read it, and the replacement was stale on arrival, having missed three
+ * surfaces including one that shipped "1 beats remaining". `grep -rn
+ * "beatUnit\|beats" frontend/src` is the authority.
+ *
+ * Two shapes were in play: the ternary, and the SUFFIX form
+ * `beat${n === 1 ? '' : 's'}`, which no test counting rendered "beats" nodes
+ * can catch because the word is split across two text nodes.
+ *
+ * Takes a number, not a move, because `formatBeats` beside it may render a
+ * fraction (3.5) -- for which "beats" is correct and `n === 1` is false, so
+ * the two compose without a special case.
+ */
+export const beatUnit = (n) => (n === 1 ? 'beat' : 'beats')
+
 /** Compact display string: whole beats as-is, fractional beats to one decimal. */
 export function formatBeats(total) {
   return Number.isInteger(total) ? `${total}` : `${Math.round(total * 10) / 10}`

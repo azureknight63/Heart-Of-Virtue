@@ -276,4 +276,114 @@ describe('SettingsDialog', () => {
     });
   });
 
+  /**
+   * Issue #563 item 2 — nothing in this dialog had an accessible name. The
+   * file held no `id`, no `<label>`, no `aria-label`, no `aria-labelledby` and
+   * no `title`, so the two sliders announced as bare "slider, 0.5" and the two
+   * mute toggles announced as "ON" — the same name, twice, on one screen.
+   *
+   * `aria-label` rather than `htmlFor`: each MUSIC / SOUND EFFECTS heading
+   * heads BOTH the mute button and the slider beneath it, so associating the
+   * heading with the slider alone would announce the slider as "MUSIC" while
+   * the button beside it stayed "ON". It is also this codebase's idiom.
+   */
+  describe('accessible names', () => {
+    /**
+     * An element's accessible name, computed the way a reader would resolve
+     * it. Deliberately not `textContent`: the whole failure being guarded is
+     * a control whose visible text is not its name (a slider has none at all,
+     * and two buttons share the word "ON").
+     */
+    const accessibleName = (el) => {
+      const label = el.getAttribute('aria-label');
+      if (label) return label.trim();
+      const ids = el.getAttribute('aria-labelledby');
+      if (ids) {
+        return ids
+          .split(/\s+/)
+          .map((id) => el.ownerDocument.getElementById(id)?.textContent ?? '')
+          .join(' ')
+          .trim();
+      }
+      return (el.getAttribute('title') || el.textContent || '').trim();
+    };
+
+    it('names both volume sliders', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      expect(screen.getByRole('slider', { name: 'Music volume' })).toBeInTheDocument();
+      expect(screen.getByRole('slider', { name: 'Sound effects volume' })).toBeInTheDocument();
+    });
+
+    it('keeps the sliders in their existing order under the new names', () => {
+      // The order the rest of this file indexes by. Naming them must not
+      // reshuffle them, or every getAllByRole('slider')[n] above moves.
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      const names = screen.getAllByRole('slider').map(accessibleName);
+      expect(names).toEqual(['Music volume', 'Sound effects volume']);
+    });
+
+    it('distinguishes the two mute toggles and exposes their pressed state', () => {
+      // Both read "ON" before this. aria-pressed matches what the
+      // combat-speed segments and the flag rows already do.
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      const music = screen.getByRole('button', { name: 'Mute music' });
+      const sfx = screen.getByRole('button', { name: 'Mute sound effects' });
+      expect(music.getAttribute('aria-pressed')).toBe('false');
+      expect(sfx.getAttribute('aria-pressed')).toBe('false');
+
+      fireEvent.click(music);
+      expect(mockSetIsMusicMuted).toHaveBeenCalledWith(true);
+      fireEvent.click(sfx);
+      expect(mockSetIsSfxMuted).toHaveBeenCalledWith(true);
+    });
+
+    it('reports the pressed state of a muted toggle', () => {
+      usePreferences.mockReturnValue({ ...mockPreferences, isMusicMuted: true, isSfxMuted: true });
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      expect(screen.getByRole('button', { name: 'Mute music' }).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByRole('button', { name: 'Mute sound effects' }).getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('names every feature-flag toggle after its flag', () => {
+      // Three identically-named ON/OFF buttons, with the only distinguishing
+      // text in an unassociated sibling div. Driven from the registry so a
+      // new flag is covered the day it is added.
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      const names = Object.values(FEATURE_FLAGS).map((flag) => flag.label);
+      expect(names.length).toBeGreaterThan(1);
+      for (const label of names) {
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+      }
+    });
+
+    it('groups the combat-speed segments under their heading', () => {
+      // The segments are named ("1x", "0.5x") but say nothing about what they
+      // set; the COMBAT SPEED heading above them was unassociated.
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      const group = screen.getByRole('group', { name: 'Combat speed' });
+      expect(within(group).getByText('1x')).toBeInTheDocument();
+    });
+
+    it('leaves no interactive control unnamed', () => {
+      // The sweep, so a control added later cannot ship nameless. #536 got
+      // exploration and combat to zero unnamed of 21 and 14 elements; this
+      // dialog was never measured.
+      const { container } = render(<SettingsDialog onClose={mockOnClose} />);
+
+      const controls = [...container.querySelectorAll('button, input, select, textarea, a[href]')];
+      expect(controls.length).toBeGreaterThan(5);
+      const unnamed = controls.filter((el) => accessibleName(el) === '');
+      expect(
+        unnamed.map((el) => `${el.tagName}${el.type ? `[type=${el.type}]` : ''}`),
+        'these controls in SettingsDialog have an empty accessible name'
+      ).toEqual([]);
+    });
+  });
+
 });

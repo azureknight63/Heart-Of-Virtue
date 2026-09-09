@@ -382,4 +382,130 @@ describe('HeroPanel', () => {
     expect(screen.getByTestId('hp-bar').firstElementChild.style.height).toBe('0%');
     expect(screen.getByTestId('fatigue-bar').firstElementChild.style.height).toBe('0%');
   });
+
+  /**
+   * Issue #563 item 7 — assistive tech was served (#536 gave both bars
+   * `role="progressbar"`, `aria-valuenow` and a name) but a SIGHTED player was
+   * not: the number rendered only on hover, click or touch, so a 15x150px
+   * capsule of colour was the whole readout. Colourblind and low-vision
+   * players had nothing to read, and on a touch screen there is no hover at
+   * all.
+   *
+   * The readout is deliberately small rather than a layout redesign: the ring
+   * is a fixed 200x200 radial arrangement scaled by useHeroAutoScale, and the
+   * complaint is "there is no number", not "the number is too small".
+   */
+  describe('persistently visible vitals (issue #563)', () => {
+    const readout = (testId) => screen.getByTestId(`${testId}-value`);
+
+    it('shows the HP and Fatigue numbers with no interaction at all', () => {
+      render(<HeroPanel {...makeProps()} />);
+
+      expect(readout('hp-bar')).toHaveTextContent('80/100');
+      expect(readout('fatigue-bar')).toHaveTextContent('120/150');
+    });
+
+    it('keeps them visible rather than rendering them only when active', () => {
+      // The regression this guards is a re-hide: moving the readout back
+      // behind `active` would restore the reported bug exactly.
+      render(<HeroPanel {...makeProps()} />);
+      const hp = readout('hp-bar');
+
+      fireEvent.mouseEnter(screen.getByTestId('hp-bar'));
+      fireEvent.mouseLeave(screen.getByTestId('hp-bar'));
+      expect(hp).toBeInTheDocument();
+      expect(hp).toHaveTextContent('80/100');
+    });
+
+    it('hides the readout from assistive tech, which already has the value', () => {
+      // The progressbar's own aria-label is "HP: 80 / 100". Exposing the
+      // visible copy too would announce every vital twice.
+      render(<HeroPanel {...makeProps()} />);
+
+      expect(readout('hp-bar').getAttribute('aria-hidden')).toBe('true');
+      expect(readout('fatigue-bar').getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('leaves the fill as the bar\'s first child', () => {
+      // Ordering trap: the assertions in this file read the fill as
+      // `firstElementChild`, so a readout inserted ahead of it would silently
+      // repoint them at a text node.
+      render(<HeroPanel {...makeProps()} />);
+
+      expect(screen.getByTestId('hp-bar').firstElementChild.style.height).toBe('80%');
+    });
+
+    it('tracks the served value', () => {
+      render(<HeroPanel {...makeProps({ player: { hp: 12, max_hp: 100, fatigue: 5, max_fatigue: 150 } })} />);
+
+      expect(readout('hp-bar')).toHaveTextContent('12/100');
+      expect(readout('fatigue-bar')).toHaveTextContent('5/150');
+    });
+  });
+
+  /**
+   * Issue #563 item 8 — the six ring buttons are the most-used controls in
+   * the game and their labels computed to `font-size: 9px; font-weight: 700`,
+   * uppercase, in a 70x44px button. The touch target was already fine; the
+   * type was not.
+   *
+   * Raising it needs the button to grow, because the longest label
+   * ("ATTRIBUTES", 10 characters) already filled the old content box at 9px.
+   * Widening to 80px is safe in a way worth pinning: the ring's horizontal
+   * extent is set by the HP and Fatigue bars at left/right -75px, not by
+   * these buttons, so the footprint useHeroAutoScale scales against does not
+   * change.
+   */
+  describe('ring button legibility (issue #563)', () => {
+    // Courier New — and the generic monospace fallbacks — advance 0.6em per
+    // character. Derived rather than hard-coded so the fit is re-checked
+    // against whatever the width, padding and font size actually become.
+    const MONO_ADVANCE = 0.6;
+
+    const ringButtons = () =>
+      ['ATTRIBUTES', 'PARTY', 'INVENTORY', 'SKILLS', 'COMMANDS', 'INTERACT'].map(screen.getByText);
+
+    it('renders the labels above 9px', () => {
+      render(<HeroPanel {...makeProps()} />);
+
+      for (const button of ringButtons()) {
+        expect(parseFloat(button.style.fontSize)).toBeGreaterThan(9);
+      }
+    });
+
+    it('leaves the longest label room to render on one line', () => {
+      // The constraint, not a magic number: raising the font without widening
+      // the button pushes "ATTRIBUTES" out of its box, and a single word wider
+      // than its line box overflows rather than wrapping.
+      render(<HeroPanel {...makeProps()} />);
+
+      for (const button of ringButtons()) {
+        const width = parseFloat(button.style.width);
+        const fontSize = parseFloat(button.style.fontSize);
+        // `padding: '4px 2px'` and a 2px border, both sides, under
+        // border-box sizing.
+        const horizontalPadding = 2 * 2;
+        const border = 2 * 2;
+        const available = width - horizontalPadding - border;
+        const needed = button.textContent.length * fontSize * MONO_ADVANCE;
+        expect(
+          available,
+          `"${button.textContent}" needs ~${needed.toFixed(1)}px at ${fontSize}px but has ${available}px`
+        ).toBeGreaterThanOrEqual(needed);
+      }
+    });
+
+    it('keeps the ring no wider than the bars that bound it', () => {
+      // Why widening the buttons costs nothing: the outermost elements are the
+      // vital bars at -75px, so the panel's footprint is unchanged and
+      // useHeroAutoScale's base size still holds.
+      render(<HeroPanel {...makeProps()} />);
+
+      const skills = screen.getByText('SKILLS');
+      // left: calc(50% + 70px) inside a 200px container, so 170px.
+      const rightEdge = 170 + parseFloat(skills.style.width);
+      // The fatigue bar's right edge: 200 + 75.
+      expect(rightEdge).toBeLessThanOrEqual(275);
+    });
+  });
 });

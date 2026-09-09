@@ -2,8 +2,9 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
-import { colors, spacing, fonts } from '../styles/theme'
+import { colors, spacing, fonts, accessibility } from '../styles/theme'
 import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
+import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
 
 const ENCH_COLORS = ['#888888', '#44FF88', '#FFD700']
 
@@ -49,7 +50,7 @@ function ItemTooltip({ item, anchorRef }) {
       fontSize: '12px',
     }}>
       <div style={{ color: '#FFD700', fontSize: '14px', fontWeight: 'bold', borderBottom: `1px solid #664400`, paddingBottom: 6, marginBottom: 8 }}>
-        {item.name}
+        {stackDisplayName(item)}
       </div>
       {ench && (
         <div style={{ color: ench.color, fontSize: '11px', marginBottom: 6 }}>
@@ -77,6 +78,10 @@ function ItemTooltip({ item, anchorRef }) {
     </div>
   )
 }
+
+// How many units of a drop to weigh. `|| 1` on purpose: a drop reporting 0
+// still weighs one unit, which is why this is not a bare stackSize call.
+const unitsOf = (item) => stackSize(item) || 1
 
 function LootRow({ item, selected, onToggle }) {
   const [hovered, setHovered] = useState(false)
@@ -116,22 +121,22 @@ function LootRow({ item, selected, onToggle }) {
       }}>
         {selected ? '✓' : ''}
       </div>
-      {/* Name + type tag */}
+      {/* Name + type tag. stackDisplayName because the engine bakes the count
+          into a stackable item's own name, which the Qty column already
+          renders — "Mineral Powder x3" beside "×3" (#565). */}
       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: colors.primary }}>
-        {item.name}
+        {stackDisplayName(item)}
         <span style={{ color: '#333', fontSize: 10, marginLeft: 4 }}>[{item.type || 'Item'}]</span>
       </div>
       {/* Qty */}
-      <div style={{ color: colors.secondary, textAlign: 'right' }}>×{item.quantity}</div>
+      <div style={{ color: colors.secondary, textAlign: 'right' }}>{stackCountLabel(stackSize(item))}</div>
       {/* Enchantment stars */}
       <div style={{ textAlign: 'center', color: ench ? ench.color : 'transparent', fontSize: 11, letterSpacing: -1 }}>
         {ench ? ench.stars : ''}
       </div>
       {/* Weight */}
       <div style={{ color: '#555', textAlign: 'right', fontSize: 11 }}>
-        {/* `|| 1` matches the selected-weight total below: a drop without an
-            explicit quantity is one unit, not zero. */}
-        {item.weight != null ? formatWeight(item.weight * (item.quantity || 1), 1) : '—'}
+        {item.weight != null ? formatWeight(item.weight * unitsOf(item), 1) : '—'}
       </div>
 
       {hovered && <ItemTooltip item={item} anchorRef={rowRef} />}
@@ -157,7 +162,7 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
     let w = 0
     selected.forEach(i => {
       const item = drops[i]
-      if (item?.weight != null) w += item.weight * (item.quantity || 1)
+      if (item?.weight != null) w += item.weight * unitsOf(item)
     })
     return Math.round(w * 100) / 100
   }, [selected, drops])
@@ -191,6 +196,11 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
       showToast('Cannot collect — carry weight would exceed capacity.')
       return
     }
+    // The RAW engine name, never stackDisplayName: /combat/collect-loot
+    // matches it exactly (GameService.collect_combat_loot), and a stack's name
+    // legitimately ends in " xN". Every DISPLAY read in this file was migrated
+    // to stackDisplayName; this one must not follow, or every stacked item
+    // silently fails to collect. Guarded by LootDialog.test.jsx.
     const names = [...selected].map(i => drops[i].name)
     setIsSubmitting(true)
     try {
@@ -295,16 +305,38 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
           {isSubmitting ? 'COLLECTING...' : selected.size === 0 ? 'NOTHING SELECTED' : `COLLECT SELECTED ITEMS (${selected.size} of ${drops.length})  →`}
         </button>
 
-        {/* Skip */}
+        {/* Skip. A real <button>, not the styled <span onClick> it used to be:
+            that carried no role and no tabindex, so the one control that
+            forfeits the whole drop was invisible to assistive tech and
+            unreachable by keyboard while looking exactly like a link (#565).
+            Kept visually de-emphasised — it is the destructive path. */}
         <div style={{ textAlign: 'center', fontSize: '11px' }}>
-          <span
-            onClick={() => !isSubmitting && onSkip()}
-            style={{ color: '#444', cursor: 'pointer', textDecoration: 'underline' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#777'}
-            onMouseLeave={e => e.currentTarget.style.color = '#444'}
+          <button
+            type="button"
+            onClick={onSkip}
+            disabled={isSubmitting}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: `${spacing.sm} ${spacing.md}`,
+              // Centred on its own full-width row, so a height floor wraps
+              // nothing.
+              minHeight: accessibility.touchTarget,
+              fontFamily: fonts.main,
+              fontSize: '11px',
+              // `muted`, not `dim`: this is an active, keyboard-reachable
+              // control, and theme.js reserves dim for inactive decoration.
+              // (It carried a bare #444 -- about 2.0:1 on the app ground, and
+              // invisible to theme.test.js besides.)
+              color: colors.text.muted,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              textDecoration: 'underline',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = colors.text.main}
+            onMouseLeave={e => e.currentTarget.style.color = colors.text.muted}
           >
             skip — drop all items on tile →
-          </span>
+          </button>
         </div>
 
       </div>

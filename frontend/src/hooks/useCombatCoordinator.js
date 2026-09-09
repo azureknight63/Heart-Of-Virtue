@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { distinctLogCount } from '../utils/combatLogKey'
 
+// How long the victory dialog waits before it may be dismissed --
+// long enough that the closing beats finish streaming behind it, so
+// the player is not dismissing a dialog over a still-animating fight.
+const VICTORY_DIALOG_DELAY_MS = 5000
+
 /**
  * Custom hook for managing combat coordination state and handlers.
  * 
@@ -20,8 +25,6 @@ import { distinctLogCount } from '../utils/combatLogKey'
  * @param {Function} params.playSFX - Sound effect player
  * @returns {Object} Combat coordinator state and handlers
  */
-const VICTORY_DIALOG_DELAY_MS = 5000
-
 export function useCombatCoordinator({
     combat,
     inCombat,

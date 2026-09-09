@@ -19,8 +19,14 @@ from neotermcolor import colored as _neo_colored
 
 logger = logging.getLogger(__name__)
 
-# Strips ANSI escape codes so the structured ``text`` field is clean.
-_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+#: Strips ANSI escape codes so the structured ``text`` field is clean.
+#:
+#: PUBLIC because the narration sink owns what engine output looks like, and
+#: two other modules had each grown their own copy. One of them had already
+#: drifted -- ``[@-Z\_-]`` instead of ``[@-Z\-_]``, i.e. it stripped a
+#: nonexistent ``ESC -`` and missed the real ``ESC ]`` / ``ESC ^`` two-byte
+#: introducers -- which is the whole argument against a second copy.
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 # Context-local buffer of message dicts. ``None`` means "no active capture".
 _buffer: "contextvars.ContextVar[list | None]" = contextvars.ContextVar(
@@ -62,7 +68,7 @@ def narrate(*parts, color=None, attrs=None, mtype="narration", sep=" ", **meta):
     :param meta: extra structured fields merged into the entry.
     """
     raw = sep.join("" if p is None else str(p) for p in parts)
-    clean = _ANSI_ESCAPE.sub("", raw)
+    clean = ANSI_ESCAPE_RE.sub("", raw)
     if clean.strip():
         entry = {"text": clean, "type": mtype}
         if color:

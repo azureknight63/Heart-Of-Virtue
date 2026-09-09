@@ -5,7 +5,7 @@
 
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import GamePanel from '../GamePanel'
 import StatsPanel from '../StatsPanel'
@@ -247,9 +247,14 @@ describe('Advanced Coverage Gap Tests', () => {
         { id: 3, type: 'no-such-type', message: 'Uncategorised' },
       ]} />)
 
-      expect(screen.getByText('Took a hit')).toHaveStyle({ color: colors.gold })
-      expect(screen.getByText('Patched up')).toHaveStyle({ color: colors.text.muted })
-      expect(screen.getByText('Uncategorised')).toHaveStyle({ color: colors.text.main })
+      // Scoped to the rendered list. The newest line is also held, uncoloured,
+      // by CombatLog's screen-reader announcer (issue #563 item 1), so an
+      // unscoped getByText for it matches twice — and before the scope was
+      // added it read the announcer's span and saw no colour at all.
+      const entries = within(screen.getByTestId('combat-log-entries'))
+      expect(entries.getByText('Took a hit')).toHaveStyle({ color: colors.gold })
+      expect(entries.getByText('Patched up')).toHaveStyle({ color: colors.text.muted })
+      expect(entries.getByText('Uncategorised')).toHaveStyle({ color: colors.text.main })
     })
 
   })

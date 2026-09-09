@@ -25,6 +25,14 @@ function equippedWeaponSubtype(player) {
 }
 
 /**
+ * The disciplines a player can actually open a tab for: those with any skill
+ * XP. Spelled twice before — once in the load effect, once in the render —
+ * and the zero-XP empty state added in #565 depends on the two agreeing.
+ */
+const disciplinesWithExp = (tree, exp) =>
+  Object.keys(tree || {}).filter((cat) => (exp?.[cat] || 0) > 0)
+
+/**
  * SkillsPanel - View and learn character skills categorized by discipline
  */
 export default function SkillsPanel({ player, onClose }) {
@@ -48,7 +56,7 @@ export default function SkillsPanel({ player, onClose }) {
         setSkillsData(response.data.skills)
         if (!selectedCategory && response.data.skills.skill_tree) {
           const exp = response.data.skills.skill_exp || {}
-          const categories = Object.keys(response.data.skills.skill_tree).filter(cat => (exp[cat] || 0) > 0)
+          const categories = disciplinesWithExp(response.data.skills.skill_tree, exp)
           if (categories.length > 0) {
             // Open on the tab matching the equipped weapon type when that
             // discipline has XP to spend; otherwise fall back to the first
@@ -110,7 +118,7 @@ export default function SkillsPanel({ player, onClose }) {
   }
 
   const { skill_tree, skill_exp } = skillsData
-  const categories = Object.keys(skill_tree || {}).filter(cat => (skill_exp?.[cat] || 0) > 0)
+  const categories = disciplinesWithExp(skill_tree, skill_exp)
 
   return (
     <BaseDialog
@@ -121,9 +129,33 @@ export default function SkillsPanel({ player, onClose }) {
       zIndex={2000}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md, minHeight: '300px' }}>
+        {/* Nothing to select yet. Every block that renders skill CONTENT is
+            gated on `selectedCategory`, which stays null while no discipline
+            has XP —
+            including the "No skills currently available" copy — so a fresh
+            character was shown a 300px blank box with no explanation (#565).
+            The copy teaches the mechanism, which this panel is the only place
+            to learn: skill XP is banked per weapon subtype during combat
+            (Player.gain_exp in src/player/_leveling.py). */}
+        {categories.length === 0 && (
+          <GamePanel padding="md" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: spacing.sm }}>
+            <GameText variant="muted" align="center" style={{ fontStyle: 'italic' }}>
+              No skill experience yet.
+            </GameText>
+            <GameText variant="muted" size="sm" align="center">
+              A discipline appears here once you have earned experience in it.
+              Fight with a weapon and its discipline — Axe, Sword, and so on —
+              opens up with XP to spend on the abilities below it.
+            </GameText>
+          </GamePanel>
+        )}
+
         {/* Discipline Tabs — chevrons appear only when the strip actually has
             more to scroll to (#540 item 5: it could be cut off mid-word with
             no way to see there was more). */}
+        {/* The tab strip is content too: ungated it drew an empty bordered
+            row directly beneath the empty state above. */}
+        {categories.length > 0 && (
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: spacing.xs }}>
           {showTabsLeft && (
             <GameButton
@@ -176,6 +208,7 @@ export default function SkillsPanel({ player, onClose }) {
             </GameButton>
           )}
         </div>
+        )}
 
         {/* XP Header */}
         {selectedCategory && (

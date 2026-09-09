@@ -610,6 +610,96 @@ def resolve_damage(
     return damage
 
 
+#: How far a resistance multiplier must sit from neutral before
+#: :func:`mitigation_note` names it. 1.0 is neutral and the engine allows any
+#: finite value, so a float that merely rounds to 1.0 must not be reported as
+#: mitigation the player could act on.
+RESISTANCE_NEUTRAL_TOLERANCE = 0.005
+
+
+def mitigation_note(target, damage_type=None):
+    """Why a blow was absorbed, in the player's words and the engine's numbers.
+
+    Returns "" when neither mitigation is in play, because then nothing here
+    is the explanation: the zero came out of the power/heat/variance product,
+    and naming armour that is not there would be a worse lie than the silence
+    this replaces (issue #555).
+
+    **Legibility, not balance** — nothing here changes a damage number. The
+    reported case is a 40-60 damage sheet producing four consecutive "struck
+    ... but did no damage" lines: ``RockRumbler`` carries ``protection = 28``
+    *and* ``_set_damage_resistance("slashing", 0.5)``, which is in force from
+    construction (that setter writes the live dict too), so a 46-power
+    slashing hit resolves as ``46 * 0.5 - 28``
+    → 0 through :func:`resolve_damage`. The multiplier that zeroes the blow
+    was surfaced nowhere: not in the log, not on the attributes sheet.
+
+    ``damage_type`` None means "this move's damage line applies no
+    resistance", which is exactly the hostile-NPC family's line
+    (``_npc._npc_flat_damage``: protection only, no resistance) — none of
+    those moves declares a ``base_damage_type``, and the note must not credit
+    a resistance they never scored. A resistance at or above neutral is
+    likewise left unmentioned: it did not consume the blow, and a
+    *vulnerability* named as a reason for zero damage reads as nonsense.
+
+    Known gap: this reads the target's FULL protection, so a move that
+    resolves against a reduced figure -- any move passing a ``protection``
+    override, which ``grep -rn "protection=" src/moves/`` enumerates and this
+    docstring deliberately does not, for the reason ``resolve_damage`` gives
+    above -- would, on a zero, name armour it did not actually subtract. No
+    shipped power/resistance pair is known to zero a hit through one of those
+    overrides today. The fix is to thread the effective value
+    from the ``resolve_damage`` call site; overridable parameters were tried
+    here first and removed, because no caller passed them and they bought two
+    unreachable branches instead of a real fix.
+
+    Worded with the words "resistance" and "protection" on purpose. The combat
+    glossary (``frontend/src/data/combatGlossary.js``, the ``?`` panel) already
+    carries a *Protection & resistance* entry whose match patterns are exactly
+    those two words, and ``GlossaryText`` attaches its explainer by word match.
+    That is the backend half only: ``GlossaryText`` currently wraps
+    ``CombatMovePanel`` and NOT the combat log, so the explainer does not
+    attach to this line until the log is wrapped too. The wording is what
+    makes that a one-component change rather than a new wire field.
+    """
+    protection = target_protection(target)
+    resistance = (
+        functions.combat_resistance(target, damage_type)
+        if damage_type is not None
+        else None
+    )
+    name = getattr(target, "name", "the target")
+
+    # No `is not None` or `isfinite` guard on `resistance`: it is None only
+    # when `damage_type` is, which the first term already excludes, and
+    # `functions.combat_resistance` coerces every missing key and non-finite
+    # value to its `default` before returning (src/functions.py) -- so guarding
+    # here would tell a reader that the shared chokepoint may hand back None or
+    # a NaN, which is the opposite of its contract.
+    resists = (
+        damage_type is not None
+        and resistance < 1.0 - RESISTANCE_NEUTRAL_TOLERANCE
+    )
+    armoured = protection > 0
+
+    if resists and armoured:
+        return (
+            "{}'s {} resistance of {:g}x scales the blow down, and {:g} "
+            "protection absorbs what is left.".format(
+                name, damage_type, resistance, protection
+            )
+        )
+    if resists:
+        return "{}'s {} resistance of {:g}x scales the blow down to nothing.".format(
+            name, damage_type, resistance
+        )
+    if armoured:
+        return "{:g} points of {}'s protection absorb the blow entirely.".format(
+            protection, name
+        )
+    return ""
+
+
 def damage_bounds(
     attacker,
     target,
@@ -1189,6 +1279,21 @@ class Move:  # master class for all moves
     # Concrete engine moves must declare a player-facing name. Internal `name`
     # values remain stable for command routing and AI logic.
     display_name = None
+    # Weapon subtypes this move's own `viable()` gates on; empty means it takes
+    # whatever is in hand (or needs no weapon at all).
+    #
+    # `viable()` stays the rule — this is the REASON, declared so the API can
+    # explain an unavailable move instead of shrugging. It returns a bare bool,
+    # so the adapter could only guess from range, and range is precisely what
+    # is fine in the reported case: Shoot Crossbow greyed out as "Cannot use
+    # this move" with an enemy well inside its 6-40 ft band and a sword in
+    # Jean's hand (issue #565).
+    #
+    # The two are held in step by `tests/test_disabled_move_reasons.py`, which
+    # derives the gate out of each `viable()` body by AST and demands the
+    # declaration match — a retuned gate that forgets this attribute would
+    # otherwise ship a confidently wrong "Requires a ...".
+    weapon_requirement = ()
     # Power multiple this move applies to its user's base damage.
     #
     # Declared HERE, on the base class, so it is part of the Move interface
@@ -1970,6 +2075,17 @@ class Move:  # master class for all moves
                 + colored(self.target.name, self.targetcolor)
                 + colored(" but did no damage!", "yellow")
             )
+            # Say WHY (issue #555). A second line rather than a longer first
+            # one: the adapter pairs the published `absorb` outcome with the
+            # NEXT narration line, and that line's exact wording is pinned by
+            # tests/test_combat_outcome_channel.py. _take_resolution has
+            # already cleared the outcome by the time this one is emitted, so
+            # it cannot re-fire the animation.
+            note = mitigation_note(
+                self.target, getattr(self, "base_damage_type", None)
+            )
+            if note:
+                narrate(colored(note, "yellow"))
         else:
             cprint(
                 "{} struck {}, but {} absorbed {} damage!".format(

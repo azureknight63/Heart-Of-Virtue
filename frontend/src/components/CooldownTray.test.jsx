@@ -75,6 +75,40 @@ function borderHex(el) {
 const cardFor = (label) => screen.getByText(label).closest('div[style*="padding: 7px 9px"]')
 
 describe('CooldownTray', () => {
+  describe('the unit caption (#563 item 6 follow-up)', () => {
+    // `cooldownLabel` already pluralises, because "Keep Away: 1 beats" reads
+    // as a bug. The expanded card's caption did not, and 1 is not an edge
+    // case: _get_available_moves emits cooldown_remaining === 1 for the
+    // "Available next beat" state, so the collapsed tooltip said "1 beat"
+    // while the expanded card printed "1 / BEATS" for the same move.
+    it('says "beat", not "beats", when one beat remains', () => {
+      const oneBeat = makeCooldownMove({
+        id: '99', name: 'KeepAway', display_name: 'Keep Away',
+        category: 'Maneuver', beats_left: 0, stage3_beats: 3,
+      })
+      expect(oneBeat.cooldown_remaining).toBe(1)
+
+      const { container } = render(<CooldownTray moves={[oneBeat]} />)
+      fireEvent.mouseEnter(trayRoot(container))
+
+      expect(screen.getByText('beat')).toBeInTheDocument()
+      expect(screen.queryByText('beats')).not.toBeInTheDocument()
+    })
+
+    it('still says "beats" for more than one', () => {
+      const threeBeats = makeCooldownMove({
+        id: '98', name: 'Slash', category: 'Offensive',
+        beats_left: 2, stage3_beats: 3,
+      })
+      expect(threeBeats.cooldown_remaining).toBe(3)
+
+      const { container } = render(<CooldownTray moves={[threeBeats]} />)
+      fireEvent.mouseEnter(trayRoot(container))
+
+      expect(screen.getByText('beats')).toBeInTheDocument()
+    })
+  })
+
   describe('visibility', () => {
     it.each([
       ['an empty array', []],
@@ -136,6 +170,88 @@ describe('CooldownTray', () => {
       expect(card.textContent).toBe('◈2')
       expect(borderHex(card)).toBe(colors.text.muted)
     })
+
+    /**
+     * Issue #565 polish batch — the collapsed HUD read `COOLDOWN | 1 | ⚔ | 5`
+     * and nothing more. Which move is on cooldown was decodable only by
+     * opening a move panel and hovering the disabled card: the tray does
+     * expand to show names, but only on `mouseEnter`, so a touch screen never
+     * gets there at all.
+     *
+     * A name and a `title` are the whole fix — a 44x42px card has no room for
+     * the move name as visible text, and the tests above pin `textContent`
+     * exactly, which is the right constraint to hold to.
+     */
+    describe('accessible names', () => {
+      const collapsedCards = (container) => [...trayRoot(container).lastChild.children]
+
+      it('names each card with its move and remaining beats', () => {
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        const names = collapsedCards(container).map((c) => c.getAttribute('aria-label'))
+        expect(names).toEqual(['Slash: 2 beats', 'Keep Away: 1 beat', "Reaper's Mark: 5 beats"])
+      })
+
+      it('gives the same text to a sighted hover', () => {
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        const titles = collapsedCards(container).map((c) => c.getAttribute('title'))
+        expect(titles).toEqual(['Slash: 2 beats', 'Keep Away: 1 beat', "Reaper's Mark: 5 beats"])
+      })
+
+      it('carries a role that can actually take a name', () => {
+        // `aria-label` on a bare <div> is ignored: the generic role prohibits
+        // naming. `img` also collapses the glyph-plus-digit into the one thing
+        // the card means, instead of announcing "⚔" and "5" separately.
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        for (const card of collapsedCards(container)) {
+          expect(card.getAttribute('role')).toBe('img')
+        }
+      })
+
+      it('adds no visible text to the compact card', () => {
+        // The cards above assert textContent exactly, and there is no room for
+        // more in 44x42px — the name has to ride on attributes.
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        expect(collapsedCards(container)[0].textContent).toBe(`${categoryIcon('Offensive')}2`)
+      })
+
+      it('prefers the display name, as the expanded card does', () => {
+        const { container } = render(
+          <CooldownTray moves={[makeCooldownMove({
+            id: '1', name: 'keep_away', display_name: 'Keep Away', category: 'Maneuver', beats_left: 3,
+          })]} />
+        )
+
+        expect(collapsedCards(container)[0].getAttribute('aria-label')).toBe('Keep Away: 4 beats')
+      })
+
+      it('labels the tray itself', () => {
+        // "COOLDOWN" plus a bare number is not self-describing; the number is
+        // a move count, which reads as a beat count next to the word.
+        const { container } = render(<CooldownTray moves={MOVES} />)
+
+        expect(trayRoot(container).getAttribute('aria-label')).toBe('Moves on cooldown')
+      })
+    })
+
+    /**
+     * Issue #563 item 6 — the "beats" unit caption under each expanded card's
+     * countdown is prose, and it was painted with `colors.text.dim`: 3.45:1 on
+     * the app ground, under WCAG AA. `text.dim` is reserved for inactive
+     * controls and decorative marks, which SC 1.4.3 exempts; tertiary prose
+     * belongs on `text.muted` (5.58:1). See the note on the token in theme.js.
+     */
+    it('paints the "beats" unit caption with a readable colour', () => {
+      render(<CooldownTray moves={MOVES} />)
+      fireEvent.mouseEnter(screen.getByText('Cooldown').closest('div[style*="border-top"]'))
+
+      const caption = screen.getAllByText('beats')[0]
+      expect(caption.style.color).not.toBe(colors.text.dim)
+      expect(caption).toHaveStyle({ color: colors.text.muted })
+    })
   })
 
   describe('expanded cards', () => {
@@ -172,7 +288,10 @@ describe('CooldownTray', () => {
       expect(within(cardFor('Slash')).getByText('2')).toBeInTheDocument()
       expect(within(cardFor('Keep Away')).getByText('1')).toBeInTheDocument()
       expect(within(cardFor("Reaper's Mark")).getByText('5')).toBeInTheDocument()
-      expect(screen.getAllByText('beats')).toHaveLength(3)
+      // /^beats?$/, not 'beats': the caption is singular at one beat, and
+      // KEEP_AWAY's cooldown_remaining is 1. What this asserts is one unit
+      // label per card.
+      expect(screen.getAllByText(/^beats?$/)).toHaveLength(3)
     })
 
     it('updates the rendered countdown when the poll returns fewer beats', () => {
@@ -263,7 +382,7 @@ describe('CooldownTray', () => {
       expect(trayRoot(container).lastChild.children).toHaveLength(20)
 
       fireEvent.mouseEnter(trayRoot(container))
-      expect(screen.getAllByText('beats')).toHaveLength(20)
+      expect(screen.getAllByText(/^beats?$/)).toHaveLength(20)
       expect(screen.getByText('Move 19')).toBeInTheDocument()
     })
   })

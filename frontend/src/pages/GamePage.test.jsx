@@ -53,12 +53,22 @@ vi.mock('../components/RightPanel', () => ({
 }));
 
 vi.mock('../components/LeftPanel', () => ({
-    default: ({ location, player, onMove }) => (
+    default: ({ location, player, onMove, onInteractionComplete }) => (
         <div data-testid="left-panel">
             <h1>{location?.name}</h1>
             <p>{location?.description}</p>
             <div>Player: {player?.name}</div>
             <button onClick={() => onMove('north')}>Move North</button>
+            {/* Stands in for InteractPanel finishing an interaction. The
+                argument is the /world/interact response body, which
+                useWorldInteract forwards; `beta_end` is set by the Ferry
+                Landing (issue #552). */}
+            <button onClick={() => onInteractionComplete({ success: true, beta_end: true })}>
+                Finish Ferry Interaction
+            </button>
+            <button onClick={() => onInteractionComplete({ success: true })}>
+                Finish Plain Interaction
+            </button>
         </div>
     )
 }));
@@ -317,6 +327,29 @@ describe('GamePage', () => {
         }
     });
 
+    describe('end of demo from a world interaction (issue #552)', () => {
+        it('shows BetaEndDialog when an interaction reports beta_end', async () => {
+            renderGamePage();
+
+            fireEvent.click(screen.getByText('Finish Ferry Interaction'));
+
+            await waitFor(() => {
+                expect(screen.getByText('END OF BETA')).toBeDefined();
+            });
+        });
+
+        it('leaves an ordinary interaction alone', async () => {
+            renderGamePage();
+
+            fireEvent.click(screen.getByText('Finish Plain Interaction'));
+
+            await waitFor(() => {
+                expect(screen.getByTestId('left-panel')).toBeDefined();
+            });
+            expect(screen.queryByText('END OF BETA')).toBeNull();
+        });
+    });
+
     describe('stuck-combat recovery (issues #505 / #508)', () => {
         // A page that only learns the combat state when it pushes an action has no
         // way back from a desync. These three pin the ways out of it.
@@ -480,6 +513,37 @@ describe('GamePage', () => {
             onSaveError(new Error('Network Error'));
 
             expect(showError).toHaveBeenCalledWith('Failed to save your progress. Check your connection.');
+        });
+    });
+
+    /**
+     * Issue #563 item 5 — the other half of the background behind a modal.
+     *
+     * LeftPanel marks its own two regions (LeftPanel.test.jsx covers those),
+     * but the battlefield/map aside is background too, and it is rendered
+     * here. The dialogs GamePage itself owns — EventManager's prompts,
+     * CombatManager's victory/defeat/loot — sit outside LeftPanel's <main>
+     * entirely, which is why the marking is a distributed opt-in rather than
+     * one `aria-hidden` on a common ancestor: there isn't one.
+     */
+    describe('modal background marking (issue #563)', () => {
+        it('marks the panel that holds the battlefield and map', () => {
+            const { container } = renderGamePage();
+
+            const rightPanel = screen.getByTestId('right-panel');
+            const marked = rightPanel.closest('[data-modal-background]');
+            expect(marked, 'the RightPanel wrapper carries no modal-background marker').not.toBeNull();
+            expect(container.contains(marked)).toBe(true);
+        });
+
+        it('does not mark the wrapper that holds LeftPanel', () => {
+            // LeftPanel renders its own dialogs inside itself, so its wrapper
+            // must not be hidden wholesale — LeftPanel marks the two regions
+            // within it that really are background.
+            renderGamePage();
+
+            const leftWrapper = screen.getByTestId('left-panel').parentElement;
+            expect(leftWrapper.hasAttribute('data-modal-background')).toBe(false);
         });
     });
 });

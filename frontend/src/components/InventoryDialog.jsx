@@ -5,6 +5,7 @@ import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { lookupOr } from '../utils/lookup'
+import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '../utils/stackName'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -87,7 +88,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
   return (
     <>
       <BaseDialog
-        title={selectedItem ? `🔍 ${selectedItem.name.toUpperCase()}` : "🎒 INVENTORY"}
+        title={selectedItem ? `🔍 ${stackDisplayName(selectedItem).toUpperCase()}` : "🎒 INVENTORY"}
         onClose={onClose}
         maxWidth="800px"
         padding="16px"
@@ -311,7 +312,9 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                   fontSize: '12px',
                   fontStyle: 'italic',
                 }}>
-                  Tip: Left-click on an item to see details.
+                  {/* Device-neutral: "Left-click" named a mouse button in a
+                      build that ships 44px touch targets for phones (#565). */}
+                  Tip: Select an item to see its details.
                 </div>
 
                 {/* Uppercase lime/orange GameButton, matching every other
@@ -333,6 +336,11 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
 function ItemCard({ item, onClick, isShop }) {
   const isEquipped = item.is_equipped
   const rarityColor = getRarityColor(item.rarity)
+  // Resolved ONCE. `isStacked(item)` and `stackCountLabel(stackSize(item))`
+  // both walked the payload for "how many", which is two chances to disagree
+  // about it -- the shape `ShopDialog` and `ItemDetailDialog` already avoid by
+  // binding the count first.
+  const quantity = stackSize(item)
 
   return (
     <div
@@ -369,7 +377,11 @@ function ItemCard({ item, onClick, isShop }) {
         </div>
       )}
 
-      {item.quantity > 1 && (
+      {/* Through the resolved `quantity`, like the name above it: two
+          hand-picked reads of "how many" in one block is how a count-only
+          payload gets no badge AND has its baked "x3" stripped off the
+          name. */}
+      {isStackedCount(quantity) && (
         <div style={{
           position: 'absolute',
           top: '-6px',
@@ -382,7 +394,7 @@ function ItemCard({ item, onClick, isShop }) {
           fontWeight: 'bold',
           boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
         }}>
-          x{item.quantity}
+          {stackCountLabel(quantity)}
         </div>
       )}
 
@@ -402,7 +414,10 @@ function ItemCard({ item, onClick, isShop }) {
         textOverflow: 'ellipsis',
         wordBreak: 'break-word',
       }}>
-        {item.name}
+        {/* stackDisplayName, not item.name: the engine bakes the stack count
+            into a stackable item's own name, so the card carried it once in
+            the name and again in the x{quantity} badge above (#565). */}
+        {stackDisplayName(item)}
       </div>
 
       <div style={{ fontSize: '10px', color: colors.text.muted, display: 'flex', justifyContent: 'space-between' }}>

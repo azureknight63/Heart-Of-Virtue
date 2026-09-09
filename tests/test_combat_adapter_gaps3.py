@@ -40,7 +40,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from src.api.combat_adapter import ApiCombatAdapter
+from src.api.combat_adapter import CANNOT_USE_REASON, ApiCombatAdapter
 from src.api.serializers.combat import CombatantSerializer
 
 # ---------------------------------------------------------------------------
@@ -932,6 +932,68 @@ class TestCancelledWindupDiscard:
         assert not [e for e in player.combat_log if "animation" in e], (
             "the cancelled wind-up's animation was flush-emitted — a phantom "
             "swing plays over the already-empty battlefield"
+        )
+
+
+# ---------------------------------------------------------------------------
+# beat_states means ONE thing: what happened during an action
+# ---------------------------------------------------------------------------
+
+
+class TestBeatStatesAreNotPublishedByAStatusPoll:
+    """``beat_states`` is a record of play, not a snapshot of now.
+
+    ``get_combat_state`` used to seed the key with ``[battle_state]`` -- a
+    single synthetic frame of the CURRENT state -- which the action path then
+    overwrote with the real per-beat stream. Every other caller kept the
+    placeholder, so a combat-status poll shipped a frame that looked exactly
+    like a one-beat action.
+
+    The client cannot tell those apart, and it polls on an 8-second timer for
+    the whole fight: ``useAccumulatedBeatStates`` appended each snapshot to the
+    breadcrumb trail, advancing the index ``BattlefieldGrid`` renders from on a
+    timer rather than on player actions, and evicting real movement from its
+    200-entry buffer.
+
+    The frontend's own canonical fixture for this response already modelled
+    ``beat_states: []`` (``frontend/src/test/payloads.js``) -- the adapter was
+    the half that was out of step.
+    """
+
+    def test_a_status_poll_carries_no_beat_states(self):
+        player = _make_player()
+        player.known_moves = [_make_move("Wait", instant=False)]
+        adapter = _make_adapter(player)
+
+        state = adapter.get_combat_state()
+
+        assert not state.get("beat_states"), (
+            "get_combat_state published a synthetic beat frame; the client "
+            "cannot tell it from a one-beat action and appends it to the "
+            "breadcrumb trail on every poll"
+        )
+
+    def test_the_action_path_still_publishes_the_real_stream(self):
+        """The negative control: removing the placeholder must not empty the
+        stream an actual move produces, which is the only thing the trail is
+        supposed to accumulate."""
+        move = _make_move("Wait", instant=False)
+        player = _make_player()
+        player.known_moves = [move]
+        adapter = _make_adapter(player)
+
+        with (
+            patch("src.functions.refresh_stat_bonuses"),
+            patch(
+                "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
+                return_value=dict(_STUB_BEAT_STATE),
+            ),
+        ):
+            result = adapter._execute_move_inner(move)
+
+        assert result is not None
+        assert result["beat_states"], (
+            "the action path stopped publishing its per-beat stream"
         )
 
 
@@ -1894,7 +1956,7 @@ class TestGetAvailableMovesRemainingBranches:
         player.combat_proximity = {enemy: 5}
         adapter = _make_adapter(player)
         moves = adapter._get_available_moves()
-        assert moves[0]["reason"] == "Cannot use this move"
+        assert moves[0]["reason"] == CANNOT_USE_REASON
 
 
 class TestGetAvailableTargetsPlayerSkip:

@@ -1589,3 +1589,68 @@ describe('actionKeywords', () => {
     expect(actionKeywords({})).toEqual([]);
   });
 });
+
+describe('InteractPanel stacked-item names (#565)', () => {
+  const mockOnClose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } });
+  });
+
+  // The engine's stack_grammar() bakes the count into the item NAME
+  // (src/items.py:3595 for MineralPowder), and the panel appends its own
+  // "x{count}" beside it — so the Materials Crate in the Grondia Fabricarium
+  // forge read "Mineral Powder x3 x3".
+  const bakedStack = { id: 'mp1', name: 'Mineral Powder x3', count: 3, keywords: ['Take'] };
+
+  const crateLocation = {
+    name: 'Fabricarium Forge',
+    npcs: [],
+    items: [],
+    objects: [
+      {
+        id: 'crate1',
+        name: 'Materials Crate',
+        is_container: true,
+        opened: true,
+        contents: [bakedStack],
+        keywords: ['Open'],
+      },
+    ],
+  };
+
+  it('shows a stacked container item\'s quantity exactly once', () => {
+    render(<InteractPanel location={crateLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Materials Crate/i)[0]);
+
+    const row = screen.getByText(/Mineral Powder/).closest('div');
+    expect(row.textContent).not.toMatch(/[x×]3\s*[x×]3/i);
+    expect(row.textContent.match(/[x×]3/gi)).toHaveLength(1);
+  });
+
+  it('shows a stacked room item\'s quantity exactly once in the target list', () => {
+    // The same doubling on the room's own item list, which renders "(xN)".
+    render(
+      <InteractPanel
+        location={{ ...crateLocation, objects: [], items: [bakedStack] }}
+        onClose={mockOnClose}
+      />
+    );
+
+    const row = screen.getAllByText(/Mineral Powder/)[0].closest('div');
+    expect(row.textContent).not.toMatch(/[x×]3.*\([x×]3\)/i);
+    expect(row.textContent.match(/[x×]3/gi)).toHaveLength(1);
+  });
+
+  it('leaves an unstacked item name untouched', () => {
+    render(
+      <InteractPanel
+        location={{ ...crateLocation, objects: [], items: [{ id: 'k1', name: 'Iron Key', count: 1, keywords: ['Take'] }] }}
+        onClose={mockOnClose}
+      />
+    );
+
+    expect(screen.getAllByText(/Iron Key/)[0].textContent).toContain('Iron Key');
+  });
+});

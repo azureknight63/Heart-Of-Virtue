@@ -2,8 +2,11 @@ import React from 'react';
 
 import { colors, spacing } from '../styles/theme';
 import { DEFAULT_HOLD_MS } from '../hooks/useHoldToConfirm';
+import { beatUnit } from '../utils/moveCommitment'
 import GameText from './GameText';
 import HoldButton from './HoldButton';
+
+export const HOLD_MS = DEFAULT_HOLD_MS;
 
 /**
  * Break-off control for a move that is still winding up.
@@ -25,8 +28,6 @@ import HoldButton from './HoldButton';
  * impossible without a second UI layer. The gauge itself lives in
  * `HoldButton`/`useHoldToConfirm`, shared with the story dialog's skip control.
  */
-export const HOLD_MS = DEFAULT_HOLD_MS;
-
 export default function AbortMoveControl({ abortable, onAbort, disabled = false }) {
     if (!abortable) return null;
 
@@ -45,7 +46,7 @@ export default function AbortMoveControl({ abortable, onAbort, disabled = false 
             }}
         >
             <GameText size="xs" weight="bold" style={{ color: colors.secondary }}>
-                {name} · lands in {beatsLeft} {beatsLeft === 1 ? 'beat' : 'beats'}
+                {name} · lands in {beatsLeft} {beatUnit(beatsLeft)}
             </GameText>
 
             <HoldButton
@@ -62,8 +63,8 @@ export default function AbortMoveControl({ abortable, onAbort, disabled = false 
             {/* The cost, stated plainly. This is not an undo, and the button
                 must not be able to imply that it is. */}
             <GameText size="xs" style={{ color: colors.text.muted }}>
-                forfeits {invested} {invested === 1 ? 'beat' : 'beats'} · then {cooldown} beat
-                {cooldown === 1 ? '' : 's'} cooldown
+                forfeits {invested} {beatUnit(invested)} · then {cooldown}{' '}
+                {beatUnit(cooldown)} cooldown
             </GameText>
         </div>
     );

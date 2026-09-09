@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import LeftPanel from './LeftPanel';
+import BaseDialog from './BaseDialog';
 import React from 'react';
 import { CATEGORY_GROUPS } from '../utils/categories';
 import { colors } from '../styles/theme';
@@ -208,6 +209,131 @@ describe('LeftPanel', () => {
         const heading = screen.getByRole('heading', { level: 1, name: 'Heart of Virtue - Exploration' });
         expect(main.contains(heading)).toBe(true);
         expect(heading.closest('header')).not.toBeNull();
+    });
+
+    /**
+     * Issue #563 item 5 — with a modal open the whole exploration screen
+     * behind it was still readable by a screen reader.
+     *
+     * The marking is what this panel owns; BaseDialog owns the hiding, and
+     * BaseDialog.test.jsx covers that half. Split that way because `<main>` is
+     * NOT the region to hide: LeftPanel renders its own dialogs as siblings
+     * inside it, so hiding the landmark would hide the modal too. The two
+     * background regions are the title bar and the content well.
+     */
+    describe('modal background marking (issue #563)', () => {
+        const renderPanel = () => render(
+            <LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />
+        );
+
+        it('marks the header and the content well as modal background', () => {
+            const { container } = renderPanel();
+
+            const marked = [...container.querySelectorAll('[data-modal-background]')];
+            expect(marked.length).toBe(2);
+            expect(marked.some((el) => el.tagName === 'HEADER')).toBe(true);
+            // The content well holds the room description and the hero ring.
+            expect(marked.some((el) => el.contains(screen.getByTestId('hero-panel')))).toBe(true);
+        });
+
+        it('does not mark the landmark that contains the dialogs', () => {
+            // The whole reason the marker is not simply on <main>.
+            const { container } = renderPanel();
+
+            const main = container.querySelector('main');
+            expect(main.hasAttribute('data-modal-background')).toBe(false);
+        });
+
+        it('hides both regions once a real dialog opens over them', () => {
+            // End to end through the real BaseDialog. Every dialog this panel
+            // renders is mocked at the top of this file with a plain <div>, so
+            // none of them registers on the modal stack — an actual dialog has
+            // to be rendered alongside for the wiring to be observable at all.
+            const { container } = renderPanel();
+            const marked = [...container.querySelectorAll('[data-modal-background]')];
+            // Asserted before the sweeps below: `[].every()` is true, so an
+            // empty list would pass every one of them without marking a thing.
+            expect(marked.length).toBe(2);
+            expect(marked.every((el) => !el.hasAttribute('aria-hidden'))).toBe(true);
+
+            const dialog = render(
+                <BaseDialog title="Enemy Encounter" onClose={() => { }}>
+                    <button>Fight</button>
+                </BaseDialog>
+            );
+            expect(marked.every((el) => el.getAttribute('aria-hidden') === 'true')).toBe(true);
+
+            dialog.unmount();
+            expect(marked.every((el) => !el.hasAttribute('aria-hidden'))).toBe(true);
+        });
+    });
+
+    /**
+     * Issue #565 polish batch — a QA pass reported the Tactical Advisor
+     * "absent at 375x812", with the mobile layout going COOLDOWN -> COMBAT LOG
+     * in a fight where the panel renders at 1440x900.
+     *
+     * IT IS NOT A BREAKPOINT. There is no viewport gate anywhere on the path:
+     * LeftPanel renders the advisor on `mode === 'combat' && isMyTurn`, and
+     * SuggestedMovesPanel's only early return is `if (!isPlayerTurn) return
+     * null` — its mobile branch still renders the words TACTICAL ADVISOR in a
+     * collapsed strip. What differs between the advisor and its two
+     * neighbours is the TURN: CooldownTray and CombatLog are gated on
+     * `mode === 'combat'` alone, so on the enemy's turn exactly the reported
+     * DOM appears — at any width.
+     *
+     * These cases pin that, so the finding cannot be re-filed as a layout bug.
+     */
+    describe('tactical advisor turn gating (issue #565)', () => {
+        const playerTurn = {
+            log: [{ message: 'Jean attacks Slime', round: 1, type: 'combat' }],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            beat_states: [{ enemies: [] }],
+            available_options: [{ name: 'Slash', available: true, cooldown_remaining: 2, cooldown_max: 3, category: 'Offensive' }],
+        };
+        // The enemy's turn is simply "not awaiting input".
+        const enemyTurn = { ...playerTurn, awaiting_input: false };
+
+        const renderCombat = (combat, isMobile) => render(
+            <LeftPanel
+                player={mockPlayer}
+                location={mockLocation}
+                mode="combat"
+                combat={combat}
+                isMobile={isMobile}
+            />
+        );
+
+        it('renders the advisor at a phone width on the player\'s turn', async () => {
+            renderCombat(playerTurn, true);
+            expect(await screen.findByTestId('suggested-moves-panel')).toBeInTheDocument();
+        });
+
+        it('renders it at desktop width on the same turn', async () => {
+            renderCombat(playerTurn, false);
+            expect(await screen.findByTestId('suggested-moves-panel')).toBeInTheDocument();
+        });
+
+        it('withholds it on the enemy turn at BOTH widths, which is the real gate', async () => {
+            const mobile = renderCombat(enemyTurn, true);
+            await waitFor(() => expect(screen.getByTestId('cooldown-tray')).toBeInTheDocument());
+            expect(screen.queryByTestId('suggested-moves-panel')).toBeNull();
+            mobile.unmount();
+
+            renderCombat(enemyTurn, false);
+            await waitFor(() => expect(screen.getByTestId('cooldown-tray')).toBeInTheDocument());
+            expect(screen.queryByTestId('suggested-moves-panel')).toBeNull();
+        });
+
+        it('reproduces the reported DOM — cooldown then log, no advisor — from the turn alone', async () => {
+            // The exact symptom the QA pass attributed to the viewport.
+            renderCombat(enemyTurn, true);
+
+            await waitFor(() => expect(screen.getByTestId('cooldown-tray')).toBeInTheDocument());
+            expect(screen.getByTestId('combat-log')).toBeInTheDocument();
+            expect(screen.queryByTestId('suggested-moves-panel')).toBeNull();
+        });
     });
 
     // Each hero-panel button owns one panel; clicking it twice must close it
@@ -954,7 +1080,10 @@ describe('LeftPanel', () => {
         expect(screen.queryByTestId('combat-input-dialog')).not.toBeInTheDocument();
     });
 
-    it('opens an empty local target-selection dialog when viable_targets is absent', () => {
+    // Named for the list being EMPTY, not absent: `makeCombatMove` supplies
+    // `viable_targets: []` and the adapter emits the key on every targeted
+    // move, so an absent list is not a payload the client can receive.
+    it('opens an empty local target-selection dialog when viable_targets is empty', () => {
         const combat = {
             log: [],
             awaiting_input: true,

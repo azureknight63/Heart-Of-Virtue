@@ -11,7 +11,6 @@ import contextlib
 import uuid
 import threading
 import logging
-import re
 import random
 from datetime import datetime
 from types import SimpleNamespace
@@ -35,6 +34,7 @@ from src.api.schemas.combat_beat import (
     UPDATE_EVENT,
 )
 from src.api.combat_beat_stream import CombatBeatStreamer
+from src.narration import ANSI_ESCAPE_RE
 from ai.combat_strategist import CombatStrategist
 from src.combatant import (
     OUTCOME_KEY,
@@ -57,8 +57,20 @@ if TYPE_CHECKING:
 #: genuinely outreaches a sword (spear, polearm, bow) gets one.
 MELEE_REACH_FT = 6
 
-# Compiled once at module level for performance
-_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
+
+def _outreaches_melee(reach_ft):
+    """True when ``reach_ft`` is past a sword's reach.
+
+    One predicate because ``MELEE_REACH_FT`` has two readers -- the range ring
+    and the out-of-range wording -- and they had drifted to opposite
+    inclusivity at the boundary: ``reach <= MELEE_REACH_FT`` drew no ring while
+    ``range_max < MELEE_REACH_FT`` chose the sentence, so a move banded exactly
+    at the constant (``OverheadSmash``, ``mvrange=(0, 6)``) was melee for one
+    and long-ranged for the other. Strict ``>`` is what the constant's own doc
+    block says: the reach ABOVE which a ring is drawn.
+    """
+    return reach_ft > MELEE_REACH_FT
+
 
 # Shortest prep stage that earns an abort affordance. Below this a move is over
 # before a player could react to anything, and offering a bail-out would only add
@@ -125,7 +137,7 @@ _strip_combatant_prefix = strip_combatant_prefix
 #:
 #: ``entity._pending_animation`` (``PENDING_ANIMATION_ATTR``) is the
 #: per-combatant animation channel: a dict created at cast time and mutated as
-#: the move resolves. Every writer and both deletion points are listed here --
+#: the move resolves. Every writer and every deletion point is listed here --
 #: the sites themselves point back at this block instead of restating fragments
 #: of it.
 #:
@@ -167,12 +179,13 @@ _strip_combatant_prefix = strip_combatant_prefix
 #:   * ``_take_resolution`` -- snapshots one resolution off the dict, records
 #:     ``_reported_beat`` and re-arms ``outcome``/``outcome_target`` to None
 #:
-#: Deletion points (exactly three):
+#: Deletion points:
 #:   * ``_flush_pending_animations`` -- end of each player move (and after the
 #:     initial NPC turns): retires every channel whose move ran to completion,
 #:     emitting a fallback only if the channel never resolved
 #:   * ``_detach_current_move`` -- a move CANCELLED mid-wind-up (abort, event
-#:     interrupt, roster emptied under it): clears ``current_move`` and
+#:     interrupt, roster emptied under it, or the fresh-fight rewind in
+#:     ``_reset_move_state_for_new_fight``): clears ``current_move`` and
 #:     discards that entity's channel as one operation. Never a fallback
 #:     emission -- the cancelled swing never happened, so emitting its
 #:     animation would play a phantom swing
@@ -228,6 +241,202 @@ MAX_ANIMATION_SEQ = 1_000_000
 #: advance() that never releases ``player.current_move`` — which would park the
 #: request thread (holding ``_beat_lock``) forever.
 MAX_INSTANT_STAGES = 20
+
+
+#: Every player-facing refusal `move_unavailability_reason` and
+#: `_get_available_moves` can emit, named rather than inlined.
+#:
+#: The reason is not tidiness: five test modules retype these sentences
+#: (`test_combat_glossary_contract`, `test_disabled_move_reasons`,
+#: `test_combat_adapter_gaps2`/`gaps3`, `tests/api/test_combat_refusal_api`),
+#: so a reworded literal leaves those assertions pinning a sentence the code no
+#: longer produces -- green, and testing nothing. Importing the constant moves
+#: the assertion with the wording. `NO_WEAPON_REASON` was named first for
+#: exactly that reason and its siblings were left as literals, which made the
+#: module's test-facing surface half-named for no stated reason.
+#:
+#: Public (no leading underscore) because they ARE the module's test-facing
+#: surface, like `move_unavailability_reason` and `combat_alert_line` beside
+#: them -- the private spelling had two test importers, both updated with the
+#: rename rather than left on an alias.
+NO_WEAPON_REASON = "No weapon equipped"
+
+#: The genuine catch-all: `viable()` returned a bare bool and nothing about
+#: range, weapon or fatigue explains it. Kept deliberately vague -- guessing
+#: here is what shipped issue #565.
+CANNOT_USE_REASON = "Cannot use this move"
+
+#: A targeted move with no `mvrange` at all, so there is no band to compare.
+NO_TARGET_REASON = "No valid target"
+
+#: Out of range, for a move that DOES outreach a sword: the miss is as likely
+#: to be a target it may not legally hit as one that is merely distant. The
+#: client has its own twin of this sentence in
+#: `frontend/src/utils/combatMoveStatus.js` (`NO_REACHABLE_TARGET_REASON`),
+#: pinned across the boundary by `test_combat_glossary_contract`.
+NO_TARGET_IN_RANGE_REASON = "No valid target in range"
+
+#: Out of range for a move that cannot outreach a sword -- see
+#: `_outreaches_melee` for which of the two sentences a band earns.
+TOO_FAR_REASON = "Enemy out of range (too far)"
+
+#: Not enough fatigue to pay for the move. Emitted from two places (the move
+#: route's `{"error": ...}` and the availability list's `reason`), which is why
+#: it is named: the two had to agree and nothing said so.
+NOT_ENOUGH_FATIGUE_REASON = "Not enough fatigue"
+
+#: Weapon subtypes whose engine name is not the noun a player would use. Every
+#: other subtype reads fine lowercased ("crossbow", "scythe", "polearm"), so
+#: only the exceptions are listed — and the phrases here are COMPLETE, article
+#: and all, because neither of them takes one.
+_WEAPON_NOUN_PHRASES = {
+    "Unarmed": "bare hands",
+    "Stars": "throwing stars",
+}
+
+
+def _weapon_noun_phrase(subtype, with_article=True):
+    """``"a crossbow"`` / ``"bare hands"`` for one weapon subtype."""
+    phrase = _WEAPON_NOUN_PHRASES.get(subtype)
+    if phrase is not None:
+        return phrase
+    noun = subtype.lower()
+    if not with_article:
+        return noun
+    return ("an " if noun[:1] in "aeiou" else "a ") + noun
+
+
+def move_unavailability_reason(move, player, is_targeted):
+    """Why a non-viable move cannot be cast, as one player-facing sentence.
+
+    ``viable()`` hands back a bare bool, so this reconstructs the objection.
+    Extracted from ``_get_available_moves``' reason ladder, which ran to six
+    indentation levels inside a 147-line method while every terminal branch
+    was a single string: as a function it is early returns, and
+    ``tests/test_disabled_move_reasons.py`` can call it directly instead of
+    standing up an adapter, a RockRumbler and a seeded RNG to reach one arm.
+
+    What is in Jean's hand is asked FIRST, before the targeted/untargeted
+    split: a weapon requirement holds regardless of range or target, it is
+    the objection the player cannot fix by walking, and the range guess below
+    happily passes while the real blocker is the sword he is holding
+    (issue #565). ``weapon_requirement_reason`` returns None when the
+    requirement is satisfied, so a correctly-armed move falls through to the
+    range reasons.
+
+    There is deliberately no "No weapon equipped" arm for an UNTARGETED move.
+    One existed, gated on ``move.name == "Attack" and not eq_weapon``, and it
+    was unreachable twice over: the engine's ``Attack`` is ``targeted=True``
+    (src/moves/_utility.py), so the targeted arm always claims it, and a
+    Player always has an ``eq_weapon`` anyway -- ``Player.__init__`` equips
+    ``items.Fists()``, which is truthy. Only doubles with ``targeted=False``
+    ever ran it. Routing that sentence to a bare-handed Jean means giving
+    ``Attack`` a ``weapon_requirement``, this project's declared mechanism
+    (asked before the split, AST-checked by that same test file) -- a
+    move-availability change, so it is left to its own issue.
+    """
+    weapon_reason = weapon_requirement_reason(
+        move, getattr(player, "eq_weapon", None)
+    )
+    if weapon_reason is not None:
+        return weapon_reason
+
+    if not is_targeted:
+        return CANNOT_USE_REASON
+
+    mvrange = getattr(move, "mvrange", None)
+    if not mvrange:
+        return NO_TARGET_REASON
+
+    range_min, range_max = mvrange
+    enemies_in_range = any(
+        range_min <= dist <= range_max
+        for dist in player.combat_proximity.values()
+    )
+    if enemies_in_range:
+        return CANNOT_USE_REASON
+    # The melee/reach split: only a move that cannot outreach a sword gets the
+    # "too far" wording, because for a longer-ranged move the miss is as
+    # likely to be a target it may not legally hit.
+    # Through `_outreaches_melee`, not a comparison written here: this and
+    # `_range_ring` are the two readers of MELEE_REACH_FT, and they had drifted
+    # to opposite inclusivity at the boundary -- see that predicate's docstring
+    # and tests/test_disabled_move_reasons.py's boundary class.
+    return (
+        NO_TARGET_IN_RANGE_REASON
+        if _outreaches_melee(range_max)
+        else TOO_FAR_REASON
+    )
+
+
+def weapon_requirement_reason(move, weapon):
+    """Why ``move`` cannot be used with ``weapon`` in hand, or None.
+
+    The engine declares the requirement (``Move.weapon_requirement``); this
+    turns it into the line the player reads. ``viable()`` remains the rule —
+    a move whose requirement IS satisfied gets None here and falls through to
+    whatever else is blocking it (range, target, state), which is why the
+    range reasons keep working for a correctly-armed move.
+
+    The catch-all this replaces ("Cannot use this move", issue #565) could not
+    do better on its own: ``viable()`` hands back a bare bool, so the adapter
+    guessed from range — and range was fine. ``ShootCrossbow.viable`` refuses
+    for three separate reasons and only one of them is a distance.
+
+    "No weapon equipped" is kept verbatim for the empty-handed case; it is the
+    string the availability path already emitted there and
+    ``tests/test_combat_glossary_contract.py`` asserts it matches no glossary
+    term.
+    """
+    requirement = tuple(getattr(move, "weapon_requirement", ()) or ())
+    if not requirement:
+        return None
+    # The engine models bare-handed two ways -- an absent/None ``eq_weapon``
+    # (most NPCs) or an ``items.Fists()`` whose subtype is "Unarmed", which is
+    # what ``Player.__init__`` equips and ``unequip_item`` restores. Both count
+    # as satisfying an Unarmed requirement; ``Jab._is_unarmed`` documents the
+    # pair, and reading only the subtype here would tell a genuinely
+    # bare-handed Jean that Jab "requires bare hands".
+    subtype = "Unarmed" if weapon is None else getattr(weapon, "subtype", None)
+    if subtype in requirement:
+        return None
+    # A fists-only move is not asking for equipment, so the empty-handed
+    # wording below would be exactly backwards for it.
+    if set(requirement) == {"Unarmed"}:
+        return "Requires " + _weapon_noun_phrase("Unarmed")
+    if weapon is None:
+        return NO_WEAPON_REASON
+    subtypes = sorted(requirement)
+    phrases = [_weapon_noun_phrase(subtypes[0])] + [
+        _weapon_noun_phrase(n, with_article=False) for n in subtypes[1:]
+    ]
+    if len(phrases) == 1:
+        return "Requires " + phrases[0]
+    return "Requires " + ", ".join(phrases[:-1]) + " or " + phrases[-1]
+
+
+def combat_alert_line(name, alert_message):
+    """``"<name> <alert_message>"`` with exactly one space between the two.
+
+    ``alert_message`` is authored under two conventions that both live in
+    ``src/npc/`` right now: most of them open with a leading space (Gorran's
+    ``" lets out a deep and angry rumble!"``, the Stone Creature's ``"
+    lurches toward Jean..."``) and a handful do not (the Slime's ``"burbles
+    angrily at Jean!"``, and the ``NPC`` class default ``"appears!"``). Both
+    read correctly in isolation, which is why neither convention ever looked
+    wrong enough to standardise.
+
+    The arrival line is the one place they meet, and it supplies a separator of
+    its own — so the leading-space majority rendered as ``Stone Creature
+    Nurenly  lurches toward Jean...`` (issue #565). Normalising here rather
+    than editing ~22 authored strings keeps it fixed for whichever convention
+    the next enemy is written under; ``alert_message`` itself stays untouched,
+    which matters because ``npc_serializer`` ships the raw value to the client
+    as well.
+    """
+    return " ".join(
+        part for part in (str(name).strip(), str(alert_message).strip()) if part
+    )
 
 
 def _dedup_key(message, round_num, source_id):
@@ -325,7 +534,7 @@ class CombatOutputCapture:
         """Capture text output."""
         if text and text.strip():
             # Clean ANSI codes
-            clean_text = _ANSI_ESCAPE.sub("", text).strip()
+            clean_text = ANSI_ESCAPE_RE.sub("", text).strip()
 
             if clean_text:
                 # Skip technical debug lines and animation errors
@@ -1026,8 +1235,10 @@ class ApiCombatAdapter:
         """Clear ``entity.current_move`` AND discard its animation channel.
 
         The deletion point for a move CANCELLED mid-wind-up -- an abort, an
-        event interrupt, or the roster emptying under it (see the
-        ``_pending_animation`` lifecycle block at the top of this module).
+        event interrupt, the roster emptying under it, or the fresh-fight
+        rewind in :meth:`_reset_move_state_for_new_fight` (which is also the
+        only caller passing an ally or enemy rather than the player). See the
+        ``_pending_animation`` lifecycle block at the top of this module.
         The end-of-move flush's fallback emission is right for a move that ran
         to completion without resolving; for a cancelled wind-up it is a
         phantom: the swing never happened, and emitting the full move
@@ -1040,7 +1251,7 @@ class ApiCombatAdapter:
         ``current_move`` and leaves the channel armed leaks it (nothing will
         ever publish again), and one that flushes instead emits the phantom.
         Stage bookkeeping (cooldown charge, stage reset) stays with each call
-        site -- the three cancellation paths legitimately differ there.
+        site -- the cancellation paths legitimately differ there.
         """
         entity.current_move = None
         if hasattr(entity, PENDING_ANIMATION_ATTR):
@@ -1110,7 +1321,10 @@ class ApiCombatAdapter:
     def _reset_idle_move_stages(combatant) -> None:
         """Rewind a combatant's moves to stage 0, sparing the one in flight.
 
-        Used by the reinit path of :meth:`initialize_combat`. The combatant's
+        Used by the reinit path of :meth:`initialize_combat`, by the player's
+        branch of the new-fight path, and by
+        :meth:`_reset_move_state_for_new_fight` once the in-flight move has
+        been detached. The combatant's
         ``current_move`` is skipped: rewinding a move that is mid-``advance``
         traps ``Move.advance``'s stage loop, which only terminates once the
         stage counter passes 3.
@@ -1121,6 +1335,68 @@ class ApiCombatAdapter:
                 continue
             move.current_stage = 0
             move.beats_left = 0
+
+    def _attach_player_ref(self, enemy) -> None:
+        """Back-reference for API-mode drop/loot tracking.
+
+        Swallowed on purpose: an enemy that cannot hold the attribute is a
+        degraded object, and refusing to enroll it would cost the fight.
+        """
+        try:
+            enemy.player_ref = self.player
+        except Exception:
+            logger.warning(
+                "Could not set player_ref on enemy %s",
+                getattr(enemy, "name", enemy),
+            )
+
+    def _reset_move_state_for_new_fight(self, combatant) -> None:
+        """Rewind every move to stage 0 AND drop the one still in flight.
+
+        The fresh-fight counterpart of :meth:`_reset_idle_move_stages`, and the
+        opposite call on ``current_move``: a reinit joins a fight already in
+        progress, so the in-flight move is legitimate and must be spared,
+        whereas a *new* fight rewinding that same move to stage 0 has already
+        decided it is garbage — it will re-run its whole prep→execute cycle
+        from the top.
+
+        Dropping the reference is what was missing (issue #560). Only the
+        player's ``current_move`` was ever cleared at end of combat (all four
+        exits do it; none touch an NPC), and ``_process_npc`` re-selects
+        ``npc.target`` only while ``current_move`` is None. So an ally who was
+        mid-swing when a fight ended entered the next one still holding that
+        swing, never re-targeted, and replayed it against the corpse from the
+        previous encounter: the log named a combatant who had died on another
+        tile, and the damage landed on it instead of on the enemy actually
+        present. Gorran makes it routine rather than rare — ``NpcAttack`` prep
+        is ``int(50 / speed)`` and his speed is 5, so his swing is winding up
+        for ten of every ~22 beats.
+
+        Clearing the move is enough to fix the target too: with it gone,
+        ``_process_npc`` picks a target from this fight's roster and
+        ``NPCCombatMixin.refresh_moves`` stamps it onto every targeted move
+        before selection, so ``refresh_announcements`` builds its line from a
+        live combatant.
+
+        Detach-and-DISCARD, not a bare assignment: `_detach_current_move`'s
+        docstring says the two "are one operation on purpose", and skipping
+        the discard reintroduced the #560 symptom through the animation
+        channel rather than the narration one. `flee_combat` is the one exit
+        that ends a fight on LIVE objects without calling
+        `_discard_pending_animations` -- `load_game` never calls it either,
+        but its combatants come back from a pickle that
+        `Combatant.__getstate__` already stripped the channel out of. So an
+        ally mid-wind-up when Jean fled kept an armed, never-reported channel;
+        clearing `current_move` here un-gates `_flush_pending_animations`
+        (which skips a combatant whose move is still set), and beat 1 of the
+        next fight then emitted a fallback animation built from the previous
+        fight's `animation_data` -- `outcome_target` and all.
+        """
+        # Detach first, then reuse the idle rewind: with `current_move` cleared,
+        # its "skip the active move" guard can never match, so every move is
+        # rewound exactly as the hand-rolled loop here used to do.
+        self._detach_current_move(combatant)
+        self._reset_idle_move_stages(combatant)
 
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
@@ -1289,22 +1565,36 @@ class ApiCombatAdapter:
                 # Reset moves only for new combat
                 for ally in self.player.combat_list_allies:
                     ally.in_combat = True
-                    for move in ally.known_moves:
-                        move.current_stage = 0
-                        move.beats_left = 0
+                    if ally is self.player:
+                        # Jean's in-flight move belongs to the four
+                        # combat-exit paths and to _detach_current_move, which
+                        # discards its animation channel as it clears it — a
+                        # fresh fight only rewinds his idle move stages. (All
+                        # four exits already leave it None, so this is the same
+                        # reset as before for every reachable state; sparing an
+                        # in-flight move additionally keeps it out of
+                        # Move.advance's stage-loop trap.)
+                        self._reset_idle_move_stages(ally)
+                        continue
+                    self._reset_move_state_for_new_fight(ally)
 
                 for enemy in self.player.combat_list:
+                    # `in_combat` is NOT set here, unlike the reinit branch
+                    # below and unlike the ally loop above: on a fresh fight
+                    # the enroller has already set it (functions.py's
+                    # check_for_combat / add_enemies_to_combat, or
+                    # GameService.start_combat).
+                    #
+                    # Reinit sets it for the WHOLE roster because its enroller
+                    # only flags what it newly enrols, while a combatant
+                    # already in `combat_list` may have had the flag cleared
+                    # in between -- the post-victory tile sweep in this module
+                    # clears `in_combat` on every non-friend NPC on the tile.
+                    # Every other asymmetry in this block is spelled out, so
+                    # this one is too.
                     # Provide a back-reference for API-mode drop/loot tracking
-                    try:
-                        enemy.player_ref = self.player
-                    except Exception:
-                        logger.warning(
-                            "Could not set player_ref on enemy %s",
-                            getattr(enemy, "name", enemy),
-                        )
-                    for move in enemy.known_moves:
-                        move.current_stage = 0
-                        move.beats_left = 0
+                    self._attach_player_ref(enemy)
+                    self._reset_move_state_for_new_fight(enemy)
             else:
                 # For re-init, ensure ALL combatants are properly flagged and
                 # reset move stages so prior cooldowns don't block new combat.
@@ -1327,13 +1617,7 @@ class ApiCombatAdapter:
                     self._reset_idle_move_stages(ally)
                 for enemy in self.player.combat_list:
                     enemy.in_combat = True
-                    try:
-                        enemy.player_ref = self.player
-                    except Exception:
-                        logger.warning(
-                            "Could not set player_ref on enemy %s",
-                            getattr(enemy, "name", enemy),
-                        )
+                    self._attach_player_ref(enemy)
                     self._reset_idle_move_stages(enemy)
 
             # Initialize combat lists for all participants (Enemies and Allies)
@@ -1343,7 +1627,7 @@ class ApiCombatAdapter:
             # - Their enemies are the Player's enemies
             # - Their allies are the Player's allies
             for ally in self.player.combat_list_allies:
-                if ally == self.player:
+                if ally is self.player:
                     continue
                 ally.combat_list = self.player.combat_list
                 ally.combat_list_allies = self.player.combat_list_allies
@@ -1370,7 +1654,9 @@ class ApiCombatAdapter:
                 self._announced_enemies.add(enemy)
                 name = getattr(enemy, "name", "Enemy")
                 alert = getattr(enemy, "alert_message", "appears!")
-                self._add_log_entry(1, f"{name} {alert}", "system")
+                self._add_log_entry(
+                    1, combat_alert_line(name, alert), "system"
+                )
 
             # A reinit raised from *inside* an in-flight move — an enemy move
             # or a combat event that spawns reinforcements during a beat —
@@ -1596,7 +1882,7 @@ class ApiCombatAdapter:
 
         # Only check fatigue for moves that actually cost some.
         if move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
-            return {"error": "Not enough fatigue"}
+            return {"error": NOT_ENOUGH_FATIGUE_REASON}
 
         # A move that is mid-cycle (execute/recoil/cooldown) is not selectable.
         if move.current_stage != 0:
@@ -3519,7 +3805,7 @@ class ApiCombatAdapter:
         reach = preview_reach() if callable(preview_reach) else None
         if not isinstance(reach, (int, float)) or isinstance(reach, bool):
             return None
-        if reach <= MELEE_REACH_FT:
+        if not _outreaches_melee(reach):
             return None
         return int(reach)
 
@@ -3611,36 +3897,12 @@ class ApiCombatAdapter:
                     move_data["reason"] = "Available next beat"
             elif move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
                 move_data["available"] = False
-                move_data["reason"] = "Not enough fatigue"
+                move_data["reason"] = NOT_ENOUGH_FATIGUE_REASON
             elif not is_viable:
-                # Move is not viable - try to determine why
                 move_data["available"] = False
-
-                # Check for common reasons
-                if is_targeted:
-                    # Check if it's a range issue
-                    mvrange = getattr(move, "mvrange", None)
-                    if mvrange:
-                        range_min, range_max = mvrange
-                        enemies_in_range = any(
-                            range_min <= dist <= range_max
-                            for dist in self.player.combat_proximity.values()
-                        )
-                        if not enemies_in_range:
-                            if range_max <= 5:
-                                move_data["reason"] = "Enemy out of range (too far)"
-                            else:
-                                move_data["reason"] = "No valid target in range"
-                        else:
-                            move_data["reason"] = "Cannot use this move"
-                    else:
-                        move_data["reason"] = "No valid target"
-                elif move.name == "Attack" and not getattr(
-                    self.player, "eq_weapon", None
-                ):
-                    move_data["reason"] = "No weapon equipped"
-                else:
-                    move_data["reason"] = "Cannot use this move"
+                move_data["reason"] = move_unavailability_reason(
+                    move, self.player, is_targeted
+                )
 
             moves.append(move_data)
 
@@ -4012,7 +4274,22 @@ class ApiCombatAdapter:
             # because this top-level one never survives transformCombatData.
             "map_size": grid_size[0],
             "battle_state": battle_state,
-            "beat_states": [battle_state],  # Initial state as a single beat state
+            # NO "beat_states" here, deliberately. It is a record of what
+            # HAPPENED during an action, and the only producers are
+            # `_execute_move_inner` (the per-beat stream) and
+            # `_terminal_state_snapshot` (the beats of the move that ended the
+            # fight) -- both of which set it on the dict this returns.
+            #
+            # It used to be seeded here with `[battle_state]`, a single
+            # synthetic frame of the CURRENT state, which the action path then
+            # overwrote. Every other caller kept the placeholder, so a
+            # combat-status poll shipped something indistinguishable from a
+            # one-beat action -- and the client polls on an 8s timer for the
+            # whole fight. `useAccumulatedBeatStates` appended each snapshot to
+            # the breadcrumb trail, so the index BattlefieldGrid renders from
+            # advanced on a timer and real movement was evicted from its
+            # 200-entry buffer. `frontend/src/test/payloads.js` already
+            # modelled this response with `beat_states: []`.
             "log": getattr(self.player, "combat_log", []),
             "suggested_moves": getattr(self.player, "suggested_moves", []),
             "suggestions_loading": getattr(self.player, "suggestions_loading", False),

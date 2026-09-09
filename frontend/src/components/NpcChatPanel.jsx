@@ -8,6 +8,7 @@ import ConversationStage from './ConversationStage'
 import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
 import { colors, spacing, fonts, commonStyles } from '../styles/theme'
+import LiveAnnouncer from './LiveAnnouncer'
 
 // The typewriter speed handed to ConversationStage below. Named and shared
 // with the panel's own `useTypewriter` tracker (see `handleFinalBeatRendered`
@@ -149,9 +150,6 @@ function announcementFor(segment) {
  * silence. Jean's own beats are skipped — the player just chose those words,
  * and echoing them back interrupts the reply they are waiting on.
  *
- * Visually hidden rather than `display: none`, which would take it out of the
- * accessibility tree along with everything else.
- *
  * @param {Object} props
  * @param {ConversationSegment[]} props.segments - The conversation so far;
  *   only the newest beat is ever announced.
@@ -161,27 +159,7 @@ function ReplyAnnouncer({ segments }) {
   const announced =
     latest && latest.speaker && latest.speaker !== JEAN_ID ? announcementFor(latest) : ''
 
-  return (
-    <div
-      data-testid="npc-chat-announcer"
-      aria-live="polite"
-      aria-atomic="true"
-      style={{
-        position: 'absolute',
-        width: '1px',
-        height: '1px',
-        margin: '-1px',
-        padding: 0,
-        border: 0,
-        overflow: 'hidden',
-        clip: 'rect(0 0 0 0)',
-        clipPath: 'inset(50%)',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {announced}
-    </div>
-  )
+  return <LiveAnnouncer text={announced} seq={segments.length} testId="npc-chat-announcer" />
 }
 
 /**

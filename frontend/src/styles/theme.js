@@ -80,11 +80,40 @@ export const colors = {
         warning: '#ffcc88',
         danger: '#ffaaaa',
         success: '#ccffcc',
+        /**
+         * INACTIVE AND DECORATIVE ONLY — never body copy. Issue #563 item 6.
+         *
+         * 3.45:1 against `bg.main`, which is below WCAG AA's 4.5:1 for text.
+         * That is deliberate and it is allowed: SC 1.4.3 exempts text in
+         * INACTIVE user-interface components, which is what this value is for
+         * — an unavailable move's name, an unfilled star, a neutral tick mark.
+         * No inventory of adopters is kept here: `commonStyles.eyebrowLabel`
+         * below says why, and the list this block used to carry was already
+         * missing half a dozen files.
+         *
+         * It is NOT allowed on prose, and the obvious fix — lifting this one
+         * number — is the wrong one. `muted` above is #888888 (5.58:1), so any
+         * value that clears 4.5:1 lands within ~16 of it and the two stop
+         * being distinguishable: the available/unavailable rendering that
+         * CombatMovePanel expresses as `muted` vs `dim` would collapse
+         * outright. There is no room for three legible greys on a #0a0a0a
+         * ground, so the two jobs get two tokens rather than one compromise.
+         *
+         * TERTIARY PROSE USES `muted`. Body text reached for `dim` in a dozen
+         * files before the split was written down; those are listed in the
+         * #563 follow-up and want migrating to `muted`, not a retune here.
+         * theme.test.js holds every other `text.*` token to 4.5:1 and names
+         * this one as the single exemption, so a NEW sub-AA text token cannot
+         * be added quietly alongside it.
+         */
         dim: '#666666',
     },
 
     bg: {
         main: '#0a0a0a',
+        // A shade under `main`, for a scroll fade to dissolve INTO: the log's
+        // fades sit on its own inset panel, not on the page ground.
+        inset: '#030303',
         input: '#1a1a2e',     // Input field background
         panel: 'rgba(0, 0, 0, 0.3)',
         panelLight: 'rgba(0, 0, 0, 0.2)',
@@ -116,6 +145,10 @@ export const colors = {
         // alpha border would let the panel behind bleed through.
         dark: '#664400',
         success: '#00ff88',
+        // Shares its value with `bg.terminal` but not its job: that one is the
+        // ToS tab GROUND, this is the cooldown tray's divider. One token for
+        // both meant retuning the tab background silently moved the divider.
+        terminal: 'rgba(0, 255, 136, 0.15)',
         danger: '#ff4444',
     },
 

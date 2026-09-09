@@ -45,6 +45,7 @@ class Reap(Move):
     display_name = 'Reap'
 
     web_animation = "sweep"
+    weapon_requirement = ("Scythe",)
 
     #: Fraction of a full weapon swing each enemy in the arc takes.
     AREA_POWER_FACTOR = 0.45
@@ -211,6 +212,7 @@ class ReapersMark(Move):
     display_name = "Reaper's Mark"
 
     web_animation = "debuff"
+    weapon_requirement = ("Scythe",)
 
     def __init__(self, user):
         description = (
@@ -292,6 +294,7 @@ class DeathsHarvest(Move):
     display_name = "Death's Harvest"
 
     web_animation = "heavy_attack"
+    weapon_requirement = ("Scythe",)
 
     def __init__(self, user):
         description = (

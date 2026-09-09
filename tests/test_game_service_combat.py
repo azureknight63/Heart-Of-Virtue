@@ -311,12 +311,34 @@ class TestFleeCombat:
 
         result = game_service.flee_combat(player)
 
+        # Imported here, not at module scope: a module-level import of a
+        # constant the fix introduced turns any revert of the fix into a
+        # collection error instead of a readable assertion failure.
+        from src.api.services.game_service import FLEE_TOO_CLOSE_MESSAGE
+
         assert result == {
             "success": False,
             "fled": False,
-            "error": "Cannot flee — enemies are too close",
+            "error": FLEE_TOO_CLOSE_MESSAGE,
         }
         assert player.in_combat is True
+
+    def test_refusal_names_the_remedy(self, game_service, player, slime):
+        """The refusal must tell the player what to DO about it.
+
+        A live QA tester in an unwinnable fight read the old bare "enemies are
+        too close" as a permanent soft-lock and filed the session as broken;
+        nothing on screen said that WITHDRAW is the prerequisite for FLEE.
+        """
+        game_service.start_combat(player, enemy_id(slime))
+        assert slime.combat_proximity[player] < 20
+
+        error = game_service.flee_combat(player)["error"]
+
+        # Names the move that creates the distance...
+        assert "withdraw" in error.lower(), error
+        # ...and the threshold it has to create, so the rule is legible.
+        assert "20" in error, error
 
     def test_distant_enemies_allow_the_escape(self, game_service, player, slime):
         game_service.start_combat(player, enemy_id(slime))

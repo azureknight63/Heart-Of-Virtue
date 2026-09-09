@@ -1,14 +1,27 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useBattlefieldCamera } from '../hooks/useBattlefieldCamera'
+import { useAccumulatedBeatStates } from '../hooks/useAccumulatedBeatStates'
 
 import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
 import BeatTimeline from './BeatTimeline'
 import GlossaryHelpButton from './GlossaryHelpButton'
-import { colors, spacing } from '../styles/theme'
-import { isLiving } from '../utils/combatEntities'
+import { accessibility, colors, spacing } from '../styles/theme'
+import { isLiving, anyEnemyOutsideView, openingState } from '../utils/combatEntities'
 import { useFeatureFlag } from '../utils/featureFlags'
+import { useMobile } from '../hooks/useMobile'
+import { useCoarsePointer } from '../hooks/useCoarsePointer'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
-const MAX_BEAT_STATES = 200;
+
+// The two tabs, driven from a table as VIEW_MODE_OPTIONS below is. Their
+// style blocks were identical but for the key and the label, which is why
+// `touchTargetStyle` had to be added to both in lockstep. `labelFor` rather
+// than `label`: one of the two counts something, so unlike VIEW_MODE_OPTIONS
+// these are functions of the payload.
+const TAB_OPTIONS = [
+  { key: 'overview', labelFor: () => 'Overview' },
+  { key: 'enemies', labelFor: (combat) => `Enemies (${combat?.enemies?.length || 0})` },
+];
 
 // Both view modes are always shown, each labelled with what it does. The old
 // control was a single button captioned with the mode it was *currently in*
@@ -28,79 +41,55 @@ const VIEW_MODE_OPTIONS = [
   },
 ];
 
-// Any living enemy whose position lies outside the zoomed viewport centered on Jean.
-function anyEnemyOffScreen(state) {
-  const player = state?.player;
-  const enemies = state?.enemies;
-  if (!player?.position || !enemies?.length) return false;
-  const px = player.position.x;
-  const py = player.position.y;
-  for (const e of enemies) {
-    if (!isLiving(e)) continue;
-    const ep = e.position;
-    if (!ep) continue;
-    if (Math.abs(ep.x - px) > HALF_VIEW || Math.abs(ep.y - py) > HALF_VIEW) return true;
-  }
-  return false;
-}
+// The grid's half-extent is Battlefield's to know; the predicate itself lives
+// with the other combatant helpers.
+const anyEnemyOffScreen = (state) => anyEnemyOutsideView(state, HALF_VIEW);
 
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1, isReloadRecovery = false }) {
   const beatTimelineEnabled = useFeatureFlag('beatTimeline')
   const [selectedTab, setSelectedTab] = useState('overview')
-  const [zoom, setZoom] = useState(VIEW_MODE_FOLLOW)
-  // Transient banner shown once per "enemy goes off-screen" transition, auto-
-  // dismissed after 2.5s or on zoom toggle so players who already understand
-  // the affordance aren't nagged.
-  const [showOffScreenBanner, setShowOffScreenBanner] = useState(false)
-  const offScreenLatchRef = useRef(false)
+  // Both hooks unconditionally — `||` would short-circuit the second and
+  // break hook order the first time the viewport is narrow.
+  const isMobile = useMobile()
+  const isCoarsePointer = useCoarsePointer()
+  const needsLargeTargets = isMobile || isCoarsePointer
 
   // Display state - synchronized with combat log progress.
   // Initialise directly to the first beat state (same shape BattlefieldGrid expects)
   // so there is never a render where displayState has the top-level API response shape.
-  const [displayState, setDisplayState] = useState(combat?.beat_states?.[0] ?? combat)
+  const [displayState, setDisplayState] = useState(openingState(combat))
 
-  // Accumulated beat states across multiple actions so trails persist across turns
-  const [accBeatStates, setAccBeatStates] = useState([])
-  const baseOffsetRef = useRef(0)
-  const prevBeatStatesRef = useRef(null)
+  // Framing lives in its own hook: four pieces of state, two effects and a
+  // callback that all answer one question, in a component that also owns beat
+  // accumulation and log-index sync.
+  const { zoom, selectViewMode, enemyOffScreen, bannerVisible, bannerMessage } =
+    useBattlefieldCamera(combat, displayState, anyEnemyOffScreen)
 
+  // The breadcrumb trail and where in it we are. Its own hook: the state,
+  // the ring buffer and the offset invariant belong together, and the offset
+  // used to be read ~180 lines from the updater that writes it.
+  const { allBeatStates, currentBeatIndex } = useAccumulatedBeatStates(
+    combat,
+    currentLogIndex
+  )
+
+  // `displayState` has THREE writers, and they are ordered, not independent:
+  // the useState above seeds it, this effect rewinds it to the payload's
+  // opening frame, and the log-progress effect below overwrites that whenever
+  // `currentLogIndex` is defined and `beat_states` is non-empty -- which is
+  // the normal case during a fight. Both effects fire on a new `combat`
+  // (their dep sets both change identity), and declaration order decides.
+  //
+  // So this effect's visible result is only the pre-playback frame: a fresh
+  // fight, or a payload with no beats. An edit here that looks inert in
+  // manual testing is probably being overwritten below, not broken.
   useEffect(() => {
-    // When combat data first loads, initialize to the first beat state (or current state if no beats)
-    if (combat?.beat_states && combat.beat_states.length > 0) {
-      // Start at the first beat state
-      setDisplayState(combat.beat_states[0])
-    } else {
-      // No beat states, show current combat state
-      setDisplayState(combat)
-    }
+    setDisplayState(openingState(combat))
   }, [combat])
 
-  // Accumulate beat states so breadcrumb trails survive across player turns
-  useEffect(() => {
-    const incoming = combat?.beat_states
-    if (!incoming || incoming === prevBeatStatesRef.current) return
-    prevBeatStatesRef.current = incoming
 
-    if (!combat?.combat_active) {
-      // Combat ended — reset accumulation
-      setAccBeatStates([])
-      baseOffsetRef.current = 0
-      return
-    }
-
-    setAccBeatStates(prev => {
-      const next = [...prev, ...incoming]
-      if (next.length > MAX_BEAT_STATES) {
-        const dropped = next.length - MAX_BEAT_STATES
-        baseOffsetRef.current = Math.max(0, prev.length - dropped)
-        return next.slice(dropped)
-      }
-      baseOffsetRef.current = prev.length
-      return next
-    })
-  }, [combat?.beat_states, combat?.combat_active])
-
-  // Separate effect for log progress - this updates the map as log displays
+  // The LAST writer of displayState, and so the winner whenever its guard
+  // holds -- see the ordering note on the rewind effect above.
   useEffect(() => {
     if (combat?.beat_states && combat.beat_states.length > 0 && currentLogIndex !== undefined) {
       // currentLogIndex contains the beat_index from the log entry
@@ -110,13 +99,6 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     }
   }, [currentLogIndex, combat?.beat_states])
 
-  // Hint the player to expand the view when a living enemy is beyond the
-  // follow-mode viewport. The glow is suppressed while already in Fit Fight.
-  const enemyOffScreen = useMemo(
-    () => zoom !== VIEW_MODE_FIT && anyEnemyOffScreen(displayState),
-    [zoom, displayState]
-  );
-
   // Living enemy count and beat number: the two numbers that answer "where is
   // this fight at?" without reading back through the log.
   const livingEnemyCount = useMemo(
@@ -124,19 +106,35 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     [displayState?.enemies]
   );
 
-  // Rising edge on enemyOffScreen → flash a one-shot banner explaining the hint.
-  useEffect(() => {
-    if (enemyOffScreen && !offScreenLatchRef.current) {
-      offScreenLatchRef.current = true;
-      setShowOffScreenBanner(true);
-      const t = setTimeout(() => setShowOffScreenBanner(false), 2500);
-      return () => clearTimeout(t);
-    }
-    if (!enemyOffScreen) {
-      offScreenLatchRef.current = false;
-      setShowOffScreenBanner(false);
-    }
-  }, [enemyOffScreen]);
+  // 44px minimum on a phone or any coarse pointer. Measured at 375px before
+  // this: Overview 75.6x28, Enemies 97.2x28, Follow 63.2x26, Fit Fight 84.8x26
+  // — all about 60% of the required height (issue #564). Height only; the
+  // widths already clear the minimum, so the row's total width is unchanged.
+  const touchTargetStyle = needsLargeTargets
+    ? { minHeight: accessibility.touchTarget, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+    : {};
+
+  // One builder for both toolbar control groups. They are visually distinct
+  // (pill tabs vs a segmented control) and differ in padding, border and
+  // inactive ground, but the selected-state rule and `...touchTargetStyle`
+  // are shared -- and the spread is the part that had to be remembered in
+  // lockstep, which a third group would have had to remember again.
+  const toolbarButtonStyle = ({ active, padding, border, borderRadius, inactiveBackground, transition }) => ({
+    ...touchTargetStyle,
+    padding,
+    border,
+    borderRadius,
+    transition,
+    fontSize: '12px',
+    fontWeight: 'bold',
+    backgroundColor: active ? colors.secondary : inactiveBackground,
+    color: active ? colors.text.bright : colors.secondary,
+    cursor: 'pointer',
+  });
+
+  // Named once: five separate places in this render gate on it, and a sixth
+  // that spelled it differently would be a tab that half-renders.
+  const isOverview = selectedTab === 'overview';
 
   if (!displayState) {
     return (
@@ -148,36 +146,35 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
-      {/* Tab Selector */}
-      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Tab Selector. `flexWrap` plus the row gap so the four controls can
+          take two lines at 375px once they are 44px tall, rather than
+          overflowing the map's width (issue #564). */}
+      <div
+        data-testid="battlefield-toolbar"
+        style={{ display: 'flex', gap: '6px', rowGap: '6px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}
+      >
         <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            onClick={() => setSelectedTab('overview')}
-            style={{
-              padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
-              backgroundColor: selectedTab === 'overview' ? colors.secondary : 'transparent',
-              color: selectedTab === 'overview' ? '#fff' : colors.secondary,
-              cursor: 'pointer'
-            }}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setSelectedTab('enemies')}
-            style={{
-              padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
-              backgroundColor: selectedTab === 'enemies' ? colors.secondary : 'transparent',
-              color: selectedTab === 'enemies' ? '#fff' : colors.secondary,
-              cursor: 'pointer'
-            }}
-          >
-            Enemies ({combat?.enemies?.length || 0})
-          </button>
+          {TAB_OPTIONS.map(({ key, labelFor }) => (
+            <button
+              key={key}
+              onClick={() => setSelectedTab(key)}
+              style={toolbarButtonStyle({
+                active: selectedTab === key,
+                padding: '4px 8px',
+                border: `1px solid ${colors.secondary}`,
+                borderRadius: '4px',
+                inactiveBackground: 'transparent',
+                transition: 'all 0.2s',
+              })}
+            >
+              {labelFor(combat)}
+            </button>
+          ))}
         </div>
 
         {/* View mode — a segmented control, so the available modes and the
             active one are both visible at a glance. */}
-        {selectedTab === 'overview' && (
+        {isOverview && (
           <div
             role="group"
             aria-label="Battlefield view mode"
@@ -189,14 +186,19 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
               return (
                 <button
                   key={mode}
-                  onClick={() => setZoom(mode)}
+                  onClick={() => selectViewMode(mode)}
                   aria-pressed={active}
-                  style={{
-                    padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', border: 'none', transition: 'background-color 0.2s, color 0.2s',
-                    backgroundColor: active ? colors.secondary : 'rgba(0,0,0,0.5)',
-                    color: active ? '#fff' : colors.secondary,
-                    cursor: 'pointer'
-                  }}
+                  style={toolbarButtonStyle({
+                    active,
+                    padding: '4px 10px',
+                    border: 'none',
+                    // The segmented control's own inactive ground. NOT
+                    // colors.bg.overlay (0.75) or bg.panelHeavy (0.7) -- this
+                    // is 0.5 and no token carries it; substituting a near
+                    // neighbour would be a silent visual change.
+                    inactiveBackground: 'rgba(0,0,0,0.5)',
+                    transition: 'background-color 0.2s, color 0.2s',
+                  })}
                   title={enemyOffScreen && mode === VIEW_MODE_FIT
                     ? 'Enemies are off-screen — Fit Fight frames all of them'
                     : title}
@@ -220,11 +222,17 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           living-enemy count and the grid above it, both of which already read
           the scrub-consistent per-beat snapshot rather than the live
           top-level state. */}
-      {selectedTab === 'overview' && (
+      {isOverview && (
         <div
           style={{
             display: 'flex', gap: spacing.md, alignItems: 'center',
-            fontSize: '10px', fontFamily: 'monospace', color: colors.text.muted,
+            fontSize: '10px',
+            // `'monospace'`, not fonts.main, HERE AND at the recent-paths
+            // legend below: both sit on the map canvas, where a Courier-first
+            // stack clashes with the grid's own glyphs. Substituting is a
+            // visual change, not a rename -- do not let a fonts.main sweep
+            // take either one.
+            fontFamily: 'monospace', color: colors.text.muted,
             letterSpacing: '0.05em', textTransform: 'uppercase',
           }}
           // Deliberately not role="status": the beat number changes on every
@@ -241,12 +249,12 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           <GlossaryHelpButton style={{ marginLeft: 'auto' }} />
         </div>
       )}
-      {selectedTab === 'overview' && beatTimelineEnabled && (
+      {isOverview && beatTimelineEnabled && (
         <BeatTimeline combat={displayState} />
       )}
 
       {/* Battlefield Grid */}
-      <div style={{ flex: 1, overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border.main}`, backgroundColor: 'rgba(0,0,0,0.3)', position: 'relative' }}>
+      <div style={{ flex: 1, overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border.main}`, backgroundColor: colors.bg.panel, position: 'relative' }}>
         <BattlefieldGrid
           combat={displayState}
           // Passed explicitly, not read off `combat`: the grid receives
@@ -257,9 +265,8 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           // repeatedly mid-fight instead of once per fight.
           combatId={combat?.combat_id}
           combatActive={combat?.combat_active}
-          allBeatStates={accBeatStates}
-          /* eslint-disable-next-line react-hooks/refs -- baseOffsetRef is written by the same setAccBeatStates updater that produces accBeatStates, so offset and window are one value; promoting it to state would render one frame pairing a new window with the old offset, jumping the grid to the wrong beat. */
-          currentBeatIndex={baseOffsetRef.current + (currentLogIndex ?? 0)}
+          allBeatStates={allBeatStates}
+          currentBeatIndex={currentBeatIndex}
           combatLog={combat?.log || []}
           tab={selectedTab}
           zoom={zoom}
@@ -273,20 +280,23 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           combatSpeed={combatSpeed}
         />
 
-        {selectedTab === 'overview' && showOffScreenBanner && (
+        {isOverview && bannerVisible && (
           <div
             className="animate-in fade-in slide-in-from-top-2 duration-200"
             style={{ position: 'absolute', top: '8px', left: '50%', transform: 'translateX(-50%)', zIndex: 160, pointerEvents: 'none' }}
             role="status"
           >
-            <div style={{ backgroundColor: 'rgba(0,0,0,0.9)', border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
-              ⚠ Enemy off-screen — switch to Fit Fight
+            <div style={{ backgroundColor: colors.bg.panelDeep, border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
+              {bannerMessage}
             </div>
           </div>
         )}
 
-        {selectedTab === 'overview' && (
+        {isOverview && (
           <div
+            // `'monospace'` and the bare white 0.4 are both deliberate: see
+            // the fight-status strip above for the font, and note that
+            // `bg.muted` is 0.05, not a substitute for this legend's 0.4.
             style={{ position: 'absolute', bottom: '6px', left: '8px', zIndex: 140, pointerEvents: 'none', fontSize: '9px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
             aria-label="Trailing dots show recent movement paths"
           >

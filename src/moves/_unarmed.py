@@ -25,6 +25,7 @@ from ._base import (
 class PowerStrike(Move):
     display_name = 'Power Strike'
     web_animation = "heavy_attack"
+    weapon_requirement = ("Bludgeon",)
 
     def __init__(self, user):
         description = ""
@@ -256,6 +257,7 @@ class PowerStrike(Move):
 class Jab(Move):
     display_name = 'Jab'
     web_animation = "quick_attack"
+    weapon_requirement = ("Unarmed",)
 
     def __init__(self, user):
         description = ""

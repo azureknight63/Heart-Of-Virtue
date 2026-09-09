@@ -27,6 +27,20 @@ function CloseButton({ onClose, style = {} }) {
 }
 
 /**
+ * The class the panel root carries, exported because it is a CONTRACT.
+ *
+ * `useOccludedNavHandoff` resolves the occluding panel with
+ * `closest(\`.${GAME_PANEL_CLASS}\`)` and falls back to the header row if it
+ * misses, so a rename here would silently SHRINK the handoff region rather
+ * than break it. `CombatMovePanel.targetGating.test.jsx` would catch a rename
+ * loudly (it clicks the resolved panel, and `fireEvent` throws on null) --
+ * which is why that file imports this constant too, rather than being the
+ * thing that has to be remembered. Same reasoning as `CATEGORY_NAV_LABEL` in
+ * utils/categories.js.
+ */
+export const GAME_PANEL_CLASS = 'game-panel'
+
+/**
  * GamePanel - A standardized container component with retro styling.
  */
 export default function GamePanel({
@@ -63,7 +77,7 @@ export default function GamePanel({
     }
 
     return (
-        <div className={`game-panel border rounded p-lg bg-neutral-900 ${glow ? 'retro-glow' : ''} ${className}`} style={panelStyle}>
+        <div className={`${GAME_PANEL_CLASS} border rounded p-lg bg-neutral-900 ${glow ? 'retro-glow' : ''} ${className}`} style={panelStyle}>
             {title && (
                 <div style={{
                     display: 'flex',

@@ -20,21 +20,25 @@ export default function StatsPanel({ player, onClose }) {
     { name: 'Faith', key: 'faith', icon: '📿', tooltip: "Strengthens divine abilities and Jean's resolve. Increases resistance to mental afflictions (Apathy, Hollowed) by 0.5% per point." },
   ]
 
-  const getAttributeColor = (current, base) => {
-    if (current < base) return colors.danger
-    if (current > base) return colors.success
+  // Both readers take the DELTA, not (current, base): they are two renderings
+  // of one three-way classification, and deriving it twice is how the colour
+  // and the marker could come to disagree.
+  const attributeDeltaColor = (delta) => {
+    if (delta < 0) return colors.danger
+    if (delta > 0) return colors.success
     return colors.gold
   }
 
-  // Buffed/debuffed/at-base used to be distinguished by colour alone (green/
-  // red/orange) — issue #536 item 5. A '+'/'-' prefix carries the same
-  // information as text so colour-blind players and screen readers get it
-  // too; a value exactly at base gets neither, since there is no delta to sign.
-  const getAttributeSign = (current, base) => {
-    if (current > base) return '+'
-    if (current < base) return '-'
-    return ''
-  }
+  // Buffed/debuffed/at-base must not be distinguished by colour alone (green/
+  // red/orange) — issue #536 item 5. That was first done by prefixing the
+  // TOTAL with '+'/'-', which issue #559 then showed to be a misstatement of
+  // the number: "+14" printed above "BASE: 10" reads as base 10 plus 14, and a
+  // debuffed total of 8 rendered "-8", i.e. negative eight. So the marker is
+  // now the real delta, rendered beside the bare total — "14 (+4)" over
+  // "BASE: 10" is arithmetically true in a way the prefix never was. A value
+  // exactly at base has no delta, so it gets no marker.
+  const formatAttributeDelta = (delta) =>
+    (delta === 0 ? null : `(${delta > 0 ? '+' : ''}${delta})`)
 
   const resistance = player.resistance || {}
   const states = player.states || []
@@ -139,7 +143,7 @@ export default function StatsPanel({ player, onClose }) {
                 transition: 'width 0.3s ease',
               }} />
             </div>
-            <GameText variant="dim" size="xs" style={{ marginTop: '4px' }}>
+            <GameText variant="muted" size="xs" style={{ marginTop: '4px' }}>
               {Math.max(0, player.max_exp - (player.exp || 0))} EXP to next level
             </GameText>
           </GamePanel>
@@ -155,11 +159,17 @@ export default function StatsPanel({ player, onClose }) {
           <GameText as="h3" variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
             Core Attributes
           </GameText>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.sm }}>
+          {/* 200px, not the old 150px: "Intelligence" and "Endurance" plus the
+              icon no longer fit alongside the value column at 150px, so the
+              name cell clipped them behind an ellipsis at desktop width
+              (#565). Sized to the longest attribute name the panel can show. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: spacing.sm }}>
             {attributes.map((attr) => {
               const current = player[attr.key] || 10
               const base = player[attr.key + '_base'] || 10
-              const color = getAttributeColor(current, base)
+              const delta = current - base
+              const color = attributeDeltaColor(delta)
+              const deltaLabel = formatAttributeDelta(delta)
               return (
                 <div key={attr.key} title={attr.tooltip} style={{
                   display: 'flex',
@@ -172,15 +182,21 @@ export default function StatsPanel({ player, onClose }) {
                   fontFamily: fonts.main,
                   cursor: 'help',
                 }}>
-                  {/* minWidth: 0 lets this side truncate instead of forcing
-                      the value column below to wrap and collide with it. */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, minWidth: 0, overflow: 'hidden' }}>
+                  {/* minWidth: 0 lets this side shrink instead of forcing the
+                      value column below to wrap and collide with it. It WRAPS
+                      rather than truncating: an ellipsis here silently hid
+                      characters of "Endurance"/"Intelligence" (#565), and a
+                      hidden attribute name is worse than a taller row. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, minWidth: 0 }}>
                     <span style={{ fontSize: '14px', flexShrink: 0 }}>{attr.icon}</span>
-                    <GameText size="sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attr.name}</GameText>
+                    <GameText size="sm" style={{ overflowWrap: 'anywhere' }}>{attr.name}</GameText>
                   </div>
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    <GameText weight="bold" style={{ color }}>{getAttributeSign(current, base)}{current}</GameText>
-                    <GameText variant="dim" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: '4px' }}>
+                      <GameText weight="bold" style={{ color }}>{current}</GameText>
+                      {deltaLabel && <GameText variant="muted" size="xs">{deltaLabel}</GameText>}
+                    </div>
+                    <GameText variant="muted" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
                   </div>
                 </div>
               )
@@ -231,7 +247,7 @@ export default function StatsPanel({ player, onClose }) {
                   alignItems: 'center',
                 }}>
                   <GameText size="sm" style={{ color: '#ff9999' }}>{state.name}</GameText>
-                  {state.steps_left && <GameText variant="dim" size="xs">{state.steps_left}T</GameText>}
+                  {state.steps_left && <GameText variant="muted" size="xs">{state.steps_left}T</GameText>}
                 </div>
               )) : <GameText variant="muted" size="sm" style={{ fontStyle: 'italic' }}>No active status effects</GameText>}
             </div>

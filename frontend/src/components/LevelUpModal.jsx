@@ -42,7 +42,7 @@ export default function LevelUpModal({ player, onAllocatePoints }) {
                 textAlign: 'center',
               }}>
                 <GameText variant="success" size="md" weight="bold">
-                  LEVEL {lu.old_level} → <GameText variant="primary">{lu.new_level}</GameText>
+                  LEVEL {lu.old_level} → <GameText as="span" variant="primary">{lu.new_level}</GameText>
                 </GameText>
                 <GameText variant="muted" size="xs">+{lu.points_awarded} attribute points awarded</GameText>
               </div>

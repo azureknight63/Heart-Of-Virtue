@@ -92,8 +92,9 @@ describe('ItemDetailDialog', () => {
     expect(screen.getByText('0.25 lb')).toBeInTheDocument();
     expect(screen.getByText('100g')).toBeInTheDocument();
     expect(screen.getByText(/💊 Use/)).toBeInTheDocument();
-    // The stack size is `quantity` (2), never the engine-side `count`: the Qty
-    // cell is gated on `item.quantity > 1`, so reading `count` would hide it.
+    // This payload carries only `quantity` (2) -- the inventory serializer
+    // emits no `count`. The Qty cell resolves it through `stackSize`, which
+    // prefers `count` when present, so either spelling would render.
     expect(screen.getByText('Qty')).toBeInTheDocument();
     expect(screen.getByText('×2')).toBeInTheDocument();
     expect(screen.queryByText(/Equip/)).toBeNull();
@@ -1539,6 +1540,31 @@ describe('ItemDetailDialog', () => {
       const enchanted = { ...mockItem, bonuses: { luck: 4 } };
       render(<ItemDetailDialog item={enchanted} player={mockPlayer} onBack={mockOnBack} />);
       expect(screen.getByText(/Luck \+4/)).toBeInTheDocument();
+    });
+  });
+
+  describe('items whose engine name already carries the count (#565)', () => {
+    // src/items.py's stack_grammar() bakes the count into the item NAME, and
+    // this dialog renders that name in its header AND a separate Qty cell, so
+    // the count appeared twice.
+    const bakedStack = makeInventoryItem({
+      name: 'Mineral Powder x3',
+      maintype: 'Commodity',
+      subtype: 'Material',
+      quantity: 3,
+      value: 8,
+      weight: 0.1,
+      damage: undefined,
+      protection: undefined,
+    });
+
+    it('shows the name without the baked count, keeping the Qty cell', () => {
+      render(<ItemDetailDialog item={bakedStack} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText('Mineral Powder')).toBeInTheDocument();
+      expect(screen.queryByText('Mineral Powder x3')).not.toBeInTheDocument();
+      expect(screen.getByText('Qty')).toBeInTheDocument();
+      expect(screen.getByText('×3')).toBeInTheDocument();
     });
   });
 });

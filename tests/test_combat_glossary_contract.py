@@ -41,7 +41,13 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src.api import combat_adapter as combat_adapter_module
-from src.api.combat_adapter import ApiCombatAdapter
+from src.api.combat_adapter import (
+    ApiCombatAdapter,
+    NO_TARGET_IN_RANGE_REASON,
+    NOT_ENOUGH_FATIGUE_REASON,
+    NO_WEAPON_REASON,
+    TOO_FAR_REASON,
+)
 import src.items as items
 from src.moves import Attack
 from src.moves import _base as moves_base
@@ -430,11 +436,11 @@ class TestGlossaryTermsMatchTheEngineWording:
             for payload in adapter._get_available_moves()
             if payload.get("reason")
         )
-        assert reason == "Not enough fatigue"
+        assert reason == NOT_ENOUGH_FATIGUE_REASON
         assert "fatigue" in _matching_entry_ids(reason)
 
     def test_a_reason_with_no_glossary_term_matches_nothing(self):
-        assert _matching_entry_ids("No weapon equipped") == []
+        assert _matching_entry_ids(NO_WEAPON_REASON) == []
 
     def test_the_displayed_cooldown_number_is_the_one_the_copy_describes(self, adapter):
         """cooldown_remaining = beats_left + 1, per the maintainer's ruling.
@@ -462,19 +468,98 @@ class TestGlossaryTermsMatchTheEngineWording:
             f"emits; it now says {reason!r}."
         )
 
+    def test_the_client_gates_flee_on_the_engines_break_away_distance(self):
+        """One rule, two layers: the client must not carry its own threshold.
+
+        The engine refuses FLEE with any enemy inside
+        ``FLEE_BREAK_AWAY_DISTANCE`` and QUOTES the number to the player, while
+        `LeftPanel` decides whether the button is rendered at all. The two read
+        the same quantity -- `e.distance` is `distance_to_ref` off the same
+        `combat_proximity` the guard reads -- so a divergence is not a
+        rounding difference, it is two answers to one question.
+
+        The bad direction is the dangerous one: retune the engine DOWN and a
+        player who could legally escape sees no FLEE button, which is worse
+        than the unhelpful refusal ``FLEE_TOO_CLOSE_MESSAGE`` replaced.
+
+        Greps the JS rather than publishing the number in ``battle_state``: it
+        is a static balance constant, and riding it inside every combat poll
+        would be permanent runtime cost for a build-time problem.
+        """
+        from src.api.services.game_service import FLEE_BREAK_AWAY_DISTANCE
+
+        js = (
+            _ROOT / "frontend" / "src" / "utils" / "combatMoveStatus.js"
+        ).read_text(encoding="utf-8")
+        match = re.search(
+            r"export const FLEE_BREAK_AWAY_DISTANCE_FT = (\d+)", js
+        )
+        assert match is not None, (
+            "FLEE_BREAK_AWAY_DISTANCE_FT is no longer an `export const` "
+            "integer in combatMoveStatus.js -- update this grep, do not "
+            "delete it."
+        )
+        assert int(match.group(1)) == FLEE_BREAK_AWAY_DISTANCE, (
+            f"the client gates FLEE at {match.group(1)} ft while the engine "
+            f"refuses below {FLEE_BREAK_AWAY_DISTANCE} ft"
+        )
+
+        panel = (
+            _ROOT / "frontend" / "src" / "components" / "LeftPanel.jsx"
+        ).read_text(encoding="utf-8")
+        assert "FLEE_BREAK_AWAY_DISTANCE_FT" in panel, (
+            "LeftPanel no longer reads the named threshold -- if the literal "
+            "came back, this guard is the thing that stops it diverging"
+        )
+
+    def test_the_client_says_the_same_range_refusal_the_engine_does(self):
+        """`NO_REACHABLE_TARGET_REASON` is the engine's sentence, not a copy.
+
+        The #554 case is the one where the CLIENT is the sole producer: the
+        adapter ships ``reason: None`` for a targeted move that is `available`
+        with an empty ``viable_targets``, so ``move.reason ||`` always falls
+        through and the JS constant is what the player reads. It is
+        deliberately one of the engine's own two range refusals -- reword the
+        Python and the client keeps saying the old wording, with the
+        glossary's `range` link riding on it, and nothing fails.
+
+        Greps the literal out of the JS rather than importing it: there is no
+        JS runtime here, and the value is the whole point.
+        """
+        js = (
+            _ROOT / "frontend" / "src" / "utils" / "combatMoveStatus.js"
+        ).read_text(encoding="utf-8")
+        match = re.search(
+            r"export const NO_REACHABLE_TARGET_REASON = '([^']*)'", js
+        )
+        assert match is not None, (
+            "NO_REACHABLE_TARGET_REASON is no longer a single-quoted literal "
+            "in combatMoveStatus.js -- update this grep, do not delete it."
+        )
+        adapter_src = (
+            _ROOT / "src" / "api" / "combat_adapter.py"
+        ).read_text(encoding="utf-8")
+        assert f'"{match.group(1)}"' in adapter_src, (
+            f"the client's range refusal {match.group(1)!r} is not a string "
+            "the adapter emits any more; the two have drifted."
+        )
 
     @pytest.mark.parametrize(
         "long_reach, expected",
-        [(False, "Enemy out of range (too far)"), (True, "No valid target in range")],
+        [(False, TOO_FAR_REASON), (True, NO_TARGET_IN_RANGE_REASON)],
     )
     def test_both_out_of_range_reasons_reach_the_distance_entry(
         self, adapter, long_reach, expected
     ):
         """A move out of range emits one of TWO strings, not one.
 
-        The adapter only says "Enemy out of range (too far)" when
-        ``range_max <= 5``; anything reaching past that — spear, bow, polearm —
-        says "No valid target in range". The Distance & reach entry quoted the
+        The adapter only says "Enemy out of range (too far)" for a move that
+        does not outreach a sword (``range_max <= MELEE_REACH_FT``, i.e. 6 ft);
+        anything reaching past that — spear, bow, polearm — says "No valid
+        target in range". The boundary itself is pinned in
+        ``tests/test_disabled_move_reasons.py``, which is also where the two
+        readers of that constant are held to one convention; this test drives
+        the two ends, not the edge. The Distance & reach entry quoted the
         first flatly, as though it were what every long-reach move shows.
 
         Driven through a real ``Spear`` rather than by assigning ``mvrange``:

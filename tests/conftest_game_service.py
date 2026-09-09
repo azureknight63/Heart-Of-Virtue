@@ -145,6 +145,10 @@ def mock_player(mock_universe):
     player.inventory = []
     player.equipped_item = None
     player.reputation = {}
+    # 0, as on a real fresh Player. Left unset it is a MagicMock, and
+    # `int(MagicMock())` is 1 -- so every guard reading it saw a player with an
+    # unspent level-up point and deferred combat that should have started.
+    player.pending_attribute_points = 0
 
     player.universe = mock_universe
     player.current_room = mock_universe.get_tile(5, 5)

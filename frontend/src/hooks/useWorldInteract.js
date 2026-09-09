@@ -3,6 +3,7 @@ import apiEndpoints from '../api/endpoints'
 import { apiErrorMessage } from '../utils/apiError'
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 import { isDisplayableEvent, filterDisplayableEvents } from '../utils/eventDisplay'
+import { stackDisplayName, stackSize, isStackedCount } from '../utils/stackName'
 
 /**
  * useWorldInteract — owns InteractPanel's world-interaction API calls and the
@@ -20,7 +21,16 @@ import { isDisplayableEvent, filterDisplayableEvents } from '../utils/eventDispl
  * useEventManager's pattern of taking parent notification callbacks upfront:
  * @param {Function} params.onRefetch - called (and awaited, where the caller did) to resync room state
  * @param {Function} params.onEventsTriggered - called with an array of triggered events
- * @param {Function} params.onInteractionComplete - called after an interaction fully resolves
+ * @param {Function} params.onInteractionComplete - called after an interaction
+ *   fully resolves. Receives the `/world/interact` response body from the
+ *   `interact()` path only. Three other paths call it with NO argument:
+ *   `takeAll` (a batch, with no single body to hand over),
+ *   `handlePassagewayTransition` (its body was consumed by the caller that
+ *   handed it the events), and the direct-teleport exit — which DOES hold
+ *   `data` and deliberately withholds it, because a consumer reading
+ *   `data.beta_end` off a teleport that has already moved the player would be
+ *   acting on a room it has left. `takeOne` does not call it at all.
+ *   Consumers must optional-chain (`data?.beta_end`), never assume a body.
  * @param {Function} params.onTypingChange - called with true when new output should type out
  * @param {Function} params.onClose - called before a transition event is shown, or after a delay for a direct teleport
  * @param {Function} params.onObjectStateUpdate - called with data.object_state for local target patching
@@ -87,11 +97,23 @@ export function useWorldInteract({
         const takenLabels = []
         for (const item of takeableItems) {
             try {
+                // The RAW `count` as the wire quantity, deliberately, while the
+                // label two lines down asks stackSize: `_dispatch_interaction`
+                // treats a missing quantity as "take target.count", so this
+                // argument is the engine's own field and not a display
+                // reading. Unify only after checking that path -- passing a
+                // stackSize-derived 1 is not equivalent to passing nothing.
                 const response = await apiEndpoints.world.interact(item.id, 'take', item.count)
                 const data = response.data
 
                 if (data.success) {
-                    const label = (item.count > 1) ? `${item.count}× ${item.name}` : item.name
+                    // Through the shared helpers, not the raw fields: the row
+                    // the player clicked already renders stackDisplayName +
+                    // stackCountLabel, and hand-building the badge here off
+                    // `item.name` narrated "3× Mineral Powder x3" (#565).
+                    const size = stackSize(item)
+                    const shown = stackDisplayName(item)
+                    const label = isStackedCount(size) ? `${size}× ${shown}` : shown
                     takenLabels.push(label)
                 } else {
                     // Stop on error
@@ -186,7 +208,12 @@ export function useWorldInteract({
     const applyPanelLock = useCallback((action, target, qty) => {
         const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']
         if (!lockingActions.some(a => action.toLowerCase().includes(a))) return
-        const currentCount = parseInt(target.count) || 1
+        // Through the helper, not `parseInt(target.count)`: this is neither
+        // a wire argument nor display, it is exactly stackSize's question,
+        // and the raw read ignored the `quantity` spelling -- so a
+        // quantity-carrying target yielded 1 and locked the panel after a
+        // partial take.
+        const currentCount = stackSize(target) || 1
         const requestedQty = parseInt(qty) || 0
         const tookOnlyPartOfTheStack = requestedQty > 0 && requestedQty < currentCount
         setIsLocked(!tookOnlyPartOfTheStack)
@@ -298,7 +325,12 @@ export function useWorldInteract({
                 onEventsTriggered(triggeredEvents)
             }
             await pollBackgroundEvents()
-            if (onInteractionComplete) onInteractionComplete()
+            // The response body is handed to the completion callback so the
+            // page can act on flags that belong to it rather than to this
+            // panel — currently `beta_end`, set when the interaction was the
+            // end of the demo (issue #552). The other call sites pass nothing;
+            // consumers must therefore optional-chain the argument.
+            if (onInteractionComplete) onInteractionComplete(data)
             return data
         } catch (err) {
             console.error('Interaction error:', err)

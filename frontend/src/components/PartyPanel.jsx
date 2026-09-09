@@ -5,6 +5,7 @@ import { colors } from '../styles/theme'
 import apiClient from '../api/client'
 import { apiErrorMessage } from '../utils/apiError'
 import { getHpBarColor } from '../utils/entityUtils'
+import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
 
 /**
  * PartyPanel - View current party members and their vital stats.
@@ -27,15 +28,15 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
     (it) => it.can_use && !it.is_merchandise
   )
 
-  // Stack duplicate item instances (same name) into a single entry with a summed quantity,
+  // Stack duplicate item instances (same name) into a single entry with a summed `stacked` count,
   // mirroring the inventory's stacking convention so the picker doesn't show repeated rows.
   // Seeded with a null-prototype object, because `item.name` is wire data
   // and this accumulator is indexed by it. With a plain `{}`:
   //
   //   * an item named `constructor` makes `existing` the global Object
-  //     constructor, and the line below then writes `quantity` ONTO IT —
-  //     server-controlled mutation of a process-wide global — while the item
-  //     itself vanishes from the picker;
+  //     constructor, and the accumulator write below then puts `stacked` ONTO
+  //     IT — server-controlled mutation of a process-wide global — while the
+  //     item itself vanishes from the picker;
   //   * an item named `__proto__` makes the else-branch invoke the `__proto__`
   //     setter and reparent the accumulator instead of adding a key.
   //
@@ -45,11 +46,28 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
   // their declaration, and a `reduce` seed is not one.
   const stackedConsumables = Object.values(
     consumables.reduce((stacks, item) => {
+      // Summed through stackSize, and the render reads the summed field
+      // directly: `{ ...item }` carries the source item's own `count`
+      // through, and stackSize prefers `count`, so a count-carrying payload
+      // rendered the pre-aggregation number instead of this total.
       const existing = stacks[item.name]
       if (existing) {
-        existing.quantity = (existing.quantity || 1) + (item.quantity || 1)
-      } else {
-        stacks[item.name] = { ...item, quantity: item.quantity || 1 }
+        existing.stacked = existing.stacked + stackSize(item)
+        return stacks
+      }
+      // The aggregate drops the per-entry `count`/`quantity` and carries its
+      // own `stacked` total, so `stackSize(row)` cannot answer the
+      // pre-aggregation number. It used to keep both and rely on a comment,
+      // which meant normalising the badge to this file's sibling idiom
+      // (`stackCountLabel(stackSize(item))`) silently rendered the wrong
+      // figure. The name is stripped here for the same reason -- once
+      // `count` is gone, `stackDisplayName` can no longer match the baked
+      // " xN" suffix, so it has to be done while the count is still around.
+      const { count: _count, quantity: _quantity, ...rest } = item
+      stacks[item.name] = {
+        ...rest,
+        name: stackDisplayName(item),
+        stacked: stackSize(item),
       }
       return stacks
     }, Object.create(null))
@@ -66,7 +84,12 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
       if (data.success) {
         setActionResult({
           memberName: member.name,
-          itemName: item.name,
+          // The DISPLAY name: the picker row above already strips the
+          // engine's baked count, and this sentence read "used Dried Crystal
+          // Sap x2 on Gorran" -- a count already stale, since using one
+          // decrements the stack (#565). The POST above sends item.id, so
+          // nothing on the wire depends on the raw name.
+          itemName: stackDisplayName(item),
           message: data.message || '',
         })
         setUseItemTarget(null)
@@ -303,8 +326,14 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                     e.target.style.borderColor = '#0099cc'
                   }}
                 >
-                  {item.name}
-                  {item.quantity > 1 && <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '8px' }}>×{item.quantity}</span>}
+                  {/* Two DIFFERENT counts, on purpose. stackDisplayName must
+                      see the un-aggregated source count so the engine's baked
+                      " xN" matches and gets stripped; the badge must show the
+                      SUM. Normalising either read to the other silently
+                      renders the pre-aggregation number, or stops stripping
+                      the suffix and re-opens #565. */}
+                  {stackDisplayName(item)}
+                  <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '8px' }}>{stackCountLabel(item.stacked)}</span>
                 </button>
               ))}
             </div>

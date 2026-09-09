@@ -119,6 +119,23 @@ describe('useWorldInteract', () => {
       expect(result.current.takingAllItems).toBe(false)
     })
 
+    it('does not double the count of a stackable in the summary (#565)', async () => {
+      // The row the player clicked reads "Mineral Powder ×3" (InteractPanel
+      // renders stackDisplayName + stackCountLabel), and TAKE ALL is handed
+      // that same array -- but this summary hand-built its own badge off the
+      // raw name, so the narration read "Jean takes: 3× Mineral Powder x3."
+      apiEndpoints.world.interact.mockResolvedValueOnce({ data: { success: true } })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.takeAll([
+          { id: 'item1', name: 'Mineral Powder x3', count: 3 },
+        ])
+      })
+
+      expect(result.current.interactionOutput).toBe('Jean takes: 3× Mineral Powder.')
+    })
+
     it('takes every item, summarizes, and notifies callbacks', async () => {
       apiEndpoints.world.interact
         .mockResolvedValueOnce({ data: { success: true } })
@@ -294,6 +311,25 @@ describe('useWorldInteract', () => {
       expect(result.current.interactionHistory).toEqual(['The guard nods.'])
       expect(onTypingChange).toHaveBeenCalledWith(true)
       expect(onInteractionComplete).toHaveBeenCalledTimes(1)
+    })
+
+    it('hands the response body to onInteractionComplete', async () => {
+      // Issue #552: the Ferry Landing interaction returns `beta_end: true` and
+      // GamePage raises BetaEndDialog off it. The flag can only get there if
+      // this callback carries the body — it used to be invoked with no
+      // arguments, so the page had no way to see it.
+      const data = { success: true, message: 'Jean looks across.', beta_end: true }
+      apiEndpoints.world.interact.mockResolvedValue({ data })
+      apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } })
+      const onInteractionComplete = vi.fn()
+      const { result } = renderHook(() => useWorldInteract({ onInteractionComplete }))
+
+      await act(async () => {
+        await result.current.interact({ id: 'ferry', count: 1 }, 'enter', null)
+      })
+
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
+      expect(onInteractionComplete).toHaveBeenCalledWith(data)
     })
 
     it('defaults to "Action completed." when the response omits a message', async () => {
