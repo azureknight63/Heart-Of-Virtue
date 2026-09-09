@@ -4,6 +4,7 @@ import { colors } from '../styles/theme'
 import apiClient from '../api/client'
 import { apiErrorMessage } from '../utils/apiError'
 import { getHpBarColor } from '../utils/entityUtils'
+import { stackDisplayName } from '../utils/stackName'
 
 /**
  * PartyPanel - View current party members and their vital stats.
@@ -321,7 +322,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                     e.target.style.borderColor = '#0099cc'
                   }}
                 >
-                  {item.name}
+                  {stackDisplayName(item)}
                   {item.quantity > 1 && <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '8px' }}>×{item.quantity}</span>}
                 </button>
               ))}

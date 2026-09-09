@@ -8,8 +8,14 @@
  * from the terminal play mode, where the name was the entire readout. The API
  * serializers ship the name verbatim *and* a separate `count`/`quantity`
  * field, so every UI that renders both rendered the quantity twice:
- * "Mineral Powder x3 x3" in a container, and the same doubling on the
- * inventory card badge, the loot row and the item-detail Qty cell (#565).
+ * "Mineral Powder x3 x3" in a container, and the same doubling anywhere a
+ * stackable name is rendered beside its own count (#565) -- the container and
+ * target lists, the inventory card badge, the loot row, the item-detail panel,
+ * the shop rows and the party inventory.
+ *
+ * No count of adopters is kept here on purpose: the last enumeration went stale
+ * within the same pass, claiming the migration was complete while the shop and
+ * party surfaces still doubled.
  *
  * This is the client half of that fix. The engine half — not mutating `name`
  * in `stack_grammar()` — belongs in `src/`, and once it lands this function

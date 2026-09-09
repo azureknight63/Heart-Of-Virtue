@@ -2110,6 +2110,170 @@ class GameService:
     # Interaction Methods
     # ========================
 
+    def _dispatch_interaction(self, player, target, action, tile, quantity, session_data):
+        """Run one interaction verb against one already-resolved target.
+
+        Split out of :meth:`interact_with_target`, which had grown to ~435
+        lines across target resolution, verb validation, this five-branch
+        dispatch chain, narration capture, ANSI stripping, teleport detection
+        and response assembly.
+
+        Returns ``(events_triggered, beta_end, refusal)``. ``refusal`` is None
+        on the normal path and a ready-to-return response dict when the verb
+        resolves to nothing callable -- the early exit the caller used to make
+        with a bare ``return`` from inside its own ``try``.
+
+        The caller keeps ``capture_narration``: the narration buffer is read
+        after this returns, and moving it in here would split one context
+        manager across two frames for no gain.
+        """
+        events_triggered = []
+        # Set when this interaction is the end of the demo, so the client can
+        # raise its end-of-beta dialog (issue #552).
+        beta_end = False
+        import inspect
+
+        from src.objects import Container, Passageway, resolve_interaction
+        from src.items import Item
+        from src.inventory_utils import transfer_item
+        from src.events import LootEvent
+
+        is_container = isinstance(target, Container)
+        is_item = isinstance(target, Item) or hasattr(
+            target, "_parent_container"
+        )
+
+        # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
+        # not a copy kept here — the copy is how `search`, `look` and
+        # `lift` came to be authored across 6 shipped placements that
+        # the API then failed to recognise (#553).
+        if is_container and action in Container.LOOK_INSIDE_VERBS:
+            target.open()
+            # Only surface the loot menu if the container actually
+            # opened. A locked container's open() is a no-op (state
+            # stays "closed"); creating a LootEvent anyway would expose
+            # its contents and bypass the lock. open() narrates why it
+            # failed, which flows out via the narration sink below.
+            if getattr(target, "state", None) == "opened":
+                # Create a LootEvent and store it
+                loot_event = LootEvent(
+                    f"Looting {target.name}", player, tile, target
+                )
+                event_data = EventSerializer.serialize_with_input(loot_event)
+
+                if session_data is not None:
+                    # Dedupe-by-name is right here: the name is
+                    # "Looting <container>", so a collision is the same
+                    # container's dialog re-opened. Left to itself this
+                    # site minted a second UUID for it, and the first
+                    # entry stayed pending forever, blocking input.
+                    #
+                    # The key is the container's NAME, not its identity,
+                    # so two same-named containers on one tile would
+                    # share a dialog id — opening the second would hand
+                    # back the first's contents. That is a property of
+                    # the CONTENT, not of this code, so it is enforced
+                    # rather than asserted: tests/
+                    # test_map_object_names_unique.py scans every
+                    # shipped map for a tile that breaks it.
+                    event_data = self._store_pending_event(
+                        loot_event, event_data, session_data, tile=tile
+                    )
+
+                events_triggered.append(event_data)
+        elif (
+            is_item
+            and action in ["take", "equip"]
+            and hasattr(target, "_parent_container")
+        ):
+            # Use transfer_item for items in containers
+            qty_to_take = (
+                quantity
+                if quantity is not None
+                else getattr(target, "count", 1)
+            )
+            transfer_item(target._parent_container, player, target, qty_to_take)
+            if hasattr(target._parent_container, "refresh_description"):
+                target._parent_container.refresh_description()
+
+            if action == "take":
+                narrate(f"{player.name} takes {target.name}.")
+            else:
+                # Proceed with equipment logic
+                target.equip(player)
+        elif _is_demo_end_crossing(target, action):
+            # The demo stops at this passageway (#552). The engine owns
+            # what that means -- no crossing, story gate set, one beat
+            # of prose; the API's only job is to flag it so the client
+            # raises BetaEndDialog (the same `beta_end` flag the combat
+            # adapter sets on the Lurker path). Queuing a "Step
+            # through?" confirmation instead would promise a crossing
+            # that never happens.
+            # `enter`, not `end_demo`: Passageway.enter already guards
+            # `if self.demo_end` and delegates, so calling end_demo here
+            # decided the same rule in two places. The engine stays the
+            # sole authority on what using a passageway means; the API's
+            # only business is the wire flag.
+            target.enter(player)
+            beta_end = True
+        elif isinstance(target, Passageway) and session_data is not None:
+            # Passageway in API mode: create a confirmation event so the
+            # frontend can display "Jean steps through..." and wait for
+            # user acknowledgment before teleporting.
+            from src.events import PassagewayTransitionEvent
+
+            # Run events_before (not teleport — that happens on confirm)
+            if hasattr(player, "drop_merchandise_items"):
+                player.drop_merchandise_items()
+            if target.events_before:
+                for ev in target.events_before:
+                    ev.process()
+
+            trans_event = PassagewayTransitionEvent(
+                name=f"Passage_{target.name}",
+                player=player,
+                tile=tile,
+                passageway=target,
+            )
+            event_data = EventSerializer.serialize_with_input(trans_event)
+            # Dedupe-by-name is right here too: the name is
+            # "Passage_<passageway>", so a collision is the same
+            # passageway's confirmation re-armed.
+            event_data = self._store_pending_event(
+                trans_event, event_data, session_data, tile=tile
+            )
+            events_triggered.append(event_data)
+        else:
+            # Resolve through the engine's alias table rather than
+            # naming an attribute directly. A keyword the class does
+            # not implement yields None here and is refused in
+            # fiction; it used to raise AttributeError into the broad
+            # except below, which then handed the player
+            # "Error executing action: '<Class>' object has no
+            # attribute '<verb>'" (#553).
+            method = resolve_interaction(target, action)
+            if method is None:
+                return events_triggered, beta_end, {
+                    "success": False,
+                    "message": _unsupported_action_message(target, action),
+                }
+            # Check signature to see if we need to pass player
+            sig = inspect.signature(method)
+            # Get parameter names excluding 'self'
+            param_names = [p for p in sig.parameters.keys() if p != "self"]
+
+            # If there are parameters beyond 'self', pass player
+            if len(param_names) > 0:
+                # If the method accepts quantity, pass it
+                if "quantity" in param_names:
+                    method(player, quantity=quantity)
+                else:
+                    method(player)
+            else:
+                method()
+
+        return events_triggered, beta_end, None
+
     def interact_with_target(
         self,
         player: "player_module.Player",
@@ -2135,9 +2299,7 @@ class GameService:
             Dictionary with interaction result and output text
         """
         from unittest.mock import patch
-        import inspect
         import re
-        from src.api.serializers.event_serializer import EventSerializer
 
         # Find target
         tile = player.universe.get_tile(player.location_x, player.location_y)
@@ -2244,10 +2406,6 @@ class GameService:
         _pre_y = player.location_y
 
         # Execute action and capture output
-        events_triggered = []
-        # Set when this interaction is the end of the demo, so the client can
-        # raise its end-of-beta dialog (issue #552).
-        beta_end = False
         try:
             # Narrative output is captured via the narration sink; we still
             # neutralize terminal pauses/timing. Interaction targets no longer
@@ -2258,145 +2416,11 @@ class GameService:
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                from src.objects import Container, resolve_interaction
-                from src.items import Item
-                from src.inventory_utils import transfer_item
-                from src.events import LootEvent
-
-                is_container = isinstance(target, Container)
-                is_item = isinstance(target, Item) or hasattr(
-                    target, "_parent_container"
+                events_triggered, beta_end, refusal = self._dispatch_interaction(
+                    player, target, action, tile, quantity, session_data
                 )
-
-                # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
-                # not a copy kept here — the copy is how `search`, `look` and
-                # `lift` came to be authored across 6 shipped placements that
-                # the API then failed to recognise (#553).
-                if is_container and action in Container.LOOK_INSIDE_VERBS:
-                    target.open()
-                    # Only surface the loot menu if the container actually
-                    # opened. A locked container's open() is a no-op (state
-                    # stays "closed"); creating a LootEvent anyway would expose
-                    # its contents and bypass the lock. open() narrates why it
-                    # failed, which flows out via the narration sink below.
-                    if getattr(target, "state", None) == "opened":
-                        # Create a LootEvent and store it
-                        loot_event = LootEvent(
-                            f"Looting {target.name}", player, tile, target
-                        )
-                        event_data = EventSerializer.serialize_with_input(loot_event)
-
-                        if session_data is not None:
-                            # Dedupe-by-name is right here: the name is
-                            # "Looting <container>", so a collision is the same
-                            # container's dialog re-opened. Left to itself this
-                            # site minted a second UUID for it, and the first
-                            # entry stayed pending forever, blocking input.
-                            #
-                            # The key is the container's NAME, not its identity,
-                            # so two same-named containers on one tile would
-                            # share a dialog id — opening the second would hand
-                            # back the first's contents. That is a property of
-                            # the CONTENT, not of this code, so it is enforced
-                            # rather than asserted: tests/
-                            # test_map_object_names_unique.py scans every
-                            # shipped map for a tile that breaks it.
-                            event_data = self._store_pending_event(
-                                loot_event, event_data, session_data, tile=tile
-                            )
-
-                        events_triggered.append(event_data)
-                elif (
-                    is_item
-                    and action in ["take", "equip"]
-                    and hasattr(target, "_parent_container")
-                ):
-                    # Use transfer_item for items in containers
-                    qty_to_take = (
-                        quantity
-                        if quantity is not None
-                        else getattr(target, "count", 1)
-                    )
-                    transfer_item(target._parent_container, player, target, qty_to_take)
-                    if hasattr(target._parent_container, "refresh_description"):
-                        target._parent_container.refresh_description()
-
-                    if action == "take":
-                        narrate(f"{player.name} takes {target.name}.")
-                    else:
-                        # Proceed with equipment logic
-                        target.equip(player)
-                elif _is_demo_end_crossing(target, action):
-                    # The demo stops at this passageway (#552). The engine owns
-                    # what that means -- no crossing, story gate set, one beat
-                    # of prose; the API's only job is to flag it so the client
-                    # raises BetaEndDialog (the same `beta_end` flag the combat
-                    # adapter sets on the Lurker path). Queuing a "Step
-                    # through?" confirmation instead would promise a crossing
-                    # that never happens.
-                    # `enter`, not `end_demo`: Passageway.enter already guards
-                    # `if self.demo_end` and delegates, so calling end_demo here
-                    # decided the same rule in two places. The engine stays the
-                    # sole authority on what using a passageway means; the API's
-                    # only business is the wire flag.
-                    target.enter(player)
-                    beta_end = True
-                elif isinstance(target, Passageway) and session_data is not None:
-                    # Passageway in API mode: create a confirmation event so the
-                    # frontend can display "Jean steps through..." and wait for
-                    # user acknowledgment before teleporting.
-                    from src.events import PassagewayTransitionEvent
-
-                    # Run events_before (not teleport — that happens on confirm)
-                    if hasattr(player, "drop_merchandise_items"):
-                        player.drop_merchandise_items()
-                    if target.events_before:
-                        for ev in target.events_before:
-                            ev.process()
-
-                    trans_event = PassagewayTransitionEvent(
-                        name=f"Passage_{target.name}",
-                        player=player,
-                        tile=tile,
-                        passageway=target,
-                    )
-                    event_data = EventSerializer.serialize_with_input(trans_event)
-                    # Dedupe-by-name is right here too: the name is
-                    # "Passage_<passageway>", so a collision is the same
-                    # passageway's confirmation re-armed.
-                    event_data = self._store_pending_event(
-                        trans_event, event_data, session_data, tile=tile
-                    )
-                    events_triggered.append(event_data)
-                else:
-                    # Resolve through the engine's alias table rather than
-                    # naming an attribute directly. A keyword the class does
-                    # not implement yields None here and is refused in
-                    # fiction; it used to raise AttributeError into the broad
-                    # except below, which then handed the player
-                    # "Error executing action: '<Class>' object has no
-                    # attribute '<verb>'" (#553).
-                    method = resolve_interaction(target, action)
-                    if method is None:
-                        return {
-                            "success": False,
-                            "message": _unsupported_action_message(target, action),
-                        }
-                    # Check signature to see if we need to pass player
-                    sig = inspect.signature(method)
-                    # Get parameter names excluding 'self'
-                    param_names = [p for p in sig.parameters.keys() if p != "self"]
-
-                    # If there are parameters beyond 'self', pass player
-                    if len(param_names) > 0:
-                        # If the method accepts quantity, pass it
-                        if "quantity" in param_names:
-                            method(player, quantity=quantity)
-                        else:
-                            method(player)
-                    else:
-                        method()
-
+                if refusal is not None:
+                    return refusal
         except Exception:
             # str(e) never reaches the player. The prose panel is the game's
             # UI, and an exception rendered there reads as broken content, not

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useBattlefieldCamera } from '../hooks/useBattlefieldCamera'
 
 import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
 import BeatTimeline from './BeatTimeline'
@@ -16,7 +17,6 @@ const MAX_BEAT_STATES = 200;
 // null would collide with `combat_id` being absent (test payloads, a beat
 // state mid-serialization), and the guard would then read as already-claimed
 // and never auto-fit at all.
-const CAMERA_UNCLAIMED = Symbol('camera unclaimed');
 
 // Both view modes are always shown, each labelled with what it does. The old
 // control was a single button captioned with the mode it was *currently in*
@@ -55,19 +55,6 @@ function anyEnemyOffScreen(state) {
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1, isReloadRecovery = false }) {
   const beatTimelineEnabled = useFeatureFlag('beatTimeline')
   const [selectedTab, setSelectedTab] = useState('overview')
-  const [zoom, setZoom] = useState(VIEW_MODE_FOLLOW)
-  // Transient banner shown once per "enemy goes off-screen" transition, auto-
-  // dismissed after 2.5s or on zoom toggle so players who already understand
-  // the affordance aren't nagged.
-  const [showOffScreenBanner, setShowOffScreenBanner] = useState(false)
-  const offScreenLatchRef = useRef(false)
-  // Whether the banner is reporting an auto-fit this component performed, or
-  // nudging a player who has chosen to stay in Follow.
-  const [didAutoFit, setDidAutoFit] = useState(false)
-  // The fight whose camera has been settled — by the one auto-fit below, or by
-  // the player picking a mode. Compared against `cameraKey` so the auto-fit
-  // fires at most once per fight and never argues with a manual choice.
-  const cameraClaimedForRef = useRef(CAMERA_UNCLAIMED)
   // Both hooks unconditionally — `||` would short-circuit the second and
   // break hook order the first time the viewport is narrow.
   const isMobile = useMobile()
@@ -78,6 +65,12 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   // Initialise directly to the first beat state (same shape BattlefieldGrid expects)
   // so there is never a render where displayState has the top-level API response shape.
   const [displayState, setDisplayState] = useState(combat?.beat_states?.[0] ?? combat)
+
+  // Framing lives in its own hook: five pieces of state, two effects and a
+  // callback that all answer one question, in a component that also owns beat
+  // accumulation and log-index sync.
+  const { zoom, selectViewMode, enemyOffScreen, bannerVisible, bannerMessage } =
+    useBattlefieldCamera(combat, displayState, anyEnemyOffScreen)
 
   // Accumulated beat states across multiple actions so trails persist across turns
   const [accBeatStates, setAccBeatStates] = useState([])
@@ -130,77 +123,6 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     }
   }, [currentLogIndex, combat?.beat_states])
 
-  // Raw geometry, independent of the current camera: is a living enemy beyond
-  // the Follow viewport? Both the auto-fit and the banner key off this, so
-  // widening the camera does not retroactively erase the reason it widened.
-  const enemyOutsideFollowView = useMemo(
-    () => anyEnemyOffScreen(displayState),
-    [displayState]
-  );
-
-  // Hint the player to expand the view when a living enemy is beyond the
-  // follow-mode viewport. The glow is suppressed while already in Fit Fight.
-  const enemyOffScreen = zoom !== VIEW_MODE_FIT && enemyOutsideFollowView;
-
-  // One fight, one identity. `combat_id` is minted per fight by the adapter;
-  // the `?? null` is only for payload shapes that omit it (see CAMERA_UNCLAIMED).
-  const cameraKey = combat?.combat_id ?? null;
-
-  /**
-   * The player's camera choice, which settles the camera for the rest of this
-   * fight (issue #561).
-   *
-   * Recording the claim here is what keeps the auto-fit from being a bully: a
-   * player who deliberately goes back to Follow with an enemy still off-screen
-   * has said something, and the next beat must not undo it.
-   */
-  const selectViewMode = useCallback((mode) => {
-    cameraClaimedForRef.current = cameraKey;
-    setDidAutoFit(false);
-    setShowOffScreenBanner(false);
-    setZoom(mode);
-  }, [cameraKey]);
-
-  /**
-   * Frame the fight the player was actually handed (issue #561).
-   *
-   * Enemy spawn distance is a per-encounter roll, so with Follow (±6 cells) as
-   * the default a fight beginning at 7-8 ft opened on an empty map with a
-   * banner telling the player to fix the framing themselves — the application
-   * detecting the problem and delegating it. Fit Fight is the answer it was
-   * already recommending, so it takes it, once, and says so.
-   */
-  // A new fight starts from the default camera. `zoom` and `didAutoFit` are
-  // per-mount while the claim ref is per-fight, and that mismatch meant fight
-  // two inherited fight one's Fit camera *and* its didAutoFit -- so it opened
-  // already widened and announced "view widened to Fit Fight" when nothing had
-  // widened. Resetting here keeps all three on the same per-fight lifetime.
-  useEffect(() => {
-    setZoom(VIEW_MODE_FOLLOW);
-    setDidAutoFit(false);
-  }, [cameraKey]);
-
-  // Entry geometry, read from THIS fight's own first beat state rather than
-  // from `displayState`. `displayState` is set in an effect keyed on `combat`,
-  // so on the commit where a new fight arrives it still holds the PREVIOUS
-  // fight's positions -- and the auto-fit below, running in the same commit,
-  // would claim the new fight using the old fight's distances. It is also the
-  // right question on its own terms: this decides entry framing, which is a
-  // property of how the fight opened, not of whichever beat the player has
-  // since scrubbed to.
-  const entryEnemyOutsideFollowView = useMemo(
-    () => anyEnemyOffScreen(combat?.beat_states?.[0] ?? combat),
-    [combat]
-  );
-
-  useEffect(() => {
-    if (!entryEnemyOutsideFollowView) return;
-    if (cameraClaimedForRef.current === cameraKey) return;
-    cameraClaimedForRef.current = cameraKey;
-    setZoom(VIEW_MODE_FIT);
-    setDidAutoFit(true);
-  }, [entryEnemyOutsideFollowView, cameraKey]);
-
   // Living enemy count and beat number: the two numbers that answer "where is
   // this fight at?" without reading back through the log.
   const livingEnemyCount = useMemo(
@@ -208,23 +130,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     [displayState?.enemies]
   );
 
-  // Rising edge on "an enemy left the Follow viewport" → flash a one-shot
-  // banner. Keyed on the raw geometry rather than on `enemyOffScreen`, or the
-  // auto-fit above would clear the condition in the same commit and the player
-  // would get a camera that moved with no explanation. Manual dismissal on a
-  // zoom change now lives in selectViewMode.
-  useEffect(() => {
-    if (enemyOutsideFollowView && !offScreenLatchRef.current) {
-      offScreenLatchRef.current = true;
-      setShowOffScreenBanner(true);
-      const t = setTimeout(() => setShowOffScreenBanner(false), 2500);
-      return () => clearTimeout(t);
-    }
-    if (!enemyOutsideFollowView) {
-      offScreenLatchRef.current = false;
-      setShowOffScreenBanner(false);
-    }
-  }, [enemyOutsideFollowView]);
+
 
   // 44px minimum on a phone or any coarse pointer. Measured at 375px before
   // this: Overview 75.6x28, Enemies 97.2x28, Follow 63.2x26, Fit Fight 84.8x26
@@ -377,23 +283,14 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           combatSpeed={combatSpeed}
         />
 
-        {/* `didAutoFit || enemyOffScreen`, not showOffScreenBanner alone:
-            enemyOffScreen carries the `zoom !== VIEW_MODE_FIT` term that the
-            geometry-keyed latch deliberately drops, and without it a player
-            who chose Fit Fight manually gets told to "switch to Fit Fight"
-            the moment an enemy strays -- #561's exact complaint, one path
-            over. The auto-fit message stays, because there the camera really
-            did move and the player is owed the explanation. */}
-        {selectedTab === 'overview' && showOffScreenBanner && (didAutoFit || enemyOffScreen) && (
+        {selectedTab === 'overview' && bannerVisible && (
           <div
             className="animate-in fade-in slide-in-from-top-2 duration-200"
             style={{ position: 'absolute', top: '8px', left: '50%', transform: 'translateX(-50%)', zIndex: 160, pointerEvents: 'none' }}
             role="status"
           >
             <div style={{ backgroundColor: 'rgba(0,0,0,0.9)', border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
-              {didAutoFit
-                ? '⤢ Enemy off-screen — view widened to Fit Fight'
-                : '⚠ Enemy off-screen — switch to Fit Fight'}
+              {bannerMessage}
             </div>
           </div>
         )}

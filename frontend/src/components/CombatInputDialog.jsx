@@ -4,6 +4,7 @@ import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
 import { colors } from '../styles/theme';
 import { hostilityTokenFor } from '../utils/combatEntities';
+import HostilityChip from './HostilityChip'
 
 const INPUT_TYPE_CONFIG = {
     target_selection: { title: '🎯 SELECT TARGET' },
@@ -108,23 +109,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                 </div>
 
                                 {hostility && (
-                                    <span
-                                        style={{
-                                            alignSelf: 'flex-start',
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            border: `1px solid ${hostility.color}`,
-                                            backgroundColor: hostility.tint,
-                                            color: hostility.color,
-                                            fontFamily: 'monospace',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            letterSpacing: '0.08em',
-                                            whiteSpace: 'nowrap',
-                                        }}
-                                    >
-                                        {hostility.glyph} {hostility.label}
-                                    </span>
+                                    <HostilityChip token={hostility} variant="block" />
                                 )}
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

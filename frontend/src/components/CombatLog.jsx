@@ -5,6 +5,7 @@ import GameText from './GameText'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { lookupOr } from '../utils/lookup'
+import LiveAnnouncer from './LiveAnnouncer'
 
 /**
  * Colour per log-entry `type`, keyed on the ENGINE'S vocabulary.
@@ -103,27 +104,7 @@ function LogAnnouncer({ entries }) {
   const latest = entries[entries.length - 1]
   const spoken = useMemo(() => (latest ? spokenText(latest.message) : ''), [latest])
 
-  return (
-    <div
-      data-testid="combat-log-announcer"
-      aria-live="polite"
-      aria-atomic="true"
-      style={{
-        position: 'absolute',
-        width: '1px',
-        height: '1px',
-        margin: '-1px',
-        padding: 0,
-        border: 0,
-        overflow: 'hidden',
-        clip: 'rect(0 0 0 0)',
-        clipPath: 'inset(50%)',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {spoken ? <span key={entries.length} data-seq={entries.length}>{spoken}</span> : null}
-    </div>
-  )
+  return <LiveAnnouncer text={spoken} seq={entries.length} testId="combat-log-announcer" />
 }
 
 export default function CombatLog({ log, className = '', allowResize = true, isMyTurn = false }) {

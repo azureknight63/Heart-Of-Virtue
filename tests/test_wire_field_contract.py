@@ -1284,7 +1284,10 @@ SHOP_STATE_CONTRACT = {
 SHOP_BUY_ITEM_CONTRACT = {
     # list.find(i => i.id === selectedId)
     "id": Read("ShopDialog.jsx", "i.id === selectedId"),
-    "name": Read("ShopDialog.jsx", "selectedItem.name"),
+    # The read moved behind stackDisplayName, which strips the stack count the
+    # engine bakes into `name` (#565). Still a read of the `name` wire field --
+    # anchored on the call, which is the literal the file now contains.
+    "name": Read("ShopDialog.jsx", "stackDisplayName(selectedItem)"),
     "price": Read("ShopDialog.jsx", "selectedItem.price"),
     "weight": Read("ShopDialog.jsx", "selectedItem.weight"),
     # buyback effectiveQty
@@ -1295,7 +1298,10 @@ SHOP_BUY_ITEM_CONTRACT = {
 # Fields read off a sell-tab item (ShopSerializer.serialize_player_sellable).
 SHOP_SELL_ITEM_CONTRACT = {
     "id": Read("ShopDialog.jsx", "i.id === selectedId"),
-    "name": Read("ShopDialog.jsx", "selectedItem.name"),
+    # The read moved behind stackDisplayName, which strips the stack count the
+    # engine bakes into `name` (#565). Still a read of the `name` wire field --
+    # anchored on the call, which is the literal the file now contains.
+    "name": Read("ShopDialog.jsx", "stackDisplayName(selectedItem)"),
     "offer": Read("ShopDialog.jsx", "selectedItem.offer"),
     "weight": Read("ShopDialog.jsx", "selectedItem.weight"),
     # the sell quantity picker's ceiling

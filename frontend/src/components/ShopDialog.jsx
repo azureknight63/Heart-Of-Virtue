@@ -3,6 +3,7 @@ import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
+import { stackDisplayName } from '../utils/stackName'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -143,7 +144,7 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
           {getItemIcon(item)}
         </span>
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {item.name}
+          {stackDisplayName(item)}
         </span>
         {count > 1 && (
           <span style={{
@@ -710,7 +711,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                   <div style={{ fontSize: '0.72rem', color: colors.text.muted }}>
                     {selectedItem.is_buyback ? 'Buying back:' : activeTab === 'buy' ? 'Selected:' : 'Selling:'}
                     <span style={{ color: colors.text.main, fontWeight: 'bold', marginLeft: '4px' }}>
-                      {getItemIcon(selectedItem)} {selectedItem.name}
+                      {getItemIcon(selectedItem)} {stackDisplayName(selectedItem)}
                     </span>
                   </div>
 

@@ -20,7 +20,12 @@ import { isDisplayableEvent, filterDisplayableEvents } from '../utils/eventDispl
  * useEventManager's pattern of taking parent notification callbacks upfront:
  * @param {Function} params.onRefetch - called (and awaited, where the caller did) to resync room state
  * @param {Function} params.onEventsTriggered - called with an array of triggered events
- * @param {Function} params.onInteractionComplete - called after an interaction fully resolves
+ * @param {Function} params.onInteractionComplete - called after an interaction
+ *   fully resolves. Receives the `/world/interact` response body from the
+ *   `interact()` path only; `takeAll`, `takeOne` and the direct-teleport exit
+ *   call it with NO argument, because none of them has a body to hand over —
+ *   they resync through `onRefetch` instead. Consumers must optional-chain
+ *   (`data?.beta_end`), never assume a body.
  * @param {Function} params.onTypingChange - called with true when new output should type out
  * @param {Function} params.onClose - called before a transition event is shown, or after a delay for a direct teleport
  * @param {Function} params.onObjectStateUpdate - called with data.object_state for local target patching

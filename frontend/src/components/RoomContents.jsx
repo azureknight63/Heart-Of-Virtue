@@ -1,6 +1,7 @@
 import { colors, spacing } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
 import { HOSTILITY_TOKENS, isHostileEntity } from '../utils/combatEntities'
+import HostilityChip from './HostilityChip'
 
 /**
  * RoomContents - Display integrated room description with contents
@@ -121,24 +122,7 @@ export default function RoomContents({ location, onInteract }) {
                     content.entity
                   )}
                   {hostile && (
-                    <span
-                      style={{
-                        marginLeft: spacing.xs,
-                        padding: '0 4px',
-                        borderRadius: '3px',
-                        border: `1px solid ${hostile.color}`,
-                        backgroundColor: hostile.tint,
-                        color: hostile.color,
-                        fontFamily: 'monospace',
-                        fontStyle: 'normal',
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        letterSpacing: '0.05em',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {hostile.glyph} {hostile.label}
-                    </span>
+                    <HostilityChip token={hostile} variant="inline" />
                   )}
                 </div>
               )
