@@ -9,7 +9,7 @@ import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
 import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
-import { stackDisplayName, stackCountLabel } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
 
 /**
  * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
@@ -493,7 +493,7 @@ function InteractPanel({
                                                 {/* stackDisplayName, not target.name: the engine bakes the
                                                     count into a stackable item's own name, so this rendered
                                                     "Mineral Powder x3 (x3)" (#565). */}
-                                                {stackDisplayName(target)} {stackCountLabel(target.count)}
+                                                {stackDisplayName(target)} {stackCountLabel(stackSize(target))}
                                             </GameText>
                                             {target.description && (
                                                 <GameText
@@ -651,7 +651,7 @@ function InteractPanel({
                                                     {/* See the target list above: the engine's name already
                                                         carries the count for a stackable item, so this read
                                                         "Mineral Powder x3 x3" in the forge's crate (#565). */}
-                                                    {stackDisplayName(item)} {stackCountLabel(item.count)}
+                                                    {stackDisplayName(item)} {stackCountLabel(stackSize(item))}
                                                 </GameText>
                                                 <GameButton
                                                     onClick={async (e) => {

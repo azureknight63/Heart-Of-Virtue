@@ -179,6 +179,75 @@ def test_using_the_ferry_reports_beta_end(game_service, ferry_world):
     assert result["beta_end"] is True, result
 
 
+def test_every_crossing_verb_ends_the_demo_rather_than_crossing(
+    game_service, ferry_world
+):
+    """The verbs the client actually renders must all hit the demo-end branch.
+
+    ``Passageway.__init__`` pushes ``go``/``leave``/``exit`` into both
+    ``action_aliases`` and ``keywords``, and ``ObjectSerializer`` ships
+    ``keywords`` to the client -- so those three are buttons on the ferry, and
+    on the shipped placement they are the ONLY authored ones
+    (``eastern-descent-nomad-camp.json`` (0, 2) authors
+    ``action_aliases: ["go", "leave", "exit"]``).
+
+    They are separate methods delegating to ``enter``, not aliases of it, so a
+    gate that compared the resolved handler against ``enter`` answered False
+    for all three. Control then fell to the generic Passageway arm, which
+    queues a ``PassagewayTransitionEvent`` whose ``process`` calls
+    ``_commit_teleport`` directly -- past ``enter``'s ``demo_end`` guard. The
+    demo's edge was crossable by three of the four ways to say "use it", and
+    by the only three the map authors.
+
+    ``ferry`` and ``landing`` are the instance-bound name words, which DO
+    resolve to ``enter``; they are included so the fix cannot regress them.
+    """
+    player, _game_map, ferry = ferry_world
+
+    for verb in ("enter", "go", "leave", "exit", "ferry", "landing"):
+        session_data = {}
+        before = (player.location_x, player.location_y)
+
+        result = game_service.interact_with_target(
+            player, wire_handle(ferry), verb, session_data=session_data
+        )
+        # Drive any queued confirmation too: the teleport lands on the SECOND
+        # request, so asserting on the interact response alone passes with the
+        # bug fully present.
+        for event in result["events_triggered"]:
+            event_id = event.get("event_id")
+            if event_id:
+                game_service.process_event_input(
+                    player, event_id, "continue", session_data
+                )
+
+        assert result["beta_end"] is True, (verb, result)
+        assert (player.location_x, player.location_y) == before, (verb, result)
+        story = getattr(getattr(player, "universe", None), "story", {}) or {}
+        assert story.get("demo_ended") == "1", (verb, story)
+        story.pop("demo_ended", None)
+
+
+def test_committing_a_teleport_can_never_cross_a_demo_end_passageway(ferry_world):
+    """The crossing primitive refuses on its own, whatever route reached it.
+
+    ``enter`` guards ``demo_end``, but ``PassagewayTransitionEvent.process``
+    calls ``_commit_teleport`` directly and so never saw that guard. Guarding
+    the primitive means no present or future path can cross the demo's edge --
+    the gate above decides WHICH VERB crosses, this decides whether crossing
+    is possible at all.
+    """
+    player, _game_map, ferry = ferry_world
+    before = (player.location_x, player.location_y)
+
+    with capture_narration():
+        ferry._commit_teleport(player)
+
+    assert (player.location_x, player.location_y) == before
+    story = getattr(getattr(player, "universe", None), "story", {}) or {}
+    assert story.get("demo_ended") == "1"
+
+
 def test_merely_examining_the_ferry_does_not_end_the_demo(game_service, ferry_world):
     """Looking at the ferry must not fire the end-of-beta dialog.
 

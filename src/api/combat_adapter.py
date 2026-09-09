@@ -1201,7 +1201,10 @@ class ApiCombatAdapter:
     def _reset_idle_move_stages(combatant) -> None:
         """Rewind a combatant's moves to stage 0, sparing the one in flight.
 
-        Used by the reinit path of :meth:`initialize_combat`. The combatant's
+        Used by the reinit path of :meth:`initialize_combat`, by the player's
+        branch of the new-fight path, and by
+        :meth:`_reset_move_state_for_new_fight` once the in-flight move has
+        been detached. The combatant's
         ``current_move`` is skipped: rewinding a move that is mid-``advance``
         traps ``Move.advance``'s stage loop, which only terminates once the
         stage counter passes 3.
@@ -1213,7 +1216,7 @@ class ApiCombatAdapter:
             move.current_stage = 0
             move.beats_left = 0
 
-    def _attach_player_ref(self, enemy):
+    def _attach_player_ref(self, enemy) -> None:
         """Back-reference for API-mode drop/loot tracking.
 
         Swallowed on purpose: an enemy that cannot hold the attribute is a
@@ -1488,7 +1491,7 @@ class ApiCombatAdapter:
             # - Their enemies are the Player's enemies
             # - Their allies are the Player's allies
             for ally in self.player.combat_list_allies:
-                if ally == self.player:
+                if ally is self.player:
                     continue
                 ally.combat_list = self.player.combat_list
                 ally.combat_list_allies = self.player.combat_list_allies

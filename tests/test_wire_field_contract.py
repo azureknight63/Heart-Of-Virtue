@@ -1465,8 +1465,11 @@ ROOM_ITEM_CONTRACT = {
     "name": Read("RoomContents.jsx", "item.name"),
     # item.announce || `There is a ${item.name} here.`
     "announce": Read("RoomContents.jsx", "item.announce"),
-    # item.count > 1 ? `x${item.count}` : ''
-    "count": Read("InteractPanel.jsx", "item.count"),
+    # The read moved: every badge call site now asks `stackSize(item)`, and
+    # the `count` vs `quantity` choice happens once, in the helper. The anchor
+    # follows it -- InteractPanel no longer contains the literal.
+    # stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1)
+    "count": Read("utils/stackName.js", "item?.count"),
     # allTargets.filter(t => !t.hidden)
     "hidden": Read("InteractPanel.jsx", "t.hidden"),
     # selectedTarget.keywords.length > 0

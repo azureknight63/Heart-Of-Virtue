@@ -110,18 +110,41 @@ _ECHOED_ACTION_MAX_LENGTH = 40
 def _is_demo_end_crossing(target, action):
     """True when `action` is a verb that would CROSS a demo-end passageway.
 
-    Gated on the resolved handler rather than the literal "enter", because a
-    Passageway also binds its authored name words (`ferry`, `landing`) to
-    `enter` on the instance, and all of those are legitimate ways to say "use
-    it". Without this the demo-end branch fired for every verb the allow-list
+    Gated on the resolved handler rather than on the verb, because a
+    Passageway binds its authored name words (`ferry`, `landing`) to `enter`
+    on the instance, and all of those are legitimate ways to say "use it".
+    Without this the demo-end branch fired for every verb the allow-list
     permits, so merely examining the ferry to read its description ended the
     demo and set the story gate.
+
+    Which handlers count is `Passageway.is_crossing_handler`'s answer, not
+    this function's: comparing against `enter` here missed `go`/`leave`/`exit`,
+    which delegate to it rather than alias it -- and those are the only three
+    the shipped ferry authors.
     """
     from src.objects import Passageway, resolve_interaction
 
     if not isinstance(target, Passageway) or not getattr(target, "demo_end", False):
         return False
-    return resolve_interaction(target, action) == getattr(target, "enter", None)
+    return target.is_crossing_handler(resolve_interaction(target, action))
+
+
+def _fallback_interaction_message(action, target, events_triggered):
+    """What to say when an interaction captured no narration at all.
+
+    Prose, deliberately not part of the sanitising pipeline: an empty capture
+    is a content gap, and the wording is the answer to it.
+    """
+    # When events were triggered (e.g. PassagewayTransitionEvent), skip the
+    # robotic fallback text — the event UI handles it.
+    if events_triggered:
+        return ""
+    if action == "take_all":
+        return "Jean collects all of the available items."
+    if action == "talk":
+        target_name = getattr(target, "name", None)
+        return f"{target_name} does not respond." if target_name else "No response."
+    return f"Jean successfully completes the '{action}' action."
 
 
 def _unsupported_action_message(target, action):
@@ -168,6 +191,16 @@ class _PreInteractionLocation(NamedTuple):
             or player.location_y != self.y
         )
 
+
+#: Compiled once at import: the same pattern was rebuilt per call in the
+#: event pipeline and again in the interaction pipeline, and a regex that
+#: exists twice is a regex that can be corrected once.
+_ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+#: The verbs that move an item OUT of a container. Named rather than inlined
+#: beside the comment noting that the container verb set is the engine's and
+#: not a copy kept here.
+_CONTAINER_ITEM_VERBS = frozenset({"take", "equip"})
 
 #: The break-away threshold, in feet. Named because the refusal message below
 #: quotes it: as a bare literal in the guard, a retune would silently make the
@@ -378,7 +411,6 @@ class GameService:
         if not output:
             return ""
 
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         lines = output.splitlines()
         filtered_lines = [
             line
@@ -386,7 +418,7 @@ class GameService:
             if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
             and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
-        return ansi_escape.sub("", "\n".join(filtered_lines)).strip()
+        return _ANSI_ESCAPE_RE.sub("", "\n".join(filtered_lines)).strip()
 
     def _resolve_conversation_side(self, char_id, player) -> str:
         """Resolve a portrait's stage side, defaulting by the party rule.
@@ -1868,7 +1900,7 @@ class GameService:
                         # awaiting a move against an empty battlefield.
                         terminal_state = adapter.settle_victory()
                         result["combat_state"] = (
-                            terminal_state.get("battle_state") or terminal_state
+                            terminal_state["battle_state"]
                         )
                         return result
                     adapter.awaiting_input = True
@@ -1877,7 +1909,7 @@ class GameService:
                     adapter.pending_move_index = None
                 adapter_state = adapter.get_combat_state()
                 result["combat_state"] = (
-                    adapter_state.get("battle_state") or adapter_state
+                    adapter_state["battle_state"]
                 )
             return result
 
@@ -2107,6 +2139,73 @@ class GameService:
     # Interaction Methods
     # ========================
 
+    def _open_container_for_loot(self, player, target, tile, session_data):
+        """Open a container and, if it really opened, arm its loot dialog.
+
+        Returns the event payloads to append — a one-element list, or empty
+        when the container stayed shut.
+        """
+        from src.events import LootEvent
+
+        target.open()
+        # Only surface the loot menu if the container actually opened. A
+        # locked container's open() is a no-op (state stays "closed");
+        # creating a LootEvent anyway would expose its contents and bypass the
+        # lock. open() narrates why it failed, which flows out via the
+        # caller's narration capture.
+        if getattr(target, "state", None) != "opened":
+            return []
+
+        loot_event = LootEvent(f"Looting {target.name}", player, tile, target)
+        event_data = EventSerializer.serialize_with_input(loot_event)
+
+        if session_data is not None:
+            # Dedupe-by-name is right here: the name is "Looting
+            # <container>", so a collision is the same container's dialog
+            # re-opened. Left to itself this site minted a second UUID for it,
+            # and the first entry stayed pending forever, blocking input.
+            #
+            # The key is the container's NAME, not its identity, so two
+            # same-named containers on one tile would share a dialog id —
+            # opening the second would hand back the first's contents. That is
+            # a property of the CONTENT, not of this code, so it is enforced
+            # rather than asserted: tests/test_map_object_names_unique.py
+            # scans every shipped map for a tile that breaks it.
+            event_data = self._store_pending_event(
+                loot_event, event_data, session_data, tile=tile
+            )
+
+        return [event_data]
+
+    def _queue_passageway_confirmation(self, player, target, tile, session_data):
+        """Arm the "Jean steps through..." confirmation for a passageway.
+
+        API mode only: the teleport itself waits for the client to acknowledge
+        the event, so `events_before` runs now and the crossing does not.
+        Returns the event payload to append.
+        """
+        from src.events import PassagewayTransitionEvent
+
+        if hasattr(player, "drop_merchandise_items"):
+            player.drop_merchandise_items()
+        if target.events_before:
+            for ev in target.events_before:
+                ev.process()
+
+        trans_event = PassagewayTransitionEvent(
+            name=f"Passage_{target.name}",
+            player=player,
+            tile=tile,
+            passageway=target,
+        )
+        event_data = EventSerializer.serialize_with_input(trans_event)
+        # Dedupe-by-name is right here too: the name is
+        # "Passage_<passageway>", so a collision is the same passageway's
+        # confirmation re-armed.
+        return self._store_pending_event(
+            trans_event, event_data, session_data, tile=tile
+        )
+
     def _dispatch_interaction(self, player, target, action, tile, quantity, session_data):
         """Run one interaction verb against one already-resolved target.
 
@@ -2116,10 +2215,11 @@ class GameService:
         and response assembly.
 
         Returns ``(events_triggered, beta_end, refusal)``. ``refusal`` is None
-        on the normal path and a ready-to-return response dict when the verb
-        resolves to nothing callable. Returned as DATA rather than returned
-        from here, so the caller keeps one exit and its broad ``except``
-        cannot swallow a refusal as if it were a crash.
+        on the normal path and the in-fiction refusal SENTENCE when the verb
+        resolves to nothing callable — a string, not a response body: an
+        engine-dispatch helper has no business knowing the route's wire shape.
+        It is returned rather than raised so the caller's broad ``except``
+        cannot mistake a refusal for a crash.
 
         ``session_data`` is also the API-mode switch: when it is None the
         Passageway confirmation branch is skipped entirely and ``enter()``
@@ -2137,56 +2237,19 @@ class GameService:
         import inspect
 
         from src.objects import Container, Passageway, resolve_interaction
-        from src.items import Item
         from src.inventory_utils import transfer_item
-        from src.events import LootEvent
-
         is_container = isinstance(target, Container)
-        is_item = isinstance(target, Item) or hasattr(
-            target, "_parent_container"
-        )
 
         # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
         # not a copy kept here — the copy is how `search`, `look` and
         # `lift` came to be authored across 6 shipped placements that
         # the API then failed to recognise (#553).
         if is_container and action in Container.LOOK_INSIDE_VERBS:
-            target.open()
-            # Only surface the loot menu if the container actually
-            # opened. A locked container's open() is a no-op (state
-            # stays "closed"); creating a LootEvent anyway would expose
-            # its contents and bypass the lock. open() narrates why it
-            # failed, which flows out via the caller's narration capture.
-            if getattr(target, "state", None) == "opened":
-                # Create a LootEvent and store it
-                loot_event = LootEvent(
-                    f"Looting {target.name}", player, tile, target
-                )
-                event_data = EventSerializer.serialize_with_input(loot_event)
-
-                if session_data is not None:
-                    # Dedupe-by-name is right here: the name is
-                    # "Looting <container>", so a collision is the same
-                    # container's dialog re-opened. Left to itself this
-                    # site minted a second UUID for it, and the first
-                    # entry stayed pending forever, blocking input.
-                    #
-                    # The key is the container's NAME, not its identity,
-                    # so two same-named containers on one tile would
-                    # share a dialog id — opening the second would hand
-                    # back the first's contents. That is a property of
-                    # the CONTENT, not of this code, so it is enforced
-                    # rather than asserted: tests/
-                    # test_map_object_names_unique.py scans every
-                    # shipped map for a tile that breaks it.
-                    event_data = self._store_pending_event(
-                        loot_event, event_data, session_data, tile=tile
-                    )
-
-                events_triggered.append(event_data)
+            events_triggered.extend(
+                self._open_container_for_loot(player, target, tile, session_data)
+            )
         elif (
-            is_item
-            and action in ["take", "equip"]
+            action in _CONTAINER_ITEM_VERBS
             and hasattr(target, "_parent_container")
         ):
             # Use transfer_item for items in containers
@@ -2220,32 +2283,11 @@ class GameService:
             target.enter(player)
             beta_end = True
         elif isinstance(target, Passageway) and session_data is not None:
-            # Passageway in API mode: create a confirmation event so the
-            # frontend can display "Jean steps through..." and wait for
-            # user acknowledgment before teleporting.
-            from src.events import PassagewayTransitionEvent
-
-            # Run events_before (not teleport — that happens on confirm)
-            if hasattr(player, "drop_merchandise_items"):
-                player.drop_merchandise_items()
-            if target.events_before:
-                for ev in target.events_before:
-                    ev.process()
-
-            trans_event = PassagewayTransitionEvent(
-                name=f"Passage_{target.name}",
-                player=player,
-                tile=tile,
-                passageway=target,
+            events_triggered.append(
+                self._queue_passageway_confirmation(
+                    player, target, tile, session_data
+                )
             )
-            event_data = EventSerializer.serialize_with_input(trans_event)
-            # Dedupe-by-name is right here too: the name is
-            # "Passage_<passageway>", so a collision is the same
-            # passageway's confirmation re-armed.
-            event_data = self._store_pending_event(
-                trans_event, event_data, session_data, tile=tile
-            )
-            events_triggered.append(event_data)
         else:
             # Resolve through the engine's alias table rather than
             # naming an attribute directly. A keyword the class does
@@ -2256,10 +2298,11 @@ class GameService:
             # attribute '<verb>'" (#553).
             method = resolve_interaction(target, action)
             if method is None:
-                return events_triggered, beta_end, {
-                    "success": False,
-                    "message": _unsupported_action_message(target, action),
-                }
+                return (
+                    events_triggered,
+                    beta_end,
+                    _unsupported_action_message(target, action),
+                )
             # Check signature to see if we need to pass player
             sig = inspect.signature(method)
             # Get parameter names excluding 'self'
@@ -2280,9 +2323,14 @@ class GameService:
     def _resolve_interaction_target(self, player, target_id, session_data):
         """The tile the player is on, and the entity `target_id` names on it.
 
-        Pure lookup: no narration, no dispatch. Split out of
-        :meth:`interact_with_target`, which was carrying a dozen
-        responsibilities and whose only four-level nesting lived here.
+        Resolves the target AND re-baselines the tile: it sets
+        `player.current_room` and re-applies stored tile modifications (#328)
+        before any dispatch runs. Not a pure lookup, so it cannot be hoisted,
+        memoised or reordered — `persist_tile_state` at the end of the
+        interaction diffs against the state established here. No narration and
+        no dispatch, though. Split out of :meth:`interact_with_target`, which
+        was carrying a dozen responsibilities and whose only four-level
+        nesting lived here.
 
         Ids are the opaque wire handles the room serializers minted (issue
         #518), resolved through the one lookup helper so this side cannot
@@ -2357,15 +2405,14 @@ class GameService:
             round_number=getattr(player, "combat_round", 1),
         )
 
-    def _clean_interaction_output(
-        self, msgs, player, pre_location, events_triggered, action, target
-    ):
-        """Turn the captured narration into the line the player reads.
+    def _clean_interaction_output(self, msgs, player, pre_location):
+        """Sanitise the captured narration into the line the player reads.
 
         One self-contained text pipeline, split out of
         :meth:`interact_with_target`: strip ANSI, drop a destination tile's
-        description when the interaction teleported, filter the LLM noise
-        prefixes, then choose a fallback when nothing was captured at all.
+        description when the interaction teleported, then filter the LLM noise
+        prefixes. Choosing what to say when NOTHING was captured is prose, not
+        text processing, and lives in :func:`_fallback_interaction_message`.
 
         Returns ``(clean_output, teleported)``. The teleport flag is computed
         here because the description strip already needs it and the caller
@@ -2377,8 +2424,7 @@ class GameService:
         output = "\n".join(m.get("text", "") for m in msgs)
 
         # Clean up output (remove ANSI codes)
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        clean_output = ansi_escape.sub("", output)
+        clean_output = _ANSI_ESCAPE_RE.sub("", output)
 
         # Remove excessive newlines and clean up whitespace
         clean_output = re.sub(
@@ -2388,14 +2434,11 @@ class GameService:
 
         # If a teleport occurred, strip the destination tile's description from the
         # interaction output — the frontend fetches the new room via /world/current-room.
-        # Computed once and reused by the response below: asked twice, a later
-        # edit to one call would report a teleport the description strip did
-        # not act on, or the reverse.
         teleported = pre_location.player_moved(player)
         if teleported:
             dest_tile = player.universe.get_tile(player.location_x, player.location_y)
             if dest_tile and hasattr(dest_tile, "description"):
-                dest_desc = ansi_escape.sub("", dest_tile.description).strip()
+                dest_desc = _ANSI_ESCAPE_RE.sub("", dest_tile.description).strip()
                 if dest_desc:
                     clean_output = clean_output.replace(dest_desc, "").strip()
 
@@ -2416,24 +2459,6 @@ class GameService:
             clean_output = (
                 "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
             )
-
-        # Provide fallback message if no output was captured
-        if not clean_output:
-            # When events were triggered (e.g. PassagewayTransitionEvent),
-            # skip the robotic fallback text — the event UI handles it.
-            if events_triggered:
-                clean_output = ""
-            elif action == "take_all":
-                clean_output = "Jean collects all of the available items."
-            elif action == "talk":
-                target_name = getattr(target, "name", None)
-                clean_output = (
-                    f"{target_name} does not respond."
-                    if target_name
-                    else "No response."
-                )
-            else:
-                clean_output = f"Jean successfully completes the '{action}' action."
 
         return clean_output, teleported
 
@@ -2461,7 +2486,6 @@ class GameService:
         Returns:
             Dictionary with interaction result and output text
         """
-        from unittest.mock import patch
 
         tile, target = self._resolve_interaction_target(player, target_id, session_data)
         if target is None:
@@ -2539,10 +2563,15 @@ class GameService:
             ):
 
                 events_triggered, beta_end, refusal = self._dispatch_interaction(
-                    player, target, action, tile, quantity, session_data
+                    player,
+                    target,
+                    action,
+                    tile,
+                    quantity=quantity,
+                    session_data=session_data,
                 )
                 if refusal is not None:
-                    return refusal
+                    return {"success": False, "message": refusal}
         except Exception:
             # str(e) never reaches the player. The prose panel is the game's
             # UI, and an exception rendered there reads as broken content, not
@@ -2557,8 +2586,12 @@ class GameService:
             }
 
         clean_output, teleported = self._clean_interaction_output(
-            _msgs, player, _pre_location, events_triggered, action, target
+            _msgs, player, _pre_location
         )
+        if not clean_output:
+            clean_output = _fallback_interaction_message(
+                action, target, events_triggered
+            )
 
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
         more_events = self.trigger_tile_events(player, tile, session_data)

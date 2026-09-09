@@ -4,7 +4,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import { colors, spacing, fonts, accessibility } from '../styles/theme'
 import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
-import { stackDisplayName, stackCountLabel } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
 
 const ENCH_COLORS = ['#888888', '#44FF88', '#FFD700']
 
@@ -125,7 +125,7 @@ function LootRow({ item, selected, onToggle }) {
         <span style={{ color: '#333', fontSize: 10, marginLeft: 4 }}>[{item.type || 'Item'}]</span>
       </div>
       {/* Qty */}
-      <div style={{ color: colors.secondary, textAlign: 'right' }}>{stackCountLabel(item.quantity)}</div>
+      <div style={{ color: colors.secondary, textAlign: 'right' }}>{stackCountLabel(stackSize(item))}</div>
       {/* Enchantment stars */}
       <div style={{ textAlign: 'center', color: ench ? ench.color : 'transparent', fontSize: 11, letterSpacing: -1 }}>
         {ench ? ench.stars : ''}
@@ -194,6 +194,11 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
       showToast('Cannot collect — carry weight would exceed capacity.')
       return
     }
+    // The RAW engine name, never stackDisplayName: /combat/collect-loot
+    // matches it exactly (GameService.collect_combat_loot), and a stack's name
+    // legitimately ends in " xN". Every DISPLAY read in this file was migrated
+    // to stackDisplayName; this one must not follow, or every stacked item
+    // silently fails to collect. Guarded by LootDialog.test.jsx.
     const names = [...selected].map(i => drops[i].name)
     setIsSubmitting(true)
     try {
@@ -306,15 +311,14 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
         <div style={{ textAlign: 'center', fontSize: '11px' }}>
           <button
             type="button"
-            onClick={() => !isSubmitting && onSkip()}
+            onClick={onSkip}
             disabled={isSubmitting}
             style={{
               background: 'none',
               border: 'none',
               padding: `${spacing.sm} ${spacing.md}`,
-              // It is the destructive control here -- it forfeits the whole
-              // drop -- and it is centred on its own full-width row, so a
-              // height floor wraps nothing.
+              // Centred on its own full-width row, so a height floor wraps
+              // nothing.
               minHeight: accessibility.touchTarget,
               fontFamily: fonts.main,
               fontSize: '11px',

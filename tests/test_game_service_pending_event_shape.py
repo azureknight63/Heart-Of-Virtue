@@ -402,12 +402,19 @@ class TestThePendingEntryHasOneBuilder:
         (``Looting <container>``, ``Passage_<passageway>``), so a name collision
         IS the same dialog re-opened and deduping is the right rule for both.
         """
-        # `_dispatch_interaction`, not `interact_with_target`: the loot and
-        # passageway branches were split out of that method when it passed 400
-        # lines. Same two sites, same routing rule, new host -- the property
-        # this test names is unchanged.
-        assert "_dispatch_interaction" in _callers_of("_store_pending_event")
-        assert "_dispatch_interaction" not in _callers_of("_pending_payload")
+        # Named by their own hosts rather than by whatever method currently
+        # contains them: both started inside `interact_with_target`, moved to
+        # `_dispatch_interaction` when that passed 400 lines, and then to a
+        # function each. Same two sites, same routing rule -- the property
+        # this test names has survived all three moves, and asserting on the
+        # sites themselves is what stops the next move failing it again.
+        storers = _callers_of("_store_pending_event")
+        assert "_open_container_for_loot" in storers
+        assert "_queue_passageway_confirmation" in storers
+
+        minters = _callers_of("_pending_payload")
+        assert "_open_container_for_loot" not in minters
+        assert "_queue_passageway_confirmation" not in minters
 
     def test_the_stage_rekey_shares_the_shape_but_not_the_dedupe(self):
         """A fresh UUID is the entire point of that branch.

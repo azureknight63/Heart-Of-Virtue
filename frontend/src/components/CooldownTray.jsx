@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { colors } from '../styles/theme'
+import { colors, fonts } from '../styles/theme'
 import { categoryColor, categoryIcon } from '../utils/categories'
 import { displayNameOf } from '../utils/combatMoveStatus'
 
@@ -51,14 +51,14 @@ function CooldownTray({ moves }) {
           color: colors.text.muted,
           letterSpacing: '0.12em',
           textTransform: 'uppercase',
-          fontFamily: "'Courier New', monospace",
+          fontFamily: fonts.main,
         }}>
           Cooldown
         </span>
         <span style={{
           fontSize: '0.62rem',
           color: `${colors.primary}99`,
-          fontFamily: "'Courier New', monospace",
+          fontFamily: fonts.main,
         }}>
           {moves.length}
         </span>
@@ -122,7 +122,7 @@ function CollapsedCard({ move }) {
         fontWeight: 'bold',
         lineHeight: 1,
         color: `${color}CC`,
-        fontFamily: "'Courier New', monospace",
+        fontFamily: fonts.main,
       }}>
         {move.cooldown_remaining}
       </span>
@@ -153,7 +153,7 @@ function ExpandedCard({ move }) {
             fontWeight: 'bold',
             letterSpacing: '0.04em',
             color: `${color}DD`,
-            fontFamily: "'Courier New', monospace",
+            fontFamily: fonts.main,
           }}>
             {displayNameOf(move)}
           </span>
@@ -164,7 +164,7 @@ function ExpandedCard({ move }) {
             fontWeight: 'bold',
             lineHeight: 1,
             color,
-            fontFamily: "'Courier New', monospace",
+            fontFamily: fonts.main,
           }}>
             {move.cooldown_remaining}
           </div>

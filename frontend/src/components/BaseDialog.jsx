@@ -42,8 +42,8 @@ const topLevelSubscribers = new Set()
  * positioned inside a panel and never covered the rest of the viewport.
  *
  * Accepted asymmetry: for those same `containerCentered` dialogs the marked
- * regions go `aria-hidden` while staying pointer-interactive, so an assistive
- * -tech user loses a region a sighted user keeps. The alternative — skipping
+ * regions go `aria-hidden` while staying pointer-interactive, so a user on
+ * assistive tech loses a region a sighted user keeps. The alternative — skipping
  * the sync for them — leaves the original #563 hole open on the surface most
  * likely to hit it, so the trade is deliberate.
  *

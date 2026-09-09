@@ -20,9 +20,12 @@ export default function StatsPanel({ player, onClose }) {
     { name: 'Faith', key: 'faith', icon: '📿', tooltip: "Strengthens divine abilities and Jean's resolve. Increases resistance to mental afflictions (Apathy, Hollowed) by 0.5% per point." },
   ]
 
-  const getAttributeColor = (current, base) => {
-    if (current < base) return colors.danger
-    if (current > base) return colors.success
+  // Both readers take the DELTA, not (current, base): they are two renderings
+  // of one three-way classification, and deriving it twice is how the colour
+  // and the marker could come to disagree.
+  const attributeDeltaColor = (delta) => {
+    if (delta < 0) return colors.danger
+    if (delta > 0) return colors.success
     return colors.gold
   }
 
@@ -34,11 +37,8 @@ export default function StatsPanel({ player, onClose }) {
   // now the real delta, rendered beside the bare total — "14 (+4)" over
   // "BASE: 10" is arithmetically true in a way the prefix never was. A value
   // exactly at base has no delta, so it gets no marker.
-  const formatAttributeDelta = (current, base) => {
-    const delta = current - base
-    if (delta === 0) return null
-    return `(${delta > 0 ? '+' : '-'}${Math.abs(delta)})`
-  }
+  const formatAttributeDelta = (delta) =>
+    (delta === 0 ? null : `(${delta > 0 ? '+' : ''}${delta})`)
 
   const resistance = player.resistance || {}
   const states = player.states || []
@@ -167,8 +167,9 @@ export default function StatsPanel({ player, onClose }) {
             {attributes.map((attr) => {
               const current = player[attr.key] || 10
               const base = player[attr.key + '_base'] || 10
-              const color = getAttributeColor(current, base)
-              const deltaLabel = formatAttributeDelta(current, base)
+              const delta = current - base
+              const color = attributeDeltaColor(delta)
+              const deltaLabel = formatAttributeDelta(delta)
               return (
                 <div key={attr.key} title={attr.tooltip} style={{
                   display: 'flex',

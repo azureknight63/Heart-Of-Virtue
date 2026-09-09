@@ -1,6 +1,6 @@
 import { colors, spacing } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
-import { hostileTokenFor } from '../utils/combatEntities'
+import { hostileOnlyTokenFor } from '../utils/combatEntities'
 import HostilityChip from './HostilityChip'
 
 /**
@@ -12,14 +12,14 @@ import HostilityChip from './HostilityChip'
 /**
  * Hostility marker for one content line, or null.
  *
- * Only the type guard is this panel's business. Why the room marks hostiles
- * only — and not allies, as the combat target picker does — is documented once,
- * on `hostileTokenFor` (utils/combatEntities.js), so there is one place to read
- * the policy and one entry point to ask it (issue #558).
+ * Only the type guard is this panel's business. The badge policy itself is
+ * documented once, on `HOSTILITY_TOKENS` (utils/combatEntities.js), and the
+ * room's hostiles-only variant of it on `hostileOnlyTokenFor` beside it — one
+ * place to read the rule, one entry point to ask it (issue #558).
  */
 function hostileMarkerFor(content) {
   if (content.type !== 'npc') return null
-  return hostileTokenFor(content.entity)
+  return hostileOnlyTokenFor(content.entity)
 }
 
 export default function RoomContents({ location, onInteract }) {

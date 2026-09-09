@@ -949,6 +949,29 @@ class Passageway(Object):
         # See end_demo() and issue #552.
         self.demo_end = demo_end
 
+    #: The methods that CROSS this passageway. ``go``/``leave``/``exit``
+    #: DELEGATE to ``enter`` rather than aliasing it, so they are distinct
+    #: bound methods and an identity test against ``enter`` alone answers
+    #: False for all three -- which is how a demo-end passageway stayed
+    #: crossable by the only three verbs the shipped map authors (#552).
+    #: The authored name words (``ferry``, ``landing``) ARE bound to ``enter``
+    #: itself and so answer through that entry.
+    CROSSING_METHOD_NAMES = ("enter", "go", "leave", "exit")
+
+    def is_crossing_handler(self, handler):
+        """True when ``handler`` is one of this passageway's crossing methods.
+
+        The engine owns which verbs mean "use it", so callers that need to
+        treat a crossing specially -- the API's demo-end gate -- ask here
+        rather than naming ``enter`` and silently missing its delegators.
+        """
+        if handler is None:
+            return False
+        return any(
+            handler == getattr(self, name, None)
+            for name in self.CROSSING_METHOD_NAMES
+        )
+
     def end_demo(self, player):
         """Close out the demo at this passageway instead of crossing it.
 
@@ -994,7 +1017,17 @@ class Passageway(Object):
 
     def _commit_teleport(self, player):
         """Perform the actual teleport.  Called directly by CLI enter()
-        or via PassagewayTransitionEvent.process() in API mode."""
+        or via PassagewayTransitionEvent.process() in API mode.
+
+        The demo-end refusal is repeated here, not just in ``enter``, because
+        this is the crossing PRIMITIVE and ``PassagewayTransitionEvent.process``
+        reaches it without passing through ``enter`` at all (src/events.py).
+        Guarding only the polite entry point left the demo's edge crossable by
+        whichever route skipped it (#552).
+        """
+        if self.demo_end:
+            self.end_demo(player)
+            return
         player.teleport(self.teleport_map, self.teleport_tile)
         if self.events_after:
             for event in self.events_after:

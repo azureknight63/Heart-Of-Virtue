@@ -83,6 +83,12 @@ export const isHostileEntity = (entity) => {
  * conveyed by colour alone, and this particular state is the one that decides
  * whether the player swings at their own ally. `red enemy / lime friendly`
  * matches the convention BattlefieldGrid's tokens already use.
+ *
+ * THE POLICY, stated once for both readers below: ALLY requires a POSITIVE
+ * ally signal, never merely the absence of hostility. `is_hostile: false`
+ * means "not aggressive" — a villager, a merchant, a passer-by — and badging
+ * that ALLY asserts something the payload never said, which is the same class
+ * of mistake as badging a hostile friendly.
  */
 export const HOSTILITY_TOKENS = {
   hostile: {
@@ -105,18 +111,13 @@ export const HOSTILITY_TOKENS = {
 };
 
 /**
- * The token for an entity, or null when the payload carries no hostility.
- *
- * ALLY requires a POSITIVE ally signal, not merely the absence of hostility.
- * `is_hostile: false` means "not aggressive" -- a villager, a merchant -- and
- * badging that ALLY states something the payload never said, which is the same
- * class of mistake as badging a hostile friendly. See RoomContents, which
- * applies the same rule to its own surface.
+ * FRIEND OR FOE: the token for an entity, or null when the payload says
+ * nothing. The combat target picker's variant. Policy on HOSTILITY_TOKENS.
  *
  * Only NPCSerializer emits `is_hostile` and only
  * ApiCombatAdapter._build_target_entry emits `is_ally`, so the two spellings
- * do not co-occur today; the gate is cheap and a serializer change is what
- * would make it matter.
+ * do not co-occur today; the ally gate is cheap and a serializer change is
+ * what would make it matter.
  */
 export const hostilityTokenFor = (entity) => {
   if (isHostileEntity(entity) === true) return HOSTILITY_TOKENS.hostile;
@@ -125,25 +126,31 @@ export const hostilityTokenFor = (entity) => {
 };
 
 /**
- * The token for an entity that should be marked ONLY when hostile.
+ * HOSTILE ONLY: the room panel's variant, which never badges ALLY.
  *
- * The room panel's policy: `is_hostile: false` there means "not aggressive" —
- * a villager, a merchant — so badging it ALLY would assert something the
- * payload never said. The target picker's policy differs (`is_ally: true` is a
- * real party member), which is why both live here beside the tokens rather
- * than one of them living in a component.
+ * Named for its policy rather than one letter away from `hostilityTokenFor`,
+ * because the two are not interchangeable and the difference is currently
+ * unobservable: `NPCSerializer.serialize` emits only `is_hostile` and
+ * `_build_target_entry` emits only `is_ally`, so on every payload either
+ * surface can receive today these two return the same value. The fork is a
+ * deliberate guard against a serializer that later emits both — which is
+ * exactly the kind of thing a consolidation pass deletes if the names look
+ * like typos of each other.
+ *
+ * A room's party members are not marked at all: the room panel has no ally
+ * signal to read, and absence of a chip is its "nothing to worry about".
  */
-export const hostileTokenFor = (entity) =>
+export const hostileOnlyTokenFor = (entity) =>
   (isHostileEntity(entity) === true ? HOSTILITY_TOKENS.hostile : null)
 
 /**
  * Is any LIVING enemy outside the Follow viewport centred on Jean?
  *
  * Lives here, beside `isLiving`, rather than in Battlefield: the battlefield
- * camera hook asks this question, and passing it in as a bare function gave
- * the hook no checkable contract — any caller could have supplied a different
- * predicate silently. `halfView` is the viewport's half-extent in cells,
- * supplied by the caller that owns the grid size.
+ * camera hook is still handed this as an injected predicate, but there is now
+ * one shared implementation to inject, testable without mounting Battlefield.
+ * `halfView` is the viewport's half-extent in cells, supplied by the caller
+ * that owns the grid size.
  */
 export const anyEnemyOutsideView = (state, halfView) => {
   const player = state?.player;

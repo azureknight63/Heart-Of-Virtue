@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isLiving, isHostileEntity, hostilityTokenFor, HOSTILITY_TOKENS } from './combatEntities';
+import { isLiving, isHostileEntity, hostilityTokenFor, HOSTILITY_TOKENS, hostileOnlyTokenFor } from './combatEntities';
 
 describe('isLiving', () => {
   it('reads the canonical hp field', () => {
@@ -160,5 +160,27 @@ describe('hostilityTokenFor — ALLY needs a positive ally signal', () => {
   it('shows nothing when the payload is silent', () => {
     expect(hostilityTokenFor({})).toBeNull();
     expect(hostilityTokenFor(null)).toBeNull();
+  });
+});
+
+describe('hostileOnlyTokenFor -- the room panel variant', () => {
+  // Direct coverage for the fork. Without it the only exercise
+  // `hostileOnlyTokenFor` got was through RoomContents, which cannot reach
+  // the branch that distinguishes it from `hostilityTokenFor`: the room
+  // payload has no `is_ally` to supply.
+  it('refuses to badge a party member ALLY even when the payload says so', () => {
+    expect(hostilityTokenFor({ is_ally: true })?.label).toBe('ALLY');
+    expect(hostileOnlyTokenFor({ is_ally: true })).toBeNull();
+  });
+
+  it('badges a hostile from either spelling, like its sibling', () => {
+    expect(hostileOnlyTokenFor({ is_hostile: true })?.label).toBe('HOSTILE');
+    expect(hostileOnlyTokenFor({ is_ally: false })?.label).toBe('HOSTILE');
+  });
+
+  it('shows nothing for a non-aggressive NPC or a silent payload', () => {
+    expect(hostileOnlyTokenFor({ is_hostile: false })).toBeNull();
+    expect(hostileOnlyTokenFor({})).toBeNull();
+    expect(hostileOnlyTokenFor(null)).toBeNull();
   });
 });

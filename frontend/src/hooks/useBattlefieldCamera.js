@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from '../components/BattlefieldGrid'
 
+//: How long the "enemy off-screen" banner stays up before dismissing itself.
+const BANNER_DISMISS_MS = 2500
+
 /**
  * Everything that decides how the battlefield is framed, in one place.
  *
- * This was three useState, two useRef, two effects, a callback and three
- * derived values inline in a 390-line component that also owns beat-state
- * accumulation and log-index sync. Their lifetimes had already diverged once
- * and produced a real bug (see the per-fight reset below), which is the usual
- * fee for spreading one concern across a component's whole body.
+ * This was three useState, one useRef, two effects, a callback and three
+ * derived values inline in a component that also owns beat-state accumulation
+ * and log-index sync. Their lifetimes had already diverged once and produced a
+ * real bug (see the per-fight reset below), which is the usual fee for
+ * spreading one concern across a component's whole body.
  *
  * @param {object} combat the combat payload
  * @param {object} displayState the beat state currently rendered
  * @param {Function} anyEnemyOffScreen geometry predicate, injected so this hook
- *   holds no opinion about viewport size
+ *   holds no opinion about viewport size. MUST be referentially stable —
+ *   module-level, or wrapped in `useCallback` — because the settle effect
+ *   below deliberately omits it from its dep list; a new identity every render
+ *   would silently stop that effect from seeing fresh geometry.
  * @returns {{zoom, selectViewMode, enemyOffScreen, bannerVisible, bannerMessage}}
  */
 export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
@@ -79,7 +85,7 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
     // re-evaluate against later, per-action beat states -- the bug this replaced.
     setZoom(outsideAtEntry ? VIEW_MODE_FIT : VIEW_MODE_FOLLOW)
     setDidAutoFit(outsideAtEntry)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cameraKey ONLY, on purpose: `combat` changes on every poll, and re-running then is precisely the bug this replaced (beat_states is per-action, so a later payload's [0] is not how the fight opened). anyEnemyOffScreen is a module-level function and cannot change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cameraKey ONLY, on purpose: `combat` changes on every poll, and re-running then is precisely the bug this replaced (beat_states is per-action, so a later payload's [0] is not how the fight opened). anyEnemyOffScreen is omitted under the referential-stability contract the @param states, not because it is known to be constant here.
   }, [cameraKey])
 
   // Rising edge on "an enemy left the Follow viewport" -> flash a one-shot
@@ -92,7 +98,7 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
       // A rising-edge, self-dismissing banner: a timed notification about a
       // transition, not a function of current state, retired by the timeout below.
       setShowOffScreenBanner(true)
-      const t = setTimeout(() => setShowOffScreenBanner(false), 2500)
+      const t = setTimeout(() => setShowOffScreenBanner(false), BANNER_DISMISS_MS)
       return () => clearTimeout(t)
     }
     if (!enemyOutsideFollowView) {

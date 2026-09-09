@@ -13,19 +13,21 @@ import { useCoarsePointer } from '../hooks/useCoarsePointer'
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const MAX_BEAT_STATES = 200;
 
+// The two tabs, driven from a table as VIEW_MODE_OPTIONS below is. Their
+// style blocks were identical but for the key and the label, which is why
+// `touchTargetStyle` had to be added to both in lockstep. `labelFor` rather
+// than `label`: one of the two counts something, so unlike VIEW_MODE_OPTIONS
+// these are functions of the payload.
+const TAB_OPTIONS = [
+  { key: 'overview', labelFor: () => 'Overview' },
+  { key: 'enemies', labelFor: (combat) => `Enemies (${combat?.enemies?.length || 0})` },
+];
+
 // Both view modes are always shown, each labelled with what it does. The old
 // control was a single button captioned with the mode it was *currently in*
 // ("View: Normal"), which reads as a state on a control that acts — so there
 // was no way to tell whether the caption named where you were or where the
 // click would take you.
-// The two tabs, driven from a table exactly as VIEW_MODE_OPTIONS below is:
-// their style blocks were identical but for the key and the label, which is
-// how `touchTargetStyle` had to be added to both in lockstep.
-const TAB_OPTIONS = [
-  { key: 'overview', label: () => 'Overview' },
-  { key: 'enemies', label: (combat) => `Enemies (${combat?.enemies?.length || 0})` },
-];
-
 const VIEW_MODE_OPTIONS = [
   {
     mode: VIEW_MODE_FOLLOW,
@@ -57,7 +59,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   // so there is never a render where displayState has the top-level API response shape.
   const [displayState, setDisplayState] = useState(combat?.beat_states?.[0] ?? combat)
 
-  // Framing lives in its own hook: five pieces of state, two effects and a
+  // Framing lives in its own hook: four pieces of state, two effects and a
   // callback that all answer one question, in a component that also owns beat
   // accumulation and log-index sync.
   const { zoom, selectViewMode, enemyOffScreen, bannerVisible, bannerMessage } =
@@ -129,6 +131,10 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     ? { minHeight: accessibility.touchTarget, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
     : {};
 
+  // Named once: five separate places in this render gate on it, and a sixth
+  // that spelled it differently would be a tab that half-renders.
+  const isOverview = selectedTab === 'overview';
+
   if (!displayState) {
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.text.muted }}>
@@ -147,7 +153,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
         style={{ display: 'flex', gap: '6px', rowGap: '6px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}
       >
         <div style={{ display: 'flex', gap: '6px' }}>
-          {TAB_OPTIONS.map(({ key, label }) => (
+          {TAB_OPTIONS.map(({ key, labelFor }) => (
             <button
               key={key}
               onClick={() => setSelectedTab(key)}
@@ -159,14 +165,14 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
                 cursor: 'pointer'
               }}
             >
-              {label(combat)}
+              {labelFor(combat)}
             </button>
           ))}
         </div>
 
         {/* View mode — a segmented control, so the available modes and the
             active one are both visible at a glance. */}
-        {selectedTab === 'overview' && (
+        {isOverview && (
           <div
             role="group"
             aria-label="Battlefield view mode"
@@ -210,7 +216,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           living-enemy count and the grid above it, both of which already read
           the scrub-consistent per-beat snapshot rather than the live
           top-level state. */}
-      {selectedTab === 'overview' && (
+      {isOverview && (
         <div
           style={{
             display: 'flex', gap: spacing.md, alignItems: 'center',
@@ -231,7 +237,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           <GlossaryHelpButton style={{ marginLeft: 'auto' }} />
         </div>
       )}
-      {selectedTab === 'overview' && beatTimelineEnabled && (
+      {isOverview && beatTimelineEnabled && (
         <BeatTimeline combat={displayState} />
       )}
 
@@ -263,7 +269,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           combatSpeed={combatSpeed}
         />
 
-        {selectedTab === 'overview' && bannerVisible && (
+        {isOverview && bannerVisible && (
           <div
             className="animate-in fade-in slide-in-from-top-2 duration-200"
             style={{ position: 'absolute', top: '8px', left: '50%', transform: 'translateX(-50%)', zIndex: 160, pointerEvents: 'none' }}
@@ -275,7 +281,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           </div>
         )}
 
-        {selectedTab === 'overview' && (
+        {isOverview && (
           <div
             style={{ position: 'absolute', bottom: '6px', left: '8px', zIndex: 140, pointerEvents: 'none', fontSize: '9px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
             aria-label="Trailing dots show recent movement paths"

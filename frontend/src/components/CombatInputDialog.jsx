@@ -83,7 +83,6 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                             <div
                                 key={target.id}
                                 data-testid="target-card"
-                                data-target-hostility={hostility ? hostility.key : 'unknown'}
                                 onMouseEnter={() => onTargetHover && onTargetHover(target.id)}
                                 onMouseLeave={() => onTargetHover && onTargetHover(null)}
                                 style={{

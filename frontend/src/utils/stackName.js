@@ -10,6 +10,22 @@
 const BAKED_COUNT = /\s[x×](\d+)$/i;
 
 /**
+ * How many of this item the stack holds.
+ *
+ * The wire carries the size under TWO names -- `count` from
+ * `ItemSerializer`/`ShopSerializer`, `quantity` from the inventory serializer
+ * and the combat adapter -- and both are live. `stackDisplayName` reads them
+ * itself, so before this existed every badge call site re-picked the spelling
+ * by hand. Picking the absent one is silent: `Number(undefined) > 1` is false,
+ * the badge renders '', and `stackDisplayName` still strips the baked "x3" off
+ * the name, so the count disappears from the UI with nothing thrown.
+ *
+ * @param {{count?: number, quantity?: number}|null} item
+ * @returns {number} the stack size, 1 when the payload says nothing
+ */
+export const stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1);
+
+/**
  * The name to SHOW for a stackable item, with the engine's baked-in count
  * removed.
  *
@@ -43,7 +59,7 @@ export const stackDisplayName = (item) => {
   const name = item?.name;
   if (typeof name !== 'string') return '';
 
-  const size = Number(item.count ?? item.quantity ?? 1);
+  const size = stackSize(item);
   if (!Number.isFinite(size) || size <= 1) return name;
 
   const baked = name.match(BAKED_COUNT);
@@ -57,6 +73,10 @@ export const stackDisplayName = (item) => {
  * with nothing marking which was canonical, so normalising one site gave no
  * clue what to normalise to. `×` wins on count and is the typographically
  * correct multiplication sign.
+ *
+ * Takes a NUMBER, not an item: one caller (the shop row) holds only a
+ * destructured count. Anything holding the item itself should pass
+ * `stackSize(item)` rather than re-picking `count` vs `quantity` — see there.
  *
  * Returns '' for an unstacked item so callers can render it unconditionally.
  */

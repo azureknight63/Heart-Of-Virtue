@@ -59,9 +59,11 @@ const labelStyle = {
  * Deliberately a <span> and NOT a <label htmlFor>: two of its uses caption a
  * button group ("Severity") and a set of star buttons ("Ratings (optional)"),
  * neither of which is a labelable form control, so `htmlFor` would be invalid
- * there. The controls carry their own `aria-label` (or, for the star buttons, a `title`) instead — the established
- * idiom in this codebase — which is why every field must pass `ariaLabel`
- * matching its caption (#563 item 2).
+ * there. The controls carry their own `aria-label` (or, for the star buttons,
+ * a `title`) instead — the established idiom in this codebase — which is why
+ * every field must carry its caption as its own accessible name: the
+ * `ariaLabel` prop on TextInput/TextArea, or `aria-label` on a `role="group"`
+ * wrapper (#563 item 2). `LabeledField` below is what keeps the two in step.
  */
 function FieldLabel({ children, required }) {
   return (
@@ -79,10 +81,11 @@ function FieldLabel({ children, required }) {
  * visible label and the control's accessible name.
  *
  * Because the caption is a <span> rather than a <label htmlFor> (see
- * FieldLabel), every field here needs the string twice, and it used to be
- * typed out twice at each of nine sites — the shape that drifts silently: a
- * reworded caption leaves a screen reader announcing the old name and nothing
- * fails.
+ * FieldLabel), every field here needs the string twice — and without this
+ * wrapper it would be typed out twice at each of nine sites, which is the
+ * shape that drifts silently: a reworded caption leaves a screen reader
+ * announcing the old name and nothing fails. It had already happened once,
+ * to the ratings group.
  *
  * `children` is a function of the caption so that a control naming itself
  * through a prop (`ariaLabel` on TextArea/TextInput) and one naming itself
@@ -144,6 +147,32 @@ function TextArea({ value, onChange, placeholder, rows = 3, ariaLabel }) {
   )
 }
 
+/**
+ * One free-text field: caption, textarea, and the accessible name that has to
+ * match it.
+ *
+ * The six of them differed only in caption, row count, state key and
+ * placeholder, and each carried nine lines of `LabeledField` render-prop
+ * ceremony around those four values. The ceremony now exists once; the two
+ * `role="group"` fields and the Title input still reach for `LabeledField`
+ * directly, because they name themselves through a different channel.
+ */
+function LabeledTextArea({ label, rows, field, placeholder, fields, onChange }) {
+  return (
+    <LabeledField label={label}>
+      {(name) => (
+        <TextArea
+          rows={rows}
+          ariaLabel={name}
+          value={fields[field]}
+          onChange={(e) => onChange(field, e.target.value)}
+          placeholder={placeholder}
+        />
+      )}
+    </LabeledField>
+  )
+}
+
 function StarRating({ dimension, value, onChange }) {
   const [hovered, setHovered] = useState(0)
 
@@ -189,39 +218,30 @@ function StarRating({ dimension, value, onChange }) {
 function BugForm({ fields, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <LabeledField label="Steps to Reproduce">
-        {(name) => (
-          <TextArea
-            rows={3}
-            ariaLabel={name}
-            value={fields.steps}
-            onChange={(e) => onChange('steps', e.target.value)}
-            placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
-          />
-        )}
-      </LabeledField>
-      <LabeledField label="Expected Behavior">
-        {(name) => (
-          <TextArea
-            rows={2}
-            ariaLabel={name}
-            value={fields.expected}
-            onChange={(e) => onChange('expected', e.target.value)}
-            placeholder="What should have happened?"
-          />
-        )}
-      </LabeledField>
-      <LabeledField label="Actual Behavior">
-        {(name) => (
-          <TextArea
-            rows={2}
-            ariaLabel={name}
-            value={fields.actual}
-            onChange={(e) => onChange('actual', e.target.value)}
-            placeholder="What actually happened?"
-          />
-        )}
-      </LabeledField>
+      <LabeledTextArea
+        label="Steps to Reproduce"
+        rows={3}
+        field="steps"
+        placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
+        fields={fields}
+        onChange={onChange}
+      />
+      <LabeledTextArea
+        label="Expected Behavior"
+        rows={2}
+        field="expected"
+        placeholder="What should have happened?"
+        fields={fields}
+        onChange={onChange}
+      />
+      <LabeledTextArea
+        label="Actual Behavior"
+        rows={2}
+        field="actual"
+        placeholder="What actually happened?"
+        fields={fields}
+        onChange={onChange}
+      />
       {/* The caption is a <span>, so without the group the three buttons read
           as three loose controls with no idea what they select (#563 item 2). */}
       <LabeledField label="Severity">
@@ -268,28 +288,22 @@ function BugForm({ fields, onChange }) {
 function FeatureForm({ fields, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <LabeledField label="Description">
-        {(name) => (
-          <TextArea
-            rows={3}
-            ariaLabel={name}
-            value={fields.description}
-            onChange={(e) => onChange('description', e.target.value)}
-            placeholder="Describe the feature you'd like to see..."
-          />
-        )}
-      </LabeledField>
-      <LabeledField label="Use Case / Why">
-        {(name) => (
-          <TextArea
-            rows={3}
-            ariaLabel={name}
-            value={fields.use_case}
-            onChange={(e) => onChange('use_case', e.target.value)}
-            placeholder="Why would this improve the game?"
-          />
-        )}
-      </LabeledField>
+      <LabeledTextArea
+        label="Description"
+        rows={3}
+        field="description"
+        placeholder="Describe the feature you'd like to see..."
+        fields={fields}
+        onChange={onChange}
+      />
+      <LabeledTextArea
+        label="Use Case / Why"
+        rows={3}
+        field="use_case"
+        placeholder="Why would this improve the game?"
+        fields={fields}
+        onChange={onChange}
+      />
     </div>
   )
 }
@@ -297,17 +311,14 @@ function FeatureForm({ fields, onChange }) {
 function GeneralForm({ fields, onChange, ratings, onRatingChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-      <LabeledField label="Message">
-        {(name) => (
-          <TextArea
-            rows={4}
-            ariaLabel={name}
-            value={fields.message}
-            onChange={(e) => onChange('message', e.target.value)}
-            placeholder="Share your thoughts about the game..."
-          />
-        )}
-      </LabeledField>
+      <LabeledTextArea
+        label="Message"
+        rows={4}
+        field="message"
+        placeholder="Share your thoughts about the game..."
+        fields={fields}
+        onChange={onChange}
+      />
       {/* The accessible name is the caption verbatim, "(optional)" included:
           the parenthetical is how a sighted player learns the stars can be
           skipped, and a screen-reader user has no other source for it. */}
@@ -369,7 +380,10 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
     setTitle('')
     setTitleError(false)
     // The panel says "your report is still here"; after a tab switch it is
-    // not -- title and body are wiped and the form is a different one.
+    // not -- the title is wiped and a different form takes its place. (The
+    // three bodies are separate states and DO survive a round trip, which is
+    // deliberate, but the error the panel refers to belonged to the form the
+    // player just left.)
     setSubmitError(null)
   }
 
