@@ -1527,6 +1527,14 @@ class ApiCombatAdapter:
                     self._reset_move_state_for_new_fight(ally)
 
                 for enemy in self.player.combat_list:
+                    # `in_combat` is NOT set here, unlike the reinit branch
+                    # below and unlike the ally loop above: on a fresh fight
+                    # the flag is already True, set by whoever enrolled the
+                    # enemy (functions.check_for_combat, or
+                    # GameService.start_combat). Reinit has no such caller --
+                    # it re-enters mid-fight for reinforcements -- which is
+                    # why only that branch sets it. Every other asymmetry in
+                    # this block is spelled out, so this one is too.
                     # Provide a back-reference for API-mode drop/loot tracking
                     self._attach_player_ref(enemy)
                     self._reset_move_state_for_new_fight(enemy)

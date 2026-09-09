@@ -26,6 +26,15 @@ findings on a tree the reviewers have been over. On its first run it found two
 MORE instances nobody had reported (``InteractPanel.jsx`` and
 ``useCombatCoordinator.js``), which is the whole argument for not relying on
 vigilance here.
+
+**Scope: JS/JSX only.** The ``combat_adapter.py`` instance above is listed
+because it is the same defect, not because this file catches it. Python's two
+shapes resist a cheap rule — a ``def``'s docstring is bound by the language
+rather than by adjacency, so it cannot be severed at all, and the ``#:``
+fusion that happened here was two blocks each correctly followed by an
+assignment, distinguishable only by reading what the prose is *about*. A rule
+narrow enough to be sound there would have caught nothing; one loose enough to
+fire would be noise. Better an honest gap than a guard that cries wolf.
 """
 
 import io
@@ -76,11 +85,12 @@ _DECLARED = re.compile(
 
 
 def _doc_blocks(lines):
-    """Yield `(start, subject_line, gapped)` for each `/** */` block.
+    """Yield `(start, block_text, subject_line)` for each `/** */` block.
 
-    `subject_line` is the next non-blank line after the block; `gapped` says
-    whether a blank line separated them, which is itself a severance (an
-    editor's hover-doc and every doc tool bind on adjacency).
+    `subject_line` is the next non-blank line after the block. A blank line
+    between the two is deliberately NOT reported: 26 blocks in this tree sit
+    a line above their subject, most of them legitimate file headers, so a
+    rule on the gap alone would be noise rather than a guard.
     """
     index = 0
     while index < len(lines):
@@ -95,7 +105,6 @@ def _doc_blocks(lines):
                 index,
                 "\n".join(lines[index:end + 1]),
                 lines[after] if after < len(lines) else "",
-                after > end + 1,
             )
             index = end + 1
         else:
@@ -120,7 +129,7 @@ def test_a_param_block_sits_on_something_callable(path):
     lines = io.open(path, encoding="utf-8").read().split("\n")
     offenders = [
         (start + 1, subject.strip()[:70])
-        for start, block, subject, _gapped in _doc_blocks(lines)
+        for start, block, subject in _doc_blocks(lines)
         if ("@param" in block or "@returns" in block)
         and not _CALLABLE_SUBJECT.match(subject)
     ]
@@ -156,7 +165,7 @@ def test_a_block_naming_a_declaration_sits_on_that_declaration(path):
     }
 
     offenders = []
-    for start, _block, subject, _gapped in _doc_blocks(lines):
+    for start, _block, subject in _doc_blocks(lines):
         first = lines[start + 1] if start + 1 < len(lines) else ""
         match = re.match(r"\s*\*\s*([A-Z][A-Za-z0-9_]{2,})\b", first)
         if not match or match.group(1) not in declared:

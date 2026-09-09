@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useBattlefieldCamera } from '../hooks/useBattlefieldCamera'
+import { useAccumulatedBeatStates } from '../hooks/useAccumulatedBeatStates'
 
 import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
 import BeatTimeline from './BeatTimeline'
@@ -11,7 +12,6 @@ import { useMobile } from '../hooks/useMobile'
 import { useCoarsePointer } from '../hooks/useCoarsePointer'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
-const MAX_BEAT_STATES = 200;
 
 // The two tabs, driven from a table as VIEW_MODE_OPTIONS below is. Their
 // style blocks were identical but for the key and the label, which is why
@@ -65,10 +65,13 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   const { zoom, selectViewMode, enemyOffScreen, bannerVisible, bannerMessage } =
     useBattlefieldCamera(combat, displayState, anyEnemyOffScreen)
 
-  // Accumulated beat states across multiple actions so trails persist across turns
-  const [accBeatStates, setAccBeatStates] = useState([])
-  const baseOffsetRef = useRef(0)
-  const prevBeatStatesRef = useRef(null)
+  // The breadcrumb trail and where in it we are. Its own hook: the state,
+  // the ring buffer and the offset invariant belong together, and the offset
+  // used to be read ~180 lines from the updater that writes it.
+  const { allBeatStates, currentBeatIndex } = useAccumulatedBeatStates(
+    combat,
+    currentLogIndex
+  )
 
   // `displayState` has THREE writers, and they are ordered, not independent:
   // the useState above seeds it, this effect rewinds it to the payload's
@@ -84,30 +87,6 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     setDisplayState(openingState(combat))
   }, [combat])
 
-  // Accumulate beat states so breadcrumb trails survive across player turns
-  useEffect(() => {
-    const incoming = combat?.beat_states
-    if (!incoming || incoming === prevBeatStatesRef.current) return
-    prevBeatStatesRef.current = incoming
-
-    if (!combat?.combat_active) {
-      // Combat ended — reset accumulation
-      setAccBeatStates([])
-      baseOffsetRef.current = 0
-      return
-    }
-
-    setAccBeatStates(prev => {
-      const next = [...prev, ...incoming]
-      if (next.length > MAX_BEAT_STATES) {
-        const dropped = next.length - MAX_BEAT_STATES
-        baseOffsetRef.current = Math.max(0, prev.length - dropped)
-        return next.slice(dropped)
-      }
-      baseOffsetRef.current = prev.length
-      return next
-    })
-  }, [combat?.beat_states, combat?.combat_active])
 
   // The LAST writer of displayState, and so the winner whenever its guard
   // holds -- see the ordering note on the rewind effect above.
@@ -286,9 +265,8 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           // repeatedly mid-fight instead of once per fight.
           combatId={combat?.combat_id}
           combatActive={combat?.combat_active}
-          allBeatStates={accBeatStates}
-          /* eslint-disable-next-line react-hooks/refs -- baseOffsetRef is written by the same setAccBeatStates updater that produces accBeatStates, so offset and window are one value; promoting it to state would render one frame pairing a new window with the old offset, jumping the grid to the wrong beat. */
-          currentBeatIndex={baseOffsetRef.current + (currentLogIndex ?? 0)}
+          allBeatStates={allBeatStates}
+          currentBeatIndex={currentBeatIndex}
           combatLog={combat?.log || []}
           tab={selectedTab}
           zoom={zoom}
