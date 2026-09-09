@@ -418,13 +418,32 @@ describe('BaseDialog', () => {
      * fixed ancestor.
      */
     describe('background modality', () => {
-      const background = () => {
+      // Every node these tests put on document.body, so the teardown below can
+      // take them all back. Tracking the nodes rather than querying for
+      // `[data-modal-background]` is deliberate: the last test in here appends
+      // a deliberately UNMARKED region, and a selector-based sweep would walk
+      // straight past it and leak a stray <button> into the focus-trap tests
+      // further down the file.
+      const appended = []
+
+      const appendToBody = (html, marked) => {
         const el = document.createElement('div')
-        el.setAttribute('data-modal-background', 'true')
-        el.innerHTML = '<button>Background control</button>'
+        if (marked) el.setAttribute('data-modal-background', 'true')
+        el.innerHTML = html
         document.body.appendChild(el)
+        appended.push(el)
         return el
       }
+
+      const background = () => appendToBody('<button>Background control</button>', true)
+
+      // document.body is not RTL's to clean, and each test used to remove its
+      // own node AFTER its assertions -- so one failing assertion leaked a
+      // marked region that `syncBackgroundModality` went on mutating for the
+      // rest of the file. This runs however a test ends.
+      afterEach(() => {
+        appended.splice(0).forEach((el) => el.remove())
+      })
 
       it('hides marked background regions while a dialog is open', () => {
         const el = background()
@@ -436,7 +455,6 @@ describe('BaseDialog', () => {
 
         expect(el.getAttribute('aria-hidden')).toBe('true')
         unmount()
-        el.remove()
       })
 
       it('reveals them again when the dialog closes', () => {
@@ -451,7 +469,6 @@ describe('BaseDialog', () => {
         // Removed, not set to "false": aria-hidden="false" is honoured
         // inconsistently and leaves a puzzling attribute on the live screen.
         expect(el.hasAttribute('aria-hidden')).toBe(false)
-        el.remove()
       })
 
       it('leaves the background hidden while any dialog is still open', () => {
@@ -471,7 +488,6 @@ describe('BaseDialog', () => {
 
         first.unmount()
         expect(el.hasAttribute('aria-hidden')).toBe(false)
-        el.remove()
       })
 
       it('does not hide the dialog itself', () => {
@@ -489,15 +505,12 @@ describe('BaseDialog', () => {
         expect(dialog.closest('[aria-hidden="true"]')).toBeNull()
         expect(screen.getByRole('button', { name: 'Fight' })).toBeInTheDocument()
         unmount()
-        el.remove()
       })
 
       it('leaves an unmarked region alone', () => {
         // Opt-in: the marker says "I am background". Hiding everything that
         // is not the dialog would catch toasts and the live announcer.
-        const el = document.createElement('div')
-        el.innerHTML = '<button>Toast</button>'
-        document.body.appendChild(el)
+        const el = appendToBody('<button>Toast</button>', false)
 
         const { unmount } = render(
           <BaseDialog title="Enemy Encounter" onClose={mockOnClose}><button>Fight</button></BaseDialog>
@@ -505,7 +518,6 @@ describe('BaseDialog', () => {
         expect(el.hasAttribute('aria-hidden')).toBe(false)
 
         unmount()
-        el.remove()
       })
     })
 
@@ -647,23 +659,24 @@ describe('BaseDialog', () => {
      * falls through to `container.focus()`. Landing on the container is the
      * right answer whenever the only alternative is the dismiss button.
      */
-    it('does not land initial focus on the dismiss button', () => {
-      render(
-        <BaseDialog title="Test" onClose={mockOnClose}>
-          <button>Inner Button</button>
-        </BaseDialog>
-      )
-      expect(document.activeElement).not.toHaveTextContent('✕')
-    })
-
     it('moves focus to the first meaningful control, skipping the ✕', () => {
+      // Identity, not `toHaveTextContent`: that matcher is a SUBTREE substring
+      // match, so against the focused element it answered the wrong question
+      // in both directions -- it passed when focus landed on the dialog
+      // container (whose textContent contains every label in the dialog) and
+      // failed when the container was the correct answer. A `not
+      // .toHaveTextContent('✕')` sibling assertion was removed for the same
+      // reason; the container case is covered by its own test below.
       render(
         <BaseDialog title="Test" onClose={mockOnClose}>
           <button>Inner Button</button>
           <button>Second Button</button>
         </BaseDialog>
       )
-      expect(document.activeElement).toHaveTextContent('Inner Button')
+      expect(document.activeElement).toBe(screen.getByText('Inner Button'))
+      expect(document.activeElement).not.toBe(
+        screen.getAllByRole('button').find((b) => b.textContent === '✕')
+      )
     })
 
     it('focuses the container when the ✕ is the only focusable thing', () => {

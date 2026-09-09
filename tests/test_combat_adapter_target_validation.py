@@ -34,6 +34,7 @@ from tests._combat_fixtures import (
     make_player,
     place,
     repair_proximity,
+    seeded,
 )
 
 #: Disrupt rolls ``random.randint(0, 100)`` in ``src.moves._utility`` against
@@ -52,7 +53,20 @@ def _build(move_cls=moves.Disrupt, ally_distance=3):
 
     Two enemies sit inside ``Disrupt``'s ``mvrange`` so the adapter genuinely
     enters ``target_selection`` (a single viable target auto-resolves instead).
+
+    Built under ``seeded``: ``_ALWAYS_HITS`` forces the to-hit roll, but the
+    DAMAGE roll downstream of it is unseeded, and
+    ``test_valid_in_range_enemy_still_resolves`` asserts the target actually
+    lost HP. It was observed failing once in a full run and passing in
+    isolation and across a 15-seed sweep -- which is the signature of an
+    unseeded assertion with a narrow margin, not of a real defect, and is
+    exactly what CLAUDE.md says to seed rather than loosen.
     """
+    with seeded(20260909):
+        return _build_unseeded(move_cls, ally_distance)
+
+
+def _build_unseeded(move_cls, ally_distance):
     player = make_player(
         weapon="Sword", strength=20, finesse=20, endurance=20, speed=20
     )

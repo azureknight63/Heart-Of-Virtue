@@ -20,6 +20,7 @@ set out of the ``viable()`` source.
 import ast
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -29,11 +30,21 @@ import src.items as items  # noqa: E402
 import src.moves as moves  # noqa: E402
 from _combat_fixtures import make_adapter, make_player, seeded  # noqa: E402
 from _moves_scan import move_module_paths  # noqa: E402
-from src.api.combat_adapter import _NO_WEAPON_REASON  # noqa: E402
+from src.api.combat_adapter import (  # noqa: E402
+    CANNOT_USE_REASON,
+    MELEE_REACH_FT,
+    NO_TARGET_IN_RANGE_REASON,
+    NO_WEAPON_REASON,
+    TOO_FAR_REASON,
+    _outreaches_melee,
+    move_unavailability_reason,
+)
 from src.moves._base import Move  # noqa: E402
 from src.npc import RockRumbler  # noqa: E402
 
-CATCH_ALL = "Cannot use this move"
+#: Imported rather than retyped: the adapter owns the wording, and a
+#: local copy goes on asserting a sentence the code stopped emitting.
+CATCH_ALL = CANNOT_USE_REASON
 
 #: Attribute names an expression must mention for its ``.subtype`` read to be
 #: about the WIELDED WEAPON. Without this, ``ShootBow``'s inventory scan
@@ -230,7 +241,7 @@ def test_an_empty_hand_still_reads_as_no_weapon(sword_vs_rumbler):
     """The existing wording for the bare-handed case is kept, not replaced."""
     adapter, player = sword_vs_rumbler
     player.eq_weapon = None
-    assert _reason_for(adapter, "Shoot Crossbow") == _NO_WEAPON_REASON
+    assert _reason_for(adapter, "Shoot Crossbow") == NO_WEAPON_REASON
 
 
 def test_the_right_weapon_out_of_range_still_reports_range(sword_vs_rumbler):
@@ -243,7 +254,7 @@ def test_the_right_weapon_out_of_range_still_reports_range(sword_vs_rumbler):
     player.eq_weapon = items.Crossbow()
     enemy = next(iter(player.combat_proximity))
     player.combat_proximity = {enemy: 2}
-    assert _reason_for(adapter, "Shoot Crossbow") == "No valid target in range"
+    assert _reason_for(adapter, "Shoot Crossbow") == NO_TARGET_IN_RANGE_REASON
 
 
 def test_bare_hands_satisfies_a_bare_hands_requirement():
@@ -294,3 +305,88 @@ def test_a_bare_hands_requirement_reads_as_bare_hands():
         player.known_moves = [moves.Jab(player)]
         reason = _reason_for(adapter, "Jab")
         assert reason == "Requires bare hands", reason
+
+class TestTheMeleeReachBoundaryIsOneConvention:
+    """One constant, one inclusivity rule, at both of its readers.
+
+    ``MELEE_REACH_FT`` is documented as the reach *above which* a move earns a
+    drawn range ring, and ``_range_ring`` implemented exactly that
+    (``reach <= MELEE_REACH_FT`` draws nothing). The refusal wording used
+    ``range_max < MELEE_REACH_FT``, so a move whose band ends exactly at the
+    constant -- ``OverheadSmash``, ``mvrange=(0, 6)`` -- counted as melee for
+    the ring and as long-ranged for the sentence. Nothing said the two
+    disagreed and nothing failed, because each site read correctly on its own.
+
+    The boundary is derived from the constant rather than typed as 6: a test
+    that retypes the number agrees with itself forever and says nothing about
+    the two readers agreeing with each other.
+    """
+
+    def test_the_predicate_is_strict_at_the_constant(self):
+        assert not _outreaches_melee(MELEE_REACH_FT), (
+            "a move reaching exactly MELEE_REACH_FT must read as melee -- the "
+            "constant is documented as the reach ABOVE which a ring is drawn"
+        )
+        assert _outreaches_melee(MELEE_REACH_FT + 1), (
+            "one foot past the constant must read as outreaching a sword, or "
+            "the predicate is inert rather than strict"
+        )
+
+    def test_the_wording_and_the_ring_agree_at_the_boundary(self):
+        """Both readers, on a move whose band ends exactly at the constant.
+
+        Before the shared predicate this move drew no ring (melee) and said
+        "No valid target in range" (long-ranged) in the same breath.
+        """
+        boundary = MELEE_REACH_FT
+
+        class _BoundaryMove:
+            name = "Overhead Smash"
+            targeted = True
+            mvrange = (0, boundary)
+            fatigue_cost = 0
+            current_stage = 0
+
+            def preview_reach(self):
+                return boundary
+
+        move = _BoundaryMove()
+        # Far enough that nothing is inside the band, which is the state the
+        # wording branch exists to describe.
+        player = SimpleNamespace(
+            eq_weapon=items.Shortsword(), combat_proximity={object(): 80}
+        )
+
+        reason = move_unavailability_reason(move, player, True)
+        assert reason == TOO_FAR_REASON, (
+            "a move whose reach ends at MELEE_REACH_FT is melee, so an "
+            f"unreachable target is simply too far; got {reason!r}"
+        )
+
+        with seeded(3):
+            adapter = make_adapter(make_player(weapon="Sword"), enemies=[RockRumbler()])
+        assert adapter._range_ring(move) is None, (
+            "the same move must draw no ring, or the two readers of one "
+            "constant have gone back to disagreeing at the boundary"
+        )
+
+    def test_a_genuinely_long_move_still_gets_the_other_sentence(self):
+        """The negative control.
+
+        Making the predicate answer False for everything would satisfy the two
+        assertions above while collapsing the melee/reach split entirely.
+        """
+        class _LongMove:
+            name = "Aimed Shot"
+            targeted = True
+            mvrange = (6, 40)
+            fatigue_cost = 0
+            current_stage = 0
+
+        player = SimpleNamespace(
+            eq_weapon=items.Shortsword(), combat_proximity={object(): 80}
+        )
+        assert (
+            move_unavailability_reason(_LongMove(), player, True)
+            == NO_TARGET_IN_RANGE_REASON
+        )

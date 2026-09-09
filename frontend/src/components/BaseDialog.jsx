@@ -62,7 +62,9 @@ export const MODAL_BACKGROUND_ATTR = 'data-modal-background'
  * was hand-repeated at three call sites and is the non-obvious half of an
  * opt-in contract.
  *
- * This attribute has exactly one owner, `syncBackgroundModality`. A JSX
+ * The `aria-hidden` this marker triggers has exactly one owner,
+ * `syncBackgroundModality` (the marker attribute itself has three owners --
+ * the JSX call sites that spread this constant). A JSX
  * `aria-hidden` on the same element fights it non-deterministically —
  * whichever wrote last wins, and React only rewrites the attribute when its
  * own prop VALUE changes, so a constant prop leaves the out-of-band value

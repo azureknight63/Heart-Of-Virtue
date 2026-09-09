@@ -36,6 +36,7 @@ from unittest.mock import Mock, MagicMock, patch
 import src.states as states
 import src.combatant as combatant
 import src.items as items
+from src.api.combat_adapter import NOT_ENOUGH_FATIGUE_REASON
 from src.moves import Move, PassiveMove
 from src.moves import (
     Attack, Dodge, Parry, Advance, Withdraw, StrategicInsight, Check, Wait, Rest, UseItem,
@@ -1035,7 +1036,7 @@ class TestMoveViability:
         )
         entry = adapter._get_available_moves()[0]
         assert entry["available"] is False
-        assert entry["reason"] == "Not enough fatigue"
+        assert entry["reason"] == NOT_ENOUGH_FATIGUE_REASON
 
     def test_move_viable_respects_current_stage(self, armed_encounter):
         """A move parked in the cooldown stage reports beats remaining, not fatigue."""

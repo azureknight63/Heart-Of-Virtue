@@ -37,9 +37,8 @@ would make this guard fail open for exactly the object this branch made
 special (``tests/test_ferry_demo_end.py`` pins that behaviour).
 """
 
-import importlib
+import functools
 import inspect
-import json
 import sys
 from pathlib import Path
 
@@ -50,8 +49,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src.objects import Container, Passageway  # noqa: E402
-
-_MAPS_DIR = _ROOT / "src" / "resources" / "maps"
+from tests._map_scan import object_placements, resolve_class  # noqa: E402
 
 
 class _StubTile:
@@ -64,27 +62,17 @@ class _StubTile:
         self.events_here = []
 
 
-def _a_player():
+@functools.lru_cache(maxsize=1)
+def _player():
+    """One real Player for every constructor that wants one.
+
+    Cached because building a Player mutates module-level item and merchant
+    registries, so one per module is meaningfully cheaper and quieter than one
+    per placement.
+    """
     from src.player import Player
 
     return Player()
-
-
-_PLAYER = None
-
-
-def _player():
-    global _PLAYER
-    if _PLAYER is None:
-        _PLAYER = _a_player()
-    return _PLAYER
-
-
-#: Classes that could only be built through the ``cls.__new__`` fallback.
-#: Asserted empty below: a fallback instance is uninitialized, so its keywords
-#: and its instance-bound aliases are missing and the contract would quietly
-#: weaken for that class instead of failing.
-_FALLBACK_CLASSES = set()
 
 
 def _instantiate(cls):
@@ -111,55 +99,57 @@ def _instantiate(cls):
     if "tile" in params:
         kwargs["tile"] = _StubTile()
     try:
-        return cls(**kwargs)
+        return cls(**kwargs), False
     except Exception:
-        _FALLBACK_CLASSES.add(cls.__name__)
         instance = cls.__new__(cls)
         try:
             instance.__init__()
         except Exception:
             pass
-        return instance
+        return instance, True
 
 
 def _object_placements():
-    """Every object placement in every shipped map.
+    """Every object placement in every shipped map, instantiated.
 
-    Yields ``(map_name, coord, cls, display_name, keywords)`` where
-    ``keywords`` is the *effective* set: authored ``props.keywords`` replace the
-    class-computed list, because the loader ``setattr``s every prop.
+    Returns ``(rows, fallback_classes)``. A row is
+    ``(map_name, coord, cls, display_name, keywords, instance)`` where
+    ``keywords`` is the *effective* set: authored ``props.keywords`` replace
+    the class-computed list, because the loader ``setattr``s every prop.
+
+    ``fallback_classes`` is returned rather than accumulated in a module
+    global. It used to be one, written as a side effect of the scan and read by
+    an assertion further down -- correct only because the scan happened to run
+    exactly once at import, and silently stale the moment anyone moved it into
+    a fixture.
+
+    The map walk lives in :mod:`tests._map_scan`, shared with the two other
+    guards added alongside this one.
     """
-    placements = []
-    for path in sorted(_MAPS_DIR.glob("*.json")):
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        for coord, tile_data in raw.items():
-            if coord == "metadata" or not isinstance(tile_data, dict):
-                continue
-            for payload in tile_data.get("objects", []) or []:
-                mod_name = payload.get("__module__")
-                cls_name = payload.get("__class__")
-                if not mod_name or not cls_name:
-                    continue
-                module = importlib.import_module(f"src.{mod_name}")
-                cls = getattr(module, cls_name)
-                props = payload.get("props") or {}
-                instance = _instantiate(cls)
-                if "keywords" in props:
-                    keywords = list(props["keywords"] or [])
-                else:
-                    keywords = list(getattr(instance, "keywords", []) or [])
-                placements.append((
-                    path.name,
-                    coord,
-                    cls,
-                    props.get("name") or cls_name,
-                    keywords,
-                    instance,
-                ))
-    return placements
+    rows = []
+    fallbacks = set()
+    for placement in object_placements():
+        cls = resolve_class(placement)
+        props = placement.props
+        instance, used_fallback = _instantiate(cls)
+        if used_fallback:
+            fallbacks.add(cls.__name__)
+        if "keywords" in props:
+            keywords = list(props["keywords"] or [])
+        else:
+            keywords = list(getattr(instance, "keywords", []) or [])
+        rows.append((
+            placement.map_name,
+            placement.coord,
+            cls,
+            props.get("name") or placement.class_name,
+            keywords,
+            instance,
+        ))
+    return rows, fallbacks
 
 
-_PLACEMENTS = _object_placements()
+_PLACEMENTS, _FALLBACK_CLASSES = _object_placements()
 
 
 def _authored_pairs():
@@ -274,9 +264,11 @@ def test_no_placement_needed_the_uninitialized_fallback():
     ``_instantiate``'s ``cls.__new__`` fallback mirrors the map loader, but an
     instance built that way has no keywords and none of its instance-bound
     aliases, so the contract below would silently stop testing anything for
-    that class rather than failing. All 122 shipped placements construct
+    that class rather than failing. Every shipped placement constructs
     normally today; if that changes, fix the construction, don't accept the
-    fallback.
+    fallback. (No count here on purpose: the suite only asserts ``> 100``, so a
+    number written into the prose goes stale the next time a map gains an
+    object and nothing notices.)
     """
     assert not _FALLBACK_CLASSES, (
         "these classes could only be built uninitialized, so the keyword "

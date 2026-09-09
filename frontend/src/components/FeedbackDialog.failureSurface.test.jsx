@@ -22,10 +22,11 @@ vi.mock('../api/endpoints', () => ({
 }));
 
 /**
- * The toast container also carries role="alert", so while the toast is alive
- * there are two alerts on screen. Assert on the set rather than on a single
- * node -- what matters is that an alert carrying the message survives the
- * toast's expiry, not which element it is.
+ * Each toast node carries role="alert" (`ToastContext.jsx`; the container it
+ * sits in has no role), so while the toast is alive there are two alerts on
+ * screen. Assert on the set rather than on a single node -- what matters is
+ * that an alert carrying the message survives the toast's expiry, not which
+ * element it is.
  */
 const alertSaying = (pattern) =>
   screen.queryAllByRole('alert').filter((el) => pattern.test(el.textContent));
@@ -38,6 +39,9 @@ const alertSaying = (pattern) =>
  */
 const waitForAlertSaying = (pattern) =>
   waitFor(() => expect(alertSaying(pattern)).not.toHaveLength(0));
+
+const waitForAnyAlert = () =>
+  waitFor(() => expect(screen.queryAllByRole('alert')).not.toHaveLength(0));
 
 const renderDialog = (onClose) =>
   render(
@@ -137,7 +141,7 @@ describe('FeedbackDialog -- a failed submit (issue #556)', () => {
     });
     fireEvent.click(screen.getByText(/Submit Feedback/i));
 
-    await waitForAlertSaying(/./);
+    await waitForAnyAlert();
     // The dialog is still mounted -- the SPA did not come down.
     expect(screen.getByPlaceholderText(/Short description of the bug/i)).toHaveValue(
       'The ferry does nothing'
@@ -146,6 +150,13 @@ describe('FeedbackDialog -- a failed submit (issue #556)', () => {
   });
 
   it('clears a previous failure notice when the report is resubmitted', async () => {
+    // This test asserted only `onClose` before, which is not the clearing at
+    // all: `onClose` is a vi.fn(), so the dialog stays mounted and a stale
+    // panel would have sat there behind a successful submit with nothing
+    // failing. Deleting `setSubmitError(null)` from handleSubmit left it green
+    // -- coverage theatre. The clearing is now what it looks at, and the toast
+    // has to be expired first, because the toast carries the same string and
+    // would answer the query on the panel's behalf.
     feedbackApi.submitIssue.mockRejectedValueOnce({
       response: { status: 503, data: { error: 'Feedback service is not configured on this server.' } },
     });
@@ -161,7 +172,13 @@ describe('FeedbackDialog -- a failed submit (issue #556)', () => {
 
     fireEvent.click(screen.getByText(/Submit Feedback/i));
     await act(async () => {});
-
     expect(onClose).toHaveBeenCalled();
+
+    // Past the toast's lifetime, so anything still saying "not configured" is
+    // the durable panel.
+    await act(async () => {
+      vi.advanceTimersByTime(6000);
+    });
+    expect(alertSaying(/not configured/i)).toHaveLength(0);
   });
 });

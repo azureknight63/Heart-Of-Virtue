@@ -207,3 +207,53 @@ class TestLootRoundTrip:
         assert all(name in result["output_text"]
                    for name in ("Restorative", "Antidote"))
         assert container.inventory == []
+
+
+class TestBothInteractionArmsShipTheSameEventShape:
+    """`_queue_passageway_confirmation`'s docstring promises this; nothing checked it.
+
+    It says the two arms return "the same shape ... so a third arm has one
+    contract to copy". They did not: the container arm wrapped its
+    `_store_pending_event` call in `if session_data is not None`, while the
+    passageway arm called it unconditionally. `_store_pending_event` already
+    gates its own two session-touching blocks on that, so the guard's only
+    effect was to withhold `event_id` from the container arm's payload — a
+    silent divergence from the contract the sibling documents, in the one
+    situation (a caller with no session) where a client has nothing else to
+    identify the dialog by.
+
+    Asserted through the two real arms rather than on the helper, because the
+    helper was never the thing that differed.
+    """
+
+    def _container_arm(self, session_data):
+        container = _make_container(num_items=2)
+        player, _ = _make_player_on_tile(container)
+        result = GameService().interact_with_target(
+            player, wire_handle(container), "loot", session_data=session_data
+        )
+        return result
+
+    def test_the_container_arm_ships_an_event_id_with_no_session(self):
+        result = self._container_arm(None)
+
+        events = result.get("events_triggered") or []
+        assert len(events) == 1, (
+            "expected exactly the loot dialog; a zero-length list would make "
+            f"the assertion below vacuous. Got {events!r}"
+        )
+        assert events[0].get("event_id"), (
+            "the container arm withheld event_id when session_data is None, so "
+            "its payload does not match the shape "
+            "_queue_passageway_confirmation's docstring says both arms return"
+        )
+
+    def test_a_session_backed_call_is_unchanged(self):
+        # The negative control: the guard only ever fired on the None path, so
+        # if this regressed too, the fix went further than the finding.
+        session_data = {}
+        result = self._container_arm(session_data)
+
+        events = result.get("events_triggered") or []
+        assert len(events) == 1, events
+        assert events[0].get("event_id") in session_data.get("pending_events", {})

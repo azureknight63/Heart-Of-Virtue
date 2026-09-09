@@ -5,9 +5,12 @@ damage!`` lines against an ATTRIBUTES sheet advertising
 ``attack_damage_min: 40, attack_damage_max: 60``.
 
 Source-confirmed arithmetic (``RockRumbler``, ``src/npc/_enemies.py``):
-``protection = 28`` and ``resistance_base["slashing"] = 0.5``, which the
-adapter syncs into the live ``resistance`` dict at combat start. Through the
-canonical line (``src/moves/_base.resolve_damage``) a 46-power slashing hit
+``protection = 28`` and ``resistance_base["slashing"] = 0.5``, the latter
+written by ``_set_damage_resistance`` in ``__init__``, which sets the live
+``resistance`` dict at the same time -- so both values are in force from
+construction, with no combat enrollment needed
+(``tests/test_authored_resistances_are_live.py`` is the guard for that).
+Through the canonical line (``src/moves/_base.resolve_damage``) a 46-power slashing hit
 resolves as ``46 * 0.5 - 28 = -5`` → 0, and a 60-power one yields 2. Neither
 multiplier is surfaced anywhere, so the advertised damage range does not
 predict the outcome and the log never says why.
@@ -38,10 +41,15 @@ ABSORBED_LINE = "Jean struck {} but did no damage!"
 def _sword_attack_on(enemy):
     """Jean, a sword, and ``enemy`` enrolled in a real fight.
 
-    ``refresh_stat_bonuses`` is what combat start runs on every enemy (see
-    ``ApiCombatAdapter.initialize_combat``); without it the authored
-    ``resistance_base`` values are not yet live on ``resistance`` — the trap
-    ``Combatant._set_status_resistance`` documents for the status half.
+    ``refresh_stat_bonuses`` is here because it is what combat start runs on
+    every enemy (``ApiCombatAdapter.initialize_combat``), so the fixture
+    matches production. It is NOT what makes the authored resistances live --
+    an earlier version of this docstring said so and was wrong:
+    ``_set_damage_resistance`` writes ``resistance`` and ``resistance_base``
+    together in ``__init__``, which is exactly what the sibling guard
+    ``tests/test_authored_resistances_are_live.py`` asserts. Removing the call
+    would not change this test's outcome; it stays because a fixture that
+    diverges from combat start is how a passing test stops predicting the game.
     """
     player = make_player(weapon="Sword")
     functions.refresh_stat_bonuses(enemy)

@@ -35,11 +35,22 @@ const REC_LABELS = { upgrade: '↑ UPGRADE', downgrade: '↓ DOWNGRADE', sidegra
  * we have is the transport's complaint ("Network Error"), so a player can tell
  * "the game said no" from "the request never landed".
  *
- * Shared by use-on-ally, equip, the generic use handler and drop, which had
- * four verbatim copies of it — a distinction this fine is exactly the kind that
- * drifts in one of four places and is never noticed in the other three.
+ * Shared by use-on-ally, equip, the generic use handler, drop and read, which
+ * had five copies of it — a distinction this fine is exactly the kind that
+ * drifts in one of five places and is never noticed in the other four. And it
+ * had: `handleRead` was the odd one out, ✗-prefixing the server's own prose
+ * that the other four sent up bare.
+ *
+ * `err?.message || 'Unknown error'`, not a bare `err.message`: a rejected
+ * plain object (`{ code: 'WEIRD' }`) has neither a `response` body for
+ * `apiErrorMessage` to read nor a `message`, and this line rendered the player
+ * a literal "✗ Error: undefined". `handleRead`'s own copy was the only one
+ * that handled that case, so folding it in without this would have spread its
+ * bug to the other four rather than removing a duplicate. Guarded by
+ * ItemDetailDialog.test.jsx's "shows 'Unknown error' instead of 'undefined'".
  */
-const actionFailureMessage = (err) => apiErrorMessage(err, '') || `✗ Error: ${err.message}`
+const actionFailureMessage = (err) =>
+  apiErrorMessage(err, '') || `✗ Error: ${err?.message || 'Unknown error'}`
 
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 const formatSigned = (value) => `${value >= 0 ? '+' : ''}${value}`
@@ -83,6 +94,28 @@ function describeEffect(effect) {
   }
 }
 
+/**
+ * KNOWN SIZE, deliberately not split here.
+ *
+ * This is one ~1050-line component holding seven data sections, a five-button
+ * action row and four inline `position: fixed` overlays (action result, drop
+ * confirm, ally picker, book reader), each with its own z-index ladder; the
+ * ally picker nests two maps around ~20 derived locals. The shape a reviewer
+ * proposes every round is the right one -- lift the three inline overlays to
+ * sibling components in this file (`ActionResultOverlay`,
+ * `DropConfirmOverlay`, `AllyPickerOverlay`), which read only props and state
+ * already in scope and change no DOM.
+ *
+ * It was NOT done on the 2026-09-08 QA-triage branch, and the reason is scope
+ * rather than disagreement: that branch touched this file only to route stack
+ * names through `utils/stackName` and to fix the action-failure message, and a
+ * 1000-line restructure lands on a green PR with no behavioural test of its
+ * own. Frontend coverage gates at 95%, so the split needs its own change with
+ * its own verification. Five duplicated action buttons (Equip / Use / Use on…
+ * / Read / Drop, ~30 lines each, differing in a colour set, a label and an
+ * onClick) belong to the same follow-up; `ShopDialog.jsx`'s `ActionButton` is
+ * the shape to copy.
+ */
 export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
@@ -196,7 +229,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
     }
   }
 
-  const makeItemActionHandler = (actionName, successMsg, errorMsg, shouldRemoveItem = false) => {
+  const makeItemActionHandler = (successMsg, errorMsg, shouldRemoveItem = false) => {
     return async () => {
       setIsLoading(true)
       try {
@@ -223,7 +256,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
     }
   }
 
-  const handleUse = makeItemActionHandler('use', 'Item used!', 'Cannot use this item', true)
+  const handleUse = makeItemActionHandler('Item used!', 'Cannot use this item', true)
 
   const handleCloseBook = useCallback(() => setBookReaderData(null), [])
 
@@ -239,7 +272,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot read this item'))
       }
     } catch (err) {
-      setActionMessage('✗ ' + apiErrorMessage(err, err.message || 'Unknown error'))
+      setActionMessage(actionFailureMessage(err))
     } finally {
       setIsLoading(false)
     }

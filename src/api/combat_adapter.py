@@ -57,6 +57,21 @@ if TYPE_CHECKING:
 #: genuinely outreaches a sword (spear, polearm, bow) gets one.
 MELEE_REACH_FT = 6
 
+
+def _outreaches_melee(reach_ft):
+    """True when ``reach_ft`` is past a sword's reach.
+
+    One predicate because ``MELEE_REACH_FT`` has two readers -- the range ring
+    and the out-of-range wording -- and they had drifted to opposite
+    inclusivity at the boundary: ``reach <= MELEE_REACH_FT`` drew no ring while
+    ``range_max < MELEE_REACH_FT`` chose the sentence, so a move banded exactly
+    at the constant (``OverheadSmash``, ``mvrange=(0, 6)``) was melee for one
+    and long-ranged for the other. Strict ``>`` is what the constant's own doc
+    block says: the reach ABOVE which a ring is drawn.
+    """
+    return reach_ft > MELEE_REACH_FT
+
+
 # Shortest prep stage that earns an abort affordance. Below this a move is over
 # before a player could react to anything, and offering a bail-out would only add
 # a decision to every swing. Above it the commitment is long enough that the
@@ -228,13 +243,47 @@ MAX_ANIMATION_SEQ = 1_000_000
 MAX_INSTANT_STAGES = 20
 
 
-#: The empty-handed refusal. Named because two tests must agree with it, and
-#: they now IMPORT it rather than retyping the literal --
-#: `test_combat_glossary_contract` asserts it matches no glossary term and
-#: `test_disabled_move_reasons` asserts the adapter emits it, so rewording the
-#: string moves both assertions with it. Spelled out, they would have gone on
-#: pinning a sentence the code no longer produced.
-_NO_WEAPON_REASON = "No weapon equipped"
+#: Every player-facing refusal `move_unavailability_reason` and
+#: `_get_available_moves` can emit, named rather than inlined.
+#:
+#: The reason is not tidiness: five test modules retype these sentences
+#: (`test_combat_glossary_contract`, `test_disabled_move_reasons`,
+#: `test_combat_adapter_gaps2`/`gaps3`, `tests/api/test_combat_refusal_api`),
+#: so a reworded literal leaves those assertions pinning a sentence the code no
+#: longer produces -- green, and testing nothing. Importing the constant moves
+#: the assertion with the wording. `NO_WEAPON_REASON` was named first for
+#: exactly that reason and its siblings were left as literals, which made the
+#: module's test-facing surface half-named for no stated reason.
+#:
+#: Public (no leading underscore) because they ARE the module's test-facing
+#: surface, like `move_unavailability_reason` and `combat_alert_line` beside
+#: them -- the private spelling had two test importers, both updated with the
+#: rename rather than left on an alias.
+NO_WEAPON_REASON = "No weapon equipped"
+
+#: The genuine catch-all: `viable()` returned a bare bool and nothing about
+#: range, weapon or fatigue explains it. Kept deliberately vague -- guessing
+#: here is what shipped issue #565.
+CANNOT_USE_REASON = "Cannot use this move"
+
+#: A targeted move with no `mvrange` at all, so there is no band to compare.
+NO_TARGET_REASON = "No valid target"
+
+#: Out of range, for a move that DOES outreach a sword: the miss is as likely
+#: to be a target it may not legally hit as one that is merely distant. The
+#: client has its own twin of this sentence in
+#: `frontend/src/utils/combatMoveStatus.js` (`NO_REACHABLE_TARGET_REASON`),
+#: pinned across the boundary by `test_combat_glossary_contract`.
+NO_TARGET_IN_RANGE_REASON = "No valid target in range"
+
+#: Out of range for a move that cannot outreach a sword -- see
+#: `_outreaches_melee` for which of the two sentences a band earns.
+TOO_FAR_REASON = "Enemy out of range (too far)"
+
+#: Not enough fatigue to pay for the move. Emitted from two places (the move
+#: route's `{"error": ...}` and the availability list's `reason`), which is why
+#: it is named: the two had to agree and nothing said so.
+NOT_ENOUGH_FATIGUE_REASON = "Not enough fatigue"
 
 #: Weapon subtypes whose engine name is not the noun a player would use. Every
 #: other subtype reads fine lowercased ("crossbow", "scythe", "polearm"), so
@@ -293,11 +342,11 @@ def move_unavailability_reason(move, player, is_targeted):
         return weapon_reason
 
     if not is_targeted:
-        return "Cannot use this move"
+        return CANNOT_USE_REASON
 
     mvrange = getattr(move, "mvrange", None)
     if not mvrange:
-        return "No valid target"
+        return NO_TARGET_REASON
 
     range_min, range_max = mvrange
     enemies_in_range = any(
@@ -305,18 +354,18 @@ def move_unavailability_reason(move, player, is_targeted):
         for dist in player.combat_proximity.values()
     )
     if enemies_in_range:
-        return "Cannot use this move"
+        return CANNOT_USE_REASON
     # The melee/reach split: only a move that cannot outreach a sword gets the
     # "too far" wording, because for a longer-ranged move the miss is as
     # likely to be a target it may not legally hit.
+    # Through `_outreaches_melee`, not a comparison written here: this and
+    # `_range_ring` are the two readers of MELEE_REACH_FT, and they had drifted
+    # to opposite inclusivity at the boundary -- see that predicate's docstring
+    # and tests/test_disabled_move_reasons.py's boundary class.
     return (
-        "Enemy out of range (too far)"
-        # `< MELEE_REACH_FT`, not a literal 5: this is the same "a sword
-        # reaches about 5 ft" fact the constant is named for, and retuning it
-        # there used to move the range ring and the glossary while leaving
-        # this wording on the old band.
-        if range_max < MELEE_REACH_FT
-        else "No valid target in range"
+        NO_TARGET_IN_RANGE_REASON
+        if _outreaches_melee(range_max)
+        else TOO_FAR_REASON
     )
 
 
@@ -356,7 +405,7 @@ def weapon_requirement_reason(move, weapon):
     if set(requirement) == {"Unarmed"}:
         return "Requires " + _weapon_noun_phrase("Unarmed")
     if weapon is None:
-        return _NO_WEAPON_REASON
+        return NO_WEAPON_REASON
     subtypes = sorted(requirement)
     phrases = [_weapon_noun_phrase(subtypes[0])] + [
         _weapon_noun_phrase(n, with_article=False) for n in subtypes[1:]
@@ -1332,9 +1381,12 @@ class ApiCombatAdapter:
         Detach-and-DISCARD, not a bare assignment: `_detach_current_move`'s
         docstring says the two "are one operation on purpose", and skipping
         the discard reintroduced the #560 symptom through the animation
-        channel rather than the narration one. `flee_combat` is the one combat
-        exit that never calls `_discard_pending_animations`, so an ally
-        mid-wind-up when Jean fled kept an armed, never-reported channel;
+        channel rather than the narration one. `flee_combat` is the one exit
+        that ends a fight on LIVE objects without calling
+        `_discard_pending_animations` -- `load_game` never calls it either,
+        but its combatants come back from a pickle that
+        `Combatant.__getstate__` already stripped the channel out of. So an
+        ally mid-wind-up when Jean fled kept an armed, never-reported channel;
         clearing `current_move` here un-gates `_flush_pending_animations`
         (which skips a combatant whose move is still set), and beat 1 of the
         next fight then emitted a fallback animation built from the previous
@@ -1830,7 +1882,7 @@ class ApiCombatAdapter:
 
         # Only check fatigue for moves that actually cost some.
         if move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
-            return {"error": "Not enough fatigue"}
+            return {"error": NOT_ENOUGH_FATIGUE_REASON}
 
         # A move that is mid-cycle (execute/recoil/cooldown) is not selectable.
         if move.current_stage != 0:
@@ -3753,7 +3805,7 @@ class ApiCombatAdapter:
         reach = preview_reach() if callable(preview_reach) else None
         if not isinstance(reach, (int, float)) or isinstance(reach, bool):
             return None
-        if reach <= MELEE_REACH_FT:
+        if not _outreaches_melee(reach):
             return None
         return int(reach)
 
@@ -3845,7 +3897,7 @@ class ApiCombatAdapter:
                     move_data["reason"] = "Available next beat"
             elif move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
                 move_data["available"] = False
-                move_data["reason"] = "Not enough fatigue"
+                move_data["reason"] = NOT_ENOUGH_FATIGUE_REASON
             elif not is_viable:
                 move_data["available"] = False
                 move_data["reason"] = move_unavailability_reason(

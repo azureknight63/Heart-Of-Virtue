@@ -273,6 +273,17 @@ function QtyPicker({ value, max, onChange, isMobile }) {
  *   onClose    {function}
  *   onRefetch  {function} Called after each successful transaction to sync parent
  *   isMobile   {boolean}
+ *
+ * KNOWN SIZE, deliberately not split here -- same decision as
+ * `ItemDetailDialog`, whose block carries the reasoning.
+ *
+ * ~550 lines with a ~380-line return mixing the NPC strip, the tab bar, three
+ * status banners, both tab lists and the selection action row. `WeightBar`,
+ * `ItemRow`, `QtyPicker` and `ActionButton` are already extracted, so the
+ * remaining step is small and mechanical -- `BuyTabList`, `SellTabList`,
+ * `SelectionActionRow` -- but it is still a restructure with no behavioural
+ * test of its own, and the 2026-09-08 QA-triage branch touched this file only
+ * for the stack-name reads. Its own change.
  */
 export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player, onClose, onRefetch, isMobile }) {
   const { shopState, sellInventory, isLoading, error, txnMessage, welcomeMessage, buy, sell, buyback } = useShop(npcId)

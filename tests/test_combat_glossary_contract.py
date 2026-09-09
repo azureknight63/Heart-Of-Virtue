@@ -41,7 +41,13 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src.api import combat_adapter as combat_adapter_module
-from src.api.combat_adapter import ApiCombatAdapter, _NO_WEAPON_REASON
+from src.api.combat_adapter import (
+    ApiCombatAdapter,
+    NO_TARGET_IN_RANGE_REASON,
+    NOT_ENOUGH_FATIGUE_REASON,
+    NO_WEAPON_REASON,
+    TOO_FAR_REASON,
+)
 import src.items as items
 from src.moves import Attack
 from src.moves import _base as moves_base
@@ -430,11 +436,11 @@ class TestGlossaryTermsMatchTheEngineWording:
             for payload in adapter._get_available_moves()
             if payload.get("reason")
         )
-        assert reason == "Not enough fatigue"
+        assert reason == NOT_ENOUGH_FATIGUE_REASON
         assert "fatigue" in _matching_entry_ids(reason)
 
     def test_a_reason_with_no_glossary_term_matches_nothing(self):
-        assert _matching_entry_ids(_NO_WEAPON_REASON) == []
+        assert _matching_entry_ids(NO_WEAPON_REASON) == []
 
     def test_the_displayed_cooldown_number_is_the_one_the_copy_describes(self, adapter):
         """cooldown_remaining = beats_left + 1, per the maintainer's ruling.
@@ -540,16 +546,20 @@ class TestGlossaryTermsMatchTheEngineWording:
 
     @pytest.mark.parametrize(
         "long_reach, expected",
-        [(False, "Enemy out of range (too far)"), (True, "No valid target in range")],
+        [(False, TOO_FAR_REASON), (True, NO_TARGET_IN_RANGE_REASON)],
     )
     def test_both_out_of_range_reasons_reach_the_distance_entry(
         self, adapter, long_reach, expected
     ):
         """A move out of range emits one of TWO strings, not one.
 
-        The adapter only says "Enemy out of range (too far)" when
-        ``range_max <= 5``; anything reaching past that — spear, bow, polearm —
-        says "No valid target in range". The Distance & reach entry quoted the
+        The adapter only says "Enemy out of range (too far)" for a move that
+        does not outreach a sword (``range_max <= MELEE_REACH_FT``, i.e. 6 ft);
+        anything reaching past that — spear, bow, polearm — says "No valid
+        target in range". The boundary itself is pinned in
+        ``tests/test_disabled_move_reasons.py``, which is also where the two
+        readers of that constant are held to one convention; this test drives
+        the two ends, not the edge. The Distance & reach entry quoted the
         first flatly, as though it were what every long-reach move shows.
 
         Driven through a real ``Spear`` rather than by assigning ``mvrange``:

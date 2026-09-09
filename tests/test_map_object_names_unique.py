@@ -32,9 +32,15 @@ from pathlib import Path
 import pytest
 
 import src.objects as objects_module
+from tests import _map_scan
 
-MAP_DIR = Path("src/resources/maps")
-MAP_FILES = sorted(MAP_DIR.glob("*.json"))
+#: Shared with the two other guards that walk the shipped maps, so "which
+#: files are the maps" and "which keys are tiles" are derived once. Note this
+#: file resolves the directory ABSOLUTELY through the helper rather than from a
+#: relative Path, which silently matched nothing when pytest ran from anywhere
+#: but the repo root.
+MAP_DIR = _map_scan.MAP_DIR
+MAP_FILES = _map_scan.map_files()
 
 #: A run-together CamelCase identifier: two or more capitalised segments and no
 #: separator, e.g. ``HealingSpring``. Deliberately *not* a single capitalised
@@ -50,13 +56,6 @@ OBJECT_CLASS_NAMES = frozenset(
     for name, obj in inspect.getmembers(objects_module, inspect.isclass)
     if obj.__module__ in ("src.objects", "objects")
 )
-
-
-def _tiles(map_data):
-    for key, value in map_data.items():
-        if key == "metadata" or not isinstance(value, dict):
-            continue
-        yield key, value
 
 
 def _authored_name(entry):
@@ -75,7 +74,7 @@ def test_there_are_maps_to_scan():
 def test_no_tile_has_two_identically_named_objects(map_file):
     map_data = json.loads(map_file.read_text(encoding="utf-8"))
     offenders = {}
-    for coords, tile in _tiles(map_data):
+    for coords, tile in _map_scan.tiles(map_data):
         names = [_authored_name(obj) for obj in (tile.get("objects") or [])]
         duplicates = [
             name
@@ -130,7 +129,7 @@ def _authored_object_names():
     found = []
     for map_file in MAP_FILES:
         map_data = json.loads(map_file.read_text(encoding="utf-8"))
-        for coords, tile in _tiles(map_data):
+        for coords, tile in _map_scan.tiles(map_data):
             for entry in tile.get("objects") or []:
                 if not isinstance(entry, dict):
                     continue

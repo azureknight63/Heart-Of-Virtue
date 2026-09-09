@@ -8,6 +8,17 @@ import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
 /**
+ * "COMBAT SPEED" -> "Combat speed".
+ *
+ * The headings in this dialog are authored in caps because that is how they
+ * read on screen, but a screen reader wants a name, not shouting. Named rather
+ * than inlined because two things derive names from a heading -- the segmented
+ * group and the volume rows -- and an inline `charAt(0) + slice(1)` makes the
+ * reader evaluate the expression to learn what string comes out.
+ */
+const sentenceCase = (text) => text.charAt(0) + text.slice(1).toLowerCase()
+
+/**
  * A labelled ON/OFF preference with a line of explanation.
  *
  * Shared by the feature-flag rows and the story auto-advance toggle, which
@@ -46,6 +57,97 @@ function ToggleRow({ label, description, enabled, onToggle, ariaLabel, buttonSty
 }
 
 /**
+ * A heading, a mute toggle, and a 0-100% slider with its readout.
+ *
+ * MUSIC and SOUND EFFECTS were style-for-style twins -- same wrapper, same
+ * heading style, same button style object, same `0% / range / 100%` row, same
+ * rounded readout -- differing only in the heading, the state pair, and one
+ * `marginBottom`. The accessibility pass then typed the same two `aria-label`
+ * strings into both copies, which is what made the duplication worth removing
+ * rather than tolerating: both names are now DERIVED from the heading, so a
+ * third row cannot ship nameless and the two cannot drift apart.
+ *
+ * The mute button is deliberately not `ToggleRow`: its palette is
+ * `dangerDark`/`gold`, and `ToggleRow`'s is `primaryDark`/`bg.panel`. Folding
+ * them together would change token values, which is a visual change dressed up
+ * as a de-duplication.
+ */
+function VolumeRow({
+    heading,
+    muted,
+    onToggleMute,
+    volume,
+    onVolumeChange,
+    mobileTouchTarget,
+    marginBottom,
+}) {
+    return (
+        <div style={{ marginBottom }}>
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '10px'
+            }}>
+                <div style={{ color: colors.accent, fontSize: '14px', fontWeight: 'bold' }}>
+                    {heading}
+                </div>
+                <button
+                    onClick={onToggleMute}
+                    // "ON" was the whole accessible name, and the two toggles
+                    // announced identically -- two buttons with one name on a
+                    // single screen. Derived from `heading` so they cannot
+                    // collide again.
+                    aria-label={`Mute ${sentenceCase(heading).toLowerCase()}`}
+                    aria-pressed={muted}
+                    style={{
+                        padding: '4px 8px',
+                        backgroundColor: muted ? colors.dangerDark : colors.primaryDark,
+                        color: muted ? colors.gold : colors.text.inverse,
+                        border: `1px solid ${colors.text.inverse}`,
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        ...mobileTouchTarget,
+                    }}
+                >
+                    {muted ? 'MUTED' : 'ON'}
+                </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ color: colors.primary, fontSize: '12px' }}>0%</span>
+                <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={volume}
+                    onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+                    // Announced as a bare "slider, 0.5" before this. NOT
+                    // `htmlFor` on the heading above: that heading heads the
+                    // mute button too, so tying it to the slider alone would
+                    // announce the slider as "MUSIC" and leave the button
+                    // beside it "ON".
+                    aria-label={`${sentenceCase(heading)} volume`}
+                    style={{
+                        flex: 1,
+                        accentColor: colors.primary,
+                        cursor: 'pointer'
+                    }}
+                    disabled={muted}
+                />
+                <span style={{ color: colors.primary, fontSize: '12px' }}>100%</span>
+            </div>
+            <div style={{ textAlign: 'center', color: colors.primary, fontSize: '12px', marginTop: '5px' }}>
+                {Math.round(volume * 100)}%
+            </div>
+        </div>
+    )
+}
+
+/**
  * A heading over a row of mutually-exclusive step buttons — COMBAT SPEED and
  * TEXT SPEED. Stepped rather than a slider so an end-stop (INSTANT) can be a
  * named choice rather than the far end of a scale.
@@ -63,7 +165,7 @@ function SegmentedRow({ heading, options, value, onSelect, buttonStyle = {}, fon
                 are both covered without a second list to keep in step. */}
             <div
                 role="group"
-                aria-label={heading.charAt(0) + heading.slice(1).toLowerCase()}
+                aria-label={sentenceCase(heading)}
                 style={{ display: 'flex', gap: '6px' }}
             >
                 {options.map((option) => {
@@ -150,123 +252,25 @@ export default function SettingsDialog({ onClose }) {
             {/* Content */}
             <div style={{ marginBottom: '20px' }}>
 
-                {/* Music Control */}
-                <div style={{ marginBottom: '20px' }}>
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '10px'
-                    }}>
-                        <div style={{ color: colors.accent, fontSize: '14px', fontWeight: 'bold' }}>
-                            MUSIC
-                        </div>
-                        <button
-                            onClick={() => setIsMusicMuted(!isMusicMuted)}
-                            // "ON" was the whole accessible name, and the SFX
-                            // toggle below announced identically — two buttons
-                            // with one name on a single screen.
-                            aria-label="Mute music"
-                            aria-pressed={isMusicMuted}
-                            style={{
-                                padding: '4px 8px',
-                                backgroundColor: isMusicMuted ? colors.dangerDark : colors.primaryDark,
-                                color: isMusicMuted ? colors.gold : colors.text.inverse,
-                                border: `1px solid ${colors.text.inverse}`,
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                ...mobileTouchTarget,
-                            }}
-                        >
-                            {isMusicMuted ? 'MUTED' : 'ON'}
-                        </button>
-                    </div>
+                <VolumeRow
+                    heading="MUSIC"
+                    muted={isMusicMuted}
+                    onToggleMute={() => setIsMusicMuted(!isMusicMuted)}
+                    volume={musicVolume}
+                    onVolumeChange={setMusicVolume}
+                    mobileTouchTarget={mobileTouchTarget}
+                    marginBottom="20px"
+                />
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ color: colors.primary, fontSize: '12px' }}>0%</span>
-                        <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={musicVolume}
-                            onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                            // Announced as a bare "slider, 0.5" before this.
-                            // Not `htmlFor` on the MUSIC heading above: that
-                            // heading heads the mute button too, so tying it
-                            // to the slider alone would announce the slider as
-                            // "MUSIC" and leave the button beside it "ON".
-                            aria-label="Music volume"
-                            style={{
-                                flex: 1,
-                                accentColor: colors.primary,
-                                cursor: 'pointer'
-                            }}
-                            disabled={isMusicMuted}
-                        />
-                        <span style={{ color: colors.primary, fontSize: '12px' }}>100%</span>
-                    </div>
-                    <div style={{ textAlign: 'center', color: colors.primary, fontSize: '12px', marginTop: '5px' }}>
-                        {Math.round(musicVolume * 100)}%
-                    </div>
-                </div>
-
-                {/* SFX Control */}
-                <div style={{ marginBottom: '15px' }}>
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '10px'
-                    }}>
-                        <div style={{ color: colors.accent, fontSize: '14px', fontWeight: 'bold' }}>
-                            SOUND EFFECTS
-                        </div>
-                        <button
-                            onClick={() => setIsSfxMuted(!isSfxMuted)}
-                            aria-label="Mute sound effects"
-                            aria-pressed={isSfxMuted}
-                            style={{
-                                padding: '4px 8px',
-                                backgroundColor: isSfxMuted ? colors.dangerDark : colors.primaryDark,
-                                color: isSfxMuted ? colors.gold : colors.text.inverse,
-                                border: `1px solid ${colors.text.inverse}`,
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                ...mobileTouchTarget,
-                            }}
-                        >
-                            {isSfxMuted ? 'MUTED' : 'ON'}
-                        </button>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ color: colors.primary, fontSize: '12px' }}>0%</span>
-                        <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={sfxVolume}
-                            onChange={(e) => setSfxVolume(parseFloat(e.target.value))}
-                            aria-label="Sound effects volume"
-                            style={{
-                                flex: 1,
-                                accentColor: colors.primary,
-                                cursor: 'pointer'
-                            }}
-                            disabled={isSfxMuted}
-                        />
-                        <span style={{ color: colors.primary, fontSize: '12px' }}>100%</span>
-                    </div>
-                    <div style={{ textAlign: 'center', color: colors.primary, fontSize: '12px', marginTop: '5px' }}>
-                        {Math.round(sfxVolume * 100)}%
-                    </div>
-                </div>
+                <VolumeRow
+                    heading="SOUND EFFECTS"
+                    muted={isSfxMuted}
+                    onToggleMute={() => setIsSfxMuted(!isSfxMuted)}
+                    volume={sfxVolume}
+                    onVolumeChange={setSfxVolume}
+                    mobileTouchTarget={mobileTouchTarget}
+                    marginBottom="15px"
+                />
 
                 {/* Combat Speed Control (issue #460) */}
                 <SegmentedRow

@@ -4,7 +4,7 @@ import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
 import { colors } from '../styles/theme';
 import { hostilityTokenFor } from '../utils/combatEntities';
-import HostilityChip from './HostilityChip'
+import HostilityChip from './HostilityChip';
 
 const INPUT_TYPE_CONFIG = {
     target_selection: { title: '🎯 SELECT TARGET' },

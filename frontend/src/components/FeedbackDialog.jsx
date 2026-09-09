@@ -158,15 +158,15 @@ function TextArea({ value, onChange, placeholder, rows = 3, ariaLabel }) {
  * name themselves through a DOM attribute rather than a prop, and the Title
  * input, which carries `required`/`error`/`inputRef` besides.
  */
-function LabeledTextArea({ label, rows, field, placeholder, fields, onChange }) {
+function LabeledTextArea({ label, rows, fieldKey, placeholder, fields, onChange }) {
   return (
     <LabeledField label={label}>
       {(name) => (
         <TextArea
           rows={rows}
           ariaLabel={name}
-          value={fields[field]}
-          onChange={(e) => onChange(field, e.target.value)}
+          value={fields[fieldKey]}
+          onChange={(e) => onChange(fieldKey, e.target.value)}
           placeholder={placeholder}
         />
       )}
@@ -222,7 +222,7 @@ function BugForm({ fields, onChange }) {
       <LabeledTextArea
         label="Steps to Reproduce"
         rows={3}
-        field="steps"
+        fieldKey="steps"
         placeholder="1. Go to...&#10;2. Click...&#10;3. Observe..."
         fields={fields}
         onChange={onChange}
@@ -230,7 +230,7 @@ function BugForm({ fields, onChange }) {
       <LabeledTextArea
         label="Expected Behavior"
         rows={2}
-        field="expected"
+        fieldKey="expected"
         placeholder="What should have happened?"
         fields={fields}
         onChange={onChange}
@@ -238,7 +238,7 @@ function BugForm({ fields, onChange }) {
       <LabeledTextArea
         label="Actual Behavior"
         rows={2}
-        field="actual"
+        fieldKey="actual"
         placeholder="What actually happened?"
         fields={fields}
         onChange={onChange}
@@ -292,7 +292,7 @@ function FeatureForm({ fields, onChange }) {
       <LabeledTextArea
         label="Description"
         rows={3}
-        field="description"
+        fieldKey="description"
         placeholder="Describe the feature you'd like to see..."
         fields={fields}
         onChange={onChange}
@@ -300,7 +300,7 @@ function FeatureForm({ fields, onChange }) {
       <LabeledTextArea
         label="Use Case / Why"
         rows={3}
-        field="use_case"
+        fieldKey="use_case"
         placeholder="Why would this improve the game?"
         fields={fields}
         onChange={onChange}
@@ -315,7 +315,7 @@ function GeneralForm({ fields, onChange, ratings, onRatingChange }) {
       <LabeledTextArea
         label="Message"
         rows={4}
-        field="message"
+        fieldKey="message"
         placeholder="Share your thoughts about the game..."
         fields={fields}
         onChange={onChange}
@@ -417,8 +417,11 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
    * about was still destructible. Keep the toast for immediacy and add a
    * durable in-dialog panel that outlives it.
    */
-  const failSubmit = (message) => {
-    const text = message || SUBMIT_FAILED_MESSAGE
+  // No `|| SUBMIT_FAILED_MESSAGE` fallback: both call sites already pass
+  // `apiErrorMessage(x, SUBMIT_FAILED_MESSAGE)`, and that helper is total --
+  // it never returns a falsy string when given a non-empty fallback. The arm
+  // was therefore unexercisable, against a 95% branch gate.
+  const failSubmit = (text) => {
     setSubmitError(text)
     toastError(text)
   }

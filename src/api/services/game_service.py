@@ -142,8 +142,12 @@ def _is_demo_end_crossing(target, handler):
 
     Which handlers count is `Passageway.is_crossing_handler`'s answer, not
     this function's: comparing against `enter` here missed `go`/`leave`/`exit`,
-    which delegate to it rather than alias it -- and those are the only three
-    the shipped ferry authors.
+    which delegate to it rather than alias it -- and those three are exactly
+    the shipped ferry's `action_aliases`, so the miss covered every way a
+    player actually crosses. (Its `keywords` list is wider than that:
+    `enter, go, leave, exit, ferry, landing`. The two name words bind to
+    `enter` directly, which is why the handler, not the verb, is the thing to
+    ask about.)
 
     Takes the already-resolved handler rather than the verb, so one
     interaction resolves the verb once: `_dispatch_interaction` needs the same
@@ -172,6 +176,23 @@ def _call_interaction_handler(method, player, quantity):
     if "quantity" in param_names:
         return method(player, quantity=quantity)
     return method(player)
+
+
+def _merge_new_events(existing, new_events):
+    """Append the tile events not already present, matching on `name`.
+
+    The dedupe rule was spelled at both sites that fold a second
+    `trigger_tile_events` pass into a response, with two different comments
+    ("Avoid duplicates" / "Avoid duplicates if they somehow got in") and no
+    statement of what makes two events the same. It is `name`, and only
+    `name`, which is worth having in one place: a payload that gains an id
+    would otherwise want the rule changed at both.
+
+    Mutates `existing` in place, because both callers already own their list.
+    """
+    for new_event in new_events or []:
+        if not any(e.get("name") == new_event.get("name") for e in existing):
+            existing.append(new_event)
 
 
 def _strip_llm_noise_lines(text):
@@ -1725,9 +1746,7 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            if self._defer_combat_for_level_up(player, combat_enemies):
-                combat_started = False
-            else:
+            if not self._defer_combat_for_level_up(player, combat_enemies):
                 combat_state = self._start_combat(
                     player,
                     combat_enemies,
@@ -2129,13 +2148,7 @@ class GameService:
                 if more_events:
                     if "events_triggered" not in result:
                         result["events_triggered"] = []
-                    for new_event in more_events:
-                        # Avoid duplicates
-                        if not any(
-                            e.get("name") == new_event.get("name")
-                            for e in result["events_triggered"]
-                        ):
-                            result["events_triggered"].append(new_event)
+                    _merge_new_events(result["events_triggered"], more_events)
 
         # If we are already in combat, do not reinitialize combat from check_for_combat.
         # This preserves reinforcement additions made during combat event processing.
@@ -2386,11 +2399,13 @@ class GameService:
     # Interaction Methods
     # ========================
 
-    def _open_container_for_loot(self, request):
+    def _open_container_for_loot(self, request: "_InteractionRequest"):
         """Open a container and, if it really opened, arm its loot dialog.
 
-        Returns the event payloads to append — a one-element list, or empty
-        when the container stayed shut.
+        Returns the event payloads to extend with -- a one-element list, or
+        empty when the container stayed shut. Same contract as
+        :meth:`_queue_passageway_confirmation`, whose docstring carries why
+        `append` and `extend` are not interchangeable here.
         """
         from src.events import LootEvent
 
@@ -2409,25 +2424,30 @@ class GameService:
         loot_event = LootEvent(f"Looting {target.name}", player, tile, target)
         event_data = EventSerializer.serialize_with_input(loot_event)
 
-        if session_data is not None:
-            # Dedupe-by-name is right here: the name is "Looting
-            # <container>", so a collision is the same container's dialog
-            # re-opened. Left to itself this site minted a second UUID for it,
-            # and the first entry stayed pending forever, blocking input.
-            #
-            # The key is the container's NAME, not its identity, so two
-            # same-named containers on one tile would share a dialog id —
-            # opening the second would hand back the first's contents. That is
-            # a property of the CONTENT, not of this code, so it is enforced
-            # rather than asserted: tests/test_map_object_names_unique.py
-            # scans every shipped map for a tile that breaks it.
-            event_data = self._store_pending_event(
+        # Dedupe-by-name is right here: the name is "Looting <container>", so
+        # a collision is the same container's dialog re-opened. Left to itself
+        # this site minted a second UUID for it, and the first entry stayed
+        # pending forever, blocking input.
+        #
+        # The key is the container's NAME, not its identity, so two same-named
+        # containers on one tile would share a dialog id — opening the second
+        # would hand back the first's contents. That is a property of the
+        # CONTENT, not of this code, so it is enforced rather than asserted:
+        # tests/test_map_object_names_unique.py scans every shipped map for a
+        # tile that breaks it.
+        #
+        # Unconditional, like the passageway arm: `_store_pending_event` gates
+        # its own two session-touching blocks on `session_data is not None` and
+        # assigns `event_id` either way, so an `if` here bought nothing except
+        # a payload missing its id on the no-session path — the one divergence
+        # from the shape both arms are documented to return.
+        return [
+            self._store_pending_event(
                 loot_event, event_data, session_data, tile=tile
             )
+        ]
 
-        return [event_data]
-
-    def _queue_passageway_confirmation(self, request):
+    def _queue_passageway_confirmation(self, request: "_InteractionRequest"):
         """Arm the "Jean steps through..." confirmation for a passageway.
 
         API mode only: the teleport itself waits for the client to acknowledge
@@ -2466,7 +2486,9 @@ class GameService:
             )
         ]
 
-    def _dispatch_interaction(self, request):
+    def _dispatch_interaction(
+        self, request: "_InteractionRequest"
+    ) -> "_InteractionOutcome":
         """Run one interaction verb against one already-resolved target.
 
         Split out of :meth:`interact_with_target`, which had grown past 380
@@ -2698,7 +2720,8 @@ class GameService:
             round_number=getattr(player, "combat_round", 1),
         )
 
-    def _clean_interaction_output(self, msgs, player, pre_location):
+    @staticmethod
+    def _clean_interaction_output(msgs, player, pre_location):
         """Sanitise the captured narration into the line the player reads.
 
         One self-contained text pipeline, split out of
@@ -2745,7 +2768,7 @@ class GameService:
 
         return clean_output, teleported
 
-    def _redirect_attack_to_combat(self, request):
+    def _redirect_attack_to_combat(self, request: "_InteractionRequest"):
         """The combat-start response for ATTACK on a room NPC, or None.
 
         ``attack`` is not an interaction verb: ``Player.attack`` does not exist
@@ -2775,7 +2798,7 @@ class GameService:
             "combat_data": combat_result,
         }
 
-    def _verb_refusal(self, request):
+    def _verb_refusal(self, request: "_InteractionRequest"):
         """The refusal for a verb this target does not accept, or None.
 
         A verb is accepted if the target ADVERTISES it (its own ``keywords``,
@@ -2903,14 +2926,10 @@ class GameService:
             )
 
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
-        more_events = self.trigger_tile_events(player, tile, session_data)
-        if more_events:
-            for new_event in more_events:
-                # Avoid duplicates if they somehow got in
-                if not any(
-                    e.get("name") == new_event.get("name") for e in events_triggered
-                ):
-                    events_triggered.append(new_event)
+        _merge_new_events(
+            events_triggered,
+            self.trigger_tile_events(player, tile, session_data),
+        )
 
         # Store tile modifications AFTER all events have processed to capture state changes
         self.persist_tile_state(session_data, tile)
@@ -2921,16 +2940,20 @@ class GameService:
         combat_started = False
         combat_state = None
 
-        if combat_enemies and not self._defer_combat_for_level_up(
-            player, combat_enemies
-        ):
-            combat_state = self._start_combat(
-                player,
-                combat_enemies,
-                session_id=session_id,
-                session_data=session_data,
-            )
-            combat_started = True
+        if combat_enemies:
+            # Its own statement, not a clause in the `if` above: this call
+            # STASHES the enemies on the player when it answers True, and a
+            # side effect inside a compound condition is invisible at the call
+            # site. The other two callers (`move_player`, `process_event_input`)
+            # already read this way.
+            if not self._defer_combat_for_level_up(player, combat_enemies):
+                combat_state = self._start_combat(
+                    player,
+                    combat_enemies,
+                    session_id=session_id,
+                    session_data=session_data,
+                )
+                combat_started = True
 
         return {
             "success": True,

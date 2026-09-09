@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 import src.items as items
 
 from src.api.combat_adapter import (
+    NOT_ENOUGH_FATIGUE_REASON,
     REPORTED_BEAT_KEY,
     ApiCombatAdapter,
     CombatOutputCapture,
@@ -866,7 +867,7 @@ class TestMoveExecution:
 
         result = adapter._handle_move_selection(0)
 
-        assert result.get("error") == "Not enough fatigue"
+        assert result.get("error") == NOT_ENOUGH_FATIGUE_REASON
 
     def test_handle_invalid_move_index(self, adapter_setup, mock_player):
         """Test selecting move with invalid index."""

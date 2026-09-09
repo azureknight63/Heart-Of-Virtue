@@ -40,7 +40,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from src.api.combat_adapter import ApiCombatAdapter
+from src.api.combat_adapter import CANNOT_USE_REASON, ApiCombatAdapter
 from src.api.serializers.combat import CombatantSerializer
 
 # ---------------------------------------------------------------------------
@@ -1956,7 +1956,7 @@ class TestGetAvailableMovesRemainingBranches:
         player.combat_proximity = {enemy: 5}
         adapter = _make_adapter(player)
         moves = adapter._get_available_moves()
-        assert moves[0]["reason"] == "Cannot use this move"
+        assert moves[0]["reason"] == CANNOT_USE_REASON
 
 
 class TestGetAvailableTargetsPlayerSkip:

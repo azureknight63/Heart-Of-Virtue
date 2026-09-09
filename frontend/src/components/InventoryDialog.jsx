@@ -5,7 +5,7 @@ import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { lookupOr } from '../utils/lookup'
-import { stackDisplayName, stackCountLabel, stackSize, isStacked } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '../utils/stackName'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -336,6 +336,11 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
 function ItemCard({ item, onClick, isShop }) {
   const isEquipped = item.is_equipped
   const rarityColor = getRarityColor(item.rarity)
+  // Resolved ONCE. `isStacked(item)` and `stackCountLabel(stackSize(item))`
+  // both walked the payload for "how many", which is two chances to disagree
+  // about it -- the shape `ShopDialog` and `ItemDetailDialog` already avoid by
+  // binding the count first.
+  const quantity = stackSize(item)
 
   return (
     <div
@@ -372,10 +377,11 @@ function ItemCard({ item, onClick, isShop }) {
         </div>
       )}
 
-      {/* Through stackSize, like the badge below it: two hand-picked reads of
-          "how many" in one block is how a count-only payload gets no badge
-          AND has its baked "x3" stripped off the name. */}
-      {isStacked(item) && (
+      {/* Through the resolved `quantity`, like the name above it: two
+          hand-picked reads of "how many" in one block is how a count-only
+          payload gets no badge AND has its baked "x3" stripped off the
+          name. */}
+      {isStackedCount(quantity) && (
         <div style={{
           position: 'absolute',
           top: '-6px',
@@ -388,7 +394,7 @@ function ItemCard({ item, onClick, isShop }) {
           fontWeight: 'bold',
           boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
         }}>
-          {stackCountLabel(stackSize(item))}
+          {stackCountLabel(quantity)}
         </div>
       )}
 
