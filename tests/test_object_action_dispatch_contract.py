@@ -20,15 +20,21 @@ themselves — there is no hand-written list of expected keywords, and the
 derivation is asserted non-empty (and roughly the right size) so it cannot
 silently stop matching and approve everything.
 
-It mirrors ``interact_with_target``'s dispatch order, which is the thing under
-contract:
+It mirrors ``_dispatch_interaction``'s arm order, which is the thing under
+contract. In code order:
 
-  1. ``Passageway`` + ``session_data`` -> queues a transition event (no getattr)
-  2. ``Container`` + a verb in ``Container.LOOK_INSIDE_VERBS`` -> ``open()``
-  3. everything else -> ``resolve_interaction(target, action)``
+  1. ``Container`` + a verb in ``Container.LOOK_INSIDE_VERBS`` -> ``open()``
+  2. a verb in ``_CONTAINER_ITEM_VERBS`` on a container's item -> transfer
+  3. a demo-end ``Passageway`` + a CROSSING verb -> ends the demo
+  4. any OTHER ``Passageway`` + ``session_data`` -> queues a transition event
+  5. everything else -> ``resolve_interaction(target, action)``
 
-Only step 3 is a real function call, so steps 1 and 2 are expressed here as the
-same two engine facts the service branches on.
+Only arm 5 is a real attribute lookup, so the others are expressed here as the
+engine facts the service branches on. Arm 3 is why a demo-end passageway is
+NOT waved through below: a non-crossing verb on it falls all the way to arm 5
+and is refused in fiction, so approving every ``Passageway`` unconditionally
+would make this guard fail open for exactly the object this branch made
+special (``tests/test_ferry_demo_end.py`` pins that behaviour).
 """
 
 import importlib
@@ -177,7 +183,11 @@ def _is_dispatchable(cls, instance, keyword):
     """
     from src.objects import resolve_interaction
 
-    if issubclass(cls, Passageway):
+    # A demo-end passageway is deliberately NOT waved through: only its
+    # crossing verbs are dispatched by arm 3, and everything else falls to
+    # arm 5 (see the module docstring). Waving them all through would make
+    # this guard fail open on the one object type the demo edge added.
+    if issubclass(cls, Passageway) and not getattr(instance, "demo_end", False):
         return True
     look_inside = getattr(Container, "LOOK_INSIDE_VERBS", frozenset())
     if issubclass(cls, Container) and keyword in look_inside:

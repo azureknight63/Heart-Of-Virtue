@@ -959,8 +959,19 @@ def add_preference(player, preftype, setting):
 
 
 def escape_ansi(line):
-    ansi_escape = re.compile(r"(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]")
-    return ansi_escape.sub("", line)
+    """Strip ANSI escapes. Delegates -- the narration sink owns the pattern.
+
+    Kept for the two tests that call it and for API stability; nothing in
+    ``src/``, ``tools/`` or the frontend does. It used to compile a THIRD copy
+    of the pattern, per call, which is exactly what ``src/narration.py``'s
+    consolidation was about -- one of the two copies that retired had already
+    drifted. This one also handled the 8-bit C1 introducers, which nothing in
+    the engine emits (``neotermcolor`` writes ``ESC[`` sequences), so the
+    shared pattern covers every real input.
+    """
+    from src.narration import ANSI_ESCAPE_RE
+
+    return ANSI_ESCAPE_RE.sub("", line)
 
 
 def clean_string(input_string):

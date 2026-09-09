@@ -33,17 +33,22 @@ export default function RoomContents({ location, onInteract }) {
   // Build content descriptions array
   const contentDescriptions = []
 
-  // Add NPCs with idle messages
-  npcs.forEach(npc => {
-    if (npc.idle_message) {
+  // NPCs and objects describe themselves the same way -- an `idle_message`,
+  // or nothing at all. Items do not (they carry `announce` and a fallback),
+  // which is why only these two share a helper. Call order is load-bearing:
+  // the render depends on npc -> item -> object.
+  const pushIdleLines = (entities, type) => entities.forEach(entity => {
+    if (entity.idle_message) {
       contentDescriptions.push({
-        type: 'npc',
-        text: npc.idle_message,
-        name: npc.name,
-        entity: npc,
+        type,
+        text: entity.idle_message,
+        name: entity.name,
+        entity,
       })
     }
   })
+
+  pushIdleLines(npcs, 'npc')
 
   // Add items with announce messages
   items.forEach(item => {
@@ -59,17 +64,7 @@ export default function RoomContents({ location, onInteract }) {
     })
   })
 
-  // Add objects with idle messages
-  objects.forEach(obj => {
-    if (obj.idle_message) {
-      contentDescriptions.push({
-        type: 'object',
-        text: obj.idle_message,
-        name: obj.name,
-        entity: obj,
-      })
-    }
-  })
+  pushIdleLines(objects, 'object')
 
   // Build combined description
   const roomDescriptionText = location.description

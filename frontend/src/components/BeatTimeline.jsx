@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { beatUnit } from '../utils/moveCommitment'
 
 import { colors, spacing } from '../styles/theme';
 import { categoryIcon } from '../utils/categories';
@@ -85,7 +86,7 @@ function TimelineMarker({ entry }) {
 
   return (
     <div
-      title={`${entry.name} — ${entry.moveName} (lands in ${entry.beat} beat${entry.beat === 1 ? '' : 's'})`}
+      title={`${entry.name} — ${entry.moveName} (lands in ${entry.beat} ${beatUnit(entry.beat)})`}
       style={{
         display: 'flex', alignItems: 'center', gap: '4px',
         padding: entry.isPlayer ? '4px 8px' : '2px 6px',

@@ -255,6 +255,12 @@ class Lunge(Move):
             return False
         if getattr(self.user.eq_weapon, "subtype", None) != "Spear":
             return False
+        # The DECLARED band (3-15), deliberately NOT `self.mvrange`. Those are
+        # different quantities: `Move.__init__` narrows `self.mvrange` to the
+        # weapon-derived reach -- (3, 8) for a spear -- and Lunge exists to
+        # close a gap OUTSIDE that reach ("bridges the gap when the target
+        # retreats just outside spear reach", above). Reading `self.mvrange`
+        # here makes the move unusable for the case it was written for.
         return any(3 <= dist <= 15 for dist in self.user.combat_proximity.values())
 
     def evaluate(self):

@@ -40,8 +40,8 @@ function VitalBar({
   // min/max exposes the live value directly; the label/title give every
   // player (not just assistive tech) an always-available accessible name,
   // independent of the pinned tooltip.
-  // Coerce once: `current`/`max` come straight off the wire, and while a
-  // guard upstream handles null/undefined, it doesn't guarantee a number —
+  // Coerce once: `current` comes straight off the wire, and while a guard
+  // upstream handles null/undefined, it doesn't guarantee a number —
   // a malformed payload calling .toFixed() directly would crash the whole
   // HUD render rather than just this bar's tooltip.
   const currentValue = Number(current) || 0

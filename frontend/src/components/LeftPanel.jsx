@@ -21,7 +21,7 @@ import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
 import { MODAL_BACKGROUND_PROPS } from './BaseDialog'
-import { moveAvailability, FLEE_BREAK_AWAY_DISTANCE_FT } from '../utils/combatMoveStatus'
+import { moveAvailability, FLEE_BREAK_AWAY_DISTANCE_FT, autoResolvedTargetId } from '../utils/combatMoveStatus'
 import HeatMeter from './HeatMeter'
 import ShopDialog from './ShopDialog'
 import useCombatLogPlayback from '../hooks/useCombatLogPlayback'
@@ -298,15 +298,17 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // dialogs (e.g. CombatCheckDialog for Check) remain visible.
     const isInstantMove = KEEP_TAB_MOVES.has(move.name)
 
-    // Auto-select single target if it doesn't require selection
-    if (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1) {
-      const target = move.viable_targets[0];
+    // Auto-select single target if it doesn't require selection. Shared with
+    // the battlefield hover in MoveCard, so the highlight and the submitted
+    // id cannot disagree.
+    const autoTargetId = autoResolvedTargetId(move)
+    if (autoTargetId) {
       try {
         setPendingMoveSelection(true)
         if (!isInstantMove) notifyMoveSubmitted()
         await onCombatAction('select_move_and_target', {
           move_name: move.name,
-          target_id: target.id
+          target_id: autoTargetId
         })
       } catch (err) {
         console.error('Failed to auto-select target:', err)

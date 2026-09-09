@@ -3,7 +3,7 @@ import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
-import { stackDisplayName, stackCountLabel, stackSize, isStacked } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '../utils/stackName'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -150,7 +150,7 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {stackDisplayName(item)}
         </span>
-        {isStacked(item) && (
+        {isStackedCount(count) && (
           <span style={{
             fontSize: '0.58rem',
             background: 'rgba(255,204,0,0.15)',

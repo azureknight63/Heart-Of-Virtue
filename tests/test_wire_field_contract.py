@@ -394,10 +394,22 @@ MOVE_CONTRACT = {
     # function's own return shape and could therefore never fail.
     "reason": Read("combatMoveStatus.js", "move.reason"),
     "fatigue_cost": Read("CombatMovePanel.jsx", "move.fatigue_cost"),
-    "targeted": Read("CombatMovePanel.jsx", "move.targeted"),
-    "viable_targets": Read("CombatMovePanel.jsx", "move.viable_targets"),
+    # These three moved together into `autoResolvedTargetId`: the panel and
+    # LeftPanel each had their own copy of the three-term predicate, and a
+    # drift meant the battlefield highlighted one enemy while the click
+    # submitted another. Helper-plus-consumer, as with `count`/`quantity`
+    # below: the helper read alone would keep passing if both surfaces
+    # stopped auto-resolving targets entirely.
+    "targeted": (
+        Read("combatMoveStatus.js", "move.targeted"),
+        Read("LeftPanel.jsx", "autoResolvedTargetId(move)"),
+    ),
+    "viable_targets": (
+        Read("combatMoveStatus.js", "move.viable_targets"),
+        Read("CombatMovePanel.jsx", "autoResolvedTargetId(move)"),
+    ),
     "requires_target_selection": Read(
-        "CombatMovePanel.jsx", "move.requires_target_selection"
+        "combatMoveStatus.js", "move.requires_target_selection"
     ),
     # `category` routes the move to a radial button via CATEGORY_GROUPS
     # (utils/categories.js). A category no group claims leaves the move with no
@@ -654,7 +666,7 @@ TARGET_CONTRACT = {
     "name": Read("CombatInputDialog.jsx", "target.name"),
     "distance": Read("CombatInputDialog.jsx", "target.distance"),
     # target.health.current / target.health.max
-    "health": Read("CombatInputDialog.jsx", "target.health.current"),
+    "health": Read("CombatInputDialog.jsx", "const hp = target.health"),
     # Bug #4: hit_chance is an already-integer percentage (see
     # ShootBow.calculate_hit_chance) — CombatInputDialog explicitly does NOT
     # rescale it. If the engine ever starts sending a 0-1 fraction instead,
@@ -1496,7 +1508,7 @@ ROOM_ITEM_CONTRACT = {
     # which is exactly the regression this entry exists to catch.
     "count": (
         Read("utils/stackName.js", "item?.count"),
-        Read("InteractPanel.jsx", "stackSize(target)"),
+        Read("InteractPanel.jsx", "stackSize(selectedTarget)"),
     ),
     # allTargets.filter(t => !t.hidden)
     "hidden": Read("InteractPanel.jsx", "t.hidden"),
@@ -1508,10 +1520,13 @@ ROOM_ITEM_CONTRACT = {
 ROOM_NPC_CONTRACT = {
     # key={`${target.id}-${idx}`}
     "id": Read("InteractPanel.jsx", "target.id"),
-    "name": Read("RoomContents.jsx", "npc.name"),
+    "name": Read("RoomContents.jsx", "entity.name"),
     # npc_class: n.type -> NpcChatPanel npcId
     "type": Read("InteractPanel.jsx", "n.type"),
-    "idle_message": Read("RoomContents.jsx", "npc.idle_message"),
+    # NPCs and objects describe themselves identically (an `idle_message`
+    # or nothing), so `pushIdleLines` reads BOTH shapes -- which is why
+    # this anchor and the object contract's are the same literal.
+    "idle_message": Read("RoomContents.jsx", "entity.idle_message"),
     "llm_chat_enabled": Read("InteractPanel.jsx", "selectedTarget?.llm_chat_enabled"),
     "loquacity_available": Read(
         "InteractPanel.jsx", "selectedTarget?.loquacity_available"
@@ -1521,8 +1536,8 @@ ROOM_NPC_CONTRACT = {
 # Room objects flow through ObjectSerializer.serialize_list.
 ROOM_OBJECT_CONTRACT = {
     "id": Read("InteractPanel.jsx", "target.id"),
-    "name": Read("RoomContents.jsx", "obj.name"),
-    "idle_message": Read("RoomContents.jsx", "obj.idle_message"),
+    "name": Read("RoomContents.jsx", "entity.name"),
+    "idle_message": Read("RoomContents.jsx", "entity.idle_message"),
     # objectState.keywords ?? prev.keywords
     "keywords": Read("InteractPanel.jsx", "objectState.keywords"),
 }

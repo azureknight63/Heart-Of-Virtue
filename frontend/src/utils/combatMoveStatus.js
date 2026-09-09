@@ -92,6 +92,30 @@ export function displayNameOf(value) {
 export const NO_REACHABLE_TARGET_REASON = 'No valid target in range';
 
 /**
+ * The id the client may submit WITHOUT asking the player, or null.
+ *
+ * A targeted move that does not require a selection and has exactly one
+ * viable target resolves itself: `LeftPanel` POSTs
+ * `select_move_and_target` with that id, and `MoveCard` highlights the same
+ * combatant on the battlefield so the player can see what they are about to
+ * hit. Those two were separate copies of the three-term predicate, so a
+ * drift meant the card highlighted one enemy while the click submitted
+ * another -- a wrong hit, with nothing failing.
+ *
+ * Allies are NOT excluded here: an ally target is still auto-resolvable and
+ * still gets submitted. The battlefield hover narrows to `enemy_` at its own
+ * call site, because that highlight is drawn from the enemy roster.
+ *
+ * @param {Object} move a move entry from `available_options` / `moves`
+ * @returns {?string} the sole viable target's id, or null
+ */
+export function autoResolvedTargetId(move) {
+  if (!move?.targeted || move.requires_target_selection) return null;
+  if (move.viable_targets?.length !== 1) return null;
+  return move.viable_targets[0]?.id ?? null;
+}
+
+/**
  * The break-away threshold, in feet: FLEE is refused with any enemy closer.
  *
  * The ENGINE owns this rule (`FLEE_BREAK_AWAY_DISTANCE`,

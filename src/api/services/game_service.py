@@ -115,6 +115,20 @@ _PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
 _ECHOED_ACTION_MAX_LENGTH = 40
 
 
+def _is_demo_end_passageway(target):
+    """Is this the passageway the demo stops at?
+
+    Its own function because the dispatch chain asks it twice with OPPOSITE
+    polarity -- the demo-end arm needs it True, and the generic
+    "step through?" arm needs it False, so that a non-crossing verb on the
+    demo edge cannot arm a confirmation whose confirm ends the demo with no
+    ``beta_end`` (#552).
+    """
+    from src.objects import Passageway
+
+    return isinstance(target, Passageway) and getattr(target, "demo_end", False)
+
+
 def _is_demo_end_crossing(target, handler):
     """True when `handler` is a verb that would CROSS a demo-end passageway.
 
@@ -135,9 +149,7 @@ def _is_demo_end_crossing(target, handler):
     answer for its own dispatch, and two `resolve_interaction` calls are two
     sites that have to keep agreeing about what a verb means.
     """
-    from src.objects import Passageway
-
-    if not isinstance(target, Passageway) or not getattr(target, "demo_end", False):
+    if not _is_demo_end_passageway(target):
         return False
     return target.is_crossing_handler(handler)
 
@@ -2284,7 +2296,7 @@ class GameService:
         dispatch chain, narration capture, ANSI stripping, teleport detection
         and response assembly.
 
-Returns an :class:`_InteractionOutcome`. Its ``refusal`` is None
+        Returns an :class:`_InteractionOutcome`. Its ``refusal`` is None
         on the normal path and the in-fiction refusal SENTENCE when the verb
         resolves to nothing callable — a string, not a response body: an
         engine-dispatch helper has no business knowing the route's wire shape.
@@ -2372,7 +2384,7 @@ Returns an :class:`_InteractionOutcome`. Its ``refusal`` is None
         # player got the closing beat and the story gate and no BetaEndDialog.
         elif (
             isinstance(target, Passageway)
-            and not getattr(target, "demo_end", False)
+            and not _is_demo_end_passageway(target)
             and session_data is not None
         ):
             events_triggered.extend(

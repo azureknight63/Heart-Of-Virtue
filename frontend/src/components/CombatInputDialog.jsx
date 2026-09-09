@@ -50,6 +50,12 @@ const TargetCard = ({ target, confirmVerb, onHover, onSelect }) => {
   // never guessed.
   const hostility = hostilityTokenFor(target);
 
+  const hp = target.health;
+  // Guard the divisor: a combatant serialized with max 0 would otherwise put
+  // "Infinity%" into the style.
+  const hpPct = hp && hp.max > 0 ? hp.current / hp.max : 0;
+  const hpColor = hp ? healthBarColor(hp.current, hp.max) : null;
+
   return (
       <div
           data-testid="target-card"
@@ -82,21 +88,15 @@ const TargetCard = ({ target, confirmVerb, onHover, onSelect }) => {
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {target.health && (() => {
-                  // Guard the divisor: a combatant serialized with max 0
-                  // would otherwise put "Infinity%" into the style.
-                  const hpPct = target.health.max > 0 ? target.health.current / target.health.max : 0;
-                  const hpColor = healthBarColor(target.health.current, target.health.max);
-                  return (
-                      <div style={{ fontSize: '12px', color: hpColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ minWidth: '30px', opacity: 0.6 }}>HP:</span>
-                          <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
-                              <div style={{ width: `${hpPct * 100}%`, height: '100%', backgroundColor: hpColor, borderRadius: '2px' }} />
-                          </div>
-                          <span style={{ fontSize: '10px', color: hpColor }}>{target.health.current}/{target.health.max}</span>
+              {hp && (
+                  <div style={{ fontSize: '12px', color: hpColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ minWidth: '30px', opacity: 0.6 }}>HP:</span>
+                      <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
+                          <div style={{ width: `${hpPct * 100}%`, height: '100%', backgroundColor: hpColor, borderRadius: '2px' }} />
                       </div>
-                  );
-              })()}
+                      <span style={{ fontSize: '10px', color: hpColor }}>{hp.current}/{hp.max}</span>
+                  </div>
+              )}
               {target.hit_chance !== undefined && (
                   <div style={{ fontSize: '12px', color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Accuracy:</span>

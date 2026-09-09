@@ -6,7 +6,7 @@ import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
-import { displayNameOf, moveAvailability } from '../utils/combatMoveStatus';
+import { displayNameOf, moveAvailability, autoResolvedTargetId } from '../utils/combatMoveStatus';
 import { useOccludedNavHandoff } from '../hooks/useOccludedNavHandoff';
 import {
     STAGE_KEYS,
@@ -136,11 +136,14 @@ function MoveCard({
   // (issue #554) — see moveAvailability.
   const { available: isAvailable, reason } = moveAvailability(move);
 
-  // Single target detection for hover effect
-  const firstTarget = move.viable_targets?.[0];
-  const singleTargetId = (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1 && firstTarget?.id?.startsWith('enemy_'))
-      ? firstTarget.id
-      : null;
+  // Which combatant this card would hit if clicked, for the battlefield
+  // hover. The predicate is `autoResolvedTargetId`'s -- the same one
+  // LeftPanel submits on, so the highlight cannot name a different enemy
+  // than the click. Narrowed to `enemy_` HERE, not there: an ally target is
+  // still auto-resolved and submitted, it just has no enemy-roster token to
+  // light up.
+  const autoTargetId = autoResolvedTargetId(move);
+  const singleTargetId = autoTargetId?.startsWith('enemy_') ? autoTargetId : null;
 
   // The card is a wrapper, not the button itself: the
   // unavailability reason carries interactive glossary terms

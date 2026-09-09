@@ -4,9 +4,9 @@ import { beatUnit } from '../utils/moveCommitment'
 import { colors, spacing } from '../styles/theme';
 import GameText from './GameText';
 
-//: How long the abort must be held, in ms. Long enough that an
-//: accidental press cannot forfeit a move in flight, short enough to
-//: stay usable while beats are streaming.
+// How long the abort must be held, in ms. Long enough that an
+// accidental press cannot forfeit a move in flight, short enough to
+// stay usable while beats are streaming.
 export const HOLD_MS = 600;
 
 /**

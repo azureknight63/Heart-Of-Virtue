@@ -311,7 +311,11 @@ def move_unavailability_reason(move, player, is_targeted):
     # likely to be a target it may not legally hit.
     return (
         "Enemy out of range (too far)"
-        if range_max <= 5
+        # `< MELEE_REACH_FT`, not a literal 5: this is the same "a sword
+        # reaches about 5 ft" fact the constant is named for, and retuning it
+        # there used to move the range ring and the glossary while leaving
+        # this wording on the old band.
+        if range_max < MELEE_REACH_FT
         else "No valid target in range"
     )
 

@@ -208,7 +208,12 @@ export function useWorldInteract({
     const applyPanelLock = useCallback((action, target, qty) => {
         const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']
         if (!lockingActions.some(a => action.toLowerCase().includes(a))) return
-        const currentCount = parseInt(target.count) || 1
+        // Through the helper, not `parseInt(target.count)`: this is neither
+        // a wire argument nor display, it is exactly stackSize's question,
+        // and the raw read ignored the `quantity` spelling -- so a
+        // quantity-carrying target yielded 1 and locked the panel after a
+        // partial take.
+        const currentCount = stackSize(target) || 1
         const requestedQty = parseInt(qty) || 0
         const tookOnlyPartOfTheStack = requestedQty > 0 && requestedQty < currentCount
         setIsLocked(!tookOnlyPartOfTheStack)

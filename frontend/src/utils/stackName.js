@@ -67,6 +67,16 @@ export const stackDisplayName = (item) => {
 };
 
 /**
+ * A stackable's display name with its badge: "Mineral Powder ×3".
+ *
+ * The pair `stackDisplayName(item)` + `stackCountLabel(stackSize(item))` was
+ * spelled identically at two InteractPanel sites. Trimmed, so an unstacked
+ * item renders no trailing space -- which the inline pair did.
+ */
+export const stackLabel = (item) =>
+  `${stackDisplayName(item)} ${stackCountLabel(stackSize(item))}`.trim();
+
+/**
  * Is a stack size worth badging?
  *
  * The `> 1` threshold was written at each render gate AND inside
