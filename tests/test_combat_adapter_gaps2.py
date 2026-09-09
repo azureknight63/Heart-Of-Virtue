@@ -660,15 +660,65 @@ class TestHandleNumberSelectionBranches:
 
 
 class TestGetAvailableMovesReasons:
-    def test_no_weapon_reason_for_attack(self):
-        move = _make_move("Attack", viable=False, targeted=False)
-        player = _make_player()
-        player.known_moves = [move]
-        player.eq_weapon = None
-        player.combat_proximity = {}
-        adapter = _make_adapter(player)
-        moves = adapter._get_available_moves()
-        assert moves[0]["reason"] == "No weapon equipped"
+    def test_the_engines_attack_is_targeted_so_no_untargeted_arm_is_needed(self):
+        """The deleted "No weapon equipped" arm was unreachable, and this says why.
+
+        There used to be an ``elif move.name == "Attack" and not eq_weapon``
+        arm below the targeted split, with a test that reached it by building
+        a double named "Attack" with ``targeted=False``. The engine builds no
+        such move: ``Attack`` passes ``targeted=True`` and ``self.targeted``
+        is written in exactly one place, so the targeted arm always claims it.
+        A double contradicting the engine is the "mock agreeing with a mock"
+        this project names as its dominant bug class -- it kept a dead branch
+        alive and green for as long as it existed.
+
+        Read out of the SOURCE, not off an instance: ``Attack.__init__`` calls
+        ``evaluate()``, which needs a real equipped weapon, so constructing one
+        here would mean building the very double this test exists to argue
+        against. AST is the idiom ``tests/test_disabled_move_reasons.py``
+        already uses for the same reason.
+        """
+        import ast
+        import pathlib
+
+        source = pathlib.Path("src/moves/_utility.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        attack = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name == "Attack"
+        )
+        super_calls = [
+            node
+            for node in ast.walk(attack)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "__init__"
+        ]
+        assert len(super_calls) == 1, "Attack no longer has one super().__init__"
+        targeted = {
+            kw.arg: kw.value
+            for kw in super_calls[0].keywords
+        }.get("targeted")
+        assert isinstance(targeted, ast.Constant) and targeted.value is True, (
+            "Attack is no longer constructed with targeted=True, so the "
+            "untargeted no-weapon arm deleted from _get_available_moves "
+            "becomes reachable again -- give Attack a weapon_requirement "
+            "instead, or restore the arm with a real test."
+        )
+        declared = {
+            target.id
+            for node in attack.body
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        assert "weapon_requirement" not in declared, (
+            "Attack now declares a weapon_requirement, so "
+            "weapon_requirement_reason answers for it before the targeted "
+            "split -- update this test and the comment in "
+            "_get_available_moves that says the arm was removed"
+        )
 
     def test_targeted_not_viable_with_range_too_far(self):
         move = _make_move("Slash", viable=False, targeted=True)

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { CATEGORY_NAV_SELECTOR } from '../utils/categories'
+import { GAME_PANEL_CLASS } from '../components/GamePanel'
 
 // "The panel" throughout this module means the panel that CALLS
 // `useOccludedNavHandoff` -- CombatMovePanel today, and only it.
@@ -76,7 +77,7 @@ export function useOccludedNavHandoff(contentRef) {
         // panel ROOT — whose padding ring is exactly the inert chrome the
         // reported hit-test landed on — is resolved from it.
         const content = contentRef.current;
-        const panel = content?.closest('.game-panel') ?? content;
+        const panel = content?.closest(`.${GAME_PANEL_CLASS}`) ?? content;
         if (!panel) return undefined;
 
         // Deliberately NOT gated on `event.isTrusted`, though a scrub pass

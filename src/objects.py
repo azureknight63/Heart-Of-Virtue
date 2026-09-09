@@ -927,7 +927,7 @@ class Passageway(Object):
             aliases=aliases,
         )
         self.keywords.append("enter")
-        self.action_aliases.extend(["go", "leave", "exit"])
+        self.action_aliases.extend(Passageway._DELEGATED_CROSSING_VERBS)
         self.keywords.extend(self.action_aliases)
         _name_words = name.lower().replace("'s", "").replace("'", "").split()
         for _word in _name_words:
@@ -949,14 +949,22 @@ class Passageway(Object):
         # See end_demo() and issue #552.
         self.demo_end = demo_end
 
-    #: The methods that CROSS this passageway. ``go``/``leave``/``exit``
-    #: DELEGATE to ``enter`` rather than aliasing it, so they are distinct
-    #: bound methods and an identity test against ``enter`` alone answers
-    #: False for all three -- which is how a demo-end passageway stayed
-    #: crossable by the only three verbs the shipped map authors (#552).
-    #: The authored name words (``ferry``, ``landing``) ARE bound to ``enter``
-    #: itself and so answer through that entry.
-    CROSSING_METHOD_NAMES = ("enter", "go", "leave", "exit")
+    #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
+    #: once because ``__init__`` registers them as aliases and
+    #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
+    #: delegator and forgetting the tuple re-opens #552 exactly, with a
+    #: demo-end passageway crossable by a verb ``is_crossing_handler`` answers
+    #: False for. ``tests/test_object_action_dispatch_contract.py`` derives
+    #: the check from this attribute rather than a hand-kept list.
+    _DELEGATED_CROSSING_VERBS = ("go", "leave", "exit")
+
+    #: The methods that CROSS this passageway. The delegators above are
+    #: distinct bound methods, so an identity test against ``enter`` alone
+    #: answers False for all three -- which is how a demo-end passageway
+    #: stayed crossable by the only three verbs the shipped map authors
+    #: (#552). The authored name words (``ferry``, ``landing``) ARE bound to
+    #: ``enter`` itself and so answer through that entry.
+    CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
 
     def is_crossing_handler(self, handler):
         """True when ``handler`` is one of this passageway's crossing methods.

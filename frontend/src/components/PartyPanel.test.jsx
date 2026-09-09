@@ -229,6 +229,29 @@ describe('PartyPanel', () => {
     expect(screen.getByText(/Gorran feels better\./)).toBeInTheDocument();
   });
 
+  it('aggregates two baked-name entries without doubling either count', async () => {
+    // The row carries TWO counts on purpose: stackDisplayName reads the
+    // spread-through source count (3) so the engine's baked " x3" matches and
+    // is stripped, while the badge reads the SUM (6). Nothing about the code
+    // forces them apart, so this is the guard: normalising either read to the
+    // other renders "Dried Crystal Sap x3 ×6" or "Dried Crystal Sap ×3".
+    const player = {
+      name: 'Jean',
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [
+        { id: 'i1', name: 'Dried Crystal Sap x3', can_use: true, count: 3 },
+        { id: 'i2', name: 'Dried Crystal Sap x3', can_use: true, count: 3 },
+      ],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+
+    expect(screen.getByText('Dried Crystal Sap')).toBeInTheDocument();
+    expect(screen.queryByText(/Dried Crystal Sap x3/)).not.toBeInTheDocument();
+    expect(screen.getByText('×6')).toBeInTheDocument();
+    expect(screen.queryByText('×3')).not.toBeInTheDocument();
+  });
+
   it('strips the engine-baked count from the confirmation sentence (#565)', async () => {
     // The picker row was migrated to stackDisplayName; the confirmation
     // sentence one state field over was not, so a stackable read

@@ -23,10 +23,14 @@ import { stackDisplayName, stackSize } from '../utils/stackName'
  * @param {Function} params.onEventsTriggered - called with an array of triggered events
  * @param {Function} params.onInteractionComplete - called after an interaction
  *   fully resolves. Receives the `/world/interact` response body from the
- *   `interact()` path only; `takeAll`, `takeOne` and the direct-teleport exit
- *   call it with NO argument, because none of them has a body to hand over —
- *   they resync through `onRefetch` instead. Consumers must optional-chain
- *   (`data?.beta_end`), never assume a body.
+ *   `interact()` path only. Three other paths call it with NO argument:
+ *   `takeAll` (a batch, with no single body to hand over),
+ *   `handlePassagewayTransition` (its body was consumed by the caller that
+ *   handed it the events), and the direct-teleport exit — which DOES hold
+ *   `data` and deliberately withholds it, because a consumer reading
+ *   `data.beta_end` off a teleport that has already moved the player would be
+ *   acting on a room it has left. `takeOne` does not call it at all.
+ *   Consumers must optional-chain (`data?.beta_end`), never assume a body.
  * @param {Function} params.onTypingChange - called with true when new output should type out
  * @param {Function} params.onClose - called before a transition event is shown, or after a delay for a direct teleport
  * @param {Function} params.onObjectStateUpdate - called with data.object_state for local target patching
@@ -93,6 +97,12 @@ export function useWorldInteract({
         const takenLabels = []
         for (const item of takeableItems) {
             try {
+                // The RAW `count` as the wire quantity, deliberately, while the
+                // label two lines down asks stackSize: `_dispatch_interaction`
+                // treats a missing quantity as "take target.count", so this
+                // argument is the engine's own field and not a display
+                // reading. Unify only after checking that path -- passing a
+                // stackSize-derived 1 is not equivalent to passing nothing.
                 const response = await apiEndpoints.world.interact(item.id, 'take', item.count)
                 const data = response.data
 

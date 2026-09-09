@@ -336,9 +336,13 @@ function InteractPanel({
 
         // Check if we need to ask for quantity
         const isStackableAction = ['take', 'pickup', 'drop'].some(a => action.toLowerCase().includes(a))
-        if (isStackableAction && selectedTarget.count > 1 && qty === null) {
+        // Through stackSize, like the badges in this file: `count` is what
+        // ItemSerializer emits for this payload today, but a hand-picked read
+        // beside a helper-resolved one is two canonical-looking ways to ask
+        // the same question.
+        if (isStackableAction && stackSize(selectedTarget) > 1 && qty === null) {
             setPendingAction(action)
-            setQuantity(selectedTarget.count) // Default to all
+            setQuantity(stackSize(selectedTarget)) // Default to all
             setShowQuantityInput(true)
             return
         }
@@ -571,16 +575,16 @@ function InteractPanel({
                                         nested inside this outer GameText's own <p> is invalid HTML and fired
                                         React's validateDOMNesting warning on every quantity prompt (#540 item 14). */}
                                     <GameText as="span" variant="muted" size="xs" weight="normal" style={{ display: 'block' }}>
-                                        Available: {selectedTarget.count}
+                                        Available: {stackSize(selectedTarget)}
                                     </GameText>
                                 </GameText>
                                 <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
                                     <input
                                         type="number"
                                         min="1"
-                                        max={selectedTarget.count}
+                                        max={stackSize(selectedTarget)}
                                         value={quantity}
-                                        onChange={(e) => setQuantity(Math.min(selectedTarget.count, Math.max(1, parseInt(e.target.value) || 1)))}
+                                        onChange={(e) => setQuantity(Math.min(stackSize(selectedTarget), Math.max(1, parseInt(e.target.value) || 1)))}
                                         style={{
                                             backgroundColor: colors.bg.main,
                                             border: `1px solid ${colors.secondary}`,

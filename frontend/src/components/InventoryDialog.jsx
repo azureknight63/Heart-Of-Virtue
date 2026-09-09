@@ -5,7 +5,7 @@ import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { lookupOr } from '../utils/lookup'
-import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize, isStacked } from '../utils/stackName'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -375,7 +375,7 @@ function ItemCard({ item, onClick, isShop }) {
       {/* Through stackSize, like the badge below it: two hand-picked reads of
           "how many" in one block is how a count-only payload gets no badge
           AND has its baked "x3" stripped off the name. */}
-      {stackSize(item) > 1 && (
+      {isStacked(item) && (
         <div style={{
           position: 'absolute',
           top: '-6px',

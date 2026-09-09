@@ -26,6 +26,10 @@ export default function HostilityChip({ token, variant = 'inline' }) {
         border: `1px solid ${token.color}`,
         backgroundColor: token.tint,
         color: token.color,
+        // The generic stack, NOT fonts.main: the chip sits inside italic
+        // serif prose in RoomContents, and a Courier-first stack there reads
+        // as a different typeface rather than as a badge. Left alone
+        // deliberately -- do not let a fonts.main sweep "fix" it.
         fontFamily: 'monospace',
         fontStyle: 'normal',
         fontWeight: 'bold',

@@ -57,8 +57,6 @@ if TYPE_CHECKING:
 #: genuinely outreaches a sword (spear, polearm, bow) gets one.
 MELEE_REACH_FT = 6
 
-# Compiled once at module level for performance
-
 # Shortest prep stage that earns an abort affordance. Below this a move is over
 # before a player could react to anything, and offering a bail-out would only add
 # a decision to every swing. Above it the commitment is long enough that the
@@ -124,7 +122,7 @@ _strip_combatant_prefix = strip_combatant_prefix
 #:
 #: ``entity._pending_animation`` (``PENDING_ANIMATION_ATTR``) is the
 #: per-combatant animation channel: a dict created at cast time and mutated as
-#: the move resolves. Every writer and both deletion points are listed here --
+#: the move resolves. Every writer and every deletion point is listed here --
 #: the sites themselves point back at this block instead of restating fragments
 #: of it.
 #:
@@ -166,12 +164,13 @@ _strip_combatant_prefix = strip_combatant_prefix
 #:   * ``_take_resolution`` -- snapshots one resolution off the dict, records
 #:     ``_reported_beat`` and re-arms ``outcome``/``outcome_target`` to None
 #:
-#: Deletion points (exactly three):
+#: Deletion points:
 #:   * ``_flush_pending_animations`` -- end of each player move (and after the
 #:     initial NPC turns): retires every channel whose move ran to completion,
 #:     emitting a fallback only if the channel never resolved
 #:   * ``_detach_current_move`` -- a move CANCELLED mid-wind-up (abort, event
-#:     interrupt, roster emptied under it): clears ``current_move`` and
+#:     interrupt, roster emptied under it, or the fresh-fight rewind in
+#:     ``_reset_move_state_for_new_fight``): clears ``current_move`` and
 #:     discards that entity's channel as one operation. Never a fallback
 #:     emission -- the cancelled swing never happened, so emitting its
 #:     animation would play a phantom swing
@@ -229,18 +228,15 @@ MAX_ANIMATION_SEQ = 1_000_000
 MAX_INSTANT_STAGES = 20
 
 
+#: The empty-handed refusal. Named because `tests/test_combat_glossary_contract.py`
+#: pins it by value (it must match no glossary term), so the string and the
+#: assertion cannot drift apart.
+_NO_WEAPON_REASON = "No weapon equipped"
+
 #: Weapon subtypes whose engine name is not the noun a player would use. Every
 #: other subtype reads fine lowercased ("crossbow", "scythe", "polearm"), so
 #: only the exceptions are listed — and the phrases here are COMPLETE, article
 #: and all, because neither of them takes one.
-#: The empty-handed refusal, named because two producers ship it -- this
-#: module's `weapon_requirement_reason` and `_get_available_moves`' own
-#: no-weapon branch, which stays live because `Attack` declares no
-#: `weapon_requirement`. `tests/test_combat_glossary_contract.py` pins the
-#: string by value, so a divergence in one producer is an unpinned
-#: player-facing sentence.
-_NO_WEAPON_REASON = "No weapon equipped"
-
 _WEAPON_NOUN_PHRASES = {
     "Unarmed": "bare hands",
     "Stars": "throwing stars",
@@ -3806,11 +3802,24 @@ class ApiCombatAdapter:
                             move_data["reason"] = "Cannot use this move"
                     else:
                         move_data["reason"] = "No valid target"
-                elif move.name == "Attack" and not getattr(
-                    self.player, "eq_weapon", None
-                ):
-                    move_data["reason"] = _NO_WEAPON_REASON
                 else:
+                    # No "No weapon equipped" arm here. There was one, gated on
+                    # `move.name == "Attack" and not eq_weapon`, and it was
+                    # unreachable twice over: the engine's Attack is
+                    # `targeted=True` (src/moves/_utility.py), so the
+                    # `elif is_targeted` above always claims it, and a Player
+                    # always has an `eq_weapon` anyway -- `Player.__init__`
+                    # equips `items.Fists()`, which is truthy. Only mocks with
+                    # `targeted=False` ever ran it.
+                    #
+                    # Getting that sentence to a bare-handed Jean means giving
+                    # `Attack` a `weapon_requirement`, which is this project's
+                    # declared mechanism for it (`weapon_requirement_reason`
+                    # runs BEFORE the targeted split, and
+                    # tests/test_disabled_move_reasons.py AST-checks the
+                    # declarations). That is a move-availability change, not a
+                    # comment fix, so it is left to its own issue rather than
+                    # smuggled in here.
                     move_data["reason"] = "Cannot use this move"
 
             moves.append(move_data)

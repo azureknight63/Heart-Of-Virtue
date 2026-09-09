@@ -1483,40 +1483,13 @@ class TestGetAvailableMoves:
         moves = adapter._get_available_moves()
         assert moves[0]["available"] is False
 
-    def test_attack_no_weapon_reason(self):
-        player = _make_player()
-        player.eq_weapon = None
-        player.combat_proximity = {}
-        move = _make_move(name="Attack", viable=False)
-        del move.mvrange
-        move2 = MagicMock(
-            spec=[
-                "name",
-                "passive",
-                "viable",
-                "targeted",
-                "fatigue_cost",
-                "current_stage",
-                "beats_left",
-                "category",
-                "description",
-                "needs_duration",
-            ]
-        )
-        move2.name = "Attack"
-        move2.passive = False
-        move2.viable.return_value = False
-        move2.targeted = False
-        move2.fatigue_cost = 0
-        move2.current_stage = 0
-        move2.beats_left = 0
-        move2.category = "Offensive"
-        move2.description = ""
-        move2.needs_duration = False
-        player.known_moves = [move2]
-        adapter = _make_adapter(player)
-        moves = adapter._get_available_moves()
-        assert moves[0]["reason"] == "No weapon equipped"
+    # `test_attack_no_weapon_reason` lived here. It built a double named
+    # "Attack" with `targeted=False` to reach an `elif` arm that only such a
+    # double could reach -- the engine's Attack is `targeted=True`, so the
+    # targeted arm always claimed it, and a Player always has an `eq_weapon`
+    # (`Fists()`) besides. The arm is deleted; the invariant that made it dead
+    # is asserted against the real class in
+    # tests/test_combat_adapter_gaps2.py.
 
 
 # ---------------------------------------------------------------------------

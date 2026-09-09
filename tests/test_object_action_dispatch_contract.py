@@ -185,6 +185,54 @@ def _is_dispatchable(cls, instance, keyword):
     return resolve_interaction(instance, keyword) is not None
 
 
+def test_every_delegated_crossing_verb_is_a_crossing_handler():
+    """``__init__``'s aliases and ``CROSSING_METHOD_NAMES`` name one set.
+
+    ``go``/``leave``/``exit`` DELEGATE to ``enter`` rather than aliasing it,
+    so ``is_crossing_handler`` cannot answer for them by identity against
+    ``enter`` -- it consults ``CROSSING_METHOD_NAMES``. Both that tuple and
+    the alias registration derive from ``_DELEGATED_CROSSING_VERBS``, and this
+    is the guard that they still do: a fourth delegator added as a method and
+    an alias but left out of the set re-opens #552, with a demo-end passageway
+    crossable by a verb the API's gate answers False for.
+
+    Derived from the class attribute, never a hand-kept list -- a list here
+    would go stale in exactly the way it is meant to catch.
+    """
+    passage = Passageway(
+        player=None,
+        tile=None,
+        name="Ferry Landing",
+        teleport_map="somewhere",
+        teleport_tile=(1, 1),
+    )
+
+    for verb in Passageway._DELEGATED_CROSSING_VERBS:
+        assert verb in passage.action_aliases, (
+            f"{verb!r} delegates to enter but __init__ never registered it "
+            "as an alias, so the client is offered no button for it"
+        )
+        assert verb in Passageway.CROSSING_METHOD_NAMES, (
+            f"{verb!r} crosses the passageway but is_crossing_handler does "
+            "not count it -- a demo-end passageway is crossable by it"
+        )
+        handler = getattr(passage, verb, None)
+        assert callable(handler), f"{verb!r} names no method on Passageway"
+        assert passage.is_crossing_handler(handler), (
+            f"is_crossing_handler answers False for {verb!r}"
+        )
+
+    # `enter` itself, and the instance-bound authored name words that are set
+    # to `enter` directly, must answer through that entry.
+    assert passage.is_crossing_handler(passage.enter)
+    assert passage.is_crossing_handler(passage.ferry)
+
+    # Negative control: a verb that does not cross must not be counted, or the
+    # assertions above would pass for a predicate that returns True always.
+    assert not passage.is_crossing_handler(passage.build_article_phrase)
+    assert not passage.is_crossing_handler(None)
+
+
 # ---------------------------------------------------------------------------
 # Derivation guards — without these the contract below is fail-open.
 # ---------------------------------------------------------------------------

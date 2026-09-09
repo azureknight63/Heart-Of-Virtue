@@ -100,6 +100,10 @@ _LLM_NOISE_PREFIXES = (
 #: traceback goes to the log instead.
 _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 
+#: The #543 refusal, named because both guard sites ship it -- the move path
+#: under ``"error"`` and the interaction path under ``"message"``.
+_PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
+
 
 #: Cap on the client-supplied verb echoed back by
 #: :func:`_unsupported_action_message`. The /world/interact route validates
@@ -108,8 +112,8 @@ _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 _ECHOED_ACTION_MAX_LENGTH = 40
 
 
-def _is_demo_end_crossing(target, action):
-    """True when `action` is a verb that would CROSS a demo-end passageway.
+def _is_demo_end_crossing(target, handler):
+    """True when `handler` is a verb that would CROSS a demo-end passageway.
 
     Gated on the resolved handler rather than on the verb, because a
     Passageway binds its authored name words (`ferry`, `landing`) to `enter`
@@ -122,12 +126,17 @@ def _is_demo_end_crossing(target, action):
     this function's: comparing against `enter` here missed `go`/`leave`/`exit`,
     which delegate to it rather than alias it -- and those are the only three
     the shipped ferry authors.
+
+    Takes the already-resolved handler rather than the verb, so one
+    interaction resolves the verb once: `_dispatch_interaction` needs the same
+    answer for its own dispatch, and two `resolve_interaction` calls are two
+    sites that have to keep agreeing about what a verb means.
     """
-    from src.objects import Passageway, resolve_interaction
+    from src.objects import Passageway
 
     if not isinstance(target, Passageway) or not getattr(target, "demo_end", False):
         return False
-    return target.is_crossing_handler(resolve_interaction(target, action))
+    return target.is_crossing_handler(handler)
 
 
 def _call_interaction_handler(method, player, quantity):
@@ -182,6 +191,29 @@ def _unsupported_action_message(target, action):
     return f"There's no way for Jean to {verb} the {name}."
 
 
+class _InteractionRequest(NamedTuple):
+    """Everything one interaction is about, resolved once and passed around.
+
+    The four helpers below it were taking six, six, four and four loose
+    positionals drawn from this same set -- all untyped, several of compatible
+    shape, so a caller that transposed ``action`` and ``tile`` still ran. Same
+    argument :class:`_PreInteractionLocation` makes for the pre-location
+    triple, applied to the request it sits beside.
+
+    ``target_id`` rides along beside ``target`` because the attack redirect
+    hands the id back to :meth:`GameService.start_combat`, which resolves it
+    itself rather than taking an entity.
+    """
+
+    player: Any
+    target: Any
+    target_id: str
+    tile: Any
+    action: str
+    quantity: Optional[int]
+    session_data: Optional[Dict]
+
+
 class _PreInteractionLocation(NamedTuple):
     """Where the player stood before an interaction ran.
 
@@ -212,9 +244,10 @@ class _PreInteractionLocation(NamedTuple):
         )
 
 
-#: Runs of blank lines in captured narration, collapsed to one. Compiled
-#: beside the ANSI pattern it sits two lines from, rather than being the one
-#: uncompiled regex in a function that already imports a named one.
+#: Runs of blank lines in captured narration, collapsed to one. Compiled at
+#: module level rather than left as the one inline regex in a function that
+#: already uses a named, imported one (``ANSI_ESCAPE_RE``, from
+#: ``src/narration.py``).
 _BLANK_LINE_RUN_RE = re.compile(r"\n\s*\n")
 
 #: API-side: the two ``_ALLOWED_INTERACTION_VERBS`` entries that move an item
@@ -1751,7 +1784,7 @@ class GameService:
         ):
             return {
                 "success": False,
-                "error": "Cannot use a passageway while in combat.",
+                "error": _PASSAGEWAY_IN_COMBAT_MESSAGE,
             }
 
         # Process the event with user input
@@ -2145,13 +2178,16 @@ class GameService:
     # Interaction Methods
     # ========================
 
-    def _open_container_for_loot(self, player, target, tile, session_data):
+    def _open_container_for_loot(self, request):
         """Open a container and, if it really opened, arm its loot dialog.
 
         Returns the event payloads to append — a one-element list, or empty
         when the container stayed shut.
         """
         from src.events import LootEvent
+
+        player, target = request.player, request.target
+        tile, session_data = request.tile, request.session_data
 
         target.open()
         # Only surface the loot menu if the container actually opened. A
@@ -2183,7 +2219,7 @@ class GameService:
 
         return [event_data]
 
-    def _queue_passageway_confirmation(self, player, target, tile, session_data):
+    def _queue_passageway_confirmation(self, request):
         """Arm the "Jean steps through..." confirmation for a passageway.
 
         API mode only: the teleport itself waits for the client to acknowledge
@@ -2191,6 +2227,9 @@ class GameService:
         Returns the event payload to append.
         """
         from src.events import PassagewayTransitionEvent
+
+        player, target = request.player, request.target
+        tile, session_data = request.tile, request.session_data
 
         if hasattr(player, "drop_merchandise_items"):
             player.drop_merchandise_items()
@@ -2212,7 +2251,7 @@ class GameService:
             trans_event, event_data, session_data, tile=tile
         )
 
-    def _dispatch_interaction(self, player, target, action, tile, quantity, session_data):
+    def _dispatch_interaction(self, request):
         """Run one interaction verb against one already-resolved target.
 
         Split out of :meth:`interact_with_target`, which had grown past 380
@@ -2236,6 +2275,9 @@ class GameService:
         after this returns, and moving it in here would split one context
         manager across two frames for no gain.
         """
+        player, target, action = request.player, request.target, request.action
+        quantity, session_data = request.quantity, request.session_data
+
         events_triggered = []
         # Set when this interaction is the end of the demo, so the client can
         # raise its end-of-beta dialog (issue #552).
@@ -2243,6 +2285,15 @@ class GameService:
 
         from src.objects import Container, Passageway, resolve_interaction
         from src.inventory_utils import transfer_item
+
+        # Resolved ONCE for the whole dispatch: the demo-end gate below and
+        # the fall-through arm both need to know what this verb means, and two
+        # calls are two sites that have to keep agreeing. None means the class
+        # implements nothing by that name -- the arms that do not consult it
+        # (container, container-item, passageway) key off the target's TYPE,
+        # not off a handler.
+        handler = resolve_interaction(target, action)
+
         is_container = isinstance(target, Container)
 
         # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
@@ -2251,7 +2302,7 @@ class GameService:
         # the API then failed to recognise (#553).
         if is_container and action in Container.LOOK_INSIDE_VERBS:
             events_triggered.extend(
-                self._open_container_for_loot(player, target, tile, session_data)
+                self._open_container_for_loot(request)
             )
         elif (
             action in _CONTAINER_ITEM_VERBS
@@ -2272,7 +2323,7 @@ class GameService:
             else:
                 # Proceed with equipment logic
                 target.equip(player)
-        elif _is_demo_end_crossing(target, action):
+        elif _is_demo_end_crossing(target, handler):
             # The demo stops at this passageway (#552). The engine owns
             # what that means -- no crossing, story gate set, one beat
             # of prose; the API's only job is to flag it so the client
@@ -2300,9 +2351,7 @@ class GameService:
             and session_data is not None
         ):
             events_triggered.append(
-                self._queue_passageway_confirmation(
-                    player, target, tile, session_data
-                )
+                self._queue_passageway_confirmation(request)
             )
         else:
             # Resolve through the engine's alias table rather than
@@ -2312,14 +2361,13 @@ class GameService:
             # except below, which then handed the player
             # "Error executing action: '<Class>' object has no
             # attribute '<verb>'" (#553).
-            method = resolve_interaction(target, action)
-            if method is None:
+            if handler is None:
                 return (
                     events_triggered,
                     beta_end,
                     _unsupported_action_message(target, action),
                 )
-            _call_interaction_handler(method, player, quantity)
+            _call_interaction_handler(handler, player, quantity)
 
         return events_triggered, beta_end, None
 
@@ -2406,7 +2454,7 @@ class GameService:
 
         The three callers that begin combat — movement, event resolution and
         object interaction — each spelled this out, and the copies had already
-        drifted: two read ``adapter_state["battle_state"]`` while the third
+        drifted: two read ``adapter_state.get("battle_state")`` while the third
         carried an ``or adapter_state`` fallback for a key
         :meth:`ApiCombatAdapter.get_combat_state` always sets. Whether a caller
         SHOULD start a fight stays with the caller only where the answer
@@ -2488,9 +2536,7 @@ class GameService:
 
         return clean_output, teleported
 
-    def _redirect_attack_to_combat(
-        self, player, target, target_id, tile, action, session_data
-    ):
+    def _redirect_attack_to_combat(self, request):
         """The combat-start response for ATTACK on a room NPC, or None.
 
         ``attack`` is not an interaction verb: ``Player.attack`` does not exist
@@ -2502,6 +2548,10 @@ class GameService:
         ``session_data`` is threaded through so the adapter's event callback can
         persist interactive combat events (#335).
         """
+        player, target, tile = request.player, request.target, request.tile
+        action, session_data = request.action, request.session_data
+        target_id = request.target_id
+
         if action.lower() != "attack":
             return None
         if not (hasattr(tile, "npcs_here") and target in tile.npcs_here):
@@ -2516,7 +2566,7 @@ class GameService:
             "combat_data": combat_result,
         }
 
-    def _verb_refusal(self, target, action):
+    def _verb_refusal(self, request):
         """The refusal for a verb this target does not accept, or None.
 
         A verb is accepted if the target ADVERTISES it (its own ``keywords``,
@@ -2529,6 +2579,7 @@ class GameService:
         from the player's side both are "that verb does nothing here", and the
         difference (advertised vs implemented) is ours, not theirs.
         """
+        target, action = request.target, request.action
         advertised = hasattr(target, "keywords") and action in target.keywords
         if advertised or action in self._ALLOWED_INTERACTION_VERBS:
             return None
@@ -2566,13 +2617,21 @@ class GameService:
         if target is None:
             return {"success": False, "message": "Target not found."}
 
-        redirect = self._redirect_attack_to_combat(
-            player, target, target_id, tile, action, session_data
+        request = _InteractionRequest(
+            player=player,
+            target=target,
+            target_id=target_id,
+            tile=tile,
+            action=action,
+            quantity=quantity,
+            session_data=session_data,
         )
+
+        redirect = self._redirect_attack_to_combat(request)
         if redirect is not None:
             return redirect
 
-        refusal = self._verb_refusal(target, action)
+        refusal = self._verb_refusal(request)
         if refusal is not None:
             return refusal
 
@@ -2589,7 +2648,7 @@ class GameService:
         if isinstance(target, Passageway) and getattr(player, "in_combat", False):
             return {
                 "success": False,
-                "message": "Cannot use a passageway while in combat.",
+                "message": _PASSAGEWAY_IN_COMBAT_MESSAGE,
             }
 
         # Record pre-action location to detect passageway teleportation
@@ -2607,12 +2666,7 @@ class GameService:
             ):
 
                 events_triggered, beta_end, refusal = self._dispatch_interaction(
-                    player,
-                    target,
-                    action,
-                    tile,
-                    quantity=quantity,
-                    session_data=session_data,
+                    request
                 )
                 if refusal is not None:
                     return {"success": False, "message": refusal}

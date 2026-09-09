@@ -70,15 +70,18 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   const baseOffsetRef = useRef(0)
   const prevBeatStatesRef = useRef(null)
 
+  // `displayState` has THREE writers, and they are ordered, not independent:
+  // the useState above seeds it, this effect rewinds it to the payload's
+  // opening frame, and the log-progress effect below overwrites that whenever
+  // `currentLogIndex` is defined and `beat_states` is non-empty -- which is
+  // the normal case during a fight. Both effects fire on a new `combat`
+  // (their dep sets both change identity), and declaration order decides.
+  //
+  // So this effect's visible result is only the pre-playback frame: a fresh
+  // fight, or a payload with no beats. An edit here that looks inert in
+  // manual testing is probably being overwritten below, not broken.
   useEffect(() => {
-    // When combat data first loads, initialize to the first beat state (or current state if no beats)
-    if (combat?.beat_states && combat.beat_states.length > 0) {
-      // Start at the first beat state
-      setDisplayState(combat.beat_states[0])
-    } else {
-      // No beat states, show current combat state
-      setDisplayState(combat)
-    }
+    setDisplayState(openingState(combat))
   }, [combat])
 
   // Accumulate beat states so breadcrumb trails survive across player turns
@@ -106,7 +109,8 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     })
   }, [combat?.beat_states, combat?.combat_active])
 
-  // Separate effect for log progress - this updates the map as log displays
+  // The LAST writer of displayState, and so the winner whenever its guard
+  // holds -- see the ordering note on the rewind effect above.
   useEffect(() => {
     if (combat?.beat_states && combat.beat_states.length > 0 && currentLogIndex !== undefined) {
       // currentLogIndex contains the beat_index from the log entry
@@ -265,7 +269,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
       )}
 
       {/* Battlefield Grid */}
-      <div style={{ flex: 1, overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border.main}`, backgroundColor: 'rgba(0,0,0,0.3)', position: 'relative' }}>
+      <div style={{ flex: 1, overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border.main}`, backgroundColor: colors.bg.panel, position: 'relative' }}>
         <BattlefieldGrid
           combat={displayState}
           // Passed explicitly, not read off `combat`: the grid receives
@@ -298,7 +302,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
             style={{ position: 'absolute', top: '8px', left: '50%', transform: 'translateX(-50%)', zIndex: 160, pointerEvents: 'none' }}
             role="status"
           >
-            <div style={{ backgroundColor: 'rgba(0,0,0,0.9)', border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
+            <div style={{ backgroundColor: colors.bg.panelDeep, border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
               {bannerMessage}
             </div>
           </div>

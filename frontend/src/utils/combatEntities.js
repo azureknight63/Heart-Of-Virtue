@@ -150,10 +150,9 @@ export const hostileOnlyTokenFor = (entity) =>
  * frame rather than the current one.
  *
  * `beat_states` is per-ACTION, not per-fight, so `[0]` is the opening state
- * only of the payload in hand -- which is exactly what the auto-fit decision
- * (#561) and the initial display state both want, and why both spelled this
- * out. Falls back to the payload itself, which is the shape the grid expects
- * before any beat has streamed.
+ * only of the payload in hand -- which is what the auto-fit decision (#561)
+ * and the display-state rewind both want. Falls back to the payload itself,
+ * which is the shape the grid expects before any beat has streamed.
  */
 export const openingState = (combat) => combat?.beat_states?.[0] ?? combat;
 

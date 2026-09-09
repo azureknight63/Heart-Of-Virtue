@@ -75,6 +75,40 @@ function borderHex(el) {
 const cardFor = (label) => screen.getByText(label).closest('div[style*="padding: 7px 9px"]')
 
 describe('CooldownTray', () => {
+  describe('the unit caption (#563 item 6 follow-up)', () => {
+    // `cooldownLabel` already pluralises, because "Keep Away: 1 beats" reads
+    // as a bug. The expanded card's caption did not, and 1 is not an edge
+    // case: _get_available_moves emits cooldown_remaining === 1 for the
+    // "Available next beat" state, so the collapsed tooltip said "1 beat"
+    // while the expanded card printed "1 / BEATS" for the same move.
+    it('says "beat", not "beats", when one beat remains', () => {
+      const oneBeat = makeCooldownMove({
+        id: '99', name: 'KeepAway', display_name: 'Keep Away',
+        category: 'Maneuver', beats_left: 0, stage3_beats: 3,
+      })
+      expect(oneBeat.cooldown_remaining).toBe(1)
+
+      const { container } = render(<CooldownTray moves={[oneBeat]} />)
+      fireEvent.mouseEnter(trayRoot(container))
+
+      expect(screen.getByText('beat')).toBeInTheDocument()
+      expect(screen.queryByText('beats')).not.toBeInTheDocument()
+    })
+
+    it('still says "beats" for more than one', () => {
+      const threeBeats = makeCooldownMove({
+        id: '98', name: 'Slash', category: 'Offensive',
+        beats_left: 2, stage3_beats: 3,
+      })
+      expect(threeBeats.cooldown_remaining).toBe(3)
+
+      const { container } = render(<CooldownTray moves={[threeBeats]} />)
+      fireEvent.mouseEnter(trayRoot(container))
+
+      expect(screen.getByText('beats')).toBeInTheDocument()
+    })
+  })
+
   describe('visibility', () => {
     it.each([
       ['an empty array', []],
@@ -254,7 +288,10 @@ describe('CooldownTray', () => {
       expect(within(cardFor('Slash')).getByText('2')).toBeInTheDocument()
       expect(within(cardFor('Keep Away')).getByText('1')).toBeInTheDocument()
       expect(within(cardFor("Reaper's Mark")).getByText('5')).toBeInTheDocument()
-      expect(screen.getAllByText('beats')).toHaveLength(3)
+      // /^beats?$/, not 'beats': the caption is singular at one beat, and
+      // KEEP_AWAY's cooldown_remaining is 1. What this asserts is one unit
+      // label per card.
+      expect(screen.getAllByText(/^beats?$/)).toHaveLength(3)
     })
 
     it('updates the rendered countdown when the poll returns fewer beats', () => {
@@ -345,7 +382,7 @@ describe('CooldownTray', () => {
       expect(trayRoot(container).lastChild.children).toHaveLength(20)
 
       fireEvent.mouseEnter(trayRoot(container))
-      expect(screen.getAllByText('beats')).toHaveLength(20)
+      expect(screen.getAllByText(/^beats?$/)).toHaveLength(20)
       expect(screen.getByText('Move 19')).toBeInTheDocument()
     })
   })

@@ -99,16 +99,16 @@ export function categoryGlowOrNull(category) {
 /**
  * The accessible name of the combat category nav.
  *
- * Exported because it is a CONTRACT, not decoration: CombatMovePanel builds a
- * `document.querySelector` from it to hand back clicks its flyout occludes
- * (#557). While the label was a literal in both places, a rename in HeroPanel
+ * Exported because it is a CONTRACT, not decoration: `useOccludedNavHandoff`
+ * (called by CombatMovePanel) builds a `document.querySelectorAll` from it to
+ * hand back clicks the flyout occludes (#557). While the label was a literal in both places, a rename in HeroPanel
  * would have silently retired that handoff -- and the regression tests could
  * not have caught it, because they built their own <nav> with the same
  * hard-coded string. A mock agreeing with a mock.
  */
 export const CATEGORY_NAV_LABEL = 'Game actions'
 
-/** The selector CombatMovePanel hit-tests against. Derived, never retyped. */
+/** The selector `useOccludedNavHandoff` hit-tests against. Derived, never retyped. */
 export const CATEGORY_NAV_SELECTOR = `nav[aria-label="${CATEGORY_NAV_LABEL}"] button`
 
 /**

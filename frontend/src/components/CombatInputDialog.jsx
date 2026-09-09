@@ -52,7 +52,6 @@ const TargetCard = ({ target, confirmVerb, onHover, onSelect }) => {
 
   return (
       <div
-          key={target.id}
           data-testid="target-card"
           onMouseEnter={() => onHover(target.id)}
           onMouseLeave={() => onHover(null)}

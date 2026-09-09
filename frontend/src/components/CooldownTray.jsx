@@ -14,9 +14,16 @@ import { displayNameOf } from '../utils/combatMoveStatus'
  * Singular at one beat: "Keep Away: 1 beats" is the sort of thing that reads
  * as a bug in a tooltip.
  */
+// The unit, singular at one. Shared by the hover label and the expanded
+// card's caption: the label pluralised and the caption did not, so the same
+// move read "Keep Away: 1 beat" collapsed and "1 / BEATS" expanded. 1 is not
+// an edge case -- `_get_available_moves` emits it for the "Available next
+// beat" state.
+const beatUnit = (n) => (n === 1 ? 'beat' : 'beats')
+
 function cooldownLabel(move) {
   const beats = move.cooldown_remaining
-  return `${displayNameOf(move)}: ${beats} ${beats === 1 ? 'beat' : 'beats'}`
+  return `${displayNameOf(move)}: ${beats} ${beatUnit(beats)}`
 }
 
 function CooldownTray({ moves }) {
@@ -179,7 +186,7 @@ function ExpandedCard({ move }) {
             textTransform: 'uppercase',
             marginTop: '1px',
           }}>
-            beats
+            {beatUnit(move.cooldown_remaining)}
           </div>
         </div>
       </div>

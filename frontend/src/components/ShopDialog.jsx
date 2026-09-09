@@ -3,7 +3,7 @@ import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
-import { stackDisplayName, stackCountLabel } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -96,7 +96,11 @@ function WeightBar({ current, max, pendingDelta, isMobile }) {
 }
 
 function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
-  const count = item.count || 1
+  // Through stackSize, like the name beside it: this row calls
+  // stackDisplayName(item), which resolves `count ?? quantity` internally, so
+  // a hand-picked read here means the strip and the badge answer "how many"
+  // two different ways in one row.
+  const count = stackSize(item)
   const isBuyback = item.is_buyback
 
   const borderColor = isSelected

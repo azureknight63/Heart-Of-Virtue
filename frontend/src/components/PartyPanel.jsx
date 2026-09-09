@@ -27,7 +27,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
     (it) => it.can_use && !it.is_merchandise
   )
 
-  // Stack duplicate item instances (same name) into a single entry with a summed quantity,
+  // Stack duplicate item instances (same name) into a single entry with a summed `stacked` count,
   // mirroring the inventory's stacking convention so the picker doesn't show repeated rows.
   // Seeded with a null-prototype object, because `item.name` is wire data
   // and this accumulator is indexed by it. With a plain `{}`:
@@ -331,6 +331,12 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                     e.target.style.borderColor = '#0099cc'
                   }}
                 >
+                  {/* Two DIFFERENT counts, on purpose. stackDisplayName must
+                      see the un-aggregated source count so the engine's baked
+                      " xN" matches and gets stripped; the badge must show the
+                      SUM. Normalising either read to the other silently
+                      renders the pre-aggregation number, or stops stripping
+                      the suffix and re-opens #565. */}
                   {stackDisplayName(item)}
                   <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '8px' }}>{stackCountLabel(item.stacked)}</span>
                 </button>

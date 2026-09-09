@@ -18,9 +18,13 @@ const BANNER_DISMISS_MS = 2500
  * @param {object} displayState the beat state currently rendered
  * @param {Function} anyEnemyOffScreen geometry predicate, injected so this hook
  *   holds no opinion about viewport size. MUST be referentially stable —
- *   module-level, or wrapped in `useCallback` — because the settle effect
- *   below deliberately omits it from its dep list; a new identity every render
- *   would silently stop that effect from seeing fresh geometry.
+ *   module-level, or wrapped in `useCallback` — for the sake of the
+ *   `enemyOutsideFollowView` memo below, which DOES list it: a new identity
+ *   every render invalidates that memo every render. The settle effect is
+ *   unaffected either way; it runs the closure of the render that committed
+ *   it, so omitting the predicate from its deps cannot make the value stale,
+ *   it only stops the effect re-running when the identity changes — which is
+ *   the entry-only behaviour that effect wants.
  * @returns {{zoom, selectViewMode, enemyOffScreen, bannerVisible, bannerMessage}}
  */
 export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
@@ -86,7 +90,7 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
     // re-evaluate against later, per-action beat states -- the bug this replaced.
     setZoom(outsideAtEntry ? VIEW_MODE_FIT : VIEW_MODE_FOLLOW)
     setDidAutoFit(outsideAtEntry)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cameraKey ONLY, on purpose: `combat` changes on every poll, and re-running then is precisely the bug this replaced (beat_states is per-action, so a later payload's [0] is not how the fight opened). anyEnemyOffScreen is omitted under the referential-stability contract the @param states, not because it is known to be constant here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cameraKey ONLY, on purpose: `combat` changes on every poll, and re-running then is precisely the bug this replaced (beat_states is per-action, so a later payload's [0] is not how the fight opened). anyEnemyOffScreen is omitted because this effect must fire on a NEW FIGHT and nothing else; it reads the committing render's closure either way, so omitting it cannot stale the value.
   }, [cameraKey])
 
   // Rising edge on "an enemy left the Follow viewport" -> flash a one-shot

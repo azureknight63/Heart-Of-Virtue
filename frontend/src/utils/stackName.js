@@ -67,6 +67,15 @@ export const stackDisplayName = (item) => {
 };
 
 /**
+ * Is this item a stack worth badging?
+ *
+ * The `> 1` threshold was written at each gate AND inside
+ * `stackCountLabel`; changing one left the other rendering an empty badge
+ * box. One reading, one place.
+ */
+export const isStacked = (item) => stackSize(item) > 1;
+
+/**
  * The stack-count badge, in the one spelling the app uses.
  *
  * There were four (`(x3)`, `x3`, `×3`, `×{quantity}`) across the item lists,
@@ -78,9 +87,11 @@ export const stackDisplayName = (item) => {
  * (`useWorldInteract`) deliberately keeps a `3× ` prefix instead, because it
  * is a sentence about a quantity rather than a label on a row.
  *
- * Takes a NUMBER, not an item: one caller (the shop row) holds only a
- * destructured count. Anything holding the item itself should pass
- * `stackSize(item)` rather than re-picking `count` vs `quantity` — see there.
+ * Takes a NUMBER, not an item, because one caller has a count that no item
+ * carries: `PartyPanel`'s aggregated row shows the SUM across entries
+ * (`item.stacked`), which `stackSize` cannot derive. Everything else holds
+ * the item and should pass `stackSize(item)` rather than re-picking `count`
+ * vs `quantity` — see there.
  *
  * Returns '' for an unstacked item so callers can render it unconditionally.
  */

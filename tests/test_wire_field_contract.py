@@ -1465,11 +1465,17 @@ ROOM_ITEM_CONTRACT = {
     "name": Read("RoomContents.jsx", "item.name"),
     # item.announce || `There is a ${item.name} here.`
     "announce": Read("RoomContents.jsx", "item.announce"),
-    # The read moved: every badge call site now asks `stackSize(item)`, and
-    # the `count` vs `quantity` choice happens once, in the helper. The anchor
-    # follows it -- InteractPanel no longer contains the literal.
-    # stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1)
-    "count": Read("utils/stackName.js", "item?.count"),
+    # The read moved behind `stackSize`, which resolves `count ?? quantity`
+    # once so no call site re-picks the spelling:
+    #   stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1)
+    # Anchored on the HELPER *and* on a consumer's call, deliberately. The
+    # helper alone would attest only that the serializer emits the key -- it
+    # would keep passing if every list stopped rendering counts entirely,
+    # which is exactly the regression this entry exists to catch.
+    "count": (
+        Read("utils/stackName.js", "item?.count"),
+        Read("InteractPanel.jsx", "stackSize(target)"),
+    ),
     # allTargets.filter(t => !t.hidden)
     "hidden": Read("InteractPanel.jsx", "t.hidden"),
     # selectedTarget.keywords.length > 0
@@ -1590,11 +1596,13 @@ INVENTORY_ITEM_CONTRACT = {
         Read("InventoryDialog.jsx", "item.subtype"),
         Read("ItemDetailDialog.jsx", "item.subtype"),
     ),
-    # The stack count badge. The read moved for the same reason `count`'s did:
-    # every consumer now asks `stackSize(item)`, and the `count` vs `quantity`
-    # choice happens once, in the helper.
-    # stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1)
-    "quantity": Read("utils/stackName.js", "item?.quantity"),
+    # The stack count badge, moved behind `stackSize` for the same reason
+    # `count`'s read was. Helper plus one consumer, as there -- see the note
+    # on `count` for why the helper alone is not enough.
+    "quantity": (
+        Read("utils/stackName.js", "item?.quantity"),
+        Read("InventoryDialog.jsx", "stackSize(item)"),
+    ),
     # row colour
     "rarity": Read("InventoryDialog.jsx", "item.rarity"),
     "weight": Read("InventoryDialog.jsx", "item.weight"),

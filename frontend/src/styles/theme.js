@@ -92,7 +92,7 @@ export const colors = {
          * missing half a dozen files.
          *
          * It is NOT allowed on prose, and the obvious fix — lifting this one
-         * number — is the wrong one. `muted` below is #888888 (5.58:1), so any
+         * number — is the wrong one. `muted` above is #888888 (5.58:1), so any
          * value that clears 4.5:1 lands within ~16 of it and the two stop
          * being distinguishable: the available/unavailable rendering that
          * CombatMovePanel expresses as `muted` vs `dim` would collapse

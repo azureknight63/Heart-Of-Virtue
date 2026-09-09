@@ -463,6 +463,38 @@ class TestGlossaryTermsMatchTheEngineWording:
         )
 
 
+    def test_the_client_says_the_same_range_refusal_the_engine_does(self):
+        """`NO_REACHABLE_TARGET_REASON` is the engine's sentence, not a copy.
+
+        The #554 case is the one where the CLIENT is the sole producer: the
+        adapter ships ``reason: None`` for a targeted move that is `available`
+        with an empty ``viable_targets``, so ``move.reason ||`` always falls
+        through and the JS constant is what the player reads. It is
+        deliberately one of the engine's own two range refusals -- reword the
+        Python and the client keeps saying the old wording, with the
+        glossary's `range` link riding on it, and nothing fails.
+
+        Greps the literal out of the JS rather than importing it: there is no
+        JS runtime here, and the value is the whole point.
+        """
+        js = (
+            _ROOT / "frontend" / "src" / "utils" / "combatMoveStatus.js"
+        ).read_text(encoding="utf-8")
+        match = re.search(
+            r"export const NO_REACHABLE_TARGET_REASON = '([^']*)'", js
+        )
+        assert match is not None, (
+            "NO_REACHABLE_TARGET_REASON is no longer a single-quoted literal "
+            "in combatMoveStatus.js -- update this grep, do not delete it."
+        )
+        adapter_src = (
+            _ROOT / "src" / "api" / "combat_adapter.py"
+        ).read_text(encoding="utf-8")
+        assert f'"{match.group(1)}"' in adapter_src, (
+            f"the client's range refusal {match.group(1)!r} is not a string "
+            "the adapter emits any more; the two have drifted."
+        )
+
     @pytest.mark.parametrize(
         "long_reach, expected",
         [(False, "Enemy out of range (too far)"), (True, "No valid target in range")],
