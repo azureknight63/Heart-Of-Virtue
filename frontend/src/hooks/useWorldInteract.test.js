@@ -119,6 +119,23 @@ describe('useWorldInteract', () => {
       expect(result.current.takingAllItems).toBe(false)
     })
 
+    it('does not double the count of a stackable in the summary (#565)', async () => {
+      // The row the player clicked reads "Mineral Powder ×3" (InteractPanel
+      // renders stackDisplayName + stackCountLabel), and TAKE ALL is handed
+      // that same array -- but this summary hand-built its own badge off the
+      // raw name, so the narration read "Jean takes: 3× Mineral Powder x3."
+      apiEndpoints.world.interact.mockResolvedValueOnce({ data: { success: true } })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.takeAll([
+          { id: 'item1', name: 'Mineral Powder x3', count: 3 },
+        ])
+      })
+
+      expect(result.current.interactionOutput).toBe('Jean takes: 3× Mineral Powder.')
+    })
+
     it('takes every item, summarizes, and notifies callbacks', async () => {
       apiEndpoints.world.interact
         .mockResolvedValueOnce({ data: { success: true } })

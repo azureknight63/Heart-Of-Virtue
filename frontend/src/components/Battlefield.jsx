@@ -5,7 +5,7 @@ import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './B
 import BeatTimeline from './BeatTimeline'
 import GlossaryHelpButton from './GlossaryHelpButton'
 import { accessibility, colors, spacing } from '../styles/theme'
-import { isLiving, anyEnemyOutsideView } from '../utils/combatEntities'
+import { isLiving, anyEnemyOutsideView, openingState } from '../utils/combatEntities'
 import { useFeatureFlag } from '../utils/featureFlags'
 import { useMobile } from '../hooks/useMobile'
 import { useCoarsePointer } from '../hooks/useCoarsePointer'
@@ -57,7 +57,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   // Display state - synchronized with combat log progress.
   // Initialise directly to the first beat state (same shape BattlefieldGrid expects)
   // so there is never a render where displayState has the top-level API response shape.
-  const [displayState, setDisplayState] = useState(combat?.beat_states?.[0] ?? combat)
+  const [displayState, setDisplayState] = useState(openingState(combat))
 
   // Framing lives in its own hook: four pieces of state, two effects and a
   // callback that all answer one question, in a component that also owns beat
@@ -131,6 +131,24 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     ? { minHeight: accessibility.touchTarget, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
     : {};
 
+  // One builder for both toolbar control groups. They are visually distinct
+  // (pill tabs vs a segmented control) and differ in padding, border and
+  // inactive ground, but the selected-state rule and `...touchTargetStyle`
+  // are shared -- and the spread is the part that had to be remembered in
+  // lockstep, which a third group would have had to remember again.
+  const toolbarButtonStyle = ({ active, padding, border, borderRadius, inactiveBackground, transition }) => ({
+    ...touchTargetStyle,
+    padding,
+    border,
+    borderRadius,
+    transition,
+    fontSize: '12px',
+    fontWeight: 'bold',
+    backgroundColor: active ? colors.secondary : inactiveBackground,
+    color: active ? colors.text.bright : colors.secondary,
+    cursor: 'pointer',
+  });
+
   // Named once: five separate places in this render gate on it, and a sixth
   // that spelled it differently would be a tab that half-renders.
   const isOverview = selectedTab === 'overview';
@@ -157,13 +175,14 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
             <button
               key={key}
               onClick={() => setSelectedTab(key)}
-              style={{
-                ...touchTargetStyle,
-                padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
-                backgroundColor: selectedTab === key ? colors.secondary : 'transparent',
-                color: selectedTab === key ? colors.text.bright : colors.secondary,
-                cursor: 'pointer'
-              }}
+              style={toolbarButtonStyle({
+                active: selectedTab === key,
+                padding: '4px 8px',
+                border: `1px solid ${colors.secondary}`,
+                borderRadius: '4px',
+                inactiveBackground: 'transparent',
+                transition: 'all 0.2s',
+              })}
             >
               {labelFor(combat)}
             </button>
@@ -186,13 +205,17 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
                   key={mode}
                   onClick={() => selectViewMode(mode)}
                   aria-pressed={active}
-                  style={{
-                    ...touchTargetStyle,
-                    padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', border: 'none', transition: 'background-color 0.2s, color 0.2s',
-                    backgroundColor: active ? colors.secondary : 'rgba(0,0,0,0.5)',
-                    color: active ? colors.text.bright : colors.secondary,
-                    cursor: 'pointer'
-                  }}
+                  style={toolbarButtonStyle({
+                    active,
+                    padding: '4px 10px',
+                    border: 'none',
+                    // The segmented control's own inactive ground. NOT
+                    // colors.bg.overlay (0.75) or bg.panelHeavy (0.7) -- this
+                    // is 0.5 and no token carries it; substituting a near
+                    // neighbour would be a silent visual change.
+                    inactiveBackground: 'rgba(0,0,0,0.5)',
+                    transition: 'background-color 0.2s, color 0.2s',
+                  })}
                   title={enemyOffScreen && mode === VIEW_MODE_FIT
                     ? 'Enemies are off-screen — Fit Fight frames all of them'
                     : title}

@@ -176,7 +176,7 @@ function MoveCard({
           }
       }}
       style={{
-          backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+          backgroundColor: isHovered ? colors.alpha.secondary[10] : 'rgba(255, 255, 255, 0.03)',
           // Dashed, desaturated and dimmed: three cues
           // that survive a colour-blind or greyscale
           // reading of the card, on top of the LOCKED
@@ -279,6 +279,10 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
     // Base for the per-card reason ids that aria-describedby points at. useId
     // keeps them unique across concurrent panels and stable across re-renders.
     const reasonIdBase = useId();
+    // Every clickable in the JSX below must be a real control (a <button>,
+    // or role="button"/tabindex). A plain <div onClick> has its clicks
+    // swallowed and re-aimed at HeroPanel's category nav -- see
+    // PANEL_CONTROL_SELECTOR's editing rule in the hook.
     useOccludedNavHandoff(contentRef);
 
     const filteredMoves = useMemo(() => movesInGroup(moves, category), [moves, category]);

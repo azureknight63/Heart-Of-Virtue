@@ -92,8 +92,9 @@ describe('ItemDetailDialog', () => {
     expect(screen.getByText('0.25 lb')).toBeInTheDocument();
     expect(screen.getByText('100g')).toBeInTheDocument();
     expect(screen.getByText(/💊 Use/)).toBeInTheDocument();
-    // The stack size is `quantity` (2), never the engine-side `count`: the Qty
-    // cell is gated on `item.quantity > 1`, so reading `count` would hide it.
+    // This payload carries only `quantity` (2) -- the inventory serializer
+    // emits no `count`. The Qty cell resolves it through `stackSize`, which
+    // prefers `count` when present, so either spelling would render.
     expect(screen.getByText('Qty')).toBeInTheDocument();
     expect(screen.getByText('×2')).toBeInTheDocument();
     expect(screen.queryByText(/Equip/)).toBeNull();

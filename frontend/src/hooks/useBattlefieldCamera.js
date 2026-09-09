@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { openingState } from '../utils/combatEntities'
 import { VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from '../components/BattlefieldGrid'
 
-//: How long the "enemy off-screen" banner stays up before dismissing itself.
+// How long the "enemy off-screen" banner stays up before dismissing itself.
 const BANNER_DISMISS_MS = 2500
 
 /**
@@ -79,7 +80,7 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
    * one's Fit camera and announced "view widened" when nothing had.
    */
   useEffect(() => {
-    const outsideAtEntry = anyEnemyOffScreen(combat?.beat_states?.[0] ?? combat)
+    const outsideAtEntry = anyEnemyOffScreen(openingState(combat))
     // Set from an effect, not derived during render: this reads geometry that
     // is only correct on this one commit. A render-derived equivalent would
     // re-evaluate against later, per-action beat states -- the bug this replaced.

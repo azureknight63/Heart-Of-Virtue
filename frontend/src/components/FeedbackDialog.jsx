@@ -151,11 +151,12 @@ function TextArea({ value, onChange, placeholder, rows = 3, ariaLabel }) {
  * One free-text field: caption, textarea, and the accessible name that has to
  * match it.
  *
- * The six of them differed only in caption, row count, state key and
- * placeholder, and each carried nine lines of `LabeledField` render-prop
- * ceremony around those four values. The ceremony now exists once; the two
- * `role="group"` fields and the Title input still reach for `LabeledField`
- * directly, because they name themselves through a different channel.
+ * The six of them differ only in caption, row count, state key and
+ * placeholder, and each wrapped those four values in the same `LabeledField`
+ * render-prop ceremony. The ceremony now exists once. `LabeledField` itself
+ * stays for the other three fields: the two `role="group"` captions, which
+ * name themselves through a DOM attribute rather than a prop, and the Title
+ * input, which carries `required`/`error`/`inputRef` besides.
  */
 function LabeledTextArea({ label, rows, field, placeholder, fields, onChange }) {
   return (

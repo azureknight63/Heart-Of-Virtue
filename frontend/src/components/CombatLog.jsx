@@ -93,12 +93,6 @@ function spokenText(message) {
  * @param {Array} props.entries - the revealed, renderable entries; only the
  *   newest is ever announced, and `animation` carriers are already gone.
  */
-// The ground the scroll fades dissolve INTO -- a shade darker than
-// `colors.bg.main` ('#0a0a0a') so the fade reads against the log's own inset
-// panel rather than against the page. Named rather than typed twice; not
-// swapped for the token, which is a different colour.
-const LOG_FADE_GROUND = '#030303'
-
 function LogAnnouncer({ entries }) {
   const latest = entries[entries.length - 1]
   const spoken = useMemo(() => (latest ? spokenText(latest.message) : ''), [latest])
@@ -259,10 +253,10 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
               })}
             </div>
             {showTop && (
-              <ScrollFadeIndicator position="top" color={colors.secondary} bgColor={LOG_FADE_GROUND} />
+              <ScrollFadeIndicator position="top" color={colors.secondary} bgColor={colors.bg.inset} />
             )}
             {showBottom && (
-              <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor={LOG_FADE_GROUND} />
+              <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor={colors.bg.inset} />
             )}
           </div>
           {allowResize && (

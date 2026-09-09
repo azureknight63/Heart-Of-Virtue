@@ -693,13 +693,14 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       </div>
 
       {/* Modal Overlays */}
-      {/* Combat Input Dialog lives HERE, with the other modals, and not in
-          the content well above: that well carries MODAL_BACKGROUND_ATTR, so a
-          BaseDialog rendered inside it sets aria-hidden on its own ancestor and
-          prunes itself from the accessibility tree while the focus trap still
-          holds focus inside it -- a blocking prompt that announces nothing and
-          offers no reachable exit. Guarded by LeftPanel.modalBackground.test.jsx. */}
-      {/* Combat Input Dialog - for target selection, direction selection, etc. */}
+      {/* Combat Input Dialog (target selection, direction selection, ...)
+          lives HERE, with the other modals, and not in the content well
+          above: that well carries MODAL_BACKGROUND_ATTR, so a BaseDialog
+          rendered inside it sets aria-hidden on its own ancestor and prunes
+          itself from the accessibility tree while the focus trap still holds
+          focus inside it -- a blocking prompt that announces nothing and
+          offers no reachable exit. Guarded by
+          LeftPanel.modalBackground.test.jsx. */}
       {(showInputDialog || localCombatInput) && mode === 'combat' && !isEventDialogActive && (
         <CombatInputDialog
           inputType={localCombatInput ? localCombatInput.type : combat.input_type}

@@ -1,6 +1,7 @@
 import logging
 import uuid
 import contextlib
+import inspect
 import re
 from collections import Counter
 from typing import TYPE_CHECKING, Dict, Any, NamedTuple, Optional, List
@@ -19,7 +20,7 @@ from src.functions import (
 from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.inventory_utils import get_gold
 from src.moves import attacker_accuracy
-from src.narration import capture_narration, narrate
+from src.narration import ANSI_ESCAPE_RE, capture_narration, narrate
 from src.story import gorran_flavor
 
 if TYPE_CHECKING:
@@ -129,6 +130,25 @@ def _is_demo_end_crossing(target, action):
     return target.is_crossing_handler(resolve_interaction(target, action))
 
 
+def _call_interaction_handler(method, player, quantity):
+    """Call an interaction handler with whatever arguments it declares.
+
+    Authored content and thirteen years of engine classes disagree about the
+    signature: some handlers take the player, some take a quantity too, and a
+    few take nothing at all. Introspecting is not defensiveness -- it is the
+    only way one dispatch site can serve all three without the map author
+    having to know which shape their object's method happens to be.
+    """
+    param_names = [
+        name for name in inspect.signature(method).parameters if name != "self"
+    ]
+    if not param_names:
+        return method()
+    if "quantity" in param_names:
+        return method(player, quantity=quantity)
+    return method(player)
+
+
 def _fallback_interaction_message(action, target, events_triggered):
     """What to say when an interaction captured no narration at all.
 
@@ -192,14 +212,15 @@ class _PreInteractionLocation(NamedTuple):
         )
 
 
-#: Compiled once at import: the same pattern was rebuilt per call in the
-#: event pipeline and again in the interaction pipeline, and a regex that
-#: exists twice is a regex that can be corrected once.
-_ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+#: Runs of blank lines in captured narration, collapsed to one. Compiled
+#: beside the ANSI pattern it sits two lines from, rather than being the one
+#: uncompiled regex in a function that already imports a named one.
+_BLANK_LINE_RUN_RE = re.compile(r"\n\s*\n")
 
-#: The verbs that move an item OUT of a container. Named rather than inlined
-#: beside the comment noting that the container verb set is the engine's and
-#: not a copy kept here.
+#: API-side: the two ``_ALLOWED_INTERACTION_VERBS`` entries that move an item
+#: OUT of a container. Unlike ``Container.LOOK_INSIDE_VERBS``, which the engine
+#: declares and this layer must not copy, the engine declares nothing here --
+#: so this is the one authority, not a duplicate of one.
 _CONTAINER_ITEM_VERBS = frozenset({"take", "equip"})
 
 #: The break-away threshold, in feet. Named because the refusal message below
@@ -418,7 +439,7 @@ class GameService:
             if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
             and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
-        return _ANSI_ESCAPE_RE.sub("", "\n".join(filtered_lines)).strip()
+        return ANSI_ESCAPE_RE.sub("", "\n".join(filtered_lines)).strip()
 
     def _resolve_conversation_side(self, char_id, player) -> str:
         """Resolve a portrait's stage side, defaulting by the party rule.
@@ -1463,12 +1484,7 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            # Do not initialize the new combat while the player has unspent level-up
-            # attribute points — same race-condition guard as in process_event_input.
-            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
-            if pending_points > 0:
-                # Stash enemies so get_combat_status can auto-resume when points hit 0
-                player._combat_deferred_enemies = combat_enemies
+            if self._defer_combat_for_level_up(player, combat_enemies):
                 combat_started = False
             else:
                 combat_state = self._start_combat(
@@ -1918,23 +1934,13 @@ class GameService:
         combat_enemies = check_for_combat(player)
 
         if combat_enemies and not result.get("needs_input", False):
-            # Do NOT initialize the new combat while the player still has unspent
-            # level-up attribute points.  _initialize_combat emits "combat:started"
-            # which races with the level-up dialog and leaves the frontend in a
-            # corrupt state — subsequent allocate calls get 400s ("Not enough points")
-            # because the points counter is correct but the frontend has already
-            # moved to the combat screen.
-            #
-            # Since the aggro NPCs remain in the room, check_for_combat will find
-            # them again on the very next player action (move / event input) and
-            # combat will initialize cleanly after level-up is resolved.
-            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
-            if pending_points > 0:
+            if self._defer_combat_for_level_up(player, combat_enemies):
+                # This caller is the only one that reports the deferral to the
+                # client, because it is the one the level-up dialog itself is
+                # polling.
                 result["combat_started"] = False
                 result["combat_deferred"] = True
                 result["combat_deferred_reason"] = "level_up_pending"
-                # Stash enemies so get_combat_status can auto-resume when points hit 0
-                player._combat_deferred_enemies = combat_enemies
             else:
                 result["combat_state"] = self._start_combat(
                     player,
@@ -2234,7 +2240,6 @@ class GameService:
         # Set when this interaction is the end of the demo, so the client can
         # raise its end-of-beta dialog (issue #552).
         beta_end = False
-        import inspect
 
         from src.objects import Container, Passageway, resolve_interaction
         from src.inventory_utils import transfer_item
@@ -2282,7 +2287,18 @@ class GameService:
             # only business is the wire flag.
             target.enter(player)
             beta_end = True
-        elif isinstance(target, Passageway) and session_data is not None:
+        # `not demo_end`: this arm asks "step through?", and the arm above has
+        # already handled every verb that WOULD step through a demo-end
+        # passageway. What reached here is a verb that resolves to nothing
+        # callable (examine/look/check/...), and arming the confirmation for
+        # those meant confirming it ran `_commit_teleport` -- which now ends
+        # the demo instead of crossing, but with `beta_end` never set, so the
+        # player got the closing beat and the story gate and no BetaEndDialog.
+        elif (
+            isinstance(target, Passageway)
+            and not getattr(target, "demo_end", False)
+            and session_data is not None
+        ):
             events_triggered.append(
                 self._queue_passageway_confirmation(
                     player, target, tile, session_data
@@ -2303,20 +2319,7 @@ class GameService:
                     beta_end,
                     _unsupported_action_message(target, action),
                 )
-            # Check signature to see if we need to pass player
-            sig = inspect.signature(method)
-            # Get parameter names excluding 'self'
-            param_names = [p for p in sig.parameters.keys() if p != "self"]
-
-            # If there are parameters beyond 'self', pass player
-            if len(param_names) > 0:
-                # If the method accepts quantity, pass it
-                if "quantity" in param_names:
-                    method(player, quantity=quantity)
-                else:
-                    method(player)
-            else:
-                method()
+            _call_interaction_handler(method, player, quantity)
 
         return events_triggered, beta_end, None
 
@@ -2375,6 +2378,27 @@ class GameService:
 
         return tile, target
 
+    @staticmethod
+    def _defer_combat_for_level_up(player, combat_enemies) -> bool:
+        """Stash the fight rather than starting it while points are unspent.
+
+        ``_initialize_combat`` emits ``combat:started``, which races the
+        level-up dialog: the frontend leaves for the combat screen while the
+        allocate calls still 400 ("Not enough points") -- the counter is
+        right, the client has just moved on. The aggro NPCs stay in the room,
+        and ``get_combat_status`` resumes from this stash on the poll the
+        frontend already makes after every allocation.
+
+        Returns True when the caller must NOT start combat. Only the RESPONSE
+        differs between the three callers (bare flags, ``result`` keys, the
+        interaction payload) -- the guard itself is uniform, and the
+        interaction path went without it until #567's regrade.
+        """
+        if int(getattr(player, "pending_attribute_points", 0) or 0) <= 0:
+            return False
+        player._combat_deferred_enemies = combat_enemies
+        return True
+
     def _start_combat(
         self, player, combat_enemies, session_id=None, session_data=None
     ):
@@ -2385,8 +2409,15 @@ class GameService:
         drifted: two read ``adapter_state["battle_state"]`` while the third
         carried an ``or adapter_state`` fallback for a key
         :meth:`ApiCombatAdapter.get_combat_state` always sets. Whether a caller
-        SHOULD start a fight (the level-up deferral, the narrative pause) stays
-        with the caller, because that answer genuinely differs between them.
+        SHOULD start a fight stays with the caller only where the answer
+        genuinely differs -- the narrative pause in ``process_event_input``.
+        The level-up deferral does NOT differ and is
+        :meth:`_defer_combat_for_level_up`, which all three callers ask.
+
+        ``["battle_state"]`` rather than ``.get``, matching the two sibling
+        unwraps: ``get_combat_state`` sets the key unconditionally, so a miss
+        is a broken adapter and should say so rather than putting a silent
+        ``None`` on the wire.
         """
         self._initialize_combat(
             player,
@@ -2396,7 +2427,7 @@ class GameService:
         )
         adapter = getattr(player, "_combat_adapter", None)
         if adapter is not None:
-            return adapter.get_combat_state().get("battle_state")
+            return adapter.get_combat_state()["battle_state"]
         # No adapter (older sessions, and tests that build a player directly).
         return CombatStateSerializer.serialize_combat_state(
             player,
@@ -2419,18 +2450,13 @@ class GameService:
         needs the same answer for its response; spelled in both places, an
         edit to one would report a teleport the strip did not act on.
         """
-        import re
-
         output = "\n".join(m.get("text", "") for m in msgs)
 
         # Clean up output (remove ANSI codes)
-        clean_output = _ANSI_ESCAPE_RE.sub("", output)
+        clean_output = ANSI_ESCAPE_RE.sub("", output)
 
-        # Remove excessive newlines and clean up whitespace
-        clean_output = re.sub(
-            r"\n\s*\n", "\n", clean_output
-        )  # Replace multiple newlines with single
-        clean_output = clean_output.strip()
+        # Runs of blank lines collapse to one.
+        clean_output = _BLANK_LINE_RUN_RE.sub("\n", clean_output).strip()
 
         # If a teleport occurred, strip the destination tile's description from the
         # interaction output — the frontend fetches the new room via /world/current-room.
@@ -2438,7 +2464,7 @@ class GameService:
         if teleported:
             dest_tile = player.universe.get_tile(player.location_x, player.location_y)
             if dest_tile and hasattr(dest_tile, "description"):
-                dest_desc = _ANSI_ESCAPE_RE.sub("", dest_tile.description).strip()
+                dest_desc = ANSI_ESCAPE_RE.sub("", dest_tile.description).strip()
                 if dest_desc:
                     clean_output = clean_output.replace(dest_desc, "").strip()
 
@@ -2461,6 +2487,55 @@ class GameService:
             )
 
         return clean_output, teleported
+
+    def _redirect_attack_to_combat(
+        self, player, target, target_id, tile, action, session_data
+    ):
+        """The combat-start response for ATTACK on a room NPC, or None.
+
+        ``attack`` is not an interaction verb: ``Player.attack`` does not exist
+        (it went out with the terminal teardown) and neither does an NPC method
+        by that name, so dispatching it would refuse a verb the client is right
+        to send. It means "start a fight", and only for an NPC standing on this
+        tile -- attacking a chest is still an unsupported verb.
+
+        ``session_data`` is threaded through so the adapter's event callback can
+        persist interactive combat events (#335).
+        """
+        if action.lower() != "attack":
+            return None
+        if not (hasattr(tile, "npcs_here") and target in tile.npcs_here):
+            return None
+
+        combat_result = self.start_combat(player, target_id, session_data=session_data)
+        if "error" in combat_result:
+            return {"success": False, "message": combat_result["error"]}
+        return {
+            "success": True,
+            "message": f"Combat started with {target.name}!",
+            "combat_data": combat_result,
+        }
+
+    def _verb_refusal(self, target, action):
+        """The refusal for a verb this target does not accept, or None.
+
+        A verb is accepted if the target ADVERTISES it (its own ``keywords``,
+        authored per placement) or it is on ``_ALLOWED_INTERACTION_VERBS``. The
+        allow-list is the whole point: dispatching on an arbitrary attribute
+        name would expose every public method on the target -- ``NPC.die``
+        among them (#334).
+
+        Same wording as ``_dispatch_interaction``'s unimplemented-verb branch:
+        from the player's side both are "that verb does nothing here", and the
+        difference (advertised vs implemented) is ours, not theirs.
+        """
+        advertised = hasattr(target, "keywords") and action in target.keywords
+        if advertised or action in self._ALLOWED_INTERACTION_VERBS:
+            return None
+        return {
+            "success": False,
+            "message": _unsupported_action_message(target, action),
+        }
 
     def interact_with_target(
         self,
@@ -2491,46 +2566,15 @@ class GameService:
         if target is None:
             return {"success": False, "message": "Target not found."}
 
-        # Special case: attack action on NPCs should start combat
-        if action.lower() == "attack":
-            # Check if target is an NPC by looking in current tile's NPCs
-            is_npc = hasattr(tile, "npcs_here") and target in tile.npcs_here
-            if is_npc:
-                # Redirect to start_combat instead of trying to call attack() method.
-                # Pass session_data so the combat adapter's event callback can persist
-                # interactive combat events to the session (#335).
-                combat_result = self.start_combat(
-                    player, target_id, session_data=session_data
-                )
-                # Wrap start_combat response to match interact_with_target format
-                if "error" in combat_result:
-                    return {"success": False, "message": combat_result["error"]}
-                else:
-                    # Combat started successfully
-                    return {
-                        "success": True,
-                        "message": f"Combat started with {target.name}!",
-                        "combat_data": combat_result,
-                    }
+        redirect = self._redirect_attack_to_combat(
+            player, target, target_id, tile, action, session_data
+        )
+        if redirect is not None:
+            return redirect
 
-        is_valid = False
-        if hasattr(target, "keywords") and action in target.keywords:
-            is_valid = True
-        elif action in self._ALLOWED_INTERACTION_VERBS:
-            # Fallback restricted to an explicit allow-list of interaction
-            # verbs. Never dispatch on arbitrary attribute names — that would
-            # expose every public method on the target (e.g. NPC.die). See #334.
-            is_valid = True
-
-        if not is_valid:
-            # Same refusal wording as an unimplemented-but-allowed verb below:
-            # from the player's side both are "that verb does nothing here",
-            # and the difference (advertised vs implemented) is ours, not
-            # theirs.
-            return {
-                "success": False,
-                "message": _unsupported_action_message(target, action),
-            }
+        refusal = self._verb_refusal(target, action)
+        if refusal is not None:
+            return refusal
 
         # Reject a Passageway teleport interaction while combat is active
         # (#543, same root cause as the move_player guard above).
@@ -2612,7 +2656,9 @@ class GameService:
         combat_started = False
         combat_state = None
 
-        if combat_enemies:
+        if combat_enemies and not self._defer_combat_for_level_up(
+            player, combat_enemies
+        ):
             combat_state = self._start_combat(
                 player,
                 combat_enemies,

@@ -1590,8 +1590,11 @@ INVENTORY_ITEM_CONTRACT = {
         Read("InventoryDialog.jsx", "item.subtype"),
         Read("ItemDetailDialog.jsx", "item.subtype"),
     ),
-    # stack count badge
-    "quantity": Read("InventoryDialog.jsx", "item.quantity"),
+    # The stack count badge. The read moved for the same reason `count`'s did:
+    # every consumer now asks `stackSize(item)`, and the `count` vs `quantity`
+    # choice happens once, in the helper.
+    # stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1)
+    "quantity": Read("utils/stackName.js", "item?.quantity"),
     # row colour
     "rarity": Read("InventoryDialog.jsx", "item.rarity"),
     "weight": Read("InventoryDialog.jsx", "item.weight"),

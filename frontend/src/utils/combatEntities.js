@@ -112,12 +112,12 @@ export const HOSTILITY_TOKENS = {
 
 /**
  * FRIEND OR FOE: the token for an entity, or null when the payload says
- * nothing. The combat target picker's variant. Policy on HOSTILITY_TOKENS.
+ * nothing. The combat target picker's variant. Policy on HOSTILITY_TOKENS;
+ * which serializer emits which spelling, on `isHostileEntity`.
  *
- * Only NPCSerializer emits `is_hostile` and only
- * ApiCombatAdapter._build_target_entry emits `is_ally`, so the two spellings
- * do not co-occur today; the ally gate is cheap and a serializer change is
- * what would make it matter.
+ * The ally gate reads `is_ally` directly rather than through
+ * `isHostileEntity`: "not hostile" and "on Jean's side" are different
+ * questions, and only the second may badge ALLY.
  */
 export const hostilityTokenFor = (entity) => {
   if (isHostileEntity(entity) === true) return HOSTILITY_TOKENS.hostile;
@@ -129,19 +129,33 @@ export const hostilityTokenFor = (entity) => {
  * HOSTILE ONLY: the room panel's variant, which never badges ALLY.
  *
  * Named for its policy rather than one letter away from `hostilityTokenFor`,
- * because the two are not interchangeable and the difference is currently
- * unobservable: `NPCSerializer.serialize` emits only `is_hostile` and
- * `_build_target_entry` emits only `is_ally`, so on every payload either
- * surface can receive today these two return the same value. The fork is a
- * deliberate guard against a serializer that later emits both — which is
- * exactly the kind of thing a consolidation pass deletes if the names look
- * like typos of each other.
+ * because the two are not interchangeable. On an ally target card they
+ * already differ today — `_get_available_targets` passes `is_ally=True` for
+ * every ally entry (src/api/combat_adapter.py), so `hostilityTokenFor`
+ * badges ALLY there and this returns null. What makes the fork look
+ * pointless is only that the ROOM payload cannot reach the distinguishing
+ * branch: `NPCSerializer.serialize` emits no `is_ally` at all, so on the one
+ * surface that calls THIS function the two agree. That is a property of the
+ * caller, not of the functions, which is why the names have to carry the
+ * policy.
  *
  * A room's party members are not marked at all: the room panel has no ally
  * signal to read, and absence of a chip is its "nothing to worry about".
  */
 export const hostileOnlyTokenFor = (entity) =>
   (isHostileEntity(entity) === true ? HOSTILITY_TOKENS.hostile : null)
+
+/**
+ * The state a combat payload OPENED with, for a caller that needs the first
+ * frame rather than the current one.
+ *
+ * `beat_states` is per-ACTION, not per-fight, so `[0]` is the opening state
+ * only of the payload in hand -- which is exactly what the auto-fit decision
+ * (#561) and the initial display state both want, and why both spelled this
+ * out. Falls back to the payload itself, which is the shape the grid expects
+ * before any beat has streamed.
+ */
+export const openingState = (combat) => combat?.beat_states?.[0] ?? combat;
 
 /**
  * Is any LIVING enemy outside the Follow viewport centred on Jean?

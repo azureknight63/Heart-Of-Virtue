@@ -45,11 +45,15 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
   // their declaration, and a `reduce` seed is not one.
   const stackedConsumables = Object.values(
     consumables.reduce((stacks, item) => {
+      // Summed through stackSize, and the render reads the summed field
+      // directly: `{ ...item }` carries the source item's own `count`
+      // through, and stackSize prefers `count`, so a count-carrying payload
+      // rendered the pre-aggregation number instead of this total.
       const existing = stacks[item.name]
       if (existing) {
-        existing.quantity = (existing.quantity || 1) + (item.quantity || 1)
+        existing.stacked = existing.stacked + stackSize(item)
       } else {
-        stacks[item.name] = { ...item, quantity: item.quantity || 1 }
+        stacks[item.name] = { ...item, stacked: stackSize(item) }
       }
       return stacks
     }, Object.create(null))
@@ -66,7 +70,12 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
       if (data.success) {
         setActionResult({
           memberName: member.name,
-          itemName: item.name,
+          // The DISPLAY name: the picker row above already strips the
+          // engine's baked count, and this sentence read "used Dried Crystal
+          // Sap x2 on Gorran" -- a count already stale, since using one
+          // decrements the stack (#565). The POST above sends item.id, so
+          // nothing on the wire depends on the raw name.
+          itemName: stackDisplayName(item),
           message: data.message || '',
         })
         setUseItemTarget(null)
@@ -323,7 +332,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                   }}
                 >
                   {stackDisplayName(item)}
-                  <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '8px' }}>{stackCountLabel(stackSize(item))}</span>
+                  <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '8px' }}>{stackCountLabel(item.stacked)}</span>
                 </button>
               ))}
             </div>

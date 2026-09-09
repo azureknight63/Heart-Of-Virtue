@@ -1,15 +1,19 @@
 import { useEffect } from 'react'
 import { CATEGORY_NAV_SELECTOR } from '../utils/categories'
 
-// A click that lands on any of these inside the panel is the panel's own
+// "The panel" throughout this module means the panel that CALLS
+// `useOccludedNavHandoff` -- CombatMovePanel today, and only it.
+//
+// A click that lands on any of these inside that panel is the panel's own
 // business, whatever it happens to be covering.
 //
 // EDITING RULE, because `useOccludedNavHandoff` reads this as an inverse: any
-// new clickable element in this panel MUST match this selector — a <button>,
-// or `role="button"`/`tabindex` on whatever you used instead. A plain
-// `<div onClick>` is treated as inert chrome, and its clicks are swallowed
-// (stopPropagation, so React's delegated handler never runs) and forwarded to
-// HeroPanel's category nav wherever the two overlap. Nothing throws.
+// new clickable element in the calling panel MUST match this selector — a
+// <button>, or `role="button"`/`tabindex` on whatever you used instead. A
+// plain `<div onClick>` is treated as inert chrome, and its clicks are
+// swallowed (stopPropagation, so React's delegated handler never runs) and
+// forwarded to HeroPanel's category nav wherever the two overlap. Nothing
+// throws.
 const PANEL_CONTROL_SELECTOR = 'button, a, input, select, textarea, [role="button"], [tabindex]';
 
 /**

@@ -11,7 +11,6 @@ import contextlib
 import uuid
 import threading
 import logging
-import re
 import random
 from datetime import datetime
 from types import SimpleNamespace
@@ -35,6 +34,7 @@ from src.api.schemas.combat_beat import (
     UPDATE_EVENT,
 )
 from src.api.combat_beat_stream import CombatBeatStreamer
+from src.narration import ANSI_ESCAPE_RE
 from ai.combat_strategist import CombatStrategist
 from src.combatant import (
     OUTCOME_KEY,
@@ -58,7 +58,6 @@ if TYPE_CHECKING:
 MELEE_REACH_FT = 6
 
 # Compiled once at module level for performance
-_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
 # Shortest prep stage that earns an abort affordance. Below this a move is over
 # before a player could react to anything, and offering a bail-out would only add
@@ -234,6 +233,14 @@ MAX_INSTANT_STAGES = 20
 #: other subtype reads fine lowercased ("crossbow", "scythe", "polearm"), so
 #: only the exceptions are listed — and the phrases here are COMPLETE, article
 #: and all, because neither of them takes one.
+#: The empty-handed refusal, named because two producers ship it -- this
+#: module's `weapon_requirement_reason` and `_get_available_moves`' own
+#: no-weapon branch, which stays live because `Attack` declares no
+#: `weapon_requirement`. `tests/test_combat_glossary_contract.py` pins the
+#: string by value, so a divergence in one producer is an unpinned
+#: player-facing sentence.
+_NO_WEAPON_REASON = "No weapon equipped"
+
 _WEAPON_NOUN_PHRASES = {
     "Unarmed": "bare hands",
     "Stars": "throwing stars",
@@ -287,7 +294,7 @@ def weapon_requirement_reason(move, weapon):
     if set(requirement) == {"Unarmed"}:
         return "Requires " + _weapon_noun_phrase("Unarmed")
     if weapon is None:
-        return "No weapon equipped"
+        return _NO_WEAPON_REASON
     subtypes = sorted(requirement)
     phrases = [_weapon_noun_phrase(subtypes[0])] + [
         _weapon_noun_phrase(n, with_article=False) for n in subtypes[1:]
@@ -416,7 +423,7 @@ class CombatOutputCapture:
         """Capture text output."""
         if text and text.strip():
             # Clean ANSI codes
-            clean_text = _ANSI_ESCAPE.sub("", text).strip()
+            clean_text = ANSI_ESCAPE_RE.sub("", text).strip()
 
             if clean_text:
                 # Skip technical debug lines and animation errors
@@ -1117,8 +1124,10 @@ class ApiCombatAdapter:
         """Clear ``entity.current_move`` AND discard its animation channel.
 
         The deletion point for a move CANCELLED mid-wind-up -- an abort, an
-        event interrupt, or the roster emptying under it (see the
-        ``_pending_animation`` lifecycle block at the top of this module).
+        event interrupt, the roster emptying under it, or the fresh-fight
+        rewind in :meth:`_reset_move_state_for_new_fight` (which is also the
+        only caller passing an ally or enemy rather than the player). See the
+        ``_pending_animation`` lifecycle block at the top of this module.
         The end-of-move flush's fallback emission is right for a move that ran
         to completion without resolving; for a cancelled wind-up it is a
         phantom: the swing never happened, and emitting the full move
@@ -1131,7 +1140,7 @@ class ApiCombatAdapter:
         ``current_move`` and leaves the channel armed leaks it (nothing will
         ever publish again), and one that flushes instead emits the phantom.
         Stage bookkeeping (cooldown charge, stage reset) stays with each call
-        site -- the three cancellation paths legitimately differ there.
+        site -- the cancellation paths legitimately differ there.
         """
         entity.current_move = None
         if hasattr(entity, PENDING_ANIMATION_ATTR):
@@ -3800,7 +3809,7 @@ class ApiCombatAdapter:
                 elif move.name == "Attack" and not getattr(
                     self.player, "eq_weapon", None
                 ):
-                    move_data["reason"] = "No weapon equipped"
+                    move_data["reason"] = _NO_WEAPON_REASON
                 else:
                     move_data["reason"] = "Cannot use this move"
 

@@ -642,9 +642,10 @@ def mitigation_note(target, damage_type=None):
     *vulnerability* named as a reason for zero damage reads as nonsense.
 
     Known gap: this reads the target's FULL protection, so a move that
-    resolves against a reduced figure -- ``Impale`` (40%), ``ArmorPierce``
-    (zero), the two Mastery strikes -- would, on a zero, name armour it did
-    not actually subtract. No shipped power/resistance pair is confirmed to
+    resolves against a reduced figure -- any move passing a ``protection``
+    override, which ``grep -rn "protection=" src/moves/`` enumerates and this
+    docstring deliberately does not, for the reason ``resolve_damage`` gives
+    above -- would, on a zero, name armour it did not actually subtract. No shipped power/resistance pair is confirmed to
     land those at exactly 0 today. The fix is to thread the effective value
     from the ``resolve_damage`` call site; overridable parameters were tried
     here first and removed, because no caller passed them and they bought two

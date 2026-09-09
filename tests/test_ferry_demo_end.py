@@ -264,7 +264,7 @@ def test_merely_examining_the_ferry_does_not_end_the_demo(game_service, ferry_wo
             player, wire_handle(ferry), verb, session_data={}
         )
         assert result.get("beta_end") is not True, (verb, result)
-        story = getattr(player, "story", {}) or {}
+        story = getattr(getattr(player, "universe", None), "story", {}) or {}
         assert not story.get("demo_ended"), (verb, story)
 
 
@@ -309,6 +309,55 @@ def test_using_the_ferry_queues_no_step_through_confirmation(
 
     names = [e.get("name", "") for e in result["events_triggered"]]
     assert not any("Passage_" in n for n in names), names
+
+
+def test_a_non_crossing_verb_arms_no_step_through_on_the_demo_edge(
+    game_service, ferry_world
+):
+    """The generic Passageway arm must not fire for a demo-end passageway.
+
+    `examine` and its synonyms resolve to nothing callable on `Passageway`, so
+    `_is_demo_end_crossing` correctly answers False for them -- and control
+    then fell to the arm that queues a "Jean steps through..." confirmation
+    for ANY Passageway. Confirming it runs `_commit_teleport`, which now ends
+    the demo rather than crossing (good) but with `beta_end` never set, so the
+    player gets the closing beat and the story gate and NO BetaEndDialog.
+
+    The sibling test that examines the ferry could not catch this: it asserted
+    on the interact response only, and the damage happens on the confirm.
+
+    What these verbs get instead is the ordinary in-fiction refusal for a
+    keyword the class does not implement (#553) -- the ferry authors none of
+    them in its keywords, so the client renders no button for them and this is
+    reachable only by a hand-built request. A demo-end passageway declining to
+    discuss stepping through is the point.
+    """
+    player, _game_map, ferry = ferry_world
+
+    for verb in ("examine", "look", "check", "inspect", "view", "peruse"):
+        session_data = {}
+        result = game_service.interact_with_target(
+            player, wire_handle(ferry), verb, session_data=session_data
+        )
+
+        events = result.get("events_triggered", [])
+        names = [e.get("name", "") for e in events]
+        assert not any("Passage_" in n for n in names), (verb, names)
+        assert not session_data.get("pending_events"), (verb, session_data)
+
+        # Drive anything that did get queued: the teleport-or-end lands on the
+        # confirm, so asserting on this response alone would pass with the bug
+        # fully present.
+        for event in events:
+            event_id = event.get("event_id")
+            if event_id:
+                game_service.process_event_input(
+                    player, event_id, "continue", session_data
+                )
+
+        assert result.get("beta_end") is not True, (verb, result)
+        story = getattr(getattr(player, "universe", None), "story", {}) or {}
+        assert not story.get("demo_ended"), (verb, story)
 
 
 def test_an_ordinary_passageway_does_not_report_beta_end(game_service, ferry_world):

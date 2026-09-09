@@ -229,6 +229,31 @@ describe('PartyPanel', () => {
     expect(screen.getByText(/Gorran feels better\./)).toBeInTheDocument();
   });
 
+  it('strips the engine-baked count from the confirmation sentence (#565)', async () => {
+    // The picker row was migrated to stackDisplayName; the confirmation
+    // sentence one state field over was not, so a stackable read
+    // "used Dried Crystal Sap x2 on Gorran" -- and the count was already
+    // stale by then, since using one decrements the stack. The identical
+    // sentence in ItemDetailDialog had been migrated, so the same message
+    // existed twice with two different name sources.
+    apiClient.post.mockResolvedValue({ data: { success: true, message: '' } });
+    const player = {
+      name: 'Jean',
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [
+        { id: 'i1', name: 'Dried Crystal Sap x2', can_use: true, quantity: 2 },
+      ],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Dried Crystal Sap'));
+    });
+
+    expect(screen.getByText('Dried Crystal Sap')).toBeInTheDocument();
+    expect(screen.queryByText(/Dried Crystal Sap x2/)).not.toBeInTheDocument();
+  });
+
   it('shows an error result when the API reports failure', async () => {
     apiClient.post.mockResolvedValue({
       data: { success: false, error: 'Nothing happened.' },

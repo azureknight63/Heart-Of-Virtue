@@ -132,15 +132,19 @@ function LootRow({ item, selected, onToggle }) {
       </div>
       {/* Weight */}
       <div style={{ color: '#555', textAlign: 'right', fontSize: 11 }}>
-        {/* `|| 1` matches the selected-weight total below: a drop without an
-            explicit quantity is one unit, not zero. */}
-        {item.weight != null ? formatWeight(item.weight * (item.quantity || 1), 1) : '—'}
+        {/* `|| 1`, not stackSize's `?? 1`: a drop that reports 0 still weighs
+            one unit, not zero. Same reading as the selected-weight total. */}
+        {item.weight != null ? formatWeight(item.weight * unitsOf(item), 1) : '—'}
       </div>
 
       {hovered && <ItemTooltip item={item} anchorRef={rowRef} />}
     </div>
   )
 }
+
+// How many units of a drop to weigh. `|| 1` on purpose: a drop reporting 0
+// still weighs one unit, which is why this is not a bare stackSize call.
+const unitsOf = (item) => stackSize(item) || 1
 
 export default function LootDialog({ endState, playerWeight, weightLimit, onCollect, onSkip }) {
   const drops = useMemo(() => endState?.items_dropped || [], [endState])
@@ -160,7 +164,7 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
     let w = 0
     selected.forEach(i => {
       const item = drops[i]
-      if (item?.weight != null) w += item.weight * (item.quantity || 1)
+      if (item?.weight != null) w += item.weight * unitsOf(item)
     })
     return Math.round(w * 100) / 100
   }, [selected, drops])

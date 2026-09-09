@@ -3,6 +3,7 @@ import apiEndpoints from '../api/endpoints'
 import { apiErrorMessage } from '../utils/apiError'
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 import { isDisplayableEvent, filterDisplayableEvents } from '../utils/eventDisplay'
+import { stackDisplayName, stackSize } from '../utils/stackName'
 
 /**
  * useWorldInteract — owns InteractPanel's world-interaction API calls and the
@@ -96,7 +97,13 @@ export function useWorldInteract({
                 const data = response.data
 
                 if (data.success) {
-                    const label = (item.count > 1) ? `${item.count}× ${item.name}` : item.name
+                    // Through the shared helpers, not the raw fields: the row
+                    // the player clicked already renders stackDisplayName +
+                    // stackCountLabel, and hand-building the badge here off
+                    // `item.name` narrated "3× Mineral Powder x3" (#565).
+                    const size = stackSize(item)
+                    const shown = stackDisplayName(item)
+                    const label = size > 1 ? `${size}× ${shown}` : shown
                     takenLabels.push(label)
                 } else {
                     // Stop on error

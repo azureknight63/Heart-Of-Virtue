@@ -518,12 +518,18 @@ class TestThePendingEntryHasOneBuilder:
         in the rerouted writer is the property, not merely the presence of a
         ``_store_pending_event`` call.
         """
-        node = _game_service_functions()["interact_with_target"]
-        assert "uuid4" not in called_names(node), (
-            "interact_with_target mints its own event id again; "
-            "_store_pending_event cannot dedupe an id it was handed"
-        )
-        assert "uuid4" in called_names(_game_service_functions()["_store_pending_event"])
+        # Named by the functions that HOLD the writers, not by whatever method
+        # currently contains them. `called_names` walks a single function node,
+        # so when the loot site moved out of `interact_with_target` this
+        # assertion went vacuously true -- it would have stayed green with the
+        # site minting its own UUID again, which is the whole property.
+        funcs = _game_service_functions()
+        for host in ("_open_container_for_loot", "_queue_passageway_confirmation"):
+            assert "uuid4" not in called_names(funcs[host]), (
+                f"{host} mints its own event id again; "
+                "_store_pending_event cannot dedupe an id it was handed"
+            )
+        assert "uuid4" in called_names(funcs["_store_pending_event"])
 
 
 # ── Finding 3: the dead assignment ─────────────────────────────────────────

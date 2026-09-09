@@ -111,6 +111,9 @@ export const colors = {
 
     bg: {
         main: '#0a0a0a',
+        // A shade under `main`, for a scroll fade to dissolve INTO: the log's
+        // fades sit on its own inset panel, not on the page ground.
+        inset: '#030303',
         input: '#1a1a2e',     // Input field background
         panel: 'rgba(0, 0, 0, 0.3)',
         panelLight: 'rgba(0, 0, 0, 0.2)',

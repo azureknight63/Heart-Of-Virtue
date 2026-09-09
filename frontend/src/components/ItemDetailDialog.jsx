@@ -98,6 +98,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   // Every API call in this file posts `item.id`, never the name, so nothing
   // here is naming the item TO the engine.
   const itemDisplayName = stackDisplayName(item)
+  const stackQty = stackSize(item)
   const partyMembers = freshPartyMembers || player?.party_members || []
   const hasPartyMembers = partyMembers.length > 0
 
@@ -233,7 +234,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const response = await apiClient.post('/inventory/use', { item_id: item.id })
       const data = response.data || response
       if (data.success) {
-        setBookReaderData({ title: item.name, text: stripBookWrapper(data.message) })
+        setBookReaderData({ title: itemDisplayName, text: stripBookWrapper(data.message) })
       } else {
         setActionMessage('✗ ' + apiErrorMessage(data, 'Cannot read this item'))
       }
@@ -370,7 +371,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           { label: 'Weight', value: formatWeight(item.weight) },
           { label: 'Value', value: `${item.value || 0}g` },
           { label: 'Rarity', value: item.rarity, show: Boolean(item.rarity) },
-          { label: 'Qty', value: stackCountLabel(stackSize(item)), show: stackSize(item) > 1 },
+          { label: 'Qty', value: stackCountLabel(stackQty), show: stackQty > 1 },
         ]} />
 
         {/* Comparison vs. currently equipped item in the same slot */}

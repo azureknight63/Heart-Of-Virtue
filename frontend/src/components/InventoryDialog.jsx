@@ -372,7 +372,10 @@ function ItemCard({ item, onClick, isShop }) {
         </div>
       )}
 
-      {item.quantity > 1 && (
+      {/* Through stackSize, like the badge below it: two hand-picked reads of
+          "how many" in one block is how a count-only payload gets no badge
+          AND has its baked "x3" stripped off the name. */}
+      {stackSize(item) > 1 && (
         <div style={{
           position: 'absolute',
           top: '-6px',
