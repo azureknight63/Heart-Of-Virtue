@@ -4222,7 +4222,22 @@ class ApiCombatAdapter:
             # because this top-level one never survives transformCombatData.
             "map_size": grid_size[0],
             "battle_state": battle_state,
-            "beat_states": [battle_state],  # Initial state as a single beat state
+            # NO "beat_states" here, deliberately. It is a record of what
+            # HAPPENED during an action, and the only producers are
+            # `_execute_move_inner` (the per-beat stream) and
+            # `_terminal_state_snapshot` (the beats of the move that ended the
+            # fight) -- both of which set it on the dict this returns.
+            #
+            # It used to be seeded here with `[battle_state]`, a single
+            # synthetic frame of the CURRENT state, which the action path then
+            # overwrote. Every other caller kept the placeholder, so a
+            # combat-status poll shipped something indistinguishable from a
+            # one-beat action -- and the client polls on an 8s timer for the
+            # whole fight. `useAccumulatedBeatStates` appended each snapshot to
+            # the breadcrumb trail, so the index BattlefieldGrid renders from
+            # advanced on a timer and real movement was evicted from its
+            # 200-entry buffer. `frontend/src/test/payloads.js` already
+            # modelled this response with `beat_states: []`.
             "log": getattr(self.player, "combat_log", []),
             "suggested_moves": getattr(self.player, "suggested_moves", []),
             "suggestions_loading": getattr(self.player, "suggestions_loading", False),

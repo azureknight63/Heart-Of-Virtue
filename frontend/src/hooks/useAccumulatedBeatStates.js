@@ -26,17 +26,29 @@ const MAX_BEAT_STATES = 200
  * Accumulates ACROSS actions so trails survive a player's turn, and resets
  * only when combat ends.
  *
- * KNOWN LIMIT, stated because the obvious reading of the guard is wrong:
- * `incoming === prevBeatStatesRef.current` distinguishes a re-render from a
- * new RESPONSE, not from new play. `get_combat_state` publishes
- * `beat_states: [battle_state]` on every status poll and `transformCombatData`
- * passes that array through untouched, so each idle poll arrives with a fresh
- * identity and appends a duplicate frame — advancing the offset on a timer and
- * evicting real movement from the 200-entry buffer during a long fight.
- * Pre-existing, and not patched here: deciding what counts as "new play"
- * either dedupes by content at this boundary or stops the poll re-publishing
- * beat states, and it changes what the player sees, so it needs a browser
- * (rung 3 on CLAUDE.md's ladder) rather than a guess.
+ * WHAT THE IDENTITY GUARD DOES AND DOESN'T DO, because the obvious reading is
+ * wrong: `incoming === prevBeatStatesRef.current` distinguishes a re-render
+ * from a new RESPONSE, not from new play. It is the length check that keeps
+ * idle polls out — `get_combat_state` used to publish
+ * `beat_states: [battle_state]`, one synthetic frame of the present, on every
+ * status poll, and `GamePage` polls for the whole fight, so each tick arrived
+ * with a fresh identity, passed the guard, and appended a duplicate: the
+ * offset advanced on a timer and real movement was evicted from the 200-entry
+ * buffer. Fixed on both sides (#567) — the poll now publishes no
+ * `beat_states` at all, and an empty batch never reaches the updater below.
+ * Keep BOTH halves: the updater rewrites `baseOffsetRef.current` whether or
+ * not it appended anything, so a serializer that goes back to sending an empty
+ * array every tick would walk the offset forward again on its own.
+ *
+ * WHAT FEEDS THIS HOOK, which is not "every fight": `beat_states` rides the
+ * HTTP action response. With `COMBAT_SOCKET_STREAMING` on, `performAction`
+ * deliberately does NOT apply a streamed non-terminal response
+ * (`useApi.js`'s `response_streamed` branch) and `emit_resolved` pops
+ * `beat_states` off the socket's authoritative state, so in that configuration
+ * this hook is handed nothing and the trail stays empty for the entire fight.
+ * Verified in a browser, not inferred. That is a gap in the streaming path,
+ * not in this hook — but a reader debugging an empty trail should look at the
+ * carrier before looking here.
  *
  * @param {object} combat the combat payload
  * @param {?number} currentLogIndex the beat index the log has revealed
@@ -49,7 +61,12 @@ export function useAccumulatedBeatStates(combat, currentLogIndex) {
 
   useEffect(() => {
     const incoming = combat?.beat_states
-    if (!incoming || incoming === prevBeatStatesRef.current) return
+    // `!incoming?.length`, not `!incoming`: a response with nothing to
+    // accumulate must not reach the updater below, which rewrites
+    // `baseOffsetRef.current` whether or not it appended anything. A poll
+    // carries no beats, and a fresh empty array on every poll would otherwise
+    // walk the offset forward on a timer.
+    if (!incoming?.length || incoming === prevBeatStatesRef.current) return
     prevBeatStatesRef.current = incoming
 
     if (!combat?.combat_active) {
