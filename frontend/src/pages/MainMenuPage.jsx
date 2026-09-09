@@ -68,6 +68,7 @@ function useEmbers() {
 import { useAuth } from '../hooks/useApi'
 import { saves } from '../api/endpoints'
 import { useAudio } from '../context/AudioContext'
+import { usePreferences } from '../context/PreferencesContext'
 import { useToast } from '../context/ToastContext'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameButton from '../components/GameButton'
@@ -98,9 +99,8 @@ export default function MainMenuPage() {
     const { logout } = useAuth()
     useEmbers()
     const { warning: showWarning } = useToast()
+    const { playBGM, playSFX } = useAudio()
     const {
-        playBGM,
-        playSFX,
         musicVolume,
         setMusicVolume,
         sfxVolume,
@@ -109,7 +109,7 @@ export default function MainMenuPage() {
         setIsMusicMuted,
         isSfxMuted,
         setIsSfxMuted
-    } = useAudio()
+    } = usePreferences()
 
     const [showLoadModal, setShowLoadModal] = useState(false)
     const [showSettings, setShowSettings] = useState(false)

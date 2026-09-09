@@ -318,7 +318,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                     dialog's convention — this was rendering sentence-case
                     grey (#540 item 4). */}
                 <GameButton onClick={onClose} variant="secondary" size="small">
-                  Close
+                  CLOSE
                 </GameButton>
               </div>
             </>

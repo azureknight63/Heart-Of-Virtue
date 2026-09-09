@@ -120,9 +120,9 @@ describe('PartyPanel', () => {
     expect(closeButton.style.color).toBe('rgb(136, 136, 136)');
   });
 
-  it('calls onClose when DISMISS is clicked', () => {
+  it('calls onClose when CLOSE is clicked', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
-    fireEvent.click(screen.getByText('DISMISS'));
+    fireEvent.click(screen.getByText('CLOSE'));
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
@@ -395,14 +395,18 @@ describe('PartyPanel', () => {
     await act(async () => resolvePost({ data: { success: true, message: '' } }));
   });
 
-  it('applies and clears hover styling on the DISMISS button', () => {
+  it('applies and clears hover styling on the CLOSE button', () => {
+    // See BookReaderDialog's equivalent: the dismiss control is now a shared
+    // `GameButton`, so this asserts that it responds to hover and returns,
+    // rather than pinning colours another component owns.
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
-    const dismissButton = screen.getByText('DISMISS');
+    const dismissButton = screen.getByText('CLOSE');
+    const resting = dismissButton.style.backgroundColor;
 
     fireEvent.mouseEnter(dismissButton);
-    expect(dismissButton.style.color).toBe('rgb(0, 0, 0)');
+    expect(dismissButton.style.backgroundColor).not.toBe(resting);
 
     fireEvent.mouseLeave(dismissButton);
-    expect(dismissButton.style.color).toBe('rgb(255, 170, 0)');
+    expect(dismissButton.style.backgroundColor).toBe(resting);
   });
 });

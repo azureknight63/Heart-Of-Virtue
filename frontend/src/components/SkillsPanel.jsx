@@ -270,7 +270,7 @@ export default function SkillsPanel({ player, onClose }) {
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: spacing.sm }}>
           <GameButton onClick={onClose} variant="secondary" size="small">
-            CLOSE BOOK
+            CLOSE
           </GameButton>
         </div>
       </div>

@@ -100,7 +100,7 @@ const CombatCheckDialog = ({ checkData, onClose }) => {
 
             <div style={{ marginTop: spacing.xl, textAlign: 'center' }}>
                 <GameButton onClick={onClose} variant="primary">
-                    Close
+                    CLOSE
                 </GameButton>
             </div>
         </BaseDialog>

@@ -16,6 +16,17 @@ export const COMBAT_SPEED_STEPS = [0.5, 0.75, 1, 1.5, 2];
 export const DEFAULT_COMBAT_SPEED = 1;
 
 /**
+ * The steps as the settings control renders them, so the label lives beside
+ * the value it names rather than being rebuilt at the call site. Mirrors
+ * `textPacing.TEXT_SPEED_OPTIONS`, whose labels are words rather than
+ * multipliers precisely so the two adjacent rows cannot be confused.
+ */
+export const COMBAT_SPEED_OPTIONS = COMBAT_SPEED_STEPS.map((value) => ({
+  value,
+  label: `${value}x`,
+}));
+
+/**
  * Clamp a speed multiplier to a positive, finite number (defaults to 1x).
  *
  * `Number.isFinite` rather than `typeof === 'number'`: this value is seeded from

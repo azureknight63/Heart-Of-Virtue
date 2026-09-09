@@ -144,9 +144,9 @@ describe('BookReaderDialog', () => {
     expect(screen.getByText(/Page 1 \//)).toBeDefined()
   })
 
-  it('calls onClose when CLOSE BOOK is clicked', () => {
+  it('calls onClose when CLOSE is clicked', () => {
     render(<BookReaderDialog title="Book" text={shortText} onClose={mockOnClose} />)
-    fireEvent.click(screen.getByText('CLOSE BOOK'))
+    fireEvent.click(screen.getByText('CLOSE'))
     expect(mockOnClose).toHaveBeenCalledOnce()
   })
 
@@ -208,15 +208,21 @@ describe('BookReaderDialog', () => {
   })
 
   describe('button hover styling', () => {
-    it('applies and clears hover styling on CLOSE BOOK', () => {
+    it('applies and clears hover styling on CLOSE', () => {
+      // No longer pins hex values: the dismiss control is a `GameButton` like
+      // every other dialog's, so its hover treatment belongs to GameButton and
+      // asserting specific colours here would pin one component's styling from
+      // inside another's test. What is this dialog's to guarantee is that the
+      // control reacts to hover at all, and returns to where it started.
       render(<BookReaderDialog title="Book" text={shortText} onClose={mockOnClose} />)
-      const closeButton = screen.getByText('CLOSE BOOK')
+      const closeButton = screen.getByText('CLOSE')
+      const resting = closeButton.style.backgroundColor
 
       fireEvent.mouseEnter(closeButton)
-      expect(closeButton.style.backgroundColor).toBe('rgb(51, 0, 0)')
+      expect(closeButton.style.backgroundColor).not.toBe(resting)
 
       fireEvent.mouseLeave(closeButton)
-      expect(closeButton.style.backgroundColor).toBe('rgb(26, 0, 0)')
+      expect(closeButton.style.backgroundColor).toBe(resting)
     })
 
     it('applies and clears hover styling on NEXT while enabled (not on the last page)', () => {

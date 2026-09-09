@@ -274,7 +274,7 @@ export default function TermsOfServiceModal({ onClose }) {
             {/* Footer */}
             <div style={{ marginTop: spacing.lg, borderTop: `1px solid ${colors.border.light}`, paddingTop: spacing.lg, textAlign: 'center' }}>
                 <GameButton variant="secondary" onClick={onClose} size="small">
-                    Close
+                    CLOSE
                 </GameButton>
             </div>
         </BaseDialog>

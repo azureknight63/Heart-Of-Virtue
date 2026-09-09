@@ -1,53 +1,27 @@
-import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
-import { DEFAULT_COMBAT_SPEED, normalizeSpeed } from '../utils/combatTiming';
+import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
+import { normalizeSpeed } from '../utils/combatTiming';
+import { usePreferences } from './PreferencesContext';
 import { lookupOr } from '../utils/lookup';
+
+/**
+ * Audio playback: the looping BGM element, one-shot SFX, and stings.
+ *
+ * Playback only. The volumes and mutes it obeys are player *preferences* and
+ * live in `PreferencesContext`, which this provider reads — as do the pacing
+ * settings that used to sit here (`combatSpeed`, `textSpeed`, `autoAdvance`)
+ * and are not audio at all. Consumers that only want to make a sound call
+ * `useAudio()`; consumers that want a setting call `usePreferences()`.
+ */
 
 const AudioContext = createContext({
     playBGM: () => {},
     stopBGM: () => {},
     playSFX: () => {},
     playSting: () => {},
-    musicVolume: 0.5,
-    setMusicVolume: () => {},
-    sfxVolume: 0.5,
-    setSfxVolume: () => {},
-    isMusicMuted: false,
-    setIsMusicMuted: () => {},
-    isSfxMuted: false,
-    setIsSfxMuted: () => {},
     currentBGM: null,
-    combatSpeed: DEFAULT_COMBAT_SPEED,
-    setCombatSpeed: () => {},
 });
 
 export const useAudio = () => useContext(AudioContext);
-
-// Helper functions for localStorage
-const loadAudioPreferences = () => {
-    try {
-        const saved = localStorage.getItem('audioPreferences');
-        if (saved) {
-            return JSON.parse(saved);
-        }
-    } catch (error) {
-        console.warn('Failed to load audio preferences:', error);
-    }
-    return {
-        musicVolume: 0.5,
-        sfxVolume: 0.5,
-        isMusicMuted: false,
-        isSfxMuted: false,
-        combatSpeed: DEFAULT_COMBAT_SPEED
-    };
-};
-
-const saveAudioPreferences = (preferences) => {
-    try {
-        localStorage.setItem('audioPreferences', JSON.stringify(preferences));
-    } catch (error) {
-        console.warn('Failed to save audio preferences:', error);
-    }
-};
 
 const getAssetPath = (path) => {
     const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -80,14 +54,9 @@ const BGM_MAP = {
 };
 
 export const AudioProvider = ({ children }) => {
-    // Load initial preferences from localStorage
-    const initialPrefs = loadAudioPreferences();
-
-    const [musicVolume, setMusicVolume] = useState(initialPrefs.musicVolume);
-    const [sfxVolume, setSfxVolume] = useState(initialPrefs.sfxVolume);
-    const [isMusicMuted, setIsMusicMuted] = useState(initialPrefs.isMusicMuted);
-    const [isSfxMuted, setIsSfxMuted] = useState(initialPrefs.isSfxMuted);
-    const [combatSpeed, setCombatSpeed] = useState(normalizeSpeed(initialPrefs.combatSpeed));
+    // Volumes and mutes are preferences, owned and persisted by
+    // PreferencesProvider, which must therefore wrap this one (see App.jsx).
+    const { musicVolume, sfxVolume, isMusicMuted, isSfxMuted } = usePreferences();
     const [currentBGM, setCurrentBGM] = useState(null);
 
     const bgmRef = useRef(new Audio());
@@ -113,17 +82,6 @@ export const AudioProvider = ({ children }) => {
         bgmRef.current.loop = true;
         bgmRef.current.onended = null;
     }, []);
-
-    // Save preferences whenever they change
-    useEffect(() => {
-        saveAudioPreferences({
-            musicVolume,
-            sfxVolume,
-            isMusicMuted,
-            isSfxMuted,
-            combatSpeed
-        });
-    }, [musicVolume, sfxVolume, isMusicMuted, isSfxMuted, combatSpeed]);
 
     useEffect(() => {
         bgmRef.current.loop = true;
@@ -279,17 +237,7 @@ export const AudioProvider = ({ children }) => {
         stopBGM,
         playSFX,
         playSting,
-        musicVolume,
-        setMusicVolume,
-        sfxVolume,
-        setSfxVolume,
-        isMusicMuted,
-        setIsMusicMuted,
-        isSfxMuted,
-        setIsSfxMuted,
         currentBGM,
-        combatSpeed,
-        setCombatSpeed
     };
 
     return (

@@ -5,6 +5,7 @@ import GameText from './GameText'
 import GameInput from './GameInput'
 import TypewriterOutput from './TypewriterOutput'
 import ConversationStage from './ConversationStage'
+import HoldButton from './HoldButton'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
@@ -14,6 +15,18 @@ import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { apiErrorMessage } from '../utils/apiError'
 
 const SUBMIT_FAILED_MESSAGE = 'Failed to submit input. Please try again.'
+
+/**
+ * One title for every scripted scene (issue #538 item 3).
+ *
+ * The old title was derived from the event's own `name`, which produced
+ * `\u2728 EVENT` for one chain and `\u2728 EVENT RESULT` for the next -- two
+ * names for the same frame, decided by which code path happened to build it.
+ * Most authored events carry a class-shaped name anyway (`CampEntryGreeting`),
+ * so a name-derived title was mostly a placeholder with extra steps.
+ */
+const STORY_DIALOG_TITLE = '\u2728 STORY'
+const MEMORY_FLASH_TITLE = '\u2727 A Memory Stirs \u2727'
 
 /**
  * Build the retry banner text for a failed input submission.
@@ -47,6 +60,11 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const [validationSeverity, setValidationSeverity] = useState('') // 'warning' or 'error'
     const [selectedChoice, setSelectedChoice] = useState(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    // Raised by the SKIP SCENE hold control and left raised for the rest of
+    // the stage; ConversationStage consumes the rising edge. Reset by the
+    // per-event reset effect below, so each stage of a multi-stage event can
+    // be skipped in turn.
+    const [skipRequested, setSkipRequested] = useState(false)
 
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
@@ -93,6 +111,12 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     // a legacy fallback for any payload still using the old field names.
     const minValue = event?.input_min ?? event?.min_value
     const maxValue = event?.input_max ?? event?.max_value
+    // A one-option "choice" is not a choice, it is a Continue button. Rendering
+    // it with "Your choice:", a `[1]` key binding and "Press 1-1 to select"
+    // asked the player to make a decision that does not exist (issue #538
+    // item 5), so the prompt, the binding and the hint are all suppressed and
+    // the single option becomes a plain primary button.
+    const isSoleOption = inputType === 'choice' && inputOptions.length === 1
     // Staged conversation mode: when the engine emits structured beats, render
     // the visual-novel cast stage instead of the plain typewriter block.
     const segments = Array.isArray(event?.segments) ? event.segments : null
@@ -116,7 +140,8 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         setValidationMessage('')
         setSelectedChoice(null)
         setIsSubmitting(false)
-    }, [eventText, needsInput, isDeathScene])
+        setSkipRequested(false)
+    }, [eventText, needsInput, isDeathScene, eventId])
 
     // Focus input when shown
     useEffect(() => {
@@ -272,6 +297,11 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             // that field genuinely is the real DOM focus target.
             if (isTypingTarget(e.target) && e.target !== inputRef.current) return
             if (isModifiedKeyEvent(e)) return
+            // Auto-repeat is a held key, not a series of presses. Without this
+            // a keyboard hold on the skip control streams keydowns that, the
+            // moment the skip reveals a choice, answer it before the player
+            // has seen it.
+            if (e.repeat) return
 
             // Handle number keys for choices
             if (inputType === 'choice' && inputOptions.length > 0) {
@@ -283,9 +313,16 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                 }
             }
 
-            // Handle Enter key
+            // Handle Enter key. With a single option there is nothing to
+            // pick first, so Enter takes it -- otherwise Enter on a
+            // Continue-shaped prompt only ever produced "Please select an
+            // option".
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
+                if (isSoleOption) {
+                    handleChoiceSelect(inputOptions[0].value)
+                    return
+                }
                 handleSubmit()
             }
         }
@@ -307,7 +344,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         return () => {
             document.removeEventListener('keydown', handleKeyDown)
         }
-    }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice, isSubmitting])
+    }, [showInput, inputType, inputOptions, isSoleOption, textInput, numberInput, selectedChoice, isSubmitting])
 
     // Character counter for text input
     const charCount = textInput.length
@@ -359,6 +396,71 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         onClose()
     }
 
+    /**
+     * Reveal the rest of the scene at once.
+     *
+     * Hold-to-confirm rather than a plain click: this is the one control in the
+     * dialog that destroys pacing on purpose, and it sits next to the text the
+     * player is clicking through. Nothing is lost either way -- the journal has
+     * already recorded the scene and the LOG button still lists it -- so there
+     * is no confirmation dialog beyond the hold itself.
+     */
+    const handleSkipScene = () => {
+        if (isSubmitting) return
+        setSkipRequested(true)
+    }
+
+    // Two conditions, deliberately separate. `showSkipControl` decides whether
+    // the control EXISTS; `canSkip` decides whether it is live.
+    //
+    // They differ because the control must not vanish at the moment a hold
+    // completes. A browser whose mousedown target has been removed retargets
+    // the resulting click to the nearest still-connected ancestor — here the
+    // dialog body, whose handler dismisses a completed event — so an
+    // unmount-on-confirm made "skip this scene" close it instead of landing on
+    // its final beat. A disabled button dispatches no mouse events and stays
+    // connected, so nothing is left to retarget.
+    const showSkipControl = !isDeathScene && !showHistory && (hasSegments || Boolean(eventText))
+    const canSkip = showSkipControl && !isComplete
+
+    /**
+     * Hand focus back to the dialog when the skip control disappears.
+     *
+     * The skip control is usually the first focusable element inside the
+     * dialog, so BaseDialog's focus trap parks focus on it at mount. When the
+     * scene finishes, the control unmounts and focus would otherwise fall to
+     * `<body>` — outside the trap, so Tab escapes into the page behind and the
+     * dialog's own Escape handling is the only way back.
+     *
+     * `.modal-content` is BaseDialog's container, the same node its trap
+     * focuses when a dialog has no focusable descendant, and the node the
+     * issue-#530 keyboard tests pin as the real focus target. Reached via
+     * `closest` from this dialog's own body rather than a document-wide query,
+     * so a nested dialog cannot capture the wrong container.
+     */
+    useEffect(() => {
+        if (!canSkip) return undefined
+        // Resolved on the way IN, not in the cleanup: by cleanup time this
+        // dialog may itself be unmounting, and `dialogRef.current` is then
+        // null (or, worse, a node from a later render).
+        const container = dialogRef.current?.closest('.modal-content')
+        return () => {
+            // `document.contains` because the container goes with the dialog:
+            // when the whole dialog closes, BaseDialog restores focus to
+            // whatever had it before, and this must not fight that.
+            if (!container || !document.contains(container)) return
+            const focused = document.activeElement
+            // Two spellings of "focus is now on nothing usable", because
+            // browsers and jsdom disagree about what disabling a focused
+            // element does: a browser blurs it to <body>, jsdom leaves it
+            // focused-but-disabled. Handling both keeps the behaviour correct
+            // in production and observable in a test.
+            const focusIsStranded =
+                !focused || focused === document.body || focused.disabled === true
+            if (focusIsStranded) container.focus()
+        }
+    }, [canSkip])
+
     // Use wider dialog for memory events due to pre-formatted text
     const isMemoryEvent = /memory|flash/i.test(event?.type || '') ||
         /memory|flash/i.test(event?.name || '') ||
@@ -367,9 +469,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     // of the old inline ASCII borders.
     const isMemoryFlash = event?.presentation === 'memory_flash' || isMemoryEvent
 
-    const dialogTitle = isMemoryFlash
-        ? '✧ A Memory Stirs ✧'
-        : `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
+    const dialogTitle = isMemoryFlash ? MEMORY_FLASH_TITLE : STORY_DIALOG_TITLE
 
     const dialogMaxWidth = isDeathScene ? '1100px' : isMemoryEvent ? '900px' : '800px'
     const dialogWidth = isDeathScene ? '98%' : isMemoryEvent ? '95%' : '90%'
@@ -403,9 +503,32 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                     </div>
                 )}
 
-                {/* Event History Toggle (only if multiple messages) */}
-                {history.length > 1 && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: `-${spacing.sm}` }}>
+                {/* Scene controls: in-scene history, and the skip gesture.
+
+                    The row stops its own clicks. Completing the skip hold
+                    unmounts the skip button, and a browser whose mousedown
+                    target has gone retargets the resulting click to the
+                    nearest still-connected ancestor — which, without this,
+                    is the dialog body, whose click handler dismisses a
+                    completed event. Skipping a scene closed it. */}
+                {(history.length > 1 || showSkipControl) && (
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ display: 'flex', justifyContent: 'flex-end', gap: spacing.sm, alignItems: 'center', marginBottom: `-${spacing.sm}` }}
+                    >
+                        {showSkipControl && (
+                            <HoldButton
+                                label="hold to skip scene"
+                                holdingLabel="keep holding…"
+                                ariaLabel="Hold to skip the rest of this scene"
+                                onConfirm={handleSkipScene}
+                                disabled={!canSkip || isSubmitting}
+                                color={colors.text.muted}
+                                fillColor="rgba(255, 255, 255, 0.16)"
+                                testId="skip-scene-fill"
+                            />
+                        )}
+                        {history.length > 1 && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -431,6 +554,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                 {showHistory ? '↩ Back' : `📜 Log (${history.length})`}
                             </GameText>
                         </button>
+                        )}
                     </div>
                 )}
 
@@ -501,14 +625,14 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         segments={segments}
                         conversation={event?.conversation || null}
                         onComplete={handleStageComplete}
-                        speed={25}
+                        skipRequested={skipRequested}
                     />
                 ) : (
                     <div style={{ position: 'relative', flex: 1 }}>
                         <div ref={scrollRef} style={{ maxHeight: '450px', overflowY: 'auto' }}>
                             <TypewriterOutput
                                 text={eventText}
-                                speed={25}
+                                speed={skipRequested ? 0 : undefined}
                                 onComplete={() => {
                                     setIsComplete(true)
                                     if (needsInput) setShowInput(true)
@@ -544,10 +668,13 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         gap: spacing.md,
                         marginTop: spacing.sm,
                     }}>
-                        {/* Input Prompt */}
-                        <GameText variant="primary" size="sm" weight="bold" align="center" style={{ marginBottom: spacing.xs }}>
-                            {inputPrompt}
-                        </GameText>
+                        {/* Input Prompt — omitted for a sole option, which is a
+                            Continue button rather than a decision. */}
+                        {!isSoleOption && (
+                            <GameText variant="primary" size="sm" weight="bold" align="center" style={{ marginBottom: spacing.xs }}>
+                                {inputPrompt}
+                            </GameText>
+                        )}
 
                         {/* Choice Buttons */}
                         {inputType === 'choice' && inputOptions.length > 0 && (
@@ -558,13 +685,13 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                             }}>
                                 {inputOptions.map((option, idx) => {
                                     const isSelected = selectedChoice === option.value
-                                    const keyBinding = idx < 9 ? `[${idx + 1}] ` : ''
+                                    const keyBinding = !isSoleOption && idx < 9 ? `[${idx + 1}] ` : ''
 
                                     return (
                                         <GameButton
                                             key={idx}
                                             onClick={() => handleChoiceSelect(option.value)}
-                                            variant={isSelected ? 'primary' : 'secondary'}
+                                            variant={isSelected || isSoleOption ? 'primary' : 'secondary'}
                                             disabled={isSubmitting}
                                             style={{
                                                 padding: '14px 20px',
@@ -676,40 +803,39 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                             </GameButton>
                         )}
 
-                        {/* Keyboard shortcuts hint */}
-                        {inputType === 'choice' && inputOptions.length > 0 && (
+                        {/* Keyboard shortcuts hint. A sole option needs none:
+                            it is one button, and Enter takes it. */}
+                        {inputType === 'choice' && inputOptions.length > 1 && (
                             <GameText variant="muted" size="xs" align="center" style={{ fontStyle: 'italic', marginTop: spacing.xs }}>
-                                {inputOptions.length === 1
-                                    ? 'Press 1 to select'
-                                    : `Press 1-${Math.min(inputOptions.length, 9)} to select`}
+                                {`Press 1-${Math.min(inputOptions.length, 9)} to select`}
                             </GameText>
                         )}
                     </div>
                 )}
 
-                {/* Continue hint (if no input required) */}
+                {/* Dismissal. One control, not three: the stage's own advance
+                    hint retires when the scene completes, and the "or click
+                    anywhere to continue…" line is gone. Clicking the body still
+                    closes the dialog — it is simply no longer advertised
+                    alongside this button and the header's ✕ (issue #538 item 3). */}
                 {!needsInput && isComplete && (
                     <div style={{
                         textAlign: 'center',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
-                        gap: spacing.md,
                         marginTop: spacing.lg,
                     }}>
                         <GameButton
-                            onClick={handleGlobalInteraction}
+                            onClick={handleDismiss}
                             variant="secondary"
                             disabled={isSubmitting}
                             style={{
                                 padding: '10px 40px',
                             }}
                         >
-                            {isSubmitting ? 'Closing...' : 'Close'}
+                            {isSubmitting ? 'CLOSING…' : 'CLOSE'}
                         </GameButton>
-                        <GameText variant="muted" size="sm" style={{ fontStyle: 'italic' }}>
-                            or click anywhere to continue...
-                        </GameText>
                     </div>
                 )}
             </div>

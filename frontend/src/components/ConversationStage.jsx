@@ -6,6 +6,8 @@ import { castMember } from './ConversationTranscript'
 import { DEFAULT_EMOTION } from '../utils/conversationSegment'
 import { colors, spacing, fonts, commonStyles, STAGE_PORTRAIT_WIDTH_VAR } from '../styles/theme'
 import { isTypingTarget, isModifiedKeyEvent } from '../utils/domFocus'
+import { usePreferences } from '../context/PreferencesContext'
+import { autoAdvanceDelay, msPerChar } from '../utils/textPacing'
 
 // Referentially stable stand-in for "no initial roster". `computeStage` is
 // memoized on its arguments, and a fresh `[]` per render would miss that cache
@@ -110,6 +112,14 @@ export function computeStage(segments, idx, initialCast) {
 }
 
 const PORTRAIT_TRANSITION = 'opacity 0.8s ease, transform 0.35s ease, filter 0.35s ease'
+
+// One continue verb for the whole story UI (issue #538 item 3). The old
+// pair -- "click or press Enter to continue" mid-scene, "click to finish"
+// on the last beat -- read as two different controls, and the second
+// stacked with the dialog's own CLOSE button and its "or click anywhere"
+// line. The hint retires the moment the scene completes; dismissal is
+// CLOSE's job.
+export const CONTINUE_HINT = '▾ Click, Space or Enter to continue'
 
 /**
  * Play a mount-time fade-in on `nodeRef` by painting it at 0 for one frame and
@@ -294,7 +304,11 @@ function StageDialogueCard({
                 gridArea: isWide ? 'dialogue' : undefined,
                 display: 'flex',
                 flexDirection: 'column',
-                justifyContent: 'center',
+                // Top-pinned, not centred (issue #538 item 2): vertical
+                // centring inside a fixed min-height made the first line of
+                // every beat land at a different y, so the copy bobbed as the
+                // player clicked through a scene.
+                justifyContent: 'flex-start',
                 gap: spacing.sm,
                 border: `2px solid ${colors.secondary}`,
                 borderRadius: '8px',
@@ -323,7 +337,7 @@ function StageDialogueCard({
                         fontSize: '13px',
                         lineHeight: 1.45,
                         fontStyle: 'italic',
-                        textAlign: isDialogue ? 'left' : 'center',
+                        textAlign: 'left',
                         padding: `${spacing.xs} ${spacing.sm}`,
                         borderLeft: `2px solid ${colors.border.light}`,
                     }}
@@ -337,8 +351,18 @@ function StageDialogueCard({
                     fontSize: '16px',
                     lineHeight: 1.6,
                     whiteSpace: 'pre-wrap',
-                    textAlign: isDialogue ? 'left' : 'center',
-                    fontStyle: isDialogue && !isThought ? 'normal' : 'italic',
+                    // Narration reads left-aligned and upright like every other
+                    // block of prose in the app. It used to be centred and
+                    // italic, which set an eight-word line floating mid-box and
+                    // spent the emphasis of italics on ordinary description
+                    // (issue #538 item 2). Italic now means one thing: a
+                    // thought.
+                    textAlign: 'left',
+                    fontStyle: isThought ? 'italic' : 'normal',
+                    // A comfortable measure. Without it the wide layout runs
+                    // prose the full width of the dialog, well past the point
+                    // the eye can track a line break.
+                    maxWidth: '68ch',
                 }}
             >
                 {text}
@@ -369,7 +393,7 @@ function StageDialogueCard({
  * Shows the full cast flanking the prose (Jean + party left, others right),
  * advancing one beat at a time on click/Enter. The active speaker is
  * emphasized; listeners persist, dimmed, until a beat changes their emotion.
- * Pre-conversation beats (no `in_conversation`) render as plain centered prose.
+ * Pre-conversation beats (no `in_conversation`) render as plain left-aligned prose.
  *
  * `mode` is the whole behavioural contract, because interactivity, the advance
  * hint and tail-following always travel together for a given caller:
@@ -397,21 +421,37 @@ function StageDialogueCard({
  *   - ordered beats from the event payload
  * @param {?Object} props.conversation - { cast: [...] } initial roster (optional)
  * @param {Function} props.onComplete - called once after the final beat is revealed (never in `"live"` mode)
- * @param {number} [props.speed] - typewriter speed (ms/char)
+ * @param {number} [props.speed] - typewriter delay (ms/char); omit to follow the player's TEXT SPEED setting
  * @param {'authored'|'live'} [props.mode] - interactive+hinted+from-beat-0, or non-interactive+tail-following
  * @param {'default'|'wide'} [props.layout] - layout density for the conversation stage
+ * @param {boolean} [props.skipRequested] - rising-edge skip request: the parent
+ *   raises it and leaves it raised for the rest of the stage, and this consumes
+ *   the edge once by revealing the remaining beats and ending the scene
  */
 function ConversationStage({
     segments = [],
     conversation = null,
     onComplete,
-    speed = 25,
+    speed,
     mode = 'authored',
     layout = 'default',
+    skipRequested = false,
 }) {
     const isLive = mode === 'live'
+    // TEXT SPEED / AUTO-ADVANCE, the player's narrative pacing settings
+    // (issue #538 item 1). An explicit `speed` still wins: NpcChatPanel pairs
+    // its stage with its own useTypewriter tracker at a matched speed (issue
+    // #531), and that pair must not drift because a story setting changed.
+    const { textSpeed, autoAdvance } = usePreferences()
+    const typingSpeed = speed ?? msPerChar(textSpeed)
 
     const [beatIndex, setBeatIndex] = useState(0)
+    // Mirrors completedRef for rendering: the advance hint must disappear once
+    // the scene is over, and a ref cannot trigger that re-render.
+    const [stageComplete, setStageComplete] = useState(false)
+    // Set by skipToEnd so the landed-on final beat renders whole instead of
+    // typing itself out; cleared whenever a new segments array arrives.
+    const [revealInstantly, setRevealInstantly] = useState(false)
     const completedRef = useRef(false)
     const containerRef = useRef(null)
 
@@ -431,7 +471,10 @@ function ConversationStage({
         }
     }, [segments, beatIndex, initialCast])
 
-    const { displayedText, isComplete, finishImmediately } = useTypewriter(current.text || '', speed)
+    const { displayedText, isComplete, finishImmediately } = useTypewriter(
+        current.text || '',
+        revealInstantly ? 0 : typingSpeed
+    )
 
     // A single event can stage multiple conversations across separate turns
     // (e.g. a multi-stage Votha Krr scene where each "Continue" advances the
@@ -444,10 +487,24 @@ function ConversationStage({
     // event are often the same length, and a length-keyed reset leaves the stage
     // parked on the previous stage's last beat with onComplete already spent.
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset above is the whole point: EventDialog reuses one mounted ConversationStage across stages, so a new `segments` array must rewind beatIndex/completedRef or onComplete never fires again (soft-lock). In live mode the newest segment is the one to show, so it rewinds to the end rather than the start.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset here is the whole point: EventDialog reuses one mounted ConversationStage across stages, so a new `segments` array must rewind beatIndex/completedRef (and the skip/complete flags below) or onComplete never fires again (soft-lock). In live mode the newest segment is the one to show, so it rewinds to the end rather than the start.
         setBeatIndex(isLive ? Math.max(0, segments.length - 1) : 0)
+        setStageComplete(false)
+        setRevealInstantly(false)
         completedRef.current = false
     }, [segments, isLive])
+
+    // The one place the scene is declared over. Guarded by completedRef so the
+    // two callers -- a click through the last beat, and skipToEnd -- cannot
+    // both fire onComplete.
+    const completeStage = useCallback(() => {
+        if (completedRef.current) return
+        completedRef.current = true
+        setStageComplete(true)
+        // Live chat tracks its own completion off the API response; the stage
+        // itself must never fire onComplete for it.
+        if (!isLive) onComplete?.()
+    }, [isLive, onComplete])
 
     const advance = useCallback(() => {
         if (!isComplete) {
@@ -456,23 +513,69 @@ function ConversationStage({
         }
         if (beatIndex < lastIndex) {
             setBeatIndex((i) => i + 1)
-        } else if (!completedRef.current) {
-            completedRef.current = true
-            // Live chat tracks its own completion off the API response; the
-            // stage itself must never fire onComplete for it (guarded here,
-            // the only call site).
-            if (!isLive) onComplete?.()
+        } else {
+            completeStage()
         }
-    }, [isComplete, finishImmediately, beatIndex, lastIndex, onComplete, isLive])
+    }, [isComplete, finishImmediately, beatIndex, lastIndex, completeStage])
+
+    /**
+     * Reveal the rest of the scene at once and end it.
+     *
+     * Jumps to the final beat and renders it whole (`revealInstantly` drives
+     * the typewriter to zero delay) rather than replaying every beat, which is
+     * what a skip means in a one-beat-at-a-time stage. Nothing is lost: the
+     * journal has already recorded the full scene, and the dialog's own LOG
+     * button still lists it.
+     */
+    const skipToEnd = useCallback(() => {
+        if (isLive) return
+        setBeatIndex(lastIndex)
+        setRevealInstantly(true)
+        completeStage()
+    }, [isLive, lastIndex, completeStage])
+
+    // The parent raises `skipRequested` and leaves it raised for the rest of
+    // the stage, so this must fire on the edge only. Read through a latest-ref
+    // so re-running on skipToEnd's changing identity (lastIndex moves between
+    // stages of a multi-stage event) cannot re-trigger a spent skip.
+    const skipToEndRef = useRef(skipToEnd)
+    useEffect(() => {
+        skipToEndRef.current = skipToEnd
+    }, [skipToEnd])
+    useEffect(() => {
+        if (skipRequested) skipToEndRef.current()
+    }, [skipRequested])
 
     // Auto-advance text-less beats (silent enter/exit) once their fade has a
     // moment to play, so the player isn't asked to click through blank frames.
+    // Unconditional: a blank frame must always resolve on its own, whatever the
+    // AUTO-ADVANCE setting says.
     useEffect(() => {
         if (isComplete && !(current.text || '').trim()) {
             const t = setTimeout(() => advance(), 450)
             return () => clearTimeout(t)
         }
     }, [isComplete, current.text, advance])
+
+    // AUTO-ADVANCE (issue #538 item 1): walk a finished beat on by itself after
+    // a dwell scaled to how much there was to read. Off by default -- a scene
+    // that advances under a slow reader is worse than one that waits. A click
+    // or key still advances immediately.
+    //
+    // It DOES arm on the final beat, and that is deliberate: advancing past the
+    // last beat completes the stage, which only reveals the dialog's CLOSE
+    // button — it never dismisses anything — so stopping a beat short would
+    // leave a hands-free reader with one mandatory click and nothing to decide.
+    // `stageComplete` then keeps the timer from re-arming, which is the only
+    // thing it can do here: it is set BY the completing call, not before it.
+    useEffect(() => {
+        if (!autoAdvance || isLive) return undefined
+        if (!isComplete || stageComplete) return undefined
+        const text = (current.text || '').trim()
+        if (!text) return undefined
+        const timer = setTimeout(() => advance(), autoAdvanceDelay(text, textSpeed))
+        return () => clearTimeout(timer)
+    }, [autoAdvance, isLive, isComplete, stageComplete, current.text, textSpeed, advance])
 
     // Enter/Space advance the conversation while it is active.
     //
@@ -504,6 +607,9 @@ function ConversationStage({
             if (completedRef.current) return
             if (isTypingTarget(e.target)) return
             if (isModifiedKeyEvent(e)) return
+            // Auto-repeat is one held key, not a run of presses; without this
+            // a key held down walks several beats at the OS repeat rate.
+            if (e.repeat) return
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
                 advance()
@@ -589,9 +695,9 @@ function ConversationStage({
                 text={displayedText}
                 isThought={isThought}
                 isWide={isWide}
-                showHint={!isLive}
+                showHint={!isLive && !stageComplete}
                 hintVisible={isComplete}
-                hintText={beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
+                hintText={CONTINUE_HINT}
             />
 
             {staged && !stackPortraits && <PortraitColumn members={rightMembers} area="right" {...columnProps} />}

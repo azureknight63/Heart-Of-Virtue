@@ -10,6 +10,7 @@ vi.mock('./PartyPanel', () => ({ default: ({ onClose }) => <div data-testid="par
 vi.mock('./InventoryDialog', () => ({ default: ({ onClose }) => <div data-testid="inventory-dialog"><button onClick={onClose}>Close Inv</button></div> }));
 vi.mock('./AccountDialog', () => ({ default: ({ onClose }) => <div data-testid="account-dialog"><button onClick={onClose}>Close Acc</button></div> }));
 vi.mock('./SettingsDialog', () => ({ default: ({ onClose }) => <div data-testid="audio-dialog"><button onClick={onClose}>Close Aud</button></div> }));
+vi.mock('./JournalDialog', () => ({ default: ({ onClose }) => <div data-testid="journal-dialog"><button onClick={onClose}>Close Journal</button></div> }));
 vi.mock('./StatsPanel', () => ({ default: ({ onClose }) => <div data-testid="stats-panel"><button onClick={onClose}>Close Stats</button></div> }));
 vi.mock('./SkillsPanel', () => ({ default: ({ onClose }) => <div data-testid="skills-panel"><button onClick={onClose}>Close Skills</button></div> }));
 vi.mock('./CollapsibleRoomDescription', () => ({
@@ -248,6 +249,26 @@ describe('LeftPanel', () => {
         expect(screen.getByTestId('account-dialog')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Close Acc'));
         expect(screen.queryByTestId('account-dialog')).toBeNull();
+    });
+
+    it('opens and closes the journal from the header (issue #538)', () => {
+        // The journal lives in the header rather than on the HeroPanel action
+        // star so it is reachable from combat too — hence the combat-mode half.
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+
+        expect(screen.queryByTestId('journal-dialog')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Open journal' }));
+        expect(screen.getByTestId('journal-dialog')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('Close Journal'));
+        expect(screen.queryByTestId('journal-dialog')).toBeNull();
+    });
+
+    it('keeps the journal reachable in combat', () => {
+        const combat = { log: [], awaiting_input: false, beat_states: [{ enemies: [] }] };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Open journal' }));
+        expect(screen.getByTestId('journal-dialog')).toBeInTheDocument();
     });
 
     it('closes panels when their close buttons are clicked', () => {

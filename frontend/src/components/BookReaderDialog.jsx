@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import GameButton from './GameButton'
 
 const CHARS_PER_PAGE = 800
 // ASCII sentinel — angle-bracket sequences never appear in game prose.
@@ -210,30 +211,15 @@ export default function BookReaderDialog({ title, text, onClose }) {
             ← PREV
           </button>
 
-          <button
-            onClick={onClose}
-            style={{
-              padding: '7px 20px',
-              backgroundColor: '#1a0000',
-              color: '#ff6644',
-              border: '1px solid #ff6644',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = '#330000'
-              e.target.style.boxShadow = '0 0 8px rgba(255, 100, 68, 0.4)'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = '#1a0000'
-              e.target.style.boxShadow = 'none'
-            }}
-          >
-            CLOSE BOOK
-          </button>
+          {/* The dismiss control is `GameButton` like every other dialog's:
+              the label was unified to CLOSE, and a shared label rendered by a
+              private button with its own hover handlers and hardcoded colours
+              is only half a convention. The page-turn buttons either side keep
+              their bespoke styling — they are this dialog's own affordance,
+              not a dismissal. */}
+          <GameButton onClick={onClose} variant="secondary" size="small">
+            CLOSE
+          </GameButton>
 
           <button
             onClick={handleNext}

@@ -10,6 +10,7 @@ from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, wire_handle
+from src.journal import Journal, existing_journal, journal_for
 from src.events import purge_orphaned_combat_events, map_name_for_tile
 from src.functions import (
     check_for_combat,
@@ -190,6 +191,17 @@ class GameService:
         """Get the current game tick from player's universe, or 0."""
         u = getattr(player, "universe", None)
         return getattr(u, "game_tick", 0) if u else 0
+
+    @staticmethod
+    def _journal(player):
+        """Get the :class:`~src.journal.Journal` for a WRITE, creating it if needed.
+
+        Delegates rather than re-deriving: ``src.journal`` owns the rule for
+        resolving a player's journal, and a second copy here had already drifted
+        from it. Kept as a method so routes and service code reach the journal
+        the same way they reach ``_story``/``_game_tick``.
+        """
+        return journal_for(player)
 
     @staticmethod
     def _serialize_active_states(combatant: Any) -> List[Dict[str, Any]]:
@@ -398,6 +410,72 @@ class GameService:
             chunks.append(current)
         return chunks
 
+    #: The ONLY fields a mergeable beat may carry. A beat holding anything else
+    #: is doing something beyond showing prose — attributing a line, moving the
+    #: cast, changing a face, closing the stage — and that work is anchored to
+    #: its own beat.
+    #:
+    #: An allow-list, not a list of blockers, because the merge rebuilds each
+    #: chunk from ``run[0]`` alone: under a blocker list, any field added to
+    #: :meth:`_capture_conversation` in future and not remembered here would be
+    #: silently dropped from every beat after the first in a run. Unknown means
+    #: un-mergeable, so a new field costs pacing rather than data.
+    _MERGEABLE_SEGMENT_KEYS = frozenset({"text", "type", "in_conversation"})
+
+    @classmethod
+    def _coalesce_narration_segments(
+        cls, segments: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Merge runs of plain narration beats into paced, chunk-sized beats.
+
+        Every ``narrate()``/``print_slow()`` call becomes its own segment, and
+        therefore its own mandatory click: the nomad-camp arrival spent one
+        full-screen modal on *"The sound of the river was constant behind it."*
+        (issue #538, item 1). Consecutive beats that carry nothing but prose are
+        joined and re-split through :meth:`_chunk_narration_text`, so a block of
+        narration paces on its own length instead of on how many times the
+        author happened to call the sink.
+
+        Spoken beats are deliberately untouched. One ``say()`` is one beat is
+        one line of dialogue — that is the authored rhythm of a scene, and the
+        portrait's emotion changes with it.
+
+        Runs are additionally split by ``in_conversation`` and ``type`` so a
+        staged aside never merges with unstaged narration, nor narration with
+        combat output.
+        """
+        out: List[Dict[str, Any]] = []
+        run: List[Dict[str, Any]] = []
+
+        def flush():
+            if not run:
+                return
+            if len(run) == 1:
+                out.append(run[0])
+            else:
+                joined = "\n".join(
+                    seg["text"] for seg in run if seg.get("text")
+                )
+                template = run[0]
+                for chunk in cls._chunk_narration_text(joined) or [joined]:
+                    out.append({**template, "text": chunk})
+            run.clear()
+
+        for seg in segments:
+            mergeable = set(seg) <= cls._MERGEABLE_SEGMENT_KEYS
+            if not mergeable:
+                flush()
+                out.append(seg)
+                continue
+            if run and (
+                run[-1].get("in_conversation") != seg.get("in_conversation")
+                or run[-1].get("type") != seg.get("type")
+            ):
+                flush()
+            run.append(seg)
+        flush()
+        return out
+
     def _capture_conversation(self, msgs, player=None):
         """Turn captured narration entries into (output_text, segments, conversation).
 
@@ -561,7 +639,91 @@ class GameService:
                 ]
                 return output_text, paced_segments, None
             return output_text, [], None
-        return output_text, segments, conversation
+        return output_text, self._coalesce_narration_segments(segments), conversation
+
+    def get_journal(self, player):
+        """The journal payload for ``GET /api/journal``.
+
+        Reads through :func:`~src.journal.existing_journal`, which does NOT
+        create one: the lazy ``Universe.journal`` property would otherwise make
+        this read attach a ``Journal`` that then rides into the next save, so
+        opening the journal on a pre-journal save would dirty it.
+
+        Always returns the full shape — an empty ``Journal``'s own ``to_dict``,
+        not a hand-written literal, so the wire shape has one author — and never
+        raises: a degraded ``_journal`` slot from an old save must render as an
+        empty journal, not a 500 on every open.
+        """
+        try:
+            journal = existing_journal(player)
+            if journal is not None:
+                return journal.to_dict()
+        except Exception:
+            _log.exception("Journal serialization failed; returning an empty journal")
+        return Journal().to_dict()
+
+    def _capture_scene(self, msgs, player):
+        """:meth:`_capture_conversation`, plus filing the result in the journal.
+
+        The single seam every event-processing path uses, so a scene is recorded
+        exactly once no matter how many times its payload is later copied onto a
+        response dict. :meth:`_apply_staged_payload` looks like the more natural
+        home, but ``process_event_input`` calls it twice for one capture (once
+        onto the response, once onto the stored pending event) and would file
+        every stage of a multi-stage event twice.
+
+        :meth:`_capture_conversation` itself stays pure: it is the transform,
+        this is the transform plus its side effect, and only the latter needs a
+        live journal.
+        """
+        clean_output, segments, conversation = self._capture_conversation(msgs, player)
+        self._record_scene(player, clean_output, segments)
+        return clean_output, segments, conversation
+
+    @staticmethod
+    def _scene_lines(clean_output, segments):
+        """Flatten a captured event into journal transcript lines.
+
+        Prefers ``segments`` so the transcript keeps the speaker attribution the
+        staged conversation displayed; falls back to splitting the flattened
+        prose on newlines, which are the original ``narrate()`` call boundaries
+        (see :meth:`_chunk_narration_text`) and therefore its paragraph breaks.
+        """
+        if segments:
+            return [
+                {"speaker": seg.get("speaker"), "text": seg.get("text", "")}
+                for seg in segments
+            ]
+        return [
+            {"speaker": None, "text": line}
+            for line in (clean_output or "").split("\n")
+        ]
+
+    def _record_scene(self, player, clean_output, segments):
+        """File one scene in the player's journal transcript.
+
+        Titled by the room it happened in rather than the event's class-shaped
+        ``name`` ("CampEntryGreeting"), because the transcript is read as a
+        travelogue and the location is what a player recognises. A room with no
+        name falls back to ``Journal``'s own default rather than a second
+        spelling of it here.
+
+        Never raises: a journal write is bookkeeping, and the event loop it runs
+        inside must survive a degraded player, an exotic room object, or a
+        journal that failed to construct.
+        """
+        try:
+            journal = self._journal(player)
+            if journal is None:
+                return
+            room = getattr(player, "current_room", None)
+            journal.record_scene(
+                getattr(room, "name", None),
+                self._scene_lines(clean_output, segments),
+                tick=self._game_tick(player),
+            )
+        except Exception:
+            _log.exception("Journal scene recording failed")
 
     #: The keys :meth:`_apply_staged_payload` writes and
     #: :meth:`_carry_staged_payload` preserves. Both READ this tuple rather
@@ -1548,7 +1710,7 @@ class GameService:
                     )
 
                 # Capture output + staged conversation segments
-                clean_output, segments, conversation = self._capture_conversation(
+                clean_output, segments, conversation = self._capture_scene(
                     _msgs, player
                 )
                 self._apply_staged_payload(
@@ -1697,7 +1859,7 @@ class GameService:
             _log.exception("Event input processing failed for event_id=%s", event_id)
 
         # Capture output + staged conversation segments
-        clean_output, segments, conversation = self._capture_conversation(_msgs, player)
+        clean_output, segments, conversation = self._capture_scene(_msgs, player)
         self._apply_staged_payload(result, clean_output, segments, conversation)
 
         # Check if event still needs input (persistent events)
@@ -2614,7 +2776,7 @@ class GameService:
                     event_data["error"] = str(e)
 
                 # Capture output + staged conversation segments
-                clean_output, segments, conversation = self._capture_conversation(
+                clean_output, segments, conversation = self._capture_scene(
                     _msgs, player
                 )
                 self._apply_staged_payload(
