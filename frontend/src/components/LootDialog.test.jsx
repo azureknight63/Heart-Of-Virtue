@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import LootDialog from './LootDialog'
+import { colors } from '../styles/theme'
+import { hexToRgb } from '../test/hexToRgb'
 
 vi.mock('./BaseDialog', () => ({
   default: ({ children, title }) => (
@@ -292,11 +294,14 @@ describe('LootDialog', () => {
     render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     const skipLink = screen.getByText(/skip — drop all items on tile/)
 
+    // Read from the tokens, not from literals: this used to pin #777/#444,
+    // which is how a hand-typed grey stayed invisible to theme.test.js in the
+    // first place. Derived here so a retune moves the test with the theme.
     fireEvent.mouseEnter(skipLink)
-    expect(skipLink.style.color).toBe('rgb(119, 119, 119)')
+    expect(skipLink.style.color).toBe(hexToRgb(colors.text.muted))
 
     fireEvent.mouseLeave(skipLink)
-    expect(skipLink.style.color).toBe('rgb(68, 68, 68)')
+    expect(skipLink.style.color).toBe(hexToRgb(colors.text.dim))
   })
 
   describe('the skip control is a real control (#565)', () => {

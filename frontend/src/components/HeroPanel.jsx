@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { colors, spacing, fonts, accessibility } from '../styles/theme'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
 import GameText from './GameText'
+import { CATEGORY_NAV_LABEL } from '../utils/categories'
 
 /**
  * VitalBar — one of the two curved bars flanking the hero portrait.
@@ -229,7 +230,10 @@ function HeroPanel({
   // scale shrinks these buttons' EFFECTIVE on-screen size right along with
   // the portrait, even though their own CSS already declares the 44px
   // minimum (`accessibility.touchTarget` below): a real QA pass measured
-  // 40x25px rendered buttons at heroScale ~0.57 (70*0.57≈40, 44*0.57≈25).
+  // 40x25px rendered buttons: a QA pass measured that at the THEN-70px width
+  // and heroScale ~0.57 (70*0.57≈40, 44*0.57≈25). The width is 80px now, so
+  // read those numbers as the history that motivated this, not as current
+  // measurements.
   // Counter-scaling each button by 1/heroScale cancels the ancestor's shrink
   // for just these interactive elements, restoring the declared 44px+ target
   // regardless of how small the portrait itself has to get. A no-op on
@@ -369,7 +373,7 @@ function HeroPanel({
             display:'contents' means the <nav> contributes no box of its own,
             so every button's `position: absolute` still resolves against
             this Hero Head Container exactly as before. */}
-        <nav aria-label="Game actions" style={{ display: 'contents' }}>
+        <nav aria-label={CATEGORY_NAV_LABEL} style={{ display: 'contents' }}>
         {buttons.map(({ key, label, top, left, transform, onClick, color }) => {
           const isHovered = hoveredButton === key
           const baseColor = color || colors.primary

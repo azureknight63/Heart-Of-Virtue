@@ -86,12 +86,17 @@ export const isHostileEntity = (entity) => {
  */
 export const HOSTILITY_TOKENS = {
   hostile: {
+    // `key` is the machine-readable identity; `label` is display copy. The
+    // test hook used to be derived from label.toLowerCase(), so rewording the
+    // badge silently rewrote the attribute selectors that watch it.
+    key: 'hostile',
     glyph: '⚔️',
     label: 'HOSTILE',
     color: colors.danger,
     tint: colors.alpha.danger[10],
   },
   ally: {
+    key: 'ally',
     glyph: '🛡️',
     label: 'ALLY',
     color: colors.primary,
@@ -105,14 +110,13 @@ export const HOSTILITY_TOKENS = {
  * ALLY requires a POSITIVE ally signal, not merely the absence of hostility.
  * `is_hostile: false` means "not aggressive" -- a villager, a merchant -- and
  * badging that ALLY states something the payload never said, which is the same
- * class of mistake as badging a hostile friendly. RoomContents already
- * documents this reasoning for its own surface; this used to contradict it by
- * treating every non-hostile as an ally.
+ * class of mistake as badging a hostile friendly. See RoomContents, which
+ * applies the same rule to its own surface.
  *
- * Latent rather than live: only NPCSerializer emits `is_hostile` and only
+ * Only NPCSerializer emits `is_hostile` and only
  * ApiCombatAdapter._build_target_entry emits `is_ally`, so the two spellings
- * do not co-occur today. Gated anyway, because the invariant is cheap to hold
- * and a serializer change is what would make it reachable.
+ * do not co-occur today; the gate is cheap and a serializer change is what
+ * would make it matter.
  */
 export const hostilityTokenFor = (entity) => {
   if (isHostileEntity(entity) === true) return HOSTILITY_TOKENS.hostile;

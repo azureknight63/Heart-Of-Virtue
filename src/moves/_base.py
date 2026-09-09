@@ -628,7 +628,7 @@ def mitigation_note(target, damage_type=None, protection=None, resistance=None):
     **Legibility, not balance** — nothing here changes a damage number. The
     reported case is a 40-60 damage sheet producing four consecutive "struck
     ... but did no damage" lines: ``RockRumbler`` carries ``protection = 28``
-    *and* ``resistance_base["slashing"] = 0.5``, which the adapter syncs live
+    *and* ``_set_damage_resistance("slashing", 0.5)``, which the adapter syncs live
     at combat start, so a 46-power slashing hit resolves as ``46 * 0.5 - 28``
     → 0 through :func:`resolve_damage`. The multiplier that zeroes the blow
     was surfaced nowhere: not in the log, not on the attributes sheet.

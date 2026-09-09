@@ -20,7 +20,7 @@ import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
-import { MODAL_BACKGROUND_ATTR } from './BaseDialog'
+import { MODAL_BACKGROUND_PROPS } from './BaseDialog'
 import { moveAvailability } from '../utils/combatMoveStatus'
 import HeatMeter from './HeatMeter'
 import ShopDialog from './ShopDialog'
@@ -250,9 +250,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       // per combatant by effective range). Gating on the bare flag left #554
       // closed on the move panel only -- a suggestion card for such a move
       // stayed live and POSTed an action the server was certain to refuse.
+      // No `option &&` guard and no `option?.reason` fallback: moveAvailability
+      // returns {available:false} for a missing option, and both of its
+      // unavailable branches already fall back to `move.reason`. Both terms
+      // were dead.
       const { available, reason } = moveAvailability(option)
-      if (option && available) return null
-      return reason || option?.reason || 'Not available right now'
+      if (available) return null
+      return reason || 'Not available right now'
     }
   }, [combat?.available_options])
 
@@ -274,6 +278,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
   const handleMoveSelection = async (move) => {
     // Execute move via API
+    // Deliberately the bare flag, NOT moveAvailability: a scrub pass flagged
+    // this as a third encoding of the same rule, but moveAvailability treats
+    // an ABSENT viable_targets the same as an empty one, and
+    // LeftPanel.test.jsx documents opening the picker for an absent list on
+    // purpose. Tightening here changes observable behaviour for a case the
+    // suite names, to satisfy a DRY nit on a path CombatMovePanel already
+    // filters. Left as-is on purpose.
     if (!move.available) return;
 
     // Instant/non-turn-consuming moves stay on the Combat tab so result
@@ -367,7 +378,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // instead — see MODAL_BACKGROUND_ATTR in BaseDialog.jsx (issue #563 item 5).
     <main className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible', position: 'relative' }}>
       {/* Header */}
-      <header {...{ [MODAL_BACKGROUND_ATTR]: 'true' }} style={{
+      <header {...MODAL_BACKGROUND_PROPS} style={{
         backgroundColor: colors.primary,
         color: colors.text.inverse,
         padding: '10px 15px',
@@ -473,7 +484,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
       {/* Main Panel Content Area */}
       <div
-        {...{ [MODAL_BACKGROUND_ATTR]: 'true' }}
+        {...MODAL_BACKGROUND_PROPS}
         style={{
           flex: 1,
           display: 'flex',

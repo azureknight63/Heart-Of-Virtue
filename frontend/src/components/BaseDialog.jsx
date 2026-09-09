@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { useMobile } from '../hooks/useMobile'
+import logger from '../utils/logger'
 
 // A dialog's nearest enclosing BaseDialog (if any) is reached through this
 // context, so a dialog rendered inside another one's children — e.g.
@@ -48,6 +49,18 @@ const topLevelSubscribers = new Set()
  * genuinely background says so, and the modal machinery does the rest.
  */
 export const MODAL_BACKGROUND_ATTR = 'data-modal-background'
+
+/**
+ * Spread this onto a region that should be hidden from assistive tech while a
+ * modal is open. One import instead of retyping the computed-key spread, which
+ * was hand-repeated at three call sites and is the non-obvious half of an
+ * opt-in contract.
+ *
+ * A marked region must NOT also set `aria-hidden` in JSX: this attribute is
+ * managed out of band by syncBackgroundModality, and React would overwrite it
+ * on the next render.
+ */
+export const MODAL_BACKGROUND_PROPS = Object.freeze({ [MODAL_BACKGROUND_ATTR]: 'true' })
 
 /**
  * Hide or reveal every marked background region.
@@ -230,6 +243,23 @@ function useFocusTrap({ containerRef, dialogId, parentDialog, activeChildCountRe
     useEffect(() => {
         const container = containerRef.current
         if (!container) return
+
+        // Tripwire for the MODAL_BACKGROUND_ATTR invariant: no dialog may
+        // render INSIDE a marked region. Violating it makes syncBackgroundModality
+        // set aria-hidden on the dialog's own ancestor, pruning the open modal
+        // from the accessibility tree while this focus trap still holds focus
+        // inside it — a blocking prompt that announces nothing and offers no
+        // reachable exit. It looks perfect on screen, which is how it shipped
+        // once already.
+        //
+        // Runtime, not a test, because the invariant depends on where an
+        // unrelated component happens to place its JSX: a targeted test can
+        // only cover the scenarios someone thought to render, and the one that
+        // caught this covered exactly one component in one combat state. Every
+        // dialog that opens in dev now reports its own violation.
+        if (import.meta.env?.DEV && container.closest(`[${MODAL_BACKGROUND_ATTR}]`)) {
+            logger.event('dialog_inside_modal_background', { dialogId })
+        }
 
         const previouslyFocused = document.activeElement
 

@@ -86,10 +86,10 @@ export const colors = {
          * 3.45:1 against `bg.main`, which is below WCAG AA's 4.5:1 for text.
          * That is deliberate and it is allowed: SC 1.4.3 exempts text in
          * INACTIVE user-interface components, which is what this value is for
-         * — CombatMovePanel's unavailable move names and descriptions (via
-         * `GameText variant="dim"`), FeedbackDialog's unfilled star and
-         * inactive severity border, HeatMeter's neutral tick, the scrollbar
-         * thumb's hover in index.css.
+         * — an unavailable move's name, an unfilled star, a neutral tick mark.
+         * No inventory of adopters is kept here: `commonStyles.eyebrowLabel`
+         * below says why, and the list this block used to carry was already
+         * missing half a dozen files.
          *
          * It is NOT allowed on prose, and the obvious fix — lifting this one
          * number — is the wrong one. `muted` below is #888888 (5.58:1), so any

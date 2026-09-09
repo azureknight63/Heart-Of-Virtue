@@ -285,12 +285,12 @@ def weapon_requirement_reason(move, weapon):
     # A fists-only move is not asking for equipment, so the empty-handed
     # wording below would be exactly backwards for it.
     if set(requirement) == {"Unarmed"}:
-        return "Requires " + _WEAPON_NOUN_PHRASES["Unarmed"]
+        return "Requires " + _weapon_noun_phrase("Unarmed")
     if weapon is None:
         return "No weapon equipped"
-    nouns = sorted(requirement)
-    phrases = [_weapon_noun_phrase(nouns[0])] + [
-        _weapon_noun_phrase(n, with_article=False) for n in nouns[1:]
+    subtypes = sorted(requirement)
+    phrases = [_weapon_noun_phrase(subtypes[0])] + [
+        _weapon_noun_phrase(n, with_article=False) for n in subtypes[1:]
     ]
     if len(phrases) == 1:
         return "Requires " + phrases[0]
@@ -1252,10 +1252,11 @@ class ApiCombatAdapter:
         next fight then emitted a fallback animation built from the previous
         fight's `animation_data` -- `outcome_target` and all.
         """
+        # Detach first, then reuse the idle rewind: with `current_move` cleared,
+        # its "skip the active move" guard can never match, so every move is
+        # rewound exactly as the hand-rolled loop here used to do.
         self._detach_current_move(combatant)
-        for move in getattr(combatant, "known_moves", []):
-            move.current_stage = 0
-            move.beats_left = 0
+        self._reset_idle_move_stages(combatant)
 
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False

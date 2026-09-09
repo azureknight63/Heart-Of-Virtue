@@ -20,7 +20,7 @@ def resolve_interaction(target, action):
 
     The single authority on how an interaction keyword becomes a call. Keywords
     are authored per placement in the map JSON and rendered as buttons by the
-    frontend; ``ACTION_ALIASES`` is how a class says "this authored verb means
+    frontend; ``KEYWORD_METHOD_ALIASES`` is how a class says "this authored verb means
     that method of mine" (e.g. a ``WallInscription`` authored with ``inspect``
     still just reads the inscription).
 
@@ -42,7 +42,7 @@ def resolve_interaction(target, action):
     """
     aliases = {}
     for klass in reversed(type(target).__mro__):
-        aliases.update(klass.__dict__.get("ACTION_ALIASES") or {})
+        aliases.update(klass.__dict__.get("KEYWORD_METHOD_ALIASES") or {})
     handler = getattr(target, aliases.get(action, action), None)
     return handler if callable(handler) else None
 
@@ -60,7 +60,13 @@ class Object:
     #: ``{authored keyword: method name that implements it}``. Merged across
     #: the MRO by :func:`resolve_interaction`; empty means every keyword must
     #: name a method directly. See issue #553.
-    ACTION_ALIASES: dict[str, str] = {}
+    #:
+    #: NOT ``action_aliases`` -- that is the instance-level LIST of keyword
+    #: strings the map author writes and the client renders as buttons. This
+    #: is the class-level MAP from such a keyword to the method that serves
+    #: it. Adding a verb to ``action_aliases`` alone gives the player a button
+    #: with no dispatch behind it, which is exactly what #553 was.
+    KEYWORD_METHOD_ALIASES: dict[str, str] = {}
 
     def __init__(
         self,
@@ -285,7 +291,7 @@ class WallInscription(Object):
     #: ``peruse`` is not authored anywhere today; it is here because it is on
     #: ``GameService._ALLOWED_INTERACTION_VERBS``, so a client can send it
     #: against any target and it would otherwise be refused for no reason.
-    ACTION_ALIASES = {
+    KEYWORD_METHOD_ALIASES = {
         "inspect": "read",
         "view": "read",
         "check": "read",
@@ -349,8 +355,8 @@ class Container(Object):
     #: property of the object, not of the transport: ``GameService`` branches
     #: on this set, and the map-keyword contract test reads it too, so the two
     #: cannot drift (issue #553 — ``search``/``look``/``lift`` account for 13
-    #: authored keywords across 6 placements in 2 maps, while only the first
-    #: six verbs here were recognised; the other three fell through to a bare
+    #: authored keywords across 6 placements in 2 maps, while only only
+    #: loot/check/view/examine/inspect/peruse were recognised; the other three fell through to a bare
     #: ``getattr`` and raised).
     #:
     #: Every entry of ``action_aliases`` (the buttons a container shows by

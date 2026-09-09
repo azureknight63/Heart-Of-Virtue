@@ -262,7 +262,7 @@ def test_every_authored_keyword_is_dispatchable(
         f"{keyword!r}, which resolves to nothing callable. The frontend renders "
         f"a button for it and clicking it used to hand the player an "
         f"AttributeError (issue #553). Either implement it, add it to the "
-        f"class's ACTION_ALIASES, or remove the keyword from the map."
+        f"class's KEYWORD_METHOD_ALIASES, or remove the keyword from the map."
     )
 
 

@@ -22,6 +22,17 @@
  * @param {{name?: string, count?: number, quantity?: number}|null} item
  * @returns {string} the display name, or '' when there is no usable name
  */
+/**
+ * A space, then `x` or `×`, then a run of digits, at the very end.
+ *
+ * Module scope, and matched-then-compared rather than interpolating `size`
+ * into the pattern. Built per call it allocated a RegExp for every rendered
+ * row across six call sites; and interpolating the number meant a size that
+ * stringifies in exponential form (`1e+21`) injected a `+` quantifier into
+ * the pattern.
+ */
+const BAKED_COUNT = /\s[x×](\d+)$/i;
+
 export const stackDisplayName = (item) => {
   const name = item?.name;
   if (typeof name !== 'string') return '';
@@ -29,9 +40,6 @@ export const stackDisplayName = (item) => {
   const size = Number(item.count ?? item.quantity ?? 1);
   if (!Number.isFinite(size) || size <= 1) return name;
 
-  // A space, then `x` or `×`, then exactly the stack size, at the very end.
-  const bakedCount = new RegExp(`\\s[x×]${size}$`, 'i');
-  return name.replace(bakedCount, '');
+  const baked = name.match(BAKED_COUNT);
+  return baked && Number(baked[1]) === size ? name.slice(0, baked.index) : name;
 };
-
-export default stackDisplayName;

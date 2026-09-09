@@ -123,11 +123,11 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       })
       const data = response.data || response
       if (data.success) {
-        setActionMessage(`✓ ${item.name} used on ${ally.name}!`)
+        setActionMessage(`✓ ${displayName} used on ${ally.name}!`)
         setActionResult({
           message: (
             <div style={{ whiteSpace: 'pre-wrap', textAlign: 'center', fontSize: '14px', fontFamily: 'monospace' }}>
-              <strong>{player?.name || 'Player'}</strong> used <span style={{ color: '#ffff00' }}>{item.name}</span> on <strong>{ally.name}</strong>.{data.message ? `\n\n${data.message}` : ''}
+              <strong>{player?.name || 'Player'}</strong> used <span style={{ color: '#ffff00' }}>{displayName}</span> on <strong>{ally.name}</strong>.{data.message ? `\n\n${data.message}` : ''}
             </div>
           )
         })
@@ -162,8 +162,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionResult({
           message: renderNarration(data.messages) || (
             isNowEquipped
-              ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
-              : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+              ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{displayName}</span>.</>
+              : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{displayName}</span>.</>
           )
         })
 
@@ -252,7 +252,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         // when the backend returned no narration.
         setActionResult({
           message: renderNarration(data.messages) || (
-            <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+            <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{displayName}</span>.</>
           )
         })
 
@@ -271,6 +271,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
     }
   }
 
+  // One display name for every player-facing mention in this panel. The engine
+  // bakes the stack count into a stackable item's own name, so the raw value
+  // reads "Mineral Powder x3" beside a Qty cell that says 3 again (#565).
+  // Every API call in this file posts `item.id`, never the name, so nothing
+  // here is naming the item TO the engine.
+  const displayName = stackDisplayName(item)
   const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
   const isWeapon = categoryType.includes('weapon')
 
@@ -300,12 +306,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           fontSize: '20px',
           fontFamily: 'monospace',
         }}>
-          {/* stackDisplayName, not item.name: the engine bakes the stack count
-              into a stackable item's own name, and the Qty cell below already
-              renders it — the header read "Mineral Powder x3" (#565). The
-              action prose further down keeps the engine's name on purpose;
-              it is naming the item to the engine, not labelling this panel. */}
-          {stackDisplayName(item)}
+          {displayName}
         </div>
         <button
           onClick={onBack}
@@ -826,7 +827,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               color: '#ffcc88',
               lineHeight: '1.5',
             }}>
-              Are you sure you want to drop <strong>{item.name}</strong>? It will be left on the ground at your current location.
+              Are you sure you want to drop <strong>{displayName}</strong>? It will be left on the ground at your current location.
             </div>
 
             {/* Buttons */}
@@ -920,7 +921,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             boxShadow: '0 0 20px rgba(0, 153, 204, 0.3)',
           }}>
             <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#00ccff', fontFamily: 'monospace', borderBottom: '1px solid #0099cc', paddingBottom: '10px' }}>
-              👥 USE ON — {item.name}
+              👥 USE ON — {displayName}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {partyMembers.map((member) => {
@@ -935,7 +936,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                     key={member.id}
                     onClick={() => !outOfRange && handleUseOnAlly(member)}
                     disabled={outOfRange}
-                    title={outOfRange ? 'Out of range — use Advance to close distance first' : `Use ${item.name} on ${member.name}`}
+                    title={outOfRange ? 'Out of range — use Advance to close distance first' : `Use ${displayName} on ${member.name}`}
                     style={{
                       padding: '12px',
                       backgroundColor: outOfRange ? 'rgba(40,40,40,0.6)' : 'rgba(0,30,50,0.8)',

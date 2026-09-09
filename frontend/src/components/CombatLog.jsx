@@ -54,8 +54,7 @@ function spokenText(message) {
   // config keeps <img src>, <source> and <video poster>, and parsing those into
   // this div fetches their subresources even though only textContent is read --
   // so a log line could beacon out, and LogAnnouncer runs even while the log is
-  // collapsed and rendering nothing. The docstring above claimed this config
-  // was in force while the call passed none.
+  // collapsed and rendering nothing.
   scratch.innerHTML = DOMPurify.sanitize(String(message ?? ''), {
     ALLOWED_TAGS: [],
     ALLOWED_ATTR: [],

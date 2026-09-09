@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
-import { colors, spacing, fonts } from '../styles/theme'
+import { colors, spacing, fonts, accessibility, commonStyles } from '../styles/theme'
 import { feedback as feedbackApi } from '../api/endpoints'
 import { useToast } from '../context/ToastContext'
 import { apiErrorMessage } from '../utils/apiError'
+
+const SUBMIT_FAILED_MESSAGE = 'Could not submit feedback — please try again later.'
 
 const TYPES = [
   { id: 'bug', label: 'Bug Report' },
@@ -212,7 +214,7 @@ function BugForm({ fields, onChange }) {
                   // touch minimum. Height, not width: three flex:1 buttons have
                   // to keep sharing one row inside a ~330px dialog body, so a
                   // minWidth big enough to matter would wrap them instead.
-                  minHeight: '44px',
+                  minHeight: accessibility.touchTarget,
                   padding: `${spacing.xs} ${spacing.sm}`,
                   backgroundColor: active ? `${severityColor}22` : 'transparent',
                   border: `1px solid ${active ? severityColor : colors.text.dim}`,
@@ -293,7 +295,7 @@ function GeneralForm({ fields, onChange, ratings, onRatingChange }) {
               onChange={(val) => onRatingChange(dim.key, val)}
             />
           ))}
-          <div style={{ color: colors.text.dim, fontSize: '11px', marginTop: spacing.xs }}>
+          <div style={{ color: colors.text.muted, fontSize: '11px', marginTop: spacing.xs }}>
             Click a star again to clear it. Leave any dimension unrated to skip it.
           </div>
         </div>
@@ -364,7 +366,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
    * durable in-dialog panel that outlives it.
    */
   const failSubmit = (message) => {
-    const text = message || 'Could not submit feedback — please try again later.'
+    const text = message || SUBMIT_FAILED_MESSAGE
     setSubmitError(text)
     toastError(text)
   }
@@ -400,13 +402,13 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
         // the error. The helper was already hardened against exactly this;
         // this branch was the one path bypassing it. It also restores the
         // documented message-before-error precedence.
-        failSubmit(apiErrorMessage(res.data, 'Could not submit feedback — please try again later.'))
+        failSubmit(apiErrorMessage(res.data, SUBMIT_FAILED_MESSAGE))
         return
       }
       toastSuccess('Feedback submitted! Thank you.')
       onClose()
     } catch (err) {
-      failSubmit(apiErrorMessage(err, 'Could not submit feedback — please try again later.'))
+      failSubmit(apiErrorMessage(err, SUBMIT_FAILED_MESSAGE))
     } finally {
       submittingRef.current = false
       setSubmitting(false)
@@ -542,15 +544,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       {submitError && (
         <div
           role="alert"
-          style={{
-            color: colors.danger,
-            fontSize: '0.75rem',
-            padding: '8px 12px',
-            marginTop: spacing.md,
-            background: 'rgba(255,68,68,0.1)',
-            border: '1px solid rgba(255,68,68,0.3)',
-            borderRadius: '6px',
-          }}
+          style={{ ...commonStyles.errorBox, padding: '8px 12px', marginTop: spacing.md }}
         >
           ⚠ {submitError} Your report is still here — you can try again.
         </div>

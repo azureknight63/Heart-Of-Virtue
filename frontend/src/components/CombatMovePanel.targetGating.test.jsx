@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
 import { useAudio } from '../context/AudioContext';
+import { CATEGORY_NAV_LABEL } from '../utils/categories'
 
 vi.mock('../context/AudioContext', () => ({
   useAudio: vi.fn(),
@@ -218,7 +219,7 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
   const NAV_RECT = { left: 100, top: 40, right: 170, bottom: 84, width: 70, height: 44 };
 
   const OccludedNav = () => (
-    <nav aria-label="Game actions" style={{ display: 'contents' }}>
+    <nav aria-label={CATEGORY_NAV_LABEL} style={{ display: 'contents' }}>
       <button onClick={navClick}>OFFENSIVE</button>
     </nav>
   );

@@ -170,13 +170,36 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
    * detecting the problem and delegating it. Fit Fight is the answer it was
    * already recommending, so it takes it, once, and says so.
    */
+  // A new fight starts from the default camera. `zoom` and `didAutoFit` are
+  // per-mount while the claim ref is per-fight, and that mismatch meant fight
+  // two inherited fight one's Fit camera *and* its didAutoFit -- so it opened
+  // already widened and announced "view widened to Fit Fight" when nothing had
+  // widened. Resetting here keeps all three on the same per-fight lifetime.
   useEffect(() => {
-    if (!enemyOutsideFollowView) return;
+    setZoom(VIEW_MODE_FOLLOW);
+    setDidAutoFit(false);
+  }, [cameraKey]);
+
+  // Entry geometry, read from THIS fight's own first beat state rather than
+  // from `displayState`. `displayState` is set in an effect keyed on `combat`,
+  // so on the commit where a new fight arrives it still holds the PREVIOUS
+  // fight's positions -- and the auto-fit below, running in the same commit,
+  // would claim the new fight using the old fight's distances. It is also the
+  // right question on its own terms: this decides entry framing, which is a
+  // property of how the fight opened, not of whichever beat the player has
+  // since scrubbed to.
+  const entryEnemyOutsideFollowView = useMemo(
+    () => anyEnemyOffScreen(combat?.beat_states?.[0] ?? combat),
+    [combat]
+  );
+
+  useEffect(() => {
+    if (!entryEnemyOutsideFollowView) return;
     if (cameraClaimedForRef.current === cameraKey) return;
     cameraClaimedForRef.current = cameraKey;
     setZoom(VIEW_MODE_FIT);
     setDidAutoFit(true);
-  }, [enemyOutsideFollowView, cameraKey]);
+  }, [entryEnemyOutsideFollowView, cameraKey]);
 
   // Living enemy count and beat number: the two numbers that answer "where is
   // this fight at?" without reading back through the log.

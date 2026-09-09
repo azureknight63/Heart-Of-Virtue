@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import LeftPanel from './LeftPanel';
 import { MODAL_BACKGROUND_ATTR } from './BaseDialog';
+import { CATEGORY_NAV_LABEL } from '../utils/categories'
 
 /**
  * Structural guard for #563 item 5's aria-hidden mechanism.
@@ -23,7 +24,7 @@ import { MODAL_BACKGROUND_ATTR } from './BaseDialog';
  */
 vi.mock('./HeroPanel', () => ({
   default: () => (
-    <nav aria-label="Game actions">
+    <nav aria-label={CATEGORY_NAV_LABEL}>
       <button>OFFENSIVE</button>
     </nav>
   ),

@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
-import { colors, spacing, fonts } from '../styles/theme'
+import { colors, spacing, fonts, accessibility } from '../styles/theme'
 import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { stackDisplayName } from '../utils/stackName'
 
@@ -312,19 +312,23 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
               background: 'none',
               border: 'none',
               padding: `${spacing.sm} ${spacing.md}`,
-              // 44px like the severity buttons this diff also raised. It is
-              // the destructive control here -- it forfeits the whole drop --
-              // and it is centred on its own full-width row, so a height
-              // floor wraps nothing.
-              minHeight: '44px',
+              // It is the destructive control here -- it forfeits the whole
+              // drop -- and it is centred on its own full-width row, so a
+              // height floor wraps nothing.
+              minHeight: accessibility.touchTarget,
               fontFamily: fonts.main,
               fontSize: '11px',
-              color: '#444',
+              // Tokens, not the #444/#777 this used to carry: #444 is ~2.0:1
+              // on the app ground, dimmer than text.dim, whose own doc block
+              // reserves sub-AA greys for inactive decoration -- and this is
+              // an active, keyboard-reachable control. A bare hex is also
+              // invisible to theme.test.js.
+              color: colors.text.dim,
               cursor: isSubmitting ? 'not-allowed' : 'pointer',
               textDecoration: 'underline',
             }}
-            onMouseEnter={e => e.currentTarget.style.color = '#777'}
-            onMouseLeave={e => e.currentTarget.style.color = '#444'}
+            onMouseEnter={e => e.currentTarget.style.color = colors.text.muted}
+            onMouseLeave={e => e.currentTarget.style.color = colors.text.dim}
           >
             skip — drop all items on tile →
           </button>

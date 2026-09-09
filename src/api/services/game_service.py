@@ -107,6 +107,23 @@ _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 _ECHOED_ACTION_MAX_LENGTH = 40
 
 
+def _is_demo_end_crossing(target, action):
+    """True when `action` is a verb that would CROSS a demo-end passageway.
+
+    Gated on the resolved handler rather than the literal "enter", because a
+    Passageway also binds its authored name words (`ferry`, `landing`) to
+    `enter` on the instance, and all of those are legitimate ways to say "use
+    it". Without this the demo-end branch fired for every verb the allow-list
+    permits, so merely examining the ferry to read its description ended the
+    demo and set the story gate.
+    """
+    from src.objects import Passageway, resolve_interaction
+
+    if not isinstance(target, Passageway) or not getattr(target, "demo_end", False):
+        return False
+    return resolve_interaction(target, action) == getattr(target, "enter", None)
+
+
 def _unsupported_action_message(target, action):
     """In-fiction refusal for a keyword the target does not implement.
 
@@ -115,7 +132,9 @@ def _unsupported_action_message(target, action):
     sending a verb off ``_ALLOWED_INTERACTION_VERBS``. Either way the player
     gets prose, never an attribute name.
     """
-    name = getattr(target, "name", None) or "that"
+    # "object", not "that" -- the fallback is substituted into "... the {name}."
+    # below, so "that" renders as "There's no way for Jean to touch the that."
+    name = getattr(target, "name", None) or "object"
     verb = str(action)[:_ECHOED_ACTION_MAX_LENGTH]
     return f"There's no way for Jean to {verb} the {name}."
 
@@ -125,9 +144,15 @@ def _unsupported_action_message(target, action):
 #: unwinnable fight read the previous bare "enemies are too close" as a
 #: permanent soft-lock, because nothing anywhere told them WITHDRAW is FLEE's
 #: prerequisite. The 20 ft gate itself is unchanged — this is copy only.
+#: The break-away threshold, in feet. Named because the refusal message below
+#: quotes it: as a bare literal in the guard, a retune would silently make the
+#: message lie to the player about the rule it exists to explain.
+FLEE_BREAK_AWAY_DISTANCE = 20
+
 FLEE_TOO_CLOSE_MESSAGE = (
     "Cannot flee — the enemies are too close to break away. Use WITHDRAW to back "
-    "off first; Jean can run once every foe is at least 20 feet away."
+    "off first; Jean can run once every foe is at least "
+    f"{FLEE_BREAK_AWAY_DISTANCE} feet away."
 )
 
 #: Stand-in attribute value for a player object that predates (or omits) the
@@ -2301,20 +2326,7 @@ class GameService:
                     else:
                         # Proceed with equipment logic
                         target.equip(player)
-                elif (
-                    isinstance(target, Passageway)
-                    and getattr(target, "demo_end", False)
-                    # Only the verb that would actually CROSS. Gated on the
-                    # resolved handler rather than on the literal "enter",
-                    # because a Passageway also binds its authored name words
-                    # (`ferry`, `landing`) to `enter` on the instance, and all
-                    # of those are legitimate ways to say "use it". Without
-                    # this the branch fired for every verb the allow-list
-                    # permits, so merely examining the ferry to read its
-                    # description ended the demo and set the story gate.
-                    and resolve_interaction(target, action)
-                    == getattr(target, "enter", None)
-                ):
+                elif _is_demo_end_crossing(target, action):
                     # The demo stops at this passageway (#552). The engine owns
                     # what that means -- no crossing, story gate set, one beat
                     # of prose; the API's only job is to flag it so the client
@@ -2322,7 +2334,12 @@ class GameService:
                     # adapter sets on the Lurker path). Queuing a "Step
                     # through?" confirmation instead would promise a crossing
                     # that never happens.
-                    target.end_demo(player)
+                    # `enter`, not `end_demo`: Passageway.enter already guards
+                    # `if self.demo_end` and delegates, so calling end_demo here
+                    # decided the same rule in two places. The engine stays the
+                    # sole authority on what using a passageway means; the API's
+                    # only business is the wire flag.
+                    target.enter(player)
                     beta_end = True
                 elif isinstance(target, Passageway) and session_data is not None:
                     # Passageway in API mode: create a confirmation event so the
@@ -4189,7 +4206,7 @@ class GameService:
         for enemy in enemies:
             prox = getattr(enemy, "combat_proximity", 0)
             dist = prox.get(player, 0) if isinstance(prox, dict) else prox
-            if dist < 20:
+            if dist < FLEE_BREAK_AWAY_DISTANCE:
                 return {
                     "success": False,
                     "fled": False,

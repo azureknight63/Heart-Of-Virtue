@@ -5,7 +5,7 @@ import GamePanel from './GamePanel';
 import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
-import { movesInGroup } from '../utils/categories';
+import { movesInGroup, CATEGORY_NAV_SELECTOR } from '../utils/categories';
 import { displayNameOf, moveAvailability } from '../utils/combatMoveStatus';
 import {
     STAGE_KEYS,
@@ -111,7 +111,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
 // hero head. Read, never written: this panel needs to know where those buttons
 // ARE (see useOccludedNavHandoff), and it must not reach into HeroPanel to
 // restyle them.
-const CATEGORY_NAV_SELECTOR = 'nav[aria-label="Game actions"] button';
+
 
 // A click that lands on any of these inside the panel is the panel's own
 // business, whatever it happens to be covering.

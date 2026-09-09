@@ -15,7 +15,7 @@ import { useAudio } from '../context/AudioContext'
 import { useToast } from '../context/ToastContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
-import { MODAL_BACKGROUND_ATTR } from '../components/BaseDialog'
+import { MODAL_BACKGROUND_PROPS } from '../components/BaseDialog'
 import EventManager from '../components/EventManager'
 import CombatManager from '../components/CombatManager'
 import GameOverScreen from '../components/GameOverScreen'
@@ -740,7 +740,7 @@ export default function GamePage() {
           CombatManager's victory/defeat/loot — are siblings of this wrapper,
           which is why the marking is a distributed opt-in: there is no single
           ancestor that holds all the background and none of the modals. */}
-      <div {...{ [MODAL_BACKGROUND_ATTR]: 'true' }} style={panelWrap(TAB_KEYS.right)}>
+      <div {...MODAL_BACKGROUND_PROPS} style={panelWrap(TAB_KEYS.right)}>
         <RightPanel
           mode={mode}
           combat={combat}

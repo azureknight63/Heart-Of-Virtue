@@ -66,6 +66,22 @@ describe('Battlefield — framing the fight the player was handed (#561)', () =>
         expect(lastZoom()).toBe('follow');
     });
 
+    it('does not claim it widened the view when a new fight inherits Fit Fight', async () => {
+        // `zoom` and `didAutoFit` are per-mount while the camera claim is
+        // per-fight, so fight two started already in Fit with didAutoFit still
+        // true from fight one. Nothing widened, and the banner said it had.
+        const { rerender } = render(<Battlefield combat={fight({ id: 'fight-A' })} currentLogIndex={0} />);
+        await waitFor(() => expect(lastZoom()).toBe('fit'));
+
+        // A new fight whose enemy is already framed: no auto-fit is warranted.
+        rerender(<Battlefield combat={fight({ id: 'fight-B', enemyX: 6 })} currentLogIndex={0} />);
+
+        // The reset runs in a post-commit effect, so wait for it rather than
+        // reading the render that was already on screen when rerender returned.
+        await waitFor(() => expect(lastZoom()).toBe('follow'));
+        expect(screen.queryByText(/view widened to Fit Fight/i)).toBeNull();
+    });
+
     it('never tells the player to switch to Fit Fight while Fit Fight is on', async () => {
         // The nag's whole reason for existing (#561) is that the app knew the
         // framing was wrong and asked the player to fix it. Rendering it while
