@@ -97,6 +97,21 @@ export function categoryGlowOrNull(category) {
 }
 
 /**
+ * The accessible name of the combat category nav.
+ *
+ * Exported because it is a CONTRACT, not decoration: CombatMovePanel builds a
+ * `document.querySelector` from it to hand back clicks its flyout occludes
+ * (#557). While the label was a literal in both places, a rename in HeroPanel
+ * would have silently retired that handoff -- and the regression tests could
+ * not have caught it, because they built their own <nav> with the same
+ * hard-coded string. A mock agreeing with a mock.
+ */
+export const CATEGORY_NAV_LABEL = 'Game actions'
+
+/** The selector CombatMovePanel hit-tests against. Derived, never retyped. */
+export const CATEGORY_NAV_SELECTOR = `nav[aria-label="${CATEGORY_NAV_LABEL}"] button`
+
+/**
  * Combat radial button group → the engine move categories it collects.
  *
  * SINGLE SOURCE OF TRUTH for which radial button a move appears under. Both
@@ -112,20 +127,6 @@ export function categoryGlowOrNull(category) {
  * they need no button. Every other category the engine emits must appear here —
  * tests/test_move_categories_ui_contract.py fails if one does not.
  */
-/**
- * The accessible name of the combat category nav.
- *
- * Exported because it is a CONTRACT, not decoration: CombatMovePanel builds a
- * `document.querySelector` from it to hand back clicks its flyout occludes
- * (#557). While the label was a literal in both places, a rename in HeroPanel
- * would have silently retired that handoff -- and the regression tests could
- * not have caught it, because they built their own <nav> with the same
- * hard-coded string. A mock agreeing with a mock.
- */
-export const CATEGORY_NAV_LABEL = 'Game actions'
-
-/** The selector CombatMovePanel hit-tests against. Derived, never retyped. */
-export const CATEGORY_NAV_SELECTOR = `nav[aria-label="${CATEGORY_NAV_LABEL}"] button`
 
 export const CATEGORY_GROUPS = {
   Offensive: ['Offensive'],

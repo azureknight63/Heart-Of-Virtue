@@ -9,7 +9,7 @@ import { VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from '../components/BattlefieldGrid'
  * would read as already-claimed for exactly those payloads and the auto-fit
  * would never fire at all.
  */
-export const CAMERA_UNCLAIMED = Symbol('camera-unclaimed')
+const CAMERA_UNCLAIMED = Symbol('camera-unclaimed')
 
 /**
  * Everything that decides how the battlefield is framed, in one place.
@@ -59,44 +59,39 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
     setZoom(mode)
   }, [cameraKey])
 
-  // A new fight starts from the default camera. `zoom` and `didAutoFit` are
-  // per-mount while the claim ref is per-fight, and that mismatch meant fight
-  // two inherited fight one's Fit camera AND its didAutoFit -- so it opened
-  // already widened and announced "view widened" when nothing had.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new fight is an external event (a new combat_id off a poll), not React-derived data; deriving the camera during render would discard the player's manual choice on every re-render.
-    setZoom(VIEW_MODE_FOLLOW)
-    setDidAutoFit(false)
-  }, [cameraKey])
-
-  // Entry geometry, read from THIS fight's own first beat state rather than
-  // from `displayState`, which is set in an effect keyed on `combat` and so
-  // still holds the PREVIOUS fight's positions on the commit a new fight
-  // arrives -- the auto-fit below runs in that same commit. It is also the
-  // right question on its own terms: entry framing is a property of how the
-  // fight opened, not of whichever beat the player has since scrubbed to.
-  const entryEnemyOutsideFollowView = useMemo(
-    () => anyEnemyOffScreen(combat?.beat_states?.[0] ?? combat),
-    [combat, anyEnemyOffScreen]
-  )
-
   /**
-   * Frame the fight the player was actually handed.
+   * Settle the camera for this fight, once, on the commit the fight arrives.
    *
-   * Spawn distance is a per-encounter roll, so with Follow (±6 cells) as the
-   * default a fight beginning at 7-8 ft opened on an empty map with a banner
-   * telling the player to fix the framing themselves -- the application
-   * detecting the problem and delegating it. Fit Fight is the answer it was
-   * already recommending, so it takes it, once, and says so.
+   * Frames the fight the player was actually handed (#561): spawn distance is
+   * a per-encounter roll, so with Follow (±6 cells) as the default a fight
+   * beginning at 7-8 ft opened on an empty map with a banner telling the
+   * player to fix the framing themselves.
+   *
+   * The claim is taken UNCONDITIONALLY, not only when the camera moves. That
+   * is what makes this entry-only, and the earlier version got it wrong: it
+   * claimed only on a fit, so a fight that opened fully in view stayed
+   * unclaimed and the auto-fit could still fire later. `beat_states` is
+   * per-ACTION, not per-fight -- the adapter rebuilds it for every move, and
+   * only the combat-start payload makes `[0]` the opening state -- so an
+   * unclaimed camera would have re-read `[0]` mid-fight and widened on some
+   * later action's first beat. Reading it here, on the one commit where
+   * `cameraKey` changes, is the only moment `[0]` genuinely means "how this
+   * fight opened".
+   *
+   * `zoom` and `didAutoFit` are set together for the same reason: they were
+   * per-mount while the claim was per-fight, so fight two inherited fight
+   * one's Fit camera and announced "view widened" when nothing had.
    */
   useEffect(() => {
-    if (!entryEnemyOutsideFollowView) return
-    if (cameraClaimedForRef.current === cameraKey) return
+    const outsideAtEntry = anyEnemyOffScreen(combat?.beat_states?.[0] ?? combat)
     cameraClaimedForRef.current = cameraKey
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a deliberate one-shot on combat entry, guarded by the claim ref; it must happen exactly once per fight and must stay overridable, which render-derived state cannot express.
-    setZoom(VIEW_MODE_FIT)
-    setDidAutoFit(true)
-  }, [entryEnemyOutsideFollowView, cameraKey])
+    // Set from an effect, not derived during render: this reads geometry that
+    // is only correct on this one commit. A render-derived equivalent would
+    // re-evaluate against later, per-action beat states -- the bug this replaced.
+    setZoom(outsideAtEntry ? VIEW_MODE_FIT : VIEW_MODE_FOLLOW)
+    setDidAutoFit(outsideAtEntry)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cameraKey ONLY, on purpose: `combat` changes on every poll, and re-running then is precisely the bug this replaced (beat_states is per-action, so a later payload's [0] is not how the fight opened). anyEnemyOffScreen is a module-level function and cannot change.
+  }, [cameraKey])
 
   // Rising edge on "an enemy left the Follow viewport" -> flash a one-shot
   // banner. Keyed on the raw geometry rather than on `enemyOffScreen`, or the
@@ -105,7 +100,8 @@ export function useBattlefieldCamera(combat, displayState, anyEnemyOffScreen) {
   useEffect(() => {
     if (enemyOutsideFollowView && !offScreenLatchRef.current) {
       offScreenLatchRef.current = true
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- a rising-edge, self-dismissing banner: it is a timed notification about a transition, not a function of current state, and the timeout below retires it.
+      // A rising-edge, self-dismissing banner: a timed notification about a
+      // transition, not a function of current state, retired by the timeout below.
       setShowOffScreenBanner(true)
       const t = setTimeout(() => setShowOffScreenBanner(false), 2500)
       return () => clearTimeout(t)

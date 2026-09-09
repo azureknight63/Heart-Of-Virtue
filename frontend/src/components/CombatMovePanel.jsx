@@ -107,17 +107,18 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
     );
 };
 
-// HeroPanel's radial category ring — the `<nav>` landmark it renders around the
-// hero head. Read, never written: this panel needs to know where those buttons
-// ARE (see useOccludedNavHandoff), and it must not reach into HeroPanel to
-// restyle them.
-
-
 // A click that lands on any of these inside the panel is the panel's own
 // business, whatever it happens to be covering.
 const PANEL_CONTROL_SELECTOR = 'button, a, input, select, textarea, [role="button"], [tabindex]';
 
-/** The category nav button under a viewport point, or null. */
+/**
+ * The category nav button under a viewport point, or null.
+ *
+ * Read, never written: this panel needs to know where HeroPanel's radial
+ * category buttons ARE, and must not reach into HeroPanel to restyle them.
+ * The selector itself is owned by `utils/categories.js` so a rename of the
+ * nav's accessible name cannot silently retire the handoff.
+ */
 function categoryNavButtonAt(clientX, clientY) {
     if (typeof clientX !== 'number' || typeof clientY !== 'number') return null;
     for (const button of document.querySelectorAll(CATEGORY_NAV_SELECTOR)) {

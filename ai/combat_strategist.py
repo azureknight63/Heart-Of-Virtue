@@ -230,9 +230,9 @@ _NO_TACTICAL_READ = "No situational modifiers apply; {name} is a solid baseline 
 # read "Tactical analysis unavailable; {name} is a viable fallback." -- one
 # string reused for two different meanings. In the true catch-all above,
 # "unavailable" read as fair alongside a plain base score. But a WARM/Offensive
-# move (heat's
-# offensive bonus is +0 there, so its score is just the category base, e.g.
-# 85 for a plain Attack) got the identical wording despite having a completed,
+# move (heat's offensive bonus is +0 there, so its score is just the category
+# base, e.g. 85 for a plain Attack) got the identical wording despite having a
+# completed,
 # real scoring pass -- pairing "85%" with "analysis unavailable" told players
 # no analysis had happened when one plainly had. Own string, own truth: WARM
 # is a real, if unremarkable, heat reading. (#565 later retired "unavailable"

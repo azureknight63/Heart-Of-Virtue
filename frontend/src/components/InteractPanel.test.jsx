@@ -1625,8 +1625,8 @@ describe('InteractPanel stacked-item names (#565)', () => {
     fireEvent.click(screen.getAllByText(/Materials Crate/i)[0]);
 
     const row = screen.getByText(/Mineral Powder/).closest('div');
-    expect(row.textContent).not.toMatch(/x3\s*x3/i);
-    expect(row.textContent.match(/x3/gi)).toHaveLength(1);
+    expect(row.textContent).not.toMatch(/[x×]3\s*[x×]3/i);
+    expect(row.textContent.match(/[x×]3/gi)).toHaveLength(1);
   });
 
   it('shows a stacked room item\'s quantity exactly once in the target list', () => {
@@ -1639,8 +1639,8 @@ describe('InteractPanel stacked-item names (#565)', () => {
     );
 
     const row = screen.getAllByText(/Mineral Powder/)[0].closest('div');
-    expect(row.textContent).not.toMatch(/x3.*\(x3\)/i);
-    expect(row.textContent.match(/x3/gi)).toHaveLength(1);
+    expect(row.textContent).not.toMatch(/[x×]3.*\([x×]3\)/i);
+    expect(row.textContent.match(/[x×]3/gi)).toHaveLength(1);
   });
 
   it('leaves an unstacked item name untouched', () => {

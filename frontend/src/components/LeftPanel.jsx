@@ -278,13 +278,16 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
   const handleMoveSelection = async (move) => {
     // Execute move via API
-    // Deliberately the bare flag, NOT moveAvailability: a scrub pass flagged
-    // this as a third encoding of the same rule, but moveAvailability treats
-    // an ABSENT viable_targets the same as an empty one, and
-    // LeftPanel.test.jsx documents opening the picker for an absent list on
-    // purpose. Tightening here changes observable behaviour for a case the
-    // suite names, to satisfy a DRY nit on a path CombatMovePanel already
-    // filters. Left as-is on purpose.
+    // Deliberately the bare flag, NOT moveAvailability. A scrub pass flagged
+    // this as a third encoding of the same rule; the decision to keep it
+    // stands, but the reason first recorded here was wrong, so: the fixture
+    // (`makeCombatMove`) always supplies `viable_targets: []`, and
+    // LeftPanel.test.jsx:1062 deliberately opens the picker for exactly that
+    // EMPTY list. moveAvailability blocks it, so tightening here changes
+    // observable behaviour for a case the suite names, on a path
+    // CombatMovePanel already filters. The durable fix is for
+    // moveAvailability to distinguish an absent list from an empty one, after
+    // which this encoding disappears with no behaviour change at all.
     if (!move.available) return;
 
     // Instant/non-turn-consuming moves stay on the Combat tab so result

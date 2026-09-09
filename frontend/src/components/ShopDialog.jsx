@@ -3,7 +3,7 @@ import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
-import { stackDisplayName } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel } from '../utils/stackName'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
             border: `1px solid rgba(255,204,0,0.3)`,
             padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold', flexShrink: 0,
           }}>
-            ×{count}
+            {stackCountLabel(count)}
           </span>
         )}
         {isBuyback && (

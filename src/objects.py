@@ -355,13 +355,18 @@ class Container(Object):
     #: property of the object, not of the transport: ``GameService`` branches
     #: on this set, and the map-keyword contract test reads it too, so the two
     #: cannot drift (issue #553 — ``search``/``look``/``lift`` account for 13
-    #: authored keywords across 6 placements in 2 maps, while only only
-    #: loot/check/view/examine/inspect/peruse were recognised; the other three fell through to a bare
-    #: ``getattr`` and raised).
+    #: authored keywords across 6 placements in 2 maps, while only
+    #: loot/check/view/examine/inspect/peruse were recognised; the other
+    #: three fell through to a bare ``getattr`` and raised).
     #:
     #: Every entry of ``action_aliases`` (the buttons a container shows by
     #: default) must appear here, or that button would have no dispatch behind
     #: it. Asserted by tests/test_object_action_dispatch_contract.py.
+    #: The five verbs every container offers as buttons by default. Declared
+    #: here so the `action_aliases` extension below and LOOK_INSIDE_VERBS are
+    #: one literal rather than two that must agree.
+    _DEFAULT_LOOK_INSIDE_ALIASES = ("check", "view", "examine", "inspect", "peruse")
+
     LOOK_INSIDE_VERBS = frozenset({
         "loot", "check", "view", "examine", "inspect", "peruse",
         "search", "look", "lift",
@@ -501,7 +506,7 @@ class Container(Object):
             if "open" not in self.keywords:
                 self.keywords.append("open")
 
-        self.action_aliases.extend(["check", "view", "examine", "inspect", "peruse"])
+        self.action_aliases.extend(Container._DEFAULT_LOOK_INSIDE_ALIASES)
         self.keywords.extend(self.action_aliases)
 
         self.process_events()  # process initial events (triggers labeled "auto")

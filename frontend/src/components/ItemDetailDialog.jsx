@@ -4,7 +4,7 @@ import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 import { ItemStatGrid, ItemSection } from './ItemStatGrid'
 import { formatWeight } from '../utils/itemUtils'
-import { stackDisplayName } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel } from '../utils/stackName'
 import { apiErrorMessage } from '../utils/apiError'
 import { lookupOr } from '../utils/lookup'
 import { getHpBarColor } from '../utils/entityUtils'
@@ -370,7 +370,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           { label: 'Weight', value: formatWeight(item.weight) },
           { label: 'Value', value: `${item.value || 0}g` },
           { label: 'Rarity', value: item.rarity, show: Boolean(item.rarity) },
-          { label: 'Qty', value: `×${item.quantity}`, show: item.quantity > 1 },
+          { label: 'Qty', value: stackCountLabel(item.quantity), show: item.quantity > 1 },
         ]} />
 
         {/* Comparison vs. currently equipped item in the same slot */}

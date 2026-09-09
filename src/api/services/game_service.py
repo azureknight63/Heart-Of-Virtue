@@ -139,16 +139,16 @@ def _unsupported_action_message(target, action):
     return f"There's no way for Jean to {verb} the {name}."
 
 
-#: Refusal handed back when FLEE is attempted with an enemy inside the 20 ft
-#: break-away threshold. It names the remedy on purpose: a live QA tester in an
-#: unwinnable fight read the previous bare "enemies are too close" as a
-#: permanent soft-lock, because nothing anywhere told them WITHDRAW is FLEE's
-#: prerequisite. The 20 ft gate itself is unchanged — this is copy only.
 #: The break-away threshold, in feet. Named because the refusal message below
 #: quotes it: as a bare literal in the guard, a retune would silently make the
 #: message lie to the player about the rule it exists to explain.
 FLEE_BREAK_AWAY_DISTANCE = 20
 
+#: Refusal handed back when FLEE is attempted with an enemy inside the
+#: break-away threshold. It names the remedy on purpose: a live QA tester in an
+#: unwinnable fight read the previous bare "enemies are too close" as a
+#: permanent soft-lock, because nothing anywhere told them WITHDRAW is FLEE's
+#: prerequisite. The gate itself is unchanged — this is copy only.
 FLEE_TOO_CLOSE_MESSAGE = (
     "Cannot flee — the enemies are too close to break away. Use WITHDRAW to back "
     "off first; Jean can run once every foe is at least "
@@ -2113,15 +2113,21 @@ class GameService:
     def _dispatch_interaction(self, player, target, action, tile, quantity, session_data):
         """Run one interaction verb against one already-resolved target.
 
-        Split out of :meth:`interact_with_target`, which had grown to ~435
+        Split out of :meth:`interact_with_target`, which had grown past 380
         lines across target resolution, verb validation, this five-branch
         dispatch chain, narration capture, ANSI stripping, teleport detection
         and response assembly.
 
         Returns ``(events_triggered, beta_end, refusal)``. ``refusal`` is None
         on the normal path and a ready-to-return response dict when the verb
-        resolves to nothing callable -- the early exit the caller used to make
-        with a bare ``return`` from inside its own ``try``.
+        resolves to nothing callable. Returned as DATA rather than returned
+        from here, so the caller keeps one exit and its broad ``except``
+        cannot swallow a refusal as if it were a crash.
+
+        ``session_data`` is also the API-mode switch: when it is None the
+        Passageway confirmation branch is skipped entirely and ``enter()``
+        runs inline, so the player teleports immediately with no confirmation
+        event.
 
         The caller keeps ``capture_narration``: the narration buffer is read
         after this returns, and moving it in here would split one context
@@ -2153,7 +2159,7 @@ class GameService:
             # opened. A locked container's open() is a no-op (state
             # stays "closed"); creating a LootEvent anyway would expose
             # its contents and bypass the lock. open() narrates why it
-            # failed, which flows out via the narration sink below.
+            # failed, which flows out via the caller's narration capture.
             if getattr(target, "state", None) == "opened":
                 # Create a LootEvent and store it
                 loot_event = LootEvent(
@@ -2449,11 +2455,15 @@ class GameService:
         # If a teleport occurred, strip the destination tile's description from the
         # interaction output — the frontend fetches the new room via /world/current-room.
         _post_map_name = player.map.get("name") if player.map else None
-        if (
+        # Computed once and reused by the response below: spelled twice, a
+        # later edit to one copy would report a teleport the description strip
+        # did not act on, or the reverse.
+        teleported = (
             _post_map_name != _pre_map_name
             or player.location_x != _pre_x
             or player.location_y != _pre_y
-        ):
+        )
+        if teleported:
             dest_tile = player.universe.get_tile(player.location_x, player.location_y)
             if dest_tile and hasattr(dest_tile, "description"):
                 dest_desc = ansi_escape.sub("", dest_tile.description).strip()
@@ -2537,13 +2547,6 @@ class GameService:
                     current_turn_index=getattr(player, "combat_turn_index", 0),
                     round_number=getattr(player, "combat_round", 1),
                 )
-
-        # Detect if player teleported
-        teleported = (
-            _post_map_name != _pre_map_name
-            or player.location_x != _pre_x
-            or player.location_y != _pre_y
-        )
 
         return {
             "success": True,

@@ -4,8 +4,10 @@ import { colors, spacing, fonts } from '../styles/theme'
 
 /**
  * BetaEndDialog - Marks the end of the beta. Raised by the Ferry Landing
- * interaction (issue #552) and, if that path is ever re-enabled, by defeating
- * the Lurker; the copy therefore names neither, since it cannot know which
+ * interaction (issue #552) and by defeating the Lurker, which the current
+ * beta scope puts out of reach rather than disables --
+ * `ApiCombatAdapter._handle_victory` still sets the same flag. The copy names
+ * neither, since it cannot know which
  * one the player reached it through.
  *
  * Thanks the tester and offers to open the feedback dialog or continue exploring.

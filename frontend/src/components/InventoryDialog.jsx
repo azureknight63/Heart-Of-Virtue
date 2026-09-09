@@ -5,7 +5,7 @@ import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { lookupOr } from '../utils/lookup'
-import { stackDisplayName } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel } from '../utils/stackName'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -385,7 +385,7 @@ function ItemCard({ item, onClick, isShop }) {
           fontWeight: 'bold',
           boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
         }}>
-          x{item.quantity}
+          {stackCountLabel(item.quantity)}
         </div>
       )}
 

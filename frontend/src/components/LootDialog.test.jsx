@@ -298,10 +298,10 @@ describe('LootDialog', () => {
     // which is how a hand-typed grey stayed invisible to theme.test.js in the
     // first place. Derived here so a retune moves the test with the theme.
     fireEvent.mouseEnter(skipLink)
-    expect(skipLink.style.color).toBe(hexToRgb(colors.text.muted))
+    expect(skipLink.style.color).toBe(hexToRgb(colors.text.main))
 
     fireEvent.mouseLeave(skipLink)
-    expect(skipLink.style.color).toBe(hexToRgb(colors.text.dim))
+    expect(skipLink.style.color).toBe(hexToRgb(colors.text.muted))
   })
 
   describe('the skip control is a real control (#565)', () => {

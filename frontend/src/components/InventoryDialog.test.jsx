@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import InventoryDialog from './InventoryDialog';
 import { WEIGHT_UNIT } from '../utils/itemUtils';
 import { colors } from '../styles/theme';
+import { stackCountLabel } from '../utils/stackName'
 
 // Mock ItemDetailDialog. It ECHOES the item it was handed, so the parent's
 // "which item did you open" and "did the update apply" claims are checkable —
@@ -276,7 +277,7 @@ describe('InventoryDialog', () => {
     render(<InventoryDialog player={player} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     fireEvent.click(screen.getByTitle('Consumables'));
     expect(screen.getByText('EQUIPPED')).toBeInTheDocument();
-    expect(screen.getByText('x4')).toBeInTheDocument();
+    expect(screen.getByText(stackCountLabel(4))).toBeInTheDocument();
   });
 
   it('clears the selected item when onItemRemoved fires from ItemDetailDialog', () => {
@@ -353,8 +354,8 @@ describe('InventoryDialog', () => {
     expect(screen.getByText('Test Potion').textContent).toBe('Test Potion');
     // The stack badge reads the item's own `quantity`; the Health Potion in the
     // same tab has 5, so a badge that ignored the item would collide here.
-    expect(screen.getByText('x3').textContent).toBe('x3');
-    expect(screen.getByText('x5').textContent).toBe('x5');
+    expect(screen.getByText(stackCountLabel(3)).textContent).toBe(stackCountLabel(3));
+    expect(screen.getByText(stackCountLabel(5)).textContent).toBe(stackCountLabel(5));
   });
 
   describe('footer hint copy (#565)', () => {
@@ -387,7 +388,7 @@ describe('InventoryDialog', () => {
 
       expect(screen.getByText('Mineral Powder')).toBeInTheDocument();
       expect(screen.queryByText('Mineral Powder x3')).not.toBeInTheDocument();
-      expect(screen.getByText('x3')).toBeInTheDocument();
+      expect(screen.getByText(stackCountLabel(3))).toBeInTheDocument();
     });
 
     it('opens the detail view under the de-duplicated name', () => {

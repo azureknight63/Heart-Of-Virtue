@@ -617,7 +617,7 @@ def resolve_damage(
 RESISTANCE_NEUTRAL_TOLERANCE = 0.005
 
 
-def mitigation_note(target, damage_type=None, protection=None, resistance=None):
+def mitigation_note(target, damage_type=None):
     """Why a blow was absorbed, in the player's words and the engine's numbers.
 
     Returns "" when neither mitigation is in play, because then nothing here
@@ -641,6 +641,15 @@ def mitigation_note(target, damage_type=None, protection=None, resistance=None):
     likewise left unmentioned: it did not consume the blow, and a
     *vulnerability* named as a reason for zero damage reads as nonsense.
 
+    Known gap: this reads the target's FULL protection, so a move that
+    resolves against a reduced figure -- ``Impale`` (40%), ``ArmorPierce``
+    (zero), the two Mastery strikes -- would, on a zero, name armour it did
+    not actually subtract. No shipped power/resistance pair is confirmed to
+    land those at exactly 0 today. The fix is to thread the effective value
+    from the ``resolve_damage`` call site; overridable parameters were tried
+    here first and removed, because no caller passed them and they bought two
+    unreachable branches instead of a real fix.
+
     Worded with the words "resistance" and "protection" on purpose. The combat
     glossary (``frontend/src/data/combatGlossary.js``, the ``?`` panel) already
     carries a *Protection & resistance* entry whose match patterns are exactly
@@ -650,10 +659,12 @@ def mitigation_note(target, damage_type=None, protection=None, resistance=None):
     attach to this line until the log is wrapped too. The wording is what
     makes that a one-component change rather than a new wire field.
     """
-    if protection is None:
-        protection = target_protection(target)
-    if resistance is None and damage_type is not None:
-        resistance = functions.combat_resistance(target, damage_type)
+    protection = target_protection(target)
+    resistance = (
+        functions.combat_resistance(target, damage_type)
+        if damage_type is not None
+        else None
+    )
     name = getattr(target, "name", "the target")
 
     resists = (

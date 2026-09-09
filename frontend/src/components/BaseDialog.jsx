@@ -41,6 +41,12 @@ const topLevelSubscribers = new Set()
  * would be a behaviour CHANGE rather than a redundancy — that overlay is
  * positioned inside a panel and never covered the rest of the viewport.
  *
+ * Accepted asymmetry: for those same `containerCentered` dialogs the marked
+ * regions go `aria-hidden` while staying pointer-interactive, so an assistive
+ * -tech user loses a region a sighted user keeps. The alternative — skipping
+ * the sync for them — leaves the original #563 hole open on the surface most
+ * likely to hit it, so the trade is deliberate.
+ *
  * OPT-IN, and marked BY the background rather than derived from the dialog's
  * position, because there is no single ancestor to hide. GamePage's
  * EventManager renders outside LeftPanel's `<main>`, while LeftPanel's own
@@ -56,9 +62,11 @@ export const MODAL_BACKGROUND_ATTR = 'data-modal-background'
  * was hand-repeated at three call sites and is the non-obvious half of an
  * opt-in contract.
  *
- * A marked region must NOT also set `aria-hidden` in JSX: this attribute is
- * managed out of band by syncBackgroundModality, and React would overwrite it
- * on the next render.
+ * This attribute has exactly one owner, `syncBackgroundModality`. A JSX
+ * `aria-hidden` on the same element fights it non-deterministically —
+ * whichever wrote last wins, and React only rewrites the attribute when its
+ * own prop VALUE changes, so a constant prop leaves the out-of-band value
+ * standing. Do not set both.
  */
 export const MODAL_BACKGROUND_PROPS = Object.freeze({ [MODAL_BACKGROUND_ATTR]: 'true' })
 

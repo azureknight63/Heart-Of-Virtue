@@ -9,7 +9,7 @@ import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
 import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
-import { stackDisplayName } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel } from '../utils/stackName'
 
 /**
  * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
@@ -375,7 +375,7 @@ function InteractPanel({
 
     return (<>
         <BaseDialog
-            title={selectedTarget ? `✨ ${selectedTarget.name}` : "👋 INTERACT"}
+            title={selectedTarget ? `✨ ${stackDisplayName(selectedTarget)}` : "👋 INTERACT"}
             onClose={onClose}
             maxWidth="500px"
             zIndex={2000}
@@ -493,7 +493,7 @@ function InteractPanel({
                                                 {/* stackDisplayName, not target.name: the engine bakes the
                                                     count into a stackable item's own name, so this rendered
                                                     "Mineral Powder x3 (x3)" (#565). */}
-                                                {stackDisplayName(target)} {target.count > 1 ? `(x${target.count})` : ''}
+                                                {stackDisplayName(target)} {stackCountLabel(target.count)}
                                             </GameText>
                                             {target.description && (
                                                 <GameText
@@ -651,12 +651,12 @@ function InteractPanel({
                                                     {/* See the target list above: the engine's name already
                                                         carries the count for a stackable item, so this read
                                                         "Mineral Powder x3 x3" in the forge's crate (#565). */}
-                                                    {stackDisplayName(item)} {item.count > 1 ? `x${item.count}` : ''}
+                                                    {stackDisplayName(item)} {stackCountLabel(item.count)}
                                                 </GameText>
                                                 <GameButton
                                                     onClick={async (e) => {
                                                         e.stopPropagation()
-                                                        await takeOne(item.id, item.name)
+                                                        await takeOne(item.id, stackDisplayName(item))
                                                     }}
                                                     disabled={loading}
                                                     variant="secondary"

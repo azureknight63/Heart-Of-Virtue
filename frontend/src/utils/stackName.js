@@ -1,4 +1,15 @@
 /**
+ * A space, then `x` or `×`, then a run of digits, at the very end.
+ *
+ * Module scope, and matched-then-compared rather than interpolating `size`
+ * into the pattern. Built per call it allocated a RegExp for every rendered
+ * row across six call sites; and interpolating the number meant a size that
+ * stringifies in exponential form (`1e+21`) injected a `+` quantifier into
+ * the pattern.
+ */
+const BAKED_COUNT = /\s[x×](\d+)$/i;
+
+/**
  * The name to SHOW for a stackable item, with the engine's baked-in count
  * removed.
  *
@@ -28,17 +39,6 @@
  * @param {{name?: string, count?: number, quantity?: number}|null} item
  * @returns {string} the display name, or '' when there is no usable name
  */
-/**
- * A space, then `x` or `×`, then a run of digits, at the very end.
- *
- * Module scope, and matched-then-compared rather than interpolating `size`
- * into the pattern. Built per call it allocated a RegExp for every rendered
- * row across six call sites; and interpolating the number meant a size that
- * stringifies in exponential form (`1e+21`) injected a `+` quantifier into
- * the pattern.
- */
-const BAKED_COUNT = /\s[x×](\d+)$/i;
-
 export const stackDisplayName = (item) => {
   const name = item?.name;
   if (typeof name !== 'string') return '';
@@ -49,3 +49,15 @@ export const stackDisplayName = (item) => {
   const baked = name.match(BAKED_COUNT);
   return baked && Number(baked[1]) === size ? name.slice(0, baked.index) : name;
 };
+
+/**
+ * The stack-count badge, in the one spelling the app uses.
+ *
+ * There were four (`(x3)`, `x3`, `×3`, `×{quantity}`) across six components,
+ * with nothing marking which was canonical, so normalising one site gave no
+ * clue what to normalise to. `×` wins on count and is the typographically
+ * correct multiplication sign.
+ *
+ * Returns '' for an unstacked item so callers can render it unconditionally.
+ */
+export const stackCountLabel = (count) => (Number(count) > 1 ? `×${count}` : '')

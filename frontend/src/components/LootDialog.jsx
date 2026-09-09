@@ -4,7 +4,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import { colors, spacing, fonts, accessibility } from '../styles/theme'
 import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
-import { stackDisplayName } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel } from '../utils/stackName'
 
 const ENCH_COLORS = ['#888888', '#44FF88', '#FFD700']
 
@@ -125,7 +125,7 @@ function LootRow({ item, selected, onToggle }) {
         <span style={{ color: '#333', fontSize: 10, marginLeft: 4 }}>[{item.type || 'Item'}]</span>
       </div>
       {/* Qty */}
-      <div style={{ color: colors.secondary, textAlign: 'right' }}>×{item.quantity}</div>
+      <div style={{ color: colors.secondary, textAlign: 'right' }}>{stackCountLabel(item.quantity)}</div>
       {/* Enchantment stars */}
       <div style={{ textAlign: 'center', color: ench ? ench.color : 'transparent', fontSize: 11, letterSpacing: -1 }}>
         {ench ? ench.stars : ''}
@@ -318,17 +318,16 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
               minHeight: accessibility.touchTarget,
               fontFamily: fonts.main,
               fontSize: '11px',
-              // Tokens, not the #444/#777 this used to carry: #444 is ~2.0:1
-              // on the app ground, dimmer than text.dim, whose own doc block
-              // reserves sub-AA greys for inactive decoration -- and this is
-              // an active, keyboard-reachable control. A bare hex is also
-              // invisible to theme.test.js.
-              color: colors.text.dim,
+              // `muted`, not `dim`: this is an active, keyboard-reachable
+              // control, and theme.js reserves dim for inactive decoration.
+              // (It carried a bare #444 -- about 2.0:1 on the app ground, and
+              // invisible to theme.test.js besides.)
+              color: colors.text.muted,
               cursor: isSubmitting ? 'not-allowed' : 'pointer',
               textDecoration: 'underline',
             }}
-            onMouseEnter={e => e.currentTarget.style.color = colors.text.muted}
-            onMouseLeave={e => e.currentTarget.style.color = colors.text.dim}
+            onMouseEnter={e => e.currentTarget.style.color = colors.text.main}
+            onMouseLeave={e => e.currentTarget.style.color = colors.text.muted}
           >
             skip — drop all items on tile →
           </button>

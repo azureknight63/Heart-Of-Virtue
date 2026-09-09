@@ -45,11 +45,20 @@ function VitalBar({
   // a malformed payload calling .toFixed() directly would crash the whole
   // HUD render rather than just this bar's tooltip.
   const currentValue = Number(current) || 0
-  const accessibleLabel = `${label}: ${currentValue.toFixed(0)} / ${max}`
+  // Two formats on purpose, both built from one reading of the value. The
+  // visual sites (the persistent number and the pinned tooltip) share the
+  // compact form, because the bar is 15px wide; the accessible name keeps the
+  // spaced form, which a screen reader renders as "80 of 100" rather than
+  // running the digits together. They were previously spelled out at three
+  // separate sites, which is how the spacing came to differ by accident
+  // rather than by decision.
+  const shownValue = currentValue.toFixed(0)
+  const readout = `${shownValue}/${max}`
+  const accessibleLabel = `${label}: ${shownValue} / ${max}`
   return (
     <div
       role="progressbar"
-      aria-valuenow={currentValue.toFixed(0)}
+      aria-valuenow={shownValue}
       aria-valuemin={0}
       aria-valuemax={max}
       aria-label={accessibleLabel}
@@ -123,7 +132,7 @@ function VitalBar({
           pointerEvents: 'none',
         }}
       >
-        {currentValue.toFixed(0)}/{max}
+        {readout}
       </div>
 
       {active && (
@@ -144,7 +153,7 @@ function VitalBar({
           boxShadow: `0 0 8px ${color}99`,
           zIndex: 20,
         }}>
-          {label}<br />{currentValue.toFixed(0)}/{max}
+          {label}<br />{readout}
         </div>
       )}
     </div>
@@ -229,11 +238,10 @@ function HeroPanel({
   // squeeze that container well below its 360x310 base size. That ancestor
   // scale shrinks these buttons' EFFECTIVE on-screen size right along with
   // the portrait, even though their own CSS already declares the 44px
-  // minimum (`accessibility.touchTarget` below): a real QA pass measured
-  // 40x25px rendered buttons: a QA pass measured that at the THEN-70px width
-  // and heroScale ~0.57 (70*0.57≈40, 44*0.57≈25). The width is 80px now, so
-  // read those numbers as the history that motivated this, not as current
-  // measurements.
+  // minimum (`accessibility.touchTarget` below): a QA pass measured 40x25px
+  // rendered buttons at the then-70px width and heroScale ~0.57
+  // (70*0.57≈40, 44*0.57≈25). The width is 80px now, so read those figures
+  // as the history that motivated this, not as current measurements.
   // Counter-scaling each button by 1/heroScale cancels the ancestor's shrink
   // for just these interactive elements, restoring the declared 44px+ target
   // regardless of how small the portrait itself has to get. A no-op on

@@ -13,11 +13,6 @@ import { useCoarsePointer } from '../hooks/useCoarsePointer'
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const MAX_BEAT_STATES = 200;
 
-// Sentinel for "no camera decision has been made for any fight yet". A plain
-// null would collide with `combat_id` being absent (test payloads, a beat
-// state mid-serialization), and the guard would then read as already-claimed
-// and never auto-fit at all.
-
 // Both view modes are always shown, each labelled with what it does. The old
 // control was a single button captioned with the mode it was *currently in*
 // ("View: Normal"), which reads as a state on a control that acts — so there
@@ -129,8 +124,6 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     () => (displayState?.enemies || []).filter(isLiving).length,
     [displayState?.enemies]
   );
-
-
 
   // 44px minimum on a phone or any coarse pointer. Measured at 375px before
   // this: Overview 75.6x28, Enemies 97.2x28, Follow 63.2x26, Fit Fight 84.8x26
