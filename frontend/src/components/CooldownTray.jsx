@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { colors, fonts } from '../styles/theme'
 import { categoryColor, categoryIcon } from '../utils/categories'
 import { displayNameOf } from '../utils/combatMoveStatus'
+import { beatUnit } from '../utils/moveCommitment'
 
 /**
  * What one cooling move is, in words. Issue #565 polish batch.
@@ -11,16 +12,10 @@ import { displayNameOf } from '../utils/combatMoveStatus'
  * the disabled card. Shared by the card's `aria-label` and its `title` so the
  * screen-reader name and the sighted hover cannot drift apart.
  *
- * Singular at one beat: "Keep Away: 1 beats" is the sort of thing that reads
- * as a bug in a tooltip.
+ * The unit is `beatUnit`'s, shared with the expanded card's caption below and
+ * with AbortMoveControl: this label pluralised while the caption did not, so
+ * the same move read "1 beat" collapsed and "1 / BEATS" expanded.
  */
-// The unit, singular at one. Shared by the hover label and the expanded
-// card's caption: the label pluralised and the caption did not, so the same
-// move read "Keep Away: 1 beat" collapsed and "1 / BEATS" expanded. 1 is not
-// an edge case -- `_get_available_moves` emits it for the "Available next
-// beat" state.
-const beatUnit = (n) => (n === 1 ? 'beat' : 'beats')
-
 function cooldownLabel(move) {
   const beats = move.cooldown_remaining
   return `${displayNameOf(move)}: ${beats} ${beatUnit(beats)}`
@@ -42,7 +37,7 @@ function CooldownTray({ moves }) {
       aria-label="Moves on cooldown"
       style={{
         flexShrink: 0,
-        borderTop: `1px solid rgba(0,255,136,0.15)`,
+        borderTop: `1px solid ${colors.bg.terminal}`,
         paddingTop: '8px',
       }}
     >
@@ -111,6 +106,8 @@ function CollapsedCard({ move }) {
         width: '44px',
         height: '42px',
         borderRadius: '5px',
+        // 0.6: no token carries it (theme.js's bg has 0.2/0.3/0.7/0.75/0.9),
+        // and substituting a near neighbour would be a silent visual change.
         background: 'rgba(0,0,0,0.6)',
         border: `1px solid ${color}99`,
         boxShadow: `0 0 6px ${color}44`,
@@ -147,7 +144,7 @@ function ExpandedCard({ move }) {
   return (
     <div style={{
       borderRadius: '5px',
-      background: 'rgba(0,0,0,0.7)',
+      background: colors.bg.panelHeavy,
       border: `1px solid ${color}8C`,
       boxShadow: `0 0 8px ${color}33`,
       padding: '7px 9px',

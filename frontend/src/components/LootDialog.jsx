@@ -79,6 +79,10 @@ function ItemTooltip({ item, anchorRef }) {
   )
 }
 
+// How many units of a drop to weigh. `|| 1` on purpose: a drop reporting 0
+// still weighs one unit, which is why this is not a bare stackSize call.
+const unitsOf = (item) => stackSize(item) || 1
+
 function LootRow({ item, selected, onToggle }) {
   const [hovered, setHovered] = useState(false)
   const rowRef = useRef(null)
@@ -141,10 +145,6 @@ function LootRow({ item, selected, onToggle }) {
     </div>
   )
 }
-
-// How many units of a drop to weigh. `|| 1` on purpose: a drop reporting 0
-// still weighs one unit, which is why this is not a bare stackSize call.
-const unitsOf = (item) => stackSize(item) || 1
 
 export default function LootDialog({ endState, playerWeight, weightLimit, onCollect, onSkip }) {
   const drops = useMemo(() => endState?.items_dropped || [], [endState])

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { beatUnit } from '../utils/moveCommitment'
 
 import { colors, spacing } from '../styles/theme';
 import GameText from './GameText';
@@ -82,7 +83,7 @@ export default function AbortMoveControl({ abortable, onAbort, disabled = false 
             }}
         >
             <GameText size="xs" weight="bold" style={{ color: colors.secondary }}>
-                {name} · lands in {beatsLeft} {beatsLeft === 1 ? 'beat' : 'beats'}
+                {name} · lands in {beatsLeft} {beatUnit(beatsLeft)}
             </GameText>
 
             <button
@@ -132,8 +133,8 @@ export default function AbortMoveControl({ abortable, onAbort, disabled = false 
             {/* The cost, stated plainly. This is not an undo, and the button
                 must not be able to imply that it is. */}
             <GameText size="xs" style={{ color: colors.text.muted }}>
-                forfeits {invested} {invested === 1 ? 'beat' : 'beats'} · then {cooldown} beat
-                {cooldown === 1 ? '' : 's'} cooldown
+                forfeits {invested} {beatUnit(invested)} · then {cooldown}{' '}
+                {beatUnit(cooldown)} cooldown
             </GameText>
         </div>
     );

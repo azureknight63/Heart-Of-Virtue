@@ -247,7 +247,10 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
         <div
           style={{
             display: 'flex', gap: spacing.md, alignItems: 'center',
-            fontSize: '10px', fontFamily: 'monospace', color: colors.text.muted,
+            fontSize: '10px', // Generic stack, not fonts.main: these sit on the map canvas,
+              // where Courier-first would clash with the grid's own
+              // glyphs. Substituting is a visual change, not a rename.
+              fontFamily: 'monospace', color: colors.text.muted,
             letterSpacing: '0.05em', textTransform: 'uppercase',
           }}
           // Deliberately not role="status": the beat number changes on every

@@ -34,6 +34,22 @@ export function totalStageBeats(stageBeats) {
   return STAGE_KEYS.reduce((sum, key) => sum + (stageBeats[key] || 0), 0)
 }
 
+/**
+ * The unit word for a beat count, singular at exactly one.
+ *
+ * One rule, and it had four encodings: `cooldownLabel`'s ternary, the
+ * expanded cooldown card's bare "beats" caption (which printed "1 / BEATS"
+ * for the ordinary "Available next beat" value), and two more in
+ * AbortMoveControl -- one of them spelled as a SUFFIX (`beat{n === 1 ? '' :
+ * 's'}`) split across a JSX newline, which no test counting rendered
+ * "beats" nodes could ever have caught.
+ *
+ * Takes a number, not a move, because `formatBeats` beside it may render a
+ * fraction (3.5) -- for which "beats" is correct and `n === 1` is false, so
+ * the two compose without a special case.
+ */
+export const beatUnit = (n) => (n === 1 ? 'beat' : 'beats')
+
 /** Compact display string: whole beats as-is, fractional beats to one decimal. */
 export function formatBeats(total) {
   return Number.isInteger(total) ? `${total}` : `${Math.round(total * 10) / 10}`

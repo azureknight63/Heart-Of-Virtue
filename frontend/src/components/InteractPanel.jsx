@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { HOSTILITY_TOKENS } from '../utils/combatEntities'
 import { useWorldInteract } from '../hooks/useWorldInteract'
 import BaseDialog from './BaseDialog'
 import NpcChatPanel from './NpcChatPanel'
@@ -9,7 +10,7 @@ import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
 import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
-import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize, isStacked } from '../utils/stackName'
 
 /**
  * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
@@ -116,7 +117,9 @@ function isHostileNpc(target) {
 
 /** Accent color for a target's chip/icon/border — danger for a hostile NPC, the shared per-type color otherwise. */
 function getTargetAccentColor(target) {
-    return isHostileNpc(target) ? colors.danger : getEntityColor(target?.type)
+    return isHostileNpc(target)
+        ? HOSTILITY_TOKENS.hostile.color
+        : getEntityColor(target?.type)
 }
 
 function InteractPanel({
@@ -340,7 +343,7 @@ function InteractPanel({
         // ItemSerializer emits for this payload today, but a hand-picked read
         // beside a helper-resolved one is two canonical-looking ways to ask
         // the same question.
-        if (isStackableAction && stackSize(selectedTarget) > 1 && qty === null) {
+        if (isStackableAction && isStacked(selectedTarget) && qty === null) {
             setPendingAction(action)
             setQuantity(stackSize(selectedTarget)) // Default to all
             setShowQuantityInput(true)
@@ -359,8 +362,11 @@ function InteractPanel({
 
     const getTargetIcon = (target) => {
         // A hostile NPC gets its own glyph rather than the friendly 👤 — the
-        // two must not read as the same kind of thing (issue #537).
-        if (isHostileNpc(target)) return '⚔️'
+        // two must not read as the same kind of thing (issue #537). The glyph
+        // is HOSTILITY_TOKENS', not a second copy: that table declares itself
+        // the one owner of the colour AND the glyph AND the word, and this
+        // panel was re-typing all three.
+        if (isHostileNpc(target)) return HOSTILITY_TOKENS.hostile.glyph
         switch (target?.type) {
             case 'npc': return '👤'
             case 'item': return '📦'
@@ -376,6 +382,12 @@ function InteractPanel({
     // value twice — as its React key and as its `npcId` — and the two silently
     // disagreeing would remount on every render.
     const chatNpcId = selectedTarget?.npc_class || selectedTarget?.name
+
+    // The one reading the quantity prompt is about: how many the stack holds.
+    // Named rather than asked three times inside the JSX below. Safe when
+    // nothing is selected -- stackSize(null) is 1, and the prompt is gated on
+    // showQuantityInput anyway.
+    const availableToTake = stackSize(selectedTarget)
 
     return (<>
         <BaseDialog
@@ -533,6 +545,15 @@ function InteractPanel({
                                             letterSpacing: '1px',
                                             fontFamily: fonts.main,
                                         }}>
+                                            {/* Lowercase, unlike HostilityChip's
+                                                HOSTILITY_TOKENS.hostile.label ('HOSTILE'):
+                                                this chip is uppercased by CSS
+                                                (textTransform above) and sits beside a
+                                                sibling rendering `target.type` the same
+                                                way, so lowercase-in-DOM is this
+                                                surface's convention. The colour and
+                                                glyph above DO come from the token --
+                                                only the casing is local. */}
                                             {isHostileNpc(target) ? 'hostile' : target.type}
                                         </div>
                                     </div>
@@ -575,16 +596,16 @@ function InteractPanel({
                                         nested inside this outer GameText's own <p> is invalid HTML and fired
                                         React's validateDOMNesting warning on every quantity prompt (#540 item 14). */}
                                     <GameText as="span" variant="muted" size="xs" weight="normal" style={{ display: 'block' }}>
-                                        Available: {stackSize(selectedTarget)}
+                                        Available: {availableToTake}
                                     </GameText>
                                 </GameText>
                                 <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
                                     <input
                                         type="number"
                                         min="1"
-                                        max={stackSize(selectedTarget)}
+                                        max={availableToTake}
                                         value={quantity}
-                                        onChange={(e) => setQuantity(Math.min(stackSize(selectedTarget), Math.max(1, parseInt(e.target.value) || 1)))}
+                                        onChange={(e) => setQuantity(Math.min(availableToTake, Math.max(1, parseInt(e.target.value) || 1)))}
                                         style={{
                                             backgroundColor: colors.bg.main,
                                             border: `1px solid ${colors.secondary}`,

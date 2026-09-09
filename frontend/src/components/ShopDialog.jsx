@@ -3,7 +3,7 @@ import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
-import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
+import { stackDisplayName, stackCountLabel, stackSize, isStacked } from '../utils/stackName'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -150,7 +150,7 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {stackDisplayName(item)}
         </span>
-        {count > 1 && (
+        {isStacked(item) && (
           <span style={{
             fontSize: '0.58rem',
             background: 'rgba(255,204,0,0.15)',
@@ -299,6 +299,12 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
   // `buyback_price * count` (GameService.shop_buyback). The qty picker is
   // suppressed for buyback, so `quantity` stays 1 — use `count` as the real
   // multiplier or the UI quotes a fraction of what the player is actually charged.
+  // The RAW `count`, deliberately, in a file that resolves the same
+  // question through stackSize for DISPLAY: this is the shop payload's
+  // own field (`shop_serializer.py` normalises count/quantity itself)
+  // and it is the literal `tests/test_wire_field_contract.py` anchors
+  // the shop `count` citation on. Routing it through the helper would
+  // delete the read that guard cites.
   const effectiveQty = selectedItem?.is_buyback ? (selectedItem.count || 1) : quantity
 
   // ── Weight delta for the weight bar ───────────────────────────────────────

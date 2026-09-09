@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { GAME_PANEL_CLASS } from './GamePanel'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
 import { useAudio } from '../context/AudioContext';
@@ -259,7 +260,7 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
       { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
     ]);
 
-    const panel = container.querySelector('.game-panel');
+    const panel = container.querySelector(`.${GAME_PANEL_CLASS}`);
     fireEvent.click(panel, inNavRect);
 
     expect(navClick).toHaveBeenCalledTimes(1);
@@ -284,7 +285,7 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
       { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
     ]);
 
-    const panel = container.querySelector('.game-panel');
+    const panel = container.querySelector(`.${GAME_PANEL_CLASS}`);
     fireEvent.click(panel, { clientX: 999, clientY: 999 });
 
     expect(navClick).not.toHaveBeenCalled();
@@ -308,7 +309,7 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
     vi.spyOn(screen.getByRole('button', { name: 'OFFENSIVE' }), 'getBoundingClientRect')
       .mockReturnValue({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 });
 
-    fireEvent.click(container.querySelector('.game-panel'), { clientX: 0, clientY: 0 });
+    fireEvent.click(container.querySelector(`.${GAME_PANEL_CLASS}`), { clientX: 0, clientY: 0 });
     expect(navClick).not.toHaveBeenCalled();
   });
 
@@ -322,7 +323,7 @@ describe('CombatMovePanel — clicks over the occluded category nav (#557)', () 
       { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
     ]);
 
-    const panel = container.querySelector('.game-panel');
+    const panel = container.querySelector(`.${GAME_PANEL_CLASS}`);
     fireEvent.pointerDown(panel, inNavRect);
     fireEvent.mouseDown(panel, inNavRect);
     fireEvent.mouseUp(panel, inNavRect);

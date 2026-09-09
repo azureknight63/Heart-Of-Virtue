@@ -30,9 +30,12 @@ function CloseButton({ onClose, style = {} }) {
  * The class the panel root carries, exported because it is a CONTRACT.
  *
  * `useOccludedNavHandoff` resolves the occluding panel with
- * `closest('.game-panel')` and falls back to the header row if it misses --
- * so a rename here would shrink the handoff region in production with
- * nothing failing. Same reasoning as `CATEGORY_NAV_LABEL` in
+ * `closest(\`.${GAME_PANEL_CLASS}\`)` and falls back to the header row if it
+ * misses, so a rename here would silently SHRINK the handoff region rather
+ * than break it. `CombatMovePanel.targetGating.test.jsx` would catch a rename
+ * loudly (it clicks the resolved panel, and `fireEvent` throws on null) --
+ * which is why that file imports this constant too, rather than being the
+ * thing that has to be remembered. Same reasoning as `CATEGORY_NAV_LABEL` in
  * utils/categories.js.
  */
 export const GAME_PANEL_CLASS = 'game-panel'

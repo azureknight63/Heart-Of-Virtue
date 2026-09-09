@@ -92,6 +92,24 @@ export function displayNameOf(value) {
 export const NO_REACHABLE_TARGET_REASON = 'No valid target in range';
 
 /**
+ * The break-away threshold, in feet: FLEE is refused with any enemy closer.
+ *
+ * The ENGINE owns this rule (`FLEE_BREAK_AWAY_DISTANCE`,
+ * src/api/services/game_service.py) and quotes the number to the player in
+ * its refusal, so the client must not carry a second, silently-diverging
+ * copy. `e.distance` on a serialized combatant is `distance_to_ref`, read off
+ * the same `combat_proximity` the engine's guard reads, so this compares like
+ * with like.
+ *
+ * Named, not inlined, because the drift is asymmetric and the bad direction
+ * is the dangerous one: retune the engine DOWN and a player who could
+ * legally escape gets no FLEE button at all -- worse than the unhelpful
+ * refusal `FLEE_TOO_CLOSE_MESSAGE` was written to replace. Pinned to the
+ * engine by `tests/test_combat_glossary_contract.py`.
+ */
+export const FLEE_BREAK_AWAY_DISTANCE_FT = 20;
+
+/**
  * Whether a move can actually be cast right now, and why not.
  *
  * `move.available` alone is not enough (issue #554). The engine's own

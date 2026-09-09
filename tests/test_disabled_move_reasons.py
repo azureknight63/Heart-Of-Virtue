@@ -29,6 +29,7 @@ import src.items as items  # noqa: E402
 import src.moves as moves  # noqa: E402
 from _combat_fixtures import make_adapter, make_player, seeded  # noqa: E402
 from _moves_scan import move_module_paths  # noqa: E402
+from src.api.combat_adapter import _NO_WEAPON_REASON  # noqa: E402
 from src.moves._base import Move  # noqa: E402
 from src.npc import RockRumbler  # noqa: E402
 
@@ -229,7 +230,7 @@ def test_an_empty_hand_still_reads_as_no_weapon(sword_vs_rumbler):
     """The existing wording for the bare-handed case is kept, not replaced."""
     adapter, player = sword_vs_rumbler
     player.eq_weapon = None
-    assert _reason_for(adapter, "Shoot Crossbow") == "No weapon equipped"
+    assert _reason_for(adapter, "Shoot Crossbow") == _NO_WEAPON_REASON
 
 
 def test_the_right_weapon_out_of_range_still_reports_range(sword_vs_rumbler):

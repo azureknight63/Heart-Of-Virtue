@@ -228,9 +228,12 @@ MAX_ANIMATION_SEQ = 1_000_000
 MAX_INSTANT_STAGES = 20
 
 
-#: The empty-handed refusal. Named because `tests/test_combat_glossary_contract.py`
-#: pins it by value (it must match no glossary term), so the string and the
-#: assertion cannot drift apart.
+#: The empty-handed refusal. Named because two tests must agree with it, and
+#: they now IMPORT it rather than retyping the literal --
+#: `test_combat_glossary_contract` asserts it matches no glossary term and
+#: `test_disabled_move_reasons` asserts the adapter emits it, so rewording the
+#: string moves both assertions with it. Spelled out, they would have gone on
+#: pinning a sentence the code no longer produced.
 _NO_WEAPON_REASON = "No weapon equipped"
 
 #: Weapon subtypes whose engine name is not the noun a player would use. Every
@@ -252,6 +255,65 @@ def _weapon_noun_phrase(subtype, with_article=True):
     if not with_article:
         return noun
     return ("an " if noun[:1] in "aeiou" else "a ") + noun
+
+
+def move_unavailability_reason(move, player, is_targeted):
+    """Why a non-viable move cannot be cast, as one player-facing sentence.
+
+    ``viable()`` hands back a bare bool, so this reconstructs the objection.
+    Extracted from ``_get_available_moves``' reason ladder, which ran to six
+    indentation levels inside a 147-line method while every terminal branch
+    was a single string: as a function it is early returns, and
+    ``tests/test_disabled_move_reasons.py`` can call it directly instead of
+    standing up an adapter, a RockRumbler and a seeded RNG to reach one arm.
+
+    What is in Jean's hand is asked FIRST, before the targeted/untargeted
+    split: a weapon requirement holds regardless of range or target, it is
+    the objection the player cannot fix by walking, and the range guess below
+    happily passes while the real blocker is the sword he is holding
+    (issue #565). ``weapon_requirement_reason`` returns None when the
+    requirement is satisfied, so a correctly-armed move falls through to the
+    range reasons.
+
+    There is deliberately no "No weapon equipped" arm for an UNTARGETED move.
+    One existed, gated on ``move.name == "Attack" and not eq_weapon``, and it
+    was unreachable twice over: the engine's ``Attack`` is ``targeted=True``
+    (src/moves/_utility.py), so the targeted arm always claims it, and a
+    Player always has an ``eq_weapon`` anyway -- ``Player.__init__`` equips
+    ``items.Fists()``, which is truthy. Only doubles with ``targeted=False``
+    ever ran it. Routing that sentence to a bare-handed Jean means giving
+    ``Attack`` a ``weapon_requirement``, this project's declared mechanism
+    (asked before the split, AST-checked by that same test file) -- a
+    move-availability change, so it is left to its own issue.
+    """
+    weapon_reason = weapon_requirement_reason(
+        move, getattr(player, "eq_weapon", None)
+    )
+    if weapon_reason is not None:
+        return weapon_reason
+
+    if not is_targeted:
+        return "Cannot use this move"
+
+    mvrange = getattr(move, "mvrange", None)
+    if not mvrange:
+        return "No valid target"
+
+    range_min, range_max = mvrange
+    enemies_in_range = any(
+        range_min <= dist <= range_max
+        for dist in player.combat_proximity.values()
+    )
+    if enemies_in_range:
+        return "Cannot use this move"
+    # The melee/reach split: only a move that cannot outreach a sword gets the
+    # "too far" wording, because for a longer-ranged move the miss is as
+    # likely to be a target it may not legally hit.
+    return (
+        "Enemy out of range (too far)"
+        if range_max <= 5
+        else "No valid target in range"
+    )
 
 
 def weapon_requirement_reason(move, weapon):
@@ -3768,59 +3830,10 @@ class ApiCombatAdapter:
                 move_data["available"] = False
                 move_data["reason"] = "Not enough fatigue"
             elif not is_viable:
-                # Move is not viable - try to determine why
                 move_data["available"] = False
-
-                # What is in Jean's hand is asked FIRST, and before the
-                # targeted/untargeted split: a weapon requirement is true
-                # regardless of range or target, it is the objection the
-                # player cannot fix by walking, and the range guess below
-                # happily passes while the real blocker is the sword he is
-                # holding (issue #565). Returns None when the requirement is
-                # satisfied, so a correctly-armed move still falls through to
-                # the range reasons.
-                weapon_reason = weapon_requirement_reason(
-                    move, getattr(self.player, "eq_weapon", None)
+                move_data["reason"] = move_unavailability_reason(
+                    move, self.player, is_targeted
                 )
-                if weapon_reason is not None:
-                    move_data["reason"] = weapon_reason
-                elif is_targeted:
-                    # Check if it's a range issue
-                    mvrange = getattr(move, "mvrange", None)
-                    if mvrange:
-                        range_min, range_max = mvrange
-                        enemies_in_range = any(
-                            range_min <= dist <= range_max
-                            for dist in self.player.combat_proximity.values()
-                        )
-                        if not enemies_in_range:
-                            if range_max <= 5:
-                                move_data["reason"] = "Enemy out of range (too far)"
-                            else:
-                                move_data["reason"] = "No valid target in range"
-                        else:
-                            move_data["reason"] = "Cannot use this move"
-                    else:
-                        move_data["reason"] = "No valid target"
-                else:
-                    # No "No weapon equipped" arm here. There was one, gated on
-                    # `move.name == "Attack" and not eq_weapon`, and it was
-                    # unreachable twice over: the engine's Attack is
-                    # `targeted=True` (src/moves/_utility.py), so the
-                    # `elif is_targeted` above always claims it, and a Player
-                    # always has an `eq_weapon` anyway -- `Player.__init__`
-                    # equips `items.Fists()`, which is truthy. Only mocks with
-                    # `targeted=False` ever ran it.
-                    #
-                    # Getting that sentence to a bare-handed Jean means giving
-                    # `Attack` a `weapon_requirement`, which is this project's
-                    # declared mechanism for it (`weapon_requirement_reason`
-                    # runs BEFORE the targeted split, and
-                    # tests/test_disabled_move_reasons.py AST-checks the
-                    # declarations). That is a move-availability change, not a
-                    # comment fix, so it is left to its own issue rather than
-                    # smuggled in here.
-                    move_data["reason"] = "Cannot use this move"
 
             moves.append(move_data)
 

@@ -194,11 +194,11 @@ def _unsupported_action_message(target, action):
 class _InteractionRequest(NamedTuple):
     """Everything one interaction is about, resolved once and passed around.
 
-    The four helpers below it were taking six, six, four and four loose
-    positionals drawn from this same set -- all untyped, several of compatible
-    shape, so a caller that transposed ``action`` and ``tile`` still ran. Same
-    argument :class:`_PreInteractionLocation` makes for the pre-location
-    triple, applied to the request it sits beside.
+    The five helpers below it were each taking a different subset of these
+    seven as loose, untyped positionals -- several of compatible shape, so a
+    caller that transposed ``action`` and ``tile`` still ran. Same argument
+    :class:`_PreInteractionLocation` makes for the pre-location triple,
+    applied to the request it sits beside.
 
     ``target_id`` rides along beside ``target`` because the attack redirect
     hands the id back to :meth:`GameService.start_combat`, which resolves it

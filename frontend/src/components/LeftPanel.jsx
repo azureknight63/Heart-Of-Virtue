@@ -21,7 +21,7 @@ import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
 import { MODAL_BACKGROUND_PROPS } from './BaseDialog'
-import { moveAvailability } from '../utils/combatMoveStatus'
+import { moveAvailability, FLEE_BREAK_AWAY_DISTANCE_FT } from '../utils/combatMoveStatus'
 import HeatMeter from './HeatMeter'
 import ShopDialog from './ShopDialog'
 import useCombatLogPlayback from '../hooks/useCombatLogPlayback'
@@ -114,11 +114,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const abortableMove = combat?.abortable_move || null
   const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive && !abortableMove
 
-  // Flee is viable only when it's the player's turn and all enemies are >= 20 ft away
+  // Flee is viable only when it's the player's turn and every enemy is at
+  // least the engine's break-away distance away. The threshold is the
+  // engine's, imported rather than retyped -- see the constant.
   const canFlee = isMyTurn &&
     Array.isArray(combat?.enemies) &&
     combat.enemies.length > 0 &&
-    combat.enemies.every(e => (e.distance ?? 0) >= 20)
+    combat.enemies.every(e => (e.distance ?? 0) >= FLEE_BREAK_AWAY_DISTANCE_FT)
 
   // Check for move categories - handle both direct API response and transformed state
   // transformCombatData spreads battle_state flat onto the combat object, so
@@ -611,7 +613,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           />
         )}
 
-        {/* Flee button — only when all enemies are >= 20 ft away */}
+        {/* Flee button — only when every enemy is at least
+            FLEE_BREAK_AWAY_DISTANCE_FT away; see `canFlee` above. */}
         {canFlee && (
           <FleeButton
             onFlee={() => onCombatAction('flee', {})}
