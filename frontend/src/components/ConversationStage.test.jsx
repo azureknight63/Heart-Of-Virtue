@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import ConversationStage, { computeStage } from './ConversationStage'
+import ConversationStage, { computeStage, CONTINUE_HINT } from './ConversationStage'
 import { portraitUrl } from '../utils/portraits'
 import { portraitManifestPairs } from '../test/portraitManifest'
 import { expectNoNaNStyles } from '../test/styleAssertions'
@@ -313,7 +313,7 @@ describe('ConversationStage rendering', () => {
         // No cast column, no prose, no speaker label — an empty payload must
         // produce a blank stage rather than a crash or a stray placeholder.
         expect(stage.querySelectorAll('img')).toHaveLength(0)
-        expect(stage.textContent.trim()).toBe('\u25be click to finish')
+        expect(stage.textContent.trim()).toBe(CONTINUE_HINT)
         // ...and clicking the empty stage completes rather than hanging.
         const onComplete = vi.fn()
         render(<ConversationStage onComplete={onComplete} />)
@@ -370,11 +370,13 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByText('Ghost')).toBeInTheDocument()
     })
 
-    it('renders non-dialogue prose centered and italicized', () => {
+    it('renders non-dialogue prose left-aligned and upright (issue #538)', () => {
+        // Narration used to render centred and italic, which floated a short
+        // line mid-box and spent the emphasis of italics on plain description.
         const proseSegments = [
             { text: 'The wind howls through the ruins.', in_conversation: false },
         ]
-        const { container } = render(
+        render(
             <ConversationStage
                 segments={proseSegments}
                 conversation={{ cast: CAST }}
@@ -383,8 +385,33 @@ describe('ConversationStage rendering', () => {
         )
         act(() => vi.advanceTimersByTime(3000))
         const proseDiv = screen.getByText(/The wind howls/i)
-        expect(proseDiv.style.textAlign).toBe('center')
-        expect(proseDiv.style.fontStyle).toBe('italic')
+        expect(proseDiv.style.textAlign).toBe('left')
+        expect(proseDiv.style.fontStyle).toBe('normal')
+    })
+
+    it('reserves italics for a thought beat', () => {
+        render(
+            <ConversationStage
+                segments={[{ text: 'He should not have come.', speaker: 'Jean', thought: true, in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText(/should not have come/i).style.fontStyle).toBe('italic')
+    })
+
+    it('pins prose to the top of the card so it does not bob between beats', () => {
+        // A fixed min-height with centred content put the first line at a
+        // different y on every beat (issue #538 item 2).
+        const { container } = render(
+            <ConversationStage
+                segments={[{ text: 'Short.', in_conversation: false }]}
+                onComplete={vi.fn()}
+            />
+        )
+        const card = container.querySelector('.conversation-stage__dialogue')
+        expect(card.style.justifyContent).toBe('flex-start')
     })
 
     it('paces multi-chunk plain narration (no speakers) beat by beat on click', () => {

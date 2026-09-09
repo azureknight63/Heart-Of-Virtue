@@ -694,14 +694,14 @@ describe('ItemDetailDialog', () => {
         expect(apiClient.post).toHaveBeenCalledWith('/inventory/use', { item_id: 42 })
         // Book content visible (wrapper lines stripped)
         expect(screen.getByText(/Buy low, sell high\./i)).toBeDefined()
-        // CLOSE BOOK button confirms BookReaderDialog is open
-        expect(screen.getByText('CLOSE BOOK')).toBeDefined()
+        // CLOSE button confirms BookReaderDialog is open
+        expect(screen.getByText('CLOSE')).toBeDefined()
         // Wrapper lines must NOT appear in the reader
         expect(screen.queryByText(/^---/)).toBeNull()
       })
     })
 
-    it('closes BookReaderDialog when CLOSE BOOK is clicked', async () => {
+    it('closes BookReaderDialog when CLOSE is clicked', async () => {
       apiClient.post.mockResolvedValue({
         data: {
           success: true,
@@ -718,10 +718,10 @@ describe('ItemDetailDialog', () => {
       )
 
       fireEvent.click(screen.getByText(/Read/i))
-      await waitFor(() => expect(screen.getByText('CLOSE BOOK')).toBeDefined())
+      await waitFor(() => expect(screen.getByText('CLOSE')).toBeDefined())
 
-      fireEvent.click(screen.getByText('CLOSE BOOK'))
-      expect(screen.queryByText('CLOSE BOOK')).toBeNull()
+      fireEvent.click(screen.getByText('CLOSE'))
+      expect(screen.queryByText('CLOSE')).toBeNull()
     })
 
     it('shows error message when API returns failure', async () => {
@@ -741,7 +741,7 @@ describe('ItemDetailDialog', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Cannot read a blank book\./i)).toBeDefined()
-        expect(screen.queryByText('CLOSE BOOK')).toBeNull()
+        expect(screen.queryByText('CLOSE')).toBeNull()
       })
     })
 
@@ -760,7 +760,7 @@ describe('ItemDetailDialog', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/✗.*Network timeout/i)).toBeDefined()
-        expect(screen.queryByText('CLOSE BOOK')).toBeNull()
+        expect(screen.queryByText('CLOSE')).toBeNull()
       })
     })
 
@@ -811,7 +811,7 @@ describe('ItemDetailDialog', () => {
       fireEvent.click(screen.getByText(/Read/i))
       await waitFor(() => {
         expect(screen.queryByText(/First failure/i)).toBeNull()
-        expect(screen.getByText('CLOSE BOOK')).toBeDefined()
+        expect(screen.getByText('CLOSE')).toBeDefined()
       })
     })
   })
@@ -1435,7 +1435,7 @@ describe('ItemDetailDialog', () => {
       render(<ItemDetailDialog item={bookItem} player={mockPlayer} onBack={mockOnBack} />);
       fireEvent.click(screen.getByText(/Read/i));
 
-      await waitFor(() => expect(screen.getByText('CLOSE BOOK')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('CLOSE')).toBeInTheDocument());
     });
 
     it('falls back to data.message when stripping the title wrapper leaves nothing', async () => {
@@ -1444,7 +1444,7 @@ describe('ItemDetailDialog', () => {
       render(<ItemDetailDialog item={bookItem} player={mockPlayer} onBack={mockOnBack} />);
       fireEvent.click(screen.getByText(/Read/i));
 
-      await waitFor(() => expect(screen.getByText('CLOSE BOOK')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('CLOSE')).toBeInTheDocument());
     });
 
     it('prefers the server 400 error message when reading fails via a rejected promise', async () => {

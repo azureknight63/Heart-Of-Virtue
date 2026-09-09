@@ -67,10 +67,10 @@ describe('EventDialog', () => {
     mockOnSubmitInput.mockResolvedValue({ success: true });
   });
 
-  it('renders the event name in the title and the full body text once the typewriter finishes', () => {
+  it('renders the story title and the full body text once the typewriter finishes', () => {
     renderDialog();
 
-    expect(screen.getByText(/Mysterious Statue/i).textContent).toContain('Mysterious Statue');
+    expect(screen.getByText('✨ STORY')).toBeInTheDocument();
 
     const body = screen.getByTestId('event-text-container');
     // Mid-animation the container holds a strict prefix of the text, never all
@@ -89,7 +89,7 @@ describe('EventDialog', () => {
     // Encounter" shape below is copied from GamePage.jsx's synthetic alert
     // event, not invented.
     renderDialog();
-    expect(screen.getByRole('dialog', { name: '✨ Mysterious Statue' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '✨ STORY' })).toBeInTheDocument();
 
     const encounterEvent = {
       event_id: COMBAT_INIT_EVENT_ID,
@@ -102,7 +102,7 @@ describe('EventDialog', () => {
     render(
       <EventDialog event={encounterEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />
     );
-    expect(screen.getByRole('dialog', { name: '✨ Enemy Encounter' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '✨ STORY' })).toBeInTheDocument();
   });
 
   it('reveals the choice buttons only after the text completes', () => {
@@ -121,18 +121,48 @@ describe('EventDialog', () => {
     expect(screen.getByText(/Press 1-2 to select/i).textContent).toBe('Press 1-2 to select');
   });
 
-  // Bug 2 (issue #530): Math.min(inputOptions.length, 9) with no singular
-  // case renders "Press 1-1 to select" for the (very common) single-choice
-  // event, which reads as a typo/glitch even once the shortcut itself works.
-  it('shows a singular hint for a single-choice event instead of "Press 1-1 to select"', () => {
-    renderDialog({
-      ...mockEvent,
-      input_options: [{ label: 'Continue', value: 'go' }],
-    });
-    finishText();
+  // Issue #530 gave the single-choice event a singular "Press 1 to select"
+  // instead of "Press 1-1". Issue #538 item 5 goes further: a one-option
+  // "choice" is not a choice, so the prompt, the [1] binding and the hint all
+  // go away and the option renders as a plain Continue-shaped button.
+  describe('a single option is a button, not a decision (issue #538 item 5)', () => {
+    const soleOption = { ...mockEvent, input_prompt: 'Your choice:', input_options: [{ label: 'Continue', value: 'go' }] };
 
-    expect(screen.getByText('Press 1 to select').textContent).toBe('Press 1 to select');
-    expect(screen.queryByText(/Press 1-1/i)).toBeNull();
+    it('drops the prompt, the key binding and the key hint', () => {
+      renderDialog(soleOption);
+      finishText();
+
+      expect(screen.queryByText(/Press 1/i)).toBeNull();
+      expect(screen.queryByText('Your choice:')).toBeNull();
+      expect(buttonFor('Continue').textContent).toBe('Continue');
+    });
+
+    it('still takes the option on the 1 key', () => {
+      renderDialog(soleOption);
+      finishText();
+
+      fireEvent.keyDown(document.activeElement, { key: '1' });
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'go');
+    });
+
+    it('takes the option on Enter rather than demanding a selection first', () => {
+      // With nothing to choose between, Enter used to fail validation with
+      // "Please select an option" — a dead end on a Continue button.
+      renderDialog(soleOption);
+      finishText();
+
+      fireEvent.keyDown(document.activeElement, { key: 'Enter' });
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'go');
+      expect(screen.queryByText(/Please select an option/i)).toBeNull();
+    });
+
+    it('keeps the prompt and the bindings when there is a real choice', () => {
+      renderDialog();
+      finishText();
+
+      expect(buttonFor('Touch it').textContent).toBe('[1] Touch it');
+      expect(screen.getByText(/Press 1-2 to select/i)).toBeInTheDocument();
+    });
   });
 
   it('submits the selected choice value (not its label or index)', () => {
@@ -528,7 +558,7 @@ describe('EventDialog', () => {
       fireEvent.click(stage); // finish beat two's typewriter
       expect(screen.getByText('Stage one, beat two.').textContent).toBe('Stage one, beat two.');
       fireEvent.click(stage);
-      expect(buttonFor('Go on').textContent).toBe('[1] Go on');
+      expect(buttonFor('Go on').textContent).toBe('Go on');
 
       // The server answers with the next stage of the SAME event; the dialog is
       // never unmounted in between.
@@ -545,7 +575,7 @@ describe('EventDialog', () => {
       expect(screen.getByText('Stage two, beat two.').textContent).toBe('Stage two, beat two.');
       fireEvent.click(stage);
       // The way out reappears — this is the assertion the soft-lock broke.
-      expect(buttonFor('Go on').textContent).toBe('[1] Go on');
+      expect(buttonFor('Go on').textContent).toBe('Go on');
       // ...and it still submits the right value after the stage swap.
       fireEvent.click(screen.getByText('Go on'));
       expect(mockOnSubmitInput).toHaveBeenCalledWith('guide-1', 'go');
@@ -672,9 +702,14 @@ describe('EventDialog', () => {
         expect(screen.getByText(/his voice low and rough from disuse/).textContent)
           .toContain('his voice low and rough from disuse.');
 
-        // isComplete is now true: the Close affordance and its hint render.
-        expect(screen.getByRole('button', { name: /^Close$/i })).not.toBeNull();
-        expect(screen.getByText(/or click anywhere to continue/i)).not.toBeNull();
+        // isComplete is now true: ONE dismissal affordance renders (issue
+        // #538 item 3). The stage's own advance hint has retired and the
+        // "or click anywhere to continue…" line is gone — clicking the body
+        // still closes, it is simply no longer advertised beside two other
+        // controls.
+        expect(screen.getByRole('button', { name: /^CLOSE$/ })).not.toBeNull();
+        expect(screen.queryByText(/or click anywhere to continue/i)).toBeNull();
+        expect(screen.queryByText(/click to finish/i)).toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: '✕' }));
         expect(mockOnClose).toHaveBeenCalledTimes(1);
@@ -788,20 +823,27 @@ describe('EventDialog', () => {
   });
 
   describe('dialog title', () => {
-    // Every (name, type) pair below is a REAL one from src/story/*.py: `type`
-    // is the Python class name and `name` the value its __init__ passes to
-    // Event.__init__. The dialog hides internal identifiers behind "Event" and
-    // shows only prose names.
+    // Issue #538 item 3: every scripted scene now carries the SAME title. The
+    // old title was derived from the event's `name`, which produced "✨ EVENT"
+    // for one chain and "✨ EVENT RESULT" for the very next frame of the same
+    // conversation — two names for one thing, decided by which code path built
+    // it. Every (name, type) pair below is a REAL one from src/story/*.py.
     it.each([
-      ['a prose name', 'The Whispering Statue', 'WhisperingStatue', '✨ The Whispering Statue'],
-      ['a spaced prose name', 'Gold From Heaven', 'GoldFromHeaven', '✨ Gold From Heaven'],
-      ['a name identical to the class name', 'Ch02ArenaEntrance', 'Ch02ArenaEntrance', '✨ Event'],
-      ['a PascalCase identifier', 'AnvilIntro', 'AnvilIntroEvent', '✨ Event'],
-      ['a snake_case identifier', 'Ch02_GuideToCitadel', 'Ch02GuideToCitadel', '✨ Event'],
-      ['no name at all', undefined, 'LootEvent', '✨ Event'],
-    ])('uses %s', (_label, name, type, expected) => {
+      ['a prose name', 'The Whispering Statue', 'WhisperingStatue'],
+      ['a spaced prose name', 'Gold From Heaven', 'GoldFromHeaven'],
+      ['a name identical to the class name', 'Ch02ArenaEntrance', 'Ch02ArenaEntrance'],
+      ['a PascalCase identifier', 'AnvilIntro', 'AnvilIntroEvent'],
+      ['a snake_case identifier', 'Ch02_GuideToCitadel', 'Ch02GuideToCitadel'],
+      ['no name at all', undefined, 'LootEvent'],
+      ['the synthetic Event Result frame', 'Event Result', 'EventResult'],
+    ])('reads "✨ STORY" for %s', (_label, name, type) => {
       renderDialog({ event_id: 't1', name, type, output_text: 'x', needs_input: false });
-      expect(screen.getByText(expected).textContent).toBe(expected);
+      expect(screen.getByText('✨ STORY').textContent).toBe('✨ STORY');
+    });
+
+    it('keeps the memory flash its own title', () => {
+      renderDialog({ event_id: 't1', type: 'MemoryFlash', output_text: 'x', needs_input: false });
+      expect(screen.getByText('✧ A Memory Stirs ✧')).toBeInTheDocument();
     });
   });
 

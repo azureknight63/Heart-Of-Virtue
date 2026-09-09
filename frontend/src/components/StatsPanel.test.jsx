@@ -143,7 +143,7 @@ describe('StatsPanel', () => {
   });
 
 
-  it.each([['✕'], ['CLOSE SHEET']])(
+  it.each([['✕'], ['CLOSE']])(
     'calls onClose exactly once from the %s control',
     (label) => {
       // Two separate affordances close this sheet; the old file only covered

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Final
 from src.coordinate_config import CoordinateSystemConfig
 from src.narration import narrate
+from src.journal import Journal
 
 RESOURCES_DIR: Final = Path(__file__).parent / "resources"
 
@@ -51,6 +52,26 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.testing_mode = False  # test mode flag from config
         self.game_config = None  # full GameConfig object for access to all settings
         self.coordinate_config = None  # CoordinateSystemConfig for grid positioning
+
+    @property
+    def journal(self):
+        """The playthrough's :class:`~src.journal.Journal`, created on first access.
+
+        A lazy property rather than an ``__init__`` assignment because saves are
+        pickled ``Universe`` instances (see ``GameService.save_game``): every
+        save written before the journal existed unpickles without the attribute,
+        and ``__init__`` does not run on unpickling. Reading it here builds a
+        fresh journal for those saves instead of raising ``AttributeError`` deep
+        inside a story event.
+        """
+        # `setdefault` rather than get-then-set: two requests on one session
+        # can otherwise each build a Journal, and whichever lost the race has
+        # its recorded scene silently discarded. Same pattern as
+        # `Combatant.wire_handle`.
+        journal = self.__dict__.get("_journal")
+        if journal is None:
+            journal = self.__dict__.setdefault("_journal", Journal())
+        return journal
 
     def get_tile(self, x, y):
         """Get tile at coordinates from the current player's map."""

@@ -7,6 +7,16 @@ from src.functions import print_slow, await_input
 import time
 from src import items
 from src.story.effects import MemoryFlash
+from src.journal import (
+    complete_objective,
+    set_objective,
+    OBJ_CH01_FOLLOW_GORRAN,
+    OBJ_CH02_EXPLORE_GRONDIA,
+    OBJ_CH02_FIND_MARA,
+    OBJ_CH02_HEAD_EAST,
+    OBJ_CH02_KING_SLIME,
+    OBJ_CH02_VOTHA_KRR,
+)
 from src.narration import (
     narrate,
     say,
@@ -49,6 +59,24 @@ class AfterDefeatingLurker(Event):
         # Beta end: story continuation to Grondia is disabled for beta testing.
         # The player can continue exploring Verdette Caverns freely.
         pass
+
+
+#: The beta route, authored once. The briefing renders it as its numbered task
+#: list and the journal stores it as the player's objectives, so the two can
+#: never drift — which they had already begun to do when they were separate
+#: literals a hundred lines apart.
+_BETA_ROUTE = (
+    (OBJ_CH02_EXPLORE_GRONDIA, "Explore Grondia and speak with its inhabitants."),
+    (OBJ_CH02_KING_SLIME, "Reach the Grondelith Mineral Pools and defeat the King Slime."),
+    (OBJ_CH02_VOTHA_KRR, "Return to the Citadel and speak with Votha Krr."),
+    (OBJ_CH02_HEAD_EAST, "Exit Grondia and head east to the river."),
+    (OBJ_CH02_FIND_MARA, "Find Mara at the river camp and arrange a crossing."),
+)
+
+#: The route as the briefing modal shows it: "1. …\n\n2. …".
+_BETA_ROUTE_PROSE = "\n\n".join(
+    "%d. %s" % (index, text) for index, (_key, text) in enumerate(_BETA_ROUTE, start=1)
+)
 
 
 class BetaTesterBriefing(Event):
@@ -97,11 +125,7 @@ class BetaTesterBriefing(Event):
                 "── BETA TESTER NOTICE ──\n\n"
                 "Welcome to the Grondia arc beta. Your task is to play through the sequence below and "
                 "note anything that feels broken, inconsistent, or unclear:\n\n"
-                "1. Explore Grondia and speak with its inhabitants.\n\n"
-                "2. Reach the Grondelith Mineral Pools and defeat the King Slime.\n\n"
-                "3. Return to the Citadel and speak with Votha Krr.\n\n"
-                "4. Exit Grondia and head east to the river.\n\n"
-                "5. Find Mara at the river camp and attempt to cross.\n\n"
+                + _BETA_ROUTE_PROSE + "\n\n"
                 "Use the Feedback button (left panel) to record anything worth reporting.\n"
                 "If you send feedback with your name or contact, you will be listed in the game credits.\n"
                 "Anonymous feedback is still valuable — you just won’t be credited.\n\n"
@@ -115,6 +139,11 @@ class BetaTesterBriefing(Event):
         elif self._stage == 3:
             self.needs_input = False
             self.completed = True
+            complete_objective(self.player, OBJ_CH01_FOLLOW_GORRAN)
+            # The five steps this briefing just listed, recorded where the
+            # player can re-read them after the modal closes (issue #538).
+            for key, text in _BETA_ROUTE:
+                set_objective(self.player, key, text, chapter=2)
             if self.tile is not None and self in self.tile.events_here:
                 self.tile.events_here.remove(self)
 
@@ -594,6 +623,7 @@ class AfterDefeatingKingSlime(Event):
 
         # Set the story flag so AfterKingSlimeReturn can fire later
         self.player.universe.story["king_slime_defeated"] = "1"
+        complete_objective(self.player, OBJ_CH02_KING_SLIME)
 
         # Teleport Gorran to the arena. He lives as an ally NPC; find him wherever
         # he currently is (atrium fallback, then combat_list_allies).
@@ -828,6 +858,7 @@ class Ch02GorranAtPools(Event):
             await_input()
 
         self.player.universe.story["gorran_at_pools"] = "1"
+        complete_objective(self.player, OBJ_CH02_EXPLORE_GRONDIA)
         self.tile.remove_event(self.name)
 
 
@@ -1265,4 +1296,5 @@ class AfterKingSlimeReturn(Event):
             self.needs_input = False
             self.completed = True
             self.player.universe.story["votha_krr_response_given"] = "1"
+            complete_objective(self.player, OBJ_CH02_VOTHA_KRR)
             self.tile.remove_event(self.name)

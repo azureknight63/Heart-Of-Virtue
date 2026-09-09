@@ -23,7 +23,6 @@ export default function PreVictoryNarrativeDialog({ text, onClose }) {
             <div style={{ padding: spacing.lg }}>
                 <TypewriterOutput
                     text={text}
-                    speed={25}
                     onComplete={() => setIsComplete(true)}
                     style={{
                         border: `2px solid ${colors.secondary}`,

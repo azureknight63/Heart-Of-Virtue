@@ -81,7 +81,7 @@ GAME_SERVICE_PUBLIC_API = {
     "get_available_commands", "get_available_moves", "get_combat_state",
     "get_combat_status", "get_current_room", "get_current_tile",
     "get_current_tile_object", "get_equipment", "get_explored_tiles",
-    "get_inventory", "get_player_skills", "get_player_stats",
+    "get_inventory", "get_journal", "get_player_skills", "get_player_stats",
     "get_player_status", "get_shop_state", "get_tile", "get_world_info",
     "interact_with_target", "interact_with_tile", "is_player_dead",
     "learn_skill", "list_saves", "load_game", "move_player", "npc_chat_end",

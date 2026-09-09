@@ -17,6 +17,7 @@ export const player = {
   getFullState: () => apiClient.get('/full-state'),
   getStats: () => apiClient.get('/stats'),
   getSkills: () => apiClient.get('/skills'),
+  getJournal: () => apiClient.get('/journal'),
   learnSkill: (skillName, category) => apiClient.post('/skills/learn', { skill_name: skillName, category }),
   allocateLevelUpPoints: (attribute, amount) => apiClient.post('/level-up/allocate', { attribute, amount }),
 }

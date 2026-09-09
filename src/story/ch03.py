@@ -4,6 +4,15 @@ Chapter 03 events
 
 from src.events import Event, map_name_for_tile
 from src.functions import print_slow
+from src.journal import (
+    complete_objective,
+    set_objective,
+    OBJ_CH02_FIND_MARA,
+    OBJ_CH02_HEAD_EAST,
+    OBJ_CH03_CANVASS_CAMP,
+    OBJ_CH03_FERRY_LANDING,
+    OBJ_CH03_WALK_THE_CAMP,
+)
 from src.narration import (
     narrate,
     say,
@@ -184,6 +193,7 @@ class NomadCampSmellEvent(Event):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
             story["nomad_camp_entered"] = "1"
+        complete_objective(self.player, OBJ_CH02_HEAD_EAST)
 
 
 class CampEntryGreetingEvent(Event):
@@ -224,11 +234,9 @@ class CampEntryGreetingEvent(Event):
             narrate("\n")
             # time.sleep(0.3)
             print_slow(
-                "Jean stopped at the edge of the camp and let himself take it in — the fire, "
-                "the packed earth, the smell of food. The river was close enough to hear."
+                "Jean stopped at the edge of the packed earth and let himself take it in. "
+                "Gorran stood beside him. Said nothing. That was usual."
             )
-            # time.sleep(1)
-            print_slow("Gorran stood beside him. Said nothing. That was usual.")
             # time.sleep(0.5)
             begin_conversation(
                 [
@@ -317,6 +325,12 @@ class CampEntryGreetingEvent(Event):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
             story["camp_entry_greeting_done"] = "1"
+        set_objective(
+            self.player,
+            OBJ_CH03_CANVASS_CAMP,
+            "Ask around the nomad camp for a way across the river.",
+            chapter=3,
+        )
 
 
 class MaraFirstContactEvent(Event):
@@ -471,6 +485,22 @@ class MaraFirstContactEvent(Event):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
             story["mara_intro_done"] = "1"
+        complete_objective(self.player, OBJ_CH03_CANVASS_CAMP)
+        complete_objective(self.player, OBJ_CH02_FIND_MARA)
+        # Mara says "come back when the sun's lower". There is no clock in the
+        # game, so the objective states the actionable version instead.
+        # It names only Devet and Liss because those, with this scene, are the
+        # three gates MaraObservationEvent actually waits on — the forge is
+        # optional, and an objective must not send the player after something
+        # the game does not require.
+        set_objective(
+            self.player,
+            OBJ_CH03_WALK_THE_CAMP,
+            "Mara will ferry Jean across once her raft is restrung. Speak with "
+            "Devet at the fire and with Liss, then return to Mara at the "
+            "river's edge.",
+            chapter=3,
+        )
 
 
 class DevetIntroEvent(Event):
@@ -1194,6 +1224,13 @@ class MaraObservationEvent(Event):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
             story["nomad_ferry_ready"] = "1"
+        complete_objective(self.player, OBJ_CH03_WALK_THE_CAMP)
+        set_objective(
+            self.player,
+            OBJ_CH03_FERRY_LANDING,
+            "Meet Mara at the ferry landing to cross the river.",
+            chapter=3,
+        )
 
 
 class DemoEndEvent(Event):
@@ -1232,3 +1269,6 @@ class DemoEndEvent(Event):
             time.sleep(1)
             print_slow("\n[Be sure to submit feedback using the Feedback button at the top of the UI, next to 'Account'. Thank you for helping to make this game better! -Alex]\n")
             time.sleep(1)
+        # Outside the skip_dialog guard: the journal must agree with the
+        # story state whether or not the prose was shown.
+        complete_objective(self.player, OBJ_CH03_FERRY_LANDING)

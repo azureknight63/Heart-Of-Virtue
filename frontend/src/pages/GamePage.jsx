@@ -12,6 +12,7 @@ import { colors, spacing, fonts } from '../styles/theme'
 import { combat as combatApi } from '../api/endpoints'
 import GameText from '../components/GameText'
 import { useAudio } from '../context/AudioContext'
+import { usePreferences } from '../context/PreferencesContext'
 import { useToast } from '../context/ToastContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
@@ -35,7 +36,8 @@ export default function GamePage() {
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combatSocketStreaming } = useCapabilities()
-  const { playBGM, playSFX, playSting, combatSpeed } = useAudio()
+  const { playBGM, playSFX, playSting } = useAudio()
+  const { combatSpeed } = usePreferences()
   const { error: showError } = useToast()
 
   // The server answers an in-game refusal (not enough fatigue, move on

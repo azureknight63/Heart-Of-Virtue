@@ -89,7 +89,7 @@ export default function AccountDialog({ player, onClose }) {
           Main Menu
         </GameButton>
         <GameButton onClick={onClose} variant="secondary">
-          Close
+          CLOSE
         </GameButton>
         {/* An outline danger button, not a solid fill — it should read as
             "this is the destructive one", not "this is the most important

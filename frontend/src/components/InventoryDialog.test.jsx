@@ -137,7 +137,7 @@ describe('InventoryDialog', () => {
     // only as "changes on hover, restores on leave", not against a hardcoded
     // color GameButton doesn't own.
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
-    const closeBtn = screen.getByText('Close');
+    const closeBtn = screen.getByText('CLOSE');
     const resting = closeBtn.style.backgroundColor;
 
     fireEvent.mouseEnter(closeBtn);
@@ -149,7 +149,7 @@ describe('InventoryDialog', () => {
 
   it('renders the Close button with the app-wide uppercase button convention', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
-    const closeBtn = screen.getByText('Close');
+    const closeBtn = screen.getByText('CLOSE');
     expect(closeBtn.style.textTransform).toBe('uppercase');
     // GameButton's secondary variant — highlight-colored outline, not the
     // previous plain grey. jsdom normalizes the hex literal to rgb().
@@ -175,7 +175,7 @@ describe('InventoryDialog', () => {
   it('calls onClose when close button is clicked', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
 
-    fireEvent.click(screen.getByText('Close'));
+    fireEvent.click(screen.getByText('CLOSE'));
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 

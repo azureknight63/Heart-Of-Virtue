@@ -93,11 +93,13 @@ from src.api.serializers.combat import (
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
 from src.items import IronArrow, Mace, Restorative, Shortbow
+import src.journal as journal
 from src.moves import Attack, PowerStrike, ShootBow, Wait
 from src.moves._mastery import BloodOfMartyrs
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
+from src.universe import Universe
 import src.states as states
 from tests._cite import Read, unverifiable, verify
 from tests._gs_fixtures import GRID_3X3
@@ -1269,6 +1271,81 @@ class TestPlayerWireContract:
         payload = gs.get_player_stats(player)
         assert payload["states"], "expected the Poisoned state to be serialized"
         _assert_contract(payload["states"][0], PLAYER_STATE_ITEM_CONTRACT, "player.states[0]")
+
+
+# ============================================================================
+# Journal payload (issue #538)
+# ============================================================================
+# JournalDialog.jsx reads `response?.data?.journal` (GameService.get_journal ->
+# Journal.to_dict) and then indexes into its three lists. The per-item shapes
+# get their own contracts because an empty list would hide a rename on the
+# fields the rows actually read.
+
+JOURNAL_CONTRACT = {
+    "objectives": Read("JournalDialog.jsx", "journal?.objectives"),
+    "completed": Read("JournalDialog.jsx", "journal?.completed"),
+    "log": Read("JournalDialog.jsx", "journal?.log"),
+}
+
+JOURNAL_OBJECTIVE_CONTRACT = {
+    "key": Read("JournalDialog.jsx", "key={objective.key}"),
+    "text": Read("JournalDialog.jsx", "{objective.text}"),
+}
+
+JOURNAL_SCENE_CONTRACT = {
+    "title": Read("JournalDialog.jsx", "String(scene.title || '').toUpperCase()"),
+    "lines": Read("JournalDialog.jsx", "(scene.lines || []).map"),
+}
+
+JOURNAL_LINE_CONTRACT = {
+    "speaker": Read("JournalDialog.jsx", "{line.speaker && ("),
+    "text": Read("JournalDialog.jsx", "{line.text}"),
+}
+
+
+class TestJournalWireContract:
+    def _journal_payload(self):
+        """A journal with one of everything, produced by the real engine path.
+
+        Objectives and scenes are written through the module-level helpers the
+        story files call, and read back through the service method the route
+        calls -- so a rename anywhere along that chain fails here.
+        """
+        player = Player()
+        player.universe = Universe(player)
+        journal.set_objective(player, "cross_river", "Cross the river.", chapter=3)
+        journal.set_objective(player, "done_one", "Already handled.", chapter=3)
+        journal.complete_objective(player, "done_one")
+        GameService()._record_scene(
+            player,
+            "Jean stopped at the edge.",
+            [
+                {"text": "Jean stopped at the edge.", "in_conversation": False},
+                {"text": "Tents.", "speaker": "Jean", "in_conversation": True},
+            ],
+        )
+        return GameService().get_journal(player)
+
+    def test_journal_top_level_fields(self):
+        _assert_contract(self._journal_payload(), JOURNAL_CONTRACT, "get_journal()")
+
+    def test_journal_objective_fields(self):
+        payload = self._journal_payload()
+        assert payload["objectives"], "expected an active objective to serialize"
+        assert payload["completed"], "expected a completed objective to serialize"
+        _assert_contract(
+            payload["objectives"][0], JOURNAL_OBJECTIVE_CONTRACT, "journal.objectives[0]"
+        )
+        _assert_contract(
+            payload["completed"][0], JOURNAL_OBJECTIVE_CONTRACT, "journal.completed[0]"
+        )
+
+    def test_journal_scene_and_line_fields(self):
+        payload = self._journal_payload()
+        assert payload["log"], "expected the recorded scene to serialize"
+        scene = payload["log"][0]
+        _assert_contract(scene, JOURNAL_SCENE_CONTRACT, "journal.log[0]")
+        _assert_contract(scene["lines"][0], JOURNAL_LINE_CONTRACT, "journal.log[0].lines[0]")
 
 
 # ============================================================================

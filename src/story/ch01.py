@@ -19,6 +19,12 @@ from src.events import Event, tile_identity
 import src.objects as objects
 from src.functions import await_input
 from src.story.effects import MemoryFlash
+from src.journal import (
+    complete_objective,
+    set_objective,
+    OBJ_CH01_ESCAPE_GROTTO,
+    OBJ_CH01_FOLLOW_GORRAN,
+)
 
 # Recurring conversation casts, to avoid retyping the same tuple at every stage.
 _JEAN_SOLO = [("Jean", "left", "neutral")]
@@ -215,6 +221,12 @@ class Ch01DarkGrottoIntro(Event):
         elif self._stage == 3:
             self.needs_input = False
             self.completed = True
+            set_objective(
+                self.player,
+                OBJ_CH01_ESCAPE_GROTTO,
+                "Find a way out of the dark chamber.",
+                chapter=1,
+            )
             if self.tile is not None and self in self.tile.events_here:
                 self.tile.events_here.remove(self)
 
@@ -976,6 +988,13 @@ class AfterGorranIntro(Event):
                 # Reset moves if joining mid-combat
                 if self.player.in_combat:
                     gorran.reset_combat_moves()
+        complete_objective(self.player, OBJ_CH01_ESCAPE_GROTTO)
+        set_objective(
+            self.player,
+            OBJ_CH01_FOLLOW_GORRAN,
+            "Follow Gorran through the Verdette Caverns.",
+            chapter=1,
+        )
         self.player.teleport("verdette-caverns", (2, 1))
 
 

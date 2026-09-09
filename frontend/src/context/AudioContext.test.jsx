@@ -2,7 +2,9 @@ import { render, screen, fireEvent, act, renderHook } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.unmock('./AudioContext');
+vi.unmock('./PreferencesContext');
 import { AudioProvider, useAudio } from './AudioContext';
+import { PreferencesProvider } from './PreferencesContext';
 import React from 'react';
 
 // Mock Audio constructor
@@ -27,15 +29,38 @@ class MockAudio {
 }
 global.Audio = MockAudio;
 
+/**
+ * AudioProvider reads its volumes from PreferencesProvider, so every render
+ * here nests the pair. Preferences are seeded through localStorage — the same
+ * route a real session takes — rather than by injecting a fake context, so
+ * these tests exercise the wiring between the two providers instead of
+ * assuming it.
+ */
+const Providers = ({ children }) => (
+    <PreferencesProvider>
+        <AudioProvider>{children}</AudioProvider>
+    </PreferencesProvider>
+);
+
+/**
+ * Seed a preference the way a returning player's browser does.
+ *
+ * Mutes and volumes are no longer AudioProvider's own state, so a test cannot
+ * set one through `useAudio()`. Writing the stored blob before render is the
+ * honest substitute: it goes through `loadPreferences`, so these tests keep
+ * proving that a stored mute actually reaches the media element rather than
+ * that a hand-injected context value does.
+ */
+const withPreferences = (prefs) =>
+    localStorage.setItem('audioPreferences', JSON.stringify(prefs));
+
 const TestComponent = () => {
-    const { playBGM, stopBGM, playSFX, musicVolume, sfxVolume } = useAudio();
+    const { playBGM, stopBGM, playSFX } = useAudio();
     return (
         <div>
             <button onClick={() => playBGM('adventure')}>Play BGM</button>
             <button onClick={() => stopBGM()}>Stop BGM</button>
             <button onClick={() => playSFX('click')}>Play SFX</button>
-            <div data-testid="music-volume">{musicVolume}</div>
-            <div data-testid="sfx-volume">{sfxVolume}</div>
         </div>
     );
 };
@@ -47,17 +72,6 @@ describe('AudioContext', () => {
         global.__audioInstances = [];
     });
 
-    it('provides music and sfx controls', () => {
-        render(
-            <AudioProvider>
-                <TestComponent />
-            </AudioProvider>
-        );
-
-        expect(screen.getByTestId('music-volume').textContent).toBe('0.5');
-        expect(screen.getByTestId('sfx-volume').textContent).toBe('0.5');
-    });
-
     it('plays and stops BGM', () => {
         // This test had NO assertions at all — it clicked both buttons and
         // ended. Every line of playBGM/stopBGM could have been deleted and it
@@ -65,9 +79,9 @@ describe('AudioContext', () => {
         // the shared <audio> element: load the track, start it, and on stop
         // pause it and clear the current-track state.
         render(
-            <AudioProvider>
+            <Providers>
                 <TestComponent />
-            </AudioProvider>
+            </Providers>
         );
         const bgmElement = global.__audioInstances[0];
 
@@ -92,7 +106,7 @@ describe('AudioContext', () => {
         ['jambos_tent', 'Jambo Heals U.mp3'],
         ['iron_and_oath', 'We Got The Gear.mp3'],
     ])('loads the titled asset for the %s location track', (trackName, filename) => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM(trackName); });
@@ -106,9 +120,9 @@ describe('AudioContext', () => {
         // The early-return guard is what stops a re-render from restarting the
         // map theme from the top on every poll.
         render(
-            <AudioProvider>
+            <Providers>
                 <TestComponent />
-            </AudioProvider>
+            </Providers>
         );
         const bgmElement = global.__audioInstances[0];
 
@@ -122,7 +136,7 @@ describe('AudioContext', () => {
         // When playBGM('memory_flash') is called it used to update currentBGM state,
         // which recreated the playBGM function reference, which retriggered the BGM
         // useEffect in GamePage (mode === 'combat') and called playBGM('battle') again.
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         const firstRef = result.current.playBGM;
@@ -139,64 +153,8 @@ describe('AudioContext', () => {
         expect(afterMemoryFlash).toBe(firstRef);
     });
 
-    it('loads preferences from localStorage', () => {
-        const prefs = {
-            musicVolume: 0.8,
-            sfxVolume: 0.2,
-            isMusicMuted: true,
-            isSfxMuted: false
-        };
-        localStorage.setItem('audioPreferences', JSON.stringify(prefs));
-
-        render(
-            <AudioProvider>
-                <TestComponent />
-            </AudioProvider>
-        );
-
-        expect(screen.getByTestId('music-volume').textContent).toBe('0.8');
-        expect(screen.getByTestId('sfx-volume').textContent).toBe('0.2');
-    });
-
-    it('falls back to defaults when stored preferences are corrupt JSON', () => {
-        localStorage.setItem('audioPreferences', '{not valid json');
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-        render(
-            <AudioProvider>
-                <TestComponent />
-            </AudioProvider>
-        );
-
-        expect(screen.getByTestId('music-volume').textContent).toBe('0.5');
-        expect(screen.getByTestId('sfx-volume').textContent).toBe('0.5');
-        // Naming the message and the payload: a bare toHaveBeenCalled() passed
-        // even when the warning came from an unrelated code path.
-        expect(warnSpy).toHaveBeenCalledWith('Failed to load audio preferences:', expect.any(SyntaxError));
-        warnSpy.mockRestore();
-    });
-
-    it('does not throw when localStorage.setItem fails while saving preferences', () => {
-        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-            throw new Error('quota exceeded');
-        });
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-        expect(() => {
-            render(
-                <AudioProvider>
-                    <TestComponent />
-                </AudioProvider>
-            );
-        }).not.toThrow();
-
-        expect(warnSpy).toHaveBeenCalledWith('Failed to save audio preferences:', expect.any(Error));
-        warnSpy.mockRestore();
-        setItemSpy.mockRestore();
-    });
-
     it('does not restart a track that is already playing', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('battle'); });
@@ -214,7 +172,7 @@ describe('AudioContext', () => {
 
     it('fades out the current track before switching, then fades in the new one', () => {
         vi.useFakeTimers();
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('battle'); });
@@ -236,7 +194,7 @@ describe('AudioContext', () => {
 
     it('plays a sting and restores the previous BGM when it ends', () => {
         vi.useFakeTimers();
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('battle'); });
@@ -262,7 +220,7 @@ describe('AudioContext', () => {
 
     it('restores looping when a new BGM takes over mid-sting', () => {
         vi.useFakeTimers();
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playSting('fanfare'); });
@@ -283,7 +241,7 @@ describe('AudioContext', () => {
     });
 
     it('restores looping when the BGM is stopped mid-sting', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playSting('fanfare'); });
@@ -297,7 +255,7 @@ describe('AudioContext', () => {
     });
 
     it('does not restore the previous BGM if it changed during the sting', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('battle'); });
@@ -312,30 +270,40 @@ describe('AudioContext', () => {
         expect(result.current.currentBGM).toBeNull();
     });
 
-    it('mutes BGM volume when isMusicMuted is set', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+    it('silences BGM playback when the stored preference is muted', () => {
+        withPreferences({ isMusicMuted: true });
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
-        act(() => { result.current.setIsMusicMuted(true); });
-        expect(result.current.isMusicMuted).toBe(true);
-    });
-
-    it('silences BGM playback when isMusicMuted is set', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
-        const { result } = renderHook(() => useAudio(), { wrapper });
-
-        act(() => { result.current.setIsMusicMuted(true); });
         act(() => { result.current.playBGM('battle'); });
 
         const bgmInstance = global.__audioInstances.find(a => a.src.includes('Crossing Blades.mp3'));
         expect(bgmInstance.volume).toBe(0);
     });
 
-    it('silences the sting when isMusicMuted is set', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+    it('fades a BGM up towards the stored volume when not muted', () => {
+        // The positive control for the test above: without it, a provider that
+        // silenced everything unconditionally would satisfy the mute test.
+        // playBGM fades in from 0, so the observable is that the fade RUNS and
+        // climbs, not the volume on the first frame.
+        vi.useFakeTimers();
+        withPreferences({ isMusicMuted: false, musicVolume: 0.4 });
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
-        act(() => { result.current.setIsMusicMuted(true); });
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(1000); });
+
+        const bgmInstance = global.__audioInstances.find(a => a.src.includes('Crossing Blades.mp3'));
+        expect(bgmInstance.volume).toBeCloseTo(0.4, 5);
+        vi.useRealTimers();
+    });
+
+    it('silences the sting when the stored preference is muted', () => {
+        withPreferences({ isMusicMuted: true });
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
         act(() => { result.current.playSting('fanfare'); });
 
         const stingInstance = global.__audioInstances.find(a => a.src.includes('bgm_fanfare'));
@@ -343,7 +311,7 @@ describe('AudioContext', () => {
     });
 
     it('builds a fallback path for a BGM track not in BGM_MAP', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('custom_track'); });
@@ -358,7 +326,7 @@ describe('AudioContext', () => {
     });
 
     it('builds a fallback path for a sting not in BGM_MAP', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playSting('custom_sting'); });
@@ -369,38 +337,34 @@ describe('AudioContext', () => {
         expect(instance.loop).toBe(false);
     });
 
-    it('mutes SFX volume when isSfxMuted is set', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+    it('mutes SFX volume when the stored preference is muted', () => {
+        withPreferences({ isSfxMuted: true });
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         // The old assertion was `isSfxMuted === true` — i.e. it re-read the
         // state it had just set, and would have passed with the mute flag
         // ignored by playSFX entirely. What matters is the element's volume.
-        act(() => { result.current.setIsSfxMuted(true); });
         act(() => { result.current.playSFX('click'); });
         const muted = global.__audioInstances[global.__audioInstances.length - 1];
         expect(muted.src).toContain('sounds/sfx/click.wav');
         expect(muted.volume).toBe(0);
         expect(muted.play).toHaveBeenCalledTimes(1);
 
-        // Unmuting restores the configured sfxVolume on the NEXT cue.
-        act(() => { result.current.setIsSfxMuted(false); });
-        act(() => { result.current.setSfxVolume(0.3); });
-        act(() => { result.current.playSFX('click'); });
-        const unmuted = global.__audioInstances[global.__audioInstances.length - 1];
-        expect(unmuted).not.toBe(muted);
-        expect(unmuted.volume).toBe(0.3);
     });
 
-    it('updates music and sfx volume via setters', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+    it('plays SFX at the stored volume when not muted', () => {
+        // The positive control for the test above: a provider that silenced
+        // every cue unconditionally would satisfy the mute assertion alone.
+        withPreferences({ isSfxMuted: false, sfxVolume: 0.3 });
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
-        act(() => { result.current.setMusicVolume(0.9); });
-        act(() => { result.current.setSfxVolume(0.1); });
+        act(() => { result.current.playSFX('click'); });
 
-        expect(result.current.musicVolume).toBe(0.9);
-        expect(result.current.sfxVolume).toBe(0.1);
+        const cue = global.__audioInstances[global.__audioInstances.length - 1];
+        expect(cue.src).toContain('sounds/sfx/click.wav');
+        expect(cue.volume).toBe(0.3);
     });
 
     it('warns but does not throw when SFX playback fails', async () => {
@@ -417,7 +381,7 @@ describe('AudioContext', () => {
         };
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         await act(async () => {
@@ -437,7 +401,7 @@ describe('AudioContext', () => {
         // ended cue no longer counts toward the cap. This test pins that the
         // handler is installed on the right instance and is safe to fire more
         // than once, which is what a browser can do on seek/replay.
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playSFX('click'); });
@@ -455,7 +419,7 @@ describe('AudioContext', () => {
         // A layered impact burst (or a stuck onended) must not pile up an
         // unbounded number of live media elements: past the cap the oldest
         // still-active one-shot is paused and released before a new one starts.
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => {
@@ -475,7 +439,7 @@ describe('AudioContext', () => {
         // set keeps the callback closure and the loaded resource pinned to a
         // media element that is only waiting for GC — an evicted element must
         // hold neither.
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => {
@@ -494,7 +458,7 @@ describe('AudioContext', () => {
     });
 
     it('defaults SFX playbackRate to 1x with pitch preserved', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playSFX('click'); });
@@ -505,7 +469,7 @@ describe('AudioContext', () => {
     });
 
     it('sets playbackRate from the passed combat-speed multiplier (issue #460)', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playSFX('attack_swipe', 2); });
@@ -516,7 +480,7 @@ describe('AudioContext', () => {
     });
 
     it('normalizes an invalid speed to 1x rather than setting a zero/negative playbackRate', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playSFX('attack_swipe', 0); });
@@ -526,82 +490,25 @@ describe('AudioContext', () => {
         expect(global.__audioInstances[global.__audioInstances.length - 1].playbackRate).toBe(1);
     });
 
-    it('defaults combatSpeed to 1x and persists changes via setCombatSpeed', () => {
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
-        const { result } = renderHook(() => useAudio(), { wrapper });
-
-        expect(result.current.combatSpeed).toBe(1);
-
-        act(() => { result.current.setCombatSpeed(1.5); });
-        expect(result.current.combatSpeed).toBe(1.5);
-
-        const saved = JSON.parse(localStorage.getItem('audioPreferences'));
-        expect(saved.combatSpeed).toBe(1.5);
-    });
-
-    it('normalizes a corrupted stored combatSpeed (0/negative/non-numeric) to the 1x default', () => {
-        localStorage.setItem('audioPreferences', JSON.stringify({
-            musicVolume: 0.5,
-            sfxVolume: 0.5,
-            isMusicMuted: false,
-            isSfxMuted: false,
-            combatSpeed: 0
-        }));
-
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
-        const { result } = renderHook(() => useAudio(), { wrapper });
-
-        expect(result.current.combatSpeed).toBe(1);
-    });
-
-    it('loads combatSpeed from localStorage', () => {
-        localStorage.setItem('audioPreferences', JSON.stringify({
-            musicVolume: 0.5,
-            sfxVolume: 0.5,
-            isMusicMuted: false,
-            isSfxMuted: false,
-            combatSpeed: 2
-        }));
-
-        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
-        const { result } = renderHook(() => useAudio(), { wrapper });
-
-        expect(result.current.combatSpeed).toBe(2);
-    });
-
     it('exposes no-op defaults when used outside an AudioProvider', () => {
         const { result } = renderHook(() => useAudio());
 
-        expect(result.current.musicVolume).toBe(0.5);
-        expect(result.current.sfxVolume).toBe(0.5);
-        expect(result.current.isMusicMuted).toBe(false);
-        expect(result.current.isSfxMuted).toBe(false);
         expect(result.current.currentBGM).toBeNull();
-        expect(result.current.combatSpeed).toBe(1);
 
         // These are no-ops, so "doesn't throw" was the whole assertion — but a
         // no-op that silently constructs an <audio> element, or that mutates
         // the context it was told not to, is exactly the leak this default
-        // exists to prevent. Assert both halves.
+        // exists to prevent. Assert both halves. (The preference half of this
+        // guard now lives in PreferencesContext.test.jsx, with the setters.)
         global.__audioInstances = [];
         act(() => {
             result.current.playBGM('adventure');
             result.current.stopBGM();
             result.current.playSFX('click');
             result.current.playSting('memory_flash');
-            result.current.setMusicVolume(0.2);
-            result.current.setSfxVolume(0.2);
-            result.current.setIsMusicMuted(true);
-            result.current.setIsSfxMuted(true);
-            result.current.setCombatSpeed(2);
         });
 
         expect(global.__audioInstances).toHaveLength(0);
-        expect(result.current.musicVolume).toBe(0.5);
-        expect(result.current.sfxVolume).toBe(0.5);
-        expect(result.current.isMusicMuted).toBe(false);
-        expect(result.current.isSfxMuted).toBe(false);
-        expect(result.current.combatSpeed).toBe(1);
         expect(result.current.currentBGM).toBeNull();
     });
 });

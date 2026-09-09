@@ -28,11 +28,14 @@ describe('PreVictoryNarrativeDialog', () => {
     return { onClose, finish }
   }
 
-  it('forwards the narration text and speed to the typewriter', () => {
+  it('forwards the narration text, and no speed of its own, to the typewriter', () => {
+    // Issue #538: this used to pin speed={25}, opting the victory narration
+    // out of the player's TEXT SPEED setting. Omitting the prop is what makes
+    // TypewriterOutput fall through to `msPerChar(textSpeed)`.
     setup('The camp erupts in cheers.')
     const tw = screen.getByTestId('typewriter')
     expect(tw.textContent).toContain('The camp erupts in cheers.')
-    expect(tw.getAttribute('data-speed')).toBe('25')
+    expect(tw.getAttribute('data-speed')).toBe('undefined')
   })
 
   it('titles itself Victory', () => {
