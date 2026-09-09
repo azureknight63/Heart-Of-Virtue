@@ -123,3 +123,39 @@ export const hostilityTokenFor = (entity) => {
   if (entity?.is_ally === true) return HOSTILITY_TOKENS.ally;
   return null;
 };
+
+/**
+ * The token for an entity that should be marked ONLY when hostile.
+ *
+ * The room panel's policy: `is_hostile: false` there means "not aggressive" —
+ * a villager, a merchant — so badging it ALLY would assert something the
+ * payload never said. The target picker's policy differs (`is_ally: true` is a
+ * real party member), which is why both live here beside the tokens rather
+ * than one of them living in a component.
+ */
+export const hostileTokenFor = (entity) =>
+  (isHostileEntity(entity) === true ? HOSTILITY_TOKENS.hostile : null)
+
+/**
+ * Is any LIVING enemy outside the Follow viewport centred on Jean?
+ *
+ * Lives here, beside `isLiving`, rather than in Battlefield: the battlefield
+ * camera hook asks this question, and passing it in as a bare function gave
+ * the hook no checkable contract — any caller could have supplied a different
+ * predicate silently. `halfView` is the viewport's half-extent in cells,
+ * supplied by the caller that owns the grid size.
+ */
+export const anyEnemyOutsideView = (state, halfView) => {
+  const player = state?.player;
+  const enemies = state?.enemies;
+  if (!player?.position || !enemies?.length) return false;
+  const px = player.position.x;
+  const py = player.position.y;
+  for (const e of enemies) {
+    if (!isLiving(e)) continue;
+    const ep = e.position;
+    if (!ep) continue;
+    if (Math.abs(ep.x - px) > halfView || Math.abs(ep.y - py) > halfView) return true;
+  }
+  return false;
+};

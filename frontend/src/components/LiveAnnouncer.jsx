@@ -2,10 +2,8 @@
  * A visually-hidden polite live region — the screen-reader channel for content
  * that appears without focus moving.
  *
- * Shared because CombatLog and NpcChatPanel had grown byte-identical copies of
- * the same 11-property hidden style block and the same "announce the newest
- * one" shape, and they had already drifted: only one of them carried the
- * re-announce key below.
+ * CombatLog and NpcChatPanel both announce through this one region, so the
+ * hidden-style block and the "announce the newest one" shape exist once.
  *
  * `seq` is load-bearing. A polite region announces a DOM CHANGE, not a value —
  * re-feeding it an identical string writes the same text node, mutates

@@ -1,6 +1,6 @@
 import { colors, spacing } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
-import { HOSTILITY_TOKENS, isHostileEntity } from '../utils/combatEntities'
+import { HOSTILITY_TOKENS, isHostileEntity, hostileTokenFor } from '../utils/combatEntities'
 import HostilityChip from './HostilityChip'
 
 /**
@@ -20,8 +20,11 @@ import HostilityChip from './HostilityChip'
  * colour, that carries the warning (issue #558).
  */
 function hostileMarkerFor(content) {
+  // Only the type guard is this panel's business; the hostility policy lives
+  // with the tokens (utils/combatEntities.js) so there is one documented way
+  // to ask, not a component-local second entry point.
   if (content.type !== 'npc') return null
-  return isHostileEntity(content.entity) === true ? HOSTILITY_TOKENS.hostile : null
+  return hostileTokenFor(content.entity)
 }
 
 export default function RoomContents({ location, onInteract }) {

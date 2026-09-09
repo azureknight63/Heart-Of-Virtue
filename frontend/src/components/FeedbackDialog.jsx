@@ -59,7 +59,7 @@ const labelStyle = {
  * Deliberately a <span> and NOT a <label htmlFor>: two of its uses caption a
  * button group ("Severity") and a set of star buttons ("Ratings (optional)"),
  * neither of which is a labelable form control, so `htmlFor` would be invalid
- * there. The controls carry their own `aria-label` instead — the established
+ * there. The controls carry their own `aria-label` (or, for the star buttons, a `title`) instead — the established
  * idiom in this codebase — which is why every field must pass `ariaLabel`
  * matching its caption (#563 item 2).
  */
@@ -280,6 +280,8 @@ function GeneralForm({ fields, onChange, ratings, onRatingChange }) {
       <div>
         <FieldLabel>Ratings (optional)</FieldLabel>
         <div
+          role="group"
+          aria-label="Ratings"
           style={{
             backgroundColor: colors.bg.panel,
             border: `1px solid ${colors.primary}22`,
@@ -544,7 +546,7 @@ export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
       {submitError && (
         <div
           role="alert"
-          style={{ ...commonStyles.errorBox, padding: '8px 12px', marginTop: spacing.md }}
+          style={{ ...commonStyles.errorBox, marginTop: spacing.md }}
         >
           ⚠ {submitError} Your report is still here — you can try again.
         </div>

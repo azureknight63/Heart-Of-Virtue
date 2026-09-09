@@ -5,7 +5,7 @@ import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './B
 import BeatTimeline from './BeatTimeline'
 import GlossaryHelpButton from './GlossaryHelpButton'
 import { accessibility, colors, spacing } from '../styles/theme'
-import { isLiving } from '../utils/combatEntities'
+import { isLiving, anyEnemyOutsideView } from '../utils/combatEntities'
 import { useFeatureFlag } from '../utils/featureFlags'
 import { useMobile } from '../hooks/useMobile'
 import { useCoarsePointer } from '../hooks/useCoarsePointer'
@@ -31,21 +31,9 @@ const VIEW_MODE_OPTIONS = [
   },
 ];
 
-// Any living enemy whose position lies outside the zoomed viewport centered on Jean.
-function anyEnemyOffScreen(state) {
-  const player = state?.player;
-  const enemies = state?.enemies;
-  if (!player?.position || !enemies?.length) return false;
-  const px = player.position.x;
-  const py = player.position.y;
-  for (const e of enemies) {
-    if (!isLiving(e)) continue;
-    const ep = e.position;
-    if (!ep) continue;
-    if (Math.abs(ep.x - px) > HALF_VIEW || Math.abs(ep.y - py) > HALF_VIEW) return true;
-  }
-  return false;
-}
+// The grid's half-extent is Battlefield's to know; the predicate itself lives
+// with the other combatant helpers.
+const anyEnemyOffScreen = (state) => anyEnemyOutsideView(state, HALF_VIEW);
 
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1, isReloadRecovery = false }) {
   const beatTimelineEnabled = useFeatureFlag('beatTimeline')

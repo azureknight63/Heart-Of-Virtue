@@ -162,9 +162,8 @@ function ReplyAnnouncer({ segments }) {
   const announced =
     latest && latest.speaker && latest.speaker !== JEAN_ID ? announcementFor(latest) : ''
 
-  // `seq` fixes a real gap this copy had and CombatLog's did not: without a
-  // changing key an identical repeated reply reused the same text node and was
-  // never announced at all.
+  // `seq` so an identical repeated reply replaces the node rather than
+  // rewriting it — a polite region announces a DOM change, not a value.
   return <LiveAnnouncer text={announced} seq={segments.length} testId="npc-chat-announcer" />
 }
 

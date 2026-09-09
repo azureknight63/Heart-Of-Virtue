@@ -34,7 +34,7 @@ export default function StatsPanel({ player, onClose }) {
   // now the real delta, rendered beside the bare total — "14 (+4)" over
   // "BASE: 10" is arithmetically true in a way the prefix never was. A value
   // exactly at base has no delta, so it gets no marker.
-  const getAttributeDelta = (current, base) => {
+  const formatAttributeDelta = (current, base) => {
     const delta = current - base
     if (delta === 0) return null
     return `(${delta > 0 ? '+' : '-'}${Math.abs(delta)})`
@@ -168,7 +168,7 @@ export default function StatsPanel({ player, onClose }) {
               const current = player[attr.key] || 10
               const base = player[attr.key + '_base'] || 10
               const color = getAttributeColor(current, base)
-              const delta = getAttributeDelta(current, base)
+              const deltaLabel = formatAttributeDelta(current, base)
               return (
                 <div key={attr.key} title={attr.tooltip} style={{
                   display: 'flex',
@@ -193,7 +193,7 @@ export default function StatsPanel({ player, onClose }) {
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', flexShrink: 0, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: '4px' }}>
                       <GameText weight="bold" style={{ color }}>{current}</GameText>
-                      {delta && <GameText variant="muted" size="xs">{delta}</GameText>}
+                      {deltaLabel && <GameText variant="muted" size="xs">{deltaLabel}</GameText>}
                     </div>
                     <GameText variant="muted" size="xs" style={{ whiteSpace: 'nowrap' }}>BASE: {base}</GameText>
                   </div>
