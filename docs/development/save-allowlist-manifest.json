@@ -1782,15 +1782,15 @@
     },
     {
       "module": "src.story.ch03",
-      "name": "DemoEndEvent"
-    },
-    {
-      "module": "src.story.ch03",
       "name": "DevetIntroEvent"
     },
     {
       "module": "src.story.ch03",
       "name": "EasternRoadTurnbackEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "FerryLandingObjectiveEvent"
     },
     {
       "module": "src.story.ch03",

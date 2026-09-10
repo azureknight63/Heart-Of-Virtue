@@ -904,6 +904,14 @@ class Passageway(Object):
     #: shipped the mechanism without the gate that used to guard it.
     DEMO_END_READY_FLAG = "nomad_ferry_ready"
 
+    #: Story-state key ``end_demo`` SETS once the demo actually closes here,
+    #: as distinct from ``DEMO_END_READY_FLAG`` above, which gates whether it
+    #: may. Named for the same reason: the API reads it to decide the wire's
+    #: ``beta_end`` flag and chapter 3's ``FerryLandingObjectiveEvent`` reads
+    #: it to close the ferry objective, so three modules agree on one string
+    #: instead of keeping three copies that can drift apart silently.
+    DEMO_END_FLAG = "demo_ended"
+
     #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
     #: once because ``__init__`` registers them as aliases and
     #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
@@ -1027,7 +1035,7 @@ class Passageway(Object):
                 "finishing first."
             )
             return
-        story["demo_ended"] = "1"
+        story[self.DEMO_END_FLAG] = "1"
         narrate(
             f"Jean stops at {self.build_article_phrase(self.name)} and looks "
             "at what lies beyond. The way is plain enough — but not today."

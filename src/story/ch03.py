@@ -1234,60 +1234,51 @@ class MaraObservationEvent(Event):
         )
 
 
-class DemoEndEvent(Event):
-    """
-    Fires when Jean interacts with the Ferry Landing passageway (via events_before).
+class FerryLandingObjectiveEvent(Event):
+    """Closes ``OBJ_CH03_FERRY_LANDING`` once the demo actually ends at the
+    landing.
 
-    Shows a narrated message that the crossing is visible but the demo ends here.
-    Blocks the passageway interaction from completing — Jean is not teleported.
-    Sets story gate 'demo_ended'.
+    ``MaraObservationEvent`` sets that objective the moment Mara's chain
+    completes; nothing closed it in real play. The only completer used to be
+    ``DemoEndEvent``, which was placed on no tile in any shipped map, so the
+    objective stayed in the journal forever. This event exists to be
+    *wired*: it is authored onto ``eastern-descent-nomad-camp`` (0, 2) in the
+    map JSON, the same tile that carries the Ferry Landing, and
+    ``interact_with_target`` re-evaluates the tile's events immediately after
+    dispatching an interaction -- so it fires in the same request that
+    ``Passageway.end_demo`` sets the gate.
 
-    Issue #579 deliberately keeps this class rather than deleting it, even
-    though ``grep -rl DemoEnd src/resources/maps/`` finds no placement in any
-    map and no shipped save could hold a pickled instance of it (confirmed
-    across the project's full git history -- this class has never been
-    wired to a tile). The demo-end mechanism it duplicates now lives on
-    ``Passageway.end_demo``/``DEMO_END_READY_FLAG``, gated the same way this
-    class already was. What is NOT reproduced there is the
-    ``complete_objective(self.player, OBJ_CH03_FERRY_LANDING)`` call below --
-    this is the ONLY call in the tree that ever closes that objective (a
-    pre-existing, separate bug: ``OBJ_CH03_FERRY_LANDING`` is set by
-    ``MaraObservationEvent`` but this class is the sole completer, and it
-    never fires in real play). Deleting this class without first giving that
-    objective a real completer breaks
-    ``TestObjectiveKeyRegistry::test_every_key_the_story_completes_is_one_the_story_also_sets``
-    -- a signal the deletion's blast radius is wider than issue #579 (the
-    ``nomad_ferry_ready`` gate) actually asked for. Left in place, unreferenced,
-    for a follow-up to resolve deliberately rather than as a side effect here.
+    Deliberately silent. The in-fiction closing beat belongs to
+    ``Passageway.end_demo`` and the meta-text to the client's
+    ``BetaEndDialog``; a third voice here would narrate the same moment
+    twice. ``repeat=False`` lets ``pass_conditions_to_process`` retire it
+    after the one firing.
     """
 
-    def __init__(self, player, tile, params=None, repeat=True, name="DemoEnd"):
+    def __init__(
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="FerryLandingObjective",
+    ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
 
     def check_conditions(self):
-        """Only fires after the second conversation with Mara (ferry is ready.)"""
+        """Fires only once the demo has actually closed at this landing.
+
+        Reads ``Passageway.DEMO_END_FLAG`` -- the gate ``end_demo`` sets --
+        rather than ``DEMO_END_READY_FLAG``: the ferry being *ready* is what
+        sets this objective, so closing on it would mark the objective done
+        the instant it was handed out.
+        """
         story = getattr(getattr(self.player, "universe", None), "story", {})
-        # Only fire after the ferry is ready
-        if story.get(Passageway.DEMO_END_READY_FLAG) != "1":
+        if story.get(Passageway.DEMO_END_FLAG) != "1":
             return
         self.pass_conditions_to_process()
 
     def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            print_slow(
-                "The ferry is ready. The crossing is short — you can see the far bank clearly."
-            )
-            time.sleep(1)
-            print_slow("But beyond the river is where the demo ends.")
-            time.sleep(0.5)
-            print_slow("\n[The full journey continues in the complete release. You may continue exploring the area, but can go no further in the story.]\n")
-            time.sleep(1)
-            print_slow("\n[Be sure to submit feedback using the Feedback button at the top of the UI, next to 'Account'. Thank you for helping to make this game better! -Alex]\n")
-            time.sleep(1)
-        # Outside the skip_dialog guard: the journal must agree with the
-        # story state whether or not the prose was shown.
         complete_objective(self.player, OBJ_CH03_FERRY_LANDING)

@@ -18,6 +18,7 @@ import pytest
 import src.journal as journal
 from src.api.services.game_service import GameService
 from src.narration import capture_narration
+from src.objects import Passageway
 from src.player import Player
 from src.story import ch01, ch02, ch03
 from src.universe import Universe
@@ -159,10 +160,26 @@ class TestChapterThreeObjectiveChain:
         assert "ch03_ferry_landing" in objective_keys(player)
 
     def test_the_demo_end_closes_the_last_objective(self, gs, player):
+        """The closer is ``FerryLandingObjectiveEvent``, and it needs the gate.
+
+        This used to run ``DemoEndEvent``, which closed the objective when
+        called -- but nothing ever called it, so the objective was in fact
+        uncloseable in play.
+
+        ``run_event`` calls ``process()`` directly, so the gate below is set
+        for realism and is NOT what this test proves: like its predecessor it
+        only shows the class closes the objective once it runs. The two facts
+        that actually made this bug possible -- that the gate is honoured, and
+        that the shipped Ferry Landing tile carries this event at all -- are
+        pinned in ``test_ferry_landing_objective.py``.
+        """
         tile = _Tile("Ferry Landing")
         player.current_room = tile
         run_event(gs, player, ch03.MaraObservationEvent(player=player, tile=tile))
-        run_event(gs, player, ch03.DemoEndEvent(player=player, tile=tile))
+        player.universe.story[Passageway.DEMO_END_FLAG] = "1"
+        run_event(
+            gs, player, ch03.FerryLandingObjectiveEvent(player=player, tile=tile)
+        )
 
         assert "ch03_ferry_landing" in objective_keys(player, "done")
 

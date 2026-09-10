@@ -2581,7 +2581,7 @@ class GameService:
             # only business is the wire flag.
             target.enter(player)
             story = getattr(getattr(player, "universe", None), "story", None) or {}
-            beta_end = story.get("demo_ended") == "1"
+            beta_end = story.get(Passageway.DEMO_END_FLAG) == "1"
         # `not demo_end`: this arm asks "step through?", and the arm above has
         # already handled every verb that WOULD step through a demo-end
         # passageway. What reached here is a verb that resolves to nothing
