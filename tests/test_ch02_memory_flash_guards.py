@@ -141,5 +141,71 @@ class TestCh02KingSlimeMemoryFlashGuards(unittest.TestCase):
         self.assertIn("BOOM.", flash.description)
 
 
+class TestCh02KingSlimeMemoryFlashFiresOnGrantNotFloorPickup(unittest.TestCase):
+    """Guard for #574: the flash's opening beat has to match how the engine
+    actually hands Jean the fragment, not how it used to.
+
+    ``AfterDefeatingKingSlime`` grants the MineralFragment straight into
+    inventory (#378/#371) and never spawns it as a floor item. This runs the
+    real grant path -- a real ``Player``, the real event classes, the real
+    item -- and checks the fact the flash's ``check_conditions`` actually
+    depends on: when the already-queued ``Ch02KingSlimeMemoryFlash`` decides
+    to fire, the fragment must be in the player's inventory and absent from
+    the tile's floor items. It does not assert on any prose, so rewording the
+    scene can never break it; only a regression back to a floor-drop (or a
+    flash that starts firing on something other than possession) would.
+    """
+
+    def _make_tile(self):
+        tile = Mock()
+        tile.npcs_here = []  # King Slime already dead
+        tile.events_here = []
+        tile.items_here = []  # floor items -- must stay empty of the fragment
+        tile.spawn_object = Mock()
+        tile.remove_event = Mock()
+        return tile
+
+    def test_flash_fires_on_inventory_grant_with_no_floor_drop(self):
+        from types import SimpleNamespace
+        from src.player import Player
+        from src.story.ch02 import AfterDefeatingKingSlime, Ch02KingSlimeMemoryFlash
+
+        player = Player()
+        player.universe = SimpleNamespace(
+            story={}, maps=[{"name": "grondelith-mineral-pools"}]
+        )
+        player.map = {}  # skip the Gorran-teleport atrium lookup
+        tile = self._make_tile()
+
+        event = AfterDefeatingKingSlime(player=player, tile=tile)
+        with (
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
+        ):
+            event.check_conditions()  # King absent on this tile -> runs process()
+
+        # Engine truth (#378/#371): the fragment is inventory-only.
+        self.assertTrue(
+            any(i.__class__.__name__ == "MineralFragment" for i in player.inventory),
+            "AfterDefeatingKingSlime must grant the fragment straight to inventory",
+        )
+        self.assertFalse(
+            any(i.__class__.__name__ == "MineralFragment" for i in tile.items_here),
+            "the fragment must never be spawned as a floor item (#378/#371)",
+        )
+
+        flashes = [
+            e for e in tile.events_here if isinstance(e, Ch02KingSlimeMemoryFlash)
+        ]
+        self.assertTrue(flashes, "AfterDefeatingKingSlime must queue the memory flash")
+        flash = flashes[0]
+
+        # This is the real check_conditions on the real, queued flash instance --
+        # not a re-derivation of its logic -- confirming it fires on possession.
+        with patch.object(flash, "pass_conditions_to_process") as mock_pass:
+            flash.check_conditions()
+            mock_pass.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

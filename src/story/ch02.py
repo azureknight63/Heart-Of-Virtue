@@ -1011,10 +1011,10 @@ class Ch02FragmentReminder(Event):
 
 class Ch02KingSlimeMemoryFlash(MemoryFlash):
     """
-    Memory flash triggered when Jean picks up the MineralFragment after
-    defeating King Slime. The razor edge cuts Jean's finger; the sharp pain
+    Memory flash triggered once the MineralFragment is in Jean's inventory --
+    granted automatically by AfterDefeatingKingSlime (#378/#371), not picked
+    up off the floor. The razor edge still cuts Jean's finger; the sharp pain
     unlocks a violent, fragmented memory of the explosion.
-    Called from the MineralFragment item's on_pickup hook via the story system.
     """
 
     def __init__(
@@ -1030,7 +1030,7 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
         # are tagged as his internal thought (italic, no reactions to author —
         # there's no one else on stage to react).
         memory_lines = [
-            ("The edge catches Jean's finger.", 1.5),
+            ("The fragment is already in his hand — the edge catches his finger.", 1.8),
             ("", 0.5),
             (
                 "Pain — sudden, immediate, real.",
