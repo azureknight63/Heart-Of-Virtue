@@ -414,14 +414,18 @@ class TestAfterDefeatingKingSlimeProcess:
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
-    def test_process_spawns_tile_description(self, mock_print, mock_sleep):
+    def test_process_replaces_tile_description(self, mock_print, mock_sleep):
+        """Issue #573/#572: the arena's description is overwritten directly,
+        not appended via a spawned TileDescription object (which never had a
+        real name and left the corrupted text in place alongside it)."""
         self.player.map = {}
         self.player.universe.maps = [self._make_pools_map()]
         evt = self._make_event()
         evt.process()
-        self.tile.spawn_object.assert_called()
-        args = self.tile.spawn_object.call_args
-        assert args[0][0] == "TileDescription"
+        # tile.description starts as an auto-generated Mock attribute (see
+        # _make_tile) -- only a real assignment turns it into a string.
+        assert isinstance(self.tile.description, str) and len(self.tile.description) > 100
+        self.tile.spawn_object.assert_not_called()
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
@@ -513,7 +517,9 @@ class TestCleansPoolTiles:
         return AfterDefeatingKingSlime(player=self.player, tile=self.tile)
 
     def test_cleanse_pool_tiles_updates_matching_coords(self):
-        """Tiles at known coords should have spawn_object called."""
+        """Tiles at known coords should have their description overwritten
+        directly (issue #573) rather than have a nameless TileDescription
+        object spawned onto them (issue #572)."""
         from src.story.ch02 import AfterDefeatingKingSlime
 
         tiles = {}
@@ -546,16 +552,17 @@ class TestCleansPoolTiles:
 
         # All 9 coords should have been updated, each with its OWN prose — a
         # copy-paste that gave two tiles the same description would make the
-        # cleansed pools read as one repeated room.
+        # cleansed pools read as one repeated room. tile.description starts
+        # as an auto-generated Mock attribute (never assigned above), so
+        # isinstance(..., str) only holds once a real assignment happened.
         descriptions = {}
         for coord, t in tiles.items():
-            t.spawn_object.assert_called_once()
-            args = t.spawn_object.call_args[0]
-            assert args[0] == "TileDescription"
-            descriptions[coord] = t.spawn_object.call_args.kwargs["description"]
+            t.spawn_object.assert_not_called()
+            assert isinstance(t.description, str) and len(t.description) > 80
+            descriptions[coord] = t.description
         assert len(set(descriptions.values())) == len(tiles)
-        assert all(isinstance(d, str) and len(d) > 80 for d in descriptions.values())
         untouched.spawn_object.assert_not_called()
+        assert not isinstance(untouched.description, str)
 
     def test_cleanse_pool_tiles_skips_missing_coords(self):
         """Coords not in map are silently skipped."""
@@ -570,7 +577,8 @@ class TestCleansPoolTiles:
         evt = self._make_event()
         # Should not raise
         evt._cleanse_pool_tiles(self.player)
-        t.spawn_object.assert_called_once()
+        t.spawn_object.assert_not_called()
+        assert isinstance(t.description, str) and len(t.description) > 80
 
     def test_cleanse_pool_tiles_fallback_map_when_no_named_map(self):
         """Falls back to passed-in current_map when no named map found."""
@@ -583,7 +591,8 @@ class TestCleansPoolTiles:
 
         evt = self._make_event()
         evt._cleanse_pool_tiles(self.player, current_map=fallback)
-        t.spawn_object.assert_called_once()
+        t.spawn_object.assert_not_called()
+        assert isinstance(t.description, str) and len(t.description) > 80
 
     def test_cleanse_pool_tiles_empty_map_writes_nothing(self):
         """A pools map with none of the 9 coords present is a silent no-op."""

@@ -594,17 +594,21 @@ class AfterDefeatingKingSlime(Event):
         end_conversation()
         time.sleep(2)
 
-        # Update the arena tile description to reflect the cleansed state
-        self.tile.spawn_object(
-            "TileDescription",
-            self.player,
-            self.tile,
-            description=(
-                "The circular cavern is still. The pool that filled it — wall to wall with "
-                "pulsating corruption — is gone. Clean, luminescent blue water rests in its place, "
-                "glowing faintly from below. The single stone island at the centre is bare and quiet. "
-                "The arena smells of minerals and cold water."
-            ),
+        # Replace the arena tile description to reflect the cleansed state.
+        # TileDescription (src/objects.py) only ADDS to a tile's description --
+        # spawning one here left the original "wall to wall with pulsating
+        # corruption" text in tile.description while the cleansed prose sat
+        # alongside it as a nameless object, so both rendered together
+        # (issue #573) and the nameless object was listed as an interactable
+        # (issue #572). Writing tile.description directly replaces the
+        # authored text outright, matching the precedent in
+        # Ch01BridgeWall (src/story/ch01.py) for the same "prose ages the
+        # room" pattern.
+        self.tile.description = (
+            "The circular cavern is still. The pool that filled it — wall to wall with "
+            "pulsating corruption — is gone. Clean, luminescent blue water rests in its place, "
+            "glowing faintly from below. The single stone island at the centre is bare and quiet. "
+            "The arena smells of minerals and cold water."
         )
 
         # Grant the MineralFragment straight to Jean's inventory. Spawning it as
@@ -763,7 +767,11 @@ class AfterDefeatingKingSlime(Event):
         for coords, description in cleansed.items():
             if coords in current_map:
                 tile = current_map[coords]
-                tile.spawn_object("TileDescription", player, tile, description=description)
+                # Overwrite outright -- see the comment in process() above
+                # this method's call site: TileDescription only adds, so
+                # spawning one here left every corridor tile showing its
+                # corrupted authored text alongside the cleansed prose.
+                tile.description = description
 
 
 class Ch02GorranAtPools(Event):

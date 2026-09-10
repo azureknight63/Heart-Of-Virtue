@@ -1163,14 +1163,17 @@ class TestAfterDefeatingKingSlime:
             i.__class__.__name__ == "MineralFragment" for i in granted
         )
 
-    def test_process_spawns_tile_description(self):
+    def test_process_replaces_tile_description(self):
+        """Issue #573/#572: description is overwritten directly rather than
+        appended via a spawned (nameless) TileDescription object."""
         ev, player, tile = self._make()
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
-        tile.spawn_object.assert_called()
+        tile.spawn_object.assert_not_called()
+        assert isinstance(tile.description, str) and len(tile.description) > 80
 
     def test_process_teleports_gorran_from_atrium(self):
         ev, player, tile = self._make()
@@ -1234,8 +1237,11 @@ class TestAfterDefeatingKingSlime_CleanseTiles:
         ):
             ev.process()
 
-        # spawn_object should have been called on pool tiles that exist in the map
-        pool_tile.spawn_object.assert_called()
+        # Description should be overwritten directly on pool tiles that exist
+        # in the map -- not appended via a spawned TileDescription object
+        # (issue #573/#572).
+        pool_tile.spawn_object.assert_not_called()
+        assert isinstance(pool_tile.description, str) and len(pool_tile.description) > 80
 
 
 class TestCh02FragmentReminder:
