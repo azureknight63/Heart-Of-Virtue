@@ -2561,20 +2561,27 @@ class GameService:
                 # Proceed with equipment logic
                 target.equip(player)
         elif _is_demo_end_crossing(target, handler):
-            # The demo stops at this passageway (#552). The engine owns
-            # what that means -- no crossing, story gate set, one beat
-            # of prose; the API's only job is to flag it so the client
-            # raises BetaEndDialog (the same `beta_end` flag the combat
-            # adapter sets on the Lurker path). Queuing a "Step
-            # through?" confirmation instead would promise a crossing
-            # that never happens.
+            # The demo stops at this passageway (#552) -- but only once
+            # the engine says the crossing is actually ready (#579:
+            # Passageway.end_demo gates itself on DEMO_END_READY_FLAG, so
+            # reaching the Ferry Landing before Mara's conversation chain
+            # completes declines in fiction instead of closing the demo).
+            # No crossing happens either way; only the ready case sets the
+            # story gate and one beat of prose. The engine is the sole
+            # authority on readiness, so the API does not re-derive that
+            # check -- it reads the outcome (`demo_ended`) `end_demo` just
+            # decided and flags it so the client raises BetaEndDialog (the
+            # same `beta_end` flag the combat adapter sets on the Lurker
+            # path). Queuing a "Step through?" confirmation instead would
+            # promise a crossing that never happens.
             # `enter`, not `end_demo`: Passageway.enter already guards
             # `if self.demo_end` and delegates, so calling end_demo here
             # decided the same rule in two places. The engine stays the
             # sole authority on what using a passageway means; the API's
             # only business is the wire flag.
             target.enter(player)
-            beta_end = True
+            story = getattr(getattr(player, "universe", None), "story", None) or {}
+            beta_end = story.get("demo_ended") == "1"
         # `not demo_end`: this arm asks "step through?", and the arm above has
         # already handled every verb that WOULD step through a demo-end
         # passageway. What reached here is a verb that resolves to nothing
