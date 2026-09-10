@@ -31,6 +31,11 @@ function VitalBar({
   onHoverChange,
   onToggle,
   testId,
+  // Defaults to true, matching HeroPanel's own default below: VitalBar isn't
+  // exported (HeroPanel is its only caller today), but a future caller that
+  // omits this prop should get today's always-interactive behaviour rather
+  // than silently going dead.
+  interactive = true,
 }) {
   const isLeft = side === 'left'
   // issue #536 item 1: this bar rendered as a bare, unlabeled capsule — no
@@ -86,6 +91,15 @@ function VitalBar({
         flexDirection: 'column-reverse',
         overflow: 'visible',
         cursor: 'pointer',
+        // The Hero Head Container this bar sits in is `pointerEvents: 'none'`
+        // (issue #575 — see that div's comment); this opts the bar back in
+        // so HP/Fatigue hover/click/touch keep working once the container is
+        // raised above CombatMovePanel — but only while `interactive` is
+        // true. Hard-coding 'auto' here would keep the bar clickable even
+        // while LeftPanel dims and disables the whole hero during the
+        // enemy's turn, which the ancestor's own `pointerEvents: 'none'`
+        // used to guarantee before this opt-in existed.
+        pointerEvents: interactive ? 'auto' : 'none',
       }}
       data-testid={testId}
     >
@@ -164,6 +178,16 @@ function HeroPanel({
   player,
   isMobile,
   inCombat,
+  // Issue #575: the Hero Head Container is `pointerEvents: 'none'` so a
+  // raised HeroPanel can't swallow clicks meant for CombatMovePanel, with
+  // its real controls (VitalBar, the nav buttons) opting back in to
+  // 'auto'. That opt-in must not survive LeftPanel dimming this whole
+  // component during the enemy's turn (its wrapper already goes
+  // `pointerEvents: 'none'` there) — this prop is that wrapper's gate,
+  // threaded down so the opt-in can defer to it. Defaults to true so every
+  // other caller (exploration mode, every existing test) keeps today's
+  // behaviour with no changes.
+  interactive = true,
   heroScale = 1,
   hasSpecialMoves,
   hasDefensiveMoves,
@@ -259,7 +283,7 @@ function HeroPanel({
       position: 'relative',
     }}>
       {/* Hero Head Container */}
-      <div style={{
+      <div data-testid="hero-head-container" style={{
         position: 'relative',
         width: '200px',
         height: '200px',
@@ -268,6 +292,25 @@ function HeroPanel({
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'visible',
+        // Issue #575: LeftPanel.jsx raises the stacking context this whole
+        // component renders inside (`HERO_PANEL_STACKING_Z_INDEX`) above
+        // CombatMovePanel so the category nav ring below can never be
+        // visually covered by an open move flyout. That is the ONLY place
+        // the fix can work — this container's own z-index is `auto` and
+        // creates no stacking context of its own, so nothing set on it (or
+        // on the nav's buttons) would matter otherwise — but raising the
+        // WHOLE ancestor also lifts this container's blank space above the
+        // panel, which would silently swallow clicks meant for a move card
+        // underneath. `pointerEvents: 'none'` here punches that hole back
+        // open; VitalBar and the nav buttons opt back in with their own
+        // `pointerEvents`, gated on the `interactive` prop rather than a bare
+        // 'auto' -- LeftPanel already goes `pointerEvents: 'none'` on this
+        // component's wrapper during the enemy's turn to disable the whole
+        // dimmed hero, and an unconditional 'auto' here would silently
+        // override that for just these two controls. (The passive/status
+        // icon columns predate #575 and already hard-code 'auto' regardless
+        // of turn -- out of scope for this fix, left as-is.)
+        pointerEvents: 'none',
       }}>
         {/* Passive Effects Icons — side column on desktop, hidden here on mobile (shown below) */}
         {!isMobile && (
@@ -359,6 +402,7 @@ function HeroPanel({
           onHoverChange={(on) => setHoveredBar(on ? 'hp' : null)}
           onToggle={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
           testId="hp-bar"
+          interactive={interactive}
         />
 
         <VitalBar
@@ -373,6 +417,7 @@ function HeroPanel({
           onHoverChange={(on) => setHoveredBar(on ? 'fatigue' : null)}
           onToggle={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
           testId="fatigue-bar"
+          interactive={interactive}
         />
 
         {/* Surrounding Buttons — issue #536 item 3: the app had zero <nav>
@@ -434,6 +479,16 @@ function HeroPanel({
                 justifyContent: 'center',
                 fontFamily: fonts.main,
                 zIndex: 5,
+                // The Hero Head Container is `pointerEvents: 'none'` (issue
+                // #575); this is the nav's real control, so it opts back in
+                // -- but only while `interactive`. Hard-coding 'auto' would
+                // keep this button clickable even while LeftPanel disables
+                // the whole hero during the enemy's turn (a stray click
+                // would stage a move category that then pops open the
+                // instant it becomes the player's turn again), which the
+                // ancestor's own `pointerEvents: 'none'` used to guarantee
+                // before this opt-in existed.
+                pointerEvents: interactive ? 'auto' : 'none',
                 textAlign: 'center',
                 // Horizontal padding trimmed to 2px to buy the wider type its
                 // room; the vertical 4px is what keeps the label off the

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useId } from 'react';
+import React, { useState, useMemo, useId } from 'react';
 import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
@@ -7,7 +7,6 @@ import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
 import { displayNameOf, moveAvailability, autoResolvedTargetId } from '../utils/combatMoveStatus';
-import { useOccludedNavHandoff } from '../hooks/useOccludedNavHandoff';
 import {
     STAGE_KEYS,
     getStageBeats,
@@ -43,6 +42,22 @@ const COMMITMENT_BAR_MAX_WIDTH = 120;
 // Floor so a very cheap (or 0-beat) move still shows a visible sliver
 // instead of disappearing next to a heavy move's full-width bar.
 const COMMITMENT_BAR_MIN_WIDTH = 3;
+
+/**
+ * This panel's stacking rank, exported so LeftPanel.jsx's
+ * `HERO_PANEL_STACKING_Z_INDEX` can be DEFINED IN TERMS OF this value rather
+ * than restating a number that could drift back out of order (issue #575).
+ *
+ * Until #575, this panel (`zIndex: 100`) sat above the stacking context
+ * LeftPanel wraps HeroPanel's combat category nav in (`zIndex: 50`), so a
+ * tall category flyout could fully cover the nav ring — three of five tabs
+ * went dead whenever a category had enough cards to reach them.
+ * `useOccludedNavHandoff` used to paper over that by hit-testing the nav
+ * under a click on the panel's own inert chrome; #575 raised the nav's real
+ * stacking context above this value instead (see LeftPanel.jsx), which makes
+ * the nav genuinely un-occludable and retires that hook.
+ */
+export const COMBAT_MOVE_PANEL_Z_INDEX = 100;
 
 /**
  * Compact "how long does this lock me out for" visual: a four-segment bar
@@ -279,15 +294,9 @@ function MoveCard({
 // LeftPanel's button gating reads too, so the two can never drift apart.
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
-    const contentRef = useRef(null);
     // Base for the per-card reason ids that aria-describedby points at. useId
     // keeps them unique across concurrent panels and stable across re-renders.
     const reasonIdBase = useId();
-    // Every clickable in the JSX below must be a real control (a <button>,
-    // or role="button"/tabindex). A plain <div onClick> has its clicks
-    // swallowed and re-aimed at HeroPanel's category nav -- see
-    // PANEL_CONTROL_SELECTOR's editing rule in the hook.
-    useOccludedNavHandoff(contentRef);
 
     const filteredMoves = useMemo(() => movesInGroup(moves, category), [moves, category]);
     // Shared scale across THIS panel's visible moves, not per-card — see
@@ -304,7 +313,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                 top: '50%',
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
-                zIndex: 100,
+                zIndex: COMBAT_MOVE_PANEL_Z_INDEX,
                 minWidth: '320px',
                 maxWidth: '450px',
                 maxHeight: '80vh',
@@ -313,9 +322,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                 backgroundColor: colors.bg.panelDeep,
             }}
         >
-            {/* ref: useOccludedNavHandoff resolves the panel root from here,
-                because GamePanel takes no ref of its own. */}
-            <div ref={contentRef} style={{
+            <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
