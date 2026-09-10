@@ -895,6 +895,15 @@ class Passageway(Object):
     #: resolves the attribute (and crosses normally).
     demo_end = False
 
+    #: Story-state key ``end_demo`` reads to decide whether the demo
+    #: actually closes here or merely declines with an in-fiction hint
+    #: (issue #579). Chapter 3's ``MaraObservationEvent``
+    #: (``src/story/ch03.py``) is the sole writer, once Mara's full
+    #: conversation chain completes -- it imports this constant rather than
+    #: keeping its own copy of the string, which is exactly how the #552 fix
+    #: shipped the mechanism without the gate that used to guard it.
+    DEMO_END_READY_FLAG = "nomad_ferry_ready"
+
     #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
     #: once because ``__init__`` registers them as aliases and
     #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
@@ -987,20 +996,38 @@ class Passageway(Object):
         )
 
     def end_demo(self, player):
-        """Close out the demo at this passageway instead of crossing it.
+        """Close out the demo at this passageway instead of crossing it --
+        but only once ``DEMO_END_READY_FLAG`` says the crossing is actually
+        ready (issue #579).
 
-        Jean stays where he is; the story gate ``demo_ended`` is set so any
-        later content can read it. The player-facing end-of-beta message (with
-        its Send Feedback button) is the client's ``BetaEndDialog``, which the
-        API triggers off this — so the prose here is only the in-fiction beat
-        that belongs in the interaction panel, not the meta-text.
+        When the flag is set, Jean stays where he is and the story gate
+        ``demo_ended`` is set so any later content can read it. The
+        player-facing end-of-beta message (with its Send Feedback button) is
+        the client's ``BetaEndDialog``, which the API triggers off this — so
+        the prose here is only the in-fiction beat that belongs in the
+        interaction panel, not the meta-text.
 
-        The line names the passageway and claims nothing about its
-        surroundings, so it stays true wherever the demo's edge is moved to.
+        When the flag is NOT set — a player can reach a demo-end passageway
+        before whatever story beat was supposed to gate it — Jean still does
+        not cross (this remains the edge of the playable slice either way),
+        but neither ``demo_ended`` nor the API's ``beta_end`` fires; instead
+        he declines with an in-fiction hint that something is unfinished, per
+        the fairness rule that every closed passage explains itself without
+        naming the flag.
+
+        Both lines name the passageway and claim nothing about its
+        surroundings, so they stay true wherever the demo's edge is moved to.
         """
         story = getattr(getattr(player, "universe", None), "story", None)
-        if story is not None:
-            story["demo_ended"] = "1"
+        ready = story is not None and story.get(self.DEMO_END_READY_FLAG) == "1"
+        if not ready:
+            narrate(
+                f"Jean stops at {self.build_article_phrase(self.name)} but "
+                "doesn't go through — not yet. Something else still needs "
+                "finishing first."
+            )
+            return
+        story["demo_ended"] = "1"
         narrate(
             f"Jean stops at {self.build_article_phrase(self.name)} and looks "
             "at what lies beyond. The way is plain enough — but not today."

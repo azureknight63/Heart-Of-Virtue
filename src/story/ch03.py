@@ -4,6 +4,7 @@ Chapter 03 events
 
 from src.events import Event, map_name_for_tile
 from src.functions import print_slow
+from src.objects import Passageway
 from src.journal import (
     complete_objective,
     set_objective,
@@ -1157,7 +1158,7 @@ class MaraObservationEvent(Event):
 
     def check_conditions(self):
         story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("nomad_ferry_ready") == "1":
+        if story.get(Passageway.DEMO_END_READY_FLAG) == "1":
             if self in self.tile.events_here:
                 self.tile.events_here.remove(self)
             return
@@ -1223,7 +1224,7 @@ class MaraObservationEvent(Event):
     def _set_gate(self):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
-            story["nomad_ferry_ready"] = "1"
+            story[Passageway.DEMO_END_READY_FLAG] = "1"
         complete_objective(self.player, OBJ_CH03_WALK_THE_CAMP)
         set_objective(
             self.player,
@@ -1240,6 +1241,24 @@ class DemoEndEvent(Event):
     Shows a narrated message that the crossing is visible but the demo ends here.
     Blocks the passageway interaction from completing — Jean is not teleported.
     Sets story gate 'demo_ended'.
+
+    Issue #579 deliberately keeps this class rather than deleting it, even
+    though ``grep -rl DemoEnd src/resources/maps/`` finds no placement in any
+    map and no shipped save could hold a pickled instance of it (confirmed
+    across the project's full git history -- this class has never been
+    wired to a tile). The demo-end mechanism it duplicates now lives on
+    ``Passageway.end_demo``/``DEMO_END_READY_FLAG``, gated the same way this
+    class already was. What is NOT reproduced there is the
+    ``complete_objective(self.player, OBJ_CH03_FERRY_LANDING)`` call below --
+    this is the ONLY call in the tree that ever closes that objective (a
+    pre-existing, separate bug: ``OBJ_CH03_FERRY_LANDING`` is set by
+    ``MaraObservationEvent`` but this class is the sole completer, and it
+    never fires in real play). Deleting this class without first giving that
+    objective a real completer breaks
+    ``TestObjectiveKeyRegistry::test_every_key_the_story_completes_is_one_the_story_also_sets``
+    -- a signal the deletion's blast radius is wider than issue #579 (the
+    ``nomad_ferry_ready`` gate) actually asked for. Left in place, unreferenced,
+    for a follow-up to resolve deliberately rather than as a side effect here.
     """
 
     def __init__(self, player, tile, params=None, repeat=True, name="DemoEnd"):
@@ -1251,7 +1270,7 @@ class DemoEndEvent(Event):
         """Only fires after the second conversation with Mara (ferry is ready.)"""
         story = getattr(getattr(self.player, "universe", None), "story", {})
         # Only fire after the ferry is ready
-        if story.get("nomad_ferry_ready") != "1":
+        if story.get(Passageway.DEMO_END_READY_FLAG) != "1":
             return
         self.pass_conditions_to_process()
 
