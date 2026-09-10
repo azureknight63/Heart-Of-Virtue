@@ -722,7 +722,7 @@
     "(0, 2)": {
         "id": "tile_0_2",
         "title": "WaterStep",
-        "description": "A short muddy track ends at a platform of weathered planks spiked into the gravel bank. Drag marks in the mud show where the craft is regularly hauled up and launched. The river is close here \u00e2\u20ac\u201d cold water and silt smell, the constant low sound of current. The far bank is a dark line through the grey.",
+        "description": "A short muddy track ends at a platform of weathered planks spiked into the gravel bank. Drag marks in the mud show where the craft is regularly hauled up and launched. The river is close here \u2014 cold water and silt smell, the constant low sound of current. The far bank is a dark line through the grey.",
         "exits": [
             "east"
         ],
@@ -779,7 +779,7 @@
     "(1, 2)": {
         "id": "tile_1_2",
         "title": "RiversEdge",
-        "description": "The camp's western edge meets the river approach \u00e2\u20ac\u201d packed gravel dropping to the waterline in a shallow ramp worn by use. The river is wide here, grey-green, moving with a quiet authority. A flat-bottomed craft is pulled up on the gravel and tied to a stake driven into the bank. The far shore is visible: lower ground, darker soil.",
+        "description": "The camp's western edge meets the river approach \u2014 packed gravel dropping to the waterline in a shallow ramp worn by use. The river is wide here, grey-green, moving with a quiet authority. A flat-bottomed craft is pulled up on the gravel and tied to a stake driven into the bank. The far shore is visible: lower ground, darker soil.",
         "exits": [
             "east",
             "west"
@@ -1553,7 +1553,7 @@
     "(3, 4)": {
         "id": "tile_3_4",
         "title": "CampFarEdge",
-        "description": "The camp's southeast corner: a low windbreak of stacked stones marking the boundary, and beyond it the open bank continuing east. A cord strung between two stakes carries several small carved shapes \u00e2\u20ac\u201d worn smooth, turning slowly in the river wind. The ground here is undisturbed gravel, untouched by the camp's foot traffic.",
+        "description": "The camp's southeast corner: a low windbreak of stacked stones marking the boundary, and beyond it the open bank continuing east. A cord strung between two stakes carries several small carved shapes \u2014 worn smooth, turning slowly in the river wind. The ground here is undisturbed gravel, untouched by the camp's foot traffic.",
         "exits": [
             "north",
             "northeast",
