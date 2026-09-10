@@ -78,7 +78,14 @@ vi.mock('./CombatMovePanel', () => ({
             ))}
             <button onClick={onClose}>Close Moves</button>
         </div>
-    )
+    ),
+    // LeftPanel derives HERO_PANEL_STACKING_Z_INDEX from this at module load
+    // (issue #575) — the mock needs the same named export or the import
+    // resolves to undefined and NaN leaks into the wrapper's z-index. The
+    // real relationship between the two constants is covered by
+    // LeftPanel.categoryNavStacking.test.jsx, which renders the real
+    // CombatMovePanel; this mock only needs to not crash the module graph.
+    COMBAT_MOVE_PANEL_Z_INDEX: 100,
 }));
 vi.mock('./FeedbackDialog', () => ({ default: ({ onClose }) => <div data-testid="feedback-dialog"><button onClick={onClose}>Close Feedback</button></div> }));
 vi.mock('./CooldownTray', () => ({ default: ({ moves }) => <div data-testid="cooldown-tray">{moves.length} on cooldown</div> }));

@@ -1,9 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { GAME_PANEL_CLASS } from './GamePanel'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
 import { useAudio } from '../context/AudioContext';
-import { CATEGORY_NAV_LABEL } from '../utils/categories'
 
 vi.mock('../context/AudioContext', () => ({
   useAudio: vi.fn(),
@@ -209,127 +207,23 @@ describe('CombatMovePanel — disabled cards read as disabled (#565)', () => {
   });
 });
 
-describe('CombatMovePanel — clicks over the occluded category nav (#557)', () => {
-  const onMoveClick = vi.fn();
-  const onClose = vi.fn();
-  let navClick;
-
-  // The nav bar HeroPanel renders under this flyout. Its buttons are
-  // zIndex 5 against the panel's 100, so a click at these coordinates lands
-  // on the panel; the rect is what lets the panel notice.
-  const NAV_RECT = { left: 100, top: 40, right: 170, bottom: 84, width: 70, height: 44 };
-
-  const OccludedNav = () => (
-    <nav aria-label={CATEGORY_NAV_LABEL} style={{ display: 'contents' }}>
-      <button onClick={navClick}>OFFENSIVE</button>
-    </nav>
-  );
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    navClick = vi.fn();
-    useAudio.mockReturnValue({ playSFX: vi.fn() });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  const renderWithNav = (moves) => {
-    const view = render(
-      <>
-        <OccludedNav />
-        <CombatMovePanel
-          moves={moves}
-          category="Miscellaneous"
-          onMoveClick={onMoveClick}
-          onClose={onClose}
-        />
-      </>
-    );
-    const navButton = screen.getByRole('button', { name: 'OFFENSIVE' });
-    vi.spyOn(navButton, 'getBoundingClientRect').mockReturnValue(NAV_RECT);
-    return view;
-  };
-
-  const inNavRect = { clientX: 135, clientY: 62 };
-
-
-  it('hands a click on the panel chrome to the category button underneath', () => {
-    const { container } = renderWithNav([
-      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
-    ]);
-
-    const panel = container.querySelector(`.${GAME_PANEL_CLASS}`);
-    fireEvent.click(panel, inNavRect);
-
-    expect(navClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaves a click on one of its own move cards alone', () => {
-    renderWithNav([
-      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
-    ]);
-
-    // Same coordinates — over the nav button — but on the panel's own
-    // control, where forwarding would be a guess. The move wins.
-    const moveButton = screen.getByText('Meditate').closest('button');
-    fireEvent.click(moveButton, inNavRect);
-
-    expect(navClick).not.toHaveBeenCalled();
-    expect(onMoveClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('ignores a click on the panel chrome that is over nothing', () => {
-    const { container } = renderWithNav([
-      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
-    ]);
-
-    const panel = container.querySelector(`.${GAME_PANEL_CLASS}`);
-    fireEvent.click(panel, { clientX: 999, clientY: 999 });
-
-    expect(navClick).not.toHaveBeenCalled();
-  });
-
-  it('ignores a nav button that is not laid out', () => {
-    // A zero-sized rect (a button that is display:none, or one jsdom never
-    // measured) must not swallow every click on the panel: a point is inside
-    // an empty rect at the origin for any (0, 0)-ish coordinate.
-    const { container } = render(
-      <>
-        <OccludedNav />
-        <CombatMovePanel
-          moves={[{ name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true }]}
-          category="Miscellaneous"
-          onMoveClick={onMoveClick}
-          onClose={onClose}
-        />
-      </>
-    );
-    vi.spyOn(screen.getByRole('button', { name: 'OFFENSIVE' }), 'getBoundingClientRect')
-      .mockReturnValue({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 });
-
-    fireEvent.click(container.querySelector(`.${GAME_PANEL_CLASS}`), { clientX: 0, clientY: 0 });
-    expect(navClick).not.toHaveBeenCalled();
-  });
-
-  // The hazard that ruled out forwarding on `pointerdown`: stopping the FIRST
-  // event of a gesture leaves mousedown/mouseup/click to land on whatever the
-  // replacement panel puts under the pointer, so one tap could switch category
-  // AND cast a move. Forwarding on `click` — the last event — means the whole
-  // gesture produces exactly one action.
-  it('produces one action for one gesture, not two', () => {
-    const { container } = renderWithNav([
-      { name: 'Meditate', category: 'Miscellaneous', description: 'Rest.', available: true },
-    ]);
-
-    const panel = container.querySelector(`.${GAME_PANEL_CLASS}`);
-    fireEvent.pointerDown(panel, inNavRect);
-    fireEvent.mouseDown(panel, inNavRect);
-    fireEvent.mouseUp(panel, inNavRect);
-    fireEvent.click(panel, inNavRect);
-
-    expect(navClick).toHaveBeenCalledTimes(1);
-    expect(onMoveClick).not.toHaveBeenCalled();
-  });
-});
+// The "clicks over the occluded category nav (#557)" describe block that
+// used to live here tested `useOccludedNavHandoff`: a synthetic <nav> plus a
+// coordinate hit-test that forwarded a click on the panel's own inert chrome
+// to whichever category button was underneath, while a click on one of the
+// panel's OWN move cards at those same coordinates was left alone ("the move
+// card wins") — because the tab really was hidden behind the card, and
+// picking a winner for an ambiguous click was the best that hook could do.
+//
+// Issue #575 removed the reason that arbitration existed: LeftPanel.jsx now
+// renders HeroPanel's whole stacking context above this panel
+// (`HERO_PANEL_STACKING_Z_INDEX` vs `COMBAT_MOVE_PANEL_Z_INDEX`), so a move
+// card can never visually cover a nav tab in the first place — there is
+// nothing left to hand off, and `useOccludedNavHandoff` is deleted along with
+// its only caller (this component). The "move card wins" test specifically
+// PINNED that occlusion as expected behaviour, which is exactly the bug #575
+// closes; keeping it (even edited) would still be asserting a scenario that
+// can no longer occur. The real coverage for the fix lives in
+// `LeftPanel.categoryNavStacking.test.jsx`, which renders the real HeroPanel
+// and CombatMovePanel together and checks the actual stacking relationship
+// and pointer-events pass-through, rather than a hand-built stand-in nav.

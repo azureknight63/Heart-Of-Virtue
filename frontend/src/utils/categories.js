@@ -99,16 +99,23 @@ export function categoryGlowOrNull(category) {
 /**
  * The accessible name of the combat category nav.
  *
- * Exported because it is a CONTRACT, not decoration: `useOccludedNavHandoff`
- * (called by CombatMovePanel) builds a `document.querySelectorAll` from it to
- * hand back clicks the flyout occludes (#557). While the label was a literal in both places, a rename in HeroPanel
- * would have silently retired that handoff -- and the regression tests could
- * not have caught it, because they built their own <nav> with the same
- * hard-coded string. A mock agreeing with a mock.
+ * Exported because it is a CONTRACT, not decoration: `categoryNavContract.test.jsx`
+ * and `LeftPanel.categoryNavStacking.test.jsx` both build a
+ * `document.querySelectorAll` from `CATEGORY_NAV_SELECTOR` below to find the
+ * REAL nav buttons HeroPanel renders, rather than a stand-in with the same
+ * hard-coded string — a rename here cannot silently pass while the tests find
+ * nothing, the way a mock built from the same literal would let it.
+ *
+ * Until issue #575 this selector also backed `useOccludedNavHandoff`, which
+ * hit-tested it to hand back clicks CombatMovePanel's flyout occluded (#557).
+ * That hook is retired: #575 raises the nav's real stacking context above the
+ * flyout (LeftPanel.jsx's `HERO_PANEL_STACKING_Z_INDEX`) instead of hit-testing
+ * around the occlusion, so the nav can no longer be covered in the first
+ * place.
  */
 export const CATEGORY_NAV_LABEL = 'Game actions'
 
-/** The selector `useOccludedNavHandoff` hit-tests against. Derived, never retyped. */
+/** The selector the nav-identity tests above hit-test against. Derived, never retyped. */
 export const CATEGORY_NAV_SELECTOR = `nav[aria-label="${CATEGORY_NAV_LABEL}"] button`
 
 /**
