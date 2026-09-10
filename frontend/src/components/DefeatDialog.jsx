@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import apiEndpoints from '../api/endpoints'
-import { useAuth } from '../hooks/useApi'
 import { useAudio } from '../context/AudioContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
@@ -30,7 +29,6 @@ const SKULL_ART = `
 `
 
 export default function DefeatDialog({ endState, onLoadedSave }) {
-  const { logout } = useAuth()
   const { playSFX } = useAudio()
   const [loading, setLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -111,11 +109,21 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
   }
 
   const handleStartOver = async () => {
+    setError('')
     try {
       setIsSubmitting(true)
-      await logout()
+      // Issue #587: this used to call logout(), which killed the session and
+      // stranded the (often unauthenticated test-bypass) player on the login
+      // page with no way back in. START OVER means "begin a fresh run in
+      // this session", which is exactly POST /game/new — the same call
+      // MainMenuPage's "New Game" button makes (apiEndpoints.saves.newGame).
+      await apiEndpoints.saves.newGame()
+      if (typeof onLoadedSave === 'function') {
+        await onLoadedSave()
+      }
     } catch (e) {
-      setError(e?.message || 'Failed to start over.')
+      setError(apiErrorMessage(e, e?.message || 'Failed to start over.'))
+    } finally {
       setIsSubmitting(false)
     }
   }

@@ -10,12 +10,22 @@ vi.mock('../api/endpoints', () => ({
   default: {
     saves: {
       list: vi.fn(),
-      load: vi.fn()
+      load: vi.fn(),
+      newGame: vi.fn()
     }
   }
 }));
 
 // Mock useAuth
+//
+// DefeatDialog no longer imports useAuth at all (issue #587 fix), so this
+// mock is not on the render path for anything below — it is kept, and
+// mockLogout asserted against, purely as a regression tripwire: if START OVER
+// ever again reaches for useAuth().logout(), this mock intercepts the call
+// instead of the real AuthContext (which would either throw with no
+// <AuthProvider> in the tree, or worse, actually destroy the session), and
+// the `expect(mockLogout).not.toHaveBeenCalled()` assertions below start
+// failing instead of silently passing.
 vi.mock('../hooks/useApi', () => ({
   useAuth: vi.fn()
 }));
@@ -139,7 +149,14 @@ describe('DefeatDialog', () => {
     await waitFor(() => expect(apiEndpoints.saves.load).toHaveBeenCalledTimes(2));
   });
 
-  it('handles start over (logout)', async () => {
+  it('starts a fresh run via /game/new on Start Over, without logging out', async () => {
+    // Issue #587: START OVER used to call logout(), which killed the session
+    // and dumped the (often unauthenticated test-bypass) player on the login
+    // page with no way back in. It must call the same POST /game/new the
+    // main menu's "New Game" button uses (apiEndpoints.saves.newGame,
+    // wrapping MainMenuPage.jsx's `saves.newGame()`), and it must NOT touch
+    // logout at all.
+    apiEndpoints.saves.newGame.mockResolvedValue({ success: true });
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
     await waitFor(() => {
@@ -150,12 +167,17 @@ describe('DefeatDialog', () => {
     fireEvent.click(startOverBtn);
 
     await waitFor(() => {
-      expect(mockLogout).toHaveBeenCalledTimes(1);
+      expect(apiEndpoints.saves.newGame).toHaveBeenCalledTimes(1);
     });
-    expect(mockLogout).toHaveBeenCalledWith();
+    expect(apiEndpoints.saves.newGame).toHaveBeenCalledWith();
+    expect(mockLogout).not.toHaveBeenCalled();
     // Starting over is not loading a save.
     expect(apiEndpoints.saves.load).not.toHaveBeenCalled();
-    expect(mockOnLoadedSave).not.toHaveBeenCalled();
+    // The parent (GamePage, via CombatManager's onDefeatClose) is told the
+    // underlying game state changed so it can reset out of the defeat state
+    // (close the dialog, clear endState, drop back to exploration mode) —
+    // exactly the same signal a successful Load Save sends today.
+    await waitFor(() => expect(mockOnLoadedSave).toHaveBeenCalledTimes(1));
   });
 
   it('renders "No saves found" if list is empty', async () => {
@@ -201,7 +223,7 @@ describe('DefeatDialog', () => {
   });
 
   it('falls back to a generic message when Start Over fails without one', async () => {
-    mockLogout.mockRejectedValue({});
+    apiEndpoints.saves.newGame.mockRejectedValue({});
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
     await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
@@ -210,6 +232,8 @@ describe('DefeatDialog', () => {
     await waitFor(() => {
       expect(screen.getByText('Failed to start over.')).toBeDefined();
     });
+    expect(mockLogout).not.toHaveBeenCalled();
+    expect(mockOnLoadedSave).not.toHaveBeenCalled();
   });
 
   it('omits the level segment when the server reports it as "?"', () => {
@@ -282,16 +306,20 @@ describe('DefeatDialog', () => {
     });
   });
 
-  it('shows an error and stops loading when logout fails on Start Over', async () => {
-    mockLogout.mockRejectedValue(new Error('Logout failed'));
+  it('shows an error and stops loading when starting a new game fails on Start Over', async () => {
+    apiEndpoints.saves.newGame.mockRejectedValue(new Error('New game failed'));
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
     await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
     fireEvent.click(screen.getByText('START OVER'));
 
     await waitFor(() => {
-      expect(screen.getByText('Logout failed')).toBeInTheDocument();
+      expect(screen.getByText('New game failed')).toBeInTheDocument();
     });
     expect(screen.getByText('START OVER')).not.toBeDisabled();
+    // A failed Start Over must not have logged the player out or left the
+    // defeat dialog thinking the run restarted.
+    expect(mockLogout).not.toHaveBeenCalled();
+    expect(mockOnLoadedSave).not.toHaveBeenCalled();
   });
 });
