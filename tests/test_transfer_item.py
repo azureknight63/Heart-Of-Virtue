@@ -139,9 +139,13 @@ def test_looting_merchant_container_keeps_merchandise_flag():
 
 
 class FakeRoom:
-    def __init__(self, map_dict=None):
+    def __init__(self, map_dict=None, npcs_here=None):
         self.map = map_dict or {}
         self.items_here = []
+        # A real merchant NPC standing on this tile, if any -- see issue #598:
+        # Item.take() used to tag merchandise from the *map's* name alone,
+        # regardless of whether a merchant was actually here.
+        self.npcs_here = npcs_here or []
 
     def stack_duplicate_items(self):
         pass
@@ -167,14 +171,23 @@ def test_looting_container_in_shop_map_keeps_merchandise_flag():
     assert getattr(player_items[0], 'merchandise', False) is True
 
 
-def test_ground_pickup_in_shop_map_sets_merchandise_flag():
+def test_ground_pickup_on_a_merchant_tile_sets_merchandise_flag():
+    """Issue #598: a genuine merchant NPC actually standing on the tile --
+    not the map's *name* -- is what makes an item picked up there shop
+    goods. A map-name substring match flagged an item on ANY tile of a
+    "...shop" map file as merchandise, even a tile with no merchant on it.
+    """
     player = Player()
     player.inventory = []
     player.name = "Jean"
-    player.map = {"name": "milos-shop"}
+    player.map = {"name": "milos-shop"}  # a "shop" map name alone must not decide it
 
-    # Mock a room containing the item on the ground
-    room = FakeRoom(map_dict={"name": "milos-shop"})
+    # Mock a room containing the item on the ground, with a real merchant
+    # (detected by `shop_name`, per issue #442) actually present on it.
+    room = FakeRoom(
+        map_dict={"name": "milos-shop"},
+        npcs_here=[FakeMerchant()],
+    )
     player.current_room = room
 
     item = Restorative(count=1, merchandise=False)  # starts false
