@@ -203,6 +203,94 @@ describe('useCombatLogPlayback — reload recovery', () => {
   })
 })
 
+describe('useCombatLogPlayback — reload after combat already ended (issue #570)', () => {
+  /**
+   * `useCombat()` (frontend/src/hooks/useApi.js) starts `combat` at `null` and
+   * only replaces it once the mount-time `fetchCombatStatus()` resolves. Every
+   * other test in this file hands the hook a `combat_id` from its very first
+   * render (`initialProps`), which is NOT what a real mount does -- so none of
+   * them exercise the null -> populated transition. A page reload after a
+   * fight already ended lands exactly there: `combat_active` is already false
+   * and `end_state`/`log` are already fully populated on that first non-null
+   * payload, same shape as the existing "reload recovery" describe block
+   * above, just arriving one render later than combat_id.
+   */
+  it('reveals an already-resolved fight instantly on the first non-null payload, not paced like a live fight', () => {
+    const log = [
+      entry('Jean attacks the slime'),
+      entry('The slime is defeated'),
+      entry('Victory! Gained exp: 40'),
+    ]
+    const view = renderHook(
+      ({ combat }) => useCombatLogPlayback(combat),
+      { initialProps: { combat: null } }
+    )
+
+    act(() => {
+      view.rerender({
+        combat: {
+          combat_id: 'fight-1',
+          combat_active: false,
+          end_state: { id: 'e1', status: 'victory' },
+          log,
+        },
+      })
+    })
+    // The head of a batch is always revealed synchronously, live fight or
+    // not -- this alone doesn't distinguish the two paths.
+    expect(messages(view.result)).toEqual(['Jean attacks the slime'])
+
+    // A live fight paces the remaining lines at 400ms each; a reload has
+    // nothing left to pace and should already show the rest well inside
+    // that first tick.
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(messages(view.result)).toEqual([
+      'Jean attacks the slime', 'The slime is defeated', 'Victory! Gained exp: 40',
+    ])
+    expect(mockPlaySFX).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Negative control for the fix above. `combat` starting at `null` and then
+   * landing on its first real payload is not, by itself, evidence of a
+   * reload -- it is ALSO exactly what an ordinary first fight of the session
+   * looks like the moment its first status fetch resolves, since `useCombat`
+   * never resets `combat` back to null between fights (only page load does).
+   * A first fix here keyed only on "is this the first combat_id we've ever
+   * seen" could not tell that case apart from issue #570's reload-after-end
+   * case, and swallowed a brand new fight's opening line(s) into the same
+   * instant, SFX-less catch-up path -- silently dropping the pacing and any
+   * attack SFX on a fight nobody reloaded. The fix must also check
+   * `end_state`: a fight that has not ended yet never has one.
+   */
+  it('still paces a brand new live fight normally on its first-ever payload, not like a reload', () => {
+    const log = [
+      entry('The slime attacks!'),
+      entry('Jean readies her blade'),
+    ]
+    const view = renderHook(
+      ({ combat }) => useCombatLogPlayback(combat),
+      { initialProps: { combat: null } }
+    )
+
+    act(() => {
+      view.rerender({
+        combat: { combat_id: 'fight-1', combat_active: true, round: 1, log },
+      })
+    })
+    // Same as the reload case: the head of the batch shows synchronously.
+    expect(messages(view.result)).toEqual(['The slime attacks!'])
+
+    // Unlike the reload case, the second line must NOT appear after a
+    // negligible tick -- a live fight paces it a full 400ms later.
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(messages(view.result)).toEqual(['The slime attacks!'])
+
+    act(() => { vi.advanceTimersByTime(399) })
+    expect(messages(view.result)).toEqual(['The slime attacks!', 'Jean readies her blade'])
+  })
+})
+
 describe('useCombatLogPlayback — per-fight reset', () => {
   it('clears the revealed log when combat_id changes and paces the new fight normally', () => {
     const fight1 = [entry('fight one line')]

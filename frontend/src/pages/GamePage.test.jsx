@@ -44,10 +44,11 @@ vi.mock('../context/ToastContext', () => ({
 }));
 
 vi.mock('../components/RightPanel', () => ({
-    default: ({ mode, location }) => (
+    default: ({ mode, location, isReloadRecovery }) => (
         <div data-testid="right-panel">
             Mode: {mode}
             Location: {location?.name}
+            ReloadRecovery: {String(isReloadRecovery)}
         </div>
     )
 }));
@@ -484,6 +485,123 @@ describe('GamePage', () => {
             renderGamePage();
 
             expect(screen.getByText('A Slime glares sharply at Jean!')).toBeDefined();
+        });
+    });
+
+    describe('post-combat-ended reload recovery (issue #570)', () => {
+        // `useCombat()` (frontend/src/hooks/useApi.js) starts `combat` at `null`
+        // and only replaces it once the mount-time `fetchCombatStatus()` resolves.
+        // A page reload after a fight already ended therefore hands this hook's
+        // battlefield-reload flag (isCombatReloadRecovery) an `inCombat: false`
+        // payload that already carries a populated `end_state` and log, on a
+        // session that never observed the fight live. That is functionally
+        // identical to a mid-fight reload -- the whole log is history -- but the
+        // flag only ever got decided on the `inCombat: true` branch, so it stayed
+        // permanently false and the battlefield replayed every animation in the
+        // finished fight at full speed, holding isBattlefieldAnimating true long
+        // enough to block useCombatCoordinator's victory/defeat dialog gate.
+
+        it('flags reload recovery when the very first combat payload already shows the fight over', () => {
+            useCombat.mockReturnValue({
+                combat: {
+                    ...mockCombat,
+                    combat_active: false,
+                    end_state: { id: 'reload-1', status: 'victory', message: 'You won!' },
+                    log: [
+                        { type: 'combat', message: 'Jean strikes the Slime.' },
+                        { type: 'system', message: 'Victory! Gained exp: 40' }
+                    ]
+                },
+                inCombat: false,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
+
+            renderGamePage();
+            expect(screen.getByText(/ReloadRecovery: true/i)).toBeDefined();
+        });
+
+        it('does not flag reload recovery for a fight that ends live in this session', () => {
+            useCombat.mockReturnValue({
+                combat: { ...mockCombat, combat_active: true, round: 1, log: [] },
+                inCombat: true,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
+            const view = renderGamePage();
+
+            // The same fight, now resolved -- but this session watched it happen,
+            // so it must never be mistaken for a reload.
+            useCombat.mockReturnValue({
+                combat: {
+                    ...mockCombat,
+                    combat_active: false,
+                    end_state: { id: 'live-end-1', status: 'victory', message: 'You won!' },
+                    log: [
+                        { type: 'combat', message: 'Jean strikes the Slime.' },
+                        { type: 'system', message: 'Victory! Gained exp: 40' }
+                    ]
+                },
+                inCombat: false,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
+            view.rerender(
+                <MemoryRouter>
+                    <GamePage />
+                </MemoryRouter>
+            );
+
+            expect(screen.getByText(/ReloadRecovery: false/i)).toBeDefined();
+        });
+
+        // The test above renders `inCombat: true` WITH a populated `combat`
+        // object on its very first render, which the effect's `inCombat`
+        // branch decides (and latches `reloadRecoveryDecidedRef`) immediately
+        // -- before the fight ever ends. That makes it pass on the OLD code
+        // too (verified: reverting everInCombatRef and rerunning it still
+        // goes green), so it doesn't actually exercise everInCombatRef.
+        // `useCombat`'s real setters (`setCombat`/`setInCombat` in
+        // useApi.js) update together in one render today, but nothing
+        // enforces that stays true, and `inCombat: true` with `combat` still
+        // `null` is exactly the gap everInCombatRef is there to cover: it
+        // must remember the fight went live even on a render where there was
+        // no `combat` object yet to decide from.
+        it('remembers a fight went live even if combat data lagged inCombat on that render', () => {
+            useCombat.mockReturnValue({
+                combat: null,
+                inCombat: true,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
+            const view = renderGamePage();
+
+            useCombat.mockReturnValue({
+                combat: {
+                    ...mockCombat,
+                    combat_active: false,
+                    end_state: { id: 'live-end-2', status: 'victory', message: 'You won!' },
+                    log: [
+                        { type: 'combat', message: 'Jean strikes the Slime.' },
+                        { type: 'system', message: 'Victory! Gained exp: 40' }
+                    ]
+                },
+                inCombat: false,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
+            view.rerender(
+                <MemoryRouter>
+                    <GamePage />
+                </MemoryRouter>
+            );
+
+            expect(screen.getByText(/ReloadRecovery: false/i)).toBeDefined();
         });
     });
 
