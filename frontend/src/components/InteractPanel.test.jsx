@@ -834,6 +834,45 @@ describe('InteractPanel', () => {
     });
   });
 
+  describe('dialog controls stay inert while an interaction is in flight (issue #585)', () => {
+    // A 'read' keyword's BookReaderDialog (z-index 2100, see BookReaderDialog.jsx)
+    // can only mount once handleActionClick's `await runInteract(...)` settles --
+    // and that promise does not resolve until useWorldInteract's `interact()`
+    // has also awaited its onRefetch/pollBackgroundEvents follow-up calls, well
+    // after `interactionOutput` (and this panel's own Back/keyword buttons) are
+    // already on screen and look fully live. Issue #585's reproduction landed a
+    // click on this panel's own dismiss button right as the read finally
+    // resolved and BookReaderDialog mounted on top of it, so the click was
+    // swallowed by the new overlay instead of reaching Back/close -- recoverable
+    // only via Escape. This asserts the invariant the fix relies on: neither
+    // control is a live target for the whole duration an interaction is
+    // in flight, so there is no window left for a later-mounting overlay to
+    // race a click against.
+    it('disables Back and hides the dismiss button until the interaction settles', async () => {
+      let resolveInteract
+      apiEndpoints.world.interact.mockReturnValue(new Promise((resolve) => { resolveInteract = resolve }))
+
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />)
+      fireEvent.click(screen.getAllByText(/Guard/i)[0])
+      fireEvent.click(screen.getByText(/^Talk$/))
+
+      // Still pending -- neither control may be clickable while this panel's
+      // own request (any keyword, not just 'read') is unresolved.
+      await waitFor(() => {
+        expect(screen.getByText(/← Back/i).closest('button').disabled).toBe(true)
+      })
+      expect(screen.queryByText('✕')).not.toBeInTheDocument()
+
+      resolveInteract({ data: { success: true, message: 'Talk successful' } })
+
+      // Settled -- both controls are live again.
+      await waitFor(() => {
+        expect(screen.getByText(/← Back/i).closest('button').disabled).toBe(false)
+      })
+      expect(screen.getByText('✕')).toBeInTheDocument()
+    })
+  })
+
   it('closes the dialog after a teleport interaction', async () => {
     vi.useFakeTimers();
     // try/finally: a bare `vi.useRealTimers()` at the end leaks fake timers
