@@ -79,6 +79,7 @@ function VolumeRow({
     volume,
     onVolumeChange,
     mobileTouchTarget,
+    mobileTouchHeight,
     marginBottom,
 }) {
     return (
@@ -134,7 +135,14 @@ function VolumeRow({
                     style={{
                         flex: 1,
                         accentColor: colors.primary,
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        // issue #580: measured 247x16px on a 375px viewport,
+                        // also under WCAG 2.5.8's 24px minimum. Growing the
+                        // input's own box (not the visible track, which the
+                        // browser draws thin and vertically centered
+                        // regardless of the box height) widens the tappable
+                        // corridor without the track reading as fatter.
+                        ...mobileTouchHeight,
                     }}
                     disabled={muted}
                 />
@@ -200,7 +208,7 @@ function SegmentedRow({ heading, options, value, onSelect, buttonStyle = {}, fon
 // One row per registered flag. Rendered from the registry rather than written
 // out per flag, so adding an entry to FEATURE_FLAGS is the only step needed to
 // surface a new toggle here.
-function FeatureFlagRow({ name, label, description }) {
+function FeatureFlagRow({ name, label, description, buttonStyle }) {
     const enabled = useFeatureFlag(name)
     return (
         <ToggleRow
@@ -214,6 +222,7 @@ function FeatureFlagRow({ name, label, description }) {
             // than by giving that div an id, so the row's DOM shape (which
             // SettingsDialog.test.jsx walks) is untouched.
             ariaLabel={label}
+            buttonStyle={buttonStyle}
         />
     )
 }
@@ -259,6 +268,7 @@ export default function SettingsDialog({ onClose }) {
                     volume={musicVolume}
                     onVolumeChange={setMusicVolume}
                     mobileTouchTarget={mobileTouchTarget}
+                    mobileTouchHeight={mobileTouchHeight}
                     marginBottom="20px"
                 />
 
@@ -269,6 +279,7 @@ export default function SettingsDialog({ onClose }) {
                     volume={sfxVolume}
                     onVolumeChange={setSfxVolume}
                     mobileTouchTarget={mobileTouchTarget}
+                    mobileTouchHeight={mobileTouchHeight}
                     marginBottom="15px"
                 />
 
@@ -321,6 +332,11 @@ export default function SettingsDialog({ onClose }) {
                             name={name}
                             label={flag.label}
                             description={flag.description}
+                            // issue #580: measured 38x28 / 38x28 / 31x28 on a
+                            // 375px viewport. "Auto-advance story" above
+                            // already gets this treatment; these three
+                            // registry-driven rows never received it.
+                            buttonStyle={mobileTouchTarget}
                         />
                     ))}
                 </div>

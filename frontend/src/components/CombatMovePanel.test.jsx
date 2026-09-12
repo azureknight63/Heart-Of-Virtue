@@ -2,12 +2,15 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
 import { useAudio } from '../context/AudioContext';
-import { spacing } from '../styles/theme';
+import { spacing, accessibility } from '../styles/theme';
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
   useAudio: vi.fn()
 }));
+
+const mobileMock = vi.hoisted(() => ({ isMobile: false }));
+vi.mock('../hooks/useMobile', () => ({ useMobile: () => mobileMock.isMobile }));
 
 describe('CombatMovePanel', () => {
   const mockPlaySFX = vi.fn();
@@ -25,6 +28,7 @@ describe('CombatMovePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAudio.mockReturnValue({ playSFX: mockPlaySFX });
+    mobileMock.isMobile = false;
   });
 
   it('renders moves for a specific category', () => {
@@ -249,6 +253,40 @@ describe('CombatMovePanel', () => {
     // player's beat.
     expect(mockOnClose).toHaveBeenCalledTimes(1);
     expect(mockOnMoveClick).not.toHaveBeenCalled();
+  });
+
+  describe('close button touch target (issue #580)', () => {
+    // Distinct from the BaseDialog close button #542 already fixed: this
+    // panel renders its own inline "✕" rather than using BaseDialog, and QA
+    // re-measured it at 23x35px on a 375px viewport.
+    it('grows the close button to 44px on mobile', () => {
+      mobileMock.isMobile = true;
+      render(
+        <CombatMovePanel
+          moves={mockMoves}
+          category="Offensive"
+          onMoveClick={mockOnMoveClick}
+          onClose={mockOnClose}
+        />
+      );
+      const closeBtn = screen.getByText('✕');
+      expect(closeBtn.style.minWidth).toBe(accessibility.touchTarget);
+      expect(closeBtn.style.minHeight).toBe(accessibility.touchTarget);
+    });
+
+    it('leaves the close button at its native size on desktop', () => {
+      render(
+        <CombatMovePanel
+          moves={mockMoves}
+          category="Offensive"
+          onMoveClick={mockOnMoveClick}
+          onClose={mockOnClose}
+        />
+      );
+      const closeBtn = screen.getByText('✕');
+      expect(closeBtn.style.minWidth).toBe('');
+      expect(closeBtn.style.minHeight).toBe('');
+    });
   });
 
   it('notifies onTargetHover with the single viable enemy target on hover, and clears it on click/leave', () => {

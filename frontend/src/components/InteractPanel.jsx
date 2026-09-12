@@ -10,7 +10,7 @@ import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
-import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
+import { colors, spacing, commonStyles, fonts, shadows, accessibility } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
 import { stackDisplayName, stackSize, isStacked, stackLabel } from '../utils/stackName'
 
@@ -490,6 +490,10 @@ function InteractPanel({
                                 style={{
                                     width: '100%',
                                     padding: `${spacing.sm} ${spacing.md}`,
+                                    // issue #580: measured 298x38px on a
+                                    // 375px viewport, 6px short of the 44px
+                                    // minimum.
+                                    minHeight: accessibility.touchTarget,
                                     backgroundColor: searchHovered ? colors.alpha.info[10] : 'transparent',
                                     border: `1.5px solid ${colors.accent}`,
                                     borderRadius: '8px',

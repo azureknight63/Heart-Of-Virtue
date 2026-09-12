@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel, { actionKeywords } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
-import { colors } from '../styles/theme';
+import { colors, accessibility } from '../styles/theme';
 import React from 'react';
 
 // Mock apiEndpoints
@@ -461,6 +461,13 @@ describe('InteractPanel', () => {
   it('renders Search Area button when no target is selected', () => {
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
     expect(screen.getByText(/Search Area/i).textContent).toBe('🔍 Search Area');
+  });
+
+  it('meets the 44px touch-target minimum on the Search Area button (issue #580)', () => {
+    // Measured 298x38px on a 375px viewport, 6px short of the minimum.
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    const searchButton = screen.getByText(/Search Area/i).closest('button');
+    expect(searchButton.style.minHeight).toBe(accessibility.touchTarget);
   });
 
   it('hides Search Area button when a target is selected', () => {

@@ -300,6 +300,11 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
             color: selected.size === 0 ? '#333' : colors.secondary,
             borderColor: selected.size === 0 ? '#333' : colors.secondary,
             fontFamily: fonts.main, fontSize: '12px', padding: '10px',
+            // issue #580: measured 314.5x42px on a 375px viewport, 2px short
+            // of the 44px minimum. The skip button below already carries this
+            // floor unconditionally; this brings the CTA above it in line.
+            minHeight: accessibility.touchTarget,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             textTransform: 'uppercase', letterSpacing: '0.12em', cursor: selected.size === 0 ? 'not-allowed' : 'pointer',
           }}
           onMouseEnter={e => { if (selected.size > 0 && !isSubmitting) { e.currentTarget.style.background = colors.secondary; e.currentTarget.style.color = '#0a0a0a' } }}

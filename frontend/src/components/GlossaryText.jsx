@@ -162,6 +162,31 @@ export default function GlossaryText({ text, style, className, ...rest }) {
                 font: 'inherit',
                 color: isActive ? colors.text.bright : colors.accent,
                 cursor: 'help',
+                // issue #580: measured 36x19px on a 375px viewport. Gated on
+                // the pointer (isCoarse), not viewport width — this is the
+                // same signal the rest of the component already uses to
+                // choose hover vs. tap presentation, and useMobile is asserted
+                // above never to be called by this component. Padding plus an
+                // equal negative horizontal margin grows the hit box into the
+                // surrounding whitespace without shifting this word or its
+                // neighbours (vertical margin has no layout effect on an
+                // inline element either way, so only the horizontal axis
+                // needs the offsetting margin). The dotted marker switches
+                // from border-bottom to text-decoration here: a border is
+                // drawn at the outer edge of padding, so the added vertical
+                // padding would otherwise strand the dotted line ~13px below
+                // the word it is supposed to underline. text-decoration is
+                // positioned from font metrics, not the padding box, so it
+                // keeps hugging the glyphs regardless of padding.
+                ...(isCoarse ? {
+                  borderBottom: 'none',
+                  textDecoration: 'underline dotted',
+                  textDecorationColor: colors.alpha.info[80],
+                  textUnderlineOffset: '2px',
+                  padding: '13px 4px',
+                  marginLeft: '-4px',
+                  marginRight: '-4px',
+                } : {}),
               }}
             >
               {segment.text}
