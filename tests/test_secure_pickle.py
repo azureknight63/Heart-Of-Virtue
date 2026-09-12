@@ -191,6 +191,15 @@ def test_safe_pickle_load_round_trip_simple_data():
 
 
 def test_safe_pickle_load_placeholder_for_missing_class():
+    """Placeholder synthesis still works -- but only with strict explicitly off.
+
+    This used to pass on a bare ``safe_pickle_load``, because strict was opt-in.
+    It is now the documented legacy path: a save naming a class the engine no
+    longer has resolves to a tagged placeholder only when the caller asks for
+    legacy behaviour, or when the class is curated into
+    ``LEGACY_ALLOWED_MISSING``. Under the default posture the same payload is
+    rejected -- asserted directly below.
+    """
     # Build a pickle referencing a class that won't exist at load time.
     mod = types.ModuleType("story.ephemeral_secure_mod")
     exec("class Ghost:\n    def __init__(self):\n        self.x = 1", mod.__dict__)
@@ -210,10 +219,16 @@ def test_safe_pickle_load_placeholder_for_missing_class():
         if created_story:
             del sys.modules["story"]
 
-    loaded = sp.safe_pickle_load(io.BytesIO(data))
+    loaded = sp.safe_pickle_load(io.BytesIO(data), strict=False)
     assert loaded.__class__.__name__.startswith(
         "LegacyMissing_src_story_ephemeral_secure_mod_Ghost"
     )
+
+    # The same payload under the default posture: rejected, not silently
+    # degraded. Without this half the test above would keep passing if strict
+    # were ever flipped back, and nothing would notice.
+    with pytest.raises(sp.RestrictedUnpicklingError):
+        sp.safe_pickle_load(io.BytesIO(data))
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +255,64 @@ def test_strict_mode_enabled_reads_env(monkeypatch):
     assert sp.strict_mode_enabled() is True
     monkeypatch.setenv(sp.STRICT_ENV_VAR, "0")
     assert sp.strict_mode_enabled() is False
+
+
+def test_strict_mode_is_on_when_the_env_var_is_unset(monkeypatch):
+    """Strict is the default posture, not an opt-in.
+
+    This assertion is the whole point of the flag flip: an entry point that sets
+    nothing gets allow-list enforcement. It used to assert False, which meant
+    every production load ran with the allow-list inert while SECURITY.md
+    described a gate.
+    """
     monkeypatch.delenv(sp.STRICT_ENV_VAR, raising=False)
+    assert sp.strict_mode_enabled() is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "FALSE", " off "])
+def test_strict_mode_opt_out_values(monkeypatch, value):
+    """The env var is now an escape hatch, and it accepts the negatives of the
+    truthy set it used to accept."""
+    monkeypatch.setenv(sp.STRICT_ENV_VAR, value)
     assert sp.strict_mode_enabled() is False
+
+
+@pytest.mark.parametrize("value", ["", "   ", "maybe", "1", "yes", "on", "true"])
+def test_unrecognised_or_truthy_values_stay_strict(monkeypatch, value):
+    """Anything that is not an explicit opt-out leaves the gate on.
+
+    Fail closed: a typo in a deploy env (``HOV_STRICT_UNPICKLE=flase``) must not
+    silently disable the allow-list. An empty value is not an opt-out either --
+    that is how an unset-but-declared variable reads.
+    """
+    monkeypatch.setenv(sp.STRICT_ENV_VAR, value)
+    assert sp.strict_mode_enabled() is True
+
+
+def test_unpickler_built_without_init_fails_closed(monkeypatch):
+    """``find_class`` reads ``strict`` via getattr for instances built through
+    ``__new__``. That fallback must be strict, or bypassing ``__init__`` becomes
+    a way to get placeholder synthesis back with the gate shut everywhere else.
+    """
+    monkeypatch.delenv(sp.STRICT_ENV_VAR, raising=False)
+    up = sp.SafeUnpickler.__new__(sp.SafeUnpickler)
+    with pytest.raises(sp.RestrictedUnpicklingError):
+        up.find_class("totally_nonexistent_module_xyz", "SomeClass")
+
+
+def test_default_load_rejects_a_malicious_reduce_with_no_env_set(monkeypatch, tmp_path):
+    """The end-to-end consequence of the flip, stated as a security property.
+
+    Before the flip this payload loaded and fired its side effect on a default
+    ``safe_pickle_load`` -- the allow-list only gated when an env var nothing set
+    was present. This is the regression test for that.
+    """
+    sentinel = tmp_path / "default_fired"
+    data = sp.serialize_for_save(_MkdirReduce(str(sentinel)))
+    monkeypatch.delenv(sp.STRICT_ENV_VAR, raising=False)
+    with pytest.raises(sp.RestrictedUnpicklingError):
+        sp.safe_pickle_load(io.BytesIO(data))
+    assert not sentinel.exists()
 
 
 def test_unpickler_defaults_strict_from_env(monkeypatch):
@@ -902,3 +973,61 @@ def test_placeholder_for_a_nul_bearing_module_does_not_crash():
     cls = up.find_class("mod\x00ule", "Na\x00me")
     assert "\x00" not in cls.__name__
     assert getattr(cls(), "_legacy_placeholder", False) is True
+
+
+# ---------------------------------------------------------------------------
+# Sandbox worker: the parent must propagate the *opt-out*, not the opt-in
+# ---------------------------------------------------------------------------
+
+def test_subprocess_loader_propagates_strict_false_as_an_explicit_opt_out(monkeypatch):
+    """``load_in_subprocess(strict=False)`` must actually reach the child as off.
+
+    Deleting the variable used to mean "not strict". After the default flip it
+    means the opposite, so popping it would run the child strictly and silently
+    invert the caller's argument. The parent has to write the opt-out value.
+    """
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = b'{"ok": true}'
+        stderr = b""
+
+    def _fake_run(cmd, **kwargs):
+        captured["env"] = kwargs.get("env", {})
+        return _Proc()
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    # A stray strict=1 in the ambient environment must not leak through either.
+    monkeypatch.setenv(sp.STRICT_ENV_VAR, "1")
+
+    sp.load_in_subprocess(b"unused", strict=False, memory_bytes=None)
+
+    value = captured["env"].get(sp.STRICT_ENV_VAR)
+    assert value is not None, (
+        "strict=False must SET the opt-out in the child env, not unset the "
+        "variable -- absence now means strict"
+    )
+    assert value.strip().lower() in sp.STRICT_OPT_OUT_VALUES
+
+
+def test_subprocess_loader_propagates_strict_true(monkeypatch):
+    """The strict=True direction, pinned alongside so the pair cannot drift."""
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = b'{"ok": true}'
+        stderr = b""
+
+    def _fake_run(cmd, **kwargs):
+        captured["env"] = kwargs.get("env", {})
+        return _Proc()
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    monkeypatch.setenv(sp.STRICT_ENV_VAR, "0")  # ambient opt-out must be overridden
+
+    sp.load_in_subprocess(b"unused", strict=True, memory_bytes=None)
+
+    value = captured["env"].get(sp.STRICT_ENV_VAR, "")
+    assert value.strip().lower() not in sp.STRICT_OPT_OUT_VALUES

@@ -180,12 +180,13 @@ security dimension at all; `/ship` gates a merge). They are upstream files that
 Review Gate, which already routes to `/code-review` regardless of which skill
 found the problem — reinforce that rather than patching vendored files.
 
-## Two live defects already in the tree
+## Two real defects this analysis found in the tree
 
-Neither is hypothetical, and the first is the strongest single argument for this
-work.
+Neither was hypothetical, and the first was the strongest single argument for the
+work. **Both are now fixed** — described here in the past tense, with their
+resolutions, because the analysis is only legible alongside what it caught.
 
-### 1. The pickling guidance asserts a control that is switched off (M3)
+### 1. The pickling guidance asserted a control that was switched off (M3) — FIXED
 
 `.claude/agents/code-scrubber-security.md` tells the security reviewer:
 
@@ -198,35 +199,53 @@ ready-made downgrade justification:
 > `src/secure_pickle.py`'s `SafeUnpickler` already enforces the allow-list for
 > this deserialization path
 
-**What is actually true.** The hardening is real and substantial — 658 lines,
+**What was actually true.** The hardening was real and substantial — 658 lines,
 two strict gates in `find_class`, `RestrictedUnpicklingError`, an auto-derived
 engine allow-list, a curated `LEGACY_ALLOWED_MISSING` set, manifest drift
 guarding via `tools/gen_allowlist_manifest.py`, and a save fuzzer asserting zero
-security-invariant breaches. `load_in_subprocess()` already defaults
-`strict=True`. But the default in-process path resolves `strict=None` through
-`strict_mode_enabled()` -> `HOV_STRICT_UNPICKLE`, and **nothing sets that
-variable**; `.env.example:396` ships it commented out as
+security-invariant breaches. `load_in_subprocess()` already defaulted
+`strict=True`. But the default in-process path resolved `strict=None` through
+`strict_mode_enabled()` -> `HOV_STRICT_UNPICKLE`, and **nothing set that
+variable**; `.env.example` even shipped it commented out as
 `# HOV_STRICT_UNPICKLE=0`, advertising the wrong posture. On a default load what
-protects the process is the sha256 integrity header, the 5 MB size cap and
-legacy-module rewriting — not the allow-list
-(`.claude/rules/saves-persistence.md` states this plainly).
+protected the process was the sha256 integrity header, the 5 MB size cap and
+legacy-module rewriting — not the allow-list.
 
-So the adversary can downgrade a genuine deserialization finding by citing a
-control that is off. That is the 15.2% condition, hand-written into an agent
+So the adversary could downgrade a genuine deserialization finding by citing a
+control that was off. That was the 15.2% condition, hand-written into an agent
 definition.
 
-**Maintainer's decision (recorded 2026-09-11): strict mode is the intended
-production posture, and review must not assume the legacy path carries into
-prod.** This is a better rule than restating the precondition, because it makes
-the guidance correct in the end-state rather than accurate about a temporary one.
-Phase 1 therefore instructs the reviewers to treat strict mode as on and to flag
-any new deserialization path that only holds with it off.
+**Maintainer's decision (2026-09-11): strict mode is the intended production
+posture, and review must not assume the legacy path carries into prod.** Phase 1
+encoded that, instructing the reviewers to treat strict as on and flag any path
+that only holds with it off.
 
-Turning the flag on is a code change with save-compatibility consequences and is
-out of scope for this plan; it is filed under follow-ups. Fixing `.env.example`
-to stop suggesting `0` is in scope for Phase 1 as a one-line change.
+**RESOLVED (2026-09-12): strict is now actually the default.** The maintainer
+confirmed save compatibility is not a beta constraint, which removed the only
+blocker. `strict_mode_enabled()` returns True unless `HOV_STRICT_UNPICKLE` is an
+explicit opt-out, and `find_class`'s `getattr(self, "strict", ...)` fallback was
+flipped to True so an instance built through `__new__` fails closed. The
+regression test that pins it is the one worth reading: a malicious `__reduce__`
+payload, loaded through a bare `safe_pickle_load` with no env set, previously
+fired its side effect.
 
-### 2. The adversary cannot escalate (M5)
+Two things this exposed, both of them instances of what this plan is about:
+
+- **Two tests had been round-tripping *test-local* classes through the real save
+  path.** They passed only because the allow-list was inert; such a save could
+  never have loaded in production. `test_game_service_expanded.py` now uses real
+  `src.states.State` instances, so `persistent` is read from the engine rather
+  than from a fixture agreeing with itself.
+- **The flip invalidated the guidance written for it one day earlier.** Phase 1's
+  text said the allow-list "does not gate at all" on a default load — true when
+  written, false the moment the flag flipped, and exactly the M3 stale-context
+  hazard it was added to prevent. Ten documents asserted the opt-in framing and
+  all ten were corrected in the same commit. The lesson is not "write better
+  prose": it is that **guidance describing a mutable fact needs to be found and
+  fixed when the fact changes**, which is why every such claim now instructs the
+  reader to verify against source.
+
+### 2. The adversary could not escalate (M5) — FIXED in Phase 1b
 
 `code-scrubber-adversary-security.md` states: *"You may NOT dismiss findings
 outright. The minimum disposition is Advisory."* Its three permitted actions are
@@ -535,11 +554,11 @@ Meta-level, but the plan should hold itself to its own standard:
 
 ## Follow-ups outside this plan
 
-- **Turn strict unpickling on.** The machinery is built and fuzzed; the flag is
-  unset. Enabling it is a save-compatibility change needing its own regression
-  pass over legacy fixtures, so it is its own task — but with the posture
-  decision recorded above, the review skills now treat non-strict as a defect to
-  flag rather than a baseline to accept.
+- ~~**Turn strict unpickling on.**~~ **Done 2026-09-12** — see the resolved
+  defect above. What remains is narrower: `LEGACY_ALLOWED_MISSING` is still
+  empty, so retiring any engine class is now a save-breaking change until it is
+  curated in. Acceptable in beta, but it should be a checklist item on class
+  removal rather than a surprise.
 - **Measure our own rate (§7.1).** The paper's headline recommendation is to run
   a FLAWED-style harness over your *own* previously-fixed bugs before trusting
   automated patching. Heart of Virtue has a closed-issue history and

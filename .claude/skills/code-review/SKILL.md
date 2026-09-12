@@ -110,7 +110,7 @@ The first six dimensions below are generic and language-agnostic. **Architecture
 
 **Evaluate:** Input validation/sanitization at boundaries, secrets handling, authn/authz consistency, safe deserialization, dependency hygiene.
 
-**Red flags:** Secrets or credentials committed to VCS; SQL/query strings built via string concatenation from user input; skipped authorization checks; plaintext/weak-hash password storage; `verify=False` on HTTP clients; any new deserialization path that bypasses `src/secure_pickle.py`'s `SafeUnpickler`, **or that only holds with strict mode off** (strict allow-list enforcement is gated on `HOV_STRICT_UNPICKLE`, which nothing sets, but it is the intended production posture — review as though it is on); a new `/api/debug/*`-style route not gated behind `app.config["TESTING"]`.
+**Red flags:** Secrets or credentials committed to VCS; SQL/query strings built via string concatenation from user input; skipped authorization checks; plaintext/weak-hash password storage; `verify=False` on HTTP clients; any new deserialization path that bypasses `src/secure_pickle.py`'s `SafeUnpickler`, **or that only holds with strict mode off** (strict enforcement is the default — `HOV_STRICT_UNPICKLE` is an opt-out only — so a path needing it disabled, or a `strict` default weakened to False, is a regression); a new `/api/debug/*`-style route not gated behind `app.config["TESTING"]`.
 
 ### 6. AI-Friendliness
 

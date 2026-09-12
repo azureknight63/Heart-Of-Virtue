@@ -35,10 +35,11 @@ MANIFEST_NOTE = (
     "tools/gen_allowlist_manifest.py. NOT the enforcement gate: nothing on the "
     "save-load path consults secure_pickle.get_allowlist(). Strict-mode "
     "enforcement is secure_pickle._is_allowed (engine-module based, admits "
-    "functions and methods too) and runs only when HOV_STRICT_UNPICKLE is set. "
-    ".env.example documents that variable but ships it commented out and off, "
-    "and no config or CI workflow turns it on, so in a default checkout the "
-    "loader is permissive. Regenerate, never hand-edit."
+    "functions and methods too), and it now runs by DEFAULT -- strict is on "
+    "unless HOV_STRICT_UNPICKLE is set to an explicit opt-out (0/false/no/off). "
+    "That flip is why this inventory matters: in a default checkout the loader "
+    "is no longer permissive, so a class missing from the engine surface is a "
+    "load failure rather than a silent placeholder. Regenerate, never hand-edit."
 )
 
 MANIFEST_PATH = os.path.join(

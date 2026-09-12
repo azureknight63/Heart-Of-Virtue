@@ -333,10 +333,22 @@ def test_safe_unpickler_rewrite_success(tmp_path, monkeypatch):
     rewritten_name = "src." + mod_name
     monkeypatch.setitem(sys.modules, rewritten_name, ghost_mod)
 
+    # The module-rewrite mechanism is orthogonal to allow-list enforcement, and
+    # this fixture's module is synthesised into sys.modules rather than being a
+    # real engine module -- so strict rejects it however well the rewrite worked.
+    # Opt out to isolate the rewrite branch under test.
+    monkeypatch.setenv("HOV_STRICT_UNPICKLE", "0")
     with open(pfile, "rb") as f:
         loaded = functions._safe_pickle_load(f)
     assert loaded.__class__.__name__ == "RewriteClass"
     assert loaded.v == 7
+
+    # And the security half: a successful rewrite is not a grant of trust. The
+    # same payload under the default posture is rejected, because a synthesised
+    # `src.story.*` entry is not an engine module.
+    monkeypatch.delenv("HOV_STRICT_UNPICKLE", raising=False)
+    with open(pfile, "rb") as f:
+        assert functions._safe_pickle_load(f) is None
 
 
 # ---------------------------------------------------------------------------

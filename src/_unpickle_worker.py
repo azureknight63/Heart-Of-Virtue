@@ -23,8 +23,12 @@ def main():
     from src.secure_pickle import safe_pickle_load
     from src.save_format import player_to_data
 
-    # Strict mode is the right default for untrusted input; the parent sets the
-    # env var when it wants it. safe_pickle_load handles header + size cap.
+    # Strict mode is the right default for untrusted input, and it is also the
+    # module default -- safe_pickle_load(strict=None) resolves to strict unless
+    # HOV_STRICT_UNPICKLE holds an explicit opt-out. load_in_subprocess writes
+    # that variable in both directions, so this call honours the caller's
+    # argument without the worker needing to read it. Header + size cap are
+    # handled inside safe_pickle_load.
     obj = safe_pickle_load(io.BytesIO(raw))
     if obj is None:
         sys.stderr.write("worker: failed to deserialize save\n")

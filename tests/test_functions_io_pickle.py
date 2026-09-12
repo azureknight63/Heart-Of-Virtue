@@ -5,6 +5,7 @@ import pickle
 import types
 import importlib
 import src.functions as functions
+import src.secure_pickle as secure_pickle
 
 
 class SimplePlayer:
@@ -72,6 +73,12 @@ def test_safe_unpickler_placeholder(tmp_path, monkeypatch):
     # Remove the modules so the class cannot be found on load.
     monkeypatch.delitem(sys.modules, mod_name)
     monkeypatch.delitem(sys.modules, 'story')
+
+    # Placeholder synthesis is the legacy path and strict is now the default, so
+    # this exercises the documented opt-out through the real production entry
+    # point (_safe_pickle_load takes no strict kwarg -- the env var is the
+    # control surface). Without the opt-out this load raises.
+    monkeypatch.setenv(secure_pickle.STRICT_ENV_VAR, '0')
 
     with open(pfile, 'rb') as f:
         loaded = functions._safe_pickle_load(f)
