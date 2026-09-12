@@ -5,6 +5,7 @@ import {
   isMovePending,
   beatsUntilResolve,
   moveAvailability,
+  moveDamagePreview,
   NO_REACHABLE_TARGET_REASON,
 } from './combatMoveStatus';
 
@@ -137,5 +138,73 @@ describe('moveAvailability', () => {
   it('treats nothing as unavailable rather than crashing', () => {
     expect(moveAvailability(null)).toEqual({ available: false, reason: '' });
     expect(moveAvailability(undefined)).toEqual({ available: false, reason: '' });
+  });
+});
+
+// #576: the backend has computed and shipped `damage_preview` on every target
+// card since #555, but it lives per-target (viable_targets / target_previews /
+// affected_preview — see ApiCombatAdapter._build_target_entry), never on the
+// move option itself, and nothing on the client read it. This is the
+// selector a move card uses to show ONE honest range without pretending a
+// move has a single number when it can face more than one candidate.
+describe('moveDamagePreview', () => {
+  it("returns the sole viable target's own preview for a targeted move", () => {
+    const move = {
+      targeted: true,
+      viable_targets: [{ id: 'enemy_1', damage_preview: { min: 12, max: 18, lethal: false } }],
+    };
+    expect(moveDamagePreview(move)).toEqual({ min: 12, max: 18, lethal: false });
+  });
+
+  it('returns null when the sole viable target carries no preview', () => {
+    const move = { targeted: true, viable_targets: [{ id: 'enemy_1', damage_preview: null }] };
+    expect(moveDamagePreview(move)).toBeNull();
+  });
+
+  it('returns null for a targeted move with no viable targets', () => {
+    expect(moveDamagePreview({ targeted: true, viable_targets: [] })).toBeNull();
+  });
+
+  it('returns null when more than one viable target makes the range ambiguous', () => {
+    const move = {
+      targeted: true,
+      viable_targets: [
+        { id: 'enemy_1', damage_preview: { min: 5, max: 8, lethal: false } },
+        { id: 'enemy_2', damage_preview: { min: 6, max: 9, lethal: false } },
+      ],
+    };
+    expect(moveDamagePreview(move)).toBeNull();
+  });
+
+  it("folds an area move's affected_preview into one min/max/lethal range", () => {
+    const move = {
+      targeted: false,
+      affected_preview: [
+        { id: 'enemy_1', damage_preview: { min: 5, max: 10, lethal: false } },
+        { id: 'enemy_2', damage_preview: { min: 8, max: 14, lethal: true } },
+      ],
+    };
+    expect(moveDamagePreview(move)).toEqual({ min: 5, max: 14, lethal: true });
+  });
+
+  it('ignores affected_preview entries with no preview of their own', () => {
+    const move = {
+      targeted: false,
+      affected_preview: [
+        { id: 'enemy_1', damage_preview: null },
+        { id: 'enemy_2', damage_preview: { min: 3, max: 6, lethal: false } },
+      ],
+    };
+    expect(moveDamagePreview(move)).toEqual({ min: 3, max: 6, lethal: false });
+  });
+
+  it('returns null for a non-targeted move with nothing in its affected_preview', () => {
+    expect(moveDamagePreview({ targeted: false, affected_preview: [] })).toBeNull();
+    expect(moveDamagePreview({ targeted: false })).toBeNull();
+  });
+
+  it('treats nothing as no preview rather than crashing', () => {
+    expect(moveDamagePreview(null)).toBeNull();
+    expect(moveDamagePreview(undefined)).toBeNull();
   });
 });
