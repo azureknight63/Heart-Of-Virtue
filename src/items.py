@@ -312,15 +312,21 @@ class Item:
 
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
-        # Determine if the player is currently in a shop map
-        is_in_shop = False
-        current_map = getattr(player, "map", None)
-        if not current_map and hasattr(player, "current_room") and player.current_room:
-            current_map = getattr(player.current_room, "map", None)
-        if current_map and hasattr(current_map, "get"):
-            map_name = current_map.get("name")
-            if isinstance(map_name, str) and "shop" in map_name.lower():
-                is_in_shop = True
+        # An item is only real shop goods when a genuine merchant NPC is
+        # actually standing on the tile it is being taken from -- matching
+        # "shop" against the player's *map* name instead flagged any item
+        # placed anywhere in that map file as merchandise regardless of its
+        # authored `merchandise` value, e.g. a book authored `merchandise:
+        # false` in a merchant's private lounge got flipped to sellable
+        # merchandise merely because the map file was named
+        # "grondia-jambos_shop" (issue #598). A real merchant always carries
+        # `shop_name` (set by `Merchant.__init__` in `src/npc/_shop.py`) --
+        # the same attribute issue #442 settled on to tell a genuine merchant
+        # from a lookalike -- so check for one actually present, not the
+        # map's name.
+        room = getattr(player, "current_room", None)
+        npcs_here = getattr(room, "npcs_here", []) or []
+        is_in_shop = any(hasattr(npc, "shop_name") for npc in npcs_here)
 
         if hasattr(self, "count") and getattr(self, "count") > 1:
             while True:
@@ -3204,6 +3210,19 @@ class Book(Special):
     A book that Jean can READ. Books are now items that can be carried in inventory.
     Optionally, an event may be tied to reading the book.
     """
+
+    #: Room-based interactions dispatch through ``src.objects.resolve_interaction``,
+    #: which reads this off the class MRO (see that function's docstring). Without
+    #: it, a room-placed book's authored "read" keyword resolved straight to the
+    #: bare `read()` below -- the terminal-era method that paginates long text and
+    #: wraps every page in "--- Title (Page N of M) ---" markers for an interactive
+    #: pagination prompt the web client no longer drives -- instead of `use()`, the
+    #: clean single-block method `/inventory/use` and the frontend's own
+    #: `BookReaderDialog` pagination are built around. `BookReaderDialog` only
+    #: strips one leading/trailing line, so any book long enough to paginate
+    #: displayed with leftover page-marker lines baked into the middle of the text
+    #: (issue #598).
+    KEYWORD_METHOD_ALIASES = {"read": "use"}
 
     # Issue #463: `event` is supported here as a nested placeholder (a live
     # Event instance/reference) for forward-compatibility -- no shipped Book
