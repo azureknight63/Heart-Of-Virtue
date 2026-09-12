@@ -5,7 +5,7 @@
     "(0,2)": {
         "id": "tile_0_2",
         "title": "GrondiaEasternGate",
-        "description": "The mountain air hits without warning \u2014 cold, thin, carrying the smell of raw stone and something older than either. Behind Jean, the Eastern Gate of Grondia has drawn itself shut: a slow grinding of counterweights that finishes with a sound like a word being swallowed. The rock face here is dressed stone giving way to undressed rock within a few paces. A worn path descends east along the bluff's edge.",
+        "description": "The mountain air hits without warning \u2014 cold, thin, carrying the smell of raw stone and something older than either. Behind Jean, the Eastern Gate of Grondia has drawn itself shut: a slow grinding of counterweights that finishes with a sound like a word being swallowed. The rock face here is dressed stone giving way to undressed rock within a few paces. A worn path descends east along the bluff's edge. Set into the stone beside the gate, a counterweight lever still moves freely \u2014 whatever sealed the gate can be worked again from this side.",
         "exits": [
             "east"
         ],
@@ -28,7 +28,36 @@
         ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Eastern Gate",
+                    "description": "The reverse face of the Eastern Gate, close enough to see the counterweights that dropped it shut. The lever set into the stone here still moves freely; working it hauls the gate open again, back toward Grondia.",
+                    "idle_message": "The shut gate looms here, its counterweight lever still within reach.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "the counterweight lever of the shut gate!",
+                    "announce": "The shut gate looms here, its counterweight lever still within reach.",
+                    "keywords": [
+                        "enter",
+                        "west"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia",
+                    "teleport_tile": [
+                        15,
+                        5
+                    ],
+                    "persist": true
+                }
+            }
+        ]
     },
     "(1,2)": {
         "id": "tile_1_2",
