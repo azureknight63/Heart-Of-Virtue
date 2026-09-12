@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { colors, fonts } from '../styles/theme'
+import { accessibility, colors, fonts } from '../styles/theme'
+import { useMobile } from '../hooks/useMobile'
 import {
   HEAT_DRIFT_NOTE,
   HEAT_GAINS,
@@ -212,6 +213,7 @@ function HeatMeter({ heat, beat, combatId }) {
  */
 function HeatRules({ band }) {
   const [expanded, setExpanded] = useState(false)
+  const isMobile = useMobile()
 
   return (
     <>
@@ -231,6 +233,16 @@ function HeatRules({ band }) {
           fontFamily: MONO,
           cursor: 'pointer',
           textAlign: 'left',
+          // issue #580: measured 89x13px on a 375px viewport, well under the
+          // 44px minimum. Vertical padding plus a height floor grows the
+          // tappable box without reflowing the meter above it; the label text
+          // itself is unchanged.
+          ...(isMobile ? {
+            minHeight: accessibility.touchTarget,
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '0 4px',
+          } : {}),
         }}
       >
         {expanded ? '▾ Hide' : '▸ What moves it'}

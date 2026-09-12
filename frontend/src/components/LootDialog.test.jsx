@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import LootDialog from './LootDialog'
-import { colors } from '../styles/theme'
+import { colors, accessibility } from '../styles/theme'
 import { hexToRgb } from '../test/hexToRgb'
 
 vi.mock('./BaseDialog', () => ({
@@ -363,5 +363,15 @@ describe('LootDialog', () => {
 
       expect(onCollect).toHaveBeenCalledWith(['Mineral Powder x3'])
     })
+  })
+
+  it('meets the 44px touch-target minimum on the Collect CTA (issue #580)', () => {
+    // Measured 314.5x42px on a 375px viewport, 2px short of the minimum. The
+    // Skip button below it already carries this via a fixed minHeight
+    // (unconditional, not mobile-gated) — this brings the Collect CTA in
+    // line with that sibling control rather than introducing a new pattern.
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    const collectBtn = screen.getByText(/COLLECT SELECTED ITEMS/)
+    expect(collectBtn.style.minHeight).toBe(accessibility.touchTarget)
   })
 })

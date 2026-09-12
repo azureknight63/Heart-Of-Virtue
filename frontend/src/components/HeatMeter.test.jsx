@@ -4,6 +4,10 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import HeatMeter, { DELTA_HOLD_MS } from './HeatMeter'
 import { HEAT_BANDS, heatBand, heatFillRatio, NEUTRAL_MARK_RATIO } from '../utils/heat'
 import { GLOSSARY_ENTRIES } from '../data/combatGlossary'
+import { accessibility } from '../styles/theme'
+
+const mobileMock = vi.hoisted(() => ({ isMobile: false }))
+vi.mock('../hooks/useMobile', () => ({ useMobile: () => mobileMock.isMobile }))
 
 /**
  * WIRE CONTRACT (guarded server-side by tests/test_wire_field_contract.py):
@@ -29,6 +33,7 @@ const pct = (ratio) => `${ratio * 100}%`
 
 afterEach(() => {
   vi.useRealTimers()
+  mobileMock.isMobile = false
 })
 
 describe('HeatMeter — reading the multiplier', () => {
@@ -269,5 +274,31 @@ describe('HeatMeter — what the player is told the stat is called', () => {
     const caption = screen.getByTestId('heat-caption').textContent.trim()
     const entry = GLOSSARY_ENTRIES.find(e => e.id === 'heat')
     expect(entry.tell).toContain(`${caption.toUpperCase()} meter`)
+  })
+})
+
+describe('HeatMeter — "What moves it" touch target (issue #580)', () => {
+  // QA measured this expandable helper at 89x13px on a 375px viewport, with
+  // an 8.8px (0.55rem) font on top of the undersized hit area.
+  const helper = () => screen.getByRole('button', { name: /what moves it/i })
+
+  it('grows the helper to the touch-target minimum height on mobile', () => {
+    mobileMock.isMobile = true
+    renderMeter({ heat: 1.62 })
+    expect(helper().style.minHeight).toBe(accessibility.touchTarget)
+  })
+
+  it('leaves the helper at its native (unexpanded) size on desktop', () => {
+    renderMeter({ heat: 1.62 })
+    expect(helper().style.minHeight).toBe('')
+  })
+
+  it('still opens and closes the rules table on mobile', () => {
+    mobileMock.isMobile = true
+    renderMeter({ heat: 1.62 })
+    fireEvent.click(helper())
+    expect(screen.getByTestId('heat-rules')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /hide/i }))
+    expect(screen.queryByTestId('heat-rules')).toBeNull()
   })
 })

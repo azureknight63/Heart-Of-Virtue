@@ -252,5 +252,39 @@ describe('GlossaryText', () => {
       act(() => { fireEvent.touchStart(document.body) })
       expect(screen.queryByRole('tooltip')).toBeNull()
     })
+
+    it('grows the term to the touch-target minimum via padding, not by resizing the word (issue #580)', () => {
+      // QA re-measured a term like "range" at 36x19px on a 375px viewport.
+      // Gated on the pointer (isCoarse), not viewport width — this file
+      // already asserts above that the component never calls useMobile, so
+      // the fix cannot key off it either. Padding + an equal negative
+      // horizontal margin grows the hit box into the surrounding whitespace
+      // without shifting the visible word or its neighbours (vertical margin
+      // on an inline element has no layout effect either way, so only the
+      // horizontal axis needs the offset).
+      render(<GlossaryText text={REASON} />)
+      const style = term().style
+      expect(parseFloat(style.paddingTop)).toBeGreaterThanOrEqual(13)
+      expect(parseFloat(style.paddingBottom)).toBeGreaterThanOrEqual(13)
+      expect(style.marginLeft).toBe(`-${style.paddingLeft}`)
+      expect(style.marginRight).toBe(`-${style.paddingRight}`)
+    })
+
+    it('marks the term with text-decoration instead of border-bottom, so the dotted line stays on the word (issue #580)', () => {
+      // A border is drawn at the outer edge of the box's padding, so the
+      // 13px vertical padding above would strand a border-bottom dotted
+      // line ~13px below the word it is meant to underline. text-decoration
+      // is anchored to font metrics instead, so it keeps hugging the glyphs.
+      render(<GlossaryText text={REASON} />)
+      const style = term().style
+      expect(style.borderBottomStyle).toBe('none')
+      expect(style.textDecoration).toContain('underline')
+    })
+  })
+
+  it('leaves the term unpadded on a fine pointer (mouse/trackpad)', () => {
+    render(<GlossaryText text={REASON} />)
+    expect(term().style.padding).toBe('0px')
+    expect(term().style.margin).toBe('')
   })
 })
