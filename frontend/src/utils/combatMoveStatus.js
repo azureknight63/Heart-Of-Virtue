@@ -164,3 +164,47 @@ export function moveAvailability(move) {
   }
   return { available: true, reason: '' };
 }
+
+/**
+ * The one honest damage range for a move card, or `null` when none applies
+ * (issue #576).
+ *
+ * `damage_preview` (`{min, max, lethal}` or `null` — see
+ * `ApiCombatAdapter._build_target_entry`, src/api/combat_adapter.py) has
+ * always lived per-TARGET, never on the move option itself: a targeted move
+ * can face more than one candidate and an area move can hit several at once,
+ * each with its own number (resistance, protection, facing). The card can
+ * only show one range without misattributing it, so this picks the single
+ * case where "one range" is actually unambiguous:
+ *
+ *   * a targeted move with exactly one viable target — the same target
+ *     `autoResolvedTargetId` above would auto-submit — uses that target's
+ *     own preview, verbatim (including its own `null`, e.g. a move that
+ *     targets someone but deals no damage);
+ *   * a non-targeted (area) move folds every entry in `affected_preview`
+ *     into one range: the lowest floor and the highest ceiling of the whole
+ *     swing, `lethal` true if it could finish ANY of them.
+ *
+ * A targeted move offering more than one viable target (`requires_target_
+ * selection`) returns `null` rather than a range that silently describes
+ * only the nearest candidate.
+ *
+ * @param {Object} move a move entry from `available_options` / `moves`
+ * @returns {?{min: number, max: number, lethal: boolean}}
+ */
+export function moveDamagePreview(move) {
+  if (!move) return null;
+  if (move.targeted) {
+    if (move.viable_targets?.length !== 1) return null;
+    return move.viable_targets[0]?.damage_preview ?? null;
+  }
+  const previews = (move.affected_preview ?? [])
+    .map((entry) => entry?.damage_preview)
+    .filter(Boolean);
+  if (previews.length === 0) return null;
+  return {
+    min: Math.min(...previews.map((p) => p.min)),
+    max: Math.max(...previews.map((p) => p.max)),
+    lethal: previews.some((p) => p.lethal),
+  };
+}

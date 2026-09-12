@@ -6,7 +6,7 @@ import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
-import { displayNameOf, moveAvailability, autoResolvedTargetId } from '../utils/combatMoveStatus';
+import { displayNameOf, moveAvailability, autoResolvedTargetId, moveDamagePreview } from '../utils/combatMoveStatus';
 import {
     STAGE_KEYS,
     getStageBeats,
@@ -145,6 +145,12 @@ function MoveCard({
   const autoTargetId = autoResolvedTargetId(move);
   const singleTargetId = autoTargetId?.startsWith('enemy_') ? autoTargetId : null;
 
+  // The predicted damage range for this card, or null when none applies
+  // (a support move, or a targeted move facing more than one candidate —
+  // see moveDamagePreview's own docstring for why those stay blank rather
+  // than guessing).
+  const damagePreview = moveDamagePreview(move);
+
   // The card is a wrapper, not the button itself: the
   // unavailability reason carries interactive glossary terms
   // (#507), and a disabled <button> does not dispatch pointer
@@ -242,6 +248,19 @@ function MoveCard({
                   {move.fatigue_cost > 0 && (
                       <GameText variant="muted" size="xs">
                           Fatigue: {move.fatigue_cost}
+                      </GameText>
+                  )}
+                  {damagePreview && (
+                      <GameText variant="muted" size="xs">
+                          {`${damagePreview.min}-${damagePreview.max} dmg`}
+                      </GameText>
+                  )}
+                  {/* A word, not just a color, per the "state is never
+                      color-only" pillar (#576) -- the same LOCKED pattern
+                      above this. */}
+                  {damagePreview?.lethal && (
+                      <GameText variant="danger" size="xs" weight="bold" style={{ letterSpacing: '0.05em' }}>
+                          {'☠ LETHAL'}
                       </GameText>
                   )}
               </div>
