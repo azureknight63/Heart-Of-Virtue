@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import apiEndpoints from '../api/endpoints'
+import { useEffect, useRef } from 'react'
 import { useAudio } from '../context/AudioContext'
+import useDefeatRecovery from '../hooks/useDefeatRecovery'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
-import { colors, spacing } from '../styles/theme'
-import { apiErrorMessage } from '../utils/apiError'
+import { colors, spacing, zIndex } from '../styles/theme'
 
 const SKULL_ART = `
                .o oOOOOOOOo                                            OOOo
@@ -28,112 +27,43 @@ const SKULL_ART = `
                                               .
 `
 
-export default function DefeatDialog({ endState, onLoadedSave }) {
+/**
+ * DefeatDialog — the end-of-run screen: reload a save, or start over.
+ *
+ * `onRunChanged` fires once either exit's request succeeds; its handler is
+ * `GamePage.handleDefeatClose`, reached through CombatManager's
+ * `onDefeatClose`. The state behind the two exits lives in
+ * useDefeatRecovery; this component only renders it.
+ */
+export default function DefeatDialog({ endState, onRunChanged }) {
   const { playSFX } = useAudio()
-  const [loading, setLoading] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [saves, setSaves] = useState([])
-  const [selectedSaveId, setSelectedSaveId] = useState('')
+  const {
+    isLoadingSaves,
+    isSubmitting,
+    isRestoringSave,
+    error,
+    saveOptions,
+    selectedSaveId,
+    setSelectedSaveId,
+    loadSave,
+    startOver,
+  } = useDefeatRecovery({ onRunChanged })
 
   const message = endState?.message || 'You have been defeated.'
 
-  const playSFXRef = React.useRef(playSFX)
-  React.useEffect(() => { playSFXRef.current = playSFX }, [playSFX])
+  const playSFXRef = useRef(playSFX)
+  useEffect(() => { playSFXRef.current = playSFX }, [playSFX])
 
   useEffect(() => {
     playSFXRef.current('player_death')
   }, [])
-
-  useEffect(() => {
-    let mounted = true
-
-    const fetchSaves = async () => {
-      try {
-        setLoading(true)
-        setError('')
-        const resp = await apiEndpoints.saves.list()
-        const list = resp?.data?.saves || []
-        if (!mounted) return
-        setSaves(list)
-        if (list.length > 0) {
-          setSelectedSaveId(list[0].id)
-        }
-      } catch (e) {
-        if (!mounted) return
-        setError(e?.message || 'Failed to load saves.')
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-
-    fetchSaves()
-
-    return () => {
-      mounted = false
-    }
-  }, [])
-
-  const saveOptions = useMemo(() => {
-    return saves.map((s) => {
-      const parts = [s.name]
-      if (typeof s.level === 'number') parts.push(`Lv ${s.level}`)
-      // `location` is a field no serializer emits: GameService.list_saves sends
-      // `map_name` and `room_title` (MainMenuPage reads exactly those). The old
-      // read sat behind a truthiness guard, so it failed closed and silently
-      // dropped the place from every label instead of erroring.
-      if (s.map_name) parts.push(s.map_name)
-      if (s.room_title) parts.push(s.room_title)
-      return { id: s.id, label: parts.join(' • ') }
-    })
-  }, [saves])
-
-  const handleLoad = async () => {
-    setError('')
-    if (!selectedSaveId) {
-      setError('Select a save to load.')
-      return
-    }
-
-    try {
-      setIsSubmitting(true)
-      await apiEndpoints.saves.load(selectedSaveId)
-      if (typeof onLoadedSave === 'function') {
-        await onLoadedSave()
-      }
-    } catch (e) {
-      setError(apiErrorMessage(e, e?.message || 'Failed to load save.'))
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleStartOver = async () => {
-    setError('')
-    try {
-      setIsSubmitting(true)
-      // Issue #587: this used to call logout(), which killed the session and
-      // stranded the (often unauthenticated test-bypass) player on the login
-      // page with no way back in. START OVER means "begin a fresh run in
-      // this session", which is exactly POST /game/new — the same call
-      // MainMenuPage's "New Game" button makes (apiEndpoints.saves.newGame).
-      await apiEndpoints.saves.newGame()
-      if (typeof onLoadedSave === 'function') {
-        await onLoadedSave()
-      }
-    } catch (e) {
-      setError(apiErrorMessage(e, e?.message || 'Failed to start over.'))
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   return (
     <BaseDialog
       title="Defeat"
       variant="danger"
       maxWidth="720px"
-      zIndex={2500}
+      zIndex={zIndex.raisedDialog}
       showCloseButton={false}
     >
       <pre style={{
@@ -152,13 +82,13 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
       <div style={{ border: `1px solid ${colors.border.danger}`, borderRadius: '10px', padding: spacing.md, marginBottom: spacing.lg }}>
         <div style={{ color: colors.text.danger, fontWeight: 'bold', marginBottom: spacing.sm }}>Load save</div>
 
-        {loading && <div style={{ color: colors.text.muted }}>Loading…</div>}
+        {isLoadingSaves && <div style={{ color: colors.text.muted }}>Loading…</div>}
 
-        {!loading && saveOptions.length === 0 && (
+        {!isLoadingSaves && saveOptions.length === 0 && (
           <div style={{ color: colors.text.muted }}>No saves found.</div>
         )}
 
-        {!loading && saveOptions.length > 0 && (
+        {!isLoadingSaves && saveOptions.length > 0 && (
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <select
               value={selectedSaveId}
@@ -180,22 +110,24 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
             </select>
 
             <GameButton
-              onClick={handleLoad}
+              onClick={loadSave}
               disabled={isSubmitting || !selectedSaveId}
               variant="danger"
             >
-              {isSubmitting ? 'LOADING…' : 'LOAD'}
+              {isRestoringSave ? 'LOADING…' : 'LOAD'}
             </GameButton>
           </div>
         )}
-
-        {error && <div style={{ marginTop: spacing.sm, color: colors.text.danger }}>{error}</div>}
       </div>
+
+      {/* Outside the "Load save" panel: this line also carries START OVER's
+          failures, which have nothing to do with loading a save. */}
+      {error && <div style={{ marginBottom: spacing.sm, color: colors.text.danger }}>{error}</div>}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <GameButton
-          onClick={handleStartOver}
-          disabled={loading || isSubmitting}
+          onClick={startOver}
+          disabled={isLoadingSaves || isSubmitting}
           variant="secondary"
           style={{ border: `1px solid ${colors.border.danger}`, color: colors.text.danger }}
         >

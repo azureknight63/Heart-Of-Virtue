@@ -82,6 +82,52 @@ def purge_orphaned_combat_events(player, current_tile=None):
     return removed
 
 
+#: The value a set story gate holds. Gates are set-or-absent; ``"1"`` is how
+#: the story dict has always spelled "set", so saves written before these
+#: helpers read the same.
+GATE_SET = "1"
+
+
+def _story_or_none(player):
+    """``player``'s story dict, or None when there is none to read or write
+    -- no universe, no story yet, or a story that is not a dict."""
+    story = getattr(getattr(player, "universe", None), "story", None)
+    return story if isinstance(story, dict) else None
+
+
+def story_gates(player):
+    """The story-gate dict ``player`` carries, or ``{}`` when there is none.
+
+    Read the story dict through this rather than reaching through
+    ``player.universe.story`` by hand: the hand-rolled ``getattr`` chains it
+    replaced disagreed about a missing story (``None``, a throwaway ``{}``,
+    or ``AttributeError``). The real dict is returned even when it is empty,
+    so a caller holding it sees a gate written a moment later. Read-only by
+    intent: write through ``set_story_gate``.
+    """
+    story = _story_or_none(player)
+    return {} if story is None else story
+
+
+def set_story_gate(player, key, value=GATE_SET):
+    """Write one story-state value on ``player``; returns whether it did.
+
+    The writer's half of ``story_gates``: a player with no story to record
+    into has the write skipped rather than landed in a throwaway dict.
+    ``value`` defaults to ``GATE_SET``; a staged counter passes its own.
+    """
+    story = _story_or_none(player)
+    if story is None:
+        return False
+    story[key] = value
+    return True
+
+
+def gate_is_set(player, key):
+    """True when the story gate ``key`` is set on ``player``."""
+    return story_gates(player).get(key) == GATE_SET
+
+
 class Event:  # master class for all events
     """
     Events are added to tiles much like NPCs and items. These are evaluated each game loop to see if the conditions
@@ -103,6 +149,22 @@ class Event:  # master class for all events
         "name", "repeat", "params", "combat_effect", "delay_duration",
         "delay_mode",
     }
+
+    #: The story gate a one-shot beat writes when it finishes. The default
+    #: ``check_conditions`` retires the event once it is set; other events
+    #: read it as ``<Beat>.GATE_KEY``, so no reader can drift from the
+    #: writer. None on events that are not such beats.
+    #:
+    #: The RETIREMENT path reads it off the class --
+    #: ``type(self).GATE_KEY`` in ``retire_if_gate_set`` and in the default
+    #: ``check_conditions`` -- because events are pickled into saves, so an
+    #: instance ``__dict__`` restored from one could otherwise decide which
+    #: gate takes a beat off its tile. A beat naming its OWN gate
+    #: (``self.set_story_gate(self.GATE_KEY)``, and the guards beside it in
+    #: src/story/) reads it through the instance like any other class
+    #: attribute; that is the common spelling and is not being deprecated
+    #: here. Same split as ``Passageway.DEMO_ENDED_FLAG``.
+    GATE_KEY = None
 
     def __init__(
         self,
@@ -138,6 +200,53 @@ class Event:  # master class for all events
         # reference cannot serve this purpose.
         self.origin_tile_key = tile_identity(tile)
 
+    # The story-gate methods below call the module-level functions of the
+    # same names, not themselves: a method body resolves bare names against
+    # module globals, never the class. They exist because story events read
+    # and write gates on nearly every call, always for ``self.player``.
+    #
+    # Each delegates through a private alias bound at class-body time rather
+    # than naming the module function directly: inside the class body the
+    # method name already shadows it, so a one-token edit (an added ``self.``,
+    # or a decorator that changes the lookup) would turn the body into
+    # unbounded recursion with nothing to read as wrong.
+    _module_story_gates = staticmethod(story_gates)
+    _module_set_story_gate = staticmethod(set_story_gate)
+    _module_gate_is_set = staticmethod(gate_is_set)
+
+    def story_gates(self):
+        """The story-gate dict this event's player carries, or ``{}``."""
+        return self._module_story_gates(self.player)
+
+    def set_story_gate(self, key, value=GATE_SET):
+        """Write one story-state value on this event's player; returns
+        whether it did (see the module-level ``set_story_gate``)."""
+        return self._module_set_story_gate(self.player, key, value)
+
+    def gate_is_set(self, key):
+        """True when the story gate ``key`` is set on this event's player."""
+        return self._module_gate_is_set(self.player, key)
+
+    def retire_if_gate_set(self, key=None):
+        """True -- and this event taken off its tile -- once ``key`` (this
+        event's ``GATE_KEY`` by default) is set.
+
+        How a one-shot story beat opens ``check_conditions``: the gate it
+        writes when it finishes is also what retires any copy of it still
+        attached to a tile.
+        """
+        # ``type(self)``, not ``self``: a pickled save carries a ``__dict__``,
+        # and an instance attribute named GATE_KEY would otherwise choose
+        # which gate retires this beat. Same reasoning as
+        # ``Passageway.end_demo``'s ``type(self).DEMO_ENDED_FLAG``.
+        gate = type(self).GATE_KEY if key is None else key
+        if not gate_is_set(self.player, gate):
+            return False
+        events = getattr(self.tile, "events_here", None)
+        if events is not None and self in events:
+            events.remove(self)
+        return True
+
     def pass_conditions_to_process(self):
         self.process()
         # If the event requires input, we don't want to remove it yet;
@@ -151,6 +260,10 @@ class Event:  # master class for all events
                 self.player.combat_events.remove(self)
 
     def check_conditions(self):
+        """Run the event -- unless it is a one-shot beat whose ``GATE_KEY`` is
+        already set, which retires it instead."""
+        if type(self).GATE_KEY is not None and self.retire_if_gate_set():
+            return
         self.pass_conditions_to_process()
 
     def process(self):
@@ -341,6 +454,12 @@ class PassagewayTransitionEvent(Event):
     confirmation button.  Clicking it calls process() which performs the
     actual teleport via the passageway's stored parameters.
     """
+
+    #: The API names each confirmation ``NAME_PREFIX + passageway name``, so
+    #: the pending-event dedupe treats a re-armed confirmation for the same
+    #: passageway as one event. Declared here, on the type it names, so a
+    #: test or client matching confirmations reads it rather than a copy.
+    NAME_PREFIX = "Passage_"
 
     def __init__(self, name, player=None, tile=None, passageway=None):
         super().__init__(name, player, tile, repeat=False)

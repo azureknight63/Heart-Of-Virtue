@@ -902,3 +902,13 @@ def test_placeholder_for_a_nul_bearing_module_does_not_crash():
     cls = up.find_class("mod\x00ule", "Na\x00me")
     assert "\x00" not in cls.__name__
     assert getattr(cls(), "_legacy_placeholder", False) is True
+
+
+@pytest.mark.parametrize("module", ["story.ch03", "src.story.ch03"])
+def test_strict_mode_loads_a_save_naming_the_retired_demo_end_event(module):
+    """Issue #579 retired ``DemoEndEvent`` from chapter 3. A save naming it --
+    by the bare module name legacy pickles store, or the canonical one --
+    must degrade to a placeholder under strict mode, not fail to load."""
+    up = sp.SafeUnpickler(io.BytesIO(b""), strict=True)
+    cls = up.find_class(module, "DemoEndEvent")
+    assert getattr(cls(), "_legacy_placeholder", False) is True

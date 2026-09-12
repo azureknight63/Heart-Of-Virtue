@@ -968,3 +968,58 @@ def test_the_permanence_lint_actually_detects_a_violation():
              "npcs": []}
     assert not any(_mentions(clean["description"], n)
                    for n in _entry_names(clean, "items"))
+
+
+class TestPlaceholderParams:
+    """``placeholder_params`` is the one reading of a placeholder's ``params``:
+    ``instantiate_placeholder`` builds from it, and so does the map-scan walk
+    (``tests/_map_scan.py``)."""
+
+    def test_splits_constructor_values_from_overrides(self):
+        payload = {
+            "class": "objects.Crate",
+            "params": {"name": "Box", "overrides": {"hidden": True}},
+        }
+        assert map_placeholders.placeholder_params(payload) == (
+            {"name": "Box"}, {"hidden": True}
+        )
+
+    @pytest.mark.parametrize(
+        "payload",
+        [{"class": "objects.Crate"}, {"class": "objects.Crate", "params": None}],
+        ids=["omitted", "null"],
+    )
+    def test_an_omitted_or_null_params_is_empty(self, payload):
+        assert map_placeholders.placeholder_params(payload) == ({}, {})
+
+    @pytest.mark.parametrize("params", [[], "x", 7])
+    def test_params_that_is_not_an_object_raises(self, params):
+        with pytest.raises(map_placeholders.PlaceholderError):
+            map_placeholders.placeholder_params({"class": "objects.Crate", "params": params})
+
+    @pytest.mark.parametrize("overrides", [None, [], "x"])
+    def test_overrides_that_is_not_an_object_is_ignored(self, overrides):
+        payload = {"class": "objects.Crate", "params": {"overrides": overrides}}
+        assert map_placeholders.placeholder_params(payload) == ({}, {})
+
+
+class TestSplitClassRef:
+    """``split_class_ref`` is the parse ``resolve_class`` and the shipped-map
+    scan (``tests/_map_scan.py``) share."""
+
+    @pytest.mark.parametrize(
+        "ref, expected",
+        [
+            ("objects.Passageway", ("objects", "Passageway")),
+            ("story.ch03.FerryLandingObjectiveEvent", ("story.ch03", "FerryLandingObjectiveEvent")),
+            ("items:Item", ("items", "Item")),
+            ("a:b:C", ("a:b", "C")),
+        ],
+    )
+    def test_splits_on_the_last_separator(self, ref, expected):
+        assert map_placeholders.split_class_ref(ref) == expected
+
+    @pytest.mark.parametrize("ref", ["", "Passageway", "objects.", ".Passageway", ":C", 7, None])
+    def test_rejects_anything_but_two_non_empty_parts(self, ref):
+        with pytest.raises(map_placeholders.PlaceholderError):
+            map_placeholders.split_class_ref(ref)

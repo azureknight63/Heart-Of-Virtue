@@ -52,11 +52,11 @@ def chunk_requires_confirmation(chunk_lines: int, target: int, total_chunks: int
     """
     Return (True, reason) if the chunk plan exceeds a normal safety threshold.
 
-    NOTE: the skill runs as a background-dispatched Agent (see SKILL.md
-    "Invocation Mode"), which cannot pause to ask the user mid-task. A True
-    result here does not block the run — it means the orchestrator must
-    proceed and record an "AUTO-PROCEEDED (needs review)" flag with this
-    reason in the final report instead of asking before starting.
+    NOTE: the main session orchestrates this skill (see SKILL.md "Invocation
+    Mode" — a dispatched agent cannot spawn the dimension subagents), so it
+    *can* ask the user, and a True result means it should. Only when the
+    session is non-interactive does the orchestrator proceed and record an
+    "AUTO-PROCEEDED (needs review)" flag with this reason in the final report.
     """
     if total_chunks > MAX_CHUNK_COUNT:
         return True, f"Chunk count {total_chunks} exceeds MAX_CHUNK_COUNT ({MAX_CHUNK_COUNT})"

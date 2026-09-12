@@ -729,24 +729,7 @@
         "block_exit": [],
         "events": [
             {
-                "__class__": "FerryLandingObjectiveEvent",
-                "__module__": "story.ch03",
-                "props": {
-                    "name": "FerryLandingObjective",
-                    "player": null,
-                    "tile": null,
-                    "repeat": false,
-                    "thread": null,
-                    "has_run": false,
-                    "params": null,
-                    "referenceobj": null,
-                    "combat_effect": false,
-                    "delay_duration": 3000,
-                    "delay_mode": "combat",
-                    "completed": false,
-                    "api_event_id": null,
-                    "needs_input": false
-                }
+                "class": "story.ch03.FerryLandingObjectiveEvent"
             }
         ],
         "items": [],
@@ -792,7 +775,8 @@
                     ],
                     "persist": true,
                     "passthrough": false,
-                    "demo_end": true
+                    "demo_end": true,
+                    "demo_end_ready_flag": "nomad_ferry_ready"
                 }
             }
         ]

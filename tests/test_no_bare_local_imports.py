@@ -15,10 +15,9 @@ AST-based so docstrings and comments can't false-positive.
 import ast
 import functools
 import re
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
-_SRC = _ROOT / "src"
+from tests._source_scan import ROOT as _ROOT, SRC_ROOT as _SRC, py_files
+
 _TESTS = _ROOT / "tests"
 
 # Top-level local module/package names under src/ that must only be imported
@@ -129,7 +128,7 @@ def _sys_path_src_offenses(text):
 def _source_files(root):
     """(path, text) for every .py under `root`, read once per session."""
     out = []
-    for py in sorted(root.rglob("*.py")):
+    for py in py_files(root):
         try:
             out.append((py, py.read_text(encoding="utf-8")))
         except UnicodeDecodeError:  # pragma: no cover - defensive
@@ -281,7 +280,7 @@ def test_legacy_bare_modules_covers_all_src_modules():
     def _defines_a_class(name: str) -> bool:
         """True if this top-level module (or any module in this package) has a class."""
         target = _SRC / f"{name}.py"
-        paths = [target] if target.is_file() else sorted((_SRC / name).rglob("*.py"))
+        paths = [target] if target.is_file() else py_files(_SRC / name)
         for path in paths:
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))

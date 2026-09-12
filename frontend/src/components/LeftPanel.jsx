@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { colors, spacing, accessibility } from '../styles/theme'
+import { colors, spacing, accessibility, zIndex } from '../styles/theme'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
@@ -11,7 +11,7 @@ import CollapsibleRoomDescription from './CollapsibleRoomDescription'
 import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
-import CombatMovePanel, { COMBAT_MOVE_PANEL_Z_INDEX } from './CombatMovePanel'
+import CombatMovePanel from './CombatMovePanel'
 import AbortMoveControl from './AbortMoveControl'
 import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
@@ -29,39 +29,6 @@ import useCombatLogPlayback from '../hooks/useCombatLogPlayback'
 import useHeroAutoScale from '../hooks/useHeroAutoScale'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
-
-/**
- * The stacking rank of the box LeftPanel wraps HeroPanel in for combat.
- *
- * Issue #575: HeroPanel's own `<nav>` is `display: 'contents'` (no box of its
- * own, so it cannot carry a z-index), and its buttons' `zIndex: 5` only ranks
- * them against HeroPanel's OWN local siblings (VitalBar, the passive/status
- * icon columns) — none of which create a stacking context either. THIS div
- * (below, wrapping `<HeroPanel>`) is the nearest ancestor that actually forms
- * one: it is a flex item with an explicit z-index (which alone triggers a
- * stacking context, per the flexbox spec, regardless of `position`) and it
- * also carries a `transform` (which independently triggers one). Every
- * z-indexed thing inside HeroPanel is therefore trapped at THIS box's rank
- * once compared against anything outside it — raising a button's z-index
- * inside HeroPanel.jsx alone would compile, look plausible, and change
- * nothing.
- *
- * Defined as an offset from `COMBAT_MOVE_PANEL_Z_INDEX` rather than a second
- * independent literal, so the two cannot silently drift back out of order —
- * see that constant's docstring in CombatMovePanel.jsx for the history this
- * fixes and why `useOccludedNavHandoff` is retired now that this holds.
- *
- * Raising this box, though, also raises HeroPanel's own inert chrome (the
- * hero image, the Hero Head Container's blank space) above CombatMovePanel —
- * left alone that would swallow clicks meant for a move card underneath,
- * trading three dead nav tabs for some dead cards. HeroPanel.jsx's Hero Head
- * Container is `pointerEvents: 'none'` for exactly that reason, with its real
- * controls (the nav buttons, VitalBar) opting back in — gated on the
- * `interactive` prop below, not a bare `pointerEvents: 'auto'`, so that
- * opt-in cannot survive this SAME wrapper's own `pointerEvents: 'none'`
- * during the enemy's turn (see `isHeroInert` below).
- */
-export const HERO_PANEL_STACKING_Z_INDEX = COMBAT_MOVE_PANEL_Z_INDEX + 50
 
 /**
  * Moves that are instant / non-turn-consuming on the backend.
@@ -204,11 +171,10 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const abortableMove = combat?.abortable_move || null
   const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive && !abortableMove
 
-  // Named rather than re-inlined at each site: the Hero Panel Container's
-  // opacity/filter/pointerEvents below AND HeroPanel's `interactive` prop
-  // (issue #575) must agree on exactly this condition, or a control could
-  // render dimmed-and-inert everywhere except the one place someone forgot
-  // to update it.
+  // Named rather than re-inlined at each site: the stacking layer's
+  // opacity/filter below AND HeroPanel's `interactive` prop (issue #575)
+  // must agree on exactly this condition, or the dimming and the inert
+  // state could disagree — a hero dimmed but live, or bright but dead.
   const isHeroInert = mode === 'combat' && !isMyTurn
 
   // Flee is viable only when it's the player's turn and every enemy is at
@@ -572,28 +538,30 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             transformOrigin: 'center center',
             transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
             overflow: 'visible',
-            zIndex: HERO_PANEL_STACKING_Z_INDEX,
+            // Issue #575: HeroPanel's own <nav> is display:contents (no box, so
+            // no z-index of its own) and its buttons' z-index only ranks them
+            // against HeroPanel's local siblings. THIS div — a flex item with
+            // a z-index and a transform — is the nearest ancestor that forms a
+            // stacking context, so it is the one place a rank against
+            // CombatMovePanel can be set; a button-level z-index would compile
+            // and change nothing. The theme's scale keeps the two in order.
+            zIndex: zIndex.heroStackingLayer,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             opacity: isHeroInert ? 0.6 : 1,
             filter: isHeroInert ? 'grayscale(0.5)' : 'none',
-            pointerEvents: isHeroInert ? 'none' : 'auto',
+            // Always click-through, or this raised box would swallow clicks
+            // meant for a move card beneath it (#575, see HeroPanel's root div
+            // comment). The enemy-turn gate is `interactive` below.
+            pointerEvents: 'none',
           }}>
             <HeroPanel
               player={activePlayer}
               isMobile={isMobile}
               inCombat={mode === 'combat'}
-              // Issue #575: the Hero Head Container's blank space is
-              // `pointerEvents: 'none'` so a raised HeroPanel can't swallow
-              // clicks meant for CombatMovePanel, with every real control
-              // inside it (nav buttons, VitalBar) opting back in to 'auto'.
-              // That opt-in must not override THIS wrapper's own 'none'
-              // above during the enemy's turn — otherwise the nav buttons
-              // and vitals would stay clickable while the rest of the hero
-              // is dimmed and inert, and a stray click could stage a move
-              // category that pops open the instant it becomes the
-              // player's turn again. `interactive` threads that gate down.
+              // The controls' opt-in to pointer events and their `disabled`
+              // both key off this — see HeroPanel's root div comment (#575).
               interactive={!isHeroInert}
               heroScale={heroScale}
               hasSpecialMoves={hasSpecialMoves}

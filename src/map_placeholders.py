@@ -89,6 +89,23 @@ def class_ref_string(cls):
     return f"{bare_module_name(cls.__module__)}.{cls.__name__}"
 
 
+def split_class_ref(class_ref):
+    """``(module, class_name)`` for a bare class reference string.
+
+    The one parse of both accepted spellings -- dotted ``module.ClassName``
+    and the legacy ``module:ClassName`` -- so tooling that reads placements
+    without importing them splits a reference exactly as ``resolve_class``
+    does. The class is whatever follows the LAST separator. Raises
+    ``PlaceholderError`` for anything that is not two non-empty parts.
+    """
+    if isinstance(class_ref, str):
+        sep = ":" if ":" in class_ref else "."
+        mod_name, _sep, cls_name = class_ref.rpartition(sep)
+        if mod_name and cls_name:
+            return mod_name, cls_name
+    raise PlaceholderError(f"Malformed class reference: {class_ref!r}")
+
+
 def resolve_class(class_ref):
     """Resolve a bare class reference string to the class object.
 
@@ -99,15 +116,7 @@ def resolve_class(class_ref):
     allow-list -- the same trust boundary the pickle save loader uses --
     so a hostile map file can't resolve an arbitrary Python global.
     """
-    if not isinstance(class_ref, str):
-        raise PlaceholderError(f"Malformed class reference: {class_ref!r}")
-    sep = ":" if ":" in class_ref else "."
-    try:
-        mod_name, cls_name = class_ref.rsplit(sep, 1)
-    except ValueError:
-        raise PlaceholderError(f"Malformed class reference: {class_ref!r}")
-    if not mod_name or not cls_name:
-        raise PlaceholderError(f"Malformed class reference: {class_ref!r}")
+    mod_name, cls_name = split_class_ref(class_ref)
     # Persisted data stores bare module names by contract; a "src."-prefixed
     # reference in a map file is either hand-corrupted or malicious, so this
     # rejects rather than tolerantly stripping the prefix (matching
@@ -348,6 +357,26 @@ def _serialize_value(value, *, nested_fallback=None):
 # Instantiation (shared by Universe's boot loader and the Map Editor's loader)
 # ---------------------------------------------------------------------------
 
+def placeholder_params(payload):
+    """``(constructor values, overrides)`` a placeholder payload authors.
+
+    The one reading of ``params``: an omitted or null ``params`` is a
+    zero-config placement, anything else that is not an object raises
+    ``PlaceholderError``, and an ``overrides`` value that is not an object is
+    ignored rather than applied.
+    """
+    params = payload.get("params")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise PlaceholderError(f"'params' must be an object for {payload.get('class')!r}")
+    overrides = params.get(_OVERRIDES_KEY) or {}
+    if not isinstance(overrides, dict):
+        overrides = {}
+    ctor_values = {k: v for k, v in params.items() if k != _OVERRIDES_KEY}
+    return ctor_values, overrides
+
+
 def instantiate_placeholder(payload, *, player=None, tile=None, _depth=0):
     """Build a fresh runtime instance from a placeholder dict.
 
@@ -364,17 +393,8 @@ def instantiate_placeholder(payload, *, player=None, tile=None, _depth=0):
         raise PlaceholderError(f"Not a placeholder payload: {payload!r}")
 
     class_ref = payload.get("class")
-    params = payload.get("params", {})
-    if params is None:
-        params = {}
-    if not isinstance(params, dict):
-        raise PlaceholderError(f"'params' must be an object for {class_ref!r}")
-
+    ctor_values, overrides = placeholder_params(payload)
     cls = resolve_class(class_ref)
-    overrides = params.get(_OVERRIDES_KEY) or {}
-    if not isinstance(overrides, dict):
-        overrides = {}
-    ctor_values = {k: v for k, v in params.items() if k != _OVERRIDES_KEY}
 
     def resolve_nested(value):
         return _resolve_nested_value(value, player=player, tile=tile, depth=_depth + 1)

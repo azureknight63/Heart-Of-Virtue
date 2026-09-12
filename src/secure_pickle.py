@@ -340,10 +340,16 @@ def strict_mode_enabled():
 # Curated set of ``(module, name)`` for classes that have been *removed* from
 # the engine but may still appear in old saves. In strict mode these are the
 # only classes allowed to fall back to a placeholder; every other unresolved
-# class is rejected. It is empty today (no classes have been formally
-# deprecated yet); add entries here as classes are retired so legacy saves keep
-# loading under strict mode without re-opening the door to arbitrary names.
-LEGACY_ALLOWED_MISSING = frozenset()
+# class is rejected. Keyed on the canonical ``src.`` module: ``find_class``
+# canonicalises a bare pickled name before it checks here. Add an entry in the
+# same change that retires a persisted class, so legacy saves keep loading
+# under strict mode without re-opening the door to arbitrary names.
+LEGACY_ALLOWED_MISSING = frozenset({
+    # Issue #579: the ferry's demo end moved onto ``Passageway.end_demo``.
+    # It was placed on no tile in any shipped map, so no save should name
+    # it; listed so one that does still loads.
+    ("src.story.ch03", "DemoEndEvent"),
+})
 
 
 # --- Telemetry (dev-only, issue #13 Phase 4) -------------------------------

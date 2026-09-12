@@ -12,7 +12,11 @@ from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, wire_handle
 from src.journal import Journal, existing_journal, journal_for
-from src.events import purge_orphaned_combat_events, map_name_for_tile
+from src.events import (
+    map_name_for_tile,
+    purge_orphaned_combat_events,
+    story_gates,
+)
 from src.functions import (
     check_for_combat,
     end_combat_cleanup,
@@ -127,7 +131,7 @@ def _is_demo_end_passageway(target):
     """
     from src.objects import Passageway
 
-    return isinstance(target, Passageway) and getattr(target, "demo_end", False)
+    return isinstance(target, Passageway) and target.is_demo_edge()
 
 
 def _is_demo_end_crossing(target, handler):
@@ -427,9 +431,8 @@ class GameService:
 
     @staticmethod
     def _story(player):
-        """Get the story-gate dict from player's universe, or empty dict."""
-        u = getattr(player, "universe", None)
-        return getattr(u, "story", {}) if u else {}
+        """The story-gate dict ``player`` carries (``src.events.story_gates``)."""
+        return story_gates(player)
 
     @staticmethod
     def _game_tick(player):
@@ -2471,14 +2474,14 @@ class GameService:
                 ev.process()
 
         trans_event = PassagewayTransitionEvent(
-            name=f"Passage_{target.name}",
+            name=f"{PassagewayTransitionEvent.NAME_PREFIX}{target.name}",
             player=player,
             tile=tile,
             passageway=target,
         )
         event_data = EventSerializer.serialize_with_input(trans_event)
-        # Dedupe-by-name is right here too: the name is
-        # "Passage_<passageway>", so a collision is the same passageway's
+        # Dedupe-by-name is right here too: the name is the prefix plus the
+        # passageway's name, so a collision is the same passageway's
         # confirmation re-armed.
         return [
             self._store_pending_event(
@@ -2561,30 +2564,18 @@ class GameService:
                 # Proceed with equipment logic
                 target.equip(player)
         elif _is_demo_end_crossing(target, handler):
-            # The demo stops at this passageway (#552) -- but only once
-            # the engine says the crossing is actually ready (#579:
-            # Passageway.end_demo gates itself on DEMO_END_READY_FLAG, so
-            # reaching the Ferry Landing before Mara's conversation chain
-            # completes declines in fiction instead of closing the demo).
-            # No crossing happens either way; only the ready case sets the
-            # story gate and one beat of prose. The engine is the sole
-            # authority on readiness, so the API does not re-derive that
-            # check -- it reads the outcome (`demo_ended`) `end_demo` just
-            # decided and flags it so the client raises BetaEndDialog (the
-            # same `beta_end` flag the combat adapter sets on the Lurker
-            # path). Queuing a "Step through?" confirmation instead would
-            # promise a crossing that never happens.
-            # `enter`, not `end_demo`: Passageway.enter already guards
-            # `if self.demo_end` and delegates, so calling end_demo here
-            # decided the same rule in two places. The engine stays the
-            # sole authority on what using a passageway means; the API's
-            # only business is the wire flag.
-            target.enter(player)
-            story = getattr(getattr(player, "universe", None), "story", None) or {}
-            beta_end = story.get(Passageway.DEMO_END_FLAG) == "1"
-        # `not demo_end`: this arm asks "step through?", and the arm above has
-        # already handled every verb that WOULD step through a demo-end
-        # passageway. What reached here is a verb that resolves to nothing
+            # The demo stops at this passageway (#552), gated inside the
+            # engine on the placement's ready flag (#579). No crossing
+            # happens either way, so no "Step through?" confirmation is
+            # queued; `enter` (not `end_demo`, which it already delegates
+            # to) returns whether THIS call closed the demo, and that verdict
+            # is the wire's `beta_end` -- the same flag the combat adapter
+            # sets on the Lurker path -- so the client raises BetaEndDialog.
+            beta_end = bool(target.enter(player))
+        # `not _is_demo_end_passageway(target)`: this arm asks "step
+        # through?", and the arm above has already handled every verb that
+        # WOULD step through a demo-end passageway. What reached here is a
+        # verb that resolves to nothing
         # callable (examine/look/check/...), and arming the confirmation for
         # those meant confirming it ran `_commit_teleport` -- which now ends
         # the demo instead of crossing, but with `beta_end` never set, so the
@@ -4405,6 +4396,16 @@ class GameService:
                 # Force rebuild of transient state if needed
                 if not hasattr(player.universe, "maps") or not player.universe.maps:
                     player.universe.build(player)
+
+                # Bring what an older build left in the save up to date with
+                # the story code (e.g. the pre-#572 pools objects).
+                from src.story import repair_loaded_save
+
+                repaired = repair_loaded_save(player)
+                if repaired:
+                    _log.info(
+                        "Repaired %d stale object(s) in the loaded save", repaired
+                    )
 
                 if hasattr(player, "map"):
                     start_tile = player.universe.get_tile(

@@ -123,8 +123,8 @@ def _object_placements():
     exactly once at import, and silently stale the moment anyone moved it into
     a fixture.
 
-    The map walk lives in :mod:`tests._map_scan`, shared with the two other
-    guards added alongside this one.
+    The map walk lives in :mod:`tests._map_scan`, shared by the guards over
+    authored objects and events.
     """
     rows = []
     fallbacks = set()

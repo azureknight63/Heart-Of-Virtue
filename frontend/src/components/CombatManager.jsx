@@ -105,7 +105,9 @@ export default function CombatManager({
             {showDefeatDialog && endState && endState.status === 'defeat' && (
                 <DefeatDialog
                     endState={endState}
-                    onLoadedSave={onDefeatClose}
+                    // Renamed on the way in: DefeatDialog fires this for
+                    // START OVER too, not only for a save load.
+                    onRunChanged={onDefeatClose}
                 />
             )}
         </>

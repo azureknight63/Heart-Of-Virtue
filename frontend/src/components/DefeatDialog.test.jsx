@@ -4,8 +4,8 @@ import DefeatDialog from './DefeatDialog';
 import apiEndpoints from '../api/endpoints';
 import { useAuth } from '../hooks/useApi';
 import { makeSaveRow } from '../test/payloads';
+import { LOAD_SAVE_FAILED, START_OVER_FAILED } from '../hooks/useDefeatRecovery';
 
-// Mock apiEndpoints
 vi.mock('../api/endpoints', () => ({
   default: {
     saves: {
@@ -16,56 +16,55 @@ vi.mock('../api/endpoints', () => ({
   }
 }));
 
-// Mock useAuth
-//
-// DefeatDialog no longer imports useAuth at all (issue #587 fix), so this
-// mock is not on the render path for anything below — it is kept, and
-// mockLogout asserted against, purely as a regression tripwire: if START OVER
-// ever again reaches for useAuth().logout(), this mock intercepts the call
-// instead of the real AuthContext (which would either throw with no
-// <AuthProvider> in the tree, or worse, actually destroy the session), and
-// the `expect(mockLogout).not.toHaveBeenCalled()` assertions below start
-// failing instead of silently passing.
+// Tripwire: DefeatDialog must never call useAuth().logout() (#587);
+// mockLogout is asserted not called below.
 vi.mock('../hooks/useApi', () => ({
   useAuth: vi.fn()
 }));
 
+/** What axios resolves with for a successful /saves/load or /game/new. */
+const OK = { data: { success: true } };
+
 describe('DefeatDialog', () => {
+  // The in-flight label, named once: a negative assertion against a
+  // hand-typed copy passes whether or not the copy is even spelled right.
+  const LOADING_LABEL = 'LOADING…';
+
   const mockLogout = vi.fn();
-  const mockOnLoadedSave = vi.fn();
+  const mockOnRunChanged = vi.fn();
   /**
    * Rows in the shape GameService.list_saves actually returns — id, name,
    * timestamp(+_ms), is_autosave, level, map_name, room_title, playtime.
-   *
-   * !!! PRODUCT BUG (found while replacing the old hand-written fixture) !!!
-   *
-   * FIXED: DefeatDialog.jsx's `saveOptions` memo used to build its label from `s.location`.
-   * **No serializer emits `location`** — GameService.list_saves
-   * (src/api/services/game_service.py:~3588) emits `map_name` and
-   * `room_title`, and MainMenuPage.jsx:447 reads exactly those two. So the
-   * defeat-screen save picker silently drops the place and shows only
-   * "Name • Lv N", which is textbook wire-field-name drift: the read sits
-   * behind `if (s.location)` and failed closed. It now reads map_name/room_title.
-   *
-   * The previous fixture invented `location: 'Dark Forest'`, so the test agreed
-   * with the component and the drift was invisible — the exact failure mode
-   * CLAUDE.md calls this codebase's dominant bug class.
-   *
-   * The expectations below therefore pin the CURRENT (wrong) label against a
-   * REAL payload. When DefeatDialog is fixed to read map_name/room_title,
-   * `LABELS` is the one place to update if the emitted fields ever change.
+   * `LABELS` below pins the whole label for both rows (name, level, map,
+   * room); the level-guard and untitled-name tests further down spell the
+   * separator out themselves.
+   * Both rows share makeSaveRow's timestamp, so their order is the server's;
+   * the mount test gives them distinct times to exercise the client's sort.
    */
   const mockSaves = [
     makeSaveRow({ id: 'save1', name: 'Hero Save', level: 5, map_name: 'Dark Grotto', room_title: 'Entry Hall' }),
     makeSaveRow({ id: 'save2', name: 'Auto Save', level: 4, map_name: 'Village', room_title: 'Well Square', is_autosave: true }),
   ];
-  // DefeatDialog now reads the fields list_saves actually emits (map_name,
-  // room_title), matching MainMenuPage. Previously it read `s.location`,
-  // which no serializer sends, so the place was silently dropped.
   const LABELS = [
     'Hero Save • Lv 5 • Dark Grotto • Entry Hall',
     'Auto Save • Lv 4 • Village • Well Square',
   ];
+
+  const renderDialog = (endState = {}) =>
+    render(<DefeatDialog endState={endState} onRunChanged={mockOnRunChanged} />);
+  /** The first save's option has rendered: the list fetch resolved. */
+  const waitForSaves = () =>
+    waitFor(() => expect(screen.getByText(LABELS[0])).toBeInTheDocument());
+  /** The list fetch has settled, whatever it returned. */
+  const waitForListSettled = () =>
+    waitFor(() => {
+      // The request too, not only the spinner's absence: the spinner is
+      // absent before the fetch starts, so a hook that ever set its loading
+      // flag after an await would let this resolve on the pre-fetch render.
+      // Same trap the sibling hook suite's `renderSettled` documents.
+      expect(apiEndpoints.saves.list).toHaveBeenCalled();
+      expect(screen.queryByText('Loading…')).toBeNull();
+    });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -73,8 +72,18 @@ describe('DefeatDialog', () => {
     apiEndpoints.saves.list.mockResolvedValue({ data: { saves: mockSaves } });
   });
 
-  it('renders defeat message and loads saves on mount', async () => {
-    render(<DefeatDialog endState={{ message: 'You died.' }} onLoadedSave={mockOnLoadedSave} />);
+  it('renders the defeat message and lists the saves newest first', async () => {
+    // Served oldest first, with distinct times, so the order on screen can
+    // only come from the client's compareSavesByRecency sort.
+    apiEndpoints.saves.list.mockResolvedValue({
+      data: {
+        saves: [
+          { ...mockSaves[0], timestamp_ms: Date.UTC(2026, 0, 1) },
+          { ...mockSaves[1], timestamp_ms: Date.UTC(2026, 0, 2) },
+        ],
+      },
+    });
+    renderDialog({ message: 'You died.' });
 
     expect(screen.getByText('Defeat').textContent).toBe('Defeat');
     expect(screen.getByText('You died.').textContent).toBe('You died.');
@@ -82,41 +91,36 @@ describe('DefeatDialog', () => {
     // The save list only exists once the fetch resolves.
     expect(screen.queryByRole('combobox')).toBeNull();
 
-    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+    await waitForListSettled();
 
-    // One <option> per save, in server order (list_saves sorts newest first),
-    // and the first is preselected so LOAD is immediately usable.
+    // One <option> per save, newest first, and the newest is preselected so
+    // LOAD is immediately usable.
     const options = Array.from(screen.getByRole('combobox').options);
-    expect(options.map((o) => o.textContent)).toEqual(LABELS);
-    expect(options.map((o) => o.value)).toEqual(['save1', 'save2']);
-    expect(screen.getByRole('combobox').value).toBe('save1');
+    expect(options.map((o) => o.textContent)).toEqual([LABELS[1], LABELS[0]]);
+    expect(options.map((o) => o.value)).toEqual(['save2', 'save1']);
+    expect(screen.getByRole('combobox').value).toBe('save2');
     expect(apiEndpoints.saves.list).toHaveBeenCalledTimes(1);
   });
 
-  it('handles save loading successfully', async () => {
-    apiEndpoints.saves.load.mockResolvedValue({ success: true });
+  it('loads the preselected save and tells the parent the run changed', async () => {
+    apiEndpoints.saves.load.mockResolvedValue(OK);
+    renderDialog();
+    await waitForSaves();
 
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
-
-    await waitFor(() => {
-      expect(screen.getByText(LABELS[0])).toBeDefined();
-    });
-
-    const loadBtn = screen.getByText('LOAD');
-    fireEvent.click(loadBtn);
+    fireEvent.click(screen.getByText('LOAD'));
 
     await waitFor(() => {
       // The SELECTED save's id, not the first row's name or index.
       expect(apiEndpoints.saves.load).toHaveBeenCalledWith('save1');
-      expect(mockOnLoadedSave).toHaveBeenCalledTimes(1);
+      expect(mockOnRunChanged).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByText(/Failed/)).toBeNull();
   });
 
   it('loads the save the player actually picked, not the default', async () => {
-    apiEndpoints.saves.load.mockResolvedValue({ success: true });
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
-    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeDefined());
+    apiEndpoints.saves.load.mockResolvedValue(OK);
+    renderDialog();
+    await waitForSaves();
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'save2' } });
     expect(screen.getByRole('combobox').value).toBe('save2');
@@ -126,25 +130,20 @@ describe('DefeatDialog', () => {
     expect(apiEndpoints.saves.load).toHaveBeenCalledTimes(1);
   });
 
-  it('handles save loading error', async () => {
+  it('shows the load error and leaves LOAD usable for a retry', async () => {
     apiEndpoints.saves.load.mockRejectedValue(new Error('Load Failed'));
+    renderDialog();
+    await waitForSaves();
 
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
-
-    await waitFor(() => {
-      expect(screen.getByText(LABELS[0])).toBeDefined();
-    });
-
-    const loadBtn = screen.getByText('LOAD');
-    fireEvent.click(loadBtn);
+    fireEvent.click(screen.getByText('LOAD'));
 
     await waitFor(() => {
       expect(screen.getByText('Load Failed').textContent).toBe('Load Failed');
     });
     // A failed load must leave the dialog usable: the button comes back out of
     // its LOADING… state and a retry actually reaches the endpoint.
-    expect(screen.getByText('LOAD').closest('button').disabled).toBe(false);
-    expect(mockOnLoadedSave).not.toHaveBeenCalled();
+    expect(screen.getByText('LOAD').closest('button')).not.toBeDisabled();
+    expect(mockOnRunChanged).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText('LOAD'));
     await waitFor(() => expect(apiEndpoints.saves.load).toHaveBeenCalledTimes(2));
   });
@@ -152,19 +151,14 @@ describe('DefeatDialog', () => {
   it('starts a fresh run via /game/new on Start Over, without logging out', async () => {
     // Issue #587: START OVER used to call logout(), which killed the session
     // and dumped the (often unauthenticated test-bypass) player on the login
-    // page with no way back in. It must call the same POST /game/new the
-    // main menu's "New Game" button uses (apiEndpoints.saves.newGame,
-    // wrapping MainMenuPage.jsx's `saves.newGame()`), and it must NOT touch
-    // logout at all.
-    apiEndpoints.saves.newGame.mockResolvedValue({ success: true });
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    // page with no way back in. It must call the same `saves.newGame()`
+    // (POST /game/new) that MainMenuPage's New Game calls, and it must NOT
+    // touch logout at all.
+    apiEndpoints.saves.newGame.mockResolvedValue(OK);
+    renderDialog();
+    await waitForListSettled();
 
-    await waitFor(() => {
-      expect(screen.queryByText('Loading…')).toBeNull();
-    });
-
-    const startOverBtn = screen.getByText('START OVER');
-    fireEvent.click(startOverBtn);
+    fireEvent.click(screen.getByText('START OVER'));
 
     await waitFor(() => {
       expect(apiEndpoints.saves.newGame).toHaveBeenCalledTimes(1);
@@ -174,26 +168,42 @@ describe('DefeatDialog', () => {
     // Starting over is not loading a save.
     expect(apiEndpoints.saves.load).not.toHaveBeenCalled();
     // The parent (GamePage, via CombatManager's onDefeatClose) is told the
-    // underlying game state changed so it can reset out of the defeat state
-    // (close the dialog, clear endState, drop back to exploration mode) —
-    // exactly the same signal a successful Load Save sends today.
-    await waitFor(() => expect(mockOnLoadedSave).toHaveBeenCalledTimes(1));
+    // underlying run changed so it can reset out of the defeat state — the
+    // same signal a successful Load Save sends.
+    await waitFor(() => expect(mockOnRunChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it('blames nothing when the parent fails to refresh after a successful Start Over', async () => {
+    // The request itself succeeded, so the dialog must not say the exit
+    // failed. It says nothing at all: the run HAS changed, the parent is
+    // already re-fetching, and no wording would give the player an action.
+    apiEndpoints.saves.newGame.mockResolvedValue(OK);
+    mockOnRunChanged.mockRejectedValueOnce(new Error('refetch failed'));
+    renderDialog();
+    await waitForListSettled();
+
+    fireEvent.click(screen.getByText('START OVER'));
+
+    // The run DID start over, so the dialog must not blame the request.
+    // It says nothing at all instead: the parent is already re-fetching and
+    // the dialog is on its way out, so there is nothing to tell the player.
+    await waitFor(() => expect(mockOnRunChanged).toHaveBeenCalled());
+    expect(screen.queryByText(START_OVER_FAILED)).toBeNull();
+    expect(screen.queryByText(/failed/i)).toBeNull();
   });
 
   it('renders "No saves found" if list is empty', async () => {
     apiEndpoints.saves.list.mockResolvedValue({ data: { saves: [] } });
-
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
 
     await waitFor(() => {
       expect(screen.getByText('No saves found.')).toBeDefined();
     });
   });
 
-  it('handles fetch saves error', async () => {
+  it('shows the fetch error when listing saves fails', async () => {
     apiEndpoints.saves.list.mockRejectedValue(new Error('Fetch Failed'));
-
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
 
     await waitFor(() => {
       expect(screen.getByText('Fetch Failed')).toBeDefined();
@@ -202,8 +212,7 @@ describe('DefeatDialog', () => {
 
   it('falls back to a generic message when fetching saves fails without one', async () => {
     apiEndpoints.saves.list.mockRejectedValue({});
-
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
 
     await waitFor(() => {
       expect(screen.getByText('Failed to load saves.')).toBeDefined();
@@ -212,38 +221,38 @@ describe('DefeatDialog', () => {
 
   it('falls back to a generic message when loading a save fails without a response or message', async () => {
     apiEndpoints.saves.load.mockRejectedValue({});
-
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
-    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeDefined());
+    renderDialog();
+    await waitForSaves();
 
     fireEvent.click(screen.getByText('LOAD'));
     await waitFor(() => {
-      expect(screen.getByText('Failed to load save.')).toBeDefined();
+      expect(screen.getByText(LOAD_SAVE_FAILED)).toBeDefined();
     });
   });
 
   it('falls back to a generic message when Start Over fails without one', async () => {
     apiEndpoints.saves.newGame.mockRejectedValue({});
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
+    await waitForListSettled();
 
-    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
     fireEvent.click(screen.getByText('START OVER'));
 
     await waitFor(() => {
-      expect(screen.getByText('Failed to start over.')).toBeDefined();
+      expect(screen.getByText(START_OVER_FAILED)).toBeDefined();
     });
     expect(mockLogout).not.toHaveBeenCalled();
-    expect(mockOnLoadedSave).not.toHaveBeenCalled();
+    expect(mockOnRunChanged).not.toHaveBeenCalled();
   });
 
   it('omits the level segment when the server reports it as "?"', () => {
     // list_saves emits the STRING "?" when the row has no level, and the label
-    // builder guards with `typeof s.level === 'number'` — so the fallback must
-    // not leak "Lv ?" into the picker.
+    // builder (saveSummaryParts in utils/localSave.js) guards with
+    // `typeof row?.level === 'number'` — so the fallback must not leak "Lv ?"
+    // into the picker.
     apiEndpoints.saves.list.mockResolvedValue({
       data: { saves: [makeSaveRow({ id: 's3', name: 'Broken Save', level: '?' })] },
     });
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
 
     return waitFor(() => {
       const label = screen.getByRole('combobox').options[0].textContent;
@@ -254,27 +263,39 @@ describe('DefeatDialog', () => {
     });
   });
 
-  it('shows error if trying to load without a selected save', async () => {
+  it('labels a save with no name "Untitled Save", as the main menu does', () => {
+    // The picker used to join the raw name, so a nameless row opened with the
+    // separator and nothing before it.
+    apiEndpoints.saves.list.mockResolvedValue({
+      data: { saves: [makeSaveRow({ id: 's4', name: '' })] },
+    });
+    renderDialog();
+
+    return waitFor(() => {
+      const label = screen.getByRole('combobox').options[0].textContent;
+      expect(label.startsWith('Untitled Save • ')).toBe(true);
+    });
+  });
+
+  it('does not render LOAD when there are no saves', async () => {
     apiEndpoints.saves.list.mockResolvedValue({ data: { saves: [] } });
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
 
     await waitFor(() => {
       expect(screen.getByText('No saves found.')).toBeDefined();
     });
 
-    // With no saves, no LOAD button should be rendered at all
-    const loadBtn = screen.queryByText('LOAD');
-    expect(loadBtn, 'LOAD button should not render when no saves exist').toBeNull();
+    expect(screen.queryByText('LOAD'), 'LOAD button should not render when no saves exist').toBeNull();
   });
 
   it('falls back to a generic defeat message when endState has none', async () => {
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
     expect(screen.getByText('You have been defeated.')).toBeInTheDocument();
   });
 
   it('defaults the saves list to empty when the response has no data.saves', async () => {
     apiEndpoints.saves.list.mockResolvedValue({});
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
 
     await waitFor(() => {
       expect(screen.getByText('No saves found.')).toBeInTheDocument();
@@ -284,21 +305,38 @@ describe('DefeatDialog', () => {
   it('shows the LOADING… label on the button while a load is in flight', async () => {
     let resolveLoad;
     apiEndpoints.saves.load.mockReturnValue(new Promise((r) => { resolveLoad = r; }));
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
+    await waitForSaves();
 
-    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeInTheDocument());
     fireEvent.click(screen.getByText('LOAD'));
 
-    expect(screen.getByText('LOADING…')).toBeInTheDocument();
-    resolveLoad({ success: true });
-    await waitFor(() => expect(mockOnLoadedSave).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(LOADING_LABEL)).toBeInTheDocument();
+    resolveLoad(OK);
+    await waitFor(() => expect(mockOnRunChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it('leaves the LOAD label alone while START OVER is in flight', async () => {
+    // Both buttons disable while either exit runs, but only the pressed one
+    // may say what it is doing: a single isSubmitting flag had START OVER
+    // relabel LOAD as LOADING…, as if a save were being restored.
+    let resolveNewGame;
+    apiEndpoints.saves.newGame.mockReturnValue(new Promise((r) => { resolveNewGame = r; }));
+    renderDialog();
+    await waitForSaves();
+
+    fireEvent.click(screen.getByText('START OVER'));
+
+    expect(screen.getByText('LOAD').closest('button')).toBeDisabled();
+    expect(screen.queryByText(LOADING_LABEL)).not.toBeInTheDocument();
+    resolveNewGame(OK);
+    await waitFor(() => expect(mockOnRunChanged).toHaveBeenCalledTimes(1));
   });
 
   it('prefers the server-provided error message when loading a save fails', async () => {
     apiEndpoints.saves.load.mockRejectedValue({ response: { data: { error: 'Save is corrupted.' } } });
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
+    await waitForSaves();
 
-    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeInTheDocument());
     fireEvent.click(screen.getByText('LOAD'));
 
     await waitFor(() => {
@@ -306,20 +344,40 @@ describe('DefeatDialog', () => {
     });
   });
 
-  it('shows an error and stops loading when starting a new game fails on Start Over', async () => {
+  it('shows an error and re-enables START OVER when starting a new game fails', async () => {
     apiEndpoints.saves.newGame.mockRejectedValue(new Error('New game failed'));
-    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    renderDialog();
+    await waitForListSettled();
 
-    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
     fireEvent.click(screen.getByText('START OVER'));
 
     await waitFor(() => {
       expect(screen.getByText('New game failed')).toBeInTheDocument();
     });
-    expect(screen.getByText('START OVER')).not.toBeDisabled();
+    expect(screen.getByText('START OVER').closest('button')).not.toBeDisabled();
     // A failed Start Over must not have logged the player out or left the
     // defeat dialog thinking the run restarted.
     expect(mockLogout).not.toHaveBeenCalled();
-    expect(mockOnLoadedSave).not.toHaveBeenCalled();
+    expect(mockOnRunChanged).not.toHaveBeenCalled();
+  });
+
+  it('tells the parent the run restarted only after /game/new resolves, and holds the button until then', async () => {
+    // A deferred promise, so the in-flight state is observable: resolving
+    // `newGame` immediately would let an implementation that fired the
+    // callback first (or never disabled the button) pass the same assertions.
+    let resolveNewGame;
+    apiEndpoints.saves.newGame.mockReturnValue(new Promise((r) => { resolveNewGame = r; }));
+    renderDialog();
+    await waitForListSettled();
+
+    fireEvent.click(screen.getByText('START OVER'));
+
+    expect(apiEndpoints.saves.newGame).toHaveBeenCalledTimes(1);
+    expect(mockOnRunChanged).not.toHaveBeenCalled();
+    expect(screen.getByText('START OVER').closest('button')).toBeDisabled();
+
+    resolveNewGame(OK);
+    await waitFor(() => expect(mockOnRunChanged).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('START OVER').closest('button')).not.toBeDisabled();
   });
 });

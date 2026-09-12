@@ -2,8 +2,9 @@
 Chapter 03 events
 """
 
-from src.events import Event, map_name_for_tile
+from src.events import Event, gate_is_set, map_name_for_tile
 from src.functions import print_slow
+from src.npc import Anvil
 from src.objects import Passageway
 from src.journal import (
     complete_objective,
@@ -55,16 +56,15 @@ class GorranGestureEvent(Event):
     generic "just arrived" beat. Sets gorran_gesture_done so it won't repeat.
     """
 
+    GATE_KEY = "gorran_gesture_done"
+
     def __init__(self, player, tile, params=None, repeat=False, name="GorranGesture"):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
 
     def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("gorran_gesture_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
+        if self.retire_if_gate_set():
             return
         prev = getattr(self.player, "previous_tile", None)
         if prev is None:
@@ -102,9 +102,7 @@ class GorranGestureEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["gorran_gesture_done"] = "1"
+        self.set_story_gate(self.GATE_KEY)
 
 
 class EasternRoadTurnbackEvent(Event):
@@ -164,18 +162,12 @@ class NomadCampSmellEvent(Event):
     Sets story gate 'nomad_camp_entered'.
     """
 
+    GATE_KEY = "nomad_camp_entered"
+
     def __init__(self, player, tile, params=None, repeat=False, name="NomadCampSmell"):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("nomad_camp_entered") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
 
     def process(self):
         if not self.player.skip_dialog:
@@ -191,9 +183,7 @@ class NomadCampSmellEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["nomad_camp_entered"] = "1"
+        self.set_story_gate(self.GATE_KEY)
         complete_objective(self.player, OBJ_CH02_HEAD_EAST)
 
 
@@ -212,6 +202,8 @@ class CampEntryGreetingEvent(Event):
     Sets: 'camp_entry_greeting_done'.
     """
 
+    GATE_KEY = "camp_entry_greeting_done"
+
     def __init__(
         self, player, tile, params=None, repeat=False, name="CampEntryGreeting"
     ):
@@ -220,13 +212,10 @@ class CampEntryGreetingEvent(Event):
         )
 
     def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("camp_entry_greeting_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
+        if self.retire_if_gate_set():
             return
         # Only fire after the smell event has run
-        if story.get("nomad_camp_entered") != "1":
+        if not self.gate_is_set(NomadCampSmellEvent.GATE_KEY):
             return
         self.pass_conditions_to_process()
 
@@ -323,9 +312,7 @@ class CampEntryGreetingEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["camp_entry_greeting_done"] = "1"
+        self.set_story_gate(self.GATE_KEY)
         set_objective(
             self.player,
             OBJ_CH03_CANVASS_CAMP,
@@ -351,20 +338,14 @@ class MaraFirstContactEvent(Event):
     Sets story gate 'mara_intro_done'.
     """
 
+    GATE_KEY = "mara_intro_done"
+
     def __init__(
         self, player, tile, params=None, repeat=False, name="MaraFirstContact"
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("mara_intro_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
 
     def process(self):
         if not self.player.skip_dialog:
@@ -483,9 +464,7 @@ class MaraFirstContactEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["mara_intro_done"] = "1"
+        self.set_story_gate(self.GATE_KEY)
         complete_objective(self.player, OBJ_CH03_CANVASS_CAMP)
         complete_objective(self.player, OBJ_CH02_FIND_MARA)
         # Mara says "come back when the sun's lower". There is no clock in the
@@ -516,18 +495,12 @@ class DevetIntroEvent(Event):
     Sets story gate 'devet_intro_done'.
     """
 
+    GATE_KEY = "devet_intro_done"
+
     def __init__(self, player, tile, params=None, repeat=False, name="DevetIntro"):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("devet_intro_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
 
     def process(self):
         if not self.player.skip_dialog:
@@ -594,9 +567,7 @@ class DevetIntroEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["devet_intro_done"] = "1"
+        self.set_story_gate(self.GATE_KEY)
 
 
 class LissObservingEvent(Event):
@@ -615,18 +586,12 @@ class LissObservingEvent(Event):
     Sets story gate 'liss_gorran_done'.
     """
 
+    GATE_KEY = "liss_gorran_done"
+
     def __init__(self, player, tile, params=None, repeat=False, name="LissObserving"):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("liss_gorran_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
 
     def process(self):
         if not self.player.skip_dialog:
@@ -768,9 +733,7 @@ class LissObservingEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["liss_gorran_done"] = "1"
+        self.set_story_gate(self.GATE_KEY)
 
 
 class IronAndOathIntroEvent(Event):
@@ -787,20 +750,14 @@ class IronAndOathIntroEvent(Event):
     Sets story gate 'iron_and_oath_intro_done'.
     """
 
+    GATE_KEY = "iron_and_oath_intro_done"
+
     def __init__(
         self, player, tile, params=None, repeat=False, name="IronAndOathIntro"
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("iron_and_oath_intro_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
 
     def process(self):
         if not self.player.skip_dialog:
@@ -962,18 +919,16 @@ class IronAndOathIntroEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["iron_and_oath_intro_done"] = "1"
+        self.set_story_gate(self.GATE_KEY)
 
 
 class AnvilIntroEvent(Event):
     """
     Fires the first time Jean interacts with Anvil (talk or pet) at the
     Tradepost, provided he's already met Kaelen & Vespera
-    (iron_and_oath_intro_done). Anvil.talk()/pet() set the trigger flag
-    'anvil_conversation_ready' on first use; this event picks it up via the
-    normal post-action tile-event check.
+    (IronAndOathIntroEvent.GATE_KEY). Anvil.talk()/pet() set
+    Anvil.CONVERSATION_READY_FLAG on first use; this event picks it up via
+    the normal post-action tile-event check.
 
     Jean registers the "boulder" at the stall's edge as a living creature.
     Kaelen and Vespera introduce Anvil and explain how a Shell-back survives
@@ -985,20 +940,19 @@ class AnvilIntroEvent(Event):
     Sets story gate 'anvil_conversation_done' so it never repeats.
     """
 
+    GATE_KEY = "anvil_conversation_done"
+
     def __init__(self, player, tile, params=None, repeat=False, name="AnvilIntro"):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
 
     def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("anvil_conversation_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
+        if self.retire_if_gate_set():
             return
-        if story.get("iron_and_oath_intro_done") != "1":
+        if not self.gate_is_set(IronAndOathIntroEvent.GATE_KEY):
             return
-        if story.get("anvil_conversation_ready") != "1":
+        if not self.gate_is_set(Anvil.CONVERSATION_READY_FLAG):
             return
         self.pass_conditions_to_process()
 
@@ -1136,18 +1090,23 @@ class AnvilIntroEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["anvil_conversation_done"] = "1"
+        self.set_story_gate(self.GATE_KEY)
 
 
 class MaraObservationEvent(Event):
     """
-    Fires once on Jean's re-entry to RiversEdge (1,0) after all three character
-    introduction gates are set (mara_intro_done, devet_intro_done, liss_gorran_done).
+    Fires once on Jean's re-entry to RiversEdge (1, 2) after every beat in
+    ``PREREQUISITE_BEATS`` has run.
     Mara makes her observation about Jean's background — religious kit or posture.
-    Sets story gate 'nomad_ferry_ready' (the main chapter completion gate).
+    Sets the ``Passageway.DEMO_END_READY_FLAG`` story gate (the main chapter
+    completion gate) and hands out ``OBJ_CH03_FERRY_LANDING``.
     """
+
+    GATE_KEY = Passageway.DEMO_END_READY_FLAG
+
+    #: The character beats that must all have run before Mara readies the
+    #: ferry; the camp objective names them (see test_journal_story_integration).
+    PREREQUISITE_BEATS = (MaraFirstContactEvent, DevetIntroEvent, LissObservingEvent)
 
     def __init__(
         self, player, tile, params=None, repeat=False, name="MaraObservation"
@@ -1157,17 +1116,9 @@ class MaraObservationEvent(Event):
         )
 
     def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get(Passageway.DEMO_END_READY_FLAG) == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
+        if self.retire_if_gate_set():
             return
-        # Wait until all three character beats are complete
-        if not (
-            story.get("mara_intro_done") == "1"
-            and story.get("devet_intro_done") == "1"
-            and story.get("liss_gorran_done") == "1"
-        ):
+        if not all(self.gate_is_set(beat.GATE_KEY) for beat in self.PREREQUISITE_BEATS):
             return
         self.pass_conditions_to_process()
 
@@ -1222,9 +1173,7 @@ class MaraObservationEvent(Event):
         self._set_gate()
 
     def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story[Passageway.DEMO_END_READY_FLAG] = "1"
+        self.set_story_gate(self.GATE_KEY)
         complete_objective(self.player, OBJ_CH03_WALK_THE_CAMP)
         set_objective(
             self.player,
@@ -1232,6 +1181,22 @@ class MaraObservationEvent(Event):
             "Meet Mara at the ferry landing to cross the river.",
             chapter=3,
         )
+        self._ensure_landing_completer()
+
+    def _ensure_landing_completer(self):
+        """Guarantee the demo edge this gate opens carries the objective's
+        completer.
+
+        The repair itself is ``wire_ferry_landing_completers``, which the
+        load path runs too (``src.story.repair_loaded_save``). It stays on
+        this event as well so a session that crosses Mara's gate without
+        reloading wires the tile in the same breath as the objective.
+
+        Must run AFTER ``self.set_story_gate(self.GATE_KEY)`` above: the
+        repair returns early until that gate is set, so wiring first and
+        announcing second would wire nothing.
+        """
+        wire_ferry_landing_completers(self.player)
 
 
 class FerryLandingObjectiveEvent(Event):
@@ -1239,14 +1204,14 @@ class FerryLandingObjectiveEvent(Event):
     landing.
 
     ``MaraObservationEvent`` sets that objective the moment Mara's chain
-    completes; nothing closed it in real play. The only completer used to be
-    ``DemoEndEvent``, which was placed on no tile in any shipped map, so the
-    objective stayed in the journal forever. This event exists to be
-    *wired*: it is authored onto ``eastern-descent-nomad-camp`` (0, 2) in the
-    map JSON, the same tile that carries the Ferry Landing, and
+    completes; until issue #579 nothing that was actually placed on a tile
+    closed it, so it stayed in the journal forever. This event exists to be
+    *wired*: it is authored in the ``eastern-descent-nomad-camp`` map JSON
+    onto the same tile as the Ferry Landing, and
     ``interact_with_target`` re-evaluates the tile's events immediately after
     dispatching an interaction -- so it fires in the same request that
-    ``Passageway.end_demo`` sets the gate.
+    ``Passageway.end_demo`` sets the gate. Saves whose maps predate that
+    placement get it from ``wire_ferry_landing_completers`` below.
 
     Deliberately silent. The in-fiction closing beat belongs to
     ``Passageway.end_demo`` and the meta-text to the client's
@@ -1256,29 +1221,88 @@ class FerryLandingObjectiveEvent(Event):
     """
 
     def __init__(
-        self,
-        player,
-        tile,
-        params=None,
-        repeat=False,
-        name="FerryLandingObjective",
+        self, player, tile, params=None, repeat=False, name="FerryLandingObjective"
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
 
     def check_conditions(self):
-        """Fires only once the demo has actually closed at this landing.
+        """Fires once the demo has ended.
 
-        Reads ``Passageway.DEMO_END_FLAG`` -- the gate ``end_demo`` sets --
-        rather than ``DEMO_END_READY_FLAG``: the ferry being *ready* is what
-        sets this objective, so closing on it would mark the objective done
-        the instant it was handed out.
+        Reads ``Passageway.DEMO_ENDED_FLAG`` -- the gate ``end_demo`` sets,
+        which is global and stays set -- rather than ``DEMO_END_READY_FLAG``:
+        the ferry being *ready* is what sets this objective, so closing on it
+        would mark the objective done the instant it was handed out.
         """
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get(Passageway.DEMO_END_FLAG) != "1":
+        if not self.gate_is_set(Passageway.DEMO_ENDED_FLAG):
             return
         self.pass_conditions_to_process()
 
     def process(self):
         complete_objective(self.player, OBJ_CH03_FERRY_LANDING)
+
+
+def wire_ferry_landing_completers(player):
+    """Give the demo edge in ``player``'s universe its objective completer;
+    returns how many tiles were wired.
+
+    The shipped map authors ``FerryLandingObjectiveEvent`` onto the landing
+    tile, but ``load_game`` keeps a save's pickled maps as they are, so a save
+    made before that placement existed has a landing tile with no completer --
+    and ``OBJ_CH03_FERRY_LANDING`` could never clear. A repair rather than a
+    beat, because the saves that need it are already past Mara: it runs from
+    ``src.story.repair_loaded_save`` on every load, and again from
+    ``MaraObservationEvent`` for the session that crosses her gate without
+    reloading.
+
+    Returns early until that gate is set, which keeps the walk over every
+    map off the load path of every save that has not reached Mara. Nothing is
+    missed by waiting: ``end_demo`` declines while the gate is unset, so no
+    landing tile can need its completer before then.
+
+    The edge is found by what it IS (a ``demo_end`` passageway gated on
+    ``Passageway.DEMO_END_READY_FLAG``), not by a coordinate or a map name, so
+    it follows the edge wherever the maps put it. Idempotent: an already-wired
+    tile is left alone. A completer that has already FIRED has retired itself
+    (``repeat=False``), so a later load wires a fresh one, which closes an
+    objective that is already closed -- silently, and
+    ``complete_objective`` is idempotent.
+    """
+    if not gate_is_set(player, Passageway.DEMO_END_READY_FLAG):
+        return 0
+    maps = getattr(getattr(player, "universe", None), "maps", None)
+    if not isinstance(maps, (list, tuple)):
+        return 0
+    return sum(
+        _wire_landing_tiles(player, game_map)
+        for game_map in maps
+        if isinstance(game_map, dict)
+    )
+
+
+def _wire_landing_tiles(player, game_map):
+    """The one-map half of ``wire_ferry_landing_completers``."""
+    wired = 0
+    # A map dict keys its tiles by (x, y); the other entries ("name",
+    # "metadata") are not tiles. The map can come from a restored save, where
+    # a tile the unpickler could not resolve is a placeholder with neither
+    # list, so each is read defensively.
+    for key, tile in game_map.items():
+        if not isinstance(key, tuple):
+            continue
+        events = getattr(tile, "events_here", None)
+        if not isinstance(events, list):
+            continue
+        gated_here = any(
+            isinstance(obj, Passageway)
+            and obj.is_demo_edge(Passageway.DEMO_END_READY_FLAG)
+            for obj in getattr(tile, "objects_here", None) or ()
+        )
+        already_wired = any(
+            isinstance(ev, FerryLandingObjectiveEvent) for ev in events
+        )
+        if gated_here and not already_wired:
+            events.append(FerryLandingObjectiveEvent(player=player, tile=tile))
+            wired += 1
+    return wired

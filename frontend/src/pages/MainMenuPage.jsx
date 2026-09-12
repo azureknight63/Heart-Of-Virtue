@@ -75,7 +75,13 @@ import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
 import GameText from '../components/GameText'
 import BaseDialog from '../components/BaseDialog'
-import { compareSavesByRecency, formatSaveTimestamp } from '../utils/localSave'
+import {
+    SAVE_LABEL_SEPARATOR,
+    fetchSavesNewestFirst,
+    formatSaveTimestamp,
+    saveDisplayName,
+    saveSummaryParts,
+} from '../utils/localSave'
 
 /**
  * Fetch the cloud saves, newest first. This is now the only save source —
@@ -84,14 +90,16 @@ import { compareSavesByRecency, formatSaveTimestamp } from '../utils/localSave'
  * is no local entry to fold in or exclude here anymore.
  */
 async function fetchCloudSaves() {
-    const response = await saves.list()
-    const cloudSaves = [...(response.data?.saves || [])]
-    return cloudSaves.sort(compareSavesByRecency)
+    return fetchSavesNewestFirst(() => saves.list())
 }
 
-/** Continue always targets the newest cloud save. */
+/**
+ * Continue always targets the newest cloud save. The list is already newest
+ * first: every write to it is a fetchCloudSaves result, a filter of one, or
+ * empty, and none of those can reorder it.
+ */
 function resolveContinueTarget(cloudSaves) {
-    return cloudSaves.length > 0 ? [...cloudSaves].sort(compareSavesByRecency)[0] : null
+    return cloudSaves[0] ?? null
 }
 
 export default function MainMenuPage() {
@@ -437,14 +445,14 @@ export default function MainMenuPage() {
                                         <div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
                                                 <GameText variant="bright" weight="bold">
-                                                    {save.name || 'Untitled Save'}
+                                                    {saveDisplayName(save)}
                                                 </GameText>
                                                 {save.is_autosave && (
                                                     <GameText variant="warning" size="xs">(Autosave)</GameText>
                                                 )}
                                             </div>
                                             <GameText variant="muted" size="sm" style={{ marginTop: spacing.xs }}>
-                                                Lvl {save.level} • {save.map_name} • {save.room_title}
+                                                {saveSummaryParts(save).join(SAVE_LABEL_SEPARATOR)}
                                             </GameText>
                                             <GameText variant="dim" size="xs" style={{ marginTop: spacing.xs }}>
                                                 {formatSaveTimestamp(save)}

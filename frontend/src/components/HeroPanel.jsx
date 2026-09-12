@@ -5,6 +5,35 @@ import GameText from './GameText'
 import { CATEGORY_NAV_LABEL } from '../utils/categories'
 
 /**
+ * Each real control's pointer-events opt-in. HeroPanel's root is
+ * click-through (see its comment, issue #575), so a control opts back in —
+ * but only while the hero is interactive, so the opt-in cannot outlive
+ * LeftPanel disabling the hero during the enemy's turn.
+ *
+ * EDITING RULE: any new clickable in this component must set
+ * `pointerEvents: controlPointerEvents(interactive)`. The root punches a
+ * click-through hole (see its comment below), so one that forgets is inert,
+ * and the stacking sweep only catches the opposite mistake -- a surface that
+ * opts back in when it should not.
+ */
+const controlPointerEvents = (interactive) => (interactive ? 'auto' : 'none')
+
+/**
+ * The hover-only icon surfaces (the desktop passive/status columns and the
+ * mobile icon row) opt back in unconditionally, unlike the controls: they
+ * carry no click handler, only hover tooltips, which stay readable during the
+ * enemy's turn.
+ *
+ * They are also the one place #575's click-through hole is deliberately
+ * re-armed, and that costs something: the desktop columns sit 135px out from a
+ * 200px hero box, so they can overlap the centred CombatMovePanel, and a click
+ * landing on one is lost rather than reaching a move card. Tooltips win here on
+ * purpose. Gating them on `interactive` would not help (the overlap matters on
+ * the player's turn), and 'none' would take the tooltips away.
+ */
+const HOVER_ONLY_POINTER_EVENTS = 'auto'
+
+/**
  * VitalBar — one of the two curved bars flanking the hero portrait.
  *
  * The HP and Fatigue bars were ~55-line near-duplicates differing only in the
@@ -31,10 +60,6 @@ function VitalBar({
   onHoverChange,
   onToggle,
   testId,
-  // Defaults to true, matching HeroPanel's own default below: VitalBar isn't
-  // exported (HeroPanel is its only caller today), but a future caller that
-  // omits this prop should get today's always-interactive behaviour rather
-  // than silently going dead.
   interactive = true,
 }) {
   const isLeft = side === 'left'
@@ -91,15 +116,7 @@ function VitalBar({
         flexDirection: 'column-reverse',
         overflow: 'visible',
         cursor: 'pointer',
-        // The Hero Head Container this bar sits in is `pointerEvents: 'none'`
-        // (issue #575 — see that div's comment); this opts the bar back in
-        // so HP/Fatigue hover/click/touch keep working once the container is
-        // raised above CombatMovePanel — but only while `interactive` is
-        // true. Hard-coding 'auto' here would keep the bar clickable even
-        // while LeftPanel dims and disables the whole hero during the
-        // enemy's turn, which the ancestor's own `pointerEvents: 'none'`
-        // used to guarantee before this opt-in existed.
-        pointerEvents: interactive ? 'auto' : 'none',
+        pointerEvents: controlPointerEvents(interactive),
       }}
       data-testid={testId}
     >
@@ -174,19 +191,103 @@ function VitalBar({
   )
 }
 
+// The heading over an effect group, in both layouts. Smaller than anything
+// on the type scale, which is why it stays a literal.
+const EFFECT_HEADING_SIZE = '7px'
+
+// How far out from the portrait the desktop effect columns sit. Named
+// because HOVER_ONLY_POINTER_EVENTS's doc above reasons about this exact
+// distance -- the columns hang outside a 200px hero box, which is what lets
+// them overlap the move panel.
+const EFFECT_COLUMN_OFFSET = '-135px'
+
+/**
+ * Where the six radial buttons sit around the portrait, in ring order:
+ * top-left, top-right, left, right, bottom-left, bottom-right. Exploration
+ * and combat draw DIFFERENT buttons in the SAME six places, so the geometry
+ * is said once here and the two tables below carry only what differs (label,
+ * handler, colour, and whether the category has any moves). They were two
+ * hand-kept rows of six, with nothing asserting they matched.
+ */
+const RADIAL_SLOTS = [
+  { top: '0px', left: '20%', transform: 'translateX(-50%)' },
+  { top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)' },
+  { top: '50%', left: '-40px', transform: 'translateY(-50%)' },
+  { top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)' },
+  { top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)' },
+  { top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)' },
+]
+
+/**
+ * One ring's worth of buttons: `RADIAL_SLOTS` zipped onto what each ring
+ * varies, BY INDEX -- a row's position in the table is its slot, so moving a
+ * row moves that button and no test fails (the ring test compares the two
+ * rings' position sequences, which are index-derived either way).
+ *
+ * Exactly six rows. A seventh takes `RADIAL_SLOTS[6]`, which is `undefined`;
+ * spreading that is legal, so the button would render unpositioned and
+ * silently -- add a slot first.
+ *
+ * A row's own `top`/`left`/`transform` wins over the slot. Nothing in
+ * production uses that, and it is exported only so HeroPanel.test.jsx can
+ * prove the ring is load-bearing at all: the rendered rings agree with each
+ * other whether the geometry comes from here or from two hand-kept tables.
+ */
+export const inRadialSlots = (buttons) =>
+  buttons.map((button, index) => ({ ...RADIAL_SLOTS[index], ...button }))
+
+/**
+ * The two effect groups the hero shows, in render order. Desktop draws them as
+ * columns flanking the portrait, mobile as one row underneath, but WHICH groups
+ * there are, what each is called and which player field it reads is said once,
+ * here.
+ */
+const EFFECT_GROUPS = [
+  { key: 'passives', heading: 'PASSIVES', side: 'left', testId: 'passives-column' },
+  { key: 'status_effects', heading: 'STATUS', side: 'right', testId: 'status-effects-column' },
+]
+
+/**
+ * EffectIconColumn — one of the two desktop icon columns flanking the
+ * portrait: passives on the left, status effects on the right. Mobile shows
+ * the same icons as a row below the hero instead.
+ *
+ * The two were near-duplicate blocks differing only in these props, edited in
+ * lockstep. Hover-only, so they opt back in to pointer events unconditionally
+ * (`HOVER_ONLY_POINTER_EVENTS`). The heading renders only when there is an
+ * icon under it.
+ */
+function EffectIconColumn({ side, heading, effects, testId }) {
+  return (
+    <div data-testid={testId} style={{
+      position: 'absolute',
+      top: '50%',
+      [side]: EFFECT_COLUMN_OFFSET,
+      transform: 'translateY(-50%)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '4px',
+      zIndex: 10,
+      pointerEvents: HOVER_ONLY_POINTER_EVENTS
+    }}>
+      {effects?.length > 0 && (
+        <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: EFFECT_HEADING_SIZE, marginBottom: '2px' }}>{heading}</GameText>
+      )}
+      <StatusEffectsIconPanel effects={effects} vertical />
+    </div>
+  )
+}
+
 function HeroPanel({
   player,
   isMobile,
   inCombat,
-  // Issue #575: the Hero Head Container is `pointerEvents: 'none'` so a
-  // raised HeroPanel can't swallow clicks meant for CombatMovePanel, with
-  // its real controls (VitalBar, the nav buttons) opting back in to
-  // 'auto'. That opt-in must not survive LeftPanel dimming this whole
-  // component during the enemy's turn (its wrapper already goes
-  // `pointerEvents: 'none'` there) — this prop is that wrapper's gate,
-  // threaded down so the opt-in can defer to it. Defaults to true so every
-  // other caller (exploration mode, every existing test) keeps today's
-  // behaviour with no changes.
+  // Whether the real controls (nav buttons, VitalBar) accept input. LeftPanel
+  // passes false during the enemy's turn; the pointer-events opt-in and the
+  // buttons' `disabled` both key off it — see the root div's comment (#575).
+  // Defaults to true, so callers that omit it (the tests that render HeroPanel
+  // on its own) get live controls.
   interactive = true,
   heroScale = 1,
   hasSpecialMoves,
@@ -234,23 +335,26 @@ function HeroPanel({
   const bpm = baseBpm + combatBonus + stressBonus
   const animationDuration = `${60 / bpm}s`
 
-  const explorationButtons = [
-    { key: 'attributes', label: 'ATTRIBUTES', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onAttributeClick },
-    { key: 'status', label: 'PARTY', top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)', onClick: onStatusClick },
-    { key: 'inventory', label: 'INVENTORY', top: '50%', left: '-40px', transform: 'translateY(-50%)', onClick: onInventoryClick },
-    { key: 'skills', label: 'SKILLS', top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)', onClick: onSkillsClick },
-    { key: 'actions', label: 'COMMANDS', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onActionsClick },
-    { key: 'interact', label: 'INTERACT', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onInteractClick },
-  ]
+  const explorationButtons = inRadialSlots([
+    { key: 'attributes', label: 'ATTRIBUTES', onClick: onAttributeClick },
+    { key: 'status', label: 'PARTY', onClick: onStatusClick },
+    { key: 'inventory', label: 'INVENTORY', onClick: onInventoryClick },
+    { key: 'skills', label: 'SKILLS', onClick: onSkillsClick },
+    { key: 'actions', label: 'COMMANDS', onClick: onActionsClick },
+    { key: 'interact', label: 'INTERACT', onClick: onInteractClick },
+  ])
 
-  const combatButtons = [
-    { key: 'offensive', label: 'OFFENSIVE', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onOffensiveClick, color: colors.danger, show: hasOffensiveMoves },
-    { key: 'maneuver', label: 'MANEUVER', top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)', onClick: onManeuverClick, color: colors.text.highlight, show: hasManeuverMoves },
-    { key: 'inventory', label: 'INVENTORY', top: '50%', left: '-40px', transform: 'translateY(-50%)', onClick: onInventoryClick },
-    { key: 'special', label: 'SPECIAL', top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)', onClick: onSpecialClick, color: colors.special, show: hasSpecialMoves },
-    { key: 'miscellaneous', label: 'MISC', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onMiscellaneousClick, color: colors.text.muted, show: hasMiscellaneousMoves },
-    { key: 'defensive', label: 'DEFENSIVE', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onDefensiveClick, color: colors.secondary, show: hasDefensiveMoves },
-  ]
+  // The ring's colours are its OWN, not `MOVE_CATEGORY_COLOR`: three of the
+  // five differ on purpose (the ring reads as a HUD, the move cards as
+  // categories), so do not "fix" them to match utils/categories.js.
+  const combatButtons = inRadialSlots([
+    { key: 'offensive', label: 'OFFENSIVE', onClick: onOffensiveClick, color: colors.danger, show: hasOffensiveMoves },
+    { key: 'maneuver', label: 'MANEUVER', onClick: onManeuverClick, color: colors.text.highlight, show: hasManeuverMoves },
+    { key: 'inventory', label: 'INVENTORY', onClick: onInventoryClick },
+    { key: 'special', label: 'SPECIAL', onClick: onSpecialClick, color: colors.special, show: hasSpecialMoves },
+    { key: 'miscellaneous', label: 'MISC', onClick: onMiscellaneousClick, color: colors.text.muted, show: hasMiscellaneousMoves },
+    { key: 'defensive', label: 'DEFENSIVE', onClick: onDefensiveClick, color: colors.secondary, show: hasDefensiveMoves },
+  ])
 
   const buttons = inCombat ? combatButtons.filter(btn => btn.show !== false) : explorationButtons
 
@@ -274,16 +378,28 @@ function HeroPanel({
   const touchCompensation = (isMobile && heroScale > 0 && heroScale < 1) ? 1 / heroScale : 1
 
   return (
-    <div style={{
+    <div data-testid="hero-panel-root" style={{
       display: 'flex',
       flexDirection: 'column',
       gap: spacing.md,
       alignItems: 'center',
       padding: `${spacing.xl} ${spacing.md}`,
       position: 'relative',
+      // Issue #575: LeftPanel raises the box this whole component renders in
+      // above CombatMovePanel so the category nav can never be covered by an
+      // open move flyout. That lifts ALL of this component's inert chrome —
+      // this root's padding ring, the Hero Head Container's blank space, the
+      // portrait — above the panel too, where it would swallow clicks meant
+      // for a move card underneath. `pointer-events` inherits, so 'none' here
+      // punches the hole through every descendant, and each real control
+      // opts back in through `controlPointerEvents`. The hover-only icon
+      // surfaces are the deliberate exception (`HOVER_ONLY_POINTER_EVENTS`).
+      // Set here rather than relying on LeftPanel's layer also being 'none',
+      // so HeroPanel is click-through whoever renders it.
+      pointerEvents: 'none',
     }}>
       {/* Hero Head Container */}
-      <div data-testid="hero-head-container" style={{
+      <div style={{
         position: 'relative',
         width: '200px',
         height: '200px',
@@ -292,67 +408,18 @@ function HeroPanel({
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'visible',
-        // Issue #575: LeftPanel.jsx raises the stacking context this whole
-        // component renders inside (`HERO_PANEL_STACKING_Z_INDEX`) above
-        // CombatMovePanel so the category nav ring below can never be
-        // visually covered by an open move flyout. That is the ONLY place
-        // the fix can work — this container's own z-index is `auto` and
-        // creates no stacking context of its own, so nothing set on it (or
-        // on the nav's buttons) would matter otherwise — but raising the
-        // WHOLE ancestor also lifts this container's blank space above the
-        // panel, which would silently swallow clicks meant for a move card
-        // underneath. `pointerEvents: 'none'` here punches that hole back
-        // open; VitalBar and the nav buttons opt back in with their own
-        // `pointerEvents`, gated on the `interactive` prop rather than a bare
-        // 'auto' -- LeftPanel already goes `pointerEvents: 'none'` on this
-        // component's wrapper during the enemy's turn to disable the whole
-        // dimmed hero, and an unconditional 'auto' here would silently
-        // override that for just these two controls. (The passive/status
-        // icon columns predate #575 and already hard-code 'auto' regardless
-        // of turn -- out of scope for this fix, left as-is.)
-        pointerEvents: 'none',
       }}>
-        {/* Passive Effects Icons — side column on desktop, hidden here on mobile (shown below) */}
-        {!isMobile && (
-          <div style={{
-            position: 'absolute',
-            top: '50%',
-            left: '-135px',
-            transform: 'translateY(-50%)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '4px',
-            zIndex: 10,
-            pointerEvents: 'auto'
-          }}>
-            {player?.passives?.length > 0 && (
-              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>PASSIVES</GameText>
-            )}
-            <StatusEffectsIconPanel effects={player?.passives} vertical />
-          </div>
-        )}
-
-        {/* Status Effects Icons — side column on desktop, hidden here on mobile (shown below) */}
-        {!isMobile && (
-          <div style={{
-            position: 'absolute',
-            top: '50%',
-            right: '-135px',
-            transform: 'translateY(-50%)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '4px',
-            zIndex: 10,
-            pointerEvents: 'auto'
-          }}>
-            {player?.status_effects?.length > 0 && (
-              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>STATUS</GameText>
-            )}
-            <StatusEffectsIconPanel effects={player?.status_effects} vertical />
-          </div>
-        )}
+        {/* Passive (left) and status (right) icons — see EffectIconColumn
+            above. Desktop only; on mobile they render in a row below. */}
+        {!isMobile && EFFECT_GROUPS.map(({ key, heading, side, testId }) => (
+          <EffectIconColumn
+            key={key}
+            side={side}
+            heading={heading}
+            effects={player?.[key]}
+            testId={testId}
+          />
+        ))}
 
         <img
           src={`${import.meta.env.BASE_URL}hero-heart.png`}
@@ -427,6 +494,13 @@ function HeroPanel({
             so every button's `position: absolute` still resolves against
             this Hero Head Container exactly as before. */}
         <nav aria-label={CATEGORY_NAV_LABEL} style={{ display: 'contents' }}>
+        {/* Deliberately inline, unlike VitalBar and EffectIconColumn above.
+            A RadialNavButton would need ten props -- the four slot fields,
+            label, onClick, colour, interactive, isHovered and the hover
+            setter, plus touchCompensation -- for one call site three lines
+            away: a wide signature bought with nothing. Extract the STYLE
+            object first if this grows again; the hover state is what makes
+            the component awkward, not the markup. */}
         {buttons.map(({ key, label, top, left, transform, onClick, color }) => {
           const isHovered = hoveredButton === key
           const baseColor = color || colors.primary
@@ -439,6 +513,14 @@ function HeroPanel({
             <button
               key={key}
               onClick={onClick}
+              // Inert during the enemy's turn in every input modality, not just
+              // the pointer: the `controlPointerEvents` opt-out below still
+              // leaves the button focusable, and Enter/Space would stage a
+              // category that pops open the instant it is the player's turn
+              // again. It also exposes the inert state to assistive tech; the
+              // visible dimming is the stacking layer's opacity/grayscale
+              // (LeftPanel.jsx).
+              disabled={!interactive}
               onMouseEnter={() => setHoveredButton(key)}
               onMouseLeave={() => setHoveredButton(null)}
               style={{
@@ -479,16 +561,7 @@ function HeroPanel({
                 justifyContent: 'center',
                 fontFamily: fonts.main,
                 zIndex: 5,
-                // The Hero Head Container is `pointerEvents: 'none'` (issue
-                // #575); this is the nav's real control, so it opts back in
-                // -- but only while `interactive`. Hard-coding 'auto' would
-                // keep this button clickable even while LeftPanel disables
-                // the whole hero during the enemy's turn (a stray click
-                // would stage a move category that then pops open the
-                // instant it becomes the player's turn again), which the
-                // ancestor's own `pointerEvents: 'none'` used to guarantee
-                // before this opt-in existed.
-                pointerEvents: interactive ? 'auto' : 'none',
+                pointerEvents: controlPointerEvents(interactive),
                 textAlign: 'center',
                 // Horizontal padding trimmed to 2px to buy the wider type its
                 // room; the vertical 4px is what keeps the label off the
@@ -506,20 +579,14 @@ function HeroPanel({
       </div>
 
       {/* Mobile-only: passives + status icons as a compact inline row */}
-      {isMobile && (player?.passives?.length > 0 || player?.status_effects?.length > 0) && (
-        <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-          {player?.passives?.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px' }}>PASSIVES</GameText>
-              <StatusEffectsIconPanel effects={player.passives} />
+      {isMobile && EFFECT_GROUPS.some(({ key }) => player?.[key]?.length > 0) && (
+        <div data-testid="mobile-effect-row" style={{ display: 'flex', flexDirection: 'row', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', pointerEvents: HOVER_ONLY_POINTER_EVENTS }}>
+          {EFFECT_GROUPS.map(({ key, heading }) => player?.[key]?.length > 0 && (
+            <div key={key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: EFFECT_HEADING_SIZE }}>{heading}</GameText>
+              <StatusEffectsIconPanel effects={player[key]} />
             </div>
-          )}
-          {player?.status_effects?.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px' }}>STATUS</GameText>
-              <StatusEffectsIconPanel effects={player.status_effects} />
-            </div>
-          )}
+          ))}
         </div>
       )}
     </div>

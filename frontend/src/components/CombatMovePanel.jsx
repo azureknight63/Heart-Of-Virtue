@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useId } from 'react';
 import { useAudio } from '../context/AudioContext';
-import { colors, spacing, shadows, fonts } from '../styles/theme';
+import { colors, spacing, shadows, fonts, zIndex } from '../styles/theme';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
@@ -42,22 +42,6 @@ const COMMITMENT_BAR_MAX_WIDTH = 120;
 // Floor so a very cheap (or 0-beat) move still shows a visible sliver
 // instead of disappearing next to a heavy move's full-width bar.
 const COMMITMENT_BAR_MIN_WIDTH = 3;
-
-/**
- * This panel's stacking rank, exported so LeftPanel.jsx's
- * `HERO_PANEL_STACKING_Z_INDEX` can be DEFINED IN TERMS OF this value rather
- * than restating a number that could drift back out of order (issue #575).
- *
- * Until #575, this panel (`zIndex: 100`) sat above the stacking context
- * LeftPanel wraps HeroPanel's combat category nav in (`zIndex: 50`), so a
- * tall category flyout could fully cover the nav ring — three of five tabs
- * went dead whenever a category had enough cards to reach them.
- * `useOccludedNavHandoff` used to paper over that by hit-testing the nav
- * under a click on the panel's own inert chrome; #575 raised the nav's real
- * stacking context above this value instead (see LeftPanel.jsx), which makes
- * the nav genuinely un-occludable and retires that hook.
- */
-export const COMBAT_MOVE_PANEL_Z_INDEX = 100;
 
 /**
  * Compact "how long does this lock me out for" visual: a four-segment bar
@@ -313,7 +297,8 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                 top: '50%',
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
-                zIndex: COMBAT_MOVE_PANEL_Z_INDEX,
+                // Below LeftPanel's hero stacking layer (#575); see zIndex in styles/theme.js.
+                zIndex: zIndex.combatMovePanel,
                 minWidth: '320px',
                 maxWidth: '450px',
                 maxHeight: '80vh',

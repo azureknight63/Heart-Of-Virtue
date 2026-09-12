@@ -2,26 +2,38 @@
 Targeted coverage tests for AfterKingSlimeReturn, AfterDefeatingKingSlime,
 and Ch02GorranAtPools in src/story/ch02.py.
 
-Focuses on uncovered lines:
-- AfterKingSlimeReturn stages 3-7 (lines 1021-1089)
-- AfterDefeatingKingSlime.process (lines 397-507)
-- _cleanse_pool_tiles body (lines 521-587)
-- Ch02GorranAtPools.check_conditions + process (lines 614-687)
+Focuses on:
+- AfterKingSlimeReturn stages 3-7
+- AfterDefeatingKingSlime.process
+- _cleanse_pool_tiles
+- Ch02GorranAtPools.check_conditions + process
+
+Plus two classes that are not coverage tests: the positive controls for
+``assert_replaced_or_left`` (which assert on the check, not on the event), and
+ch02's map constants (``POOLS_MAP_NAME``, ``ATRIUM_COORDS``) against the
+shipped pools map -- which no Mock test can check, because a Mock agrees with
+whatever constant named it.
 """
 
-import sys
-import os
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, patch
+
 import pytest
 
-if "tkinter" not in sys.modules:
-    sys.modules["tkinter"] = MagicMock()
-    sys.modules["tkinter.ttk"] = MagicMock()
-    sys.modules["tkinter.font"] = MagicMock()
-
-
-MineralFragment = type("MineralFragment", (), {})
+from src.story.ch02 import ATRIUM_COORDS, CLEANSED_CHANNEL_DESCRIPTIONS
+from tests._ch02_fixtures import (
+    CHANNEL_COORD,
+    CORRUPTED_AUTHORED_TEXT,
+    OFF_MAP_COORD,
+    POOLS_MAP_NAME,
+    Gorran,
+    MineralFragment,
+    assert_description_overwritten,
+    assert_description_untouched,
+    make_pools_map,
+    plant_legacy_cleansed_object,
+    pools_coords,
+    pools_tiles,
+)
 
 
 def _make_player(**kwargs):
@@ -66,6 +78,42 @@ def _make_tile(**kwargs):
     for k, v in kwargs.items():
         setattr(tile, k, v)
     return tile
+
+
+def _seeded_tile():
+    """A Mock tile whose description is ``CORRUPTED_AUTHORED_TEXT``.
+
+    Built through ``_make_tile`` rather than a bare ``Mock``: the two were
+    separate factories, so a default added to the one above reached only half
+    the tiles in this file.
+    """
+    return _make_tile(description=CORRUPTED_AUTHORED_TEXT)
+
+
+def assert_replaced_or_left(tiles):
+    """Hold every tile in ``tiles`` -- Mock tiles seeded with
+    ``CORRUPTED_AUTHORED_TEXT`` -- to the replace-or-leave contract, asserting
+    as it goes, and return the coords whose description changed.
+
+    Here rather than in ``tests/_ch02_fixtures.py`` beside its siblings
+    (``assert_description_overwritten`` and the rest) because it has one
+    consumer and reads the Mock-tile convention this module sets up. Move it
+    there if a second module ever wants it.
+
+    A changed tile must have been overwritten with no object spawned on it
+    (``assert_description_overwritten``). An unchanged tile is unchanged by
+    the definition of this split, so its description proves nothing; it is
+    checked instead for what the pre-#572 cleanse left: an object spawned in
+    place of the rewrite.
+    """
+    rewritten = set()
+    for coord, tile in tiles.items():
+        if tile.description == CORRUPTED_AUTHORED_TEXT:
+            tile.spawn_object.assert_not_called()
+        else:
+            assert_description_overwritten(tile, authored_text=CORRUPTED_AUTHORED_TEXT)
+            rewritten.add(coord)
+    return rewritten
 
 
 def _process_and_capture(evt, user_input=None):
@@ -357,7 +405,7 @@ class TestAfterKingSlimeReturnConditions:
 class TestAfterDefeatingKingSlimeProcess:
     def setup_method(self):
         self.player = _make_player()
-        self.player.skip_dialog = True
+        self.player.universe.maps = [make_pools_map()]
         self.tile = _make_tile()
 
     def _make_event(self):
@@ -375,63 +423,35 @@ class TestAfterDefeatingKingSlimeProcess:
         flash — so assert on the side effects, not just on the prose.
         """
         self.player.universe.story["king_slime_defeated"] = "1"
-        self.player.map = {}
-        self.player.universe.maps = [{"name": "grondelith-mineral-pools"}]
+        self.tile.description = CORRUPTED_AUTHORED_TEXT
+        pool_tiles = {coord: _seeded_tile() for coord in pools_coords()}
+        # Not merely "some tile": a tile the cleanse would actually rewrite.
+        # Without the overlap this test passes vacuously, asserting that a
+        # rewrite which had nothing to rewrite rewrote nothing.
+        assert set(pool_tiles) & set(CLEANSED_CHANNEL_DESCRIPTIONS), (
+            "no pools coordinate is one CLEANSED_CHANNEL_DESCRIPTIONS names"
+        )
+        self.player.universe.maps = [make_pools_map(pool_tiles)]
         evt = self._make_event()
         evt.process()
 
         mock_print.assert_not_called()
         self.player.add_items_to_inventory.assert_not_called()
-        self.tile.spawn_object.assert_not_called()
         self.tile.remove_event.assert_not_called()
         assert self.tile.events_here == []
-
-    def _make_pools_map(self):
-        """Return a minimal pools map dict that _cleanse_pool_tiles won't crash on."""
-        return {"name": "grondelith-mineral-pools"}
+        for tile in (self.tile, *pool_tiles.values()):
+            assert_description_untouched(tile, authored_text=CORRUPTED_AUTHORED_TEXT)
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
     def test_process_sets_story_flag(self, mock_print, mock_sleep):
-        self.player.map = {}
-        self.player.universe.maps = [self._make_pools_map()]
         evt = self._make_event()
         evt.process()
         assert self.player.universe.story.get("king_slime_defeated") == "1"
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
-    def test_process_grants_mineral_fragment_to_inventory(self, mock_print, mock_sleep):
-        # #378/#371: fragment is granted straight to inventory, not spawned as
-        # a floor item, so Jean always carries it to Votha Krr.
-        self.player.map = {}
-        self.player.universe.maps = [self._make_pools_map()]
-        evt = self._make_event()
-        evt.process()
-        self.player.add_items_to_inventory.assert_called_once()
-        granted = self.player.add_items_to_inventory.call_args[0][0]
-        assert any(i.__class__.__name__ == "MineralFragment" for i in granted)
-
-    @patch("src.story.ch02.time.sleep")
-    @patch("src.story.ch02.print_slow")
-    def test_process_replaces_tile_description(self, mock_print, mock_sleep):
-        """Issue #573/#572: the arena's description is overwritten directly,
-        not appended via a spawned TileDescription object (which never had a
-        real name and left the corrupted text in place alongside it)."""
-        self.player.map = {}
-        self.player.universe.maps = [self._make_pools_map()]
-        evt = self._make_event()
-        evt.process()
-        # tile.description starts as an auto-generated Mock attribute (see
-        # _make_tile) -- only a real assignment turns it into a string.
-        assert isinstance(self.tile.description, str) and len(self.tile.description) > 100
-        self.tile.spawn_object.assert_not_called()
-
-    @patch("src.story.ch02.time.sleep")
-    @patch("src.story.ch02.print_slow")
     def test_process_removes_event_from_tile(self, mock_print, mock_sleep):
-        self.player.map = {}
-        self.player.universe.maps = [self._make_pools_map()]
         evt = self._make_event()
         evt.process()
         self.tile.remove_event.assert_called_with(evt.name)
@@ -440,15 +460,13 @@ class TestAfterDefeatingKingSlimeProcess:
     @patch("src.story.ch02.print_slow")
     def test_process_with_gorran_in_atrium(self, mock_print, mock_sleep):
         """Gorran found in atrium tile should be moved to arena tile."""
-        Gorran = type("Gorran", (), {})
         gorran = Gorran()
         gorran.tile = None
 
         atrium_tile = Mock()
         atrium_tile.npcs_here = [gorran]
 
-        self.player.map = {(2, 1): atrium_tile}
-        self.player.universe.maps = [self._make_pools_map()]
+        self.player.map = {ATRIUM_COORDS: atrium_tile}
         evt = self._make_event()
         evt.process()
 
@@ -460,27 +478,25 @@ class TestAfterDefeatingKingSlimeProcess:
     @patch("src.story.ch02.print_slow")
     def test_process_with_gorran_in_allies_list(self, mock_print, mock_sleep):
         """Gorran found in allies list but not in atrium — should be relocated."""
-        Gorran = type("Gorran", (), {})
         gorran = Gorran()
         old_tile = Mock()
         old_tile.npcs_here = [gorran]
         gorran.tile = old_tile
 
-        self.player.map = {}
-        self.player.universe.maps = [self._make_pools_map()]
         self.player.combat_list_allies = [gorran]
         evt = self._make_event()
         evt.process()
 
         assert gorran.tile == self.tile
         assert gorran in self.tile.npcs_here
+        # And he LEAVES the tile he was on: without this, dropping the removal
+        # in ch02 puts Gorran on two tiles and the suite stays green.
+        assert gorran not in old_tile.npcs_here
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
     def test_process_no_gorran_anywhere(self, mock_print, mock_sleep):
         """No Gorran anywhere — process should complete without error."""
-        self.player.map = {}
-        self.player.universe.maps = [self._make_pools_map()]
         self.player.combat_list_allies = []
         evt = self._make_event()
         evt.process()
@@ -490,8 +506,6 @@ class TestAfterDefeatingKingSlimeProcess:
     @patch("src.story.ch02.print_slow")
     def test_process_queues_memory_flash_event(self, mock_print, mock_sleep):
         """A Ch02KingSlimeMemoryFlash should be queued on the tile."""
-        self.player.map = {}
-        self.player.universe.maps = [self._make_pools_map()]
         evt = self._make_event()
         evt.process()
         from src.story.ch02 import Ch02KingSlimeMemoryFlash
@@ -506,7 +520,7 @@ class TestAfterDefeatingKingSlimeProcess:
 # ---------------------------------------------------------------------------
 
 
-class TestCleansPoolTiles:
+class TestCleansePoolTiles:
     def setup_method(self):
         self.player = _make_player()
         self.tile = _make_tile()
@@ -516,94 +530,138 @@ class TestCleansPoolTiles:
 
         return AfterDefeatingKingSlime(player=self.player, tile=self.tile)
 
-    def test_cleanse_pool_tiles_updates_matching_coords(self):
-        """Tiles at known coords should have their description overwritten
-        directly (issue #573) rather than have a nameless TileDescription
-        object spawned onto them (issue #572)."""
-        from src.story.ch02 import AfterDefeatingKingSlime
+    def test_cleanse_pool_tiles_overwrites_in_place_and_leaves_an_off_map_tile(self):
+        """Every tile the pools map authors, plus one it does not, each a Mock
+        seeded with corrupted text: each tile the cleanse rewrites is
+        overwritten directly (#573) with no object spawned on it (#572), no
+        tile it leaves has an object spawned on it, and the off-map tile is
+        among those it leaves. WHICH map tiles are rewritten is checked
+        against real tiles in ``test_ch02_pool_description_replacement.py``;
+        this checks the replace-or-leave contract per tile."""
+        coords = pools_coords()
+        assert OFF_MAP_COORD not in coords, "OFF_MAP_COORD is on the pools map"
+        tiles = {coord: _seeded_tile() for coord in (*coords, OFF_MAP_COORD)}
+        self.player.universe.maps = [make_pools_map(tiles)]
 
-        tiles = {}
-        for coord in [
-            (2, 2),
-            (3, 2),
-            (4, 2),
-            (2, 3),
-            (3, 3),
-            (4, 3),
-            (2, 4),
-            (3, 4),
-            (2, 5),
-        ]:
-            t = Mock()
-            t.spawn_object = Mock()
-            tiles[coord] = t
+        self._make_event()._cleanse_pool_tiles()
 
-        pools_map = dict(tiles)
-        pools_map["name"] = "grondelith-mineral-pools"
-        self.player.universe.maps = [pools_map]
-
-        # A tile outside the corrupted-channel set must be left alone.
-        untouched = Mock()
-        untouched.spawn_object = Mock()
-        pools_map[(9, 9)] = untouched
-
-        evt = self._make_event()
-        evt._cleanse_pool_tiles(self.player)
-
-        # All 9 coords should have been updated, each with its OWN prose — a
-        # copy-paste that gave two tiles the same description would make the
-        # cleansed pools read as one repeated room. tile.description starts
-        # as an auto-generated Mock attribute (never assigned above), so
-        # isinstance(..., str) only holds once a real assignment happened.
-        descriptions = {}
-        for coord, t in tiles.items():
-            t.spawn_object.assert_not_called()
-            assert isinstance(t.description, str) and len(t.description) > 80
-            descriptions[coord] = t.description
-        assert len(set(descriptions.values())) == len(tiles)
-        untouched.spawn_object.assert_not_called()
-        assert not isinstance(untouched.description, str)
+        rewritten = assert_replaced_or_left(tiles)
+        assert rewritten, "the cleanse rewrote no tile"
+        assert OFF_MAP_COORD not in rewritten
 
     def test_cleanse_pool_tiles_skips_missing_coords(self):
-        """Coords not in map are silently skipped."""
-        from src.story.ch02 import AfterDefeatingKingSlime
+        """A map holding one of the cleansed coords and none of the others:
+        that one is rewritten and no tile is invented at the rest. "Skipped"
+        is read from the map, not from the absence of a traceback."""
+        channel_tile = _seeded_tile()
+        pools_map = make_pools_map({CHANNEL_COORD: channel_tile})
 
-        # Only one tile in map
-        t = Mock()
-        t.spawn_object = Mock()
-        pools_map = {(2, 2): t, "name": "grondelith-mineral-pools"}
+        evt = self._make_event()
         self.player.universe.maps = [pools_map]
+        evt._cleanse_pool_tiles()
 
-        evt = self._make_event()
-        # Should not raise
-        evt._cleanse_pool_tiles(self.player)
-        t.spawn_object.assert_not_called()
-        assert isinstance(t.description, str) and len(t.description) > 80
+        assert_description_overwritten(
+            channel_tile, authored_text=CORRUPTED_AUTHORED_TEXT
+        )
+        assert set(pools_map) == {"name", CHANNEL_COORD}
 
-    def test_cleanse_pool_tiles_fallback_map_when_no_named_map(self):
-        """Falls back to passed-in current_map when no named map found."""
-        from src.story.ch02 import AfterDefeatingKingSlime
-
-        t = Mock()
-        t.spawn_object = Mock()
-        fallback = {(2, 2): t}
+    def test_cleanse_pool_tiles_is_a_no_op_with_no_pools_map(self):
+        """A universe that has not loaded the pools map has nothing to
+        rewrite. Raising instead would send a TypeError into the event loop,
+        which swallows it -- skipping the ``remove_event`` that follows the
+        cleanse in ``process()``. The tile the event stands on is left alone
+        too, so "no-op" is read from the state, not from the absence of a
+        traceback."""
         self.player.universe.maps = []
+        self.tile.description = CORRUPTED_AUTHORED_TEXT
 
-        evt = self._make_event()
-        evt._cleanse_pool_tiles(self.player, current_map=fallback)
-        t.spawn_object.assert_not_called()
-        assert isinstance(t.description, str) and len(t.description) > 80
+        self._make_event()._cleanse_pool_tiles()
+
+        assert_description_untouched(self.tile, authored_text=CORRUPTED_AUTHORED_TEXT)
 
     def test_cleanse_pool_tiles_empty_map_writes_nothing(self):
-        """A pools map with none of the 9 coords present is a silent no-op."""
-        from src.story.ch02 import AfterDefeatingKingSlime
-
-        pools_map = {"name": "grondelith-mineral-pools"}
+        """A pools map holding no tiles at all is a silent no-op."""
+        pools_map = make_pools_map()
         self.player.universe.maps = [pools_map]
         evt = self._make_event()
-        evt._cleanse_pool_tiles(self.player)
+        evt._cleanse_pool_tiles()
         # No tiles were invented and the map is untouched.
-        assert pools_map == {"name": "grondelith-mineral-pools"}
+        assert pools_map == make_pools_map()
+
+
+class TestTheReplaceOrLeaveContractCheck:
+    """Positive controls for ``assert_replaced_or_left`` itself.
+
+    The cleanse tests above are only worth their green if the check they lean
+    on rejects the two shapes #572 and #573 were filed for. These assert on
+    the check, not on ``_cleanse_pool_tiles``, which is why they sit apart
+    from it.
+    """
+
+    def setup_method(self):
+        self.player = _make_player()
+
+    def test_it_rejects_an_object_spawned_in_place_of_the_rewrite(self):
+        """A tile that kept its seeded text but gained a spawned
+        ``TileDescription`` -- the pre-#572 cleanse -- falls among the
+        unchanged tiles and is still rejected."""
+        tile = _seeded_tile()
+        plant_legacy_cleansed_object(self.player, tile, "cleansed")
+        with pytest.raises(AssertionError, match="spawn_object"):
+            assert_replaced_or_left({(0, 0): tile})
+
+    def test_it_rejects_an_appended_description(self):
+        """A changed tile whose new description still holds the seeded text --
+        an append rather than the #573 overwrite -- is rejected."""
+        tile = _seeded_tile()
+        tile.description += " The water runs clear now."
+        with pytest.raises(AssertionError, match="authored text survived"):
+            assert_replaced_or_left({(0, 0): tile})
+
+
+# ---------------------------------------------------------------------------
+# What ch02's map constants claim about the shipped map
+# ---------------------------------------------------------------------------
+
+
+class TestCh02MapConstantsMatchTheShippedMap:
+    """Where ch02's map constants meet the shipped map.
+
+    No Mock test can catch drift between the two: each hands the event
+    whichever tile it names -- tiles keyed by a ch02 constant agree with it by
+    construction, and the ones keyed by ``pools_coords()`` would fail only if
+    EVERY coordinate drifted, and then blaming the rewrite. These two name the
+    cause instead.
+
+    ch02's other coordinate-keyed constant, ``CLEANSED_CHANNEL_DESCRIPTIONS``,
+    meets the shipped map in ``test_ch02_pool_description_replacement.py``
+    instead -- which builds real tiles only at authored coordinates.
+    """
+
+    def test_ch02_looks_the_pools_map_up_by_the_name_the_universe_gives_it(self):
+        """``find_pools_map`` matches maps on ch02's own ``POOLS_MAP_NAME``;
+        the universe names each map after its file (``Universe.
+        _load_single_json_map``, guarded in ``test_coverage_boost_batch2.py``),
+        and so does ``make_pools_map``. Were the two to drift apart, the
+        cleanse would find no pools map and return early, so the rewrite tests
+        would fail blaming the rewrite; this one names the cause."""
+        from src.story import ch02
+
+        assert ch02.POOLS_MAP_NAME == POOLS_MAP_NAME
+
+    def test_ch02_looks_for_gorran_where_the_shipped_map_puts_the_atrium(self):
+        """Move the Atrium and ch02 would leave Gorran behind, with every Mock
+        test still green."""
+        authored = dict(pools_tiles())
+        assert ATRIUM_COORDS in authored, (
+            f"the pools map authors no tile at {ATRIUM_COORDS}, where ch02 looks "
+            "for Gorran"
+        )
+        title = authored[ATRIUM_COORDS].get("title", "")
+        assert "atrium" in title.lower(), (
+            f"the tile at {ATRIUM_COORDS} is titled {title!r}, not the Atrium -- "
+            "ch02's ATRIUM_COORDS is stale"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -614,7 +672,7 @@ class TestCleansPoolTiles:
 class TestCh02GorranAtPools:
     def setup_method(self):
         self.player = _make_player()
-        self.player.skip_dialog = True
+        self.player.universe.maps = [make_pools_map()]
         self.tile = _make_tile()
 
     def _make_event(self):
@@ -622,11 +680,14 @@ class TestCh02GorranAtPools:
 
         return Ch02GorranAtPools(player=self.player, tile=self.tile)
 
-    def test_check_conditions_removes_event_when_story_flag_set(self):
+    def test_check_conditions_retires_the_event_once_the_story_flag_is_set(self):
         self.player.universe.story["gorran_at_pools"] = "1"
         evt = self._make_event()
+        self.tile.events_here = [evt]
+        evt.pass_conditions_to_process = Mock()
         evt.check_conditions()
-        self.tile.remove_event.assert_called_with("Ch02GorranAtPools")
+        assert evt not in self.tile.events_here
+        evt.pass_conditions_to_process.assert_not_called()
 
     def test_check_conditions_passes_when_no_story_flag(self):
         evt = self._make_event()
@@ -643,25 +704,29 @@ class TestCh02GorranAtPools:
         """
         self.player.universe = None
         evt = self._make_event()
+        self.tile.events_here = [evt]
         evt.pass_conditions_to_process = Mock()
         evt.check_conditions()
         evt.pass_conditions_to_process.assert_called_once()
-        self.tile.remove_event.assert_not_called()
+        # Retiring takes the event out of ``events_here`` (src/events.py), so
+        # that is what "did not disarm" has to be read from.
+        assert evt in self.tile.events_here
 
     def test_process_sets_story_flag(self):
         """After process(), gorran_at_pools story flag is set."""
-        pools_map = {"name": "grondelith-mineral-pools"}
-        self.player.universe.maps = [pools_map]
         evt = self._make_event()
         evt.process()
         assert self.player.universe.story.get("gorran_at_pools") == "1"
 
     def test_process_removes_event_from_tile(self):
-        pools_map = {"name": "grondelith-mineral-pools"}
-        self.player.universe.maps = [pools_map]
+        # Two ways a beat comes off its tile, and this class holds both: the
+        # gate path drops `self` out of `events_here` (`retire_if_gate_set`,
+        # asserted above), while `process()` calls `tile.remove_event(name)`
+        # explicitly. Asserted through `evt.name` rather than the class's own
+        # string, so a rename cannot leave this pinning dead wording.
         evt = self._make_event()
         evt.process()
-        self.tile.remove_event.assert_called_with("Ch02GorranAtPools")
+        self.tile.remove_event.assert_called_with(evt.name)
 
     def test_process_spawns_gorran_when_atrium_tile_found_and_empty(self):
         """When atrium tile has no Gorran, a new one should be spawned."""
@@ -669,17 +734,15 @@ class TestCh02GorranAtPools:
         atrium_tile.npcs_here = []
         atrium_tile.spawn_npc = Mock()
 
-        pools_map = {(2, 1): atrium_tile, "name": "grondelith-mineral-pools"}
-        self.player.universe.maps = [pools_map]
+        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
         self.player.combat_list_allies = []
 
         evt = self._make_event()
         evt.process()
-        atrium_tile.spawn_npc.assert_called_with("Gorran")
+        atrium_tile.spawn_npc.assert_called_with(Gorran.__name__)
 
     def test_process_moves_gorran_from_party_to_atrium(self):
         """Gorran in party should be moved to atrium tile."""
-        Gorran = type("Gorran", (), {})
         gorran = Gorran()
         gorran.tile = None
 
@@ -687,8 +750,7 @@ class TestCh02GorranAtPools:
         atrium_tile.npcs_here = []
         atrium_tile.spawn_npc = Mock()
 
-        pools_map = {(2, 1): atrium_tile, "name": "grondelith-mineral-pools"}
-        self.player.universe.maps = [pools_map]
+        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
         self.player.combat_list_allies = [gorran]
 
         evt = self._make_event()
@@ -703,15 +765,13 @@ class TestCh02GorranAtPools:
 
     def test_process_skips_spawning_if_gorran_already_in_atrium(self):
         """If Gorran is already in atrium, don't spawn another."""
-        Gorran = type("Gorran", (), {})
         gorran = Gorran()
 
         atrium_tile = Mock()
         atrium_tile.npcs_here = [gorran]
         atrium_tile.spawn_npc = Mock()
 
-        pools_map = {(2, 1): atrium_tile, "name": "grondelith-mineral-pools"}
-        self.player.universe.maps = [pools_map]
+        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
 
         evt = self._make_event()
         evt.process()

@@ -2,10 +2,13 @@
 Chapter 02 events
 """
 
-from src.events import Event
-from src.functions import print_slow, await_input
 import time
+import types
+
 from src import items
+from src.events import Event, gate_is_set, set_story_gate, story_gates
+from src.functions import print_slow, await_input
+from src.objects import TileDescription
 from src.story.effects import MemoryFlash
 from src.journal import (
     complete_objective,
@@ -18,6 +21,7 @@ from src.journal import (
     OBJ_CH02_VOTHA_KRR,
 )
 from src.narration import (
+    ANSI_ESCAPE_RE,
     narrate,
     say,
     begin_conversation,
@@ -527,12 +531,122 @@ class Ch02GuideToCitadel(
             self.tile.remove_event(self.name)
 
 
+#: What ``Universe`` names the Grondelith pools map: the file stem.
+POOLS_MAP_NAME = "grondelith-mineral-pools"
+
+#: Where Gorran waits at the pools' threshold: the Atrium.
+ATRIUM_COORDS = (2, 1)
+
+#: The story key holding the game tick at which Jean was last reminded to
+#: hand over the mineral fragment, how many ticks must pass before the next
+#: reminder, and the "never reminded" sentinel (far below any real tick, so
+#: the first call always passes the rate limit).
+FRAGMENT_REMINDER_TICK_KEY = "fragment_reminder_tick"
+FRAGMENT_REMINDER_TICKS = 3
+FRAGMENT_REMINDER_NEVER = -999
+
+#: What the arena reads once King Slime falls; ``AfterDefeatingKingSlime``
+#: writes it as the arena tile's own description.
+CLEANSED_ARENA_DESCRIPTION = (
+    "The circular cavern is still. The pool that filled it — wall to wall with "
+    "pulsating corruption — is gone. Clean, luminescent blue water rests in its place, "
+    "glowing faintly from below. The single stone island at the centre is bare and quiet. "
+    "The arena smells of minerals and cold water."
+)
+
+#: What each corrupted channel tile reads once King Slime falls. Physical
+#: damage (acid pitting, dissolved floors, staining) persists as geological
+#: evidence; active slime, living corruption and every rumbling reference
+#: are gone.
+CLEANSED_CHANNEL_DESCRIPTIONS = types.MappingProxyType({
+    (2, 2): (
+        "The colour has returned. Where the channels ran green, they run clear now — "
+        "milky-blue, lit from below, moving with quiet purpose. The walls carry the "
+        "memory of what was here: a dark tide line, scored stone, old acid pitting. "
+        "The air is cold and mineral-clean. The crevice on the west wall is visible "
+        "now, no longer obscured — a thin gap breathing the same clean air as the "
+        "rest of the passage."
+    ),
+    (3, 2): (
+        "The walkway holds. The channel below is clear — mineral water moving slowly "
+        "east, washing over stone that shows where the slime ate in: pitting, softened "
+        "edges, the marks of something that fed here for a long time. To the east, the "
+        "sealed chamber is silent now. Whatever was feeding there is gone."
+    ),
+    (4, 2): (
+        "The pocket has drained. Walls that were sheeted in thick slime are bare — "
+        "acid-scored and stained, but bare. A stone shelf juts from the east wall, "
+        "its surface worn smooth. Whatever this room was before the infestation, it "
+        "is only an empty chamber now: still, cold, smelling of mineral water and "
+        "old stone."
+    ),
+    (2, 3): (
+        "The walkway is intact. Below it, the pool is clear — deep blue, faintly "
+        "luminous, the same light as the atrium above. The acid pitting on the walls "
+        "hasn't changed; the dissolution is old work, stone already spent. Above: "
+        "silence. Whatever was nesting in the ceiling has gone. The rumbling from "
+        "the south is gone too. It is quiet here in a way it wasn't before."
+    ),
+    (3, 3): (
+        "The wider cavern is still. The dissolution is visible — the walls stripped "
+        "back to raw mineral where the slime ate through centuries of accumulated "
+        "stone — but the slime itself is gone. The chamber is deep and cold and very "
+        "quiet. The far wall is bare."
+    ),
+    (4, 3): (
+        "The low chamber is unchanged by the cleansing — the ceiling is still "
+        "collapsed, the rubble still fills half the floor. The old slime residue has "
+        "dried to a thin dark crust on the stone: harmless, inert, the ghost of a "
+        "longer infestation. The collapsed section exposes raw mineral beneath, "
+        "unchanged. It is quiet here. It was quiet here before too."
+    ),
+    (2, 4): (
+        "The passage is as narrow as ever — the walls close to arm's width for a "
+        "long stretch — but the slime that coated them is gone, leaving bare stone "
+        "that shows where it was: long staining, dissolution marks where it ran "
+        "thickest. The south end opens into a larger space. No rumbling. No sound "
+        "at all except Jean's footsteps and the faint movement of water."
+    ),
+    (3, 4): (
+        "The floor is still dissolved — the passage still crosses stone islands "
+        "above where the slime ate through — but the water between them is clear "
+        "now: cold, still, faintly luminous. The high-water mark is still visible: "
+        "a clean band of stone above the old slime line, dissolution below. It is "
+        "just water now."
+    ),
+    (2, 5): (
+        "The passage is open and still. The walls are bare stone — stained where "
+        "the slime reached, but bare. The rumbling is gone. Jean's footsteps land "
+        "without answer. The passage south opens into a large space: blue-white "
+        "light, clean water, the quiet aftermath of something enormous being undone."
+    ),
+})
+
+
+def find_pools_map(player):
+    """The loaded pools map, or None when ``player``'s universe has none.
+
+    Looked up in ``universe.maps`` by name, not through ``player.map``,
+    which can point elsewhere -- a combat arena after a flee, say.
+    """
+    maps = getattr(getattr(player, "universe", None), "maps", None)
+    if not isinstance(maps, (list, tuple)):
+        return None
+    return next(
+        (m for m in maps if isinstance(m, dict) and m.get("name") == POOLS_MAP_NAME), None
+    )
+
+
 class AfterDefeatingKingSlime(Event):
     """
     Fires once KingSlime is absent from the arena tile.
-    Cleanses the pool description, spawns MineralFragment, then triggers the
-    memory flash when Jean picks it up. Gorran teleports to the arena afterward.
+    Rewrites the cleansed pool tiles' descriptions, grants the MineralFragment
+    straight into Jean's inventory (nothing is dropped on the floor), and
+    queues the memory flash that fires on that possession. Gorran teleports
+    to the arena afterward.
     """
+
+    GATE_KEY = "king_slime_defeated"
 
     def __init__(
         self,
@@ -554,7 +668,7 @@ class AfterDefeatingKingSlime(Event):
             self.pass_conditions_to_process()
 
     def process(self):
-        if self.player.universe.story.get("king_slime_defeated"):
+        if self.gate_is_set(self.GATE_KEY):
             return
         time.sleep(1)
         begin_conversation(_JEAN_SOLO)
@@ -594,22 +708,11 @@ class AfterDefeatingKingSlime(Event):
         end_conversation()
         time.sleep(2)
 
-        # Replace the arena tile description to reflect the cleansed state.
-        # TileDescription (src/objects.py) only ADDS to a tile's description --
-        # spawning one here left the original "wall to wall with pulsating
-        # corruption" text in tile.description while the cleansed prose sat
-        # alongside it as a nameless object, so both rendered together
-        # (issue #573) and the nameless object was listed as an interactable
-        # (issue #572). Writing tile.description directly replaces the
-        # authored text outright, matching the precedent in
-        # Ch01BridgeWall (src/story/ch01.py) for the same "prose ages the
-        # room" pattern.
-        self.tile.description = (
-            "The circular cavern is still. The pool that filled it — wall to wall with "
-            "pulsating corruption — is gone. Clean, luminescent blue water rests in its place, "
-            "glowing faintly from below. The single stone island at the centre is bare and quiet. "
-            "The arena smells of minerals and cold water."
-        )
+        # Overwrite, don't spawn a TileDescription: that object only ADDS
+        # text and has no real name, so the corrupted and cleansed prose
+        # rendered together (#573) and a nameless interactable appeared
+        # (#572). Same pattern as Ch01BridgeWall (src/story/ch01.py).
+        self.tile.description = CLEANSED_ARENA_DESCRIPTION
 
         # Grant the MineralFragment straight to Jean's inventory. Spawning it as
         # a floor item relied on the player picking it up before leaving, backed
@@ -626,7 +729,7 @@ class AfterDefeatingKingSlime(Event):
         ))
 
         # Set the story flag so AfterKingSlimeReturn can fire later
-        self.player.universe.story["king_slime_defeated"] = "1"
+        self.set_story_gate(self.GATE_KEY)
         complete_objective(self.player, OBJ_CH02_KING_SLIME)
 
         # Teleport Gorran to the arena. He lives as an ally NPC; find him wherever
@@ -634,9 +737,8 @@ class AfterDefeatingKingSlime(Event):
         # player.map is a dict keyed by (x, y) tuples, not an object with .tiles.
         current_map = self.player.map
         gorran = None
-        atrium_coords = (2, 1)
-        if atrium_coords in current_map:
-            atrium_tile = current_map[atrium_coords]
+        if ATRIUM_COORDS in current_map:
+            atrium_tile = current_map[ATRIUM_COORDS]
             for npc in list(atrium_tile.npcs_here):
                 if npc.__class__.__name__ == "Gorran":
                     atrium_tile.npcs_here.remove(npc)
@@ -685,93 +787,78 @@ class AfterDefeatingKingSlime(Event):
         )
         time.sleep(1)
 
-        self._cleanse_pool_tiles(self.player)
+        self._cleanse_pool_tiles()
 
         self.tile.remove_event(self.name)
 
-    def _cleanse_pool_tiles(self, player, current_map=None):
-        """Update corrupted channel tile descriptions to reflect the post-cleansing state.
-
-        Physical damage (acid pitting, dissolved floors, staining) persists as geological
-        evidence. Active slime, living corruption, and all rumbling references are gone.
-        """
-        # Use universe.maps lookup so the correct map is found even if player.map
-        # is pointing elsewhere (e.g., after a flee from a random encounter).
-        current_map = next(
-            (m for m in player.universe.maps if m.get("name") == "grondelith-mineral-pools"),
-            current_map,  # fall back to the passed-in map if not found
-        )
-        cleansed = {
-            (2, 2): (
-                "The colour has returned. Where the channels ran green, they run clear now — "
-                "milky-blue, lit from below, moving with quiet purpose. The walls carry the "
-                "memory of what was here: a dark tide line, scored stone, old acid pitting. "
-                "The air is cold and mineral-clean. The crevice on the west wall is visible "
-                "now, no longer obscured — a thin gap breathing the same clean air as the "
-                "rest of the passage."
-            ),
-            (3, 2): (
-                "The walkway holds. The channel below is clear — mineral water moving slowly "
-                "east, washing over stone that shows where the slime ate in: pitting, softened "
-                "edges, the marks of something that fed here for a long time. To the east, the "
-                "sealed chamber is silent now. Whatever was feeding there is gone."
-            ),
-            (4, 2): (
-                "The pocket has drained. Walls that were sheeted in thick slime are bare — "
-                "acid-scored and stained, but bare. A stone shelf juts from the east wall, "
-                "its surface worn smooth. Whatever this room was before the infestation, it "
-                "is only an empty chamber now: still, cold, smelling of mineral water and "
-                "old stone."
-            ),
-            (2, 3): (
-                "The walkway is intact. Below it, the pool is clear — deep blue, faintly "
-                "luminous, the same light as the atrium above. The acid pitting on the walls "
-                "hasn't changed; the dissolution is old work, stone already spent. Above: "
-                "silence. Whatever was nesting in the ceiling has gone. The rumbling from "
-                "the south is gone too. It is quiet here in a way it wasn't before."
-            ),
-            (3, 3): (
-                "The wider cavern is still. The dissolution is visible — the walls stripped "
-                "back to raw mineral where the slime ate through centuries of accumulated "
-                "stone — but the slime itself is gone. The chamber is deep and cold and very "
-                "quiet. The far wall is bare."
-            ),
-            (4, 3): (
-                "The low chamber is unchanged by the cleansing — the ceiling is still "
-                "collapsed, the rubble still fills half the floor. The old slime residue has "
-                "dried to a thin dark crust on the stone: harmless, inert, the ghost of a "
-                "longer infestation. The collapsed section exposes raw mineral beneath, "
-                "unchanged. It is quiet here. It was quiet here before too."
-            ),
-            (2, 4): (
-                "The passage is as narrow as ever — the walls close to arm's width for a "
-                "long stretch — but the slime that coated them is gone, leaving bare stone "
-                "that shows where it was: long staining, dissolution marks where it ran "
-                "thickest. The south end opens into a larger space. No rumbling. No sound "
-                "at all except Jean's footsteps and the faint movement of water."
-            ),
-            (3, 4): (
-                "The floor is still dissolved — the passage still crosses stone islands "
-                "above where the slime ate through — but the water between them is clear "
-                "now: cold, still, faintly luminous. The high-water mark is still visible: "
-                "a clean band of stone above the old slime line, dissolution below. It is "
-                "just water now."
-            ),
-            (2, 5): (
-                "The passage is open and still. The walls are bare stone — stained where "
-                "the slime reached, but bare. The rumbling is gone. Jean's footsteps land "
-                "without answer. The passage south opens into a large space: blue-white "
-                "light, clean water, the quiet aftermath of something enormous being undone."
-            ),
-        }
-        for coords, description in cleansed.items():
-            if coords in current_map:
-                tile = current_map[coords]
-                # Overwrite outright -- see the comment in process() above
-                # this method's call site: TileDescription only adds, so
-                # spawning one here left every corridor tile showing its
-                # corrupted authored text alongside the cleansed prose.
+    def _cleanse_pool_tiles(self):
+        """Rewrite each corrupted channel tile as ``CLEANSED_CHANNEL_DESCRIPTIONS``
+        has it. A universe that has not loaded the pools map has nothing to
+        rewrite and is left alone rather than raised on."""
+        pools_map = find_pools_map(self.player)
+        if pools_map is None:
+            return
+        for coords, description in CLEANSED_CHANNEL_DESCRIPTIONS.items():
+            if coords in pools_map:
+                tile = pools_map[coords]
+                # Overwrite, don't spawn a TileDescription -- see the
+                # arena comment in process() (#572/#573).
                 tile.description = description
+
+
+def _prose_of(text):
+    """``text`` as its words alone. ``TileDescription`` re-wraps and colours
+    what it is given, so the text it stores never equals its source prose."""
+    return " ".join(ANSI_ESCAPE_RE.sub("", str(text)).split())
+
+
+#: The cleansed prose, indexed by its words alone, for the on-load repair:
+#: what a pre-#572 save left on a tile as a nameless object is matched here
+#: and folded back into the tile's own description. Built once from the
+#: constants above, which never change, rather than per load.
+_CLEANSED_BY_PROSE = types.MappingProxyType({
+    _prose_of(text): text
+    for text in (CLEANSED_ARENA_DESCRIPTION, *CLEANSED_CHANNEL_DESCRIPTIONS.values())
+})
+
+
+def fold_legacy_cleansed_descriptions(player):
+    """Repair the pools tiles of a save taken after King Slime fell under the
+    pre-#572 code; returns how many objects it folded.
+
+    That code ADDED each cleansed description as a nameless
+    ``TileDescription`` object instead of overwriting the tile's own text, so
+    such a save renders the corrupted and cleansed prose together (#573)
+    beside an interactable with no name (#572). ``src.story.repair_loaded_save``
+    runs this on every load: each object carrying cleansed prose comes off
+    its tile, and that prose becomes the tile's description -- what
+    ``AfterDefeatingKingSlime`` writes now. Matched on the prose itself, so an
+    authored ``TileDescription`` -- whose prose is its own -- is left alone,
+    and a repaired save has nothing left to fold. Anything the save restored
+    in a shape this does not expect is skipped, never raised on.
+    """
+    if not gate_is_set(player, AfterDefeatingKingSlime.GATE_KEY):
+        return 0
+    pools = find_pools_map(player)
+    if pools is None:
+        return 0
+    folded = 0
+    for key, tile in pools.items():
+        objects = getattr(tile, "objects_here", None)
+        # Coordinate keys only ("name" is no tile), and only a real list, since
+        # the loop below removes from it.
+        if not isinstance(key, tuple) or not isinstance(objects, list):
+            continue
+        for obj in list(objects):
+            if not isinstance(obj, TileDescription) or not isinstance(obj.description, str):
+                continue
+            text = _CLEANSED_BY_PROSE.get(_prose_of(obj.description))
+            if text is None:
+                continue
+            objects.remove(obj)
+            tile.description = text
+            folded += 1
+    return folded
 
 
 class Ch02GorranAtPools(Event):
@@ -786,6 +873,8 @@ class Ch02GorranAtPools(Event):
     Attach to tile (2,0) in grondelith-mineral-pools.json.
     """
 
+    GATE_KEY = "gorran_at_pools"
+
     def __init__(
         self, player, tile, params=None, repeat=False, name="Ch02GorranAtPools"
     ):
@@ -798,24 +887,14 @@ class Ch02GorranAtPools(Event):
             "He settles at the atrium entrance to wait for Jean's return."
         )
 
-    def check_conditions(self):
-        story = getattr(self.player.universe, "story", {})
-        if story.get("gorran_at_pools"):
-            self.tile.remove_event(self.name)
-            return
-        self.pass_conditions_to_process()
-
     def process(self):
         # Spawn Gorran at the Atrium (2,1) — where AfterDefeatingKingSlime
         # expects to find him. Don't place him on this entry tile so he doesn't
         # block the passage or trigger combat checks.
         # Use universe.maps lookup rather than player.map so the correct tile is
         # found even when player.map is pointing to a combat arena after a flee.
-        pools_map = next(
-            (m for m in self.player.universe.maps if m.get("name") == "grondelith-mineral-pools"),
-            None,
-        )
-        atrium_tile = pools_map.get((2, 1)) if pools_map else None
+        pools_map = find_pools_map(self.player)
+        atrium_tile = pools_map.get(ATRIUM_COORDS) if pools_map else None
         if atrium_tile is not None:
             gorran_already_there = any(
                 n.__class__.__name__ == "Gorran" for n in atrium_tile.npcs_here
@@ -865,7 +944,7 @@ class Ch02GorranAtPools(Event):
             time.sleep(1.5)
             await_input()
 
-        self.player.universe.story["gorran_at_pools"] = "1"
+        self.set_story_gate(self.GATE_KEY)
         complete_objective(self.player, OBJ_CH02_EXPLORE_GRONDIA)
         self.tile.remove_event(self.name)
 
@@ -875,10 +954,12 @@ class Ch02ArenaEntrance(Event):
     Fires once when Jean first enters the arena tile (2,6) with King Slime present.
 
     Delivers the isolation/atmosphere narrative as Jean faces the King Slime.
-    Sets story["arena_entered"] = "1".
+    Sets its ``GATE_KEY`` story gate, ``arena_entered``.
 
     Attach to the arena tile in grondelith-mineral-pools.json.
     """
+
+    GATE_KEY = "arena_entered"
 
     def __init__(
         self, player, tile, params=None, repeat=False, name="Ch02ArenaEntrance"
@@ -893,9 +974,7 @@ class Ch02ArenaEntrance(Event):
         )
 
     def check_conditions(self):
-        story = getattr(self.player.universe, "story", {})
-        if story.get("arena_entered"):
-            self.tile.remove_event(self.name)
+        if self.retire_if_gate_set():
             return
         # Only fire if King Slime is still present
         king_alive = any(n.__class__.__name__ == "KingSlime" for n in self.tile.npcs_here)
@@ -925,7 +1004,7 @@ class Ch02ArenaEntrance(Event):
             )
             time.sleep(1.5)
 
-        self.player.universe.story["arena_entered"] = "1"
+        self.set_story_gate(self.GATE_KEY)
         self.tile.remove_event(self.name)
 
 
@@ -954,15 +1033,13 @@ class Ch02FragmentReminder(Event):
         )
 
     def evaluate_for_map_entry(self, player):
-        story = getattr(player.universe, "story", {})
-
         # Done once Votha has received the fragment
-        if story.get("votha_krr_response_given"):
+        if gate_is_set(player, AfterKingSlimeReturn.GATE_KEY):
             self.tile.remove_event(self.name)
             return
 
         # Only active after the King Slime is defeated
-        if story.get("king_slime_defeated") != "1":
+        if not gate_is_set(player, AfterDefeatingKingSlime.GATE_KEY):
             return
 
         # If Jean already has the fragment, nothing to remind
@@ -979,12 +1056,17 @@ class Ch02FragmentReminder(Event):
         if player.current_room is self.tile:
             return
 
-        # Rate-limit: at most once every 3 ticks so it doesn't spam corridors
-        last_tick = int(story.get("fragment_reminder_tick", -999))
-        if player.universe.game_tick - last_tick < 3:
+        # Rate-limit so the reminder doesn't spam a corridor. The sentinel
+        # is far enough below any real tick that the first call always passes.
+        last_tick = int(
+            story_gates(player).get(FRAGMENT_REMINDER_TICK_KEY, FRAGMENT_REMINDER_NEVER)
+        )
+        if player.universe.game_tick - last_tick < FRAGMENT_REMINDER_TICKS:
             return
 
-        story["fragment_reminder_tick"] = str(player.universe.game_tick)
+        set_story_gate(
+            player, FRAGMENT_REMINDER_TICK_KEY, str(player.universe.game_tick)
+        )
         self._remind(player)
 
     def _remind(self, player):
@@ -1024,6 +1106,8 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
     up off the floor. The razor edge still cuts Jean's finger; the sharp pain
     unlocks a violent, fragmented memory of the explosion.
     """
+
+    GATE_KEY = "king_slime_flash_fired"
 
     def __init__(
         self,
@@ -1093,11 +1177,7 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
         )
 
     def check_conditions(self):
-        story = getattr(self.player.universe, "story", {})
-        if story.get("king_slime_flash_fired"):
-            # Already completed; clean up if still lingering in events_here.
-            if self in getattr(self.tile, "events_here", []):
-                self.tile.events_here.remove(self)
+        if self.retire_if_gate_set():
             return
         if self.needs_input:
             # Mid-flash — waiting for the player to click Continue.
@@ -1113,7 +1193,7 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
         super().process(user_input)
         if user_input is not None:
             # Completion pass — mark as fired so reloads/re-checks can't replay it.
-            self.player.universe.story["king_slime_flash_fired"] = "1"
+            self.set_story_gate(self.GATE_KEY)
 
 
 class AfterKingSlimeReturn(Event):
@@ -1122,6 +1202,8 @@ class AfterKingSlimeReturn(Event):
     Votha Krr accepts the mineral fragment and sends Jean toward the Echoing Caves.
     Seven stages: greeting, choice, consumption, acknowledgment, wisdom, farewell, cleanup.
     """
+
+    GATE_KEY = "votha_krr_response_given"
 
     def __init__(
         self,
@@ -1142,10 +1224,9 @@ class AfterKingSlimeReturn(Event):
         )
 
     def check_conditions(self):
-        story = getattr(self.player.universe, "story", {})
-        if story.get("king_slime_defeated") != "1" or story.get(
-            "votha_krr_response_given"
-        ):
+        slime_defeated = self.gate_is_set(AfterDefeatingKingSlime.GATE_KEY)
+        already_given = self.gate_is_set(self.GATE_KEY)
+        if not slime_defeated or already_given:
             return
         # Only start the hand-over once Jean actually has the fragment. If he
         # reaches the Citadel first, do nothing and leave the event attached so
@@ -1303,6 +1384,6 @@ class AfterKingSlimeReturn(Event):
 
             self.needs_input = False
             self.completed = True
-            self.player.universe.story["votha_krr_response_given"] = "1"
+            self.set_story_gate(self.GATE_KEY)
             complete_objective(self.player, OBJ_CH02_VOTHA_KRR)
             self.tile.remove_event(self.name)

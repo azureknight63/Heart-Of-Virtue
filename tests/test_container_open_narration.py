@@ -48,8 +48,8 @@ def _shipped_container_placements():
     ``Container``. The map JSON is the independent authority here; nothing
     about the expected set is written down in this file.
 
-    The walk itself lives in :mod:`tests._map_scan`, shared with the two other
-    guards added alongside this one.
+    The walk itself lives in :mod:`tests._map_scan`, shared by the guards
+    over authored objects and events.
     """
     placements = []
     for placement in object_placements():

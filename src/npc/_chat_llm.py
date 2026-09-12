@@ -59,6 +59,7 @@ from typing import (
 
 from . import _chat_guard
 from ._llm import _load_llm_client_module
+from src.events import story_gates
 from src.narration import narrate
 
 # Prompt-injection neutralisation, applied in BOTH directions of the chat.
@@ -1752,8 +1753,8 @@ class ConversationalNPCMixin:
         return value
 
     def _story(self, player) -> Dict[str, Any]:
-        """Get story dict from player.universe, or empty dict."""
-        return getattr(getattr(player, "universe", None), "story", None) or {}
+        """The story-gate dict ``player`` carries (``src.events.story_gates``)."""
+        return story_gates(player)
 
     def _get_chapter(self, player) -> str:
         """Get current chapter as string."""

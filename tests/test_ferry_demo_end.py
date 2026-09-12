@@ -3,9 +3,8 @@
 The Ferry Landing at ``eastern-descent-nomad-camp`` (0, 2) is an ordinary
 ``Passageway`` with ``teleport_map: "eastern-descent"`` and
 ``teleport_tile: [2, 6]``, so using it teleported Jean back into the descent
-map with no acknowledgement that the story stops here. ``DemoEndEvent``
-(``src/story/ch03.py``) was written for this moment but is placed on no tile in
-any map — ``grep -rl DemoEnd src/resources/maps/`` returns nothing.
+map with no acknowledgement that the story stops here. The event written for
+this moment was placed on no tile in any map.
 
 The maintainer's chosen mechanism is the frontend's ``BetaEndDialog``, which is
 already built and unit tested and carries a real **Send Feedback** button. The
@@ -15,109 +14,268 @@ disabled) Lurker path and the same one ``GamePage`` reads off ``endState``.
 
 Issue #579: the fix above shipped with no gate at all -- every crossing verb
 ended the demo unconditionally, so a player who reached the Ferry Landing
-without ever finishing Mara's conversation chain (the gate ``ch03.py``'s
-``MaraObservationEvent`` sets, ``nomad_ferry_ready`` -- exposed here as
-``Passageway.DEMO_END_READY_FLAG``, one name rather than a second copy of the
-string) still got the closing beat and the end-of-beta dialog. The tests below
-that exercise the "demo actually ends" behaviour now do so against a world
-where that gate is explicitly satisfied (``ferry_ready_world``); the ones
-suffixed ``_when_not_ready`` pin the declined behaviour instead, across both
-crossing paths (``enter`` and the ``_commit_teleport`` primitive it and
-``PassagewayTransitionEvent.process`` both funnel through).
-"""
+without ever finishing Mara's conversation chain still got the closing beat
+and the end-of-beta dialog. The gate is now authored per placement
+(``Passageway.demo_end_ready_flag``); the shipped ferry's key is the one
+``ch03.py``'s ``MaraObservationEvent`` writes, and a test below pins that the
+map's authored key and the event's written key are the same string.
+Behaviour that turns on the gate runs in both worlds (``world_by_readiness``)
+and ends the demo only in the ready one. It is checked on ``enter`` (which
+every crossing verb reaches) and, separately, on the ``_commit_teleport``
+primitive that ``PassagewayTransitionEvent.process`` reaches without going
+through ``enter`` at all.
 
-import json
-import sys
-from pathlib import Path
+The world under test is the shipped placement, loaded through the real map
+loader -- see ``tests/_ferry_fixtures.py``.
+"""
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+from src import map_placeholders
+from src.api.services.game_service import GameService
+from src.events import PassagewayTransitionEvent, set_story_gate
+from src.narration import capture_narration
+from src.objects import Passageway, resolve_interaction
+from src.story.ch03 import MaraObservationEvent
+from tests._ferry_fixtures import (
+    OTHER_EDGE_FLAG,
+    REACHABLE_DESTINATION,
+    REACHABLE_WORLD_COORDS,
+    build_ferry_world,
+    demo_edge,
+    demo_has_ended,
+    ferry_is_ready,
+    ferry_placement,
+    ferry_placement_props,
+    instantiate_authored,
+    interact_with,
+    mark_ferry_ready,
+    plain_passageway,
+    reported_beta_end,
+)
+from tests._map_scan import class_ref
 
-from src.api.services.game_service import GameService  # noqa: E402
-from src.combatant import wire_handle  # noqa: E402
-from src.narration import capture_narration  # noqa: E402
-from src.objects import Passageway  # noqa: E402
-from tests._gs_fixtures import live_world  # noqa: E402
 
-_FERRY_MAP = _ROOT / "src" / "resources" / "maps" / "eastern-descent-nomad-camp.json"
+#: Every verb the client renders on the shipped ferry: ``ObjectSerializer``
+#: ships ``keywords`` as the button list. Read off the ferry as the real
+#: loader builds it -- the map authors its own ``keywords``, which the loader
+#: sets over the list ``Passageway.__init__`` derives -- so a verb the map
+#: starts rendering is exercised without anyone remembering to. Every one of
+#: them is a way to say "use it".
+def _verbs_the_shipped_ferry_renders():
+    """The verbs the shipped Ferry Landing offers, from the real placement.
+
+    A function rather than three module globals plus a ``del``: the world is
+    only needed to read one attribute, and leaving it at module scope would
+    make any later import-time constant thread itself between the build and
+    the cleanup.
+    """
+    _player, _game_map, ferry = build_ferry_world(with_tile_events=False)
+    return tuple(sorted(ferry.keywords))
 
 
-def _ferry_placement():
-    """The authored Ferry Landing props, straight out of the shipped map."""
-    raw = json.loads(_FERRY_MAP.read_text(encoding="utf-8"))
-    for payload in raw["(0, 2)"]["objects"]:
-        if (payload.get("props") or {}).get("name") == "Ferry Landing":
-            return payload
-    raise AssertionError("Ferry Landing is no longer at nomad-camp (0, 2)")
+_CROSSING_VERBS = _verbs_the_shipped_ferry_renders()
 
+#: The instance attribute a passageway keeps its authored ``demo_end_ready_flag``
+#: in, as ``Passageway`` itself declares it -- the one spelling of where the
+#: authored key lives, for the tests that read or remove it.
+_AUTHORED_READY_SLOT = Passageway.MAP_AUTHORED_ATTR_ALIASES["demo_end_ready_flag"]
 
-@pytest.fixture
-def game_service():
-    return GameService()
+#: Every verb the API's allow-list admits that the ferry does not render --
+#: the looks, and the allow-list's item verbs. Reachable only by a hand-built
+#: request, and none may end the demo.
+_NON_CROSSING_VERBS = tuple(
+    sorted(GameService._ALLOWED_INTERACTION_VERBS - set(_CROSSING_VERBS))
+)
 
 
 @pytest.fixture
 def ferry_world():
-    """A two-tile world carrying the real Ferry Landing placement.
+    """A two-tile world carrying the real Ferry Landing, gate UNSATISFIED,
+    repointed at a destination this world has.
 
-    Built the way ``Universe._deserialize_saved_instance`` builds it: authored
-    props filtered to the real constructor signature, then the rest applied by
-    ``setattr``. So this fixture reflects the *shipped map*, and the assertions
-    below fail if either the code or the placement is missing.
+    Repointed so every "Jean did not move" assertion is about the demo-end
+    gate: at the shipped destination, which this world lacks, the teleport
+    would fail on its own and the assertion would pass with the gate gone.
+    The not-ready tests depend on the gate being unsatisfied; that is
+    asserted once here rather than in each of them.
     """
-    import inspect
-
-    player, game_map = live_world(coords=((0, 0), (1, 0)))
-    props = dict(_ferry_placement()["props"])
-    props.pop("player", None)
-    props.pop("tile", None)
-    accepted = set(inspect.signature(Passageway.__init__).parameters)
-    kwargs = {k: v for k, v in props.items() if k in accepted}
-    ferry = Passageway(player=player, tile=game_map[(0, 0)], **kwargs)
-    for key, value in props.items():
-        if key not in kwargs:
-            setattr(ferry, key, value)
-    game_map[(0, 0)].objects_here = [ferry]
+    player, game_map, ferry = build_ferry_world(
+        with_tile_events=False, coords=REACHABLE_WORLD_COORDS
+    )
+    ferry.teleport_map, ferry.teleport_tile = REACHABLE_DESTINATION
+    assert not ferry_is_ready(player, ferry), (
+        "fixture drift: a fresh world must start with the ferry gate unsatisfied"
+    )
     return player, game_map, ferry
 
 
 @pytest.fixture
 def ferry_ready_world(ferry_world):
-    """The same world, but with Mara's conversation chain already complete.
-
-    Issue #579's gate reads ``Passageway.DEMO_END_READY_FLAG`` off
-    ``player.universe.story`` -- the same key ``MaraObservationEvent`` writes
-    at the end of Mara's scene (``src/story/ch03.py``). Tests that exercise
-    "the demo actually ends" behaviour build their world through this fixture
-    rather than setting the flag inline, so there is exactly one place that
-    decides what "ready" means for a test world.
-    """
+    """The same world with the ferry's gate set -- by ``mark_ferry_ready``,
+    keyed off the placement's own authored key, not by running Mara's
+    conversation chain."""
     player, game_map, ferry = ferry_world
-    player.universe.story[Passageway.DEMO_END_READY_FLAG] = "1"
+    mark_ferry_ready(player, ferry)
     return player, game_map, ferry
 
 
+@pytest.fixture(params=[True, False], ids=["ready", "not ready"])
+def world_by_readiness(request, ferry_world):
+    """``(ready, (player, game_map, ferry))``: a test using it runs once with
+    the ferry's gate satisfied and once without."""
+    player, game_map, ferry = ferry_world
+    if request.param:
+        mark_ferry_ready(player, ferry)
+    return request.param, ferry_world
+
+
+def _assert_declines_until_the_ferry_is_ready(player, ferry, cross):
+    """``cross`` declines (False) while the ferry's gate is unset, and closes
+    the demo (True) once it is set."""
+    with capture_narration():
+        assert cross(player) is False
+        mark_ferry_ready(player, ferry)
+        assert cross(player) is True
+
+
+def _position(player):
+    return (player.location_x, player.location_y, player.map.get("name"))
+
+
+def _queued_event_ids(result):
+    """The ids of the events ``result`` left waiting for a confirmation."""
+    ids = (event.get("event_id") for event in result.get("events_triggered", []))
+    return [event_id for event_id in ids if event_id]
+
+
+def _drive_queued_events(game_service, player, result, session_data):
+    """Confirm anything the interaction queued.
+
+    The teleport lands on the SECOND request (``/world/events/input``), so an
+    assertion on the interact response alone passes with the bug fully
+    present.
+    """
+    for event_id in _queued_event_ids(result):
+        game_service.process_event_input(player, event_id, "continue", session_data)
+
+
+def _interact_and_confirm(game_service, player, target, verb="enter"):
+    """Interact with ``target`` by ``verb``, then confirm whatever that
+    queued; returns the interaction's own result."""
+    session_data = {}
+    result = interact_with(game_service, player, target, verb, session_data)
+    _drive_queued_events(game_service, player, result, session_data)
+    return result
+
+
+def _narrated_text(messages):
+    return " ".join(m.get("text", "") for m in messages)
+
+
+def _step_through_names(result):
+    """The "Step through?" confirmations an interaction armed."""
+    names = (event.get("name", "") for event in result.get("events_triggered", []))
+    return [name for name in names if name.startswith(PassagewayTransitionEvent.NAME_PREFIX)]
+
+
 # ---------------------------------------------------------------------------
-# The shipped map must actually carry the flag — otherwise the code below is
+# The populations the tests below run over
+# ---------------------------------------------------------------------------
+
+
+def test_the_verb_populations_are_real():
+    """A derived population that empties approves of everything, and a
+    parametrize over an empty tuple skips instead of failing -- so the
+    populations are pinned here, where an empty one fails loudly."""
+    assert set(Passageway.CROSSING_METHOD_NAMES) <= set(_CROSSING_VERBS), _CROSSING_VERBS
+    assert Passageway._DELEGATED_CROSSING_VERBS
+    assert _NON_CROSSING_VERBS
+
+
+@pytest.mark.parametrize("verb", _CROSSING_VERBS)
+def test_every_verb_rendered_on_the_ferry_resolves_to_a_crossing(ferry_world, verb):
+    """The API's demo-end arm fires only for a handler the engine calls a
+    crossing (``Passageway.is_crossing_handler``). A rendered verb it does not
+    -- a new delegator missing from ``CROSSING_METHOD_NAMES`` -- would fall to
+    the step-through arm instead: the #552 seam."""
+    _player, _game_map, ferry = ferry_world
+    assert ferry.is_crossing_handler(resolve_interaction(ferry, verb)), verb
+
+
+# ---------------------------------------------------------------------------
+# The shipped map must actually carry the wiring — otherwise the code below is
 # correct and the game still crosses the river.
 # ---------------------------------------------------------------------------
 
 
 def test_the_shipped_ferry_placement_is_flagged_as_the_demo_end():
-    props = _ferry_placement()["props"]
-    assert props.get("demo_end") is True, (
+    assert ferry_placement_props().get("demo_end") is True, (
         "the Ferry Landing placement no longer declares demo_end, so using it "
         "teleports Jean to eastern-descent (2, 6) with no end-of-demo dialog "
         "(issue #552)"
     )
 
 
-def test_demo_end_is_a_real_map_authored_parameter():
+@pytest.mark.parametrize("param", ["demo_end", "demo_end_ready_flag"])
+def test_the_demo_end_wiring_is_map_authored(param):
     """A prop the loader would drop is not a wiring mechanism."""
-    assert "demo_end" in Passageway.MAP_AUTHORED_PARAMS
+    assert param in Passageway.MAP_AUTHORED_PARAMS
+
+
+def test_the_shipped_placement_authors_the_key_mara_writes(ferry_world):
+    """The map's ``demo_end_ready_flag`` and the key ``MaraObservationEvent``
+    sets have to be the same string, or the ferry never opens in real play.
+
+    The chain is held link by link: the map JSON authors a key, the loaded
+    passageway carries that key (not the class fallback, which happens to be
+    the same string), and running the real ``_set_gate`` writes it. The map
+    value is data and the event's key is code; this is the one place the two
+    are held to each other.
+    """
+    player, _game_map, ferry = ferry_world
+    authored = ferry_placement_props().get("demo_end_ready_flag")
+    carried = vars(ferry).get(_AUTHORED_READY_SLOT)
+    assert carried == authored, (
+        f"the placement authors {authored!r}; the loaded ferry carries {carried!r}"
+    )
+    before = set(player.universe.story)
+
+    with capture_narration():
+        MaraObservationEvent(player=player, tile=ferry.tile)._set_gate()
+
+    written = set(player.universe.story) - before
+    assert written == {authored}, (
+        f"Mara's gate wrote {sorted(written)}; the shipped Ferry Landing is "
+        f"authored to wait on {authored!r}"
+    )
+
+
+def test_the_map_export_writes_the_key_as_authored_not_the_fallback(ferry_world):
+    """``demo_end_ready_flag`` validates where it is read and falls back to
+    the ferry's key, but the Map Editor's export must write what was
+    authored. Otherwise every passageway it saves comes back declaring the
+    ferry's gate, and "no key of its own" stops being expressible."""
+    player, _game_map, ferry = ferry_world
+    plain = plain_passageway(player, ferry.tile)
+    door = demo_edge(player, ferry.tile, ready_flag=OTHER_EDGE_FLAG)
+    authored = ferry_placement_props()["demo_end_ready_flag"]
+
+    def exported(passageway):
+        return map_placeholders.to_placeholder(passageway)["params"]
+
+    def round_tripped(passageway):
+        return map_placeholders.instantiate_placeholder(
+            map_placeholders.to_placeholder(passageway), player=player, tile=ferry.tile
+        )
+
+    assert exported(plain).get("demo_end_ready_flag") is None
+    assert exported(door)["demo_end_ready_flag"] == OTHER_EDGE_FLAG
+    assert exported(ferry)["demo_end_ready_flag"] == authored
+    # Each export loads back to the gate it left with -- and "no key of its
+    # own" loads back as no key, not as the fallback written in.
+    assert round_tripped(door).demo_end_ready_flag == OTHER_EDGE_FLAG
+    assert vars(round_tripped(plain)).get(_AUTHORED_READY_SLOT) is None
 
 
 # ---------------------------------------------------------------------------
@@ -125,92 +283,163 @@ def test_demo_end_is_a_real_map_authored_parameter():
 # ---------------------------------------------------------------------------
 
 
-def test_entering_a_demo_end_passageway_does_not_teleport(ferry_world):
-    player, _game_map, ferry = ferry_world
-    # Repoint the destination at a tile this world actually has. The shipped
-    # target ("eastern-descent" (2, 6)) is absent here and Player.teleport is a
-    # silent no-op for a missing map, so without this the assertion would pass
-    # for the wrong reason.
-    ferry.teleport_map = "gs-test-map"
-    ferry.teleport_tile = (1, 0)
-    before = (player.location_x, player.location_y, player.map.get("name"))
+def test_entering_a_demo_end_passageway_never_teleports(world_by_readiness):
+    _ready, (player, _game_map, ferry) = world_by_readiness
+    before = _position(player)
 
     with capture_narration():
         ferry.enter(player)
 
-    assert (player.location_x, player.location_y, player.map.get("name")) == before
+    assert _position(player) == before
 
 
-def test_entering_a_demo_end_passageway_sets_the_story_gate_when_ferry_is_ready(
-    ferry_ready_world,
-):
-    player, _game_map, ferry = ferry_ready_world
-
-    with capture_narration():
-        ferry.enter(player)
-
-    assert player.universe.story.get("demo_ended") == "1"
-
-
-def test_entering_a_demo_end_passageway_does_not_set_the_story_gate_when_not_ready(
-    ferry_world,
-):
+def test_entering_sets_the_story_gate_only_when_the_ferry_is_ready(world_by_readiness):
     """Issue #579: reaching the ferry before Mara's chain completes must not
-    close the demo -- ``nomad_ferry_ready`` is never set on this fixture."""
-    player, _game_map, ferry = ferry_world
-    assert player.universe.story.get(Passageway.DEMO_END_READY_FLAG) != "1", (
-        "fixture drift: this test needs the gate UNSATISFIED"
-    )
+    close the demo; after it, it must."""
+    ready, (player, _game_map, ferry) = world_by_readiness
 
     with capture_narration():
         ferry.enter(player)
 
-    assert not player.universe.story.get("demo_ended"), player.universe.story
+    assert demo_has_ended(player) is ready
 
 
-def test_the_demo_end_line_claims_nothing_about_the_surroundings(ferry_ready_world):
-    """It lives on Passageway, so it must be true for any passageway.
+def test_end_demo_reports_whether_this_call_closed_the_demo(ferry_world):
+    """The return value is about THIS call, not about the sticky gate.
+
+    ``DEMO_ENDED_FLAG`` only says the demo has ended at some point; a caller
+    (the API's ``beta_end``) needs to know whether the interaction it just
+    dispatched did the ending or declined.
+    """
+    player, _game_map, ferry = ferry_world
+
+    _assert_declines_until_the_ferry_is_ready(player, ferry, ferry.end_demo)
+
+
+@pytest.mark.parametrize("verb", Passageway._DELEGATED_CROSSING_VERBS)
+def test_the_delegating_verbs_hand_back_enters_verdict(ferry_world, verb):
+    """``go``/``leave``/``exit`` are separate methods delegating to ``enter``;
+    a delegator that dropped the return would read as "declined" to any
+    caller dispatching the resolved handler -- the #552 seam a third time."""
+    player, _game_map, ferry = ferry_world
+
+    _assert_declines_until_the_ferry_is_ready(player, ferry, getattr(ferry, verb))
+
+
+def test_is_demo_edge_answers_for_the_edge_and_its_key(ferry_world):
+    player, _game_map, ferry = ferry_world
+    door = demo_edge(player, ferry.tile, ready_flag=OTHER_EDGE_FLAG)
+    plain = plain_passageway(player, ferry.tile)
+
+    assert ferry.is_demo_edge() and door.is_demo_edge()
+    assert not plain.is_demo_edge()
+    assert ferry.is_demo_edge(ferry.demo_end_ready_flag)
+    assert not ferry.is_demo_edge(OTHER_EDGE_FLAG)
+    assert door.is_demo_edge(OTHER_EDGE_FLAG)
+    assert not plain.is_demo_edge(ferry.demo_end_ready_flag)
+
+
+def test_a_demo_edge_honours_its_own_authored_key(ferry_ready_world):
+    """The gate key is per placement, so a second demo edge waits on ITS
+    prerequisite -- not on the ferry's -- which is what lets the demo's edge
+    move without re-plumbing the engine."""
+    player, _game_map, ferry = ferry_ready_world
+    door = demo_edge(player, ferry.tile, ready_flag=OTHER_EDGE_FLAG)
+
+    with capture_narration():
+        # The ferry's key is set (ready world); the door's is not.
+        assert door.enter(player) is False
+        assert not demo_has_ended(player)
+        set_story_gate(player, OTHER_EDGE_FLAG)
+        assert door.enter(player) is True
+    assert demo_has_ended(player)
+
+
+def test_a_passageway_from_an_older_save_falls_back_to_the_ferry_key(ferry_world):
+    """Save compatibility: a pickled passageway from before the per-placement
+    key existed carries no authored key in its instance dict, and the only
+    demo edge ever shipped was the ferry -- so it must keep waiting on the
+    ferry's key rather than on nothing."""
+    player, _game_map, ferry = ferry_world
+    door = demo_edge(player, ferry.tile, ready_flag=OTHER_EDGE_FLAG)
+    assert vars(door)[_AUTHORED_READY_SLOT] == OTHER_EDGE_FLAG, vars(door)
+    del vars(door)[_AUTHORED_READY_SLOT]  # what an older pickle restores
+
+    assert door.demo_end_ready_flag == Passageway.DEMO_END_READY_FLAG
+    _assert_declines_until_the_ferry_is_ready(player, ferry, door.enter)
+
+
+def _door_built_directly(player, tile, authored):
+    return demo_edge(player, tile, ready_flag=authored)
+
+
+def _door_loaded_from_the_map(player, tile, authored):
+    payload = ferry_placement()
+    class_ref(payload).props["demo_end_ready_flag"] = authored
+    # The edit has to land in the payload itself, not in a copy of its props.
+    assert class_ref(payload).props["demo_end_ready_flag"] == authored
+    return instantiate_authored(player.universe, payload, tile)
+
+
+@pytest.mark.parametrize(
+    "build", [_door_built_directly, _door_loaded_from_the_map],
+    ids=["constructor", "map-loader"],
+)
+@pytest.mark.parametrize(
+    "authored", [None, "", ["not", "a", "key"], {"nor": "this"}, 7], ids=repr
+)
+def test_anything_but_a_non_empty_string_falls_back_to_the_ferry_key(
+    ferry_world, build, authored
+):
+    """Map JSON and saves are attacker-influenceable and the value becomes a
+    dict key, so anything that is not a non-empty string -- None, empty,
+    unhashable, or simply not a string -- must fall back to the ferry's key
+    rather than reach ``end_demo``.
+
+    Checked through the real map loader as well as the constructor: the
+    loader re-applies every authored prop with a bare ``setattr`` after
+    construction, so a check that lived only in ``__init__`` never saw the
+    value the game keeps.
+    """
+    player, _game_map, ferry = ferry_world
+    door = build(player, ferry.tile, authored)
+
+    assert door.demo_end_ready_flag == Passageway.DEMO_END_READY_FLAG
+    _assert_declines_until_the_ferry_is_ready(player, ferry, door.enter)
+
+
+def test_an_instance_attribute_cannot_move_the_fallback_key(ferry_world):
+    """A pickled save restores ``__dict__`` verbatim, so a tampered one can
+    carry a ``DEMO_END_READY_FLAG`` of its own on one passageway. The
+    fallback is read off the class, so that cannot re-gate a door that
+    authors no key."""
+    player, _game_map, ferry = ferry_world
+    door = demo_edge(player, ferry.tile)
+    vars(door)["DEMO_END_READY_FLAG"] = OTHER_EDGE_FLAG
+
+    assert door.demo_end_ready_flag == Passageway.DEMO_END_READY_FLAG
+
+
+def test_the_demo_end_lines_claim_nothing_about_the_surroundings(world_by_readiness):
+    """Both lines live on Passageway, so they must be true for any passageway.
 
     Same rule as issue #565's lid: a line reused across placements may not
     assert scenery only one of them has. If the demo's edge moves to a door or
-    a tunnel mouth, "the far bank" becomes a lie.
+    a tunnel mouth, "the far bank" becomes a lie. The ready world exercises
+    the closing beat, the not-ready world the #579 hint.
     """
-    player, game_map, _ferry = ferry_ready_world
-    door = Passageway(
-        player=player,
-        tile=game_map[(0, 0)],
-        name="Archive Door",
-        demo_end=True,
-    )
+    _ready, (player, _game_map, ferry) = world_by_readiness
+    # No key of its own, so the door falls back to the ferry's: it declines
+    # or closes exactly when the ferry would, in each world.
+    door = demo_edge(player, ferry.tile)
 
     with capture_narration() as messages:
         door.enter(player)
-    text = " ".join(m.get("text", "") for m in messages)
+    text = _narrated_text(messages).lower()
 
-    assert "Archive Door".lower() in text.lower(), text
+    assert "archive door" in text, text
     for scenery in ("bank", "water", "river", "ferry", "crossing"):
-        assert scenery not in text.lower(), f"{scenery!r} is not there: {text!r}"
-
-
-def test_the_declined_demo_end_line_also_claims_nothing_about_the_surroundings(
-    ferry_world,
-):
-    """The #579 hint line is reused across any demo-end passageway too."""
-    player, game_map, _ferry = ferry_world
-    door = Passageway(
-        player=player,
-        tile=game_map[(0, 0)],
-        name="Archive Door",
-        demo_end=True,
-    )
-
-    with capture_narration() as messages:
-        door.enter(player)
-    text = " ".join(m.get("text", "") for m in messages)
-
-    assert "Archive Door".lower() in text.lower(), text
-    for scenery in ("bank", "water", "river", "ferry", "crossing"):
-        assert scenery not in text.lower(), f"{scenery!r} is not there: {text!r}"
+        assert scenery not in text, f"{scenery!r} is not there: {text!r}"
 
 
 def test_the_declined_line_differs_from_the_demo_end_line(ferry_world):
@@ -221,34 +450,28 @@ def test_the_declined_line_differs_from_the_demo_end_line(ferry_world):
 
     with capture_narration() as not_ready_messages:
         ferry.enter(player)
-    not_ready_text = " ".join(m.get("text", "") for m in not_ready_messages)
+    not_ready_text = _narrated_text(not_ready_messages)
 
-    player.universe.story[Passageway.DEMO_END_READY_FLAG] = "1"
+    mark_ferry_ready(player, ferry)
     with capture_narration() as ready_messages:
         ferry.enter(player)
-    ready_text = " ".join(m.get("text", "") for m in ready_messages)
+    ready_text = _narrated_text(ready_messages)
 
     assert not_ready_text.strip(), not_ready_text
     assert ready_text.strip(), ready_text
     assert not_ready_text != ready_text
-    assert "plain enough" not in not_ready_text
 
 
 def test_an_ordinary_passageway_still_teleports(ferry_world):
     """The flag must be opt-in; every other passageway is unaffected."""
-    player, game_map, _ferry = ferry_world
-    plain = Passageway(
-        player=player,
-        tile=game_map[(0, 0)],
-        name="Tent Flap",
-        teleport_map="gs-test-map",
-        teleport_tile=(1, 0),
-    )
+    player, _game_map, ferry = ferry_world
+    plain = plain_passageway(player, ferry.tile)
 
     with capture_narration():
         plain.enter(player)
 
-    assert (player.location_x, player.location_y) == (1, 0)
+    destination_map, destination_tile = REACHABLE_DESTINATION
+    assert _position(player) == (*destination_tile, destination_map)
 
 
 # ---------------------------------------------------------------------------
@@ -256,181 +479,71 @@ def test_an_ordinary_passageway_still_teleports(ferry_world):
 # ---------------------------------------------------------------------------
 
 
-def test_using_the_ferry_reports_beta_end_when_ferry_is_ready(
-    game_service, ferry_ready_world
+def test_using_the_ferry_reports_beta_end_only_when_the_ferry_is_ready(
+    game_service, world_by_readiness
 ):
-    player, game_map, ferry = ferry_ready_world
-
-    result = game_service.interact_with_target(
-        player, wire_handle(ferry), "enter", session_data={}
-    )
-
-    assert result["success"] is True, result
-    assert result["beta_end"] is True, result
-
-
-def test_using_the_ferry_does_not_report_beta_end_when_not_ready(
-    game_service, ferry_world
-):
-    """Issue #579: the API's `beta_end` flag must track whether the engine
+    """Issue #579: the API's ``beta_end`` flag must track whether the engine
     actually closed the demo, not fire unconditionally off the crossing verb."""
-    player, game_map, ferry = ferry_world
+    ready, (player, _game_map, ferry) = world_by_readiness
 
-    result = game_service.interact_with_target(
-        player, wire_handle(ferry), "enter", session_data={}
-    )
+    result = interact_with(game_service, player, ferry)
 
     assert result["success"] is True, result
-    assert result.get("beta_end") is not True, result
-    assert not player.universe.story.get("demo_ended"), player.universe.story
+    assert reported_beta_end(result) is ready, result
+    assert demo_has_ended(player) is ready
 
 
-def test_every_crossing_verb_ends_the_demo_rather_than_crossing(
-    game_service, ferry_ready_world
-):
-    """The verbs the client actually renders must all hit the demo-end branch.
-
-    ``Passageway.__init__`` pushes ``go``/``leave``/``exit`` into both
-    ``action_aliases`` and ``keywords``, and ``ObjectSerializer`` ships
-    ``keywords`` to the client -- so those three are buttons on the ferry, and
-    on the shipped placement they are the ONLY authored ones
-    (``eastern-descent-nomad-camp.json`` (0, 2) authors
-    ``action_aliases: ["go", "leave", "exit"]``).
-
-    They are separate methods delegating to ``enter``, not aliases of it, so a
-    gate that compared the resolved handler against ``enter`` answered False
-    for all three. Control then fell to the generic Passageway arm, which
-    queues a ``PassagewayTransitionEvent`` whose ``process`` calls
-    ``_commit_teleport`` directly -- past ``enter``'s ``demo_end`` guard. The
-    demo's edge was crossable by three of the four ways to say "use it", and
-    by the only three the map authors.
-
-    ``ferry`` and ``landing`` are the instance-bound name words, which DO
-    resolve to ``enter``; they are included so the fix cannot regress them.
-
-    Requires ``ferry_ready_world``: with the #579 gate in place, ``go``/
-    ``leave``/``exit`` reach the demo end through ``_commit_teleport`` (via
-    ``PassagewayTransitionEvent``) while ``enter``/``ferry``/``landing`` reach
-    it directly, so this one loop already covers both gated call paths.
-    """
-    player, _game_map, ferry = ferry_ready_world
-
-    for verb in ("enter", "go", "leave", "exit", "ferry", "landing"):
-        session_data = {}
-        before = (player.location_x, player.location_y)
-
-        result = game_service.interact_with_target(
-            player, wire_handle(ferry), verb, session_data=session_data
-        )
-        # Drive any queued confirmation too: the teleport lands on the SECOND
-        # request, so asserting on the interact response alone passes with the
-        # bug fully present.
-        for event in result["events_triggered"]:
-            event_id = event.get("event_id")
-            if event_id:
-                game_service.process_event_input(
-                    player, event_id, "continue", session_data
-                )
-
-        assert result["beta_end"] is True, (verb, result)
-        assert (player.location_x, player.location_y) == before, (verb, result)
-        story = getattr(getattr(player, "universe", None), "story", {}) or {}
-        assert story.get("demo_ended") == "1", (verb, story)
-        story.pop("demo_ended", None)
-
-
-def test_every_crossing_verb_declines_when_the_ferry_is_not_ready(
+def test_beta_end_reports_this_interaction_not_the_sticky_gate(
     game_service, ferry_world
 ):
-    """The #579 counterpart of the test above: same verbs, same both-paths
-    coverage (``go``/``leave``/``exit`` via ``_commit_teleport``,
-    ``enter``/``ferry``/``landing`` direct), but with the gate unsatisfied --
-    none of them may close the demo or report ``beta_end``."""
+    """``DEMO_ENDED_FLAG`` stays set forever once the demo ends. If the API
+    read it back after the call, a later interaction that DECLINED would still
+    report ``beta_end`` and re-raise ``BetaEndDialog``; the flag has to come
+    from what this call did."""
     player, _game_map, ferry = ferry_world
-    assert player.universe.story.get(Passageway.DEMO_END_READY_FLAG) != "1", (
-        "fixture drift: this test needs the gate UNSATISFIED"
-    )
+    set_story_gate(player, Passageway.DEMO_ENDED_FLAG)  # ended earlier
 
-    for verb in ("enter", "go", "leave", "exit", "ferry", "landing"):
-        session_data = {}
-        before = (player.location_x, player.location_y)
+    result = interact_with(game_service, player, ferry)
 
-        result = game_service.interact_with_target(
-            player, wire_handle(ferry), verb, session_data=session_data
-        )
-        for event in result["events_triggered"]:
-            event_id = event.get("event_id")
-            if event_id:
-                game_service.process_event_input(
-                    player, event_id, "continue", session_data
-                )
-
-        assert result.get("beta_end") is not True, (verb, result)
-        assert (player.location_x, player.location_y) == before, (verb, result)
-        story = getattr(getattr(player, "universe", None), "story", {}) or {}
-        assert not story.get("demo_ended"), (verb, story)
+    assert result["success"] is True, result
+    assert not reported_beta_end(result), result
 
 
-def test_committing_a_teleport_can_never_cross_a_demo_end_passageway_when_ready(
-    ferry_ready_world,
+@pytest.mark.parametrize("verb", _CROSSING_VERBS)
+def test_no_crossing_verb_crosses_and_each_ends_the_demo_only_when_ready(
+    game_service, world_by_readiness, verb
 ):
+    """Every verb the ferry renders (``_CROSSING_VERBS``) stays on this bank,
+    and ends the demo exactly when the ferry is ready: every one when ready
+    (#552), none when not (#579) -- through the request and its confirm."""
+    ready, (player, _game_map, ferry) = world_by_readiness
+    before = _position(player)
+
+    result = _interact_and_confirm(game_service, player, ferry, verb)
+
+    assert reported_beta_end(result) is ready, result
+    assert _position(player) == before, result
+    assert demo_has_ended(player) is ready
+
+
+def test_committing_a_teleport_never_crosses_a_demo_end_passageway(world_by_readiness):
     """The crossing primitive refuses on its own, whatever route reached it.
 
     ``enter`` guards ``demo_end``, but ``PassagewayTransitionEvent.process``
-    calls ``_commit_teleport`` directly and so never saw that guard. Guarding
-    the primitive means no present or future path can cross the demo's edge --
-    the gate above decides WHICH VERB crosses, this decides whether crossing
-    is possible at all.
+    calls ``_commit_teleport`` directly (see ``src/events.py``) and so never
+    saw that guard -- exactly how #552 reopened the first time. Calling the
+    primitive here, with no session/API layer involved, pins that the gate
+    lives somewhere BOTH paths see: ready, it closes the demo; not ready, it
+    declines (#579). Neither crosses.
     """
-    player, _game_map, ferry = ferry_ready_world
-    before = (player.location_x, player.location_y)
+    ready, (player, _game_map, ferry) = world_by_readiness
+    before = _position(player)
 
     with capture_narration():
         ferry._commit_teleport(player)
 
-    assert (player.location_x, player.location_y) == before
-    story = getattr(getattr(player, "universe", None), "story", {}) or {}
-    assert story.get("demo_ended") == "1"
-
-
-def test_committing_a_teleport_does_not_end_the_demo_when_not_ready(ferry_world):
-    """Issue #579's other half: ``_commit_teleport`` is reached directly by
-    ``PassagewayTransitionEvent.process``, bypassing ``enter`` entirely (see
-    ``src/events.py``), so a gate added only to ``enter`` would leave this
-    primitive crossable -- exactly how #552 reopened the first time. Calling
-    it here, with no session/API layer involved at all, pins that the gate
-    lives somewhere BOTH paths see."""
-    player, _game_map, ferry = ferry_world
-    before = (player.location_x, player.location_y)
-    assert player.universe.story.get(Passageway.DEMO_END_READY_FLAG) != "1", (
-        "fixture drift: this test needs the gate UNSATISFIED"
-    )
-
-    with capture_narration():
-        ferry._commit_teleport(player)
-
-    assert (player.location_x, player.location_y) == before
-    assert not player.universe.story.get("demo_ended"), player.universe.story
-
-
-def test_merely_examining_the_ferry_does_not_end_the_demo(game_service, ferry_world):
-    """Looking at the ferry must not fire the end-of-beta dialog.
-
-    The demo-end branch was gated on the target being a demo_end Passageway
-    and nothing else, so every verb `_ALLOWED_INTERACTION_VERBS` permits --
-    examine, look, check, inspect, view, peruse -- ended the demo. A player
-    who examined the ferry to read its description got the closing beat and a
-    set `demo_ended` story gate without ever choosing to cross.
-    """
-    player, _game_map, ferry = ferry_world
-
-    for verb in ("examine", "look", "check", "inspect", "view", "peruse"):
-        result = game_service.interact_with_target(
-            player, wire_handle(ferry), verb, session_data={}
-        )
-        assert result.get("beta_end") is not True, (verb, result)
-        story = getattr(getattr(player, "universe", None), "story", {}) or {}
-        assert not story.get("demo_ended"), (verb, story)
+    assert _position(player) == before
+    assert demo_has_ended(player) is ready
 
 
 def test_using_the_ferry_does_not_teleport_through_the_api(game_service, ferry_world):
@@ -438,117 +551,86 @@ def test_using_the_ferry_does_not_teleport_through_the_api(game_service, ferry_w
 
     The API path teleports on the *second* request — ``interact_with_target``
     queues a ``PassagewayTransitionEvent`` and ``/world/events/input`` commits
-    the move — so this drives both halves. Asserting only on the interact
-    response would pass even with the bug fully present.
+    the move — so this drives both halves.
     """
-    player, game_map, ferry = ferry_world
-    ferry.teleport_map = "gs-test-map"
-    ferry.teleport_tile = (1, 0)
-    session_data = {}
+    player, _game_map, ferry = ferry_world
+    before = _position(player)
 
-    result = game_service.interact_with_target(
-        player, wire_handle(ferry), "enter", session_data=session_data
-    )
-    for event in result["events_triggered"]:
-        event_id = event.get("event_id")
-        if event_id:
-            game_service.process_event_input(
-                player, event_id, "continue", session_data
-            )
+    result = _interact_and_confirm(game_service, player, ferry)
 
     assert result["teleported"] is False, result
-    assert (player.location_x, player.location_y) == (0, 0)
-    assert player.map.get("name") == "gs-test-map"
+    assert _position(player) == before
 
 
 def test_using_the_ferry_queues_no_step_through_confirmation(
     game_service, ferry_world
 ):
     """A "Step through?" prompt would be a lie — there is nothing to step to."""
-    player, game_map, ferry = ferry_world
-    session_data = {}
-
-    result = game_service.interact_with_target(
-        player, wire_handle(ferry), "enter", session_data=session_data
-    )
-
-    names = [e.get("name", "") for e in result["events_triggered"]]
-    assert not any("Passage_" in n for n in names), names
-
-
-def test_a_non_crossing_verb_arms_no_step_through_on_the_demo_edge(
-    game_service, ferry_world
-):
-    """The generic Passageway arm must not fire for a demo-end passageway.
-
-    `examine` and its synonyms resolve to nothing callable on `Passageway`, so
-    `_is_demo_end_crossing` correctly answers False for them -- and control
-    then fell to the arm that queues a "Jean steps through..." confirmation
-    for ANY Passageway. Confirming it runs `_commit_teleport`, which now ends
-    the demo rather than crossing (good) but with `beta_end` never set, so the
-    player gets the closing beat and the story gate and NO BetaEndDialog.
-
-    The sibling test that examines the ferry could not catch this: it asserted
-    on the interact response only, and the damage happens on the confirm.
-
-    What these verbs get instead is the ordinary in-fiction refusal for a
-    keyword the class does not implement (#553) -- the ferry authors none of
-    them in its keywords, so the client renders no button for them and this is
-    reachable only by a hand-built request. A demo-end passageway declining to
-    discuss stepping through is the point.
-    """
     player, _game_map, ferry = ferry_world
 
-    for verb in ("examine", "look", "check", "inspect", "view", "peruse"):
-        session_data = {}
-        result = game_service.interact_with_target(
-            player, wire_handle(ferry), verb, session_data=session_data
-        )
+    result = interact_with(game_service, player, ferry)
 
-        events = result.get("events_triggered", [])
-        names = [e.get("name", "") for e in events]
-        assert not any("Passage_" in n for n in names), (verb, names)
-        assert not session_data.get("pending_events"), (verb, session_data)
+    assert _step_through_names(result) == [], result
 
-        # Drive anything that did get queued: the teleport-or-end lands on the
-        # confirm, so asserting on this response alone would pass with the bug
-        # fully present.
-        for event in events:
-            event_id = event.get("event_id")
-            if event_id:
-                game_service.process_event_input(
-                    player, event_id, "continue", session_data
-                )
 
-        assert result.get("beta_end") is not True, (verb, result)
-        story = getattr(getattr(player, "universe", None), "story", {}) or {}
-        assert not story.get("demo_ended"), (verb, story)
+@pytest.mark.parametrize("verb", _NON_CROSSING_VERBS)
+def test_a_non_crossing_verb_never_ends_the_demo_nor_arms_a_step_through(
+    game_service, world_by_readiness, verb
+):
+    """No verb the allow-list admits may end the demo except a crossing.
+
+    Looking verbs resolve to nothing callable on ``Passageway``, so
+    ``_is_demo_end_crossing`` correctly answers False for them -- and control
+    then fell to the arm that queues a "Jean steps through..." confirmation
+    for ANY Passageway. Confirming it ran ``_commit_teleport``, which ends the
+    demo rather than crossing (good) but with ``beta_end`` never set, so the
+    player got the closing beat and the story gate and NO BetaEndDialog. A
+    test that asserted on the interact response only could not catch this:
+    the damage happened on the confirm. The allow-list's item verbs are
+    refused in fiction (#553) and must be just as inert.
+
+    The ferry renders none of these, so this is reachable only by a
+    hand-built request. Checked in both worlds: in the ready one, a confirm
+    that reached ``_commit_teleport`` would actually close the demo -- so the
+    check is that there is nothing left to confirm, not that confirming is
+    harmless.
+    """
+    _ready, (player, _game_map, ferry) = world_by_readiness
+    session_data = {}
+
+    result = interact_with(game_service, player, ferry, verb, session_data)
+
+    assert _step_through_names(result) == [], result
+    assert not session_data.get("pending_events"), session_data
+    assert _queued_event_ids(result) == [], result
+
+    assert not reported_beta_end(result), result
+    assert not demo_has_ended(player)
 
 
 def test_an_ordinary_passageway_does_not_report_beta_end(game_service, ferry_world):
-    player, game_map, _ferry = ferry_world
-    plain = Passageway(
-        player=player,
-        tile=game_map[(0, 0)],
-        name="Tent Flap",
-        teleport_map="gs-test-map",
-        teleport_tile=(1, 0),
-    )
-    game_map[(0, 0)].objects_here = [plain]
+    player, _game_map, ferry = ferry_world
+    plain = plain_passageway(player, ferry.tile)
+    ferry.tile.objects_here = [plain]
 
-    result = game_service.interact_with_target(
-        player, wire_handle(plain), "enter", session_data={}
-    )
+    result = interact_with(game_service, player, plain)
 
-    assert not result.get("beta_end"), result
+    assert result["success"] is True, result
+    assert not reported_beta_end(result), result
 
 
-def test_the_ferry_still_says_something_in_fiction(game_service, ferry_world):
-    """The dialog carries the meta-text; the panel still needs a beat of prose."""
-    player, game_map, ferry = ferry_world
+def test_the_ferry_still_says_something_in_fiction(game_service, world_by_readiness):
+    """The dialog carries the meta-text; the panel still needs a beat of prose,
+    and it has to be ``end_demo``'s own line in both worlds.
 
-    result = game_service.interact_with_target(
-        player, wire_handle(ferry), "enter", session_data={}
-    )
+    A non-empty message alone proves nothing: when an interaction narrates
+    nothing, the API substitutes a generic "Jean successfully completes..."
+    line. Both ``end_demo`` lines name the passageway the way
+    ``build_article_phrase`` spells it, and the generic line does not.
+    """
+    _ready, (player, _game_map, ferry) = world_by_readiness
 
-    assert result["message"].strip(), result
+    result = interact_with(game_service, player, ferry)
+
+    assert result["success"] is True, result
+    assert Passageway.build_article_phrase(ferry.name) in result["message"].lower(), result

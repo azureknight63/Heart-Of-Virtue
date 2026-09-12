@@ -25,22 +25,20 @@ import ast
 import collections
 import functools
 import inspect
-import json
 import re
-from pathlib import Path
 
 import pytest
 
 import src.objects as objects_module
 from tests import _map_scan
+from tests._source_scan import MAP_DIR, SRC_ROOT
 
-#: Shared with the two other guards that walk the shipped maps, so "which
-#: files are the maps" and "which keys are tiles" are derived once. Note this
-#: file resolves the directory ABSOLUTELY through the helper rather than from a
-#: relative Path, which silently matched nothing when pytest ran from anywhere
-#: but the repo root.
-MAP_DIR = _map_scan.MAP_DIR
-MAP_FILES = _map_scan.map_files()
+#: The shipped maps, from the walk the guards over authored objects and
+#: events share: "which files are the maps", "which keys are tiles" and
+#: "what a placement is" are derived once, and from ``MAP_DIR``, which is
+#: resolved ABSOLUTELY rather than from a relative Path -- that silently
+#: matched nothing when pytest ran from anywhere but the repo root.
+MAP_FILES = tuple(_map_scan.map_files())
 
 #: A run-together CamelCase identifier: two or more capitalised segments and no
 #: separator, e.g. ``HealingSpring``. Deliberately *not* a single capitalised
@@ -58,11 +56,28 @@ OBJECT_CLASS_NAMES = frozenset(
 )
 
 
-def _authored_name(entry):
-    if not isinstance(entry, dict):
-        return None
-    props = entry.get("props") or {}
-    return props.get("name") or entry.get("__class__")
+def _placement_name(placement):
+    """The authored ``name``, else the class name, of one object placement."""
+    return placement.props.get("name") or placement.class_name
+
+
+def _duplicates(names):
+    """Every name that occurs more than once in ``names``."""
+    return [name for name, count in collections.Counter(names).items() if count > 1]
+
+
+def _offenders(placements, map_name):
+    """``{coord: names placed more than once on it}`` for ``map_name``'s
+    tiles among ``placements``."""
+    names_by_tile = collections.defaultdict(list)
+    for placement in placements:
+        if placement.map_name == map_name:
+            names_by_tile[placement.coord].append(_placement_name(placement))
+    return {
+        coord: duplicates
+        for coord, names in names_by_tile.items()
+        if (duplicates := _duplicates(names))
+    }
 
 
 def test_there_are_maps_to_scan():
@@ -70,19 +85,9 @@ def test_there_are_maps_to_scan():
     assert len(MAP_FILES) >= 10, f"only {len(MAP_FILES)} map files found in {MAP_DIR}"
 
 
-@pytest.mark.parametrize("map_file", MAP_FILES, ids=lambda p: p.name)
+@pytest.mark.parametrize("map_file", MAP_FILES, ids=[path.name for path in MAP_FILES])
 def test_no_tile_has_two_identically_named_objects(map_file):
-    map_data = json.loads(map_file.read_text(encoding="utf-8"))
-    offenders = {}
-    for coords, tile in _map_scan.tiles(map_data):
-        names = [_authored_name(obj) for obj in (tile.get("objects") or [])]
-        duplicates = [
-            name
-            for name, count in collections.Counter(n for n in names if n).items()
-            if count > 1
-        ]
-        if duplicates:
-            offenders[coords] = duplicates
+    offenders = _offenders(_map_scan.object_placements(), map_file.name)
 
     assert offenders == {}, (
         f"{map_file.name} places identically named objects on one tile "
@@ -93,10 +98,29 @@ def test_no_tile_has_two_identically_named_objects(map_file):
 
 
 def test_the_duplicate_detector_can_actually_find_one():
-    """Positive control for the scan itself."""
-    tile = {"objects": [{"__class__": "Crate"}, {"__class__": "Crate"}]}
-    names = [_authored_name(obj) for obj in tile["objects"]]
-    assert [n for n, c in collections.Counter(names).items() if c > 1] == ["Crate"]
+    """Positive control for the scan itself: two unnamed ``Crate`` placements
+    collide on their class name, and so does an authored name that matches
+    it; two different names do not."""
+    unnamed = _map_scan.Placement("x.json", "(0, 0)", "objects", "Crate", {})
+    named = unnamed._replace(class_name="Barrel", props={"name": "Crate"})
+    assert _duplicates([_placement_name(unnamed)] * 2) == ["Crate"]
+    assert _duplicates([_placement_name(unnamed), _placement_name(named)]) == ["Crate"]
+    assert _duplicates(["Crate", "Barrel"]) == []
+
+
+def test_the_offender_scan_groups_by_map_and_tile():
+    """Positive control for the grouping: two ``Crate`` placements on one
+    tile are reported under that tile; the same name once on another tile,
+    or on the same coordinate of another map, is not a collision."""
+    crate = _map_scan.Placement("x.json", "(0, 0)", "objects", "Crate", {})
+    placements = [
+        crate,
+        crate._replace(class_name="Barrel", props={"name": "Crate"}),
+        crate._replace(coord="(0, 1)"),
+        crate._replace(map_name="y.json"),
+    ]
+    assert _offenders(placements, "x.json") == {"(0, 0)": ["Crate"]}
+    assert _offenders(placements, "y.json") == {}
 
 
 # ---------------------------------------------------------------------------
@@ -123,19 +147,14 @@ def test_the_duplicate_detector_can_actually_find_one():
 def _authored_object_names():
     """Return ``((map_file, coords, name), ...)`` for every named placement.
 
-    Cached: four tests below want the same scan, and re-parsing all 17 map
-    files each time is the bulk of this module's runtime.
+    Built from the shared placement walk, so it reads both authored payload
+    shapes, and cached because several tests below want the same scan.
     """
     found = []
-    for map_file in MAP_FILES:
-        map_data = json.loads(map_file.read_text(encoding="utf-8"))
-        for coords, tile in _map_scan.tiles(map_data):
-            for entry in tile.get("objects") or []:
-                if not isinstance(entry, dict):
-                    continue
-                name = (entry.get("props") or {}).get("name")
-                if isinstance(name, str) and name:
-                    found.append((map_file.name, coords, name))
+    for placement in _map_scan.object_placements():
+        name = placement.props.get("name")
+        if isinstance(name, str) and name:
+            found.append((placement.map_name, placement.coord, name))
     return tuple(found)
 
 
@@ -203,7 +222,7 @@ def test_no_object_class_defaults_its_name_to_its_own_class_name():
     after their class and all read correctly doing it. Only a run-together
     identifier is a leak.
     """
-    tree = ast.parse(Path("src/objects.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC_ROOT / "objects.py").read_text(encoding="utf-8"))
     offenders = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):

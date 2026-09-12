@@ -27,21 +27,13 @@ function CloseButton({ onClose, style = {} }) {
 }
 
 /**
- * The class the panel root carries, exported because it is a CONTRACT.
+ * The class the panel root carries, exported so the stacking-order test can
+ * find the panel root.
  *
- * Anything that needs to find a GamePanel's root from an arbitrary descendant
- * (or from outside the component entirely, in a test) does it with
- * `closest(\`.${GAME_PANEL_CLASS}\`)` / `querySelector` rather than restating
- * the literal — so a rename here cannot silently break a lookup that agrees
- * with itself. `LeftPanel.categoryNavStacking.test.jsx` uses it to find
- * CombatMovePanel's real root and read its z-index (issue #575). Same
+ * That test (LeftPanel.categoryNavStacking.test.jsx) finds CombatMovePanel's
+ * root with `querySelectorAll(\`.${GAME_PANEL_CLASS}\`)` rather than restating the
+ * literal, so a rename here moves the lookup with it (issue #575). Same
  * reasoning as `CATEGORY_NAV_LABEL` in utils/categories.js.
- *
- * Until #575 this was also how `useOccludedNavHandoff` resolved the panel it
- * hit-tested against; that hook is retired now that CombatMovePanel can no
- * longer occlude the category nav (see CombatMovePanel.jsx's
- * `COMBAT_MOVE_PANEL_Z_INDEX` and LeftPanel.jsx's
- * `HERO_PANEL_STACKING_Z_INDEX`).
  */
 export const GAME_PANEL_CLASS = 'game-panel'
 

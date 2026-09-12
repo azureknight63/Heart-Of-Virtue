@@ -83,7 +83,7 @@ This is enforced at review time by the Code Review Gate below — a change repor
 ## Verification ladder — give yourself a check you can run
 
 Pick the cheapest rung that can actually observe the change, run it, and show the output as evidence — don't assert success:
-1. Unit and contract tests in `tests/` — the contract guards (`test_wire_field_contract.py`, `test_move_categories_ui_contract.py`, `test_move_web_animations.py`, `test_no_bare_local_imports.py`, `test_player_stat_derivations.py`) exist because mocks agreeing with mocks shipped five silent bugs.
+1. Unit and contract tests in `tests/` — the contract guards (`test_wire_field_contract.py`, `test_move_categories_ui_contract.py`, `test_move_web_animations.py`, `test_no_bare_local_imports.py`, `test_player_stat_derivations.py`) exist because mocks agreeing with mocks shipped six silent bugs (enumerated in `.claude/rules/frontend.md`).
 2. `python tools/bug_hunt.py --scenario …` — the real API in-process (combat, events, shop, saves, NPC chat…). Add a scenario when you add a feature.
 3. `/combat-test` against `config_combat_testing.ini` (arena table below); `python tools/<x>_fuzzer.py` for input hardening.
 4. `python tools/inquisitor.py` or `/qa` — real browser; the only rung that sees JS/rendering bugs.

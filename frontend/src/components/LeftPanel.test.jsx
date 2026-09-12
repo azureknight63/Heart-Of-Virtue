@@ -1,10 +1,32 @@
+// Comments added to this file from 2026-09 on use ASCII `--` where the older
+// ones use an em dash. Deliberate, not drift: two rounds of edits here arrived
+// double-encoded through the shell, and one of them made a negative assertion
+// vacuous. tests/test_content_encoding.py sweeps for the damage; this avoids
+// creating it.
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import LeftPanel from './LeftPanel';
 import BaseDialog from './BaseDialog';
-import React from 'react';
 import { CATEGORY_GROUPS } from '../utils/categories';
+import {
+    allyId,
+    enemyId,
+    makeAvailableOption,
+    makeCheckEntry,
+    makeCombat,
+    makeCombatant,
+    makeEnemy,
+    makeLocation,
+    makePlayer,
+    makeSuggestedMove,
+    makeTargetOption,
+    twoTargets,
+    NOT_ENOUGH_FATIGUE_REASON,
+    TURN_DIRECTIONS,
+    WAIT_DURATION_PROMPT,
+} from '../test/payloads';
 import { colors } from '../styles/theme';
+import { FLEE_BREAK_AWAY_DISTANCE_FT } from '../utils/combatMoveStatus';
 
 // Mock child components
 vi.mock('./PartyPanel', () => ({ default: ({ onClose }) => <div data-testid="party-panel"><button onClick={onClose}>Close Party</button></div> }));
@@ -61,13 +83,26 @@ vi.mock('./HeroPanel', () => ({
     )
 }));
 vi.mock('./CombatLog', () => ({ default: ({ log }) => <div data-testid="combat-log">{log.map((e, i) => <div key={i}>{e.message}</div>)}</div> }));
+// "Send Input" answers with an option actually offered, in the shape its
+// input type gives it (ApiCombatAdapter): target cards carry an `id`, a
+// direction prompt is a list of strings, and a number prompt is one dict of
+// prompt/min/max/default. From a list it takes the LAST option, so a test
+// offering two targets can tell "sends the picked target" from "sends the
+// first one"; from a number prompt, its default.
 vi.mock('./CombatInputDialog', () => ({
-    default: ({ onSelect, onCancel, moveName, moveCategory }) => (
-        <div data-testid="combat-input-dialog" data-move-name={moveName ?? ''} data-move-category={moveCategory ?? ''}>
-            <button onClick={() => onSelect('target-1')}>Select Target</button>
-            <button onClick={onCancel}>Cancel Input</button>
-        </div>
-    )
+    default: ({ options, onSelect, onCancel, moveName, moveCategory }) => {
+        const pick = () => {
+            if (!Array.isArray(options)) return options?.default;
+            const last = options.at(-1);
+            return typeof last === 'string' ? last : last?.id;
+        };
+        return (
+            <div data-testid="combat-input-dialog" data-move-name={moveName ?? ''} data-move-category={moveCategory ?? ''}>
+                <button onClick={() => onSelect(pick())}>Send Input</button>
+                <button onClick={onCancel}>Cancel Input</button>
+            </div>
+        );
+    },
 }));
 vi.mock('./CombatMovePanel', () => ({
     default: ({ moves, category, onMoveClick, onClose }) => (
@@ -79,13 +114,6 @@ vi.mock('./CombatMovePanel', () => ({
             <button onClick={onClose}>Close Moves</button>
         </div>
     ),
-    // LeftPanel derives HERO_PANEL_STACKING_Z_INDEX from this at module load
-    // (issue #575) — the mock needs the same named export or the import
-    // resolves to undefined and NaN leaks into the wrapper's z-index. The
-    // real relationship between the two constants is covered by
-    // LeftPanel.categoryNavStacking.test.jsx, which renders the real
-    // CombatMovePanel; this mock only needs to not crash the module graph.
-    COMBAT_MOVE_PANEL_Z_INDEX: 100,
 }));
 vi.mock('./FeedbackDialog', () => ({ default: ({ onClose }) => <div data-testid="feedback-dialog"><button onClick={onClose}>Close Feedback</button></div> }));
 vi.mock('./CooldownTray', () => ({ default: ({ moves }) => <div data-testid="cooldown-tray">{moves.length} on cooldown</div> }));
@@ -102,7 +130,7 @@ vi.mock('./SuggestedMovesPanel', () => ({
     default: ({ onSuggestClick, blockedReasonFor }) => (
         <div data-testid="suggested-moves-panel">
             <button onClick={() => onSuggestClick({ move_name: 'repeat_last' })}>Repeat Last</button>
-            <button onClick={() => onSuggestClick({ move_name: 'Slash', target_id: 'enemy_1' })}>Suggest Slash</button>
+            <button onClick={() => onSuggestClick({ move_name: 'Slash', target_id: enemyId(1) })}>Suggest Slash</button>
             <span data-testid="slash-blocked-reason">{blockedReasonFor?.('Slash') || ''}</span>
         </div>
     )
@@ -121,66 +149,183 @@ vi.mock('../context/AudioContext', () => ({
     }),
 }));
 
-const mockPlayer = {
-    name: 'Jean',
-    level: 1,
-    hp: 100,
-    max_hp: 100,
-    inventory: []
-};
+const basePlayer = makePlayer({ hp: 100, max_hp: 100 });
 
-const mockLocation = {
-    name: 'Forest',
-    description: 'Green trees.'
-};
+const baseLocation = makeLocation({ name: 'Forest', description: 'Green trees.' });
 
 /**
- * One entry of `available_options` exactly as ApiCombatAdapter
- * ._get_available_moves emits it (src/api/combat_adapter.py). Two details the
- * hand-written literals here used to get wrong, which is the fixture-agreeing-
- * with-itself failure CLAUDE.md warns about:
- *   * `id` is a STRING (`str(i)`), never an int.
- *   * every gating field is always present — `available`, `targeted`,
- *     `viable_targets`, `requires_target_selection`, `cooldown_remaining` —
- *     so a fixture that omits one describes a payload the adapter cannot send.
+ * A combat object mid move-selection, in the client shape `makeCombat`
+ * builds, offering `moves`. `extra` carries what a test varies (round, beat,
+ * a log, ...) -- anything `makeCombat` will build, which excludes a nested
+ * `battle_state`: the one test that wants that attaches it itself.
  */
-const makeCombatMove = (overrides = {}) => ({
-    id: '0',
-    index: 0,
-    name: 'Attack',
-    display_name: 'Attack',
-    description: 'A basic attack.',
-    category: 'Offensive',
-    fatigue_cost: 5,
-    available: true,
-    reason: null,
-    targeted: false,
-    viable_targets: [],
-    requires_target_selection: false,
-    cooldown_remaining: 0,
-    cooldown_max: 0,
+const combatWith = (moves, extra = {}) => makeCombat({
+    awaiting_input: true,
+    input_type: 'move_selection',
+    available_options: moves,
+    ...extra,
+});
+
+/**
+ * A combat awaiting a SERVER-driven target pick: `input_type`
+ * 'target_selection', where `available_options` holds target cards rather
+ * than moves. Two cards by default: the adapter enters this state only with
+ * more than one viable target, and with one card the last-option mock could
+ * not tell the picked target from the first.
+ */
+const awaitingTargetPick = (targets = twoTargets()) => makeCombat({
+    awaiting_input: true,
+    input_type: 'target_selection',
+    available_options: targets,
+});
+
+/**
+ * Lunge with two enemies in reach: a targeted move the adapter flags
+ * `requires_target_selection` (it has more than one viable target), so
+ * LeftPanel opens its own picker. `overrides` replace any of its fields.
+ */
+const lungeNeedingTarget = (overrides = {}) => makeAvailableOption({
+    id: '1', name: 'Lunge', category: 'Offensive',
+    targeted: true,
+    viable_targets: twoTargets(),
     ...overrides,
 });
 
-/** A combatant id as CombatantSerializer emits it: 'player' / 'enemy_<n>'. */
-const enemyId = (n) => `enemy_${n}`;
+/**
+ * A targeted move with exactly one viable target, which the adapter therefore
+ * flags `requires_target_selection: false` -- LeftPanel submits it without
+ * asking. The one target is `enemyId(1)`; `overrides` replace any field.
+ */
+const singleTargetMove = (overrides = {}) => makeAvailableOption({
+    id: '1', name: 'Slash', category: 'Offensive',
+    targeted: true,
+    viable_targets: [makeTargetOption({ id: enemyId(1) })],
+    ...overrides,
+});
+
+/**
+ * The two props every render in this file supplies. Spread rather than
+ * retyped: they were spelled out at ~70 sites plus three partial extractions
+ * of their own, so adding a prop the component starts requiring meant finding
+ * all of them.
+ */
+const baseProps = { player: basePlayer, location: baseLocation };
+
+/** The first log line every replay test seeds, before the entries it asserts on. */
+const SEED_LOG_ENTRY = { message: 'Combat begins', round: 0, type: 'info' };
+
+/**
+ * The three budgets the log-replay tests run on, which have to stay ordered:
+ * a wait for the seed line, a wait for the replayed lines, and vitest's own
+ * per-test budget around both.
+ *
+ * The outer one is stated because vitest's default is 5000ms -- the same as
+ * the inner wait -- so a replay test that relied on the default could never
+ * reach its own waitFor, and a failure surfaced as a bare "test timed out"
+ * instead of the element diff that says which line never appeared.
+ */
+const LOG_REVEAL_TIMEOUT = 3000;
+const REPLAY_ASSERT_TIMEOUT = 5000;
+const REPLAY_TEST_TIMEOUT = 10000;
+
+/**
+ * Render in combat with `SEED_LOG_ENTRY` already on the log and wait for it to
+ * be revealed, then hand back a `replay(entries)` that rerenders with the seed
+ * plus `entries`. Seven tests built this by hand, each restating the seed line
+ * and the timeout.
+ *
+ * `combat` carries FIELDS merged into every payload (a hurt `player`, say),
+ * not a finished one: both renders must agree about everything except the log,
+ * or the replay silently resets what the first render set up.
+ */
+const renderWithSeededLog = async ({ combat: combatFields = {}, ...props } = {}) => {
+    const withLog = (entries) =>
+        makeCombat({ log: [SEED_LOG_ENTRY, ...entries], ...combatFields });
+    const view = render(
+        <LeftPanel {...baseProps} mode="combat" combat={withLog([])} {...props} />
+    );
+    await waitFor(() => {
+        expect(screen.getByText(SEED_LOG_ENTRY.message)).toBeInTheDocument();
+    }, { timeout: LOG_REVEAL_TIMEOUT });
+    return {
+        ...view,
+        replay: (entries) => view.rerender(
+            <LeftPanel {...baseProps} mode="combat" combat={withLog(entries)} {...props} />
+        ),
+    };
+};
+
+/**
+ * Silence the console.error a test expects the component to emit. The
+ * `afterEach` below restores it, so no test restores its own.
+ */
+const silenceConsoleError = () => vi.spyOn(console, 'error').mockImplementation(() => {});
+
+/**
+ * The cooldown a card's own `stage_beats` implies: the adapter ships
+ * `stage_beat[3] + 1`, and makeAvailableOption's default cooldown is 4.
+ */
+const DEFAULT_COOLDOWN_MAX = 5;
+
+/**
+ * A move the adapter is holding back for `beats` more beats. Three of the
+ * four fields follow from that number: `cooldown_remaining` and the number in
+ * the sentence are one expression there (`beats_left + 1`), and a cooling
+ * move is never `available`. The fourth is a maximum, which the adapter
+ * raises to the remaining count when a card outlasts its own cooldown
+ * (`max(stage_beat[3] + 1, cd_remaining)`) -- so it cannot be the lower of
+ * the two whatever `beats` is asked for.
+ */
+const cooldownCard = ({ beats, ...overrides }) => makeAvailableOption({
+    cooldown_remaining: beats,
+    cooldown_max: Math.max(DEFAULT_COOLDOWN_MAX, beats),
+    available: false,
+    reason: `Available in ${beats} beats`,
+    ...overrides,
+});
+
+/**
+ * An untargeted Maneuver: no auto-target, no picker, so it takes the default
+ * submit path. Two tests drive that path -- one on the success side, one on
+ * the rejection side -- from the same card.
+ */
+const restCard = (overrides = {}) => makeAvailableOption({
+    id: '1', name: 'Rest', category: 'Maneuver', targeted: false,
+    ...overrides,
+});
+
+/**
+ * The engine's Check as the adapter cards it: untargeted, free, Utility
+ * (src/moves/_utility.py). `KEEP_TAB_MOVES` holds only this move, so it is
+ * the one card that can exercise the instant-move branches.
+ */
+const checkCard = (overrides = {}) => makeAvailableOption({
+    id: '1', name: 'Check', category: 'Utility',
+    targeted: false, fatigue_cost: 0,
+    ...overrides,
+});
 
 describe('LeftPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
+    // Restores any console.error spy a test installed, whether or not that
+    // test's assertions passed, so no test restores its own.
+    afterEach(() => {
+        if (vi.isMockFunction(console.error)) console.error.mockRestore();
+    });
+
     it.each([
-        // [mode, header, panel shown below the hero, panel hidden]
-        ['exploration', 'Heart of Virtue - Exploration', 'room-contents', 'combat-log'],
-        ['combat', 'Heart of Virtue - Combat', 'combat-log', 'room-contents'],
-    ])('titles the panel for %s mode and forwards the live player to HeroPanel', (mode, title, shown, hidden) => {
+        // [mode, header, panel shown below the hero, panel hidden, HP HeroPanel shows]
+        ['exploration', 'Heart of Virtue - Exploration', 'room-contents', 'combat-log', '100'],
+        ['combat', 'Heart of Virtue - Combat', 'combat-log', 'room-contents', '42'],
+    ])('titles the panel for %s mode and forwards the live player to HeroPanel', (mode, title, shown, hidden, hp) => {
         render(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode={mode}
-                combat={{ log: [], beat_states: [{ enemies: [] }] }}
+                combat={makeCombat({ player: makeCombatant({ hp: 42 }) })}
             />
         );
         // The exact header string (and the absence of the other mode's), not a
@@ -189,9 +334,10 @@ describe('LeftPanel', () => {
         const other = mode === 'combat' ? 'Heart of Virtue - Exploration' : 'Heart of Virtue - Combat';
         expect(screen.getByText(title)).toBeInTheDocument();
         expect(screen.queryByText(other)).toBeNull();
-        // ...and the player really reaches HeroPanel rather than the panel just
-        // being present with an undefined player.
-        expect(screen.getByTestId('hero-player-hp')).toHaveTextContent('100');
+        // ...and the live player really reaches HeroPanel rather than the panel
+        // just being present with an undefined one: the base player while
+        // exploring, with the combatant payload merged over it in combat.
+        expect(screen.getByTestId('hero-player-hp')).toHaveTextContent(hp);
         // Each mode swaps the lower half: room contents while exploring, the
         // combat log while fighting.
         expect(screen.getByTestId(shown)).toBeInTheDocument();
@@ -204,10 +350,9 @@ describe('LeftPanel', () => {
         // its title bar as <header>/<h1>.
         const { container } = render(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="exploration"
-                combat={{ log: [], beat_states: [{ enemies: [] }] }}
+                combat={makeCombat()}
             />
         );
 
@@ -230,7 +375,7 @@ describe('LeftPanel', () => {
      */
     describe('modal background marking (issue #563)', () => {
         const renderPanel = () => render(
-            <LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />
+            <LeftPanel {...baseProps} mode="exploration" />
         );
 
         it('marks the header and the content well as modal background', () => {
@@ -292,20 +437,16 @@ describe('LeftPanel', () => {
      * These cases pin that, so the finding cannot be re-filed as a layout bug.
      */
     describe('tactical advisor turn gating (issue #565)', () => {
-        const playerTurn = {
-            log: [{ message: 'Jean attacks Slime', round: 1, type: 'combat' }],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            beat_states: [{ enemies: [] }],
-            available_options: [{ name: 'Slash', available: true, cooldown_remaining: 2, cooldown_max: 3, category: 'Offensive' }],
-        };
+        const playerTurn = combatWith(
+            [cooldownCard({ id: '1', name: 'Slash', beats: 2 })],
+            { log: [{ message: 'Jean attacks Slime', round: 1, type: 'combat' }] },
+        );
         // The enemy's turn is simply "not awaiting input".
         const enemyTurn = { ...playerTurn, awaiting_input: false };
 
         const renderCombat = (combat, isMobile) => render(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="combat"
                 combat={combat}
                 isMobile={isMobile}
@@ -360,7 +501,7 @@ describe('LeftPanel', () => {
             'party-panel', 'inventory-dialog', 'skills-panel',
             'stats-panel', 'actions-panel', 'interact-panel',
         ];
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
 
         fireEvent.click(screen.getByText(button));
         const open = ALL.filter((id) => screen.queryByTestId(id) !== null);
@@ -371,7 +512,7 @@ describe('LeftPanel', () => {
     });
 
     it('opens audio and account dialogs from header', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
 
         fireEvent.click(screen.getByTitle(/^Settings$/i));
         expect(screen.getByTestId('audio-dialog')).toBeInTheDocument();
@@ -387,7 +528,7 @@ describe('LeftPanel', () => {
     it('opens and closes the journal from the header (issue #538)', () => {
         // The journal lives in the header rather than on the HeroPanel action
         // star so it is reachable from combat too — hence the combat-mode half.
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
 
         expect(screen.queryByTestId('journal-dialog')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Open journal' }));
@@ -397,15 +538,15 @@ describe('LeftPanel', () => {
     });
 
     it('keeps the journal reachable in combat', () => {
-        const combat = { log: [], awaiting_input: false, beat_states: [{ enemies: [] }] };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = makeCombat();
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Open journal' }));
         expect(screen.getByTestId('journal-dialog')).toBeInTheDocument();
     });
 
     it('closes panels when their close buttons are clicked', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
 
         fireEvent.click(screen.getByText('Status Btn'));
         expect(screen.getByTestId('party-panel')).toBeDefined();
@@ -419,19 +560,18 @@ describe('LeftPanel', () => {
     });
 
     it('handles combat mode and log processing', async () => {
-        const combat = {
+        const combat = makeCombat({
             log: [
                 { message: 'Jean attacks Slime', round: 1, type: 'action' },
                 { message: 'Jean hit Slime for 10 damage', round: 1, type: 'result' }
             ],
             awaiting_input: true,
             input_type: 'move_selection',
-            beat_states: [{ enemies: [] }]
-        };
+        });
 
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
 
-        expect(await screen.findByText('Jean hit Slime for 10 damage', {}, { timeout: 3000 }))
+        expect(await screen.findByText('Jean hit Slime for 10 damage', {}, { timeout: LOG_REVEAL_TIMEOUT }))
             .toBeInTheDocument();
         // The log must render in the order the backend sent it — checking each
         // line's mere presence passes for a reversed or reordered log.
@@ -443,41 +583,34 @@ describe('LeftPanel', () => {
     it('calls onMoveSubmitted when a target is selected via CombatInputDialog', async () => {
         const onMoveSubmitted = vi.fn()
         const onCombatAction = vi.fn().mockResolvedValue({})
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'target_selection',
-            available_options: [{ id: 'target-1', name: 'Slime' }],
-            beat_states: [{ enemies: [] }]
-        }
+        const combat = awaitingTargetPick()
         render(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="combat"
                 combat={combat}
                 onMoveSubmitted={onMoveSubmitted}
                 onCombatAction={onCombatAction}
             />
         )
-        await screen.findByTestId('combat-input-dialog', {}, { timeout: 3000 })
-        fireEvent.click(screen.getByText('Select Target'))
+        await screen.findByTestId('combat-input-dialog', {}, { timeout: LOG_REVEAL_TIMEOUT })
+        fireEvent.click(screen.getByText('Send Input'))
         await waitFor(() => {
             expect(onMoveSubmitted).toHaveBeenCalledTimes(1)
         }, { timeout: 1000 })
         // The selection must actually reach the API as a `target` command with
         // the chosen id — a bare "onMoveSubmitted fired" check passes even when
         // the wrong target, or nothing at all, is sent to the server.
-        expect(onCombatAction).toHaveBeenCalledWith('target', { target_id: 'target-1' })
+        expect(onCombatAction).toHaveBeenCalledWith('target', { target_id: enemyId(2) })
     })
 
     it('renders nothing when player is not yet loaded', () => {
-        const { container } = render(<LeftPanel player={null} location={mockLocation} mode="exploration" />);
+        const { container } = render(<LeftPanel player={null} location={baseLocation} mode="exploration" />);
         expect(container.firstChild).toBeNull();
     });
 
     it('opens and closes the feedback dialog', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
         fireEvent.click(screen.getByText('Feedback'));
         expect(screen.getByTestId('feedback-dialog')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Close Feedback'));
@@ -485,7 +618,7 @@ describe('LeftPanel', () => {
     });
 
     it('toggles the interact panel closed when the main interact button is clicked again', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
         fireEvent.click(screen.getByText('Interact Btn'));
         expect(screen.getByTestId('interact-panel')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Interact Btn'));
@@ -493,13 +626,13 @@ describe('LeftPanel', () => {
     });
 
     it('opens the interact panel with a specific target from the room description', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
         fireEvent.click(screen.getByText('Interact With Lever'));
         expect(screen.getByText('target:a rusty lever')).toBeInTheDocument();
     });
 
     it('closes inventory when skills is opened and vice versa', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
         fireEvent.click(screen.getByText('Inventory Btn'));
         expect(screen.getByTestId('inventory-dialog')).toBeInTheDocument();
 
@@ -509,7 +642,7 @@ describe('LeftPanel', () => {
     });
 
     it('opens the shop dialog via InteractPanel and closes it', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
         fireEvent.click(screen.getByText('Interact Btn'));
         fireEvent.click(screen.getByText('Open Shop'));
 
@@ -522,17 +655,11 @@ describe('LeftPanel', () => {
     });
 
     it('shows the cooldown tray when moves are on cooldown in combat', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [
-                makeCombatMove({ id: '1', name: 'Slash', category: 'Offensive', cooldown_remaining: 2 }),
-                makeCombatMove({ id: '2', name: 'Guard', category: 'Defensive', cooldown_remaining: 0 }),
-            ],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = combatWith([
+            cooldownCard({ id: '1', name: 'Slash', category: 'Offensive', beats: 2 }),
+            makeAvailableOption({ id: '2', name: 'Guard', category: 'Defensive', cooldown_remaining: 0 }),
+        ]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         expect(screen.getByTestId('cooldown-tray')).toHaveTextContent('1 on cooldown');
     });
 
@@ -540,77 +667,56 @@ describe('LeftPanel', () => {
         // These are the exact keys the serializer emits: `player.heat` is the
         // raw float multiplier (CombatantSerializer), NOT battle_state's own
         // `heat` (which is round(heat*100) and absent from beat states).
-        const combat = {
-            log: [],
-            beat: 7,
-            combat_id: 'fight-0001',
-            player: { hp: 100, heat: 1.62 },
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = makeCombat({ beat: 7, combat_id: 'fight-0001', player: makeCombatant({ heat: 1.62 }) });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         expect(screen.getByTestId('heat-meter')).toHaveTextContent('1.62|7|fight-0001');
     });
 
     it('hides the heat meter outside combat', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" combat={{ log: [], beat_states: [{ enemies: [] }] }} />);
+        render(<LeftPanel {...baseProps} mode="exploration" combat={makeCombat()} />);
         expect(screen.queryByTestId('heat-meter')).toBeNull();
     });
 
-    it('shows the flee button once enemies are all 20ft or further away', () => {
-        const combat = {
-            log: [],
+    it('shows the flee button once every enemy is at the break-away distance', () => {
+        const combat = makeCombat({
             awaiting_input: true,
-            enemies: [{ id: enemyId(1), distance: 25 }],
-            beat_states: [{ enemies: [] }],
-        };
+            enemies: [makeEnemy({ distance: FLEE_BREAK_AWAY_DISTANCE_FT + 5 })],
+        });
         const onCombatAction = vi.fn();
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByTestId('flee-button'));
         expect(onCombatAction).toHaveBeenCalledWith('flee', {});
     });
 
     it('does not show the flee button when an enemy is too close', () => {
-        const combat = {
-            log: [],
+        const combat = makeCombat({
             awaiting_input: true,
-            enemies: [{ id: enemyId(1), distance: 5 }],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+            enemies: [makeEnemy({ distance: FLEE_BREAK_AWAY_DISTANCE_FT - 1 })],
+        });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         expect(screen.queryByTestId('flee-button')).not.toBeInTheDocument();
     });
 
+    // Defensive: `serialize_combatant` emits `distance` unconditionally and
+    // `_get_distance` falls back to 0 rather than omitting it, so the server
+    // never sends this payload. Pinned so a truncated one reads as "adjacent"
+    // -- refusing the flee -- instead of as "far enough to run".
     it('treats an enemy with no distance field as too close to flee (defaults to 0)', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            enemies: [{ id: enemyId(1) }],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const { distance: _distance, ...enemyWithoutDistance } = makeEnemy();
+        const combat = makeCombat({ awaiting_input: true, enemies: [enemyWithoutDistance] });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         expect(screen.queryByTestId('flee-button')).not.toBeInTheDocument();
     });
 
     it('merges combat.player onto the base player for the hero panel', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            player: { hp: 42 },
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = makeCombat({ awaiting_input: true, player: makeCombatant({ hp: 42 }) });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         expect(screen.getByTestId('hero-player-hp')).toHaveTextContent('42');
     });
 
     it('opens the move panel for a category and toggles it closed on re-click', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({ id: '1', name: 'Slash', category: 'Offensive', available: true })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = combatWith([makeAvailableOption({ id: '1', name: 'Slash', category: 'Offensive' })]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
 
         fireEvent.click(screen.getByText('Offensive Btn'));
         expect(screen.getByTestId('combat-move-panel')).toBeInTheDocument();
@@ -637,14 +743,6 @@ describe('LeftPanel', () => {
         Special: 'special',
     };
 
-    const combatWith = (moves) => ({
-        log: [],
-        awaiting_input: true,
-        input_type: 'move_selection',
-        available_options: moves,
-        beat_states: [{ enemies: [] }],
-    });
-
     /** Every (group, engine category) pair the shared map declares. */
     const GROUP_CATEGORY_PAIRS = Object.entries(CATEGORY_GROUPS).flatMap(
         ([group, categories]) => categories.map((category) => [group, category])
@@ -662,10 +760,10 @@ describe('LeftPanel', () => {
         (group, category) => {
             render(
                 <LeftPanel
-                    player={mockPlayer}
-                    location={mockLocation}
+                    player={basePlayer}
+                    location={baseLocation}
                     mode="combat"
-                    combat={combatWith([makeCombatMove({ id: '1', name: `A ${category} move`, category })])}
+                    combat={combatWith([makeAvailableOption({ id: '1', name: `A ${category} move`, category })])}
                 />
             );
             // Exactly one flag: zero means the move has no button at all, two
@@ -677,10 +775,10 @@ describe('LeftPanel', () => {
 
     it('lights every button at once when one move of each mapped category is available', () => {
         const moves = GROUP_CATEGORY_PAIRS.map(([, category], i) =>
-            makeCombatMove({ id: String(i), name: `Move ${i}`, category })
+            makeAvailableOption({ id: String(i), name: `Move ${i}`, category })
         );
         render(
-            <LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combatWith(moves)} />
+            <LeftPanel {...baseProps} mode="combat" combat={combatWith(moves)} />
         );
         // HeroPanel renders the flags in a fixed order, so compare as a set.
         const flags = screen.getByTestId('hero-flags').textContent.split(',').filter(Boolean);
@@ -691,10 +789,9 @@ describe('LeftPanel', () => {
         // `Passive` moves are never castable, so they must reach no button.
         render(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="combat"
-                combat={combatWith([makeCombatMove({ id: '1', name: 'Iron Fist', category: 'Passive' })])}
+                combat={combatWith([makeAvailableOption({ id: '1', name: 'Iron Fist', category: 'Passive' })])}
             />
         );
         expect(screen.getByTestId('hero-flags')).toHaveTextContent('');
@@ -703,10 +800,9 @@ describe('LeftPanel', () => {
     it('tolerates a nameless move while still routing it by category', () => {
         render(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="combat"
-                combat={combatWith([makeCombatMove({ id: '1', name: undefined, category: 'Tactical' })])}
+                combat={combatWith([makeAvailableOption({ id: '1', name: undefined, category: 'Tactical' })])}
             />
         );
         expect(screen.getByTestId('hero-flags')).toHaveTextContent('misc');
@@ -717,48 +813,39 @@ describe('LeftPanel', () => {
         // combat buttons into exploration.
         render(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="exploration"
-                combat={combatWith([makeCombatMove({ id: '1', name: 'Slash', category: 'Offensive' })])}
+                combat={combatWith([makeAvailableOption({ id: '1', name: 'Slash', category: 'Offensive' })])}
             />
         );
         expect(screen.getByTestId('hero-flags')).toHaveTextContent('');
     });
 
-    // useApi's transformCombatData spreads battle_state flat onto the combat
-    // object, so a nested battle_state never reaches this component.
+    // transformCombatData (utils/combatTransform.js) spreads battle_state flat
+    // onto the combat object, so a nested battle_state never reaches this
+    // component.
     it('reads moves from the flattened combat shape, not a nested battle_state', () => {
+        // Attached outside makeCombat, which throws on a `battle_state`
+        // override: no response carries one, and building the impossible
+        // shape is this test's whole point.
         const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            battle_state: {
-                available_options: [makeCombatMove({ id: '2', name: 'Reap', category: 'Offensive', available: true })],
-            },
-            available_options: [makeCombatMove({ id: '1', name: 'Slash', category: 'Offensive', available: true })],
-            beat_states: [{ enemies: [] }],
+            ...combatWith([makeAvailableOption({ id: '1', name: 'Slash', category: 'Offensive' })]),
+            battle_state: { available_options: [makeAvailableOption({ id: '2', name: 'Reap', category: 'Offensive' })] },
         };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         expect(screen.getByText('Slash')).toBeInTheDocument();
         expect(screen.queryByText('Reap')).not.toBeInTheDocument();
     });
 
     it('excludes the UseItem and "Use Item" moves from the combat move panel, and tolerates a nameless move', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [
-                makeCombatMove({ id: '1', name: 'Slash', category: 'Offensive', available: true }),
-                makeCombatMove({ id: '2', name: 'UseItem', category: 'Offensive', available: true }),
-                makeCombatMove({ id: '3', name: 'Use Item', category: 'Offensive', available: true }),
-                makeCombatMove({ id: '4', name: undefined, category: 'Offensive', available: true }),
-            ],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = combatWith([
+            makeAvailableOption({ id: '1', name: 'Slash', category: 'Offensive' }),
+            makeAvailableOption({ id: '2', name: 'UseItem', category: 'Offensive' }),
+            makeAvailableOption({ id: '3', name: 'Use Item', category: 'Offensive' }),
+            makeAvailableOption({ id: '4', name: undefined, category: 'Offensive' }),
+        ]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         expect(screen.getByText('Slash')).toBeInTheDocument();
         expect(screen.queryByText('UseItem')).not.toBeInTheDocument();
@@ -794,7 +881,7 @@ describe('LeftPanel', () => {
         [90, 77.5, 'scale(0.4)'],
     ])('scales the hero panel to fit a %sx%s container', (w, h, expected) => {
         withContainerSize(w, h, () => {
-            render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+            render(<LeftPanel {...baseProps} mode="exploration" />);
             expect(heroScale()).toBe(expected);
         });
     });
@@ -802,7 +889,7 @@ describe('LeftPanel', () => {
     it('leaves the hero panel unscaled when the container reports zero bounds', () => {
         // A pre-layout measurement must not collapse the panel to the 0.4 floor.
         withContainerSize(0, 0, () => {
-            render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+            render(<LeftPanel {...baseProps} mode="exploration" />);
             expect(heroScale()).toBe('scale(1)');
         });
     });
@@ -814,7 +901,7 @@ describe('LeftPanel', () => {
     // just as the wrapper's own CSS transform.
     it('forwards the computed heroScale number to HeroPanel, matching the wrapper transform', () => {
         withContainerSize(720, 465, () => {
-            render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+            render(<LeftPanel {...baseProps} mode="exploration" />);
             expect(heroScale()).toBe('scale(1.5)');
             expect(screen.getByTestId('hero-scale')).toHaveTextContent('1.5');
         });
@@ -823,20 +910,10 @@ describe('LeftPanel', () => {
     it('auto-selects the single viable target for a targeted move without requiring selection', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
         const onMoveSubmitted = vi.fn();
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Slash', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: false,
-                viable_targets: [{ id: 'enemy_1' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
+        const combat = combatWith([singleTargetMove()]);
         render(
             <LeftPanel
-                player={mockPlayer} location={mockLocation} mode="combat" combat={combat}
+                {...baseProps} mode="combat" combat={combat}
                 onCombatAction={onCombatAction} onMoveSubmitted={onMoveSubmitted}
             />
         );
@@ -845,7 +922,7 @@ describe('LeftPanel', () => {
 
         await waitFor(() => {
             expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-                move_name: 'Slash', target_id: 'enemy_1',
+                move_name: 'Slash', target_id: enemyId(1),
             });
         });
         // Submitting a move flips the mobile view to the battlefield tab.
@@ -855,20 +932,13 @@ describe('LeftPanel', () => {
     it('does not notify onMoveSubmitted for instant/non-turn-consuming moves', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
         const onMoveSubmitted = vi.fn();
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Check', category: 'Utility', available: true,
-                targeted: true, requires_target_selection: false,
-                viable_targets: [{ id: 'enemy_1' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
+        // Untargeted means no auto-target and no picker, so a real Check
+        // takes the DEFAULT submit path -- which had no coverage at all while
+        // this fixture claimed `targeted: true`.
+        const combat = combatWith([checkCard()]);
         render(
             <LeftPanel
-                player={mockPlayer} location={mockLocation} mode="combat" combat={combat}
+                {...baseProps} mode="combat" combat={combat}
                 onCombatAction={onCombatAction} onMoveSubmitted={onMoveSubmitted}
             />
         );
@@ -876,45 +946,60 @@ describe('LeftPanel', () => {
         fireEvent.click(screen.getByText('Check'));
 
         await waitFor(() => {
-            // The move is dispatched by name against the sole live enemy —
-            // asserting the payload catches a wrong move_name or target_id,
-            // which a bare toHaveBeenCalled() would wave through.
-            expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-                move_name: 'Check', target_id: 'enemy_1',
-            });
+            // By id, the default flow's payload -- asserting it catches a
+            // wrong move_id, which a bare toHaveBeenCalled() would wave through.
+            expect(onCombatAction).toHaveBeenCalledWith('move', { move_id: '1' });
         });
         // ...and it does NOT flip the mobile view to the battlefield.
         expect(onMoveSubmitted).not.toHaveBeenCalled();
     });
 
+    // Defensive: KEEP_TAB_MOVES holds only 'Check', and the engine's Check is
+    // untargeted, so no card can be both instant and auto-targetable. Pinned
+    // because the auto-target path carries its own copy of the notify guard,
+    // and nothing else would fail if that copy stopped checking.
+    it('does not notify onMoveSubmitted when an instant move auto-resolves a target', async () => {
+        const onCombatAction = vi.fn().mockResolvedValue({});
+        const onMoveSubmitted = vi.fn();
+        // Only the targeting is impossible; the rest is the real card.
+        const combat = combatWith([checkCard({
+            targeted: true,
+            viable_targets: [makeTargetOption({ id: enemyId(1) })],
+        })]);
+        render(
+            <LeftPanel
+                {...baseProps} mode="combat" combat={combat}
+                onCombatAction={onCombatAction} onMoveSubmitted={onMoveSubmitted}
+            />
+        );
+        fireEvent.click(screen.getByText('Miscellaneous Btn'));
+        fireEvent.click(screen.getByText('Check'));
+
+        await waitFor(() => {
+            expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
+                move_name: 'Check', target_id: enemyId(1),
+            });
+        });
+        expect(onMoveSubmitted).not.toHaveBeenCalled();
+    });
+
     it('ignores clicks on an unavailable move', () => {
         const onCombatAction = vi.fn();
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({ id: '1', name: 'Slash', category: 'Offensive', available: false })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        // Every unavailable branch of _get_available_moves assigns a reason,
+        // so `available: false` with a null one is a card it cannot send.
+        const combat = combatWith([makeAvailableOption({
+            id: '1', name: 'Slash', category: 'Offensive',
+            available: false, reason: NOT_ENOUGH_FATIGUE_REASON,
+        })]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Slash'));
         expect(onCombatAction).not.toHaveBeenCalled();
     });
 
     it('opens a local target-selection dialog for moves that require it', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Lunge', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: true,
-                viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = combatWith([lungeNeedingTarget()]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
         expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
@@ -924,18 +1009,12 @@ describe('LeftPanel', () => {
     // category to label its confirm button correctly (STRIKE only for a
     // genuine attack) instead of a fixed "STRIKE" for every move.
     it('forwards the selected move\'s name and category to the target-selection dialog', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Advance', category: 'Maneuver', available: true,
-                targeted: true, requires_target_selection: true,
-                viable_targets: [{ id: 'enemy_1' }, { id: 'ally_1' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = combatWith([makeAvailableOption({
+            id: '1', name: 'Advance', category: 'Maneuver',
+            targeted: true,
+            viable_targets: [makeTargetOption(), makeTargetOption({ id: allyId(1), name: 'Gorran', is_ally: true })],
+        })]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         fireEvent.click(screen.getByText('Maneuver Btn'));
         fireEvent.click(screen.getByText('Advance'));
 
@@ -951,18 +1030,8 @@ describe('LeftPanel', () => {
     // overlapping the other. The completion branch (handleInputSelection)
     // already closes the move panel; the opening branch did not.
     it('hides the combat move panel once the local target-selection dialog opens', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Lunge', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: true,
-                viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = combatWith([lungeNeedingTarget()]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         expect(screen.getByTestId('combat-move-panel')).toBeInTheDocument();
 
@@ -973,25 +1042,17 @@ describe('LeftPanel', () => {
 
     it('sends the local target selection and clears it on success', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Lunge', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: true,
-                viable_targets: [{ id: 'enemy_1' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = combatWith([lungeNeedingTarget()]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
-        fireEvent.click(screen.getByText('Select Target'));
+        fireEvent.click(screen.getByText('Send Input'));
 
+        // The mock picks the second of the two targets, so this is the one
+        // picked, not merely the first one offered.
         await waitFor(() => {
             expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-                move_name: 'Lunge', target_id: 'target-1',
+                move_name: 'Lunge', target_id: enemyId(2),
             });
         });
         await waitFor(() => {
@@ -1001,18 +1062,8 @@ describe('LeftPanel', () => {
 
     it('cancels a local target-selection dialog without calling the API', () => {
         const onCombatAction = vi.fn();
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Lunge', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: true,
-                viable_targets: [{ id: 'enemy_1' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = combatWith([lungeNeedingTarget()]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
         fireEvent.click(screen.getByText('Cancel Input'));
@@ -1024,21 +1075,9 @@ describe('LeftPanel', () => {
     // The clearing effect used to key on turn_number/combat_id, neither of which
     // exists on the client combat object — so a picker outlived its own turn.
     it('closes a stale local target picker when the beat advances', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            round: 1,
-            beat: 1,
-            available_options: [makeCombatMove({
-                id: '1', name: 'Lunge', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: true,
-                viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
+        const combat = combatWith([lungeNeedingTarget()], { round: 1, beat: 1 });
         const { rerender } = render(
-            <LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />
+            <LeftPanel {...baseProps} mode="combat" combat={combat} />
         );
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
@@ -1046,8 +1085,7 @@ describe('LeftPanel', () => {
 
         rerender(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="combat"
                 combat={{ ...combat, beat: 2, awaiting_input: false }}
             />
@@ -1056,21 +1094,9 @@ describe('LeftPanel', () => {
     });
 
     it('closes a stale local target picker when the round advances', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            round: 1,
-            beat: 3,
-            available_options: [makeCombatMove({
-                id: '1', name: 'Lunge', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: true,
-                viable_targets: [{ id: 'enemy_1' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
+        const combat = combatWith([lungeNeedingTarget()], { round: 1, beat: 3 });
         const { rerender } = render(
-            <LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />
+            <LeftPanel {...baseProps} mode="combat" combat={combat} />
         );
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
@@ -1078,8 +1104,7 @@ describe('LeftPanel', () => {
 
         rerender(
             <LeftPanel
-                player={mockPlayer}
-                location={mockLocation}
+                {...baseProps}
                 mode="combat"
                 combat={{ ...combat, round: 2, awaiting_input: false }}
             />
@@ -1087,60 +1112,39 @@ describe('LeftPanel', () => {
         expect(screen.queryByTestId('combat-input-dialog')).not.toBeInTheDocument();
     });
 
-    // Named for the list being EMPTY, not absent: `makeCombatMove` supplies
-    // `viable_targets: []` and the adapter emits the key on every targeted
-    // move, so an absent list is not a payload the client can receive.
-    it('opens an empty local target-selection dialog when viable_targets is empty', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Lunge', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: true,
-            })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+    // Defensive: the adapter sets requires_target_selection only when a move
+    // has two or more viable targets, so the server never sends this payload.
+    // Pinned so a flagged move arriving with an empty list still opens the
+    // picker rather than crashing LeftPanel.
+    it('still opens the target picker for a flagged move whose target list is empty', () => {
+        // The flag is spelled out because the builder derives it from the
+        // target list, and this payload's whole point is that the two disagree.
+        const combat = combatWith([
+            lungeNeedingTarget({ viable_targets: [], requires_target_selection: true }),
+        ]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Lunge'));
         expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
     });
 
     it('logs an error and resets pending state when auto-target selection fails', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const errorSpy = silenceConsoleError();
         const onCombatAction = vi.fn().mockRejectedValue(new Error('network down'));
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({
-                id: '1', name: 'Slash', category: 'Offensive', available: true,
-                targeted: true, requires_target_selection: false,
-                viable_targets: [{ id: 'enemy_1' }],
-            })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = combatWith([singleTargetMove()]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         fireEvent.click(screen.getByText('Slash'));
 
         await waitFor(() => {
             expect(errorSpy).toHaveBeenCalledWith('Failed to auto-select target:', expect.any(Error));
         });
-        errorSpy.mockRestore();
     });
 
     it('executes a non-targeted move via the default flow', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({ id: '1', name: 'Rest', category: 'Maneuver', available: true, targeted: false })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = combatWith([restCard()]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Maneuver Btn'));
         fireEvent.click(screen.getByText('Rest'));
 
@@ -1150,131 +1154,105 @@ describe('LeftPanel', () => {
     });
 
     it('logs an error and does not crash when move execution rejects', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const errorSpy = silenceConsoleError();
         const onCombatAction = vi.fn().mockRejectedValue(new Error('server error'));
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [makeCombatMove({ id: '1', name: 'Rest', category: 'Maneuver', available: true, targeted: false })],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = combatWith([restCard()]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Maneuver Btn'));
         fireEvent.click(screen.getByText('Rest'));
 
         await waitFor(() => {
             expect(errorSpy).toHaveBeenCalledWith('Failed to execute move:', expect.any(Error));
         });
-        errorSpy.mockRestore();
     });
 
     it('sends a direction selection through the combat input dialog', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
-        const combat = {
-            log: [],
+        const combat = makeCombat({
             awaiting_input: true,
             input_type: 'direction_selection',
-            available_options: [],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+            available_options: TURN_DIRECTIONS,
+        });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         await waitFor(() => screen.getByTestId('combat-input-dialog'));
-        fireEvent.click(screen.getByText('Select Target'));
+        fireEvent.click(screen.getByText('Send Input'));
+        // The last direction offered, which the mock picks.
         await waitFor(() => {
-            expect(onCombatAction).toHaveBeenCalledWith('direction', { direction: 'target-1' });
+            expect(onCombatAction).toHaveBeenCalledWith('direction', { direction: 'west' });
         });
     });
 
     it('sends a number input through the combat input dialog', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
-        const combat = {
-            log: [],
+        const combat = makeCombat({
             awaiting_input: true,
             input_type: 'number_input',
-            available_options: [],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+            available_options: WAIT_DURATION_PROMPT,
+        });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         await waitFor(() => screen.getByTestId('combat-input-dialog'));
-        fireEvent.click(screen.getByText('Select Target'));
+        fireEvent.click(screen.getByText('Send Input'));
+        // The prompt's default, which the mock picks.
         await waitFor(() => {
-            expect(onCombatAction).toHaveBeenCalledWith('number', { value: 'target-1' });
+            expect(onCombatAction).toHaveBeenCalledWith('number', { value: 5 });
         });
     });
 
     it('cancels the backend-driven input dialog and notifies the API', async () => {
         const onCombatAction = vi.fn().mockResolvedValue({});
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'target_selection',
-            available_options: [{ id: 'target-1', name: 'Slime' }],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = awaitingTargetPick();
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         await waitFor(() => screen.getByTestId('combat-input-dialog'));
         fireEvent.click(screen.getByText('Cancel Input'));
         expect(onCombatAction).toHaveBeenCalledWith('cancel', {});
     });
 
     it('logs an error when sending backend input fails', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const errorSpy = silenceConsoleError();
         const onCombatAction = vi.fn().mockRejectedValue(new Error('boom'));
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'target_selection',
-            available_options: [{ id: 'target-1', name: 'Slime' }],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = awaitingTargetPick();
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         await waitFor(() => screen.getByTestId('combat-input-dialog'));
-        fireEvent.click(screen.getByText('Select Target'));
+        fireEvent.click(screen.getByText('Send Input'));
         await waitFor(() => {
             expect(errorSpy).toHaveBeenCalledWith('Failed to send input:', expect.any(Error));
         });
-        errorSpy.mockRestore();
     });
 
     it('shows the suggested moves panel and repeats the last move by name', () => {
         const onCombatAction = vi.fn();
-        const combat = {
-            log: [],
+        const combat = makeCombat({
             awaiting_input: true,
             last_move_name: 'Slash',
-            last_move_target_id: 'enemy_1',
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+            last_move_target_id: enemyId(1),
+        });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Repeat Last'));
         expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-            move_name: 'Slash', target_id: 'enemy_1',
+            move_name: 'Slash', target_id: enemyId(1),
         });
     });
 
     it('falls back to the first suggested move when repeating with no last move on record', () => {
         const onCombatAction = vi.fn();
-        const combat = {
-            log: [],
+        const combat = makeCombat({
             awaiting_input: true,
-            suggested_moves: [{ move_name: 'Guard', target_id: 'enemy_2' }],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+            suggested_moves: [makeSuggestedMove({ move_name: 'Guard', target_id: enemyId(2) })],
+        });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Repeat Last'));
         expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-            move_name: 'Guard', target_id: 'enemy_2',
+            move_name: 'Guard', target_id: enemyId(2),
         });
     });
 
     it('dispatches a directly-suggested move', () => {
         const onCombatAction = vi.fn();
-        const combat = { log: [], awaiting_input: true, beat_states: [{ enemies: [] }] };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = makeCombat({ awaiting_input: true });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Suggest Slash'));
         expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-            move_name: 'Slash', target_id: 'enemy_1',
+            move_name: 'Slash', target_id: enemyId(1),
         });
     });
 
@@ -1285,89 +1263,81 @@ describe('LeftPanel', () => {
         // error, which reads as a dead button. The availability was already on
         // the wire; the panel just never looked at it.
         const onCombatAction = vi.fn();
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            available_options: [
-                { name: 'Slash', available: false, reason: 'Not enough fatigue' },
-                { name: 'Guard', available: true, reason: null },
-            ],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = combatWith([
+            makeAvailableOption({ id: '0', name: 'Slash', available: false, reason: NOT_ENOUGH_FATIGUE_REASON }),
+            makeAvailableOption({ id: '1', name: 'Guard' }),
+        ]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
 
-        expect(screen.getByTestId('slash-blocked-reason')).toHaveTextContent('Not enough fatigue');
+        expect(screen.getByTestId('slash-blocked-reason')).toHaveTextContent(NOT_ENOUGH_FATIGUE_REASON);
         fireEvent.click(screen.getByText('Suggest Slash'));
         expect(onCombatAction).not.toHaveBeenCalled();
     });
 
     it('dispatches a suggested move the server reports as available', () => {
         const onCombatAction = vi.fn();
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            available_options: [{ name: 'Slash', available: true, reason: null }],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        const combat = combatWith([makeAvailableOption({ id: '0', name: 'Slash' })]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
 
         expect(screen.getByTestId('slash-blocked-reason')).toHaveTextContent('');
         fireEvent.click(screen.getByText('Suggest Slash'));
         expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-            move_name: 'Slash', target_id: 'enemy_1',
+            move_name: 'Slash', target_id: enemyId(1),
         });
     });
 
     it('skips an unavailable first suggestion when repeating with no last move on record', () => {
         const onCombatAction = vi.fn();
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            suggested_moves: [
-                { move_name: 'Guard', target_id: 'enemy_2' },
-                { move_name: 'Slash', target_id: 'enemy_1' },
+        const combat = combatWith(
+            [
+                // On cooldown, not "not ready yet" -- that string is the
+                // /move route's error body, never a card's `reason`.
+                cooldownCard({ id: '0', name: 'Guard', beats: 2 }),
+                makeAvailableOption({ id: '1', name: 'Slash' }),
             ],
-            available_options: [
-                { name: 'Guard', available: false, reason: 'Move not ready yet' },
-                { name: 'Slash', available: true, reason: null },
-            ],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+            {
+                suggested_moves: [
+                    makeSuggestedMove({ move_name: 'Guard', target_id: enemyId(2) }),
+                    makeSuggestedMove({ move_name: 'Slash', target_id: enemyId(1) }),
+                ],
+            },
+        );
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
         fireEvent.click(screen.getByText('Repeat Last'));
         expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
-            move_name: 'Slash', target_id: 'enemy_1',
+            move_name: 'Slash', target_id: enemyId(1),
         });
     });
 
     it('shows the check dialog when the backend sends check_data and closes it', () => {
-        const combat = {
-            log: [],
-            awaiting_input: false,
-            check_data: [{ label: 'Perception', value: 12 }],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = makeCombat({ check_data: [makeCheckEntry()] });
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
         expect(screen.getByTestId('combat-check-dialog')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Close Check'));
         expect(screen.queryByTestId('combat-check-dialog')).not.toBeInTheDocument();
     });
 
-    it('plays SFX cues that correspond to log message keywords', async () => {
-        // The very first batch of log lines a mount ever sees is treated as
-        // page-reload recovery (displayed instantly, no SFX) — seed one line
-        // first, then rerender with the real lines under test so they go
-        // through the normal (SFX-playing) path instead.
-        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
-        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
-        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
-        await waitFor(() => {
-            expect(screen.getByText('Combat begins')).toBeInTheDocument();
-        }, { timeout: 3000 });
+    /**
+     * The log reveals one line at a time, so every test here seeds a line,
+     * waits for it, then replays more on top -- `renderWithSeededLog` above.
+     * Grouped so that shared shape, and the timeout budgets it runs on, are
+     * scoped to the tests that actually use them.
+     */
+    describe('combat log replay', () => {
+        // The log-replay tests below build their combat through `makeCombat`,
+        // like every other fixture here, even though useCombatLogPlayback reads
+        // only `log` and `combat_id`: a bare `{ log }` object is a shape
+        // transformCombatData can never produce. LeftPanel merges `combat.player`
+        // over the `player` prop and the hook reads the merge, so the low-health
+        // case hands its hurt combatant to `makeCombat` rather than to the prop.
+        it('plays SFX cues that correspond to log message keywords', async () => {
+            // The very first batch of log lines a mount ever sees is treated as
+            // page-reload recovery (displayed instantly, no SFX) — seed one line
+            // first, then rerender with the real lines under test so they go
+            // through the normal (SFX-playing) path instead.
+            const { replay } = await renderWithSeededLog();
 
-        const newCombat = {
-            log: [
-                seedEntry,
+            replay([
                 { message: 'Jean attacks Slime', round: 1, type: 'action' },
                 { message: 'Jean hit Slime for 10 damage', round: 1, type: 'result' },
                 { message: 'Jean missed the strike', round: 1, type: 'result' },
@@ -1376,161 +1346,109 @@ describe('LeftPanel', () => {
                 { message: 'Jean is poisoned', round: 1, type: 'status' },
                 { message: 'Jean uses a Potion', round: 1, type: 'item' },
                 { message: 'Jean quest complete', round: 1, type: 'quest' },
-            ],
-            beat_states: [{ enemies: [] }],
-        };
-        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={newCombat} />);
+            ]);
 
-        await waitFor(() => {
-            expect(screen.getByText('Jean quest complete')).toBeInTheDocument();
-        }, { timeout: 8000 });
+            await waitFor(() => {
+                expect(screen.getByText('Jean quest complete')).toBeInTheDocument();
+                // Eight cues, revealed one at a time: the only replay in this
+                // file that needs more than REPLAY_ASSERT_TIMEOUT.
+            }, { timeout: 8000 });
 
-        expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe');
-        expect(mockPlaySFX).toHaveBeenCalledWith('attack_hit');
-        expect(mockPlaySFX).toHaveBeenCalledWith('attack_miss');
-        expect(mockPlaySFX).toHaveBeenCalledWith('attack_parry');
-        expect(mockPlaySFX).toHaveBeenCalledWith('enemy_death');
-        expect(mockPlaySFX).toHaveBeenCalledWith('status_hit');
-        expect(mockPlaySFX).toHaveBeenCalledWith('item_use');
-        expect(mockPlaySFX).toHaveBeenCalledWith('quest_complete');
-    }, 15000);
+            expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe');
+            expect(mockPlaySFX).toHaveBeenCalledWith('attack_hit');
+            expect(mockPlaySFX).toHaveBeenCalledWith('attack_miss');
+            expect(mockPlaySFX).toHaveBeenCalledWith('attack_parry');
+            expect(mockPlaySFX).toHaveBeenCalledWith('enemy_death');
+            expect(mockPlaySFX).toHaveBeenCalledWith('status_hit');
+            expect(mockPlaySFX).toHaveBeenCalledWith('item_use');
+            expect(mockPlaySFX).toHaveBeenCalledWith('quest_complete');
+        }, REPLAY_TEST_TIMEOUT);
 
-    it('plays a heal SFX and notifies onLogProgress/onLogProcessingChange/onDisplayedLogCountChange', async () => {
-        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
-        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
-        const onLogProgress = vi.fn();
-        const onLogProcessingChange = vi.fn();
-        const onDisplayedLogCountChange = vi.fn();
-        const { rerender } = render(
-            <LeftPanel
-                player={mockPlayer} location={mockLocation} mode="combat" combat={combat}
-                onLogProgress={onLogProgress}
-                onLogProcessingChange={onLogProcessingChange}
-                onDisplayedLogCountChange={onDisplayedLogCountChange}
-            />
-        );
-        await waitFor(() => {
-            expect(screen.getByText('Combat begins')).toBeInTheDocument();
-        }, { timeout: 3000 });
+        it('plays a heal SFX and notifies onLogProgress/onLogProcessingChange/onDisplayedLogCountChange', async () => {
+            const onLogProgress = vi.fn();
+            const onLogProcessingChange = vi.fn();
+            const onDisplayedLogCountChange = vi.fn();
+            const { replay } = await renderWithSeededLog({
+                onLogProgress,
+                onLogProcessingChange,
+                onDisplayedLogCountChange,
+            });
 
-        rerender(
-            <LeftPanel
-                player={mockPlayer} location={mockLocation} mode="combat"
-                combat={{
-                    log: [seedEntry, { message: 'Jean restores 20 HP', round: 1, type: 'result', beat_index: 3 }],
-                    beat_states: [{ enemies: [] }],
-                }}
-                onLogProgress={onLogProgress}
-                onLogProcessingChange={onLogProcessingChange}
-                onDisplayedLogCountChange={onDisplayedLogCountChange}
-            />
-        );
+            replay([
+                { message: 'Jean restores 20 HP', round: 1, type: 'result', beat_index: 3 },
+            ]);
 
-        await waitFor(() => {
-            expect(mockPlaySFX).toHaveBeenCalledWith('heal');
-        }, { timeout: 5000 });
-        expect(onLogProgress).toHaveBeenCalledWith(3);
-        expect(onLogProcessingChange).toHaveBeenCalledWith(true);
-        // Both log entries have been displayed by the time the SFX fires.
-        expect(onDisplayedLogCountChange).toHaveBeenLastCalledWith(2);
-    }, 10000);
+            await waitFor(() => {
+                expect(mockPlaySFX).toHaveBeenCalledWith('heal');
+            }, { timeout: REPLAY_ASSERT_TIMEOUT });
+            expect(onLogProgress).toHaveBeenCalledWith(3);
+            expect(onLogProcessingChange).toHaveBeenCalledWith(true);
+            // Both log entries have been displayed by the time the SFX fires.
+            expect(onDisplayedLogCountChange).toHaveBeenLastCalledWith(2);
+        }, REPLAY_TEST_TIMEOUT);
 
-    it('does not duplicate a log entry with the same message and round', async () => {
-        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
-        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
-        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
-        await waitFor(() => {
-            expect(screen.getByText('Combat begins')).toBeInTheDocument();
-        }, { timeout: 3000 });
+        it('does not duplicate a log entry with the same message and round', async () => {
+            const { replay } = await renderWithSeededLog();
 
-        const dupEntry = { message: 'Jean attacks Slime', round: 1, type: 'action' };
-        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={{
-            log: [seedEntry, dupEntry, { ...dupEntry }],
-            beat_states: [{ enemies: [] }],
-        }} />);
+            const dupEntry = { message: 'Jean attacks Slime', round: 1, type: 'action' };
+            replay([dupEntry, { ...dupEntry }]);
 
-        await waitFor(() => {
-            expect(screen.getAllByText('Jean attacks Slime').length).toBe(1);
-        }, { timeout: 5000 });
+            await waitFor(() => {
+                expect(screen.getAllByText('Jean attacks Slime').length).toBe(1);
+            }, { timeout: REPLAY_ASSERT_TIMEOUT });
+        });
+
+        it('does not play a quest SFX when "quest" appears without a completion keyword', async () => {
+            const { replay } = await renderWithSeededLog();
+
+            replay([{ message: 'A new quest is now available', round: 1, type: 'quest' }]);
+
+            await waitFor(() => {
+                expect(screen.getByText('A new quest is now available')).toBeInTheDocument();
+            }, { timeout: REPLAY_ASSERT_TIMEOUT });
+            expect(mockPlaySFX).not.toHaveBeenCalledWith('quest_complete');
+        });
+
+        it('plays a low-health warning when Jean is attacked below 30% HP', async () => {
+            // On the combatant, not the prop: LeftPanel merges `combat.player`
+            // over the prop, and the hook reads the merge.
+            const hurt = makeCombatant({ hp: 20 });
+            const { replay } = await renderWithSeededLog({ combat: { player: hurt } });
+
+            replay([{ message: 'Slime attacks Jean', round: 1, type: 'action' }]);
+
+            await waitFor(() => {
+                expect(mockPlaySFX).toHaveBeenCalledWith('low_health_warning');
+            }, { timeout: REPLAY_ASSERT_TIMEOUT });
+        });
+
+        it('skips the keyword SFX and holds the reveal for an animation-carrying log entry', async () => {
+            const { replay } = await renderWithSeededLog();
+
+            replay([
+                { message: 'Jean attacks Slime', round: 1, type: 'result', animation: { type: 'attack' } },
+            ]);
+
+            await waitFor(() => {
+                expect(screen.getByText('Jean attacks Slime')).toBeInTheDocument();
+            }, { timeout: REPLAY_ASSERT_TIMEOUT });
+            expect(mockPlaySFX).not.toHaveBeenCalledWith('attack_swipe');
+        });
+
+        it('plays the victory sting for a victory log line', async () => {
+            const { replay } = await renderWithSeededLog();
+
+            replay([{ message: 'Victory! The battle is won.', round: 1, type: 'result' }]);
+
+            await waitFor(() => {
+                expect(mockPlaySting).toHaveBeenCalledWith('fanfare');
+            }, { timeout: REPLAY_ASSERT_TIMEOUT });
+        }, REPLAY_TEST_TIMEOUT);
     });
 
-    it('does not play a quest SFX when "quest" appears without a completion keyword', async () => {
-        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
-        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
-        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
-        await waitFor(() => {
-            expect(screen.getByText('Combat begins')).toBeInTheDocument();
-        }, { timeout: 3000 });
-
-        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={{
-            log: [seedEntry, { message: 'A new quest is now available', round: 1, type: 'quest' }],
-            beat_states: [{ enemies: [] }],
-        }} />);
-
-        await waitFor(() => {
-            expect(screen.getByText('A new quest is now available')).toBeInTheDocument();
-        }, { timeout: 5000 });
-        expect(mockPlaySFX).not.toHaveBeenCalledWith('quest_complete');
-    });
-
-    it('plays a low-health warning when Jean is attacked below 30% HP', async () => {
-        const lowHpPlayer = { ...mockPlayer, hp: 20, max_hp: 100 };
-        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
-        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
-        const { rerender } = render(<LeftPanel player={lowHpPlayer} location={mockLocation} mode="combat" combat={combat} />);
-        await waitFor(() => {
-            expect(screen.getByText('Combat begins')).toBeInTheDocument();
-        }, { timeout: 3000 });
-
-        rerender(<LeftPanel player={lowHpPlayer} location={mockLocation} mode="combat" combat={{
-            log: [seedEntry, { message: 'Slime attacks Jean', round: 1, type: 'action' }],
-            beat_states: [{ enemies: [] }],
-        }} />);
-
-        await waitFor(() => {
-            expect(mockPlaySFX).toHaveBeenCalledWith('low_health_warning');
-        }, { timeout: 5000 });
-    });
-
-    it('skips the keyword SFX and holds the reveal for an animation-carrying log entry', async () => {
-        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
-        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
-        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
-        await waitFor(() => {
-            expect(screen.getByText('Combat begins')).toBeInTheDocument();
-        }, { timeout: 3000 });
-
-        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={{
-            log: [seedEntry, { message: 'Jean attacks Slime', round: 1, type: 'result', animation: { type: 'attack' } }],
-            beat_states: [{ enemies: [] }],
-        }} />);
-
-        await waitFor(() => {
-            expect(screen.getByText('Jean attacks Slime')).toBeInTheDocument();
-        }, { timeout: 5000 });
-        expect(mockPlaySFX).not.toHaveBeenCalledWith('attack_swipe');
-    });
-
-    it('plays the victory sting for a victory log line', async () => {
-        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
-        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
-        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
-        await waitFor(() => {
-            expect(screen.getByText('Combat begins')).toBeInTheDocument();
-        }, { timeout: 3000 });
-
-        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={{
-            log: [seedEntry, { message: 'Victory! The battle is won.', round: 1, type: 'result' }],
-            beat_states: [{ enemies: [] }],
-        }} />);
-
-        await waitFor(() => {
-            expect(mockPlaySting).toHaveBeenCalledWith('fanfare');
-        }, { timeout: 5000 });
-    }, 10000);
 
     it('closes the Stats, Skills, Actions, and Interact panels via their onClose handlers', () => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
 
         fireEvent.click(screen.getByText('Attributes Btn'));
         expect(screen.getByTestId('stats-panel')).toBeInTheDocument();
@@ -1554,17 +1472,11 @@ describe('LeftPanel', () => {
     });
 
     it('opens the Defensive and Special (Mastery) combat move panels', () => {
-        const combat = {
-            log: [],
-            awaiting_input: true,
-            input_type: 'move_selection',
-            available_options: [
-                makeCombatMove({ id: '1', name: 'Dodge', category: 'Defensive', available: true }),
-                makeCombatMove({ id: '2', name: 'War Cry', category: 'Mastery', available: true }),
-            ],
-            beat_states: [{ enemies: [] }],
-        };
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        const combat = combatWith([
+            makeAvailableOption({ id: '1', name: 'Dodge', category: 'Defensive' }),
+            makeAvailableOption({ id: '2', name: 'War Cry', category: 'Mastery' }),
+        ]);
+        render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
 
         // LeftPanel's job here is to hand CombatMovePanel the GROUP KEY — the
         // panel itself narrows the list with movesInGroup, so the mock (which
@@ -1594,7 +1506,7 @@ describe('LeftPanel', () => {
         ['Send Feedback', () => screen.getByTitle('Send Feedback')],
         ['Account', () => screen.getByText('Account')],
     ])('lights the %s header button on hover and restores it on leave', (_label, get) => {
-        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        render(<LeftPanel {...baseProps} mode="exploration" />);
         const btn = get();
         const rgb = (hex) => {
             const n = parseInt(hex.slice(1), 16);
@@ -1613,20 +1525,20 @@ describe('LeftPanel', () => {
 });
 
 describe('LeftPanel — revealed log resets per fight', () => {
-  const combatWith = (combatId, messages) => ({
+  const combatWithLog = (combatId, messages) => makeCombat({
     combat_id: combatId,
-    round: 1,
-    beat: 1,
     awaiting_input: true,
     enemies: [],
-    player: { hp: 10, max_hp: 10 },
-    available_options: [],
+    player: makeCombatant({ hp: 10, max_hp: 10 }),
     log: messages.map((message, i) => ({ message, round: 1, type: 'combat', beat_index: i })),
   });
 
-  const baseProps = {
-    player: { name: 'Jean', hp: 10, max_hp: 10 },
-    location: { name: 'Arena' },
+  // Its own small fixture: this block rerenders across two fights and reads
+  // only the log and the displayed count, so it states a player and a
+  // location of its own rather than leaning on the shared ones.
+  const fightProps = {
+    player: makePlayer({ hp: 10, max_hp: 10 }),
+    location: makeLocation({ name: 'Arena' }),
     mode: 'combat',
     isMobile: false,
   };
@@ -1646,8 +1558,8 @@ describe('LeftPanel — revealed log resets per fight', () => {
     const onDisplayedLogCountChange = vi.fn();
     const { rerender } = render(
       <LeftPanel
-        {...baseProps}
-        combat={combatWith('fight-1', ['one', 'two'])}
+        {...fightProps}
+        combat={combatWithLog('fight-1', ['one', 'two'])}
         onDisplayedLogCountChange={onDisplayedLogCountChange}
       />
     );
@@ -1659,8 +1571,8 @@ describe('LeftPanel — revealed log resets per fight', () => {
 
     rerender(
       <LeftPanel
-        {...baseProps}
-        combat={combatWith('fight-2', ['fresh'])}
+        {...fightProps}
+        combat={combatWithLog('fight-2', ['fresh'])}
         onDisplayedLogCountChange={onDisplayedLogCountChange}
       />
     );

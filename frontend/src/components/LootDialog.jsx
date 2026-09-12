@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
-import { colors, spacing, fonts, accessibility } from '../styles/theme'
+import { colors, spacing, fonts, accessibility, zIndex } from '../styles/theme'
 import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { stackDisplayName, stackCountLabel, stackSize } from '../utils/stackName'
 
@@ -44,6 +44,9 @@ function ItemTooltip({ item, anchorRef }) {
       background: '#0d1a0d',
       border: `2px solid ${colors.secondary}`,
       padding: '10px',
+      // A local rank, not a tier on the theme's zIndex scale: this tooltip
+      // renders inside LootDialog's BaseDialog, whose overlay forms its own
+      // stacking context, so it only has to clear the dialog's own content.
       zIndex: 3000,
       pointerEvents: 'none',
       fontFamily: fonts.main,
@@ -216,7 +219,7 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
   // leaking into player-facing copy with no phase 1 in sight if there was
   // nothing to allocate (#540 item 9).
   return (
-    <BaseDialog title="⚔ VICTORY — COLLECT YOUR LOOT" maxWidth="640px" padding="16px" zIndex={2500}>
+    <BaseDialog title="⚔ VICTORY — COLLECT YOUR LOOT" maxWidth="640px" padding="16px" zIndex={zIndex.raisedDialog}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md, fontFamily: fonts.main }}>
 
         {/* Section header */}

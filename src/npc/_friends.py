@@ -12,6 +12,7 @@ from pathlib import Path
 import src.functions as functions  # type: ignore
 import src.genericng as genericng  # type: ignore
 import src.moves as moves  # type: ignore
+from src.events import gate_is_set, set_story_gate  # type: ignore
 from src.narration import colored, narrate  # type: ignore
 from ._base import Friend, NonCombatantMixin
 from ._chat_llm import ConversationalNPCMixin
@@ -524,8 +525,7 @@ class GronditeConclaveElder(Friend):
         import time
 
         # Check if intro has already fired this session
-        story = getattr(getattr(player, "universe", None), "story", {})
-        first_time = story.get(self._INTRO_RUN_KEY, "0") == "0"
+        first_time = not gate_is_set(player, self._INTRO_RUN_KEY)
 
         if first_time:
             narrate(
@@ -568,10 +568,8 @@ class GronditeConclaveElder(Friend):
                 "Jean has the distinct sense that the question is still open. That the "
                 "Elder expects him to come back."
             )
-            universe_story = getattr(getattr(player, "universe", None), "story", None)
-            if universe_story is not None:
-                universe_story[self._INTRO_RUN_KEY] = "1"
-                universe_story["conclave_elder_disc_acknowledged"] = "1"
+            set_story_gate(player, self._INTRO_RUN_KEY)
+            set_story_gate(player, "conclave_elder_disc_acknowledged")
         else:
             lines = [
                 (
