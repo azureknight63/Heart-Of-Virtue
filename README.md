@@ -236,7 +236,7 @@ inventory, combat-command, API).
 > created them** — never load a `.sav` obtained from an untrusted source.
 >
 > Deserialization is hardened by `src/secure_pickle.py`: an allow-list of engine
-> classes, opt-in strict mode (`HOV_STRICT_UNPICKLE`), a size cap, a
+> classes, strict mode on by default (`HOV_STRICT_UNPICKLE=0` opts out), a size cap, a
 > magic-bytes + sha256 integrity header on new saves, structured event logging,
 > and an optional sandboxed-subprocess loader. A data-only (JSON) save format
 > that removes the pickle exec risk entirely exists in prototype behind the

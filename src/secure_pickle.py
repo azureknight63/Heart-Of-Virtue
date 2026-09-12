@@ -16,8 +16,11 @@ cheap Phase 2 hygiene wins):
     engine's ``src.*`` classes and nothing else.
   * An **allow-list** of engine classes derived automatically from the engine
     modules at first use (so it can't drift behind the code).
-  * An opt-in **strict mode** (env var ``HOV_STRICT_UNPICKLE``) that rejects any
-    class outside the allow-list and disables dynamic placeholder synthesis.
+  * **Strict mode on by default** -- rejects any class outside the allow-list and
+    disables dynamic placeholder synthesis. ``HOV_STRICT_UNPICKLE=0`` opts out
+    for debugging a save the allow-list refuses; there is no supported reason to
+    run the game that way. It was opt-in until the beta flip, which meant the
+    allow-list documented in SECURITY.md was not gating any default load.
   * Structured **event logging** of every rewrite, placeholder, and rejection,
     both to :mod:`logging` and onto the unpickler's ``events`` list for UI/debug
     inspection.
@@ -49,9 +52,10 @@ logger = logging.getLogger(__name__)
 # pressure from an intentionally bloated pickle. See issue #13, Phase 2.
 DEFAULT_MAX_SAVE_BYTES = 5 * 1024 * 1024
 
-# Environment variable that toggles strict allow-list enforcement. Kept as an
-# env var (rather than plumbing a config handle through the loader) so it is a
-# single, testable control surface reachable from any entry point.
+# Environment variable that can *disable* strict allow-list enforcement. Kept as
+# an env var (rather than plumbing a config handle through the loader) so it is a
+# single, testable control surface reachable from any entry point. Note the
+# polarity: this is an opt-out, and absence means strict.
 STRICT_ENV_VAR = "HOV_STRICT_UNPICKLE"
 
 # --- Integrity header (issue #13, Phase 2) ---------------------------------
@@ -330,20 +334,36 @@ def _resolved_global_is_trusted(obj):
     return _is_allowed(owner, getattr(obj, "__name__", "") or "")
 
 
+# Explicit opt-out values. Anything else -- including an unset variable, an empty
+# value, and a typo -- leaves strict enforcement ON. Fail closed: a misspelled
+# deploy variable must not silently retire the allow-list, which is precisely how
+# this gate spent its first life inert.
+STRICT_OPT_OUT_VALUES = frozenset({"0", "false", "no", "off"})
+
+
 def strict_mode_enabled():
-    """Return True when strict allow-list enforcement is requested via env."""
-    return os.environ.get(STRICT_ENV_VAR, "").strip().lower() in (
-        "1", "true", "yes", "on",
-    )
+    """Return True unless strict enforcement is explicitly disabled via env.
+
+    Strict is the **default** posture: an entry point that sets nothing gets
+    allow-list enforcement and no placeholder synthesis. Set
+    ``HOV_STRICT_UNPICKLE=0`` (or false/no/off) to opt out, which is a debugging
+    affordance for loading a save the allow-list rejects -- not a supported way
+    to run the game.
+    """
+    return os.environ.get(STRICT_ENV_VAR, "").strip().lower() not in STRICT_OPT_OUT_VALUES
 
 
 # Curated set of ``(module, name)`` for classes that have been *removed* from
 # the engine but may still appear in old saves. In strict mode these are the
 # only classes allowed to fall back to a placeholder; every other unresolved
 # class is rejected. Keyed on the canonical ``src.`` module: ``find_class``
-# canonicalises a bare pickled name before it checks here. Add an entry in the
-# same change that retires a persisted class, so legacy saves keep loading
-# under strict mode without re-opening the door to arbitrary names.
+# canonicalises a bare pickled name before it checks here.
+#
+# Now that strict is the default, this set is the *only* remaining path by which
+# a save naming a retired class loads at all. Retiring a class without adding it
+# here turns every save referencing it into a hard load failure -- the intended
+# trade in beta, but a decision to make deliberately rather than discover. Add
+# the entry in the same change that retires the class.
 LEGACY_ALLOWED_MISSING = frozenset({
     # Issue #579: the ferry's demo end moved onto ``Passageway.end_demo``.
     # It was placed on no tile in any shipped map, so no save should name
@@ -458,7 +478,11 @@ class SafeUnpickler(pickle.Unpickler):
         return type(placeholder_class_name, (object,), attrs)
 
     def find_class(self, module, name):
-        strict = getattr(self, "strict", False)
+        # Default True, not False: an instance built via __new__ (bypassing
+        # __init__) must not be a back door to placeholder synthesis now that
+        # strict is the posture everywhere else. Callers that genuinely want
+        # legacy behaviour pass strict=False and say so.
+        strict = getattr(self, "strict", True)
         original = module
         module = canonical_module_name(module)
         if module != original:
@@ -622,10 +646,12 @@ def load_in_subprocess(data, *, timeout=DEFAULT_SANDBOX_TIMEOUT, strict=True,
     import subprocess
 
     env = dict(os.environ)
-    if strict:
-        env[STRICT_ENV_VAR] = "1"
-    else:
-        env.pop(STRICT_ENV_VAR, None)
+    # Write the value explicitly in BOTH directions. Deleting the variable used
+    # to mean "not strict"; since the default flip, absence means strict, so a
+    # pop here would run the child strictly and silently invert strict=False.
+    # Setting it also stops a stray value in the parent's environment from
+    # overriding the caller's argument.
+    env[STRICT_ENV_VAR] = "1" if strict else "0"
 
     # RLIMIT_AS via preexec_fn is POSIX-only; skip the cap elsewhere.
     preexec = None

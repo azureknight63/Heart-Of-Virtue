@@ -625,8 +625,15 @@ class TestSafeUnpickler:
     """Lines 776-830."""
 
     def test_missing_module_creates_placeholder(self):
-        """A missing module yields a *tagged* placeholder, not a real class."""
+        """A missing module yields a *tagged* placeholder, not a real class.
+
+        ``strict = False`` is explicit because placeholder synthesis is the
+        legacy path: strict is the default posture, and under it this payload is
+        rejected outright (see test_secure_pickle.py). The ``__new__`` instance
+        would otherwise inherit the strict fallback and raise.
+        """
         up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
+        up.strict = False
         cls = up.find_class("totally_nonexistent_module_xyz", "SomeClass")
 
         assert cls.__name__ == "LegacyMissing_totally_nonexistent_module_xyz_SomeClass"
@@ -642,6 +649,7 @@ class TestSafeUnpickler:
     def test_placeholder_mutable_containers_are_not_shared(self):
         """Each placeholder class gets fresh keywords/interactions lists."""
         up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
+        up.strict = False  # placeholder synthesis is the legacy path
         a = up.find_class("gone_module_a", "Thing")
         b = up.find_class("gone_module_b", "Thing")
         a.keywords.append("poisoned")
@@ -665,6 +673,7 @@ class TestSafeUnpickler:
     def test_story_rewrite_unknown_class_falls_back(self):
         """Rewrite applied but class not found → placeholder, not an exception."""
         up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
+        up.strict = False  # placeholder synthesis is the legacy path
         cls = up.find_class("story.ch01", "NonExistentEvent99999")
         assert cls._legacy_placeholder is True
         assert cls.__name__ == "LegacyMissing_src_story_ch01_NonExistentEvent99999"

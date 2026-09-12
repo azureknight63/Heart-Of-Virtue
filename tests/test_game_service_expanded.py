@@ -36,6 +36,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.secure_pickle import HEADER_MAGIC, HEADER_SIZE, HEADER_VERSION
+from src.states import State
 from src.story import ch02
 from tests._ch02_fixtures import (
     CORRUPTED_AUTHORED_TEXT,
@@ -67,18 +68,23 @@ def db():
         yield stub
 
 
-class TransientState:
+# These were once module-local stand-ins with a class-level ``persistent`` flag.
+# They round-tripped through the *real* save path, which meant they only ever
+# worked because the unpickler's allow-list was inert -- a save naming
+# ``test_game_service_expanded.TransientState`` could never have loaded in
+# production, and strict mode (now the default) rejects it outright. Using the
+# real ``src.states.State`` keeps the round trip honest: ``persistent`` is a
+# genuine constructor parameter that the load path reads, so the assertion is
+# derived from the engine rather than from a fixture that agrees with itself.
+
+def _transient_state(target):
     """A combat-scoped status effect: cleared at combat end, so not on load."""
-
-    persistent = False
-    name = "Rattled"
+    return State("Rattled", target, persistent=False)
 
 
-class LastingState:
+def _lasting_state(target):
     """A world-persistent status effect (Poisoned, Slimed, ...): survives a load."""
-
-    persistent = True
-    name = "Poisoned"
+    return State("Poisoned", target, persistent=True)
 
 
 def _result(rows=(), rows_affected=0):
@@ -351,7 +357,7 @@ class TestLoadGame:
         assert loaded.current_move is None
 
     async def test_non_persistent_states_are_stripped(self, game_service, player, db):
-        player.states = [TransientState(), LastingState()]
+        player.states = [_transient_state(player), _lasting_state(player)]
 
         loaded = await self._round_trip(game_service, player, db)
 
