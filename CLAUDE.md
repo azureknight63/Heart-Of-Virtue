@@ -6,6 +6,8 @@ Text-based adventure RPG (retro terminal aesthetic) following the crusader Jean 
 
 Deep, path-specific guidance lives in `.claude/rules/*.md` and loads automatically when you touch matching files (API layer, combat engine, frontend, story/content, saves, testing, audio, LLM prompts). Project skills in `.claude/skills/` self-describe — invoke them instead of re-deriving their workflows (table at the end).
 
+**Communication style:** default to concise, terse responses and reports. Skip long explanations unless explicitly asked for verbosity.
+
 ## Design pillars — the decision filter
 
 Derived from `docs/lore/`, `src/resources/outline.md`, and the map-design principles (edit if they misstate the vision). A change that serves none of these is scope creep — not because it's bad, but because it's not this game.
